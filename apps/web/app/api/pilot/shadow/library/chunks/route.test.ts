@@ -140,3 +140,44 @@ describe('POST /api/pilot/shadow/library/chunks', () => {
     expect(response.status).toBe(409);
   });
 });
+
+// RINT-05a: the platform shelf, resolved on the server (OD-2026-10-02-013 1B;
+// OD-2026-10-02-015 D3).
+describe('the platform shelf on POST /api/pilot/shadow/library/chunks', () => {
+  test('platform_owner adds a chunk on the platform shelf', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'platform', organization_id: 'org-attacker' }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+  });
+
+  test('platform_owner cannot add a chunk on the gym shelf', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest(validBody));
+
+    expect(response.status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'board', 'volunteer', 'staff'] as const)(
+    '%s gets 403 for shelf: platform',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+      const response = await POST(postRequest({ ...validBody, shelf: 'platform' }));
+
+      expect(response.status).toBe(403);
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a gym admin without a shelf writes its own organization, as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    expect((await POST(postRequest(validBody))).status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-real' }));
+  });
+});

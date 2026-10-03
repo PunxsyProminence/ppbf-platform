@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
@@ -25,6 +26,12 @@ export const runtime = 'nodejs';
 // document. Promotion happens only through PATCH /shadow/evidence/review. That
 // human gate is the point of the Library, so this route must never pre-approve
 // its own writes.
+//
+// Every method takes an optional `shelf` ('gym', the default, or 'platform';
+// a query parameter on GET, a body field otherwise), resolved to an
+// organization id on the server by libraryShelf.ts. Only the platform owner
+// reaches the platform shelf, and it no longer writes a gym's (OD-2026-10-02-013,
+// OD-2026-10-02-015 D3). No organization id is read from the request.
 
 // Keyed by the union rather than listed as a string[] so that adding a member
 // to ShadowLibrarySourceType fails to compile here until it is classified,
@@ -67,6 +74,7 @@ export async function GET(request: NextRequest) {
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
 
     const params = new URL(request.url).searchParams;
+    const organizationId = resolveLibraryShelf(principal, params.get('shelf'), 'read');
     const sourceType = params.get('source_type');
     const status = params.get('status');
     const generalResearch = params.get('general_research');
@@ -96,7 +104,7 @@ export async function GET(request: NextRequest) {
     }
 
     const items = await listShadowLibrarySources({
-      organizationId: principal.organizationId,
+      organizationId,
       sourceType: sourceType ?? undefined,
       status: status ?? undefined,
       generalResearch: generalResearch === null ? undefined : generalResearch === 'true',
@@ -124,7 +132,9 @@ export async function POST(request: NextRequest) {
       publication_date?: unknown;
       status?: unknown;
       metadata?: unknown;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (typeof body.title !== 'string' || !body.title.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source title' }, { status: 400 });
@@ -182,7 +192,7 @@ export async function POST(request: NextRequest) {
     }
 
     const source = await createShadowLibrarySource({
-      organizationId: principal.organizationId,
+      organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       title: body.title,
@@ -220,7 +230,9 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       source_id?: unknown;
       classification_domain?: unknown;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
@@ -230,7 +242,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const source = await updateShadowLibrarySourceClassification(
-      principal.organizationId,
+      organizationId,
       body.source_id.trim(),
       body.classification_domain,
     );
