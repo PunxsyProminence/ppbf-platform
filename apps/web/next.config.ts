@@ -121,7 +121,8 @@ const nextConfig: NextConfig = {
 	// to the chunk and every parse fails at runtime ("Cannot find module
 	// .../chunks/pdf.worker.mjs"); kept external, the standalone output traces
 	// both packages into node_modules and the worker resolves. Proven by running
-	// the standalone server (RINT-02); /api/document-ingest uses the same parser.
+	// the standalone server (RINT-02). (/api/document-ingest, which used the same
+	// parser, was retired on 2026-10-03, OD-2026-10-03-002 section 9.)
 	serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
 	turbopack: {
 		root: repoRoot,
