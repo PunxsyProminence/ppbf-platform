@@ -162,3 +162,24 @@ test('an empty projection states the absence without the window line', async () 
   ).toBeTruthy();
   expect(screen.queryByText(/most recent SHADOW events/i)).toBeNull();
 });
+
+// #991 class (Lane 14 batch 8, C12): the page-level empty state was guarded,
+// but each of the four stream columns still said "No items." under the alert,
+// because a failed read leaves every column empty by construction.
+test('a failed read does not tell each stream it has no items', async () => {
+  installFetch(async () => ({ ok: false, json: async () => ({}) }) as Response);
+
+  render(<KnowledgeGraphPage />);
+
+  await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+  expect(screen.queryByText('No items.')).toBeNull();
+  expect(screen.getAllByText('Not available.')).toHaveLength(4);
+});
+
+test('a projection that answered empty still says each stream has no items', async () => {
+  installFetch(async () => ({ ok: true, json: async () => ({ ok: true, items: [] }) }) as Response);
+
+  render(<KnowledgeGraphPage />);
+
+  await waitFor(() => expect(screen.getAllByText('No items.')).toHaveLength(4));
+});

@@ -1355,9 +1355,10 @@ describe('authored announcements on the athlete workspace', () => {
     await renderWorkspace();
 
     expect(screen.queryByText('From the Gym')).toBeNull();
-    // A board that could not be read is a blank board, and says nothing about
-    // its own plumbing on top of the page's real work.
-    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
+    // A board that could not be read says so, quietly (Jason 2026-10-03, Lane
+    // 14 batch 8 P5): never "Nothing on the board.", and still no plumbing.
+    expect(screen.queryByText('Nothing on the board.')).toBeNull();
+    expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
     // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
     // the "Pre-Session Self-Report" card, which went with its defaulted slider.
     expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();

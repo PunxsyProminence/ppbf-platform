@@ -381,6 +381,10 @@ function ShadowChatPageContent() {
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
   const [sessionNotice, setSessionNotice] = useState<string>();
+  // Kept apart from sessionNotice, which "New chat" and every other action
+  // clears: once the notice went, a failed list read was left saying "No
+  // saved sessions yet." (#991 class, Lane 14 batch 8 C7).
+  const [sessionsListUnavailable, setSessionsListUnavailable] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState<string>();
   const [renameDraft, setRenameDraft] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
@@ -578,6 +582,7 @@ function ShadowChatPageContent() {
       .then((sessions) => {
         if (!controller.signal.aborted) {
           setSavedSessions(sessions);
+          setSessionsListUnavailable(false);
         }
       })
       .catch((error: unknown) => {
@@ -595,6 +600,7 @@ function ShadowChatPageContent() {
             ? 'Saved sessions are not available for this role. You can still try a new chat if your role is allowed.'
             : 'Saved sessions are temporarily unavailable. You can still start a new chat.',
         );
+        setSessionsListUnavailable(true);
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -1457,10 +1463,15 @@ function ShadowChatPageContent() {
             </div>
           )}
 
+          {!sessionsLoading && sessionsListUnavailable && savedSessions.length > 0 ? (
+            <p className="t-muted mt-[var(--s3)]">Older saved sessions could not be loaded.</p>
+          ) : null}
           {sessionsLoading ? (
             <p className="t-muted mt-[var(--s3)]">Loading saved sessions...</p>
           ) : savedSessions.length === 0 ? (
-            <p className="t-muted mt-[var(--s3)]">No saved sessions yet.</p>
+            <p className="t-muted mt-[var(--s3)]">
+              {sessionsListUnavailable ? 'Saved sessions could not be loaded.' : 'No saved sessions yet.'}
+            </p>
           ) : (
             <div className="mt-[var(--s3)] grid max-h-[233px] gap-[var(--s3)] overflow-y-auto md:grid-cols-2">
               {savedSessions.map((session) => {
