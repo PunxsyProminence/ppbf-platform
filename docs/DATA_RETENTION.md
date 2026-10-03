@@ -172,6 +172,12 @@ most of these rows with it.
   mentorships with them, coach-coverage grants on them, guardian links in the
   duplicate-guardian check and in a guardian's link to a coach's portrait, the admin PIN
   directory, the roster CSV export, and SHADOW research requirements about them.
+- The people console: their login leaves the member list (athlete memberships only: a coach
+  who was once that athlete stays listed as the coach), a guardian's link to them leaves the
+  guardian-link list, and the link is no longer offered for removal or counted by the
+  "only athlete this guardian is linked to" refusal. The SHADOW library curator queue leaves
+  out documents filed against them. Pinned by
+  `apps/web/src/server/pilot/deletedAthleteStaffReaders.pg.test.ts`.
 
 **Safety screens: hidden once resolved** (owner decision 2026-09-30, OD-2026-09-30-004, "#1027
 Q1", option B). On the organization admin's safety screens a deleted athlete's item stays until
@@ -246,9 +252,11 @@ queue is not in this table: it drops a deleted athlete's publications at once (v
   those rows.
 - Code with no caller in the app (for example the calibration gold-record reads, the attendance
   totals in `attendancePrecedence.ts`, `listDueAssessments`).
-- Readers in files another change owns this week (`intake.ts`, `staffProvisioning.ts`,
-  `shadowLibrary.ts`, `rabbitHoles.ts`): the staff page's guardian-link and member lists, and
-  the SHADOW library curator list, still show a deleted athlete's rows.
+- Rabbit-hole lesson citations (`rabbitHoles.ts` `CITATION_JOIN`): nothing to hide. A lesson
+  can cite only a gym-wide document (`d.subject_id is null`, `libraryServability.ts`), never
+  one filed against an athlete.
+- The intake review queue (`intake.ts`): `pilot.intake_cases.primary_athlete_id` is never
+  written, so a case names no athlete to filter on. Its own build-list item.
 
 **Stored files.** Deletion erases no stored file, and neither does the cleanup job: the app's
 only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall

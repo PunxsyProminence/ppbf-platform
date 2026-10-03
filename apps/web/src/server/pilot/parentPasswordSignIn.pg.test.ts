@@ -489,6 +489,30 @@ describe('everything else is refused, with the same nothing', () => {
     expect(await loginWithEmailAndPassword(parent.email, '482915')).toBeNull();
     expect(loggedReasons()).toEqual(['no_password_set']);
   });
+
+  // The column is not null, so the constraint is lifted for this one case and
+  // put back. The default organization is pointed at a real, active one: if
+  // the old fallback came back, this would mint a session there, not throw.
+  test('an account with no organization is refused, not placed in the default organization', async () => {
+    const parent = await seedAccount();
+    const previousDefaultOrg = process.env.PPBF_PILOT_DEFAULT_ORG_ID;
+    process.env.PPBF_PILOT_DEFAULT_ORG_ID = OTHER_ACTIVE_ORG_ID;
+    await client.query('alter table pilot.accounts alter column organization_id drop not null');
+    try {
+      await client.query('update pilot.accounts set organization_id = null where account_id = $1', [parent.accountId]);
+      const before = await totalSessions();
+
+      expect(await loginWithEmailAndPassword(parent.email, GOOD_PASSWORD)).toBeNull();
+      expect(await totalSessions()).toBe(before);
+      expect(mockVerifyPassword).toHaveBeenCalledTimes(1);
+      expect(loggedReasons()).toEqual(['no_organization']);
+    } finally {
+      await client.query('update pilot.accounts set organization_id = $2 where account_id = $1', [parent.accountId, ORG_ID]);
+      await client.query('alter table pilot.accounts alter column organization_id set not null');
+      if (previousDefaultOrg === undefined) delete process.env.PPBF_PILOT_DEFAULT_ORG_ID;
+      else process.env.PPBF_PILOT_DEFAULT_ORG_ID = previousDefaultOrg;
+    }
+  });
 });
 
 // The verification is the gap: the account was read before it and the session

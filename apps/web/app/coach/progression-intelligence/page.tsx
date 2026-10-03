@@ -150,6 +150,10 @@ function cancelFailureMessage(status: number | null): string {
 export default function CoachProgressionIntelligencePage() {
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
+  /* Whether the selected athlete's gaps and assignments could not be read.
+     errorMessage alone is one line in the header; the lists below must not
+     say "(0)" or "none yet" for an athlete nobody could look at. */
+  const [progressionUnreadable, setProgressionUnreadable] = useState(false);
   const [completionsByAssignment, setCompletionsByAssignment] = useState<Record<string, AssignmentCompletion[]>>({});
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [drills, setDrills] = useState<DrillLibraryItem[]>([]);
@@ -362,6 +366,7 @@ export default function CoachProgressionIntelligencePage() {
       setGaps([]);
       setAssignments([]);
       setCompletionsByAssignment({});
+      setProgressionUnreadable(false);
       return;
     }
     try {
@@ -395,6 +400,7 @@ export default function CoachProgressionIntelligencePage() {
       );
       if (signal.aborted) return;
       setCompletionsByAssignment(nextCompletions);
+      setProgressionUnreadable(false);
       setErrorMessage('');
     } catch (error) {
       // A superseded or unmounted load is not something a coach needs to
@@ -403,6 +409,11 @@ export default function CoachProgressionIntelligencePage() {
       // reporting genuine failures exactly as it did before -- a real refusal
       // or a dead network still reaches errorMessage.
       if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+      // Clear, not keep: what is on screen may be the PREVIOUS athlete's.
+      setGaps([]);
+      setAssignments([]);
+      setCompletionsByAssignment({});
+      setProgressionUnreadable(true);
       throw error;
     }
   }, []);
@@ -856,7 +867,7 @@ export default function CoachProgressionIntelligencePage() {
             {/* Progression Gaps Section */}
             <section className="space-y-[var(--s4)]">
               <div className="flex items-center justify-between gap-[var(--s3)]">
-                <h2 className="t-command text-[length:var(--t-lg)]">Progression Gaps ({gaps.length})</h2>
+                <h2 className="t-command text-[length:var(--t-lg)]">Progression Gaps ({progressionUnreadable ? 'unavailable' : gaps.length})</h2>
                 <div className="flex gap-[var(--s2)]">
                   <button
                     type="button"
@@ -1084,7 +1095,11 @@ export default function CoachProgressionIntelligencePage() {
               )}
 
               <div className="space-y-[var(--s3)]">
-                {gaps.length === 0 ? (
+                {progressionUnreadable ? (
+                  <p className="t-body text-[color:var(--bone-300)]" data-testid="gaps-unreadable">
+                    This athlete&rsquo;s gaps could not be read, so this cannot say whether they have any.
+                  </p>
+                ) : gaps.length === 0 ? (
                   <p className="t-body text-[color:var(--bone-300)]">No gaps identified yet.</p>
                 ) : (
                   gaps.map((gap) => (
@@ -1115,14 +1130,18 @@ export default function CoachProgressionIntelligencePage() {
 
             {/* Drill Assignments + verify surface */}
             <section>
-              <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Assigned Drills ({assignments.length})</h2>
+              <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Assigned Drills ({progressionUnreadable ? 'unavailable' : assignments.length})</h2>
               {/* Always mounted, so a screen reader is already listening when
                   a cancel's result is written into it. Empty otherwise. */}
               <p role="status" aria-live="polite" className="t-body text-[color:var(--bone-300)]">
                 {cancelNotice ? <span className="mb-[var(--s3)] block">{cancelNotice}</span> : null}
               </p>
               <div className="space-y-[var(--s3)]">
-                {assignments.length === 0 ? (
+                {progressionUnreadable ? (
+                  <p className="t-body text-[color:var(--bone-300)]" data-testid="assignments-unreadable">
+                    This athlete&rsquo;s assigned drills could not be read, so this cannot say whether they have any.
+                  </p>
+                ) : assignments.length === 0 ? (
                   <p className="t-body text-[color:var(--bone-300)]">No drills assigned yet.</p>
                 ) : (
                   assignments.map((assignment) => {

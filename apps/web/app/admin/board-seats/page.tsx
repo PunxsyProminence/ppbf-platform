@@ -135,18 +135,24 @@ function BoardSeatsConsole() {
       // what turns an account id back into someone an admin recognises, and it
       // is readable only by an admin -- so the President gets a typed account
       // id instead, and can still seat anyone.
-      const directoryResponse = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const directoryPayload = (await directoryResponse.json().catch(() => ({}))) as {
-        ok?: boolean;
-        members?: unknown;
-      };
-      if (directoryResponse.ok && directoryPayload.ok !== false) {
-        setMembers(normalizeMembers(directoryPayload.members));
-        setDirectoryAvailable(true);
-      } else {
+      // Its own catch: a directory that never answers must not mark the roster,
+      // which did answer, as unread.
+      try {
+        const directoryResponse = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const directoryPayload = (await directoryResponse.json().catch(() => ({}))) as {
+          ok?: boolean;
+          members?: unknown;
+        };
+        if (directoryResponse.ok && directoryPayload.ok !== false) {
+          setMembers(normalizeMembers(directoryPayload.members));
+          setDirectoryAvailable(true);
+        } else {
+          setDirectoryAvailable(false);
+        }
+      } catch {
         setDirectoryAvailable(false);
       }
     } catch (loadError) {
@@ -345,7 +351,8 @@ function BoardSeatsConsole() {
               <p className="t-eyebrow">Governance</p>
               <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Board Seats</h1>
               <p className="t-body mt-[var(--s3)] max-w-2xl">
-                Who holds each of the eight governing seats. {filledSeatCount} of {boardSeatConfigs.length} filled.
+                Who holds each of the eight governing seats.{' '}
+                {rosterAvailable ? `${filledSeatCount} of ${boardSeatConfigs.length} filled.` : ''}
                 {organizationId && (
                   <>
                     {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationId}</span>
@@ -391,6 +398,11 @@ function BoardSeatsConsole() {
           <div className="frame-in mat-leather">
           {loading ? (
             <p className="t-body p-[var(--s5)]">Loading the board roster...</p>
+          ) : !rosterAvailable ? (
+            /* A failed read is not eight empty seats: say it could not be read. */
+            <p className="t-body p-[var(--s5)]">
+              The board roster could not be loaded, so who holds each seat is not known here.
+            </p>
           ) : (
             <ul className="divide-y divide-[color:var(--hide-700)]">
               {seatRoster.map(({ config, primary, additional }) => (
@@ -461,7 +473,8 @@ function BoardSeatsConsole() {
           </div>
         </section>
 
-        {canManage && (
+        {/* Its seat picker would list every seat as unfilled on a failed read. */}
+        {canManage && rosterAvailable && (
           <form onSubmit={assign} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assign a seat</h2>

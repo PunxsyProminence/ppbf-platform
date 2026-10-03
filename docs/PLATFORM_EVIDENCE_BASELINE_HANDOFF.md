@@ -68,12 +68,22 @@ Every library table (`shadow_library_sources`, `_documents`, `_chunks`,
 The risk the chosen design creates is the inverse of the one it removes: a read
 that forgets the platform id merely *hides* the baseline (safe, obvious), but a
 **write** reaching the reserved org would pollute the corpus every tenant reads.
-That is closed at the database level, not by convention: every write path derives
-`organization_id` from the authenticated principal, and the migration adds CHECK
-constraints making it impossible for an account, membership, or athlete to
-reference `__platform__`. No principal can exist there, so no principal-derived
-write can land there. The only writer that can reach it is an operator running
-the importer with `PPBF_ORG_ID=__platform__`.
+The migration adds CHECK constraints making it impossible for an account,
+membership, or athlete to reference `__platform__`, so no principal can exist
+there. Since #1115 (OD-2026-10-02-013 answer 1B, OD-2026-10-02-015 D3) the
+write paths no longer derive `organization_id` from the principal alone: a
+Library request names a shelf (`gym`, the default, or `platform`) and
+`apps/web/src/server/pilot/libraryShelf.ts` resolves it on the server. Only
+`platform_owner` reaches `__platform__`; every other role gets 403, and a
+`platform_owner` write to a gym's shelf is refused. No organization id is read
+from a request. The importer with `PPBF_ORG_ID=__platform__` still writes there
+too.
+
+The applied migration's own header comment
+(`infra/azure/pilot_slice_postgres_platform_library_scope_migration.sql`,
+"HOW A GYM IS KEPT OUT OF IT") still says the importer is the only writer. That
+was true when it was applied and is superseded by the paragraph above; the file
+is not edited because it is an applied migration.
 
 ### The one place it is not free
 
@@ -317,10 +327,12 @@ table there and re-scoping is the only safe route.
    `isLibraryId(body.entityId, 'source_')` rejected every `src_`-prefixed id, so
    all 1,214 imported sources answered 404 there — and since retrieval requires an
    approved source, the whole corpus was permanently unretrievable through the
-   API. Fixed. Note also that the route scopes writes to
+   API. Fixed. When the baseline was approved, the route scoped writes to
    `principal.organizationId` and no principal may exist in `__platform__`, so the
-   baseline is unreachable through the API **by construction**; the script is not
-   a shortcut around it.
+   baseline was unreachable through the API and the script was the only way to
+   approve it. Since #1115 the platform owner can review platform-shelf rows on
+   that route one at a time by sending `shelf: 'platform'` (`libraryShelf.ts`);
+   the script remains the bulk attestation.
 3. **The 20 policy chunks are interleaved, not separable by document.** They sit
    inside 6 of the 14 track documents alongside peer-reviewed chunks, and
    retrieval joins chunks to documents on `organization_id`, so a chunk cannot

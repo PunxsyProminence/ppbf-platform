@@ -969,6 +969,25 @@ describe('recording what the model missed', () => {
     await screen.findByText('No videos in the library yet, so there is nothing to record an observation against.');
   });
 
+  test('a library read that failed says so, never that there is nothing to record against', async () => {
+    const base = mockFetch({
+      videos: () => [],
+      athletes: () => [athlete()],
+      proposals: () => [],
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/pilot/video/list')) {
+        return { ok: false, status: 500, json: async () => ({}) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByTestId('missed-video-unreadable');
+    expect(screen.queryByText('No videos in the library yet, so there is nothing to record an observation against.')).toBeNull();
+  });
+
   test('an incomplete entry is refused before anything is sent', async () => {
     let called = false;
     global.fetch = mockFetch({

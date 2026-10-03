@@ -2317,3 +2317,46 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     });
   });
 });
+
+describe('a progression read that failed is not an athlete with no gaps or drills', () => {
+  test('a refused gaps read says unavailable and never shows "(0)" or "none yet"', async () => {
+    const base = mockFetch({});
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/progression/gaps')) {
+        return { ok: false, status: 500, json: async () => ({}) } as Response;
+      }
+      return base(input, init);
+    });
+
+    await renderWithAthlete(fetchMock);
+
+    expect(await screen.findByTestId('gaps-unreadable')).toBeTruthy();
+    expect(screen.getByTestId('assignments-unreadable')).toBeTruthy();
+    expect(screen.queryByText('No gaps identified yet.')).toBeNull();
+    expect(screen.queryByText('No drills assigned yet.')).toBeNull();
+    expect(screen.queryByText('Progression Gaps (0)')).toBeNull();
+    expect(screen.queryByText('Assigned Drills (0)')).toBeNull();
+  });
+
+  test("a failed read for the next athlete clears the previous athlete's gaps", async () => {
+    let fail = false;
+    const base = mockFetch({});
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (fail && String(input).includes('/progression/gaps')) {
+        return { ok: false, status: 500, json: async () => ({}) } as Response;
+      }
+      return base(input, init);
+    });
+
+    await renderWithAthlete(fetchMock);
+    await screen.findByText('Rear foot stays flat through the cross.');
+
+    fail = true;
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: 'athlete-002' } });
+    });
+
+    expect(await screen.findByTestId('gaps-unreadable')).toBeTruthy();
+    expect(screen.queryByText('Rear foot stays flat through the cross.')).toBeNull();
+  });
+});

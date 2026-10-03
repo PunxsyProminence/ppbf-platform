@@ -111,8 +111,6 @@ async function run() {
       emergency_contact: 'Parent 555-0100',
       active_flag: true,
       coach_id: coachId,
-      created_at: nowIso,
-      updated_at: nowIso,
     },
   });
 

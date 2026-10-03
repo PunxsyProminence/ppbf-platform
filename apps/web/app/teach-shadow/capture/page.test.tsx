@@ -294,3 +294,28 @@ test('leads back into Teach Shadow rather than into Film Study', async () => {
   expect(hrefs).toContain('/teach-shadow');
   expect(hrefs).not.toContain('/coach/video-analysis');
 });
+
+test('a take that cannot be re-read after an upload says so, never "Nothing recorded", and does not call the upload failed', async () => {
+  const base = mockFetch();
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    // The GET re-read fails; opening the session (POST) and the upload succeed.
+    if (url.includes('/api/pilot/video/capture-session') && init?.method !== 'POST') {
+      return { ok: false, status: 500, json: async () => ({ error: 'boom' }) } as Response;
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+
+  await openSession();
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  await act(async () => {
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'angle.mp4', { type: 'video/mp4' })] },
+    });
+  });
+
+  await waitFor(() => expect(uploads).toHaveLength(1));
+  expect(await screen.findByTestId('angles-unreadable')).toBeTruthy();
+  expect(screen.queryByText(/Nothing recorded against this take yet/)).toBeNull();
+  expect(screen.queryByText(/could not be added to this take/)).toBeNull();
+});

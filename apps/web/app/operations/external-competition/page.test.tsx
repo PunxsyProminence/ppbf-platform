@@ -41,6 +41,8 @@ function mockFetch(options: {
   capture?: { posts: Array<{ url: string; body: unknown }> };
   entryPostStatus?: number;
   entryPostError?: string;
+  failCompetitions?: boolean;
+  failEntries?: boolean;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -60,9 +62,11 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ item: {} }) } as Response;
     }
     if (url.includes('/external-competition/competitions')) {
+      if (options.failCompetitions) return { ok: false, status: 500, json: async () => ({}) } as Response;
       return { ok: true, json: async () => ({ items: [COMPETITION] }) } as Response;
     }
     if (url.includes('/external-competition/entries')) {
+      if (options.failEntries) return { ok: false, status: 500, json: async () => ({}) } as Response;
       return { ok: true, json: async () => ({ items: [ENTRY] }) } as Response;
     }
     if (url.includes('/athletes/list')) {
@@ -95,6 +99,31 @@ test('competitions render from the API read', async () => {
   });
 
   expect(await screen.findByText('Regional Open 2026')).toBeTruthy();
+});
+
+test('a failed competitions read never says there are none on record', async () => {
+  global.fetch = mockFetch({ failCompetitions: true });
+
+  await act(async () => {
+    render(<ExternalCompetitionPlatformPage />);
+  });
+
+  expect(await screen.findByText('Could not load competitions')).toBeTruthy();
+  expect(screen.queryByText('No competitions on record')).toBeNull();
+});
+
+test('a failed entry-list read never says no athletes are entered', async () => {
+  global.fetch = mockFetch({ failEntries: true });
+
+  await act(async () => {
+    render(<ExternalCompetitionPlatformPage />);
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Open entries' }));
+  });
+
+  expect(await screen.findByText(/entry list could not be loaded/)).toBeTruthy();
+  expect(screen.queryByText('No athletes entered.')).toBeNull();
 });
 
 test('creating a competition posts the form', async () => {

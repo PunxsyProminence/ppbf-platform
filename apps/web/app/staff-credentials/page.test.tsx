@@ -63,3 +63,20 @@ test('an empty roster shows an empty state rather than an error', async () => {
 
   expect(await screen.findByText(/no staff credential records yet/i)).toBeTruthy();
 });
+
+// The #991 class: a read that failed must never be rendered as "no records".
+describe.each([
+  ['refused', () => jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) } as Response))],
+  ['rejected', () => jest.fn(async () => { throw new Error('network down'); })],
+])('a %s staff credentials read', (_label, makeFetch) => {
+  test('says it could not be loaded, not that there are no records', async () => {
+    global.fetch = makeFetch() as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<StaffCredentialsPage />);
+    });
+
+    expect(await screen.findByText(/staff credentials could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/no staff credential records yet/i)).toBeNull();
+  });
+});

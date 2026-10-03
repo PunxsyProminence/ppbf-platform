@@ -37,11 +37,16 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   };
 }
 
-// Every one of the ten athlete fields must be present and non-empty:
-// validateAthletePayload rejects missing keys as hard as it rejects extra
-// ones, so a partial fixture would fail at validation and never reach the
-// duplicate guard under test.
-function athletePayload(overrides: Partial<PilotAthlete> = {}): PilotAthlete {
+// Every one of the eight caller-supplied athlete fields must be present and
+// non-empty: validateAthleteCreatePayload rejects missing keys as hard as it
+// rejects extra ones, so a partial fixture would fail at validation and never
+// reach the duplicate guard under test. created_at and updated_at are not the
+// caller's to send; the route stamps them from the server clock.
+type AthleteBody = Omit<PilotAthlete, 'created_at' | 'updated_at'>;
+
+const SERVER_NOW = '2026-10-03T15:00:00.000Z';
+
+function athletePayload(overrides: Partial<PilotAthlete> = {}): AthleteBody & Partial<PilotAthlete> {
   return {
     athlete_id: 'ath-new-1',
     full_name: 'Dawn Kellerman',
@@ -51,8 +56,6 @@ function athletePayload(overrides: Partial<PilotAthlete> = {}): PilotAthlete {
     emergency_contact: 'Ruth Kellerman 814-555-0143',
     active_flag: true,
     coach_id: 'coach-1',
-    created_at: '2026-07-29T12:00:00.000Z',
-    updated_at: '2026-07-29T12:00:00.000Z',
     ...overrides,
   };
 }
@@ -65,7 +68,12 @@ function makeRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
+beforeEach(() => {
+  jest.useFakeTimers({ now: new Date(SERVER_NOW), doNotFake: ['nextTick', 'setImmediate'] });
+});
+
 afterEach(() => {
+  jest.useRealTimers();
   jest.clearAllMocks();
 });
 
@@ -78,8 +86,42 @@ describe('POST /api/pilot/athletes', () => {
     const response = await POST(makeRequest({ ...payload }));
 
     expect(response.status).toBe(200);
-    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith('org-1', payload);
+    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith('org-1', {
+      ...payload,
+      created_at: SERVER_NOW,
+      updated_at: SERVER_NOW,
+    });
     await expect(response.json()).resolves.toEqual({ ok: true, athlete_id: 'ath-new-1' });
+  });
+
+  // The reused-id check compares the roster row's created_at with a
+  // submission's time, so a device clock running slow or fast must not reach
+  // the row. A People tab opened before the page stopped sending them still
+  // sends both: they are dropped, not refused, so that tab keeps working.
+  test('stamps created_at and updated_at from the server clock, dropping any the caller sent', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockInsertAthleteIfAbsent.mockResolvedValueOnce(true);
+
+    const response = await POST(makeRequest({
+      ...athletePayload(),
+      created_at: '2020-01-01T00:00:00.000Z',
+      updated_at: '2031-01-01T00:00:00.000Z',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith(
+      'org-1',
+      expect.objectContaining({ created_at: SERVER_NOW, updated_at: SERVER_NOW }),
+    );
+  });
+
+  test('still refuses a field the roster row does not have', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(makeRequest({ ...athletePayload(), shoe_size: '9' }));
+
+    expect(response.status).toBe(400);
+    expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
   });
 
   // An "on conflict do update" would happily overwrite the existing row's

@@ -619,6 +619,10 @@ describe('the add-athlete form', () => {
     expect(await screen.findByText(/Account already exists/i)).toBeTruthy();
     expect(recordPosts).toHaveLength(1);
     expect(recordPosts[0].athlete_id).toBe('ath-002');
+    // The row's creation time is the server's clock, not this device's: the
+    // page must not send one for the route to be tempted by.
+    expect(recordPosts[0]).not.toHaveProperty('created_at');
+    expect(recordPosts[0]).not.toHaveProperty('updated_at');
 
     // The reload has put ath-002 on the roster. The field must still hold it,
     // locked, rather than having moved on to ath-003.
@@ -812,4 +816,41 @@ describe('the roster is a ruled register', () => {
     fireEvent.click(invite);
     expect(await screen.findByRole('heading', { name: /Add a coach, staff member, or guardian/i })).toBeTruthy();
   });
+});
+
+// The #991 class: a staff read that failed must never be rendered as an empty
+// gym, on the roster or in the add-athlete coach hint.
+describe.each([
+  ['refused', { ok: false as const, status: 500 }],
+  ['rejected', 'network-error' as const],
+])('a %s staff read', (_label, outcome) => {
+  test('says the roster could not be loaded instead of "Nobody here yet"', async () => {
+    global.fetch = fetchMock({ roster: ROSTER, onStaffGet: () => outcome }) as never;
+
+    render(<PeopleConsolePage />);
+
+    expect(await screen.findByText(/gym roster could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText('Nobody here yet.')).toBeNull();
+  });
+
+  test('the coach hint says the staff list could not be loaded, not that there are no coaches', async () => {
+    global.fetch = fetchMock({ roster: ROSTER, onStaffGet: () => outcome }) as never;
+
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+    expect(await screen.findByText(/staff list could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
+  });
+});
+
+test('before the staff read answers, the coach hint claims neither a failure nor an empty gym', async () => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => {})) as never;
+
+  render(<PeopleConsolePage />);
+  fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+  expect(screen.getByText(/Loading the staff list/i)).toBeTruthy();
+  expect(screen.queryByText(/staff list could not be loaded/i)).toBeNull();
+  expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
 });

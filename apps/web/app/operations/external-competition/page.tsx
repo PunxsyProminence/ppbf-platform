@@ -74,6 +74,10 @@ export default function ExternalCompetitionPlatformPage() {
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // A failed read must not render as "No competitions on record" or "No
+  // athletes entered"; these say which list is unread, apart from the message.
+  const [competitionsFailed, setCompetitionsFailed] = useState(false);
+  const [entriesFailed, setEntriesFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ competition_name: '', competition_date: '', location: '', sanctioning_body: '' });
@@ -95,6 +99,7 @@ export default function ExternalCompetitionPlatformPage() {
     if (!response.ok) throw new Error('Unable to load competitions.');
     const payload = (await response.json()) as { items?: CompetitionRow[] };
     setCompetitions(payload.items ?? []);
+    setCompetitionsFailed(false);
   }, []);
 
   useEffect(() => {
@@ -108,6 +113,7 @@ export default function ExternalCompetitionPlatformPage() {
         // An aborted load is the page unmounting, not a failure to report.
         if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load competitions.');
+        setCompetitionsFailed(true);
         setLoading(false);
       }
     })();
@@ -122,6 +128,7 @@ export default function ExternalCompetitionPlatformPage() {
     if (!response.ok) throw new Error('Unable to load the entry list.');
     const payload = (await response.json()) as { items?: EntryRow[] };
     setEntries(payload.items ?? []);
+    setEntriesFailed(false);
   }, []);
 
   // The loading flag is raised in the click handler that selects the
@@ -140,6 +147,7 @@ export default function ExternalCompetitionPlatformPage() {
       } catch (error) {
         if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load the entry list.');
+        setEntriesFailed(true);
         setEntriesLoading(false);
       }
     })();
@@ -339,6 +347,13 @@ export default function ExternalCompetitionPlatformPage() {
               <div className="flex justify-center py-[var(--s7)]">
                 <span className="working">Loading competitions...</span>
               </div>
+            ) : competitionsFailed ? (
+              <div className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)]">
+                <div className="empty">
+                  <div className="empty-title">Could not load competitions</div>
+                  <p className="empty-msg mx-auto">The list could not be read just now. Reload to try again.</p>
+                </div>
+              </div>
             ) : competitions.length === 0 ? (
               <div className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)]">
                 <div className="empty">
@@ -381,7 +396,9 @@ export default function ExternalCompetitionPlatformPage() {
                         ) : (
                           <div className="mt-[var(--s4)]">
                             <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Entries</h3>
-                            {entries.length === 0 ? (
+                            {entriesFailed ? (
+                              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>The entry list could not be loaded just now.</p>
+                            ) : entries.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes entered.</p>
                             ) : (
                               <ul className="mt-[var(--s2)] space-y-[var(--s2)]">

@@ -115,6 +115,28 @@ test('the child with no gaps reads as coached-not-yet, only after loading settle
   await waitFor(() => expect(screen.queryByText(/Loading progression data/)).toBeNull());
 });
 
+test('a failed linked-athlete read never tells a guardian their account is not linked', async () => {
+  global.fetch = mockFetch({
+    '/athletes/list': async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,
+  }) as unknown as typeof fetch;
+
+  render(<ParentProgressionVisibilityPage />);
+
+  await screen.findByText('Could not load your linked athletes');
+  expect(screen.queryByText('No linked athletes')).toBeNull();
+});
+
+test('a failed progression read never says there are no gaps on record', async () => {
+  global.fetch = mockFetch({
+    '/progression/gaps': async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response,
+  }) as unknown as typeof fetch;
+
+  render(<ParentProgressionVisibilityPage />);
+
+  await screen.findByText('Could not load progression');
+  expect(screen.queryByText('No progression gaps on record')).toBeNull();
+});
+
 test("the child's real gap, drill, and verified work render read-only", async () => {
   global.fetch = mockFetch() as unknown as typeof fetch;
 
