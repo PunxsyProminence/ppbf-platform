@@ -75,4 +75,7 @@ cross join (values
   ('WE BUILD PEOPLE, NOT JUST FIGHTERS.', 'the wall', array['at-a-milestone']::text[])
 ) as s(quote_text, speaker, shown)
 where o.organization_id = 'punxsy_prominence'
+  -- Redundant with the line above, kept because platformLibraryScope.test.ts
+  -- requires every per-organization seed to exclude the reserved organization.
+  and o.organization_id <> '__platform__'
 on conflict do nothing;
