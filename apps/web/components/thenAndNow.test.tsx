@@ -112,6 +112,26 @@ describe('the then-and-now frame', () => {
     expect(screen.queryByText(/sessions on the card/)).toBeNull();
   });
 
+  it('does not carry one athlete’s failed read over to the next athlete', async () => {
+    installFetch((url) => {
+      if (url.includes('athlete_id=ath-1')) return jsonResponse({}, false);
+      if (url.includes('/sessions/list')) return jsonResponse({ items: [{ date: '2026-01-12' }] });
+      return jsonResponse({ ok: true, items: [] });
+    });
+
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(<ThenAndNow athleteId="ath-1" />);
+    });
+    expect(await screen.findByText(/could not be loaded just now/)).toBeTruthy();
+
+    await act(async () => {
+      view.rerender(<ThenAndNow athleteId="ath-2" />);
+    });
+    expect(await screen.findByText(/session on the card/)).toBeTruthy();
+    expect(screen.queryByText(/could not be loaded/)).toBeNull();
+  });
+
   it('renders nothing at all without a resolved athlete identity', () => {
     const { container } = render(<ThenAndNow athleteId={null} />);
     expect(container.firstChild).toBeNull();

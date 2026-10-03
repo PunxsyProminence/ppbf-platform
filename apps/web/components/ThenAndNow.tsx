@@ -67,7 +67,14 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
   useEffect(() => {
     if (!athleteId) return undefined;
     let cancelled = false;
+    // Which reads have answered, so a throw part-way marks only the rest.
+    let sessionsRead = false;
+    let milestonesRead = false;
     void (async () => {
+      // Reset inside the async body (not the effect body) so a new athlete
+      // never inherits the previous one's failure.
+      setSessionsFailed(false);
+      setMilestonesFailed(false);
       try {
         const [sessionsResponse, milestonesResponse, recognitionResponse] = await Promise.all([
           fetch(`${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`, {
@@ -95,6 +102,7 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             setSessionCount((payload.items ?? []).length);
             setFirstSession(dates[0] ?? null);
           }
+          sessionsRead = true;
         } else if (!cancelled) {
           setSessionsFailed(true);
         }
@@ -105,6 +113,7 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             setFirstMilestone(byDate[0] ?? null);
             setLatestMilestone(byDate[byDate.length - 1] ?? null);
           }
+          milestonesRead = true;
         } else if (!cancelled) {
           setMilestonesFailed(true);
         }
@@ -116,8 +125,8 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
         // Quiet rather than loud: this panel is a keepsake, not an instrument.
         // Quiet still means saying it could not be read, not drawing day one.
         if (!cancelled) {
-          setSessionsFailed(true);
-          setMilestonesFailed(true);
+          if (!sessionsRead) setSessionsFailed(true);
+          if (!milestonesRead) setMilestonesFailed(true);
         }
       } finally {
         if (!cancelled) setLoaded(true);

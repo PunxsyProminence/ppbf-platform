@@ -113,7 +113,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
         if (recognitionResponse.ok) {
           const payload = (await recognitionResponse.json()) as { items?: RecognitionItem[] };
           if (!cancelled) setRecognitions((payload.items ?? []).slice(0, SHOWN));
-        } else {
+        } else if (!cancelled) {
           setRecognitions([]);
           setRecognitionFailed(true);
         }
@@ -128,7 +128,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
               typeof payload.completed_sessions === 'number' ? payload.completed_sessions : null,
             );
           }
-        } else {
+        } else if (!cancelled) {
           setMilestones([]);
           setSessionCount(null);
           setMilestoneFailed(true);
