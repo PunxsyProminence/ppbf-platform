@@ -486,7 +486,9 @@ export type BodySubject = (typeof BODY_SUBJECTS)[number];
  * - unknown: the coach could not tell, e.g. the feet are out of frame
  *   (OD-2026-10-02-016 D3 A).
  *
- * In 0.2 this replaces the event-level `stance`, which 0.2 events leave empty. */
+ * In 0.2 this is meant to replace the event-level `stance`: the TEACH-BIOMECH-01
+ * work order (item C2) has 0.2 events leave `stance` empty. Nothing enforces
+ * that yet. */
 export const LEAD_SIDES = ['orthodox', 'southpaw', 'neutral', 'transition', 'unknown'] as const;
 export type LeadSide = (typeof LEAD_SIDES)[number];
 
@@ -505,7 +507,12 @@ export type LeadSide = (typeof LEAD_SIDES)[number];
  *
  * Every page below was read in that manual's PDF (SOURCE_MANUALS). An entry
  * whose page could not be settled carries a null page and says why; an entry
- * that could not be found at all is left out, never guessed. */
+ * that could not be found at all is left out, never guessed.
+ *
+ * Left out on purpose: plain orthodox and southpaw stance headings (Boxing
+ * Australia's, for one), which are what LEAD_SIDES records; and named
+ * defensive techniques such as AIBA's DOUBLE ARM COVER, which are movements,
+ * not positions held at a moment. */
 
 export const SANCTIONING_BODIES = ['usa_boxing', 'aiba', 'boxing_australia', 'usiba'] as const;
 export type SanctioningBody = (typeof SANCTIONING_BODIES)[number];
@@ -564,15 +571,28 @@ export interface NamedPositionSource {
   unconfirmed?: string;
 }
 
-/** Guard types, recorded at each marked moment (OD-2026-10-02-011 3b). Every
- * named guard or arm position of all four bodies ("Well put all in"), except
- * the AIBA stances that OD-2026-10-02-014 moved to STANCE_TYPES. 'other' and
- * 'unknown' are observations, as everywhere in this file. */
+/** Guard types, recorded at each marked moment (OD-2026-10-02-011 3b). The
+ * named guards and arm positions of all four bodies ("Well put all in"),
+ * except the AIBA stances that OD-2026-10-02-014 moved to STANCE_TYPES.
+ * 'other' and 'unknown' are observations, as everywhere in this file.
+ *
+ * CLASSIFICATION CALLS, not readings (stand-in architect, accepted by
+ * overwatch): AIBA's arm positions printed inside its BOXING STANCE sections
+ * (pp. 124-125, 147-151) are guards because they describe the arms; AIBA's
+ * stance variations 2 and 3 (pp. 210-211) are guards because they vary the
+ * arms, and pair with a stance type recorded once per event; Boxing
+ * Australia's double guard (p. 30) is printed as a defensive reaction and is
+ * recorded as a guard because it is a position the arms hold. */
 export const GUARD_TYPES = [
   'usa_boxing__high_double_guard',
   'usa_boxing__half_guard',
   'aiba__high_shoulder_and_high_lead_arm',
   'aiba__low_arms',
+  'aiba__lead_hand_high',
+  'aiba__lead_hand_low',
+  'aiba__closed_arms_with_bodyweight_to_front',
+  'aiba__lower_arms_with_bodyweight_to_front',
+  'aiba__lead_hand_high_with_balanced_bodyweight_distribution',
   'aiba__high_guard',
   'aiba__double_guard',
   'aiba__stances_with_closed_guard',
@@ -590,6 +610,11 @@ export const GUARD_TYPE_SOURCES: Readonly<Record<Exclude<GuardType, 'other' | 'u
   usa_boxing__half_guard: { body: 'usa_boxing', nameAsPrinted: 'Half Guard', printedPage: 82, pdfPage: 83 },
   aiba__high_shoulder_and_high_lead_arm: { body: 'aiba', nameAsPrinted: 'HIGH SHOULDER AND HIGH LEAD ARM', printedPage: 124, pdfPage: 124 },
   aiba__low_arms: { body: 'aiba', nameAsPrinted: 'LOW ARMS', printedPage: 125, pdfPage: 125 },
+  aiba__lead_hand_high: { body: 'aiba', nameAsPrinted: 'LEAD HAND HIGH', printedPage: 147, pdfPage: 147 },
+  aiba__lead_hand_low: { body: 'aiba', nameAsPrinted: 'LEAD HAND LOW', printedPage: 148, pdfPage: 148 },
+  aiba__closed_arms_with_bodyweight_to_front: { body: 'aiba', nameAsPrinted: 'CLOSED ARMS (WITH BODYWEIGHT TO FRONT)', printedPage: 149, pdfPage: 149 },
+  aiba__lower_arms_with_bodyweight_to_front: { body: 'aiba', nameAsPrinted: 'LOWER ARMS (WITH BODYWEIGHT TO FRONT)', printedPage: 150, pdfPage: 150 },
+  aiba__lead_hand_high_with_balanced_bodyweight_distribution: { body: 'aiba', nameAsPrinted: 'LEAD HAND HIGH (WITH BALANCED BODYWEIGHT DISTRIBUTION)', printedPage: 151, pdfPage: 151 },
   aiba__high_guard: { body: 'aiba', nameAsPrinted: 'HIGH GUARD', printedPage: 179, pdfPage: 179 },
   aiba__double_guard: { body: 'aiba', nameAsPrinted: 'DOUBLE GUARD', printedPage: 180, pdfPage: 180 },
   aiba__stances_with_closed_guard: { body: 'aiba', nameAsPrinted: 'VARIATION 2: STANCES WITH CLOSED GUARD', printedPage: 210, pdfPage: 210 },
@@ -608,9 +633,11 @@ export const STANCE_TYPES = [
   'aiba__crouching_stance',
   'aiba__frontal_stance',
   'aiba__frontal_stance_with_closed_arms',
+  'aiba__classic',
   'aiba__stance_for_long_distance',
   'aiba__stance_for_medium_distance',
   'aiba__stance_for_short_distance',
+  'aiba__stances_with_weight_shift_to_rear_leg',
   'usiba__on_guard',
   'other',
   'unknown',
@@ -628,14 +655,16 @@ export const STANCE_TYPE_SOURCES: Readonly<Record<Exclude<StanceType, 'other' | 
   aiba__crouching_stance: { body: 'aiba', nameAsPrinted: 'CROUCHING STANCE', printedPage: 127, pdfPage: 127 },
   aiba__frontal_stance: { body: 'aiba', nameAsPrinted: 'FRONTAL STANCE', printedPage: 128, pdfPage: 128 },
   aiba__frontal_stance_with_closed_arms: { body: 'aiba', nameAsPrinted: 'FRONTAL STANCE WITH CLOSED ARMS', printedPage: 152, pdfPage: 152 },
+  // Printed as "CLASSIC" twice, in the USA chapter (p. 178) and again in the
+  // Cuba chapter (p. 205); one name in one manual is one label.
+  aiba__classic: { body: 'aiba', nameAsPrinted: 'CLASSIC', printedPage: 178, pdfPage: 178 },
   aiba__stance_for_long_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR LONG-DISTANCE', printedPage: 206, pdfPage: 206 },
   aiba__stance_for_medium_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR MEDIUM-DISTANCE', printedPage: 207, pdfPage: 207 },
   aiba__stance_for_short_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR SHORT DISTANCE', printedPage: 208, pdfPage: 208 },
-  usiba__on_guard: {
-    body: 'usiba',
-    nameAsPrinted: 'Orthodox Hand Position (On-Guard)',
-    printedPage: null,
-    pdfPage: 12,
-    unconfirmed: 'each PDF page holds two printed pages (PDF page 12 is printed 14-15); which of the two carries the heading is not settled from the text; the heading is set in small capitals, so its letter case here is a reading',
-  },
+  aiba__stances_with_weight_shift_to_rear_leg: { body: 'aiba', nameAsPrinted: 'VARIATION 1: STANCES WITH WEIGHT SHIFT TO REAR LEG', printedPage: 209, pdfPage: 209 },
+  // Each PDF page of this book is a two-page spread; PDF page 12 is printed
+  // 14-15. The book's contents page starts "Head and Hand Position" on 15, and
+  // this heading follows that section's opening sentence, so it is on 15. The
+  // heading is set in small capitals; its letter case here is a reading.
+  usiba__on_guard: { body: 'usiba', nameAsPrinted: 'Orthodox Hand Position (On-Guard)', printedPage: 15, pdfPage: 12 },
 };

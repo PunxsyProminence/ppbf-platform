@@ -346,7 +346,7 @@ describe('defining a calibration study', () => {
         ontologyVersion: 'boxing-ontology-0.2',
         createdByAccountId: COACH_ID,
       }),
-    ).rejects.toThrow(/ontology_version/);
+    ).rejects.toThrow(/ontology_version: .*cannot validate boxing-ontology-0\.2/);
   });
 
   test('the database still accepts an older stamp, so historical rows keep their true version', async () => {

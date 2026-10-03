@@ -441,6 +441,49 @@ describe('named guards and stance types, by sanctioning body', () => {
     expect(Object.keys(STANCE_TYPE_SOURCES).sort()).toEqual([...namedStanceTokens].sort());
   });
 
+  test('the guard and stance lists are exactly the agreed inventory', () => {
+    // Pinned in full, so dropping a stance OD-2026-10-02-014 names, or adding
+    // an entry nobody looked up, fails here rather than passing every
+    // structural check.
+    expect([...GUARD_TYPES]).toEqual([
+      'usa_boxing__high_double_guard',
+      'usa_boxing__half_guard',
+      'aiba__high_shoulder_and_high_lead_arm',
+      'aiba__low_arms',
+      'aiba__lead_hand_high',
+      'aiba__lead_hand_low',
+      'aiba__closed_arms_with_bodyweight_to_front',
+      'aiba__lower_arms_with_bodyweight_to_front',
+      'aiba__lead_hand_high_with_balanced_bodyweight_distribution',
+      'aiba__high_guard',
+      'aiba__double_guard',
+      'aiba__stances_with_closed_guard',
+      'aiba__stances_with_arms_down',
+      'boxing_australia__closed_guard',
+      'boxing_australia__open_guard',
+      'boxing_australia__double_guard_to_the_straight',
+      'other',
+      'unknown',
+    ]);
+    expect([...STANCE_TYPES]).toEqual([
+      'usa_boxing__classic',
+      'aiba__weight_to_lead_leg',
+      'aiba__weight_to_rear_leg',
+      'aiba__up_right_stance',
+      'aiba__crouching_stance',
+      'aiba__frontal_stance',
+      'aiba__frontal_stance_with_closed_arms',
+      'aiba__classic',
+      'aiba__stance_for_long_distance',
+      'aiba__stance_for_medium_distance',
+      'aiba__stance_for_short_distance',
+      'aiba__stances_with_weight_shift_to_rear_leg',
+      'usiba__on_guard',
+      'other',
+      'unknown',
+    ]);
+  });
+
   test('both lists end with other and unknown, which are observations', () => {
     expect(GUARD_TYPES.slice(-2)).toEqual(['other', 'unknown']);
     expect(STANCE_TYPES.slice(-2)).toEqual(['other', 'unknown']);
@@ -476,7 +519,7 @@ describe('named guards and stance types, by sanctioning body', () => {
     const unconfirmed = ALL_NAMED
       .filter(([, source]) => source.printedPage === null || source.pdfPage === null)
       .map(([token]) => token);
-    expect(unconfirmed).toEqual(['usiba__on_guard']);
+    expect(unconfirmed).toEqual([]);
   });
 
   test('every manual names the PDF its pages were read in', () => {

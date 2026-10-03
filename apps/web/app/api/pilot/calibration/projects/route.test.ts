@@ -71,6 +71,19 @@ test('a coach sees the studies their own organization is running', async () => {
   expect(mockList).toHaveBeenCalledWith('org-1');
 });
 
+test('the list says which vocabulary new studies use and which ones can be labelled', async () => {
+  // The cut page disables any study it cannot label. A 0.2 in the labellable
+  // list before 0.2's rules and screen exist would let a coach cut clips into
+  // a study nobody can open.
+  mockPrincipal.mockResolvedValueOnce({ accountId: 'coach-1', role: 'coach', organizationId: 'org-1' });
+  mockList.mockResolvedValueOnce([]);
+
+  const body = await (await GET(request())).json();
+
+  expect(body.supported_ontology_version).toBe('boxing-ontology-0.1');
+  expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1']);
+});
+
 test('the organization comes from the session, never from the request', async () => {
   mockPrincipal.mockResolvedValueOnce({ accountId: 'admin-1', role: 'organization_admin', organizationId: 'org-2' });
   mockList.mockResolvedValueOnce([]);
