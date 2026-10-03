@@ -10,6 +10,9 @@
 //   removeGuardianLink             its last-link refusal counted a deleted
 //                                  child's link, so it let an admin remove a
 //                                  guardian's one LIVE link
+//   the guardian invite            (createOrUpdateMicrosoftStaffAccount) linked
+//                                  a new guardian to a deleted child, a link the
+//                                  console would then neither show nor remove
 //
 // EVERY READER IS RUN BEFORE AND AFTER THE DELETION, IN THE SAME DATABASE.
 // "Before" is the positive control: a reader that showed nothing would pass
@@ -72,7 +75,12 @@ jest.mock('./db', () => ({
 
 import { deleteAthleteRecord } from './dataDeletion';
 import { listShadowLibraryReviewQueue } from './shadowLibrary';
-import { listOrganizationGuardianLinks, listOrganizationMembers, removeGuardianLink } from './staffProvisioning';
+import {
+  createOrUpdateMicrosoftStaffAccount,
+  listOrganizationGuardianLinks,
+  listOrganizationMembers,
+  removeGuardianLink,
+} from './staffProvisioning';
 
 jest.setTimeout(600_000);
 
@@ -409,5 +417,35 @@ describe('after deleteAthleteRecord(GONE)', () => {
     await expect(
       removeGuardianLink({ organizationId: ORG, accountId: GUARDIAN_LIVE, athleteId: LIVE_TWO }),
     ).resolves.toEqual({ parentId: GUARDIAN_LIVE_PARENT, athleteId: LIVE_TWO });
+  });
+
+  test('a guardian invite naming GONE is refused, and writes no login, guardian record or link', async () => {
+    const invited = 'invited-to-gone@gym.test';
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: invited,
+        organizationId: ORG,
+        role: 'parent',
+        guardian: { athleteId: GONE, fullName: 'Invited Guardian', relationshipToAthlete: 'mother' },
+      }),
+    ).rejects.toThrow(/is deleted; a guardian cannot be linked to it/);
+    const written = await activeClient!.query(
+      `select (select count(*) from pilot.accounts where account_id = $1)::int as accounts,
+              (select count(*) from pilot.parents where account_id = $1)::int as parents,
+              (select count(*) from pilot.guardian_links where organization_id = $2 and athlete_id = $3)::int as links`,
+      [invited, ORG, GONE],
+    );
+    // GUARDIAN's own link to GONE, from the seed, is the one link there.
+    expect(written.rows[0]).toEqual({ accounts: 0, parents: 0, links: 1 });
+  });
+
+  test('the same invite naming LIVE succeeds (the refusal is not over-broad)', async () => {
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'invited-to-live@gym.test',
+      organizationId: ORG,
+      role: 'parent',
+      guardian: { athleteId: LIVE, fullName: 'Invited Guardian', relationshipToAthlete: 'father' },
+    });
+    expect(result.guardianLink?.athleteId).toBe(LIVE);
   });
 });

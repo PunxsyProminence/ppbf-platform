@@ -556,13 +556,25 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       // mistyped a record id needs to be told which id had no athlete behind it.
       // Inside the transaction, so the athlete cannot be removed between the
       // check and the link.
-      const athlete = await client.query<{ athlete_id: string }>(
-        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
+      //
+      // A deleted athlete is refused too (deletion scope B, "10 C"). The
+      // people console no longer lists or removes a link to a deleted athlete,
+      // so a link written here would be one nobody could see or take back.
+      // `for share` holds the row against deleteAthleteRecord's `for update`
+      // until this transaction ends, so the mark cannot land between this read
+      // and the link.
+      const athlete = await client.query<{ athlete_id: string; deleted: boolean }>(
+        `select athlete_id, deleted_at is not null as deleted
+           from pilot.athletes where organization_id = $1 and athlete_id = $2
+           for share`,
         [organizationId, guardian.athleteId],
       );
 
       if (athlete.rowCount === 0) {
         throw new Error(`Missing athlete_id: no athlete record "${guardian.athleteId}" in this organization`);
+      }
+      if (athlete.rows[0]?.deleted) {
+        throw new Error(`Forbidden: athlete record "${guardian.athleteId}" is deleted; a guardian cannot be linked to it`);
       }
 
       // One pilot.parents record per account, reused across invites so a
