@@ -164,6 +164,212 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-012 -- Workout intake: the AI prompt is to link steps to the gym's own drills (a second item, after #1103)
+
+**Provenance: PRIMARY.** Typed by Jason in the workout-upload lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/08ba83a5-20e8-4531-ad03-384557eec256.jsonl`). This
+entry is new and edits no earlier one. Nothing in it is built.
+
+His definition of the work: *"this should be done in a way that when i drop a
+prompt into  another Ai it can structure the document in way that seasy
+intake"* (19:02:44Z); to the lane's option A for the first item (a
+workout-only prompt with a "Copy AI prompt" control on the content import
+screen, the files uploaded on the existing screen): *"Q1 will this hinder
+anything content wise, the content should be able to change as needed if so
+yes"* (21:48:10Z). Asked then whether the lane should build from its own
+draft or wait for the architect: *"Check in with overwatch"* (22:18:19Z), on
+which overwatch ruled build now (item 1, PR #1103, words only).
+
+Then *"Can it do both, drills will eventually expand with links connecting
+skills in it"* (23:00:18Z). The lane put (23:00:37Z): "Approve item 2,
+"drill-linked workout prompt", as a new lane after #1103 merges? ... A
+(recommended): The prompt carries the gym's drill list. Steps link to a drill
+when it clearly matches, use words otherwise, and the AI asks when unsure.
+Your drill names go to the AI you use. No athlete data. B: Same as A, but only
+drills you have approved for use. C: Stay with words only for now." Jason,
+whole message (23:08:52Z): *"A"*.
+
+**Item 2 is approved as a new lane after #1103:** the prompt carries the
+gym's drill list; a step links to a drill on a clear match, is written in
+words otherwise, and the AI asks when unsure. The gym's drill names go to
+whatever AI the admin pastes the prompt into; no athlete data does. Not
+limited to approved drills (he chose A over B). Which drill states count as
+the gym's list is not settled.
+
+---
+
+## OD-2026-10-02-011 -- PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices; all 24 points at three moments on every event (replaces the click range). The agreement screen's opening sentence
+
+**Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread and
+the agreement-report lane's thread on 2026-10-02, and read by overwatch in
+each transcript (`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`
+and `~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`).
+This entry is new and edits no earlier one. **Section 2 replaces pick 8A,
+and section 3a replaces the click range, of OD-2026-10-02-008**; that entry's
+text is not edited. Nothing in sections 1 to 3a is built, designed or costed.
+
+### 1. Where the pose tool runs
+
+To the architect's question of tablet or server he said: *"It needs to be part
+of the app"* (21:33:17Z); then *"Tablet is not the only hardware available"*
+(21:40:58Z); asked which hardware, *"The pc this tablet galaxy s10  phones and
+android if possible"* (21:45:22Z); asked whether "galaxy s10" was the tablet or
+the phones, *"Tablet"* (21:51:12Z).
+
+**The pose tool is part of the app and runs on the gym's own devices:** this
+Windows PC, a Samsung Galaxy Tab S10, phones, and Android generally if
+possible. No server was chosen. Phone models and the exact tablet variant are
+not stated.
+
+### 2. Build our own, from nothing
+
+He asked for the remaining decisions one at a time: *"Ask each individual pros
+cons and options"* (22:05:58Z). To the first (run a read-and-test proof of an
+existing pose tool) he replied: *"1 Can we build our own"* (22:14:42Z). The
+lane answered (22:14:56Z) with two options:
+
+"Option D: build a pose tool from nothing. Training from scratch: teaching a
+blank model to find body points using only your own labelled footage." Its
+stated cons: "it needs a very large amount of labelled footage before it works
+at all ... You have close to none yet. It also needs paid graphics-card
+computing time and machine-learning work that is currently parked. Until it
+works, coaches hand-mark every point with no help." and "Whether it produces a
+usable tool from the footage you'll have is NOT SURE".
+
+"Option E (recommended): start from an existing tool, and turn it into yours.
+Fine-tuning: taking a tool that already finds bodies and continuing its
+training on your footage."
+
+Jason, whole message (22:15:39Z): *"D"*.
+
+**D.** PPBF builds its own pose model from nothing, trained only on its own
+labelled footage. No third-party pose model is its base.
+
+The lane then asked what coaches use until that model exists (22:16:01Z): "A:
+fully manual landmark annotation. B: an existing pose tool as a temporary
+pre-fill aid only, replaced by the PPBF model when it passes its acceptance
+test." (B was its recommendation.) Jason, whole message (22:24:53Z): *"The
+coach's are the one helping build the tool they won't use anything until we
+develop  it"*.
+
+**A.** Coaches hand-mark every point. No borrowed pose tool is used, not as a
+temporary helper either, until PPBF's own is developed. This replaces pick 8A
+of OD-2026-10-02-008 (a pose tool pre-fills points for coaches now).
+
+### 3. What section 2 does not decide
+
+- **Training is chosen as the direction and nothing more.** How the model is
+  trained, how labelled footage is exported, what computing it needs and
+  costs, and the test for accepting a trained model are not designed and not
+  approved. The lane told him the computing cost comes back to him for a yes
+  before anything is spent. No spending is approved by this entry.
+- The architect's decisions about machine proposals (provenance of a
+  proposed point, derived points, what "corrected" means) have nothing to
+  apply to while there are no proposals. **INFERRED** by the lane; the
+  architect's to confirm.
+- (Answered in section 3a: all 24 points are required, chin included.)
+- Scoring an athlete from video stays parked (OD-2026-09-28-006).
+
+### 3a. Every point at three moments: the click range is replaced
+
+The lane asked which points a coach must mark every time (22:26:29Z): "A:
+13 required (ChatGPT's 12 plus chin), up to 39 clicks per punch. B
+(recommended): 9 required (chin, shoulders, elbows, gloves, hips), up to 27
+clicks per punch, the rest optional. C: all 24 required, up to 72 clicks per
+punch." Jason, whole message (22:28:22Z): *"C"*.
+
+It then asked how many moments are required (22:28:39Z), A contact required
+with start and end optional (recommended), B all three required, C start and
+end required with contact when there is one. Jason (22:32:42Z): *"B/c which
+one gives the most data  ....and smaller number of videos with more clicks
+will be faster in the end if done with patience in my opinion"*. The lane
+answered that B gives the most and put (22:32:55Z): "B, with a rule for
+misses: every punch is marked at three moments, start, contact, end, and
+when there's no contact, the middle moment is full extension (the glove at
+its furthest point from the body). ... 72 taps each, no lighter option. ...
+"Glove at its furthest point" is my suggested wording; change it if you'd put
+it differently. ... Is it B with full extension for misses? A "yes" settles
+it." Jason, whole message (22:42:11Z): *"B yes"*.
+
+**All 24 points are required, at three moments on every punch and every
+defence: start, contact, end.** Each point is placed or marked not visible;
+there are no optional points and no lighter option. When there is no contact
+the middle moment is **full extension**, worded by the lane as "the glove at
+its furthest point from the body" and accepted by his "B yes" without
+rewording. His reason, in his words above: depth per clip over number of
+clips. **This replaces, for the first build, the click range of
+OD-2026-10-02-008** (his 19:38:26Z words and the required-core-plus-optional
+shape); "not visible" is now the only variation. It also brings a third,
+written middle moment back where -008 left "peak" out.
+
+Not decided: the middle-moment rule for a defence with no contact (a slip, a
+block, a parry): full extension is written for punches. The architect's.
+
+### 3b. Left and right, a neutral stance, and guard labels
+
+After the lane summarised his body-point decisions (22:42:25Z) he wrote
+*"Correct and we need left right or lead rear netral"* (22:52:03Z). Asked to
+choose (A: points named left/right, the stance recorded at each marked moment
+with neutral added, lead/rear worked out from the stance; B: points named
+lead/rear directly), Jason, whole message (22:56:15Z): *"Left and right"*.
+Asked whether "neutral" meant "a square stance, feet level with neither side
+leading" (22:56:24Z): *"No the stance was correct but you did bring up a good
+point on guard"* (23:03:46Z).
+
+**Points are marked left or right; lead and rear are worked out from the
+stance, never clicked.** The stance is recorded at each marked moment, and
+the stance list gains **neutral: a square stance, feet level, neither side
+leading.** Points on the midline (nose, chin, neck, mid-hip) carry no side.
+
+Guard was then put to him (23:04:15Z): "A: a guard-type label at each marked
+moment, from a fixed vocabulary you ratify, with "other" and "unknown", and no
+quality judgement. B: no guard label ... C: guard as its own event class,
+labelled between punches." Jason, whole message (23:07:44Z): *"A"*.
+
+The lane read four coaching manuals and first reported that two bodies'
+guard names described the same position. Jason (23:14:10Z): *"No there are
+differences  for each of those guards, each of those bodies are different
+sanction bodies so different reason for each of the named guards"*. The
+lane withdrew that reading and put (23:14:29Z): "A: each sanctioning body's
+named guards kept as separate labels, each tagged with its body and carrying
+that manual's definition and stated purpose. B: one body's guard list only.
+C: PPBF's own plain descriptive labels." Jason (23:16:47Z): *"A"*. Asked which
+bodies go in (a table of USA Boxing, AIBA, Boxing Australia and USIBA and the
+guards each names, with the lane's note that some AIBA entries are stance
+positions as much as guards and "would come in only where they describe the
+arms"), Jason, whole message (23:26:44Z): *"Well put all in"*.
+
+**A guard label is recorded at each of the three moments.** The vocabulary is
+each sanctioning body's named guards kept as **separate labels**, each tagged
+with its body and carrying that manual's definition, stated purpose and page,
+plus other and unknown; never good or bad (the closed vocabulary rule of
+ontology 0.1 stands). **All four bodies, every named guard or position:** USA
+Boxing, AIBA (now IBA), Boxing Australia and USIBA, as read in
+`Documents\PPBF-overwatch\lane-inbox\TEACH-BIOMECH-guard-sources-2026-10-02.md`.
+That AIBA's stance-like entries are included too is **INFERRED** from "all";
+some overlap the separate stance field, for the architect. Whether USA Boxing
+is PPBF's own sanctioning body was not checked.
+
+### 4. The agreement screen's opening sentence
+
+ChatGPT's review of PR #1096 found that "Top disagreements" ranked kinds of
+disagreement that are not on one scale. Asked for a replacement, he first
+wrote *"Remember we are teaching the AI  we need room for it to learn"*
+(22:13:35Z), which chose no option and which he has not said means anything
+wider; then *"Explain in layman"* (22:19:32Z). The lane put it plainly: "New
+version (what I recommend): "6 clips compared. The two coaches differed on:
+which punch it was, the timing, the stance." It lists everything they saw
+differently and doesn't claim which is worst. The exact counts are one tap
+away under "Show detail"." Jason, whole message (22:22:20Z): *"Yes new
+version"*.
+
+**The opening sentence names every kind of disagreement found, with no counts
+and no ranking.** This replaces the example sentence of OD-2026-10-02-010
+section 2 item 1; the rest of that item stands.
+
+---
+
 ## OD-2026-10-02-010 -- Two "Yes" answers: the look-pin tests are covered by "remove anything that will hinder this"; the Label Agreement screen, what coaches see on it, and the tablet hand-over
 
 **Provenance: PRIMARY.** Typed by Jason in the UI lane's thread and in the
