@@ -576,6 +576,8 @@ function resolveBlankKeys(parsed: ParsedPackage, baseline: ParsedPackage | undef
 
 interface Targets {
   known(target: ReferenceTarget, value: string): boolean;
+  /** A committed drill (not one in this package) whose current version is withdrawn. */
+  withdrawnDrill(lineage: string): boolean;
   describe(target: ReferenceTarget): string;
 }
 
@@ -616,6 +618,13 @@ function buildTargets(parsed: ParsedPackage, references: ReferenceSets): Targets
           return false;
       }
     },
+    withdrawnDrill(lineage) {
+      // A drill in the package is judged by the package (its own active
+      // column); only a committed drill the package does not carry is read
+      // from the reference set.
+      if (drills.has(lineage) || isNewId(lineage)) return false;
+      return references.drills.get(lineage)?.active === false;
+    },
     describe(target) {
       switch (target) {
         case 'claim':
@@ -643,6 +652,24 @@ function checkReferences(file: ParsedFile, targets: Targets, out: Finding[]): vo
           if (column.type === 'integer' && !isIntegerText(item)) continue;
           if (!targets.known(column.references, item)) {
             out.push(finding(file, row, column.name, 'orphan_reference', `${column.references} '${item}' is in neither ${targets.describe(column.references)}`));
+            continue;
+          }
+          // A step that LINKS a drill (templates, scripts: role 'reference')
+          // may not name a withdrawn one. The AI workout prompt lists only the
+          // gym's active current drills (OD-2026-10-03-002 section 7), so the
+          // upload refuses what the prompt would never offer. A withdrawn
+          // head is still the head of its lineage (lineage.ts), so a drill
+          // package revising it names it in a 'parent' column, which this does
+          // not touch.
+          if (column.references === 'drill' && column.role === 'reference' && targets.withdrawnDrill(item)) {
+            out.push(finding(
+              file,
+              row,
+              column.name,
+              'withdrawn_drill',
+              `drill '${item}' is withdrawn (its current version is inactive), so a step cannot link it. `
+              + 'Write the step in words (free_text_drill), or restore the drill first.',
+            ));
           }
         }
       }
