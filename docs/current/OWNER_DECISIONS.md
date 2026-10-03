@@ -164,6 +164,39 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-014 -- Named stance types are labelled too, once per event, by sanctioning body
+
+**Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread on
+2026-10-02 and read in that transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`). This
+entry is new and edits no earlier one. It adds to OD-2026-10-02-011 section 3b.
+Nothing in it is built.
+
+After "Well put all in" (guards, OD-2026-10-02-011 section 3b), the lane noted
+that some of AIBA's entries are stance positions that overlap the stance
+field. Jason, whole message (23:29:49Z): *"We can add stance as well"*. The
+lane then set out three separate fields (lead side; stance type, "the body's
+named stance"; guard type) and asked (23:30:03Z): "Stance-type sampling. A:
+tagged at each of the three marked moments, like guard. B: tagged once per
+punch or defence." (B recommended). Jason, whole message (2026-10-03T01:43:51Z):
+*"B"*.
+
+**Each event also carries a stance-type label, tagged once per punch or
+defence**, from the sanctioning bodies' named stances kept separate by body,
+each with that manual's definition, purpose and page, plus other and unknown;
+never good or bad. As read so far (lane's source file
+`Documents\PPBF-overwatch\lane-inbox\TEACH-BIOMECH-guard-sources-2026-10-02.md`):
+AIBA's up-right, crouching, frontal, frontal with closed arms, weight to lead
+leg, weight to rear leg, and long, medium and short-distance stances; USA
+Boxing's basic stance; USIBA's on-guard position. AIBA's stance entries move
+out of the guard list into this one.
+
+Unchanged: lead side (orthodox, southpaw, neutral/square, switching) and guard
+type are still recorded at each of the three marked moments
+(OD-2026-10-02-011 section 3b).
+
+---
+
 ## OD-2026-10-02-013 -- Research intake: the platform owner writes the platform shelf in the app; licensed excerpts stay private; platform material on the platform shelf, gym material on the gym shelf; curator-chosen excerpts only; approval as today
 
 **Provenance: PRIMARY.** Typed by Jason in the overwatch thread on 2026-10-02
