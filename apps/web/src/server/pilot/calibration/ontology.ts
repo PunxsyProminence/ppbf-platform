@@ -100,9 +100,9 @@ export const BODY_POINT_ONTOLOGY_VERSIONS = [
 export type BodyPointOntologyVersion = (typeof BODY_POINT_ONTOLOGY_VERSIONS)[number];
 
 /** What a new study is stamped with by the routes and the bootstrap. Stays 0.1
- * until 0.2 can be labelled end to end, so no study is created that the
- * current screen cannot label. ontology.test.ts holds it inside
- * ANNOTATABLE_ONTOLOGY_VERSIONS. */
+ * until a body-point version (0.2 or 0.3) can be labelled end to end, so no
+ * study is created that the current screen cannot label. ontology.test.ts
+ * holds it inside ANNOTATABLE_ONTOLOGY_VERSIONS. */
 export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_1;
 
 /* ------------------------------------------------------------------ *

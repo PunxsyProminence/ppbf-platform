@@ -70,8 +70,8 @@ function resolveSslConfig() {
 //
 // 0.3 IS ASSERTED TOO, because a database this migration reached before 0.3
 // existed has every object above by name and still refuses solar_plexus. The
-// two clauses read a literal out of the CHECK's text and the points guard's
-// source; a quoted literal survives Postgres's deparse.
+// clauses read a literal out of the CHECK's text and the two guards' source;
+// a quoted literal survives Postgres's deparse.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.calibration_body_moments') is not null as moments_table_ready,
@@ -162,6 +162,11 @@ const READINESS_QUERY = `
       where oid = to_regprocedure('pilot.calibration_body_points_guard()')
         and prosrc like '%''boxing-ontology-0.3''%'
     ) as points_guard_0_3_ready,
+    exists (
+      select 1 from pg_proc
+      where oid = to_regprocedure('pilot.calibration_body_moments_guard()')
+        and prosrc like '%''boxing-ontology-0.3''%'
+    ) as moments_guard_0_3_ready,
     exists (
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.calibration_body_points')

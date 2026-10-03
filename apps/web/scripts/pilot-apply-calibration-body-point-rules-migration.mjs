@@ -22,8 +22,8 @@ function sslConfig() {
 // not reached").
 // Asserted BY NAME, never by pg_get_constraintdef text: Postgres deparses a
 // CHECK rather than echoing its source (issue #488). The three triggers hold
-// what the constraints cannot (the stance labels' freeze and 0.2 gate, the
-// 0.2 event rules, completeness at submission); a disabled one counts as
+// what the constraints cannot (the stance labels' freeze and version gate,
+// the 0.2 and 0.3 event rules, completeness at submission); a disabled one counts as
 // missing. FUNCTIONS_0_3 catches a database this migration reached before
 // boxing-ontology-0.3 existed: every object is there by name, and each of
 // these still admits 0.2 only.

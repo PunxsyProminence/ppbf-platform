@@ -624,11 +624,19 @@ describe('every label from its own vocabulary', () => {
   test('an unknown point code or state is refused', async () => {
     const set = await newSet();
     const momentId = await insertMoment(set, await punch(set));
-    // The guard's version list runs before the CHECK, so it may refuse first;
-    // either refusal is the vocabulary holding.
+    // The guard's version list runs before the CHECK and refuses first.
     await expect(insertPoint(set.setId, momentId, 'left_index', 'placed', 0.5, 0.5)).rejects.toThrow(
-      /pilot_calibration_body_points_code_vocab|CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION/,
+      'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION',
     );
+    // The CHECK still holds on its own, with the guard out of the way.
+    await db.query('alter table pilot.calibration_body_points disable trigger pilot_calibration_body_points_guard');
+    try {
+      await expect(insertPoint(set.setId, momentId, 'left_index', 'placed', 0.5, 0.5)).rejects.toThrow(
+        'pilot_calibration_body_points_code_vocab',
+      );
+    } finally {
+      await db.query('alter table pilot.calibration_body_points enable trigger pilot_calibration_body_points_guard');
+    }
     // An unknown state also fails the position rule, which Postgres may name
     // first; either refusal is the vocabulary holding.
     await expect(insertPoint(set.setId, momentId, 'nose', 'accepted', 0.5, 0.5)).rejects.toThrow(
