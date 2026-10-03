@@ -141,7 +141,11 @@ export async function GET(request: NextRequest) {
   try {
     const { organizationId } = await admit(request);
     const drills = promptDrills(await listDrillLibrary(organizationId));
-    return NextResponse.json({ ok: true, dataset: WORKOUT_PROMPT_DATASET, prompt: workoutIntakePrompt(drills) });
+    return NextResponse.json(
+      { ok: true, dataset: WORKOUT_PROMPT_DATASET, prompt: workoutIntakePrompt(drills) },
+      // One gym's drill list: never stored by a cache between this server and the admin.
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     return jsonError(error);
   }

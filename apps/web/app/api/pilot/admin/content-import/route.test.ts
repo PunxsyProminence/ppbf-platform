@@ -524,6 +524,7 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
     expect(mockPoolClient).not.toHaveBeenCalled();
     expect(body.prompt).toContain('- drl_lineage-org-1-1 | Drill 1 of org-1 | SK-TEST-01');
     expect(body.prompt).toContain('- drl_lineage-org-1-2 | Drill 2 of org-1 | SK-TEST-02');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
   test('only drill names, lineage ids and skill codes leave: nothing else of the row, the session or an athlete', async () => {

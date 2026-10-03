@@ -41,9 +41,9 @@ export interface PromptDrill {
   readonly skillCode: string | null;
 }
 
-/** One line, no separator: a drill's own text can add no line or column to the prompt. */
+/** One line, no separator: a drill's own text can add no line or column to the prompt. \s misses NEL (U+0085). */
 function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+  return text.replace(/[\s\u0085]+/g, ' ').replace(/\|/g, '/').trim();
 }
 
 /**
@@ -126,7 +126,8 @@ function drillRules(linking: boolean): string[] {
   return [
     "- A step that clearly is one of THE GYM'S DRILLS (listed at the end): put that drill's id in drill_id, exactly",
     '  as listed, and leave free_text_drill blank. Clearly means the document names that drill, or describes it so',
-    '  that no other drill on the list could be meant. A shared word alone is not a match.',
+    '  that no other drill on the list could be meant. A shared word alone is not a match. Anything more the',
+    '  document says about that step goes in coach_note.',
     '- Any other step: describe it in words in free_text_drill and leave drill_id blank.',
     "- If you are not sure whether a step is one of the gym's drills, or which one, stop and ask me. Do not guess.",
     '  Never write an id that is not on the list.',
