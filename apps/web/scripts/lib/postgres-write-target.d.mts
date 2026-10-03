@@ -1,13 +1,12 @@
 // Types for postgres-write-target.mjs.
 //
-// The module is plain JavaScript with JSDoc, and it is consumed by both .mjs
-// scripts (which need no types) and TypeScript under tsconfig.scripts.json,
-// which sets "allowJs": false deliberately -- that config exists because
-// scripts/ was typechecked by nothing, and its header records the two real
-// compiler errors that had been sitting in seed-data.ts unread. Without a
-// declaration the import is TS7016, and the two ways to silence that are worse
-// than this file: flipping allowJs weakens a setting chosen on purpose, and
-// re-declaring the shape inside one consumer hides it from the next.
+// The module is plain JavaScript with JSDoc, and it is consumed by .mjs
+// scripts (which need no types) and, until 2026-10-03, by the TypeScript
+// laptop seeder under tsconfig.scripts.json (both retired 2026-10-03, OD-2026-10-03-002 section 10). The
+// declaration stays for the next TypeScript consumer: without it the import is
+// TS7016, and the two ways to silence that are worse than this file --
+// flipping allowJs weakens a setting chosen on purpose, and re-declaring the
+// shape inside one consumer hides it from the next.
 //
 // postgresWriteTarget.test.ts exercises the runtime behaviour.
 // seedDataWriteTarget.test.ts -- the consumer whose import needs this file --
