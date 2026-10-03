@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
 import ProfilePortrait from './ProfilePortrait';
 import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
@@ -957,6 +958,10 @@ export default function CoachWorkspace() {
   const [contextualReadiness, setContextualReadiness] = useState<
     ReadonlyArray<{ athleteId: string; band: string; score: number | null }>
   >([]);
+  /* Whether the readiness feed answered. The roster tolerates a failed feed
+     by leaving everyone UNKNOWN; the floor's readings gauge must not, or a
+     read that never happened shows as "0 of N". */
+  const [readinessFeedState, setReadinessFeedState] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   /* Whether the coach PICKED this athlete, as opposed to the roster having
@@ -1561,6 +1566,7 @@ export default function CoachWorkspace() {
     try {
       setAthletesLoading(true);
       setAthletesError(null);
+      setReadinessFeedState('loading');
       const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
         method: 'GET',
         credentials: 'include',
@@ -1684,9 +1690,13 @@ export default function CoachWorkspace() {
           // below shows. It is computed from the feed rather than hardcoded so
           // it stops showing on its own if a validated method is ever wired,
           // instead of becoming a stale disclaimer nobody removes.
+          setReadinessFeedState('loaded');
+        } else {
+          setReadinessFeedState('error');
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+        setReadinessFeedState('error');
       }
 
       setAthletes(athleteList);
@@ -2323,6 +2333,115 @@ export default function CoachWorkspace() {
     }
   }
 
+  /* THE FLOOR VIEW'S QUEUE, built from what this component already holds.
+     Built here, after every loader is declared, so the retry callbacks below
+     never reference a loader before its declaration.
+     CoachFloorFocus reads nothing itself; everything it shows is derived here
+     from the same state the report panels below render, so the two can never
+     disagree. Safety first: open escalations, then pain reports (in the
+     server's order, highest severity first), then family barrier reports
+     (newest first). Acknowledged escalations have been seen and leave the
+     queue; they stay listed in the panel below. */
+  const floorFocusItems: FocusItem[] = (() => {
+    const queue: FocusItem[] = [];
+    for (const escalation of escalations) {
+      if (escalation.status !== 'open') continue;
+      const athleteName = athletes.find((athlete) => athlete.id === escalation.athlete_id)?.name;
+      queue.push({
+        id: `escalation:${escalation.escalation_id}`,
+        kind: 'Safety escalation',
+        urgent: true,
+        title: athleteName ?? `Athlete ID ${escalation.athlete_id}`,
+        meta: `${ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type} · ${painReportTime(escalation.created_at)}`,
+        badge: { tone: painSeverityTone(escalation.severity), label: escalation.severity },
+        details: [],
+        body: escalation.reason,
+        note: 'Acknowledging says you have seen it. Closing it out is an admin decision and happens on the admin escalations console.',
+        acknowledge: {
+          busy: escalationAckBusyId === escalation.escalation_id,
+          disabled: escalationAckBusyId !== null,
+          onAcknowledge: () => void acknowledgeCoachEscalation(escalation.escalation_id),
+          error: escalationAckErrors[escalation.escalation_id],
+        },
+      });
+    }
+    for (const report of painReports) {
+      queue.push({
+        id: `pain:${report.nearMissId}`,
+        kind: 'Pain report',
+        urgent: true,
+        title: report.athleteName ?? 'Athlete name unavailable',
+        meta: `Athlete ID ${report.athleteId} · recorded ${painReportTime(report.recordedAt)}`,
+        badge: {
+          tone: painSeverityTone(report.severity),
+          label: `${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`,
+        },
+        details: [
+          { label: 'Body location', value: report.location ?? painDetailAbsent(report.reporter), muted: !report.location },
+          { label: 'Pain type', value: report.painType ?? painDetailAbsent(report.reporter), muted: !report.painType },
+          { label: painObservedLabel(report.reporter), value: painReportTime(report.observedAt), muted: !report.observedAt },
+          { label: 'Recorded', value: painReportTime(report.recordedAt), muted: !report.recordedAt },
+        ],
+        note: PAIN_PROVENANCE[report.reporter],
+        link: { href: '/coach/decision-loop', label: 'Record what you did' },
+      });
+    }
+    for (const report of barrierReports) {
+      queue.push({
+        id: `barrier:${report.note_id}`,
+        kind: 'Family barrier report',
+        urgent: false,
+        title: report.athlete_name,
+        meta: `${BARRIER_TYPE_LABEL[report.note_type] ?? report.note_type} · reported by ${report.reporter_role === 'parent' ? 'a guardian' : report.reporter_role} · ${formatGymDateTimeShort(report.created_at) ?? report.created_at}`,
+        details: [],
+        body: report.note_text,
+        link: { href: '/coach/decision-loop', label: 'Open Decision Loop to Message Home' },
+      });
+    }
+    return queue;
+  })();
+
+  const floorFocusFeeds: FocusFeed[] = [
+    {
+      name: 'Safety escalations',
+      state: escalationsLoading ? 'loading' : escalationsError ? 'error' : 'loaded',
+      error: escalationsError,
+      failureMeaning: 'Escalations may exist that are not shown here. Do not read this as "all clear".',
+      onRetry: () => void loadEscalations(),
+    },
+    {
+      name: 'Pain reports',
+      state: painReportsLoading ? 'loading' : painReportsError ? 'error' : 'loaded',
+      error: painReportsError,
+      failureMeaning: 'Pain reports may exist that are not shown here. Do not read this as "no athlete reported pain" -- ask the floor.',
+      onRetry: () => void loadPainReports(),
+      truncatedNote: painReportsTruncated
+        ? 'More pain reports matched than are listed; the rest are in each athlete\'s near-miss history on the decision loop.'
+        : undefined,
+    },
+    {
+      name: 'Family barrier reports',
+      state: barrierReportsLoading ? 'loading' : barrierReportsError ? 'error' : 'loaded',
+      error: barrierReportsError,
+      failureMeaning: 'Reports may exist that are not shown here. Do not read this as "no family asked for help".',
+      onRetry: () => void loadBarrierReports(),
+      truncatedNote: barrierReportsTruncated ? 'More family barrier reports exist than are listed; the newest are shown first.' : undefined,
+    },
+  ];
+
+  /* A medallion on the floor view takes the coach to that athlete's row on
+     the roster below and puts focus on it. It opens nothing and reads nothing:
+     the row is where a coach deliberately chooses to open a child's
+     self-report, and that stays the coach's own tap. */
+  const showAthleteOnRoster = (athleteId: string) => {
+    const row = Array.from(document.querySelectorAll<HTMLElement>('[data-roster-athlete-id]'))
+      .find((candidate) => candidate.dataset.rosterAthleteId === athleteId);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.focus({ preventScroll: true });
+    }
+  };
+
   return (
     <div className="text-[color:var(--bone-200)]">
       <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
@@ -2362,11 +2481,39 @@ export default function CoachWorkspace() {
               3 exists to hold. */}
         </div>
 
+        {activeTab === 'dashboard' && (
+          <CoachFloorFocus
+            athletes={athletes.map((athlete) => ({
+              id: athlete.id,
+              name: athlete.name,
+              readiness: athlete.readiness,
+              unvalidatedReading: contextualReadiness.some((entry) => entry.athleteId === athlete.id),
+              // The roster row says "Not your athlete" from the register's
+              // coverage; the floor says it from the same place, or from the
+              // faces read when that is all there is.
+              isMine: athlete.isMine === false || athlete.attendance === 'NotCovered' ? false : athlete.isMine,
+            }))}
+            readinessState={readinessFeedState}
+            painWindowDays={painReportWindowDays}
+            athletesState={athletesLoading ? 'loading' : athletesError ? 'error' : 'loaded'}
+            athletesError={athletesError}
+            onSelectAthlete={showAthleteOnRoster}
+            items={floorFocusItems}
+            feeds={floorFocusFeeds}
+            sessionState={liveRunState === 'unavailable' ? 'error' : liveRunState}
+            sessionLive={liveRunState === 'loaded' && liveRun !== null}
+            sessionPaused={liveRun?.is_paused ?? false}
+            sessionMode={sessionMode}
+            onSessionMode={setSessionMode}
+            everythingElseHref="#coach-dashboard-details"
+          />
+        )}
+
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
               Athlete Pain Reports
@@ -3092,6 +3239,7 @@ export default function CoachWorkspace() {
                       <div key={athlete.id}>
                       <button
                         type="button"
+                        data-roster-athlete-id={athlete.id}
                         onClick={() => {
                           setSelectedAthleteId(athlete.id);
                           setAthleteChosenByCoach(true);
