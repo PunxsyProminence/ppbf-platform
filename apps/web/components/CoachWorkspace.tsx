@@ -958,6 +958,10 @@ export default function CoachWorkspace() {
   const [contextualReadiness, setContextualReadiness] = useState<
     ReadonlyArray<{ athleteId: string; band: string; score: number | null }>
   >([]);
+  /* Whether the readiness feed answered. The roster tolerates a failed feed
+     by leaving everyone UNKNOWN; the floor's readings gauge must not, or a
+     read that never happened shows as "0 of N". */
+  const [readinessFeedState, setReadinessFeedState] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   /* Whether the coach PICKED this athlete, as opposed to the roster having
@@ -1562,6 +1566,7 @@ export default function CoachWorkspace() {
     try {
       setAthletesLoading(true);
       setAthletesError(null);
+      setReadinessFeedState('loading');
       const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
         method: 'GET',
         credentials: 'include',
@@ -1685,9 +1690,13 @@ export default function CoachWorkspace() {
           // below shows. It is computed from the feed rather than hardcoded so
           // it stops showing on its own if a validated method is ever wired,
           // instead of becoming a stale disclaimer nobody removes.
+          setReadinessFeedState('loaded');
+        } else {
+          setReadinessFeedState('error');
         }
       } catch {
         // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+        setReadinessFeedState('error');
       }
 
       setAthletes(athleteList);
@@ -2474,7 +2483,18 @@ export default function CoachWorkspace() {
 
         {activeTab === 'dashboard' && (
           <CoachFloorFocus
-            athletes={athletes.map((athlete) => ({ id: athlete.id, name: athlete.name, readiness: athlete.readiness }))}
+            athletes={athletes.map((athlete) => ({
+              id: athlete.id,
+              name: athlete.name,
+              readiness: athlete.readiness,
+              unvalidatedReading: contextualReadiness.some((entry) => entry.athleteId === athlete.id),
+              // The roster row says "Not your athlete" from the register's
+              // coverage; the floor says it from the same place, or from the
+              // faces read when that is all there is.
+              isMine: athlete.isMine === false || athlete.attendance === 'NotCovered' ? false : athlete.isMine,
+            }))}
+            readinessState={readinessFeedState}
+            painWindowDays={painReportWindowDays}
             athletesState={athletesLoading ? 'loading' : athletesError ? 'error' : 'loaded'}
             athletesError={athletesError}
             onSelectAthlete={showAthleteOnRoster}

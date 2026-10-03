@@ -158,7 +158,7 @@ test('with every read healthy and empty, the floor says nothing has been reporte
   expect(floor().getByText(/not that everyone is fine/)).toBeTruthy();
 });
 
-test('an unvalidated GREEN reading shows as "No reading" on the floor, not as ready', async () => {
+test('an unvalidated GREEN reading shows as "Not validated" on the floor, never as a band', async () => {
   await renderWorkspace({
     athletesList: roster,
     readinessBoard: () => jsonResponse({
@@ -174,8 +174,8 @@ test('an unvalidated GREEN reading shows as "No reading" on the floor, not as re
     }),
   });
 
-  expect(floor().getByRole('button', { name: 'Jordan P.: readiness No reading' })).toBeTruthy();
-  expect(floor().queryByRole('button', { name: 'Jordan P.: readiness Ready' })).toBeNull();
+  expect(floor().getByRole('button', { name: 'Jordan P.: readiness Not validated' })).toBeTruthy();
+  expect(floor().queryByRole('button', { name: 'Jordan P.: readiness Green' })).toBeNull();
 });
 
 test('choosing an athlete on the floor reads nothing and opens nothing', async () => {
@@ -248,4 +248,61 @@ test('a live-run read that failed shows the session gauge as unknown, never "Non
   const session = floor().getByText('Session').closest('.coach-floor-focus__gauge') as HTMLElement;
   expect(session.querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('?');
   expect(floor().queryByRole('link', { name: 'Start a session' })).toBeNull();
+});
+
+test('a readiness feed that failed shows the readings gauge as unknown, never 0 of N', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    readinessBoard: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
+  });
+  const readings = floor().getByText('Readings').closest('.coach-floor-focus__gauge') as HTMLElement;
+  expect(readings.querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('?');
+  expect(readings.textContent).not.toContain('0 of 1');
+});
+
+test('acknowledging two escalations in a row takes two deliberate taps on two opened items', async () => {
+  const posted: Array<{ action?: string; escalation_id?: string }> = [];
+  await renderWorkspace({
+    athletesList: roster,
+    escalationsGet: () => jsonResponse({
+      ok: true,
+      escalations: [escalation(), escalation({ escalation_id: 'esc_2', athlete_id: 'ath_unknown' })],
+    }),
+    escalationsPost: (body) => {
+      posted.push(body);
+      return jsonResponse({ ok: true, escalation: escalation({ escalation_id: body.escalation_id, status: 'acknowledged' }) });
+    },
+  });
+
+  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  await act(async () => {
+    fireEvent.click(floor().getByRole('button', { name: 'Acknowledge' }));
+  });
+  expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
+  // The second child's escalation is now in place -- closed, no Acknowledge under the coach's finger.
+  expect(floor().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
+  expect(floor().queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+  expect(floor().getByText(/Acknowledged: Jordan P\./)).toBeTruthy();
+
+  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  await act(async () => {
+    fireEvent.click(floor().getByRole('button', { name: 'Acknowledge' }));
+  });
+  expect(posted).toEqual([
+    { action: 'acknowledge', escalation_id: 'esc_1' },
+    { action: 'acknowledge', escalation_id: 'esc_2' },
+  ]);
+});
+
+test('an athlete the register says this coach does not cover is marked "Not your athlete" on the floor too', async () => {
+  await renderWorkspace({
+    athletesList: () => jsonResponse({ items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Casey R.' },
+    ] }),
+  });
+  const casey = floor().getByRole('button', { name: /^Casey R\./ });
+  expect(casey.textContent).toContain('Not your athlete');
+  const jordan = floor().getByRole('button', { name: /^Jordan P\./ });
+  expect(jordan.textContent).not.toContain('Not your athlete');
 });

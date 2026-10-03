@@ -77,8 +77,6 @@ export interface FocusItem {
     readonly disabled: boolean;
     readonly onAcknowledge: () => void;
     readonly error?: string;
-    /** Set once acknowledged: what happens next, in words. */
-    readonly doneNote?: string;
   };
   readonly link?: { readonly href: string; readonly label: string };
 }
@@ -98,6 +96,11 @@ export interface FocusAthlete {
   readonly id: string;
   readonly name: string;
   readonly readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
+  /** A fresh check-in exists but its method is not validated, so it carries
+   *  no band. Said as "Not validated", never as no reading and never as fine. */
+  readonly unvalidatedReading?: boolean;
+  /** false when the roster names this athlete but this coach is not theirs. */
+  readonly isMine?: boolean;
 }
 
 export interface CoachFloorFocusProps {
@@ -107,6 +110,10 @@ export interface CoachFloorFocusProps {
   readonly onSelectAthlete: (athleteId: string) => void;
   readonly items: readonly FocusItem[];
   readonly feeds: readonly FocusFeed[];
+  /** Whether the readiness feed answered. A failed read is not "0 readings". */
+  readonly readinessState: 'loading' | 'error' | 'loaded';
+  /** The pain feed's window, so the all-clear line says no more than it read. */
+  readonly painWindowDays?: number | null;
   readonly sessionStatus: string;
   /** Whether the live-run read answered. A failed read is not "no session". */
   readonly sessionState: 'loading' | 'error' | 'loaded';
@@ -118,12 +125,20 @@ export interface CoachFloorFocusProps {
   readonly everythingElseHref: string;
 }
 
+/* The band, in the workspace's own words (the roster says "Readiness:
+   GREEN"). Not "Ready": a readiness band is not clearance, and a word that
+   sounds like clearance on a child's row is a false statement. */
 const READINESS_MARK: Record<FocusAthlete['readiness'], FocusBadge> = {
-  GREEN: { tone: 'cleared', label: 'Ready' },
-  YELLOW: { tone: 'monitor', label: 'Watch' },
-  RED: { tone: 'restricted', label: 'Not ready' },
+  GREEN: { tone: 'cleared', label: 'Green' },
+  YELLOW: { tone: 'monitor', label: 'Yellow' },
+  RED: { tone: 'restricted', label: 'Red' },
   UNKNOWN: { tone: 'neutral', label: 'No reading' },
 };
+const UNVALIDATED_MARK: FocusBadge = { tone: 'neutral', label: 'Not validated' };
+
+function readinessMark(athlete: FocusAthlete): FocusBadge {
+  return athlete.readiness === 'UNKNOWN' && athlete.unvalidatedReading ? UNVALIDATED_MARK : READINESS_MARK[athlete.readiness];
+}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -176,6 +191,8 @@ export default function CoachFloorFocus({
   onSelectAthlete,
   items,
   feeds,
+  readinessState,
+  painWindowDays = null,
   sessionStatus,
   sessionState,
   sessionLive,
@@ -184,30 +201,47 @@ export default function CoachFloorFocus({
   onSessionMode,
   everythingElseHref,
 }: CoachFloorFocusProps) {
-  const [index, setIndex] = useState(0);
-  const [open, setOpen] = useState(false);
+  /* THE VIEW FOLLOWS AN ITEM, NOT A POSITION. The queue changes underneath
+     the coach -- an acknowledged escalation leaves it, a refreshed feed goes
+     back to loading and jumps to the front -- and a position would then point
+     at a different child's item, still open, with its Acknowledge button
+     where the coach just tapped. So the view holds the KEY of the item it is
+     showing and which key is open; anything else that slides into place
+     arrives closed. */
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [ackedItem, setAckedItem] = useState<{ readonly key: string; readonly title: string } | null>(null);
 
   const unanswered = useMemo(() => feeds.filter((feed) => feed.state !== 'loaded'), [feeds]);
-  const queueLength = unanswered.length + items.length;
-  // An item can leave the list underneath the coach (a feed refresh); the
-  // position is clamped onto the list rather than left past its end.
-  const position = queueLength === 0 ? 0 : Math.min(index, queueLength - 1);
+  const queueKeys = [...unanswered.map((feed) => `feed:${feed.name}`), ...items.map((item) => `item:${item.id}`)];
+  const queueLength = queueKeys.length;
+  const selectedIndex = selectedKey === null ? -1 : queueKeys.indexOf(selectedKey);
+  const position = selectedIndex >= 0 ? selectedIndex : 0;
+  const currentKey = queueKeys[position] ?? null;
+  const open = currentKey !== null && openKey === currentKey;
 
   const currentFeed = position < unanswered.length ? unanswered[position] : null;
   const currentItem = currentFeed ? null : items[position - unanswered.length] ?? null;
 
+  // An acknowledged escalation leaves the queue; say so until the coach moves on.
+  const ackLanded = ackedItem !== null && !queueKeys.includes(ackedItem.key);
+
   const next = () => {
-    setOpen(false);
-    setIndex(queueLength === 0 ? 0 : (position + 1) % queueLength);
+    setOpenKey(null);
+    setAckedItem(null);
+    setSelectedKey(queueLength === 0 ? null : queueKeys[(position + 1) % queueLength]);
   };
 
-  const withReading = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
+  const validatedReadings = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
+  const withReading = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN' || athlete.unvalidatedReading).length;
   const anyFeedFailed = feeds.some((feed) => feed.state === 'error');
   const anyFeedLoading = feeds.some((feed) => feed.state === 'loading');
+  // A feed that returned fewer than matched makes the count a floor, not a total.
+  const anyFeedTruncated = feeds.some((feed) => feed.state === 'loaded' && Boolean(feed.truncatedNote));
 
   const gauges: GaugeReading[] = [
     athletesState === 'loaded'
-      ? { label: 'Athletes', value: String(athletes.length), sub: 'on your roster', state: 'ok' }
+      ? { label: 'Athletes', value: String(athletes.length), sub: 'on the roster', state: 'ok' }
       : athletesState === 'loading'
         ? { label: 'Athletes', value: '…', sub: 'Loading roster', state: 'unknown' }
         : { label: 'Athletes', value: '?', sub: 'Roster not read', state: 'unknown' },
@@ -217,24 +251,30 @@ export default function CoachFloorFocus({
         ? { label: 'Needs you', value: '…', sub: 'Still checking', state: 'unknown' }
         : {
             label: 'Needs you',
-            value: String(items.length),
+            value: anyFeedTruncated ? `${items.length}+` : String(items.length),
             sub: items.length === 0 ? 'Nothing reported' : 'Waiting on you',
             state: items.length === 0 ? 'ok' : 'alert',
           },
-    athletesState === 'loaded'
-      ? {
-          label: 'Readings',
-          value: `${withReading} of ${athletes.length}`,
-          sub: 'fresh check-ins',
-          state: 'ok',
-          fill: athletes.length === 0 ? 0 : withReading / athletes.length,
-        }
-      : { label: 'Readings', value: athletesState === 'loading' ? '…' : '?', sub: 'Roster not read', state: 'unknown' },
+    athletesState !== 'loaded'
+      ? athletesState === 'loading'
+        ? { label: 'Readings', value: '…', sub: 'Loading roster', state: 'unknown' }
+        : { label: 'Readings', value: '?', sub: 'Roster not read', state: 'unknown' }
+      : readinessState === 'error'
+        ? { label: 'Readings', value: '?', sub: 'Readiness not read', state: 'unknown' }
+        : readinessState === 'loading'
+          ? { label: 'Readings', value: '…', sub: 'Checking readiness', state: 'unknown' }
+          : {
+              label: 'Readings',
+              value: `${withReading} of ${athletes.length}`,
+              sub: withReading === validatedReadings ? 'fresh check-ins' : `fresh check-ins, ${withReading - validatedReadings} not validated`,
+              state: 'ok',
+              fill: athletes.length === 0 ? undefined : withReading / athletes.length,
+            },
     sessionState === 'loaded'
       ? {
           label: 'Session',
           value: sessionLive ? (sessionPaused ? 'Paused' : 'Running') : 'None',
-          sub: sessionMode,
+          sub: `Your mode: ${sessionMode}`,
           state: 'ok',
         }
       : sessionState === 'loading'
@@ -257,18 +297,18 @@ export default function CoachFloorFocus({
 
       <div className="coach-floor-focus__columns">
         <section aria-labelledby="coach-floor-athletes" className="coach-floor-focus__panel">
-          <h3 id="coach-floor-athletes" className="coach-floor-focus__panel-title">Today&apos;s athletes</h3>
-          {athletesState === 'loading' && <p>Loading your roster...</p>}
+          <h3 id="coach-floor-athletes" className="coach-floor-focus__panel-title">Roster</h3>
+          {athletesState === 'loading' && <p>Loading the roster...</p>}
           {athletesState === 'error' && (
             <p role="alert" className="coach-floor-focus__alert">
               {athletesError || 'Your roster could not be loaded.'} The athletes below this panel may be incomplete.
             </p>
           )}
-          {athletesState === 'loaded' && athletes.length === 0 && <p>No athletes are assigned to you.</p>}
+          {athletesState === 'loaded' && athletes.length === 0 && <p>No athletes are on the roster.</p>}
           {athletesState === 'loaded' && athletes.length > 0 && (
             <ul className="coach-floor-focus__athletes">
               {athletes.map((athlete) => {
-                const mark = READINESS_MARK[athlete.readiness];
+                const mark = readinessMark(athlete);
                 return (
                   <li key={athlete.id}>
                     <button
@@ -282,6 +322,7 @@ export default function CoachFloorFocus({
                       </span>
                       <span className="coach-floor-focus__athlete-name">{athlete.name}</span>
                       <Badge badge={mark} />
+                      {athlete.isMine === false && <span className="coach-floor-focus__quiet">Not your athlete</span>}
                     </button>
                   </li>
                 );
@@ -294,6 +335,12 @@ export default function CoachFloorFocus({
           <h3 className="coach-floor-focus__panel-title">
             {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
           </h3>
+
+          {ackLanded && (
+            <p className="coach-floor-focus__label" role="status">
+              Acknowledged: {ackedItem.title}. It stays listed under Safety Escalations below.
+            </p>
+          )}
 
           {currentFeed && (
             <div className="coach-floor-focus__item" data-focus-kind="feed">
@@ -337,24 +384,31 @@ export default function CoachFloorFocus({
                   {currentItem.acknowledge?.error && (
                     <p role="alert" className="coach-floor-focus__alert">{currentItem.acknowledge.error}</p>
                   )}
-                  {currentItem.acknowledge?.doneNote && (
-                    <p className="coach-floor-focus__quiet">{currentItem.acknowledge.doneNote}</p>
-                  )}
                 </div>
               )}
 
               <div className="coach-floor-focus__row">
                 {!open && (
-                  <button type="button" className="btn coach-floor-focus__btn" onClick={() => setOpen(true)}>
+                  <button
+                    type="button"
+                    className="btn coach-floor-focus__btn"
+                    onClick={() => {
+                      setSelectedKey(currentKey);
+                      setOpenKey(currentKey);
+                    }}
+                  >
                     Open
                   </button>
                 )}
-                {open && currentItem.acknowledge && !currentItem.acknowledge.doneNote && (
+                {open && currentItem.acknowledge && (
                   <button
                     type="button"
                     className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={currentItem.acknowledge.disabled}
-                    onClick={currentItem.acknowledge.onAcknowledge}
+                    onClick={() => {
+                      if (currentKey) setAckedItem({ key: currentKey, title: currentItem.title });
+                      currentItem.acknowledge?.onAcknowledge();
+                    }}
                   >
                     {currentItem.acknowledge.busy ? 'Acknowledging...' : 'Acknowledge'}
                   </button>
@@ -372,8 +426,9 @@ export default function CoachFloorFocus({
             <div className="coach-floor-focus__item" data-focus-kind="clear">
               <h4 className="t-command">Nothing needs you right now</h4>
               <p>
-                No pain report, open escalation or family barrier report for your athletes. That means nothing has
-                been reported, not that everyone is fine.
+                No pain report{painWindowDays ? ` in the last ${painWindowDays} days` : ''}, open escalation or
+                family barrier report for your athletes. That means nothing has been reported, not that everyone is
+                fine.
               </p>
             </div>
           )}
@@ -403,6 +458,7 @@ export default function CoachFloorFocus({
                 onClick={() => onSessionMode(mode)}
                 className={sessionMode === mode ? 'btn coach-floor-focus__btn' : 'btn btn--ghost coach-floor-focus__btn'}
               >
+                {sessionMode === mode && <span aria-hidden="true">✓ </span>}
                 {mode}
               </button>
             ))}

@@ -3470,6 +3470,26 @@
 }
 .coach-floor-focus__badge { font-size: var(--t-md); letter-spacing: .04em; white-space: nowrap; }
 .coach-floor-focus__badge i { font-size: 1em; }
+/* The selected mode is brass, the other a leather tab: told apart by more
+   than a shade, and by the check mark the markup carries. */
+.coach-floor-focus .coach-floor-focus__btn[aria-pressed="true"] {
+  background-image: linear-gradient(180deg, var(--brass-200), var(--brass-300) 55%, var(--brass-400));
+  border-color: #7a5a22;
+  color: #1d150b;
+  text-shadow: none;
+}
+/* Focus that shows on leather. The app-wide ring is brass-700, chosen for
+   canvas, white and ink; on brown leather it measures under 2:1. */
+.coach-floor-focus .coach-floor-focus__athlete:focus-visible,
+.coach-floor-focus .coach-floor-focus__btn:focus-visible {
+  outline: 3px solid var(--bone-100);
+  outline-offset: 2px;
+}
+/* Two gauges across on a phone: a word like "Running" at --t-2xl spills
+   its plate, so the value steps down one rung there (still large text). */
+@container (max-width: 559px) {
+  .coach-floor-focus__gauge-value { font-size: var(--t-xl); }
+}
 
 /* ==========================================================================
    GOLDEN ERA 010 — THE FILE (Research Inbox)

@@ -65,6 +65,7 @@ function props(overrides: Partial<CoachFloorFocusProps> = {}): CoachFloorFocusPr
     onSelectAthlete: jest.fn(),
     items: [escalation(), PAIN],
     feeds: LOADED,
+    readinessState: 'loaded',
     sessionStatus: 'No session in progress. Session Scripts is where a live delivery starts.',
     sessionState: 'loaded',
     sessionLive: false,
@@ -156,18 +157,18 @@ test('a feed still loading is never read out as "nothing needs you" either', () 
   expect(screen.getByRole('heading', { name: 'Checking safety escalations...' })).toBeTruthy();
 });
 
-test('readiness is shown in words, and an athlete with no reading is never shown as fine', () => {
+test('readiness is shown as its band in words, and an athlete with no reading is never shown as fine', () => {
   render(<CoachFloorFocus {...props()} />);
-  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Ready' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Green' })).toBeTruthy();
   const unknown = screen.getByRole('button', { name: 'Marcus Bell: readiness No reading' });
   expect(unknown.textContent).toContain('No reading');
-  expect(unknown.textContent).not.toMatch(/ready|clear/i);
+  expect(unknown.textContent).not.toMatch(/ready|clear|green/i);
 });
 
 test('choosing an athlete only hands the id back; the view reads nothing about them', () => {
   const onSelectAthlete = jest.fn();
   render(<CoachFloorFocus {...props({ onSelectAthlete })} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Ada Rivera: readiness Ready' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Ada Rivera: readiness Green' }));
   expect(onSelectAthlete).toHaveBeenCalledWith('ath_1');
   expect(fetchSpy).not.toHaveBeenCalled();
 });
@@ -213,6 +214,8 @@ test('the gauges show the counts the board was handed', () => {
   // One GREEN, one UNKNOWN: one reading, out of two.
   expect(gauge('Readings').textContent).toContain('1 of 2');
   expect(gauge('Session').textContent).toContain('None');
+  // The mode is the coach's own setting, and says so.
+  expect(gauge('Session').textContent).toContain('Your mode: Group');
 });
 
 test('a failed feed makes the needs-you gauge "?", never 0', () => {
@@ -250,5 +253,97 @@ test('a roster that was not read leaves the athlete and readings gauges unknown'
   render(<CoachFloorFocus {...props({ athletes: [], athletesState: 'error', athletesError: 'Roster read failed.' })} />);
   expect(gauge('Athletes').textContent).toContain('?');
   expect(gauge('Readings').textContent).toContain('?');
+  expect(gauge('Readings').querySelector('.coach-floor-focus__dial')).toBeNull();
+});
+
+/* THE VIEW FOLLOWS AN ITEM, NOT A POSITION (review finding, 2026-10-03). */
+function escalationFor(id: string, title: string, onAcknowledge = jest.fn()): FocusItem {
+  return { ...escalation(onAcknowledge), id: `escalation:${id}`, title };
+}
+
+test('after an acknowledge, the next child\'s escalation arrives closed, and the coach is told it landed', () => {
+  const first = escalationFor('e1', 'Ada Rivera');
+  const second = escalationFor('e2', 'Marcus Bell');
+  const { rerender } = render(<CoachFloorFocus {...props({ items: [first, second] })} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  expect(first.acknowledge?.onAcknowledge).toHaveBeenCalledTimes(1);
+
+  // The workspace drops the acknowledged escalation from the queue.
+  rerender(<CoachFloorFocus {...props({ items: [second] })} />);
+
+  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+  expect(screen.getByText(/Acknowledged: Ada Rivera/)).toBeTruthy();
+  expect(second.acknowledge?.onAcknowledge).not.toHaveBeenCalled();
+});
+
+test('a feed going back to loading does not move the coach onto a different child\'s item', () => {
+  const { rerender } = render(<CoachFloorFocus {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
+
+  const feeds: FocusFeed[] = [
+    { name: 'Safety escalations', state: 'loading' },
+    { name: 'Pain reports', state: 'loaded' },
+    { name: 'Family barrier reports', state: 'loaded' },
+  ];
+  rerender(<CoachFloorFocus {...props({ feeds })} />);
+
+  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
+  expect(screen.getByText('Needs you now · 3 of 3')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Record what you did' })).toBeTruthy();
+});
+
+test('a readiness read that failed makes the readings gauge "?", never 0 of N', () => {
+  render(<CoachFloorFocus {...props({ readinessState: 'error' })} />);
+  expect(gauge('Readings').textContent).toContain('?');
+  expect(gauge('Readings').textContent).toContain('Readiness not read');
+  expect(gauge('Readings').querySelector('.coach-floor-focus__dial')).toBeNull();
+});
+
+test('an unvalidated check-in is counted and said as "Not validated", never as a band', () => {
+  render(
+    <CoachFloorFocus
+      {...props({
+        athletes: [
+          { id: 'ath_1', name: 'Ada Rivera', readiness: 'GREEN' },
+          { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN', unvalidatedReading: true },
+          { id: 'ath_3', name: 'Sam Ortiz', readiness: 'UNKNOWN' },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Marcus Bell: readiness Not validated' })).toBeTruthy();
+  expect(gauge('Readings').textContent).toContain('2 of 3');
+  expect(gauge('Readings').textContent).toContain('1 not validated');
+});
+
+test('an athlete on the roster who is not this coach\'s is marked so', () => {
+  render(<CoachFloorFocus {...props({ athletes: [{ id: 'ath_9', name: 'Demo Two', readiness: 'UNKNOWN', isMine: false }] })} />);
+  expect(screen.getByText('Not your athlete')).toBeTruthy();
+});
+
+test('the all-clear line names the pain window it read', () => {
+  render(<CoachFloorFocus {...props({ items: [], painWindowDays: 7 })} />);
+  expect(screen.getByText(/No pain report in the last 7 days/)).toBeTruthy();
+});
+
+test('a feed that returned fewer than matched makes the needs-you count a floor', () => {
+  const feeds: FocusFeed[] = [
+    { name: 'Safety escalations', state: 'loaded' },
+    { name: 'Pain reports', state: 'loaded', truncatedNote: 'More pain reports matched than are listed.' },
+    { name: 'Family barrier reports', state: 'loaded' },
+  ];
+  render(<CoachFloorFocus {...props({ feeds })} />);
+  expect(gauge('Needs you').querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('2+');
+});
+
+test('an empty roster draws no dial', () => {
+  render(<CoachFloorFocus {...props({ athletes: [] })} />);
+  expect(gauge('Readings').textContent).toContain('0 of 0');
   expect(gauge('Readings').querySelector('.coach-floor-focus__dial')).toBeNull();
 });
