@@ -895,25 +895,30 @@ describe('what a moment was checked against cannot change under it', () => {
 });
 
 describe('the freeze', () => {
-  async function submittedSetWithOnePoint(): Promise<{ set: SetRef; eventId: string; momentId: string; pointId: string }> {
+  // Two moments: one holding a point, and an empty one, so the moments' own
+  // freeze is tested on a delete the points' freeze cannot catch for it.
+  async function submittedSetWithOnePoint(): Promise<{
+    set: SetRef; eventId: string; momentId: string; emptyMomentId: string; pointId: string;
+  }> {
     const set = await newSet();
     const eventId = await punch(set);
     const momentId = await insertMoment(set, eventId);
+    const emptyMomentId = await insertMoment(set, eventId, { slot: 'end' });
     const pointId = await insertPoint(set.setId, momentId, 'nose', 'placed', 0.5, 0.5);
     const submitted = await annotations.submitAnnotationSet(ORG_ID, set.setId);
     expect(submitted?.status).toBe('submitted');
-    return { set, eventId, momentId, pointId };
+    return { set, eventId, momentId, emptyMomentId, pointId };
   }
 
   test.each([
     ['insert a moment', async (f: Awaited<ReturnType<typeof submittedSetWithOnePoint>>) =>
-      insertMoment(f.set, f.eventId, { slot: 'end' })],
+      insertMoment(f.set, f.eventId, { slot: 'middle' })],
     ['update a moment', async (f: Awaited<ReturnType<typeof submittedSetWithOnePoint>>) =>
       db.query(`update pilot.calibration_body_moments set lead_side = 'southpaw'
                  where organization_id = $1 and body_moment_id = $2`, [ORG_ID, f.momentId])],
     ['delete a moment', async (f: Awaited<ReturnType<typeof submittedSetWithOnePoint>>) =>
       db.query(`delete from pilot.calibration_body_moments
-                 where organization_id = $1 and body_moment_id = $2`, [ORG_ID, f.momentId])],
+                 where organization_id = $1 and body_moment_id = $2`, [ORG_ID, f.emptyMomentId])],
     ['insert a point', async (f: Awaited<ReturnType<typeof submittedSetWithOnePoint>>) =>
       insertPoint(f.set.setId, f.momentId, 'chin', 'not_visible', null, null)],
     ['update a point', async (f: Awaited<ReturnType<typeof submittedSetWithOnePoint>>) =>
@@ -926,6 +931,7 @@ describe('the freeze', () => {
     const fixture = await submittedSetWithOnePoint();
     await expect(act(fixture)).rejects.toThrow('CALIBRATION_ANNOTATION_SET_SUBMITTED');
     expect(await countFor('calibration_body_points', fixture.set.setId)).toBe(1);
+    expect(await countFor('calibration_body_moments', fixture.set.setId)).toBe(2);
   });
 
   test('deleting the footage removes a submitted set\'s body points', async () => {
