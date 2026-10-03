@@ -445,6 +445,15 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: npm test
 
+      # The one suite that runs the REAL pdf-parse (RINT-02). pdfjs-dist starts
+      # its worker with a dynamic import, which jest refuses without
+      # --experimental-vm-modules, so `npm test` ignores `.pdf.test.ts` files
+      # and this step runs them with the flag. Not path-gated: it is one small
+      # file and takes seconds.
+      - name: Run PDF reader tests (real pdf-parse)
+        if: steps.changes.outputs.docs_only != 'true'
+        run: npm --workspace web run test:pdf-text
+
       # Covers this PR's own diff. It is not a release gate: it never runs for
       # a diff the classifier does not flag, and `test:migrations` is
       # fail-fast, so it stops at the first failure. pre-release-migrations.yml
