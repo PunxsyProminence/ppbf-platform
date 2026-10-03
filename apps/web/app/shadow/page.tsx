@@ -582,6 +582,7 @@ function ShadowChatPageContent() {
       .then((sessions) => {
         if (!controller.signal.aborted) {
           setSavedSessions(sessions);
+          setSessionsListUnavailable(false);
         }
       })
       .catch((error: unknown) => {
