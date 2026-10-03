@@ -173,6 +173,25 @@ describe('a failed Scout Reports read', () => {
     expect(screen.getByText('Not available -- the reports could not be read.')).toBeTruthy();
   });
 
+  it('a metrics failure does not hide reports that loaded', async () => {
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/auth/session')) {
+        return jsonResponse({ authenticated: true, role: 'admin', auth_provider: 'microsoft' });
+      }
+      if (target.includes('/shadow/jobs')) return jsonResponse({ ok: true, jobs: [] });
+      // A 2xx whose body does not parse: the metrics read throws after jobs landed.
+      return { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON'); } } as unknown as Response;
+    }) as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('admin'));
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText(/No Scout Reports yet/)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Scout Reports (0)' })).toBeTruthy();
+    expect(screen.queryByText('Not available -- the reports could not be read.')).toBeNull();
+  });
+
   it('a read that answered empty still says there are none yet', async () => {
     failJobs(async () => jsonResponse({ ok: true, jobs: [] }));
 

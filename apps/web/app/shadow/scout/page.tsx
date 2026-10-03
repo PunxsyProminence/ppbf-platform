@@ -121,6 +121,9 @@ function ScoutReportView() {
   const [selectedJob, setSelectedJob] = useState<JobStatusResult | null>(null);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [error, setError] = useState('');
+  // The reports' own read, kept apart from `error`: a metrics failure must not
+  // hide reports that loaded (Codex review on #1144).
+  const [jobsUnavailable, setJobsUnavailable] = useState(false);
   const [generateFocus, setGenerateFocus] = useState('');
   const [generateBusy, setGenerateBusy] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
@@ -132,6 +135,7 @@ function ScoutReportView() {
   const loadData = useCallback(async () => {
     setLoadingJobs(true);
     setError('');
+    let jobsRead = false;
     try {
       const requests: Promise<Response>[] = [
         fetch(`${apiBase()}/api/pilot/shadow/jobs?limit=30`, { credentials: 'include' }),
@@ -144,10 +148,13 @@ function ScoutReportView() {
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
         const data = (await jobsRes.value.json()) as OrgJobsResponse;
         setJobs(data.jobs ?? []);
+        jobsRead = true;
+        setJobsUnavailable(false);
       } else {
         // No silent else: a refused or dropped jobs read used to leave the
         // list empty and the page saying "No Scout Reports yet" (#991 class,
         // Lane 14 batch 8 C8).
+        setJobsUnavailable(true);
         setError('Scout Reports could not be loaded.');
       }
 
@@ -156,6 +163,7 @@ function ScoutReportView() {
         setScoreboard(data.metrics ?? null);
       }
     } catch {
+      if (!jobsRead) setJobsUnavailable(true);
       setError('Failed to load data');
     } finally {
       setLoadingJobs(false);
@@ -435,7 +443,7 @@ function ScoutReportView() {
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex items-center justify-between gap-[var(--s3)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-              Scout Reports ({loadingJobs || error ? '--' : scoutJobs.length})
+              Scout Reports ({loadingJobs || jobsUnavailable ? '--' : scoutJobs.length})
             </h2>
           </div>
 
@@ -486,7 +494,7 @@ function ScoutReportView() {
 
           {loadingJobs ? (
             <p className="t-muted mt-[var(--s4)]">Loading...</p>
-          ) : error ? (
+          ) : jobsUnavailable ? (
             <p className="t-muted mt-[var(--s4)]">Not available -- the reports could not be read.</p>
           ) : scoutJobs.length === 0 ? (
             <p className="t-muted mt-[var(--s4)]">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
