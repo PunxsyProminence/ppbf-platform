@@ -1340,6 +1340,22 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
 
 export async function upsertOrganizationMembership(accountId: string, organizationId: string, role: PilotRole, activeFlag: boolean): Promise<void> {
   await withTransaction(async (client) => {
+    // LOCK ORDER: THE ACCOUNT ROW, THEN ITS MEMBERSHIP -- the order
+    // activation-code redemption, deactivation and every other membership
+    // writer take them in. This used to write the membership first and the
+    // account after, the inverse, so a platform membership change racing an
+    // athlete's redemption could deadlock (membershipRedemptionLockOrder.pg.test.ts).
+    // No conditions and no result read: this only takes the lock. Whether the
+    // account may be changed is decided by the update below, as before.
+    //
+    // FOR UPDATE, not the FOR NO KEY UPDATE redemption takes: the update
+    // below can move the login to another gym, and organization_id is in the
+    // unique index uq_pilot_accounts_org_account, so that update needs FOR
+    // UPDATE. Taken any weaker here, it would be upgraded mid-transaction,
+    // waiting on any open transaction that inserted a row referencing this
+    // account -- a new deadlock the old order could not form.
+    await client.query('select 1 from pilot.accounts where account_id = $1 for update', [accountId]);
+
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
        values ($1, $2, $3, $4)
