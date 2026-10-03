@@ -951,8 +951,12 @@ export async function createAthleteAccountPendingActivation(
     );
 
     if (existing.rows.length > 0) {
-      // Same message either way. Which gym holds an account id is not
-      // something a caller who does not already have it should learn here.
+      // A deleted login in the caller's own gym is named as deleted
+      // (OD-2026-09-30-004 e2). Scoped to that gym: one held anywhere else,
+      // deleted or not, keeps the one message, because which gym holds an
+      // account id is not something a caller who does not already have it
+      // should learn here.
+      await refuseIfLoginDeleted(client, accountId, organizationId);
       throw new Error('Account already exists');
     }
 

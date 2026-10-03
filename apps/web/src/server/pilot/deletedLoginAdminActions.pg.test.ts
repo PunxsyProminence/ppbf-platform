@@ -327,6 +327,19 @@ describe('a PIN reset', () => {
     expect(await accountRow('acct-live')).toMatchObject({ pin_hash: null, active_flag: false });
     expect(await tokenCount('acct-live')).toBe(1);
   });
+
+  test('an unknown login, and a deleted one in another organization, get the same not-found answer', async () => {
+    await insertAccount('acct-other-org-deleted', 'athlete', { organizationId: OTHER_ORG, deleted: true });
+    const notFound = 'Not found: no athlete account in this organization can be reset with that account_id';
+
+    await expect(
+      activation.provisionAthleteActivation({ accountId: 'acct-no-such', organizationId: ORG, ...ISSUER, mode: 'reset' }),
+    ).rejects.toThrow(notFound);
+    await expect(
+      activation.provisionAthleteActivation({ accountId: 'acct-other-org-deleted', organizationId: ORG, ...ISSUER, mode: 'reset' }),
+    ).rejects.toThrow(notFound);
+    expect(await accountRow('acct-other-org-deleted')).toMatchObject({ pin_hash: 'hash-kept', deleted: true });
+  });
 });
 
 describe('creating an athlete login', () => {
@@ -890,6 +903,40 @@ describe('the platform owner\'s athlete shell, the guardian repair and the owner
     await expect(auth.createAthleteAccount('acct-live-coach', 'ath-free', ORG)).rejects.toThrow('Account already exists');
     await auth.createAthleteAccount('acct-shell', 'ath-free', ORG);
     expect(await accountRow('acct-shell')).toMatchObject({ athlete_id: 'ath-free', pin_hash: null, active_flag: false });
+  });
+
+  // The organization admin's create-user route (platform/users/create). It only
+  // inserts, so a taken account_id was already refused; this pins that a
+  // deleted one in the admin's own gym is refused as deleted, and that one in
+  // any other gym keeps the one answer, so the route says nothing about which
+  // gym holds an id.
+  test('pending-activation create: a deleted login in the same organization is refused 409 as deleted', async () => {
+    await insertAthlete('ath-free');
+    await insertAccount('acct-gone', 'athlete', { deleted: true });
+    const before = await accountRow('acct-gone');
+
+    await expect(auth.createAthleteAccountPendingActivation('acct-gone', 'ath-free', ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+      message: DELETED_MESSAGE('acct-gone'),
+    });
+    expect(await accountRow('acct-gone')).toEqual(before);
+    expect(await membershipActive('acct-gone')).toBe(false);
+  });
+
+  test('pending-activation create: other organizations, live logins and free ids behave as before', async () => {
+    await insertAthlete('ath-free');
+    await insertAccount('acct-gone-other', 'athlete', { organizationId: OTHER_ORG, deleted: true });
+    await insertAccount('acct-live-other', 'athlete', { organizationId: OTHER_ORG });
+    await insertAccount('acct-live-coach', 'coach', { microsoft: true });
+
+    for (const taken of ['acct-gone-other', 'acct-live-other', 'acct-live-coach']) {
+      const refusal = auth.createAthleteAccountPendingActivation(taken, 'ath-free', ORG);
+      await expect(refusal).rejects.toThrow('Account already exists');
+      await expect(refusal).rejects.not.toMatchObject({ code: 'DELETED_LOGIN' });
+    }
+    await auth.createAthleteAccountPendingActivation('acct-pending', 'ath-free', ORG);
+    expect(await accountRow('acct-pending')).toMatchObject({ athlete_id: 'ath-free', pin_hash: null, active_flag: false });
   });
 
   // Deleted, and active again: the one state the repair's own active_flag

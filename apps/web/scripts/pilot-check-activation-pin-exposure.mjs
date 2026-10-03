@@ -8,8 +8,8 @@ import { Client } from 'pg';
  * Read-only report on athlete accounts still sitting on a PIN an administrator
  * typed for them.
  *
- * WHY THIS EXISTS. activateAccountPin -- the supported way a PIN is set on an
- * athlete promoted from intake -- did not set must_change_pin. The column
+ * WHY THIS EXISTS. activateAccountPin (since deleted), once the supported way
+ * a PIN was set on an athlete promoted from intake, did not set must_change_pin. The column
  * defaults to false, so those accounts signed in on a credential their
  * administrator knows and were never once asked to replace it. The code fix
  * changes what happens from now on; it does nothing for accounts already in
