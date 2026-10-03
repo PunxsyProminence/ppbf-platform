@@ -48,8 +48,9 @@
 //
 // Corrected 2026-08-24. This paragraph used to say
 // "src/server/document-intake/sharepoint.ts has no caller", which was simply
-// false: app/api/document-ingest/route.ts imports uploadToSharePoint and calls
-// it. That helper is the GENERIC intake uploader, writing to a configurable
+// false: app/api/document-ingest/route.ts imported uploadToSharePoint and called
+// it (that route was retired on 2026-10-03, OD-2026-10-03-002 section 9; the
+// helper stays). That helper is the GENERIC intake uploader, writing to a configurable
 // destination (SHAREPOINT_FOLDER_PATH, defaulting to PPBF/Intake) -- a
 // different concern from the governed Research Archive, and not a research
 // authority. The scope limit survives the correction because it never rested

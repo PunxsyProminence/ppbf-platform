@@ -81,11 +81,3 @@ The journey suites stub the pilot API and need no database. If port 3100 is
 taken set `PPBF_E2E_PORT`; if your sandbox pins its own Chromium point
 `PPBF_CHROMIUM_PATH` at it (see `playwright.config.ts`).
 
-## PDF ingest mock run
-
-`/api/document-ingest` accepts PDF uploads and writes to Dataverse, SharePoint
-and Google Drive (configure via `.env.local`). To validate the route contract
-locally without touching those services: set `PPBF_MOCK_INGEST_SESSION_TOKEN`
-to an active organization-admin session token, then run
-`npm --workspace web run audit:mock-ingest`. It still needs the configured
-PostgreSQL database to validate the session and append the audit event.

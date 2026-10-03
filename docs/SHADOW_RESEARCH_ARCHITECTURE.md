@@ -193,14 +193,15 @@ to look like a single agreed system. They are not the same place.
 A source can be `R98` in the archive and never reviewed, or `duplicate` at review while
 sitting in a subject folder. Neither implies the other.
 
-**Google Drive receives originals in parallel, not downstream.** `apps/web/app/api/document-ingest/route.ts`
-(~line 255) uploads the same raw buffer to SharePoint **and** Google Drive in a single
-`Promise.all`, whenever both destinations are configured. Google Drive is correctly *not*
-an evidence authority — but framing it as merely a "candidate source" understates custody:
-for every document that goes through `/api/document-ingest`, Drive holds a full copy of
-the original, created at the same instant as the Microsoft copy. Any retention,
-disposition, or access-review decision about originals must cover both destinations or it
-is incomplete.
+**Google Drive received originals in parallel, not downstream (route retired 2026-10-03).**
+`/api/document-ingest` uploaded the same raw buffer to SharePoint **and** Google Drive in a
+single `Promise.all`, whenever both destinations were configured. The route was retired on
+2026-10-03 (OD-2026-10-03-002 section 9; curators read PDF pages on `/research` instead,
+RINT-02). Google Drive is correctly *not* an evidence authority, and the custody point
+stands for any document that went through the route while it existed: Drive holds a full
+copy of the original, created at the same instant as the Microsoft copy. Any retention,
+disposition, or access-review decision about those originals must cover both destinations
+or it is incomplete.
 
 Current executable GitHub code describes implementation behavior. Current Microsoft
 archive state describes original-file custody. Human evidence review determines

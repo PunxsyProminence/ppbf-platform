@@ -260,7 +260,6 @@
     "gate:pilot:guardian-contact": "node scripts/pilot-guardian-contact-probe.mjs",
     "gate:pilot:shadow-intake": "node scripts/pilot-shadow-intake-gate.mjs",
     "gate:pilot:shadow-e2e": "node scripts/pilot-shadow-intake-gate.mjs",
-    "audit:mock-ingest": "tsx scripts/run-mock-ingest.ts",
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots",
     "test:e2e:homepage": "playwright test e2e/public-homepage.spec.ts",
