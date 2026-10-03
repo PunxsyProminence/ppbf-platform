@@ -14,6 +14,8 @@
 //     clip, set, event or organization still removes them
 //   * a submission waits for an uncommitted writer instead of passing unseen
 //   * every vocabulary in the SQL is exactly the ontology.ts array
+//   * the same rules hold for 0.3, which needs its 25 points (solar_plexus
+//     included) at each moment while 0.2 still needs exactly its 24
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -62,6 +64,7 @@ const ANNOTATOR = 'acct-rules-annotator';
 const VIDEO_ID = 'vs-rules-ready';
 const V01 = 'boxing-ontology-0.1';
 const V02 = 'boxing-ontology-0.2';
+const V03 = 'boxing-ontology-0.3';
 
 const CLIP_START_MS = 60_000;
 const CLIP_END_MS = 72_000;
@@ -166,6 +169,7 @@ interface SetRef {
   orgId: string;
   setId: string;
   clipId: string;
+  version: string;
 }
 
 /** A fresh clip and an in-progress set on it, under the given vocabulary. */
@@ -193,7 +197,7 @@ async function newSet(
     annotatorAccountId: ANNOTATOR,
     ontologyVersion: version,
   });
-  return { orgId, setId, clipId };
+  return { orgId, setId, clipId, version };
 }
 
 /** An event written straight to the table, so only the database judges it.
@@ -258,10 +262,12 @@ interface CompleteOptions {
   nullLeadSideAt?: string;
   nullGuardAt?: string;
   pointsAtStart?: number;
+  /** The points at every moment; defaults to the set's version's list. */
+  points?: readonly string[];
 }
 
-/** Stance label, three moments and 24 points on each: everything submission
- * requires, unless an option leaves one piece out. */
+/** Stance label, three moments and the version's points on each: everything
+ * submission requires, unless an option leaves one piece out. */
 async function completeEvent(set: SetRef, eventId: string, options: CompleteOptions = {}): Promise<Record<string, string>> {
   if (options.stance !== false) {
     await insertStanceLabel(set, eventId);
@@ -287,7 +293,9 @@ async function completeEvent(set: SetRef, eventId: string, options: CompleteOpti
         options.nullGuardAt === slot ? null : 'usa_boxing__high_double_guard',
       ],
     );
-    const codes = ontology.BODY_POINTS.slice(0, slot === 'start' ? (options.pointsAtStart ?? 24) : 24);
+    const points = options.points
+      ?? ontology.BODY_POINTS_BY_VERSION[set.version as keyof typeof ontology.BODY_POINTS_BY_VERSION];
+    const codes = slot === 'start' ? points.slice(0, options.pointsAtStart ?? points.length) : points;
     await db.query(
       `insert into pilot.calibration_body_points
          (organization_id, body_point_id, annotation_set_id, body_moment_id, point_code, state, x_norm, y_norm)
@@ -464,6 +472,36 @@ describe('the runner', () => {
     await (await loadRunner()).applyMigrationTransaction(db, await readMigration(RULES_SQL));
   });
 
+  test('a re-run on a database holding the 0.2-only rules reaches 0.3; readiness tells the two apart', async () => {
+    const client = await prerequisiteDatabase('ppbf_test_calib_body_rules_before_03');
+    try {
+      const sql = await readMigration(RULES_SQL);
+      // The rules as they stood before 0.3: every 0.3 literal turned into 0.2.
+      const before = sql.replaceAll(`'${V03}'`, `'${V02}'`);
+      expect(before).not.toContain(V03);
+      await client.query(before);
+      const runner = await loadRunner();
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINT_RULES_NOT_READY',
+      );
+
+      await runner.applyMigrationTransaction(client, sql);
+      for (const fn of [
+        'calibration_event_stance_labels_guard',
+        'calibration_annotation_events_body_point_rules',
+        'calibration_annotation_sets_body_point_rules',
+      ]) {
+        const result = await client.query<{ def: string }>(
+          'select pg_get_functiondef($1::regprocedure) as def',
+          [`pilot.${fn}()`],
+        );
+        expect(result.rows[0].def).toContain(`'${V03}'`);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
   test('refuses a target other than the one the operator named, before connecting', async () => {
     const saved = { ...process.env };
     try {
@@ -521,13 +559,17 @@ describe('the database agrees with ontology.ts', () => {
     expect(quotedValues((versions as RegExpMatchArray)[1])).toEqual([...ontology.BODY_POINT_ONTOLOGY_VERSIONS]);
   });
 
-  test('completeness asks for exactly MOMENT_SLOTS and BODY_POINTS.length points', async () => {
+  test('completeness asks for exactly MOMENT_SLOTS, and each version\'s BODY_POINTS_BY_VERSION length', async () => {
     const source = await functionSource('calibration_annotation_sets_body_point_rules');
     const slots = source.match(/\(values ([^)]*\)(?:, \([^)]*\))*)\) as slot/);
     expect(slots).not.toBeNull();
     expect(quotedValues((slots as RegExpMatchArray)[1])).toEqual([...ontology.MOMENT_SLOTS]);
-    expect(source).toMatch(new RegExp(`having count\\(p\\.point_code\\) <> ${ontology.BODY_POINTS.length}\\b`));
-    expect(source).toContain(`' of ${ontology.BODY_POINTS.length}'`);
+    const counts = [...source.matchAll(/when '([^']*)' then (\d+)/g)].map((match) => [match[1], Number(match[2])]);
+    expect(counts).toEqual(
+      ontology.BODY_POINT_ONTOLOGY_VERSIONS.map((version) => [version, ontology.BODY_POINTS_BY_VERSION[version].length]),
+    );
+    expect(source).toContain('having count(p.point_code) <> expected_points');
+    expect(source).toContain(`' of ' || expected_points`);
   });
 });
 
@@ -700,6 +742,7 @@ describe('a set holding an event cannot change vocabulary', () => {
   test.each([
     [V02, V01],
     [V01, V02],
+    [V03, V02],
   ])('%s to %s is refused once an event exists; an empty set still can', async (from, to) => {
     const holding = await newSet(from);
     await insertEvent(holding);
@@ -718,7 +761,7 @@ describe('a set holding an event cannot change vocabulary', () => {
   });
 });
 
-describe('a 0.2 set cannot be submitted incomplete', () => {
+describe('a 0.2 or 0.3 set cannot be submitted incomplete', () => {
   test('a complete set submits: a landed punch and a defence', async () => {
     const set = await newSet();
     await completeEvent(set, await insertEvent(set));
@@ -762,6 +805,52 @@ describe('a 0.2 set cannot be submitted incomplete', () => {
     });
     expect(detail).toBe(`${eventId}: ${item}`);
     expect(await statusOf(set)).toBe('in_progress');
+  });
+
+  test.each([
+    ['a landed punch', {}, {}],
+    ['a defence', DEFENSE, { middleKind: 'furthest_point', middleMs: EV_CONTACT }],
+  ] as Array<[string, Record<string, unknown>, CompleteOptions]>)(
+    'a complete 0.3 set submits: %s with 25 points at each moment, solar_plexus among them',
+    async (_label, fields, options) => {
+      const set = await newSet(V03);
+      await completeEvent(set, await insertEvent(set, fields), options);
+      const held = await db.query<{ point_code: string; n: string }>(
+        `select point_code, count(*)::text as n from pilot.calibration_body_points
+          where organization_id = $1 and annotation_set_id = $2 group by point_code`,
+        [ORG_ID, set.setId],
+      );
+      expect(held.rows).toHaveLength(25);
+      expect(held.rows.find((row) => row.point_code === 'solar_plexus')?.n).toBe('3');
+      await submit(set);
+      expect(await statusOf(set)).toBe('submitted');
+    },
+  );
+
+  test('a 0.3 set holding only 0.2\'s 24 points is refused, each moment named', async () => {
+    const set = await newSet(V03);
+    const eventId = await insertEvent(set);
+    await completeEvent(set, eventId, { points: ontology.BODY_POINTS_BY_VERSION[V02] });
+    let detail: string | undefined;
+    await submit(set).catch((error: { message: string; detail?: string }) => {
+      expect(error.message).toBe('CALIBRATION_BODY_POINTS_INCOMPLETE');
+      detail = error.detail;
+    });
+    expect(detail?.split('; ')).toEqual(
+      ['end', 'middle', 'start'].map((slot) => `${eventId}: ${slot} points, 24 of 25`),
+    );
+    expect(await statusOf(set)).toBe('in_progress');
+  });
+
+  test('a 0.3 set one point short at the start is refused as 24 of 25', async () => {
+    const set = await newSet(V03);
+    const eventId = await insertEvent(set);
+    await completeEvent(set, eventId, { pointsAtStart: 24 });
+    let detail: string | undefined;
+    await submit(set).catch((error: { detail?: string }) => {
+      detail = error.detail;
+    });
+    expect(detail).toBe(`${eventId}: start points, 24 of 25`);
   });
 
   test('every missing item is listed', async () => {

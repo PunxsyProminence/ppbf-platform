@@ -14,6 +14,9 @@
 //   * a submitted set's moments and points are frozen, and deleting the
 //     footage, clip, set or event still removes them
 //   * every vocabulary CHECK carries exactly the ontology.ts array
+//   * a set holds only its own version's points: a 0.2 set refuses
+//     solar_plexus, a 0.3 set takes it; a re-run on a database holding the
+//     0.2-only state reaches 0.3
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -109,6 +112,13 @@ type ApplyFn = (client: Client, sql: string) => Promise<void>;
 async function loadRunner(): Promise<{ applyMigrationTransaction: ApplyFn; run: () => Promise<void> }> {
   const runner = await nativeDynamicImport(pathToFileURL(RUNNER_PATH).href);
   return runner as unknown as { applyMigrationTransaction: ApplyFn; run: () => Promise<void> };
+}
+
+/** The migration as it stood before boxing-ontology-0.3: no solar_plexus, and
+ * every 0.3 literal turned into 0.2, which leaves valid SQL that admits 0.2
+ * only. Stands in for a database the migration reached before 0.3 existed. */
+function asBefore03(sql: string): string {
+  return sql.replaceAll(", 'solar_plexus'", '').replaceAll("'boxing-ontology-0.3'", "'boxing-ontology-0.2'");
 }
 
 /** A database with every prerequisite applied and the body-points migration NOT applied. */
@@ -406,6 +416,55 @@ describe('the runner', () => {
     expect(await countFor('calibration_body_moments', set.setId)).toBe(1);
   });
 
+  test('a re-run on a database holding the 0.2-only state reaches 0.3; readiness tells the two apart', async () => {
+    const client = await prerequisiteDatabase('ppbf_test_calib_body_before_03');
+    try {
+      const sql = await readMigration(BODY_POINTS_SQL);
+      expect(asBefore03(sql)).not.toMatch(/, 'solar_plexus'|ontology-0\.3/);
+      await client.query(asBefore03(sql));
+      const runner = await loadRunner();
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+
+      await runner.applyMigrationTransaction(client, sql);
+      const live = await client.query<{ def: string }>(
+        `select pg_get_constraintdef(oid) as def from pg_constraint
+          where conrelid = to_regclass('pilot.calibration_body_points')
+            and conname = 'pilot_calibration_body_points_code_vocab'`,
+      );
+      const values = [...live.rows[0].def.matchAll(/'([^']*)'::text/g)].map((match) => match[1]);
+      expect(values).toEqual([...ontology.BODY_POINTS]);
+      const guard = await client.query<{ def: string }>(
+        `select pg_get_functiondef('pilot.calibration_body_moments_guard()'::regprocedure) as def`,
+      );
+      expect(guard.rows[0].def).toContain(`'${ontology.BOXING_ONTOLOGY_VERSION_0_3}'`);
+
+      // The moments guard alone left at 0.2 is still not ready.
+      const start = sql.indexOf('create or replace function pilot.calibration_body_moments_guard()');
+      const endMarker = '$pilot_calibration_body_moments_guard$;';
+      const end = sql.indexOf(endMarker, sql.indexOf('begin', start)) + endMarker.length;
+      expect(start).toBeGreaterThan(-1);
+      await client.query(asBefore03(sql.slice(start, end)));
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+      await runner.applyMigrationTransaction(client, sql);
+
+      // And the point-code CHECK alone left at 0.2's 24.
+      await client.query(`alter table pilot.calibration_body_points
+        drop constraint pilot_calibration_body_points_code_vocab,
+        add constraint pilot_calibration_body_points_code_vocab
+        ${ontology.vocabularyCheckSql('point_code', ontology.BODY_POINTS_0_2)}`);
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+      await runner.applyMigrationTransaction(client, sql);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('refuses a target other than the one the operator named, before connecting', async () => {
     const saved = { ...process.env };
     try {
@@ -433,6 +492,10 @@ describe('the database agrees with ontology.ts', () => {
   test.each(CHECKS)('%s %s is written as vocabularyCheckSql and holds exactly the array', async (table, name, column, vocabulary) => {
     const source = await readMigration(BODY_POINTS_SQL);
     expect(source).toContain(`constraint ${name}\n    ${ontology.vocabularyCheckSql(column, vocabulary())}`);
+    if (name === 'pilot_calibration_body_points_code_vocab') {
+      // The widening of a database that already held 0.2's list says the same.
+      expect(source).toContain(`add constraint ${name}\n      ${ontology.vocabularyCheckSql(column, vocabulary())}`);
+    }
 
     // The live constraint, read back. Postgres deparses `in (...)` into an
     // ANY(ARRAY[...]) form, so the values are compared, not the text.
@@ -455,16 +518,34 @@ describe('the database agrees with ontology.ts', () => {
     const versions = [...(gate as RegExpMatchArray)[1].matchAll(/'([^']*)'/g)].map((match) => match[1]);
     expect(versions).toEqual([...ontology.BODY_POINT_ONTOLOGY_VERSIONS]);
   });
+
+  test('the points guard holds exactly BODY_POINTS_BY_VERSION, for every body-point version', async () => {
+    const live = await db.query<{ def: string }>(
+      `select pg_get_functiondef('pilot.calibration_body_points_guard()'::regprocedure) as def`,
+    );
+    const lists = [
+      ...live.rows[0].def.matchAll(/parent_version = '([^']*)'\s+and new\.point_code not in \(([^)]*)\)/g),
+    ].map((match): [string, string[]] => [match[1], [...match[2].matchAll(/'([^']*)'/g)].map((value) => value[1])]);
+    expect(lists.map(([version]) => version)).toEqual([...ontology.BODY_POINT_ONTOLOGY_VERSIONS]);
+    for (const [version, points] of lists) {
+      expect(points).toEqual([...ontology.BODY_POINTS_BY_VERSION[version as keyof typeof ontology.BODY_POINTS_BY_VERSION]]);
+    }
+  });
 });
 
 describe('a complete event', () => {
-  test('a landed punch holds three moments, 24 points on each', async () => {
-    const set = await newSet();
+  test.each([
+    ['boxing-ontology-0.2', 24],
+    ['boxing-ontology-0.3', 25],
+  ] as const)('a landed punch under %s holds three moments, %i points on each', async (version, perMoment) => {
+    const set = await newSet(version);
     const eventId = await punch(set);
+    const points = ontology.BODY_POINTS_BY_VERSION[version];
+    expect(points).toHaveLength(perMoment);
 
     for (const slot of ontology.MOMENT_SLOTS) {
       const momentId = await insertMoment(set, eventId, { slot });
-      for (const [index, code] of ontology.BODY_POINTS.entries()) {
+      for (const [index, code] of points.entries()) {
         if (index % 5 === 0) {
           await insertPoint(set.setId, momentId, code, 'not_visible', null, null);
         } else {
@@ -474,7 +555,7 @@ describe('a complete event', () => {
     }
 
     expect(await countFor('calibration_body_moments', set.setId)).toBe(3);
-    expect(await countFor('calibration_body_points', set.setId)).toBe(3 * 24);
+    expect(await countFor('calibration_body_points', set.setId)).toBe(3 * perMoment);
   });
 
   test('the edges of the picture are on it', async () => {
@@ -483,6 +564,35 @@ describe('a complete event', () => {
     await insertPoint(set.setId, momentId, 'nose', 'placed', 0, 0);
     await insertPoint(set.setId, momentId, 'chin', 'placed', 1, 1);
     expect(await countFor('calibration_body_points', set.setId)).toBe(2);
+  });
+});
+
+describe('a set holds only its own version\'s points', () => {
+  test('a 0.2 set refuses solar_plexus; a 0.3 set takes it', async () => {
+    const old = await newSet('boxing-ontology-0.2');
+    const oldMoment = await insertMoment(old, await punch(old));
+    await expect(insertPoint(old.setId, oldMoment, 'solar_plexus', 'placed', 0.5, 0.4)).rejects.toThrow(
+      'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION',
+    );
+    expect(await countFor('calibration_body_points', old.setId)).toBe(0);
+
+    const current = await newSet('boxing-ontology-0.3');
+    const currentMoment = await insertMoment(current, await punch(current));
+    await insertPoint(current.setId, currentMoment, 'solar_plexus', 'placed', 0.5, 0.4);
+    await insertPoint(current.setId, currentMoment, 'mid_hip', 'not_visible', null, null);
+    expect(await countFor('calibration_body_points', current.setId)).toBe(2);
+  });
+
+  test('a 0.3 set holding moments cannot be relabelled 0.2', async () => {
+    const set = await newSet('boxing-ontology-0.3');
+    await insertMoment(set, await punch(set));
+    await expect(
+      db.query(
+        `update pilot.calibration_annotation_sets set ontology_version = 'boxing-ontology-0.2'
+          where organization_id = $1 and annotation_set_id = $2`,
+        [ORG_ID, set.setId],
+      ),
+    ).rejects.toThrow('CALIBRATION_SET_HAS_BODY_MOMENTS');
   });
 });
 
@@ -535,9 +645,19 @@ describe('every label from its own vocabulary', () => {
   test('an unknown point code or state is refused', async () => {
     const set = await newSet();
     const momentId = await insertMoment(set, await punch(set));
+    // The guard's version list runs before the CHECK and refuses first.
     await expect(insertPoint(set.setId, momentId, 'left_index', 'placed', 0.5, 0.5)).rejects.toThrow(
-      'pilot_calibration_body_points_code_vocab',
+      'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION',
     );
+    // The CHECK still holds on its own, with the guard out of the way.
+    await db.query('alter table pilot.calibration_body_points disable trigger pilot_calibration_body_points_guard');
+    try {
+      await expect(insertPoint(set.setId, momentId, 'left_index', 'placed', 0.5, 0.5)).rejects.toThrow(
+        'pilot_calibration_body_points_code_vocab',
+      );
+    } finally {
+      await db.query('alter table pilot.calibration_body_points enable trigger pilot_calibration_body_points_guard');
+    }
     // An unknown state also fails the position rule, which Postgres may name
     // first; either refusal is the vocabulary holding.
     await expect(insertPoint(set.setId, momentId, 'nose', 'accepted', 0.5, 0.5)).rejects.toThrow(
