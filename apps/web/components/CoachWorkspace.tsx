@@ -1713,6 +1713,10 @@ export default function CoachWorkspace() {
       void loadAttendanceToday();
     } catch (error) {
       setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
+      // The readiness board is read inside this load, so a roster failure is a
+      // readiness failure too; left at 'loading' the tile said "No fresh
+      // readiness check-ins" about a feed nobody read.
+      setReadinessFeedState('error');
       // Fallback: set empty list but don't block UI
       setAthletes([]);
     } finally {
@@ -3005,7 +3009,9 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                     </>
-                  ) : readinessFeedState === 'error' ? (
+                  ) : readinessFeedState === 'loading' && !athletesError ? (
+                    <p className="mt-[var(--s3)] t-muted">Checking...</p>
+                  ) : readinessFeedState === 'error' || athletesError ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
                       <p className="t-muted">Readiness could not be read -- do not read this as &quot;zero flags&quot;</p>

@@ -107,6 +107,12 @@ describe('coach home: a failed read is not an empty one', () => {
     expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   });
 
+  test('a failed roster read does not say there are no fresh check-ins either', async () => {
+    await renderWith('athletes');
+    expect(await screen.findByText(/Readiness could not be read/)).toBeTruthy();
+    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  });
+
   test('a healthy readiness read with nothing fresh still says so', async () => {
     await renderWith(null);
     expect(await screen.findByText(/No fresh readiness check-ins/)).toBeTruthy();
