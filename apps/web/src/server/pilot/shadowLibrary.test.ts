@@ -393,7 +393,9 @@ describe('SHADOW library keyword relevance', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain("~ ('\\m' || term || '\\M')");
     expect(String(sql)).not.toMatch(/like\s+'%'/);
-    expect(String(sql)).not.toContain('authority_tier) * 3');
+    const scoreExpr = String(sql).slice(String(sql).indexOf('select count(*)'), String(sql).indexOf(') as score'));
+    expect(scoreExpr).toContain('cardinality');
+    expect(scoreExpr).not.toContain('authority_tier');
     expect(params?.[3]).toEqual(['jab', 'footwork']);
   });
 
