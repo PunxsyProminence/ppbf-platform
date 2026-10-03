@@ -24,7 +24,6 @@ import {
   BODY_POINT_PLACEMENT_NOTES,
   BODY_POINT_STATES,
   BODY_POINTS,
-  BODY_SUBJECTS,
   BOXING_ONTOLOGY_VERSION_0_1,
   BOXING_ONTOLOGY_VERSION_0_2,
   CALIBRATION_PROJECT_STATUSES,
@@ -77,7 +76,6 @@ const ALL_VOCABULARIES: Array<[string, readonly string[]]> = [
   ['BODY_POINT_STATES', BODY_POINT_STATES],
   ['MOMENT_SLOTS', MOMENT_SLOTS],
   ['MOMENT_KINDS', MOMENT_KINDS],
-  ['BODY_SUBJECTS', BODY_SUBJECTS],
   ['LEAD_SIDES', LEAD_SIDES],
   ['SANCTIONING_BODIES', SANCTIONING_BODIES],
   ['GUARD_TYPES', GUARD_TYPES],
@@ -415,8 +413,10 @@ describe('boxing-ontology-0.2 body points', () => {
     expect(MOMENT_KINDS as readonly string[]).not.toContain('peak');
   });
 
-  test('the actor, and the other person on contact against them', () => {
-    expect([...BODY_SUBJECTS]).toEqual(['actor', 'opponent']);
+  test('points are only on the person whose action the event is: no subject list', async () => {
+    // Jason 2026-10-03 ("1 and 3"): the other boxer is marked on their own event.
+    const exported = Object.keys(await import('./ontology'));
+    expect(exported.filter((name) => /SUBJECT|OPPONENT/i.test(name))).toEqual([]);
   });
 
   test('lead side is 0.1 stance plus neutral, one token per concept', () => {

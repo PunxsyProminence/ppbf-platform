@@ -65,24 +65,36 @@ export default function MembershipsPage() {
   const [items, setItems] = useState<MembershipRow[]>([]);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [loading, setLoading] = useState(true);
+  // True once a read of the memberships list has come back. Until then an
+  // empty list is not a record of none, so the empty sentence stays hidden.
+  const [listRead, setListRead] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ athlete_id: '', program_name: '', started_on: '', scholarship_percent: 0 });
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
+  const [programsLoad, setProgramsLoad] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [showNewProgram, setShowNewProgram] = useState(false);
   const [newProgramName, setNewProgramName] = useState('');
   const [catalogProgramName, setCatalogProgramName] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-      method: 'GET',
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load memberships.');
-    const payload = (await response.json()) as { items?: MembershipRow[] };
-    setItems(payload.items ?? []);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load memberships.');
+      const payload = (await response.json()) as { items?: MembershipRow[] };
+      setItems(payload.items ?? []);
+      setListRead(true);
+    } catch (error) {
+      // A failed re-read after a write leaves the list stale: rows on screen
+      // stay, but an empty list is no longer a record of none.
+      setListRead(false);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -130,6 +142,7 @@ export default function MembershipsPage() {
     if (!response.ok) throw new Error('Unable to load programs.');
     const payload = (await response.json()) as { items?: ProgramRow[] };
     setPrograms(payload.items ?? []);
+    setProgramsLoad('loaded');
   }, []);
 
   useEffect(() => {
@@ -138,8 +151,11 @@ export default function MembershipsPage() {
       try {
         await reloadPrograms(controller.signal);
       } catch {
-        // Silent like the athlete picker: the select degrades to empty and
-        // the catalog section shows its empty state; the page still renders.
+        // The select degrades to empty; the catalog section says the list
+        // could not be read rather than "no programs", which would invite a
+        // duplicate program. The page still renders.
+        if (controller.signal.aborted) return;
+        setProgramsLoad((current) => (current === 'loaded' ? current : 'unavailable'));
       }
     })();
     return () => controller.abort();
@@ -365,6 +381,13 @@ export default function MembershipsPage() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading memberships...</span>
             </div>
+          ) : !listRead && items.length === 0 ? (
+            <div className="mat-leather rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-title">Memberships could not be read</div>
+                <p className="empty-msg mx-auto">This is not a record of none. Reload the page to try again.</p>
+              </div>
+            </div>
           ) : items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
@@ -446,7 +469,16 @@ export default function MembershipsPage() {
               select; it never touches membership rows -- enrollment history
               is a record, not a casualty of tidying the list. */}
           <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
-            {programs.length === 0 ? (
+            {programsLoad === 'loading' ? (
+              <div className="flex justify-center py-[var(--s5)]">
+                <span className="working">Loading programs...</span>
+              </div>
+            ) : programsLoad === 'unavailable' ? (
+              <div className="empty">
+                <div className="empty-title">Programs could not be read</div>
+                <p className="empty-msg mx-auto">This is not a record of none, and a program may already exist. Reload the page before creating one.</p>
+              </div>
+            ) : programs.length === 0 ? (
               <div className="empty">
                 <div className="empty-title">No programs on record</div>
                 <p className="empty-msg mx-auto">Create the first program to enroll athletes into it.</p>

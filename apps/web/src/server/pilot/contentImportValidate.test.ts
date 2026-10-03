@@ -20,6 +20,10 @@ import { COMPETENCE_DOMAINS } from './competenceCohorts';
 */
 
 const EXISTING_DRILL = MINT.drill('boxing', 'Touch to Reposition');
+// A committed drill whose current version is withdrawn (active = false). It is
+// still the head of its lineage, so a revision may name it; a template or
+// script step may not.
+const WITHDRAWN_DRILL = MINT.drill('boxing', 'Retired Pivot');
 const EXISTING_TEMPLATE = MINT.template('Beginner Footwork');
 
 const references: ReferenceSets = {
@@ -27,7 +31,10 @@ const references: ReferenceSets = {
   skillCodes: new Set(['SK-STANCE-01', 'SK-GUARD-02', 'SK-FW-04']),
   disciplines: new Set(['boxing', 'conditioning']),
   levelOrdinals: new Set([1, 2, 3, 4, 5, 6]),
-  drills: new Map([[EXISTING_DRILL, { discipline: 'boxing', name: 'Touch to Reposition', skillId: 'SK-FW-04' }]]),
+  drills: new Map([
+    [EXISTING_DRILL, { discipline: 'boxing', name: 'Touch to Reposition', skillId: 'SK-FW-04', active: true }],
+    [WITHDRAWN_DRILL, { discipline: 'boxing', name: 'Retired Pivot', skillId: 'SK-FW-04', active: false }],
+  ]),
   templates: new Set([EXISTING_TEMPLATE]),
   scripts: new Set(),
   blocks: new Set(),
@@ -491,6 +498,29 @@ describe('row and group rules', () => {
       ['row_rule', 2],
       ['row_rule', 3],
     ]);
+  });
+
+  // OD-2026-10-03-002 section 7: the AI workout prompt lists the gym's current
+  // ACTIVE reference drills (drillLibraryV3.ts listDrillLibrary), and the
+  // upload used to accept any lineage head, withdrawn included (a head stays
+  // the head when it is withdrawn, lineage.ts). The two sides now agree: a
+  // step may not link a withdrawn drill. A revision of that drill, which names
+  // it as a parent, is a different column and is not touched here.
+  it('a template step cannot link a withdrawn drill; an active one still links (script steps use the same reference column)', () => {
+    const item = (overrides: Record<string, string>) => ({ template_id: EXISTING_TEMPLATE, block: 'technical', ...overrides });
+    const result = run([
+      input(
+        'seed_workout_template_items.csv',
+        [
+          item({ ordinal: '1', drill_id: EXISTING_DRILL }),
+          item({ ordinal: '2', drill_id: WITHDRAWN_DRILL }),
+        ],
+        'workout-templates',
+      ),
+    ]);
+    expect(result.blocking.map((f) => [f.code, f.line, f.column])).toEqual([['withdrawn_drill', 3, 'drill_id']]);
+    expect(result.blocking[0].message).toContain('withdrawn');
+    expect(result.blocking[0].message).toContain('free_text_drill');
   });
 
   it('secondary skills: never the primary again, and an expected primary must match', () => {

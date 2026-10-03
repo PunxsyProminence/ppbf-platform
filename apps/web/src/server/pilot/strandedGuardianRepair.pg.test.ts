@@ -121,9 +121,14 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   // pilot.accounts (auth_provider, organization_id, active_flag, pin_hash) is
-  // entirely base-schema; no incremental migration participates in this
-  // repair, so none is applied.
+  // base-schema; the repair also refuses a login marked deleted
+  // (OD-2026-09-30-004 e2), so the retention migration that adds
+  // pilot.accounts.deleted_at is applied too. Its deleted cases live in
+  // deletedLoginAdminActions.pg.test.ts.
   await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
   for (const orgId of [ORG_A, ORG_B]) {
     await migrateClient.query(
       `insert into pilot.organizations (organization_id, organization_name, status)

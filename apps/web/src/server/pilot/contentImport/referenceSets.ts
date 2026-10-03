@@ -66,7 +66,15 @@ export function referenceSetsFromBaseline(
     drills: new Map(
       rowsOf(baseline, 'seed_drill_library.csv').map((row) => [
         row.values.drill_id,
-        { discipline: row.values.discipline, name: row.values.name, skillId: row.values.skill_id },
+        {
+          discipline: row.values.discipline,
+          name: row.values.name,
+          skillId: row.values.skill_id,
+          // The committed seed writes booleans as True/False (specs/drills.ts,
+          // the active column). Only an explicit false is withdrawn: a blank
+          // or missing cell is the column's default (active), never a refusal.
+          active: (row.values.active ?? '').trim().toLowerCase() !== 'false',
+        },
       ]),
     ),
     templates: new Set(rowsOf(baseline, 'seed_workout_templates.csv').map((row) => row.values.template_id)),

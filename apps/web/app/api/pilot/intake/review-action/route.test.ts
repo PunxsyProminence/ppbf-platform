@@ -17,7 +17,7 @@ import {
   upsertWaiver,
 } from '@/src/server/pilot/intake';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { queryOne } from '@/src/server/pilot/db';
+import { queryOne, withTransaction } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -40,7 +40,6 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
 }));
 jest.mock('@/src/server/pilot/auth', () => ({
   createOrUpdateAthleteAccount: jest.fn(),
-  createParentAccount: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
@@ -69,6 +68,8 @@ jest.mock('@/src/server/pilot/intake', () => ({
     jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotWithdrawn,
   assertAthleteRecordNotHeldByDeletedLogin:
     jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotHeldByDeletedLogin,
+  writePromotedAthleteRecord:
+    jest.requireActual('@/src/server/pilot/intake').writePromotedAthleteRecord,
   assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
@@ -107,6 +108,7 @@ const mockAssertGuardianUnchanged = assertGuardianAccountUnchanged as jest.Mocke
 const mockUpsertGuardian = upsertGuardian as jest.MockedFunction<typeof upsertGuardian>;
 const mockLinkGuardianAthlete = linkGuardianAthlete as jest.MockedFunction<typeof linkGuardianAthlete>;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
 const mockUpsertWaiver = upsertWaiver as jest.MockedFunction<typeof upsertWaiver>;
 
 function principal(): PilotPrincipal {
@@ -203,6 +205,14 @@ beforeEach(() => {
   // lookup result behind, and clearAllMocks would carry it into the next test.
   // Reset, it answers "no such account" -- a new guardian login.
   mockQueryOne.mockReset();
+  // The athlete-record checks run on writePromotedAthleteRecord's transaction
+  // client; it answers from the same stubbed lookups as queryOne.
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn({
+    query: async (sql: string, params: unknown[]) => {
+      const row = await mockQueryOne(sql, params);
+      return { rows: row ? [row] : [] };
+    },
+  }));
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);

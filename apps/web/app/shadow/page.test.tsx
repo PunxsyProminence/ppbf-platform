@@ -20,10 +20,10 @@
  */
 
 import type { ReactNode } from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ShadowChatPage from './page';
-import { listOwnedShadowSessions } from '@/client/shadowSessions';
+import { listOwnedShadowSessions, ShadowSessionsRequestError } from '@/client/shadowSessions';
 
 const replace = jest.fn();
 /* ONE router object and ONE search-params object for the life of the file. The
@@ -148,5 +148,35 @@ describe('a role SHADOW chat admits', () => {
     await act(async () => { render(<ShadowChatPage />); });
 
     expect(mockListSessions).toHaveBeenCalled();
+  });
+});
+
+/* #991 class (Lane 14 batch 8, C7). A failed saved-sessions read set only
+   sessionNotice, and "New chat" clears that notice -- leaving "No saved
+   sessions yet." alone over a list that was never read. */
+describe('a saved-sessions read that failed', () => {
+  test('never says there are no saved sessions, even after New chat clears the notice', async () => {
+    mockServerSaying('coach');
+    mockListSessions.mockRejectedValue(new ShadowSessionsRequestError(503, 'unavailable'));
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(screen.getByText(/Saved sessions are temporarily unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No saved sessions yet.')).toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /New chat/ })); });
+
+    expect(screen.queryByText(/Saved sessions are temporarily unavailable/)).toBeNull();
+    expect(screen.queryByText('No saved sessions yet.')).toBeNull();
+    expect(screen.getByText('Saved sessions could not be loaded.')).toBeTruthy();
+  });
+
+  test('a read that answered empty still says there are none yet', async () => {
+    mockServerSaying('coach');
+    mockListSessions.mockResolvedValue([]);
+
+    await act(async () => { render(<ShadowChatPage />); });
+
+    expect(screen.getByText('No saved sessions yet.')).toBeTruthy();
   });
 });

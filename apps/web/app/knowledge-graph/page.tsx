@@ -186,8 +186,16 @@ export default function KnowledgeGraphPage() {
               <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
                 {group.title}
               </h2>
+              {/* "No items." is a claim about the projection, so it waits for a
+                  read that answered. Under a failed read every column was
+                  empty by construction and said so four times beneath the
+                  alert (the #991 class). */}
               {group.items.length === 0 ? (
-                <p className="t-muted mt-[var(--s3)]">No items.</p>
+                errorMessage ? (
+                  <p className="t-muted mt-[var(--s3)]">Not available.</p>
+                ) : projectionLoading ? null : (
+                  <p className="t-muted mt-[var(--s3)]">No items.</p>
+                )
               ) : (
                 <div className="mt-[var(--s4)] space-y-[var(--s3)]">
                   {group.items.map((item) => {

@@ -261,8 +261,8 @@ export async function deleteGuardianAccount(
 
     /* In the SAME transaction as the deletion, so there is no window in which
        the account is deleted but a live session still resolves. Every other
-       account-state mutation in auth.ts already does this -- resetAccountPin,
-       activateAccountPin, changeOwnPin, setAccountActiveStatus,
+       account-state mutation already does this -- the PIN reset in
+       activation.ts, and in auth.ts changeOwnPin, setAccountActiveStatus,
        upsertOrganizationMembership, transferOrganizationAdmin,
        promoteAccountToOrganizationAdmin. Deletion was the one that did not,
        which is the reverse of the priority it should have had. */

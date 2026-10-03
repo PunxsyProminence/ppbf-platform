@@ -18,7 +18,7 @@ relationships and uniqueness constraints were validated against the live DDL bef
 
 | File | Target table | Rows |
 |---|---|---|
-| `seed_shadow_library_sources.csv` | `pilot.shadow_library_sources` | 1214 |
+| `seed_shadow_library_sources.csv` | `pilot.shadow_library_sources` | 1001 (re-measured 2026-10-03 from this file at `03f5c649` with Python's `csv.DictReader`; this line said 1214 until then) |
 | `seed_shadow_library_documents.csv` | `pilot.shadow_library_documents` | 14 |
 | `seed_shadow_library_chunks.csv` | `pilot.shadow_library_chunks` | 1193 |
 | `seed_shadow_library_capability_map.csv` | `pilot.shadow_library_capability_map` | 30 |
@@ -45,7 +45,7 @@ design, limitations and PPBF implication. It is **not publisher full text**, and
 was ingested. Each chunk links to a source row carrying the real identifier (PMID/DOI/URL) so a coach or
 reviewer can reach the original.
 
-Of 1214 sources, 429 are authority tier 1–2. All PMIDs and DOIs were independently resolved
+Of 1001 sources, 351 are authority tier 1–2 (both re-measured 2026-10-03 from this file at `03f5c649`; this sentence said 1214 and 429 until then -- the tier repair of #1029 changed the tiers). All PMIDs and DOIs were independently resolved
 against NCBI E-utilities and Crossref during the research program.
 
 ## 3. Why claims are the chunk unit

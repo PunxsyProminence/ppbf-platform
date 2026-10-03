@@ -422,11 +422,17 @@ export default function ResearchIntakePage() {
     }
   }
 
+  // Every count on this page is a count of the projection, so it is withheld
+  // as '--' until the read answered. They printed 0 while it was open and
+  // again beside the failure alert (#991 class, Lane 14 batch 8 R1).
+  const projectionAnswered = !projectionLoading && !errorMessage;
+  const shownCount = (value: number) => (projectionAnswered ? String(value) : '--');
+
   const stats = [
     { label: 'Mode', value: 'Research Projection' },
     { label: 'Current Stage', value: 'Research Intake' },
-    { label: 'Items', value: String(items.length) },
-    { label: 'Pending Review', value: String(counts.pending) },
+    { label: 'Items', value: shownCount(items.length) },
+    { label: 'Pending Review', value: shownCount(counts.pending) },
   ];
 
   return (
@@ -545,10 +551,10 @@ export default function ResearchIntakePage() {
           </h2>
           <div className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: 'Pending', value: counts.pending },
-              { label: 'Approved', value: counts.approved },
-              { label: 'Rejected', value: counts.rejected },
-              { label: 'Promoted', value: counts.promoted },
+              { label: 'Pending', value: shownCount(counts.pending) },
+              { label: 'Approved', value: shownCount(counts.approved) },
+              { label: 'Rejected', value: shownCount(counts.rejected) },
+              { label: 'Promoted', value: shownCount(counts.promoted) },
             ].map((entry) => (
               <article key={entry.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="t-label">{entry.label}</p>
