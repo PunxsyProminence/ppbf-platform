@@ -44,7 +44,7 @@ const BODY = { parent_id: 'par-1', from_account_id: 'old', to_account_id: 'new' 
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrincipal.mockResolvedValue(principal('organization_admin'));
-  mockMove.mockResolvedValue({ parentId: 'par-1', fromAccountId: 'old', toAccountId: 'new', athleteIds: ['ath-1'] });
+  mockMove.mockResolvedValue({ parentId: 'par-1', fromAccountId: 'old', toAccountId: 'new', athleteIds: ['ath-1'], oldLoginSwitchedOff: true });
 });
 
 test('an organization admin moves the record in their own organization, not one the body names', async () => {
@@ -57,6 +57,7 @@ test('an organization admin moves the record in their own organization, not one 
     from_account_id: 'old',
     to_account_id: 'new',
     athlete_ids: ['ath-1'],
+    old_login_switched_off: true,
   });
   expect(mockMove).toHaveBeenCalledWith({
     organizationId: 'org-1',

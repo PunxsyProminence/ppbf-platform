@@ -82,8 +82,8 @@ async function findFreePort(): Promise<number> {
 
 async function addLogin(accountId: string, role: string, organizationId = ORG, isPlatformOwner = false) {
   await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, is_platform_owner)
-     values ($1, $2, $3, 'microsoft', $4)`,
+    `insert into pilot.accounts (account_id, login_email, role, organization_id, auth_provider, is_platform_owner)
+     values ($1, $1 || '@example.test', $2, $3, 'microsoft', $4)`,
     [accountId, role, organizationId, isPlatformOwner],
   );
   await client.query(
@@ -239,12 +239,13 @@ describe('moveGuardianToLogin', () => {
       fromAccountId: OLD_LOGIN,
       toAccountId: NEW_LOGIN,
       athleteIds: [KID_A, KID_B],
+      oldLoginSwitchedOff: true,
     });
     expect(await parentLogin()).toBe(NEW_LOGIN);
     expect((await access.guardianAthleteIds(ORG, NEW_LOGIN)).sort()).toEqual([KID_A, KID_B]);
     expect(await access.guardianAthleteIds(ORG, OLD_LOGIN)).toEqual([]);
-    // The record keeps its parent_id, so waivers keyed by it (media consent)
-    // now belong to the new login.
+    // The record keeps its parent_id: whatever is keyed by parent_id stays
+    // with the record (this suite does not load the waiver migrations).
     expect(await access.guardianParentIds(ORG, NEW_LOGIN)).toEqual([PARENT_ID]);
     expect(await access.guardianParentIds(ORG, OLD_LOGIN)).toEqual([]);
   });
@@ -262,8 +263,84 @@ describe('moveGuardianToLogin', () => {
         from_account_id: OLD_LOGIN,
         to_account_id: NEW_LOGIN,
         athlete_ids: [KID_A, KID_B],
+        old_login_switched_off: true,
       },
     }]);
+  });
+
+  test('the contact email follows the new login', async () => {
+    await move.moveGuardianToLogin(request());
+
+    const row = await client.query('select email from pilot.parents where parent_id = $1', [PARENT_ID]);
+    expect(row.rows[0].email).toBe(`${NEW_LOGIN}@example.test`);
+  });
+
+  test('the old login, left with no guardian record, is switched off and its sessions revoked', async () => {
+    await client.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('glm-tok', $1, $2)`,
+      [OLD_LOGIN, ORG],
+    );
+
+    await move.moveGuardianToLogin(request());
+
+    const account = await client.query('select active_flag from pilot.accounts where account_id = $1', [OLD_LOGIN]);
+    const membership = await client.query(
+      'select active_flag from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+      [OLD_LOGIN, ORG],
+    );
+    const session = await client.query('select revoked_at from pilot.session_tokens where token_hash = $1', ['glm-tok']);
+    expect(account.rows[0].active_flag).toBe(false);
+    expect(membership.rows[0].active_flag).toBe(false);
+    expect(session.rows[0].revoked_at).not.toBeNull();
+    // Switched off, not deleted: nothing about it is undone or purged.
+    const deleted = await client.query('select deleted_at from pilot.accounts where account_id = $1', [OLD_LOGIN]);
+    expect(deleted.rows[0].deleted_at).toBeNull();
+  });
+
+  test('an old login that still backs another guardian record stays on', async () => {
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'par-second', $2, 'Second')`,
+      [ORG, OLD_LOGIN],
+    );
+
+    const result = await move.moveGuardianToLogin(request());
+
+    expect(result.oldLoginSwitchedOff).toBe(false);
+    const account = await client.query('select active_flag from pilot.accounts where account_id = $1', [OLD_LOGIN]);
+    expect(account.rows[0].active_flag).toBe(true);
+  });
+
+  test('a record held by a non-parent login moves without switching that login off', async () => {
+    await client.query('update pilot.parents set account_id = $1 where parent_id = $2', [COACH, PARENT_ID]);
+
+    const result = await move.moveGuardianToLogin(request({ fromAccountId: COACH }));
+
+    expect(result.oldLoginSwitchedOff).toBe(false);
+    const account = await client.query('select active_flag from pilot.accounts where account_id = $1', [COACH]);
+    expect(account.rows[0].active_flag).toBe(true);
+  });
+
+  test('a move racing a re-invite of the old login waits for it instead of deadlocking', async () => {
+    // The invite's order: the account row, then the guardian record.
+    const inviter = new Client({ connectionString: connectionStringFor(PG_DATABASE) });
+    await inviter.connect();
+    try {
+      await inviter.query('begin');
+      await inviter.query('update pilot.accounts set updated_at = now() where account_id = $1', [OLD_LOGIN]);
+
+      const moving = move.moveGuardianToLogin(request());
+      moving.catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await inviter.query(
+        `update pilot.parents set full_name = 'Guardian One', updated_at = now() where parent_id = $1`,
+        [PARENT_ID],
+      );
+      await inviter.query('commit');
+
+      await expect(moving).resolves.toMatchObject({ toAccountId: NEW_LOGIN });
+    } finally {
+      await inviter.end();
+    }
   });
 
   test('a failing audit write undoes the move', async () => {

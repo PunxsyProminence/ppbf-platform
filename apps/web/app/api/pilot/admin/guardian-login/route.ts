@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole } from '@/src/server/pilot/access';
-import { ForbiddenError } from '@/src/server/pilot/errors';
+import { requireRole } from '@/src/server/pilot/access';
 import { moveGuardianToLogin } from '@/src/server/pilot/guardianLoginMove';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
@@ -22,9 +21,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    if (!isOrganizationAdminRole(principal.role)) {
-      throw new ForbiddenError('Forbidden: only an organization admin can move a guardian to another login');
-    }
+    requireRole(principal, ['organization_admin']);
 
     const parsed: unknown = await request.json().catch(() => null);
     const body = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
@@ -44,6 +41,7 @@ export async function POST(request: NextRequest) {
       from_account_id: moved.fromAccountId,
       to_account_id: moved.toAccountId,
       athlete_ids: moved.athleteIds,
+      old_login_switched_off: moved.oldLoginSwitchedOff,
     });
   } catch (error) {
     return jsonError(error);
