@@ -9,9 +9,10 @@
 //      waiver, assessment, attendance, readiness, coach note, documents, case
 //      status, audit row -- writes exactly what it wrote before.
 //   2. A FAILURE AFTER THE ATHLETE WRITE LEAVES NOTHING. A real Postgres error
-//      is raised by a trigger at a chosen table: the guardian link (right
-//      after the guardian's login is written), and the audit row (the last
-//      write in the transaction). Either way no athlete record, no athlete
+//      is raised by a trigger at a chosen point: the guardian link (right
+//      after the guardian's login is written), the audit row (the last
+//      write in the transaction), and COMMIT itself (a deferred trigger), so
+//      a write that went to its own connection would be the one row left. Either way no athlete record, no athlete
 //      login, no guardian login, no membership, no guardian record or link,
 //      and no other promotion row is left, the case stays approved, and an
 //      existing guardian login's sessions are not revoked.
@@ -332,6 +333,19 @@ beforeAll(async () => {
        for each row execute function iot_raise_fault()`,
     );
   }
+  // Fires at COMMIT, after every write in the transaction has run.
+  await client.query(`
+    create function iot_raise_fault_at_commit() returns trigger language plpgsql as $$
+    begin
+      if exists (select 1 from iot_fault where at_table = 'commit') then
+        raise exception 'iot injected fault at commit';
+      end if;
+      return null;
+    end $$`);
+  await client.query(
+    `create constraint trigger iot_fault_commit after insert or update on pilot.athletes
+     deferrable initially deferred for each row execute function iot_raise_fault_at_commit()`,
+  );
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
@@ -437,7 +451,7 @@ test('a full promotion writes everything it wrote before', async () => {
   });
 });
 
-test.each(['guardian_links', 'audit_events'])(
+test.each(['guardian_links', 'audit_events', 'commit'])(
   'a failure at %s, after the athlete write, leaves nothing behind',
   async (table) => {
     const caseId = await seedCase();
