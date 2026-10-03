@@ -66,7 +66,7 @@ function resolveSslConfig() {
 // cannot: the freeze on a submitted set, the 0.2-only gate, the middle-moment
 // rule, and the event and set facts a moment was checked against. Tables
 // with their constraints and without their triggers look healthy and enforce
-// none of that.
+// none of that. A trigger present but disabled counts as missing.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.calibration_body_moments') is not null as moments_table_ready,
@@ -166,24 +166,28 @@ const READINESS_QUERY = `
       where tgrelid = to_regclass('pilot.calibration_body_moments')
         and tgname = 'pilot_calibration_body_moments_guard'
         and not tgisinternal
+        and tgenabled <> 'D'
     ) as moments_guard_ready,
     exists (
       select 1 from pg_trigger
       where tgrelid = to_regclass('pilot.calibration_body_points')
         and tgname = 'pilot_calibration_body_points_guard'
         and not tgisinternal
+        and tgenabled <> 'D'
     ) as points_guard_ready,
     exists (
       select 1 from pg_trigger
       where tgrelid = to_regclass('pilot.calibration_annotation_events')
         and tgname = 'pilot_calibration_events_body_moment_guard'
         and not tgisinternal
+        and tgenabled <> 'D'
     ) as event_guard_ready,
     exists (
       select 1 from pg_trigger
       where tgrelid = to_regclass('pilot.calibration_annotation_sets')
         and tgname = 'pilot_calibration_sets_body_moment_guard'
         and not tgisinternal
+        and tgenabled <> 'D'
     ) as set_version_guard_ready,
     exists (
       select 1 from pg_indexes

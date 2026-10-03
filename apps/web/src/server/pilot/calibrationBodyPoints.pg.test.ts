@@ -581,6 +581,34 @@ describe('a moment sits where the event says', () => {
     );
   });
 
+  test.each([
+    ['one side only', 1920, null],
+    ['the other side only', null, 1080],
+    ['zero', 0, 1080],
+  ])('a picture size with %s is refused', async (_label, width, height) => {
+    const set = await newSet();
+    const momentId = await insertMoment(set, await punch(set));
+    await expect(
+      db.query(
+        `update pilot.calibration_body_moments
+            set source_frame_width_px = $3, source_frame_height_px = $4
+          where organization_id = $1 and body_moment_id = $2`,
+        [ORG_ID, momentId, width, height],
+      ),
+    ).rejects.toThrow('pilot_calibration_body_moments_frame_size');
+  });
+
+  test('a picture size with both sides is kept', async () => {
+    const set = await newSet();
+    const momentId = await insertMoment(set, await punch(set));
+    await db.query(
+      `update pilot.calibration_body_moments
+          set source_frame_width_px = 1920, source_frame_height_px = 1080
+        where organization_id = $1 and body_moment_id = $2`,
+      [ORG_ID, momentId],
+    );
+  });
+
   test('a slot and kind that do not pair are refused', async () => {
     const set = await newSet();
     await expect(
@@ -818,6 +846,21 @@ describe('what a moment was checked against cannot change under it', () => {
     ).rejects.toThrow('CALIBRATION_EVENT_HAS_BODY_MOMENTS');
   });
 
+  test('the event\'s actor cannot change while it has moments', async () => {
+    // The actor is whose body the points are on; changing it would move every
+    // point onto someone else.
+    const set = await newSet();
+    const eventId = await punch(set);
+    await insertMoment(set, eventId);
+    await expect(
+      db.query(
+        `update pilot.calibration_annotation_events set actor_track = 'blue'
+          where organization_id = $1 and event_id = $2`,
+        [ORG_ID, eventId],
+      ),
+    ).rejects.toThrow('CALIBRATION_EVENT_HAS_BODY_MOMENTS');
+  });
+
   test('the event\'s start cannot move while it has moments', async () => {
     const set = await newSet();
     const eventId = await punch(set);
@@ -919,5 +962,156 @@ describe('the freeze', () => {
 
     expect(await countFor('calibration_body_moments', set.setId)).toBe(0);
     expect(await countFor('calibration_body_points', set.setId)).toBe(0);
+  });
+});
+
+describe('two writers at once', () => {
+  // A moment insert holds the set and event rows FOR SHARE until it commits.
+  // A change that would invalidate it must wait, not slip past unseen.
+  async function racingUpdate(sql: string, params: unknown[]): Promise<void> {
+    const other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+    try {
+      await other.query("set lock_timeout = '2s'");
+      await other.query(sql, params);
+    } finally {
+      await other.end();
+    }
+  }
+
+  test.each([
+    [
+      'the set\'s vocabulary',
+      `update pilot.calibration_annotation_sets set ontology_version = 'boxing-ontology-0.1'
+        where organization_id = $1 and annotation_set_id = $2`,
+      'set',
+    ],
+    [
+      'the set\'s submission',
+      `update pilot.calibration_annotation_sets set status = 'submitted', submitted_at = now()
+        where organization_id = $1 and annotation_set_id = $2`,
+      'set',
+    ],
+    [
+      'the event\'s contact time',
+      `update pilot.calibration_annotation_events set contact_ms = null, contact_result = 'no_contact'
+        where organization_id = $1 and event_id = $2`,
+      'event',
+    ],
+  ] as const)('%s waits for an uncommitted moment insert', async (_label, sql, target) => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    const writer = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await writer.connect();
+    try {
+      await writer.query('begin');
+      await writer.query(
+        `insert into pilot.calibration_body_moments
+           (organization_id, body_moment_id, annotation_set_id, calibration_clip_id, event_id,
+            event_start_ms, event_end_ms, moment_slot, moment_kind, observation_ms)
+         values ($1, $2, $3, $4, $5, $6, $7, 'middle', 'contact', $8)`,
+        [ORG_ID, crypto.randomUUID(), set.setId, set.clipId, eventId, EV_START, EV_END, EV_CONTACT],
+      );
+      await expect(
+        racingUpdate(sql, [ORG_ID, target === 'set' ? set.setId : eventId]),
+      ).rejects.toThrow(/lock timeout/);
+    } finally {
+      await writer.query('rollback').catch(() => {});
+      await writer.end();
+    }
+  });
+});
+
+describe('deleting a whole organization', () => {
+  test('removes a submitted set\'s body points; the freeze does not block it', async () => {
+    const orgId = `org-body-doomed-${crypto.randomUUID().slice(0, 8)}`;
+    // pilot.accounts does not cascade from pilot.organizations (base schema),
+    // so an organization with its own logins cannot be deleted at all. The
+    // study's rows here name this suite's annotator instead, which leaves the
+    // body-point freeze as the only thing that could block the deletion.
+    const accountId = ANNOTATOR;
+    const videoId = `vs-${orgId}`;
+    await db.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [orgId],
+    );
+    const take = await seedCaptureTake(db, { organizationId: orgId, createdByAccountId: accountId });
+    await db.query(
+      `insert into pilot.video_sessions
+         (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
+          blob_path, file_name, file_size_bytes, mime_type, status,
+          recording_session_id, capture_take_id)
+       values ($1, $2, $3, null, 'Doomed', $4, 'd.mp4', 10, 'video/mp4', 'ready', $5, $6)`,
+      [videoId, orgId, accountId, `p/${videoId}.mp4`, take.recordingSessionId, take.captureTakeId],
+    );
+    const projectId = crypto.randomUUID();
+    await projects.createCalibrationProject({
+      organizationId: orgId,
+      calibrationProjectId: projectId,
+      name: 'Doomed study',
+      ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+      createdByAccountId: accountId,
+    });
+    const clipId = crypto.randomUUID();
+    await projects.createCalibrationClip({
+      organizationId: orgId,
+      calibrationClipId: clipId,
+      calibrationProjectId: projectId,
+      videoSessionId: videoId,
+      clipCode: 'C-DOOMED-ORG',
+      startMs: CLIP_START_MS,
+      endMs: CLIP_END_MS,
+      primarySamplingReason: 'isolated_punch',
+      createdByAccountId: accountId,
+    });
+    const setId = crypto.randomUUID();
+    await annotations.openAnnotationSet({
+      organizationId: orgId,
+      annotationSetId: setId,
+      calibrationClipId: clipId,
+      annotatorAccountId: accountId,
+      ontologyVersion: 'boxing-ontology-0.2',
+    });
+    const event = await annotations.recordAnnotationEvent({
+      organizationId: orgId,
+      eventId: crypto.randomUUID(),
+      annotationSetId: setId,
+      eventClass: 'punch',
+      actorTrack: 'red',
+      startMs: EV_START,
+      endMs: EV_END,
+      contactMs: EV_CONTACT,
+      physicalHand: 'left',
+      handRole: 'lead',
+      punchType: 'lead_straight',
+      targetZone: 'head',
+      contactResult: 'clean_target_contact',
+      visibility: 'clear',
+      certainty: 'clear',
+    });
+    const momentId = crypto.randomUUID();
+    await db.query(
+      `insert into pilot.calibration_body_moments
+         (organization_id, body_moment_id, annotation_set_id, calibration_clip_id, event_id,
+          event_start_ms, event_end_ms, moment_slot, moment_kind, observation_ms)
+       values ($1, $2, $3, $4, $5, $6, $7, 'start', 'start', $6)`,
+      [orgId, momentId, setId, clipId, event.event_id, EV_START, EV_END],
+    );
+    await db.query(
+      `insert into pilot.calibration_body_points
+         (organization_id, body_point_id, annotation_set_id, body_moment_id, point_code, state, x_norm, y_norm)
+       values ($1, $2, $3, $4, 'nose', 'placed', 0.5, 0.5)`,
+      [orgId, crypto.randomUUID(), setId, momentId],
+    );
+    expect((await annotations.submitAnnotationSet(orgId, setId))?.status).toBe('submitted');
+
+    await db.query('delete from pilot.organizations where organization_id = $1', [orgId]);
+
+    const left = await db.query<{ n: string }>(
+      `select ((select count(*) from pilot.calibration_body_moments where organization_id = $1)
+             + (select count(*) from pilot.calibration_body_points where organization_id = $1))::text as n`,
+      [orgId],
+    );
+    expect(Number(left.rows[0].n)).toBe(0);
   });
 });

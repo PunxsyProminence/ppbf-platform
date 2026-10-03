@@ -33,12 +33,14 @@
 --   * A placed point has x and y in [0, 1], relative to the video's own
 --     picture; a not-visible point has neither.
 --   * A submitted set's moments and points are frozen; deleting the footage,
---     the clip, the set, the event or the organization still removes them.
+--     the clip, the set, the event or the organization still removes them
+--     (each tested in calibrationBodyPoints.pg.test.ts).
 --
 -- WHAT IS NOT HERE, and must not be added without owner ratification: any
 -- score, quality label, good or bad guard, overall number, machine-proposed
 -- point, or per-point certainty. Every column records something a coach can
--- point at. Body points enter no gold record and no export.
+-- point at. Nothing in this migration feeds gold records or any export; using
+-- body points for training is a later, separately governed item.
 --
 -- Not here yet (TEACH-BIOMECH-01-c): the per-event stance-type label, the 0.2
 -- rules on the event row itself, and the completeness check at submission.
@@ -146,10 +148,12 @@ create table if not exists pilot.calibration_body_moments (
     and (moment_kind <> 'end' or observation_ms = event_end_ms)
   ),
 
-  -- Both or neither, and positive.
+  -- Both or neither, and positive. Written so a NULL never passes for a
+  -- value: (a is null) = (b is null) is never NULL itself.
   constraint pilot_calibration_body_moments_frame_size check (
-    (source_frame_width_px is null and source_frame_height_px is null)
-    or (source_frame_width_px > 0 and source_frame_height_px > 0)
+    (source_frame_width_px is null) = (source_frame_height_px is null)
+    and (source_frame_width_px is null
+      or (source_frame_width_px > 0 and source_frame_height_px > 0))
   ),
 
   -- The event belongs to this set, and these bounds are its real bounds.
@@ -224,9 +228,17 @@ create index if not exists idx_calibration_body_points_set
 -- Moments: freeze, fixed identity, version gate, middle-kind rule.
 --
 -- FREEZE: the annotations migration's parent lookup. On DELETE, when the set
--- itself (or its clip, footage or organization) is being deleted, the parent
--- row is already gone, the lookup finds nothing, and the cascade proceeds: the
--- freeze never blocks a deletion made on behalf of a minor.
+-- itself (or its clip or footage) is being deleted, the parent row is already
+-- gone, the lookup finds nothing, and the cascade proceeds: the freeze never
+-- blocks a deletion made on behalf of a minor. An organization deletion
+-- reaches this table by its own foreign key too, and Postgres may run that
+-- cascade before the sets' one; so a row whose organization is gone is let
+-- through first, whatever its set says.
+--
+-- LOCKS: the set row and the event row are read FOR SHARE. A version change,
+-- a submission, or a change to the event's contact time, class or actor takes
+-- a stronger lock, so it waits for this insert to commit and then sees it,
+-- rather than both passing their checks unseen to each other.
 --
 -- FIXED IDENTITY: a row cannot be moved to another set, event or slot
 -- by UPDATE, so the freeze never has to reason about where a row came from.
@@ -245,6 +257,11 @@ declare
   ev_contact_ms integer;
 begin
   if tg_op = 'DELETE' then
+    if not exists (
+      select 1 from pilot.organizations where organization_id = old.organization_id
+    ) then
+      return old;
+    end if;
     select status into parent_status
       from pilot.calibration_annotation_sets
      where organization_id = old.organization_id
@@ -271,7 +288,8 @@ begin
   select status, ontology_version into parent_status, parent_version
     from pilot.calibration_annotation_sets
    where organization_id = new.organization_id
-     and annotation_set_id = new.annotation_set_id;
+     and annotation_set_id = new.annotation_set_id
+     for share;
 
   if parent_status = 'submitted' then
     raise exception 'CALIBRATION_ANNOTATION_SET_SUBMITTED'
@@ -290,7 +308,8 @@ begin
     from pilot.calibration_annotation_events
    where organization_id = new.organization_id
      and annotation_set_id = new.annotation_set_id
-     and event_id = new.event_id;
+     and event_id = new.event_id
+     for share;
 
   -- The middle moment is decided by the event. Contact whenever the event has
   -- a contact time, and exactly on it; with no contact time, full extension
@@ -317,7 +336,8 @@ create trigger pilot_calibration_body_moments_guard
   for each row
   execute function pilot.calibration_body_moments_guard();
 
--- Points: freeze and fixed identity.
+-- Points: freeze and fixed identity, with the moments' organization-deletion
+-- and FOR SHARE reasoning.
 --
 -- No version gate of its own: a point's set is its moment's set (composite
 -- foreign key), the moment's set passed the gate, and the set's version cannot
@@ -341,6 +361,11 @@ begin
   end if;
 
   if tg_op = 'DELETE' then
+    if not exists (
+      select 1 from pilot.organizations where organization_id = old.organization_id
+    ) then
+      return old;
+    end if;
     select status into parent_status
       from pilot.calibration_annotation_sets
      where organization_id = old.organization_id
@@ -349,7 +374,8 @@ begin
     select status into parent_status
       from pilot.calibration_annotation_sets
      where organization_id = new.organization_id
-       and annotation_set_id = new.annotation_set_id;
+       and annotation_set_id = new.annotation_set_id
+       for share;
   end if;
 
   if parent_status = 'submitted' then
@@ -374,16 +400,18 @@ create trigger pilot_calibration_body_points_guard
 -- Events: the facts a moment was checked against cannot change under it.
 --
 -- start_ms and end_ms are already held by the moments' foreign key. This
--- holds the other two: contact time (decides the middle kind and where a
--- contact moment sits) and class (decides full extension or furthest point).
--- A new function on purpose; the events freeze is not edited.
+-- holds the other three: contact time (decides the middle kind and where a
+-- contact moment sits), class (decides full extension or furthest point), and
+-- the actor (whose body the points are on). A new function on purpose; the
+-- events freeze is not edited.
 create or replace function pilot.calibration_annotation_events_body_moment_guard()
 returns trigger
 language plpgsql
 as $pilot_calibration_events_body_moment_guard$
 begin
   if (new.contact_ms is distinct from old.contact_ms
-      or new.event_class is distinct from old.event_class)
+      or new.event_class is distinct from old.event_class
+      or new.actor_track is distinct from old.actor_track)
      and exists (
        select 1 from pilot.calibration_body_moments
         where organization_id = old.organization_id
