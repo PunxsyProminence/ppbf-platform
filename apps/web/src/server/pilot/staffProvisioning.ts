@@ -2,6 +2,7 @@ import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
@@ -900,10 +901,19 @@ export async function removeGuardianLink(params: {
 
     const parentIds = parentRows.rows.map((row) => row.parent_id);
 
+    /*
+     * A link to a deleted athlete is neither offered nor counted. It is not
+     * offered because the people console no longer lists it (deletion scope
+     * B, "10 C"); it is not counted because the last-link refusal below exists
+     * so a guardian is never left signing in to see nothing, and a deleted
+     * child shows them nothing. Counting it let an admin remove a guardian's
+     * one live link while a deleted child's link kept the count at two.
+     */
     const links = await client.query<{ parent_id: string; athlete_id: string }>(
-      `select parent_id, athlete_id
-       from pilot.guardian_links
-       where organization_id = $1 and parent_id = any($2::text[])`,
+      `select gl.parent_id, gl.athlete_id
+       from pilot.guardian_links gl
+       where gl.organization_id = $1 and gl.parent_id = any($2::text[])
+         and ${athleteNotDeletedSql('gl')}`,
       [organizationId, parentIds],
     );
 
@@ -1049,6 +1059,20 @@ export async function listOrganizationMembers(organizationId: string): Promise<O
      from pilot.organization_memberships om
      join pilot.accounts a on a.account_id = om.account_id
      where om.organization_id = $1
+       -- A deleted athlete's login leaves the list (deletion scope B, "10 C"):
+       -- the login itself is marked, or the athlete record it names in THIS
+       -- gym is. Only athlete memberships: a staff or guardian login marked
+       -- deleted is not an athlete's row, and a coach who was once an athlete
+       -- keeps their athlete_id but is listed as the coach they now are.
+       and not (
+         om.role = 'athlete'
+         and (
+           a.deleted_at is not null
+           or exists (
+             select 1 from pilot.athletes deleted_athlete
+              where deleted_athlete.organization_id = om.organization_id
+                and deleted_athlete.athlete_id = a.athlete_id
+                and deleted_athlete.deleted_at is not null)))
      order by
        case om.role
          when 'organization_admin' then 1
@@ -1092,6 +1116,7 @@ export async function listOrganizationGuardianLinks(organizationId: string): Pro
      join pilot.athletes ath
        on ath.organization_id = gl.organization_id and ath.athlete_id = gl.athlete_id
      where gl.organization_id = $1 and p.account_id is not null
+       and ath.deleted_at is null
      order by p.account_id asc, ath.full_name asc`,
     [organizationId],
   );
