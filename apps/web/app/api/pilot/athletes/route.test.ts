@@ -37,11 +37,15 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   };
 }
 
-// Every one of the ten athlete fields must be present and non-empty:
-// validateAthletePayload rejects missing keys as hard as it rejects extra
+// Every one of the eight content fields must be present and non-empty:
+// the create validator rejects missing keys as hard as it rejects extra
 // ones, so a partial fixture would fail at validation and never reach the
-// duplicate guard under test.
-function athletePayload(overrides: Partial<PilotAthlete> = {}): PilotAthlete {
+// duplicate guard under test. created_at and updated_at are NOT the client's
+// to send: the server stamps them (the Build List row "The roster's creation
+// time comes from the admin's device on one route", OD-2026-09-29-002 item 4).
+type AthleteCreateBody = Omit<PilotAthlete, 'created_at' | 'updated_at'>;
+
+function athletePayload(overrides: Partial<AthleteCreateBody> = {}): AthleteCreateBody {
   return {
     athlete_id: 'ath-new-1',
     full_name: 'Dawn Kellerman',
@@ -51,8 +55,6 @@ function athletePayload(overrides: Partial<PilotAthlete> = {}): PilotAthlete {
     emergency_contact: 'Ruth Kellerman 814-555-0143',
     active_flag: true,
     coach_id: 'coach-1',
-    created_at: '2026-07-29T12:00:00.000Z',
-    updated_at: '2026-07-29T12:00:00.000Z',
     ...overrides,
   };
 }
@@ -78,7 +80,8 @@ describe('POST /api/pilot/athletes', () => {
     const response = await POST(makeRequest({ ...payload }));
 
     expect(response.status).toBe(200);
-    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith('org-1', payload);
+    // The content fields as sent; the timestamps are the server's (the case below).
+    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith('org-1', expect.objectContaining(payload));
     await expect(response.json()).resolves.toEqual({ ok: true, athlete_id: 'ath-new-1' });
   });
 
@@ -86,6 +89,34 @@ describe('POST /api/pilot/athletes', () => {
   // name, dob, coach and emergency contact, so the guard failing open is
   // silent data loss -- not merely a confusing response code. The write is
   // create-only in SQL, so a taken id comes back as "not inserted".
+  // The People page used to fill created_at from the device clock, and PR
+  // #1048's reused-id check compares it with a submission's time, so a slow
+  // or fast device could defeat that check either way. Roster import and
+  // intake already stamp it on the server; this route now does too.
+  test('stamps created_at and updated_at on the server, not from the body', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    const before = Date.now();
+
+    const response = await POST(makeRequest(athletePayload()));
+    expect(response.status).toBe(200);
+
+    const written = mockInsertAthleteIfAbsent.mock.calls[0][1] as PilotAthlete;
+    expect(written.created_at).toBe(written.updated_at);
+    const stamped = Date.parse(written.created_at);
+    expect(Number.isNaN(stamped)).toBe(false);
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(Date.now());
+  });
+
+  test.each(['created_at', 'updated_at'])('a client-sent %s is refused before anything is written', async (field) => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await POST(makeRequest({ ...athletePayload(), [field]: '2020-01-01T00:00:00.000Z' }));
+
+    expect(response.status).toBe(400);
+    expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
+  });
+
   test('refuses to write over an athlete_id that already exists in the organization', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockInsertAthleteIfAbsent.mockResolvedValueOnce(false);

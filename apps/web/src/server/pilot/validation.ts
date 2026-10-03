@@ -125,6 +125,40 @@ function requireSessionRpeMethod(value: unknown, field: string): SessionRpeMetho
   return value as SessionRpeMethod;
 }
 
+/**
+ * The add-one-athlete route's payload: the eight content fields, and NOT the
+ * timestamps. The server stamps created_at and updated_at at the write, as
+ * roster import and intake promotion already do. The People page used to
+ * send the device clock, and PR #1048's reused-id check compares
+ * pilot.athletes.created_at with a submission's time, so a slow or fast
+ * device could defeat that check in either direction (the Build List row
+ * "The roster's creation time comes from the admin's device on one route",
+ * OD-2026-09-29-002 item 4). A client that still sends either timestamp is
+ * refused as an extra key, not silently ignored.
+ */
+const ATHLETE_CREATE_FIELDS: readonly string[] = ATHLETE_FIELDS.filter(
+  (field) => field !== 'created_at' && field !== 'updated_at',
+);
+
+export function validateAthleteCreatePayload(payload: unknown, now: Date = new Date()): PilotAthlete {
+  const record = asRecord(payload);
+  assertOnlyAllowedKeys(record, ATHLETE_CREATE_FIELDS);
+  const stamp = now.toISOString();
+
+  return {
+    athlete_id: requireString(record.athlete_id, 'athlete_id'),
+    full_name: requireString(record.full_name, 'full_name'),
+    dob: requireString(record.dob, 'dob'),
+    weight_class: requireString(record.weight_class, 'weight_class'),
+    gym_status: requireString(record.gym_status, 'gym_status'),
+    emergency_contact: requireString(record.emergency_contact, 'emergency_contact'),
+    active_flag: requireBoolean(record.active_flag, 'active_flag'),
+    coach_id: requireString(record.coach_id, 'coach_id'),
+    created_at: stamp,
+    updated_at: stamp,
+  };
+}
+
 export function validateAthletePayload(payload: unknown): PilotAthlete {
   const record = asRecord(payload);
   assertOnlyAllowedKeys(record, ATHLETE_FIELDS);

@@ -701,13 +701,14 @@ function PeopleConsoleContent() {
 
   /**
    * Writes the pilot.athletes row. The validator rejects the payload outright
-   * if any key is absent or extra, so all ten fields are sent every time and
-   * none of them may be blank -- the form enforces that client-side because a
-   * blank one comes back as an opaque 500, not a field-level complaint.
+   * if any key is absent or extra, so all eight content fields are sent every
+   * time and none of them may be blank -- the form enforces that client-side
+   * because a blank one comes back as an opaque 500, not a field-level
+   * complaint. created_at and updated_at are the server's: this page used to
+   * send the device clock, which PR #1048's reused-id check then compared
+   * with a submission's time (OD-2026-09-29-002 item 4).
    */
   async function createAthleteRecord(recordId: string) {
-    const timestamp = new Date().toISOString();
-
     const response = await fetch(`${apiBase()}/api/pilot/athletes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -721,8 +722,6 @@ function PeopleConsoleContent() {
         emergency_contact: athleteEmergencyContact.trim(),
         active_flag: true,
         coach_id: athleteCoachId,
-        created_at: timestamp,
-        updated_at: timestamp,
       }),
     });
 
