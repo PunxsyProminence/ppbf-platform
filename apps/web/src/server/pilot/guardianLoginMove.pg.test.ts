@@ -47,6 +47,8 @@ const ELSEWHERE_PARENT = 'acct-glm-parent-elsewhere';
 const PARENT_ID = 'par-glm-1';
 const KID_A = 'ath-glm-a';
 const KID_B = 'ath-glm-b';
+const mail = (accountId: string) => `${accountId}@example.test`;
+const FRESH = 'fresh-parent@example.test';
 const ACTOR = { accountId: ADMIN, role: 'organization_admin' as const };
 
 let PG_PORT: number;
@@ -125,7 +127,7 @@ function request(overrides: Partial<Parameters<MoveModule['moveGuardianToLogin']
     organizationId: ORG,
     parentId: PARENT_ID,
     fromAccountId: OLD_LOGIN,
-    toAccountId: NEW_LOGIN,
+    toEmail: mail(NEW_LOGIN),
     actor: ACTOR,
     ...overrides,
   };
@@ -238,6 +240,7 @@ describe('moveGuardianToLogin', () => {
       parentId: PARENT_ID,
       fromAccountId: OLD_LOGIN,
       toAccountId: NEW_LOGIN,
+      loginCreated: false,
       athleteIds: [KID_A, KID_B],
       oldLoginSwitchedOff: true,
     });
@@ -262,10 +265,42 @@ describe('moveGuardianToLogin', () => {
         action: 'organization_admin_move_guardian_login',
         from_account_id: OLD_LOGIN,
         to_account_id: NEW_LOGIN,
+        to_login_created: false,
         athlete_ids: [KID_A, KID_B],
         old_login_switched_off: true,
       },
     }]);
+  });
+
+  test('a new email gets a new parent login, which can be sent a sign-in link, and the record moves to it', async () => {
+    const result = await move.moveGuardianToLogin(request({ toEmail: '  Fresh-Parent@Example.TEST ' }));
+
+    expect(result).toMatchObject({ toAccountId: FRESH, loginCreated: true, athleteIds: [KID_A, KID_B] });
+    const account = await client.query(
+      `select login_email, role, organization_id, auth_provider, active_flag, is_platform_owner, pin_hash
+       from pilot.accounts where account_id = $1`,
+      [FRESH],
+    );
+    expect(account.rows[0]).toEqual({
+      login_email: FRESH,
+      role: 'parent',
+      organization_id: ORG,
+      auth_provider: 'microsoft',
+      active_flag: true,
+      is_platform_owner: false,
+      pin_hash: null,
+    });
+    const membership = await client.query(
+      'select role, active_flag from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+      [FRESH, ORG],
+    );
+    expect(membership.rows[0]).toEqual({ role: 'parent', active_flag: true });
+    expect((await access.guardianAthleteIds(ORG, FRESH)).sort()).toEqual([KID_A, KID_B]);
+    const audit = await moveAudits();
+    expect(audit[0].details).toMatchObject({ to_account_id: FRESH, to_login_created: true });
+    // Parents sign in by email link, chosen by role (credentialPolicy.ts).
+    const { requiredCredentialFor } = await import('./credentialPolicy');
+    expect(requiredCredentialFor({ role: 'parent' })).toBe('magic_link');
   });
 
   test('the contact email follows the new login', async () => {
@@ -375,16 +410,26 @@ describe('moveGuardianToLogin', () => {
   });
 
   const refusals: Array<[string, () => Promise<void>, Partial<Parameters<MoveModule['moveGuardianToLogin']>[0]>, number, string]> = [
-    ['the same login', async () => {}, { toAccountId: OLD_LOGIN }, 400, 'GUARDIAN_MOVE_SAME_LOGIN'],
+    ['the same login', async () => {}, { toEmail: mail(OLD_LOGIN) }, 400, 'GUARDIAN_MOVE_SAME_LOGIN'],
     ['an unknown guardian record', async () => {}, { parentId: 'par-nope' }, 404, 'GUARDIAN_RECORD_NOT_FOUND'],
-    ['a stale from-login', async () => {}, { fromAccountId: NEW_LOGIN, toAccountId: ELSEWHERE_PARENT }, 409, 'GUARDIAN_LOGIN_CHANGED'],
+    ['a stale from-login', async () => {}, { fromAccountId: NEW_LOGIN, toEmail: FRESH }, 409, 'GUARDIAN_LOGIN_CHANGED'],
     ['a record with no login', async () => {
       await client.query('update pilot.parents set account_id = null where parent_id = $1', [PARENT_ID]);
     }, {}, 409, 'GUARDIAN_LOGIN_CHANGED'],
-    ['a login in another organization', async () => {}, { toAccountId: ELSEWHERE_PARENT }, 404, 'GUARDIAN_MOVE_TARGET_NOT_FOUND'],
-    ['a login that does not exist', async () => {}, { toAccountId: 'acct-nobody' }, 404, 'GUARDIAN_MOVE_TARGET_NOT_FOUND'],
-    ['a coach login', async () => {}, { toAccountId: COACH }, 409, 'GUARDIAN_MOVE_TARGET_NOT_PARENT'],
-    ['an organization admin login', async () => {}, { toAccountId: ADMIN }, 409, 'GUARDIAN_MOVE_TARGET_NOT_PARENT'],
+    ['an email whose login is in another organization', async () => {}, { toEmail: mail(ELSEWHERE_PARENT) }, 409, 'GUARDIAN_MOVE_EMAIL_ELSEWHERE'],
+    ['something that is not an email', async () => {}, { toEmail: 'not-an-email' }, 400, 'GUARDIAN_MOVE_BAD_EMAIL'],
+    ['a new email whose account_id another identity holds', async () => {
+      await client.query(
+        `insert into pilot.accounts (account_id, login_email, role, organization_id, auth_provider)
+         values ($1, 'someone-else@example.test', 'parent', $2, 'microsoft')`,
+        [FRESH, ORG],
+      );
+    }, { toEmail: FRESH }, 409, 'GUARDIAN_MOVE_ACCOUNT_ID_TAKEN'],
+    ['a new email when the record is on a deleted login', async () => {
+      await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [OLD_LOGIN]);
+    }, { toEmail: FRESH }, 409, 'GUARDIAN_LOGIN_DELETED'],
+    ['a coach login', async () => {}, { toEmail: mail(COACH) }, 409, 'GUARDIAN_MOVE_TARGET_NOT_PARENT'],
+    ['an organization admin login', async () => {}, { toEmail: mail(ADMIN) }, 409, 'GUARDIAN_MOVE_TARGET_NOT_PARENT'],
     ['a parent login flagged platform owner', async () => {
       await client.query('update pilot.accounts set is_platform_owner = true where account_id = $1', [NEW_LOGIN]);
     }, {}, 409, 'GUARDIAN_MOVE_TARGET_NOT_PARENT'],
@@ -441,6 +486,11 @@ describe('moveGuardianToLogin', () => {
 
     expect(await parentLogin()).toBe(before);
     expect(await moveAudits()).toEqual([]);
+    const made = await client.query(
+      `select count(*)::int as n from pilot.accounts where account_id = $1 and login_email = $1`,
+      [FRESH],
+    );
+    expect(made.rows[0].n).toBe(0);
   });
 
   test('a target that guards other children only still receives the record', async () => {
@@ -461,7 +511,7 @@ describe('moveGuardianToLogin', () => {
   });
 
   test('another organization cannot move this organization\'s record', async () => {
-    await expect(move.moveGuardianToLogin(request({ organizationId: OTHER_ORG, toAccountId: ELSEWHERE_PARENT })))
+    await expect(move.moveGuardianToLogin(request({ organizationId: OTHER_ORG, toEmail: mail(ELSEWHERE_PARENT) })))
       .rejects.toMatchObject({ status: 404, code: 'GUARDIAN_RECORD_NOT_FOUND' });
     expect(await parentLogin()).toBe(OLD_LOGIN);
   });

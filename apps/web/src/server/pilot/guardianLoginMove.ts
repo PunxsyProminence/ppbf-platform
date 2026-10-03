@@ -2,7 +2,13 @@
 // R4, A). Intake refuses this move (GUARDIAN_ACCOUNT_CONFLICT in intake.ts)
 // because, done silently, it hands every linked child to whoever holds the
 // new login. This is the deliberate path: an organization admin, a named
-// record, the login it holds now, and the login it moves to.
+// record, the login it holds now, and the parent's new email.
+//
+// The new email's login is made here when it does not exist yet (Jason
+// 2026-10-03, Q2 A). A parent invite cannot be used for it: every invite
+// attaches the login to a child through a guardian record of its own, and
+// moving this record onto that login would give one person two guardian
+// places for the same child.
 //
 // The RECORD moves, not the children one by one. pilot.parents.parent_id is
 // what guardian_links and the guardian's own waivers (media consent included)
@@ -24,7 +30,8 @@ export interface GuardianLoginMove {
   parentId: string;
   /** The login the admin's screen showed. A different one now refuses the move. */
   fromAccountId: string;
-  toAccountId: string;
+  /** The parent's new email. Its login is used, or made, as the target. */
+  toEmail: string;
   actor: { accountId: string; role: PilotRole };
 }
 
@@ -32,6 +39,8 @@ export interface GuardianLoginMoveResult {
   parentId: string;
   fromAccountId: string;
   toAccountId: string;
+  /** True when no login had this email and the move made one. */
+  loginCreated: boolean;
   athleteIds: string[];
   /** True when the old login backed no other guardian record and was switched off. */
   oldLoginSwitchedOff: boolean;
@@ -85,27 +94,82 @@ async function lockLogins(
   return new Map(rows.rows.map((row) => [row.account_id, row]));
 }
 
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+
+/**
+ * The target login for the new email: the one that already has it, or a new
+ * parent login made in this transaction with the same shape a parent invite
+ * makes (staffProvisioning.ts: account_id is the email, provider microsoft,
+ * signs in by email link because its role is parent). Every check on the
+ * target still runs afterwards, on the locked row; this only finds or makes it.
+ */
+async function resolveTargetLogin(
+  client: PoolClient,
+  organizationId: string,
+  email: string,
+): Promise<{ accountId: string; created: boolean }> {
+  const existing = await client.query<{ account_id: string; organization_id: string }>(
+    'select account_id, organization_id from pilot.accounts where lower(login_email) = $1',
+    [email],
+  );
+  if (existing.rows[0]) {
+    if (existing.rows[0].organization_id !== organizationId) {
+      // login_email is unique across the platform, so this email cannot be
+      // given a login here. Provisioning refuses the same case.
+      throw new ConflictError(
+        `Conflict: ${email} already belongs to a login that is not in your organization, so it cannot be used here.`,
+        'GUARDIAN_MOVE_EMAIL_ELSEWHERE',
+      );
+    }
+    return { accountId: existing.rows[0].account_id, created: false };
+  }
+
+  const inserted = await client.query(
+    `insert into pilot.accounts (account_id, login_email, auth_provider, role, organization_id,
+                                 is_platform_owner, athlete_id, pin_hash, active_flag)
+     values ($1, $1, 'microsoft', 'parent', $2, false, null, null, true)
+     on conflict (account_id) do nothing`,
+    [email, organizationId],
+  );
+  if (inserted.rowCount !== 1) {
+    // An account_id spelled like this email that carries another email, or
+    // none: some other identity holds the id a new login would take.
+    throw new ConflictError(
+      `Conflict: a login with the id "${email}" already exists for a different email, so no login can be made for it.`,
+      'GUARDIAN_MOVE_ACCOUNT_ID_TAKEN',
+    );
+  }
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $2, 'parent', true)`,
+    [email, organizationId],
+  );
+  return { accountId: email, created: true };
+}
+
 export async function moveGuardianToLogin(params: GuardianLoginMove): Promise<GuardianLoginMoveResult> {
   const organizationId = params.organizationId.trim();
   const parentId = params.parentId.trim();
   const fromAccountId = params.fromAccountId.trim();
-  const toAccountId = params.toAccountId.trim();
+  const toEmail = params.toEmail.trim().toLowerCase();
 
-  if (!organizationId || !parentId || !fromAccountId || !toAccountId) {
-    throw new ValidationError('Missing parent_id, from_account_id or to_account_id', 'GUARDIAN_MOVE_MISSING_FIELD');
+  if (!organizationId || !parentId || !fromAccountId || !toEmail) {
+    throw new ValidationError('Missing parent_id, from_account_id or to_email', 'GUARDIAN_MOVE_MISSING_FIELD');
   }
-  if (fromAccountId === toAccountId) {
-    throw new ValidationError('The guardian record already uses that login.', 'GUARDIAN_MOVE_SAME_LOGIN');
+  if (!EMAIL_SHAPE.test(toEmail)) {
+    throw new ValidationError(`"${toEmail}" is not an email address.`, 'GUARDIAN_MOVE_BAD_EMAIL');
   }
 
   try {
     return await withTransaction((client) => moveInTransaction(client, params, {
-      organizationId, parentId, fromAccountId, toAccountId,
+      organizationId, parentId, fromAccountId, toEmail,
     }));
   } catch (error) {
-    // A deadlock is one side of a race the database already broke; nothing
-    // was written. Say so, rather than a 500.
-    if ((error as { code?: string })?.code === '40P01') {
+    // A deadlock, or two moves making a login for one email at once, is a
+    // race the database already broke; nothing was written. Say so, rather
+    // than a 500.
+    const code = (error as { code?: string })?.code;
+    if (code === '40P01' || code === '23505') {
       throw new ConflictError(
         'Conflict: this guardian record or login was being changed at the same moment. Nothing was moved; try again.',
         'GUARDIAN_MOVE_BUSY',
@@ -118,10 +182,16 @@ export async function moveGuardianToLogin(params: GuardianLoginMove): Promise<Gu
 async function moveInTransaction(
   client: PoolClient,
   params: GuardianLoginMove,
-  ids: { organizationId: string; parentId: string; fromAccountId: string; toAccountId: string },
+  ids: { organizationId: string; parentId: string; fromAccountId: string; toEmail: string },
 ): Promise<GuardianLoginMoveResult> {
-  const { organizationId, parentId, fromAccountId, toAccountId } = ids;
+  const { organizationId, parentId, fromAccountId, toEmail } = ids;
   {
+    const target = await resolveTargetLogin(client, organizationId, toEmail);
+    const toAccountId = target.accountId;
+    if (toAccountId === fromAccountId) {
+      throw new ValidationError('The guardian record already uses that login.', 'GUARDIAN_MOVE_SAME_LOGIN');
+    }
+
     const logins = await lockLogins(client, organizationId, [fromAccountId, toAccountId]);
 
     // Then the record, locked, so two moves of one record queue rather than
@@ -292,11 +362,12 @@ async function moveInTransaction(
         action: 'organization_admin_move_guardian_login',
         from_account_id: fromAccountId,
         to_account_id: toAccountId,
+        to_login_created: target.created,
         athlete_ids: athleteIds,
         old_login_switched_off: oldLoginSwitchedOff,
       },
     }, client);
 
-    return { parentId, fromAccountId, toAccountId, athleteIds, oldLoginSwitchedOff };
+    return { parentId, fromAccountId, toAccountId, loginCreated: target.created, athleteIds, oldLoginSwitchedOff };
   }
 }

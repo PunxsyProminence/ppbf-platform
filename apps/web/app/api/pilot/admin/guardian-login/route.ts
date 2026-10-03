@@ -7,7 +7,8 @@ import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/
 export const runtime = 'nodejs';
 
 /**
- * Moves one guardian record to a different parent login, on purpose
+ * Moves one guardian record to the parent login for a new email -- made here
+ * if it does not exist yet -- on purpose
  * (OD-2026-09-29-004 R4) -- for a parent who changed their email. Intake
  * refuses this move; this is the deliberate path.
  *
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
       organizationId: principal.organizationId,
       parentId: text(body.parent_id),
       fromAccountId: text(body.from_account_id),
-      toAccountId: text(body.to_account_id),
+      toEmail: text(body.to_email),
       actor: { accountId: principal.accountId, role: principal.role },
     });
 
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
       parent_id: moved.parentId,
       from_account_id: moved.fromAccountId,
       to_account_id: moved.toAccountId,
+      login_created: moved.loginCreated,
       athlete_ids: moved.athleteIds,
       old_login_switched_off: moved.oldLoginSwitchedOff,
     });

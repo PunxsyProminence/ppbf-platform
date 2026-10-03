@@ -39,15 +39,15 @@ function post(body: Record<string, unknown>): NextRequest {
   } as never);
 }
 
-const BODY = { parent_id: 'par-1', from_account_id: 'old', to_account_id: 'new' };
+const BODY = { parent_id: 'par-1', from_account_id: 'old', to_email: 'new@example.test' };
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrincipal.mockResolvedValue(principal('organization_admin'));
-  mockMove.mockResolvedValue({ parentId: 'par-1', fromAccountId: 'old', toAccountId: 'new', athleteIds: ['ath-1'], oldLoginSwitchedOff: true });
+  mockMove.mockResolvedValue({ parentId: 'par-1', fromAccountId: 'old', toAccountId: 'new', loginCreated: true, athleteIds: ['ath-1'], oldLoginSwitchedOff: true });
 });
 
-test('an organization admin moves the record in their own organization, not one the body names', async () => {
+test('an organization admin moves the record in their own organization, not one the body names, to the email sent', async () => {
   const response = await POST(post({ ...BODY, organization_id: 'org-other' }));
 
   expect(response.status).toBe(200);
@@ -56,6 +56,7 @@ test('an organization admin moves the record in their own organization, not one 
     parent_id: 'par-1',
     from_account_id: 'old',
     to_account_id: 'new',
+    login_created: true,
     athlete_ids: ['ath-1'],
     old_login_switched_off: true,
   });
@@ -63,7 +64,7 @@ test('an organization admin moves the record in their own organization, not one 
     organizationId: 'org-1',
     parentId: 'par-1',
     fromAccountId: 'old',
-    toAccountId: 'new',
+    toEmail: 'new@example.test',
     actor: { accountId: 'admin-1', role: 'organization_admin' },
   });
 });
@@ -97,9 +98,9 @@ test('a refusal from the move reaches the screen with its status and code', asyn
 });
 
 test('non-string fields arrive as empty, so the move refuses them as missing', async () => {
-  await POST(post({ parent_id: 7, from_account_id: ['old'], to_account_id: null }));
+  await POST(post({ parent_id: 7, from_account_id: ['old'], to_email: null }));
 
-  expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toAccountId: '' }));
+  expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toEmail: '' }));
 });
 
 test('a body of null arrives as empty fields, not a server error', async () => {
@@ -110,5 +111,5 @@ test('a body of null arrives as empty fields, not a server error', async () => {
   } as never));
 
   expect(response.status).toBe(200);
-  expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toAccountId: '' }));
+  expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toEmail: '' }));
 });
