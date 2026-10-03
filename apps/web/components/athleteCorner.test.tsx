@@ -47,7 +47,7 @@ beforeEach(() => {
   global.fetch = fetchSpy as unknown as typeof fetch;
 });
 
-const checkIn = () => within(document.querySelector('[data-corner-panel="check-in"]') as HTMLElement);
+const checkIn = () => within(document.querySelector('[data-section="check-in"]') as HTMLElement);
 
 test('renders and every control in it makes no request of its own', () => {
   const p = props();
@@ -78,7 +78,7 @@ describe('check-in says only what the session read said', () => {
 
   test('a read still in flight is said as checking -- never as checked in, never as not', () => {
     render(<AthleteCorner {...props({ sessionState: 'loading' })} />);
-    const panel = document.querySelector('[data-corner-panel="check-in"]') as HTMLElement;
+    const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
     expect(panel.textContent).toContain('Checking whether you are checked in...');
     expect(panel.textContent).not.toMatch(/Checked in |not checked in/i);
     expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
@@ -87,7 +87,7 @@ describe('check-in says only what the session read said', () => {
   test('a failed read is said as a failure, offers a retry of the same read, and no check-in', () => {
     const p = props({ sessionState: 'unavailable' });
     render(<AthleteCorner {...p} />);
-    const panel = document.querySelector('[data-corner-panel="check-in"]') as HTMLElement;
+    const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
     expect(within(panel).getByRole('alert').textContent).toContain('Could not tell whether you are checked in');
     expect(panel.textContent).not.toMatch(/Checked in |not checked in/i);
     expect(checkIn().queryByRole('button', { name: 'Start check-in' })).toBeNull();
@@ -112,7 +112,7 @@ describe('Report pain', () => {
   test('is the first thing in the corner', () => {
     render(<AthleteCorner {...props()} />);
     const first = document.querySelector('.athlete-corner__grid > *') as HTMLElement;
-    expect(first.getAttribute('data-corner-panel')).toBe('pain');
+    expect(first.getAttribute('data-section')).toBe('pain');
   });
 
   test('is there and pressable while every read is loading or has failed', () => {
@@ -139,7 +139,7 @@ describe('counts are only numbers when a read answered', () => {
     [{ status: 'read', count: 2 }, '2 still to do.'],
   ] as const)('coach work %j reads "%s"', (coachWork, line) => {
     render(<AthleteCorner {...props({ coachWork })} />);
-    const panel = document.querySelector('[data-corner-panel="coach-work"]') as HTMLElement;
+    const panel = document.querySelector('[data-section="coach-work"]') as HTMLElement;
     expect(panel.textContent).toContain(line);
   });
 
@@ -150,7 +150,7 @@ describe('counts are only numbers when a read answered', () => {
     [{ status: 'read', count: 3 }, '3 active.'],
   ] as const)('goals %j reads "%s"', (goals, line) => {
     render(<AthleteCorner {...props({ goals })} />);
-    const panel = document.querySelector('[data-corner-panel="goals"]') as HTMLElement;
+    const panel = document.querySelector('[data-section="goals"]') as HTMLElement;
     expect(panel.textContent).toContain(line);
   });
 });
@@ -163,7 +163,7 @@ test('says nothing about clearance', () => {
 /* Review findings, 2026-10-03. */
 test('after a check-out today, the corner says checked out -- not "not checked in" -- and offers a fresh check-in', () => {
   render(<AthleteCorner {...props({ checkedOutToday: true })} />);
-  const panel = document.querySelector('[data-corner-panel="check-in"]') as HTMLElement;
+  const panel = document.querySelector('[data-section="check-in"]') as HTMLElement;
   expect(panel.textContent).toContain('Checked out today.');
   expect(panel.textContent).not.toContain('You have not checked in today.');
   expect(checkIn().getByRole('button', { name: 'Start check-in' })).toBeTruthy();
@@ -177,6 +177,6 @@ test('a check-in that failed is said in the corner, where the tap was', () => {
 test('the training-hold notice sits right after the pain report, never ahead of it', () => {
   render(<AthleteCorner {...props({ afterPain: <p>Training is paused for you right now</p> })} />);
   const cells = Array.from(document.querySelectorAll('.athlete-corner__grid > *'));
-  expect(cells[0].getAttribute('data-corner-panel')).toBe('pain');
+  expect(cells[0].getAttribute('data-section')).toBe('pain');
   expect(cells[1].textContent).toBe('Training is paused for you right now');
 });

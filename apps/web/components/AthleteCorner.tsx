@@ -115,7 +115,7 @@ export default function AthleteCorner({
       <h2 className="athlete-corner__title">My Corner</h2>
 
       <div className="athlete-corner__grid">
-        <div className="athlete-corner__panel athlete-corner__panel--pain" data-corner-panel="pain">
+        <div className="athlete-corner__panel athlete-corner__panel--pain" data-section="pain">
           <p className="athlete-corner__label">Hurt or sore?</p>
           <p>Tell your coach before you train. Pick where it hurts and what it feels like.</p>
           <button type="button" onClick={onReportPain} className="btn athlete-corner__btn athlete-corner__pain">
@@ -125,7 +125,7 @@ export default function AthleteCorner({
 
         {afterPain ? <div className="athlete-corner__wide">{afterPain}</div> : null}
 
-        <div className="athlete-corner__panel" data-corner-panel="check-in">
+        <div className="athlete-corner__panel" data-section="check-in">
           <p className="athlete-corner__label">Check in</p>
           <p
             className={sessionState === 'unavailable' && identityState === 'resolved' ? 'athlete-corner__alert' : undefined}
@@ -155,7 +155,7 @@ export default function AthleteCorner({
           )}
         </div>
 
-        <div className="athlete-corner__panel" data-corner-panel="coach-work">
+        <div className="athlete-corner__panel" data-section="coach-work">
           <p className="athlete-corner__label">From your coach</p>
           <p>{countLine(coachWork, 'No assigned work recorded.', (count) => `${count} still to do.`)}</p>
           <button type="button" onClick={onOpenFloor} className="btn btn--ghost athlete-corner__btn">
@@ -163,7 +163,7 @@ export default function AthleteCorner({
           </button>
         </div>
 
-        <div className="athlete-corner__panel" data-corner-panel="goals">
+        <div className="athlete-corner__panel" data-section="goals">
           <p className="athlete-corner__label">Your goals</p>
           <p>{countLine(goals, 'No active goals recorded.', (count) => `${count} active.`)}</p>
           <button type="button" onClick={onOpenGoals} className="btn btn--ghost athlete-corner__btn">
