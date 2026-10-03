@@ -194,7 +194,7 @@ async function stagedDisagreement(code: string, videoId = VIDEO_ID, marks: 1 | 2
       annotationSetId: setId,
       calibrationClipId: clipId,
       annotatorAccountId: annotator,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     });
     const event = await annotations.recordAnnotationEvent({
       organizationId: ORG_ID,
@@ -306,7 +306,7 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Adjudication slice study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR_A,
   });
 });
@@ -351,7 +351,7 @@ describe('an adjudication records a decision without altering the readings', () 
       sourceEventIdB: staged.eventB,
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
       fields: [
         {
@@ -386,7 +386,7 @@ describe('an adjudication records a decision without altering the readings', () 
       sourceEventIdB: staged.eventB,
       resolutionType: 'new_adjudicated_value',
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
       notes: 'Neither reading matched the frames.',
       fields: [
@@ -457,7 +457,7 @@ describe('the adjudication and its fields are one transaction', () => {
         sourceEventIdB: staged.eventB,
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         expectedCurrentRevision: 0,
         fields: [
           {
@@ -497,7 +497,7 @@ describe('the adjudication and its fields are one transaction', () => {
         sourceEventIdB: staged.eventB,
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         expectedCurrentRevision: 0,
         fields: [],
       }),
@@ -520,7 +520,7 @@ describe('the adjudication and its fields are one transaction', () => {
         sourceEventIdB: staged.eventB,
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         expectedCurrentRevision: 0,
         fields: [
           {
@@ -550,7 +550,7 @@ describe('a verdict must be answerable from the events present', () => {
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, null, $6, 'accept_a', 1, $7, $8)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_adjudications_verdict_supported/);
     } finally {
@@ -571,7 +571,7 @@ describe('a verdict must be answerable from the events present', () => {
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, null, null, 'unresolvable', 1, $6, $7)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_adjudications_has_source/);
     } finally {
@@ -595,7 +595,7 @@ describe('a verdict must be answerable from the events present', () => {
         resolutionType: 'unresolvable',
         missedEventVerdict: 'neither_valid',
         adjudicatorAccountId: ADJUDICATOR,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         expectedCurrentRevision: 0,
       }),
     ).rejects.toThrow(/only applies where one annotator recorded no event/);
@@ -617,7 +617,7 @@ describe('a verdict must be answerable from the events present', () => {
       resolutionType: 'unresolvable',
       missedEventVerdict: 'both_distinct',
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
     });
     expect(row.missed_event_verdict).toBe('both_distinct');
@@ -632,7 +632,7 @@ describe('a verdict must be answerable from the events present', () => {
       annotationSetIdB: staged.setB,
       sourceEventIdA: staged.eventA,
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
     };
 
@@ -671,7 +671,7 @@ describe('an adjudication cannot misattribute a reading', () => {
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, $6, null, 'accept_a', 1, $7, $8)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_adjudications_source_a_fk/);
     } finally {
@@ -692,7 +692,7 @@ describe('an adjudication cannot misattribute a reading', () => {
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $4, $5, null, 'accept_a', 1, $6, $7)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA,
-            staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_adjudications_two_sets/);
     } finally {
@@ -711,7 +711,7 @@ describe('an adjudication cannot misattribute a reading', () => {
       sourceEventIdA: staged.eventA,
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
     });
 
@@ -747,7 +747,7 @@ describe('an adjudication never blocks a deletion request', () => {
         sourceEventIdB: staged.eventB,
         resolutionType: 'accept_a',
         adjudicatorAccountId: ADJUDICATOR,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         expectedCurrentRevision: 0,
         fields: [
           {
@@ -825,7 +825,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       sourceEventIdA: staged.eventA,
       sourceEventIdB: staged.eventB,
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       // What the adjudicator had on screen: nothing settled. A test that
       // corrects an existing answer says which revision it reviewed.
       expectedCurrentRevision: 0,
@@ -860,7 +860,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
   ) {
     return [ORG_ID, adjudicationId, staged.clipId, staged.setA, staged.setB,
       staged.eventA, staged.eventB, resolutionType, null,
-      ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION, null];
+      ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1, null];
   }
 
   async function revisionsOf(staged: Awaited<ReturnType<typeof stagedDisagreement>>) {
@@ -948,7 +948,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, $6, $7, 'accept_b', 1, $8, $9)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         );
       } catch (error) {
         raised = error as { code?: string; constraint?: string };
@@ -1000,7 +1000,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
             resolution_type, revision, adjudicator_account_id, ontology_version)
          values ($1, $2, $3, $4, $5, $6, $7, 'accept_b', 1, $8, $9)`,
         [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-          staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+          staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
       );
 
       const losing = adjudication.recordAdjudication({
@@ -1170,7 +1170,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
             resolution_type, revision, adjudicator_account_id, ontology_version)
          values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', $8, $9, $10)`,
         [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-          eventA, eventB, revision, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+          eventA, eventB, revision, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
       );
       await expect(insert(staged.eventA2, staged.eventB2, 1)).rejects.toMatchObject({
         code: '23505',
@@ -1205,7 +1205,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, $6, null, 'accept_a', 1, $7, $8)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         );
       } catch (error) {
         raised = error as { code?: string; constraint?: string };
@@ -1235,7 +1235,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
             resolution_type, revision, adjudicator_account_id, ontology_version)
          values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', 1, $8, $9)`,
         [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-          staged.eventA2, staged.eventB2, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+          staged.eventA2, staged.eventB2, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
       );
 
       // Raced against a timer so that a write which DOES wait on the rival is
@@ -1306,7 +1306,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
               resolution_type, revision, adjudicator_account_id, ontology_version)
            values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', 0, $8, $9)`,
           [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+            staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_adjudications_revision_positive/);
     } finally {
@@ -1421,7 +1421,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
             resolution_type, revision, adjudicator_account_id, ontology_version)
          values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', 4, $8, $9)`,
         [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-          staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+          staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION_0_1],
       );
     } finally {
       await client.end();
@@ -1449,7 +1449,7 @@ describe('an administrator whose view went stale cannot replace the answer they 
       sourceEventIdA: staged.eventA,
       sourceEventIdB: staged.eventB,
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     };
   }
 

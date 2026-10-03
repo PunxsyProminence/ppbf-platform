@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { validateAthletePayload } from '@/src/server/pilot/validation';
+import { validateAthleteCreatePayload } from '@/src/server/pilot/validation';
 import { insertAthleteIfAbsent } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'coach']);
 
     const body = await request.json();
-    const payload = validateAthletePayload(body);
+    // Stamped here, not taken from the body: see validateAthleteCreatePayload.
+    const payload = validateAthleteCreatePayload(body, new Date().toISOString());
 
     if (principal.role === 'coach' && payload.coach_id !== principal.accountId) {
       throw new Error('Forbidden: coach can only create athletes assigned to self');

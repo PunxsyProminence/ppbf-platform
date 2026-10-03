@@ -39,6 +39,7 @@ interface MockOptions {
   rosterOk?: boolean;
   onPost?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
   onDelete?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
+  onGuardianMove?: (body: Record<string, unknown>) => Record<string, unknown>;
   onActivationReset?: (body: Record<string, unknown>) => Record<string, unknown>;
   onAthleteAccount?: (body: Record<string, unknown>) => Record<string, unknown>;
   onAthleteRecord?: (body: Record<string, unknown>) => Record<string, unknown>;
@@ -55,6 +56,11 @@ function fetchMock(options: MockOptions = {}) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       const payload = options.onAthleteRecord?.(body) ?? { ok: true };
       return { ok: payload.ok === true, status: payload.ok === true ? 201 : 409, json: async () => payload } as Response;
+    }
+    if (url.includes('/api/pilot/admin/guardian-login')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const payload = options.onGuardianMove?.(body) ?? { ok: true, to_account_id: body.to_email, old_login_switched_off: true };
+      return { ok: payload.ok === true, status: payload.ok === true ? 200 : 409, json: async () => payload } as Response;
     }
     if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
@@ -412,6 +418,49 @@ describe('removing a guardian link', () => {
 
     expect(await screen.findByText(/only athlete this guardian is linked to/i)).toBeTruthy();
   });
+
+  test('moves the guardian record to a new email only after it is typed and confirmed', async () => {
+    const moves: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      ...LINKED,
+      onGuardianMove: (body) => {
+        moves.push(body);
+        return { ok: true, to_account_id: 'dana.new@example.com', old_login_switched_off: true };
+      },
+    }) as never;
+
+    render(<PeopleConsolePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Alex Johnson, Sam Rivera To New Email' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm Move' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('New email'), { target: { value: ' dana.new@example.com ' } });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(moves).toHaveLength(1));
+    expect(moves[0]).toEqual({
+      parent_id: 'par-1',
+      from_account_id: 'dana@example.com',
+      to_email: 'dana.new@example.com',
+    });
+    expect(await screen.findByText(/Moved to dana\.new@example\.com\. Nothing was sent.*dana@example\.com is switched off/)).toBeTruthy();
+  });
+
+  test('shows the server refusal of a move verbatim', async () => {
+    global.fetch = fetchMock({
+      ...LINKED,
+      onGuardianMove: () => ({ ok: false, error: 'Conflict: login "x" is already a guardian of ath-1' }),
+    }) as never;
+
+    render(<PeopleConsolePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Alex Johnson, Sam Rivera To New Email' }));
+    fireEvent.change(screen.getByLabelText('New email'), { target: { value: 'x@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Move' }));
+
+    expect(await screen.findByText(/is already a guardian of ath-1/)).toBeTruthy();
+  });
 });
 
 /**
@@ -619,6 +668,10 @@ describe('the add-athlete form', () => {
     expect(await screen.findByText(/Account already exists/i)).toBeTruthy();
     expect(recordPosts).toHaveLength(1);
     expect(recordPosts[0].athlete_id).toBe('ath-002');
+    // The row's creation time is the server's clock, not this device's: the
+    // page must not send one for the route to be tempted by.
+    expect(recordPosts[0]).not.toHaveProperty('created_at');
+    expect(recordPosts[0]).not.toHaveProperty('updated_at');
 
     // The reload has put ath-002 on the roster. The field must still hold it,
     // locked, rather than having moved on to ath-003.
@@ -812,4 +865,41 @@ describe('the roster is a ruled register', () => {
     fireEvent.click(invite);
     expect(await screen.findByRole('heading', { name: /Add a coach, staff member, or guardian/i })).toBeTruthy();
   });
+});
+
+// The #991 class: a staff read that failed must never be rendered as an empty
+// gym, on the roster or in the add-athlete coach hint.
+describe.each([
+  ['refused', { ok: false as const, status: 500 }],
+  ['rejected', 'network-error' as const],
+])('a %s staff read', (_label, outcome) => {
+  test('says the roster could not be loaded instead of "Nobody here yet"', async () => {
+    global.fetch = fetchMock({ roster: ROSTER, onStaffGet: () => outcome }) as never;
+
+    render(<PeopleConsolePage />);
+
+    expect(await screen.findByText(/gym roster could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText('Nobody here yet.')).toBeNull();
+  });
+
+  test('the coach hint says the staff list could not be loaded, not that there are no coaches', async () => {
+    global.fetch = fetchMock({ roster: ROSTER, onStaffGet: () => outcome }) as never;
+
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+    expect(await screen.findByText(/staff list could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
+  });
+});
+
+test('before the staff read answers, the coach hint claims neither a failure nor an empty gym', async () => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => {})) as never;
+
+  render(<PeopleConsolePage />);
+  fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+  expect(screen.getByText(/Loading the staff list/i)).toBeTruthy();
+  expect(screen.queryByText(/staff list could not be loaded/i)).toBeNull();
+  expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
 });

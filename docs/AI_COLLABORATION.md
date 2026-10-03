@@ -21,6 +21,31 @@ Before editing, check current `main`, `docs/current/ACTIVE_WORK.md`, and open PR
 
 Roles across AI products are set by OD-2026-09-28-001 in `docs/current/OWNER_DECISIONS.md`: Claude Code is the only builder; ChatGPT is the architect and the reviewer, and its reviews start once its reviewer instructions are set up; Grok and Canva make images when Jason asks and open no pull requests; no other AI holds a standing role. Jason's four subject areas are WORK DOMAINS -- visual design, ML training, AI/ML, app build -- not roles and not authority boundaries. Among parallel Claude sessions no permanent Builder/Gatekeeper identity is required: one session may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
 
+## Lane assignment between accounts
+
+Set by Jason on 2026-10-03 (OD-2026-10-03-012), after two collisions in one
+day: #1130 duplicated an item another session was building, and #1125 and
+#1147 edited the same table in `ACTIVE_WORK.md`.
+
+- **Overwatch assigns lanes; it does not write designs.** A lane is three
+  lines: the surface and the files that may be touched; what it waits on or
+  conflicts with (open PRs, a migration, an owner question); the done
+  condition. Overwatch keeps the queue and `ACTIVE_WORK.md`.
+- **The build session does the rest**: the investigation, the code, the
+  tests, the evidence record, and the check of `main` and open PRs before
+  each item. A design brief is not evidence; a build session re-derives it
+  from source, so writing one is spent twice.
+- **One writer per surface.** If two sessions need the same files or
+  contract, sequence them (the second takes a merge of `main` after the
+  first lands), as the collision rules above already say.
+- **Briefs go the other way only for what a session cannot execute**: a
+  production read or mutation (SQL and the acceptance check, run on Jason's
+  word per run), drill or other content a coach writes, a look at a rendered
+  screen, a visual-design choice. Those are written as the exact query or
+  check to run, not as a plan.
+- **Where a decided plan already exists** (an audit section with a build
+  list, an `OWNER_DECISIONS.md` entry), it is the brief. No restatement.
+
 ## Reviewers are separate signals
 
 Several reviewers can attach to one PR — Claude Code Review, Codex, Copilot, a human, CI — and they fail and succeed independently. On 2026-09-13, PR #926 and #927 each carried a Claude check at `neutral` (its review body: credit balance too low, review skipped) *and* a completed Codex review. Either one read alone gives the wrong answer about the other.

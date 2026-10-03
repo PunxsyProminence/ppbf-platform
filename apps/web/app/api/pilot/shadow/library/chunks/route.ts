@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import { createShadowLibraryChunk } from '@/src/server/pilot/shadowLibrary';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
@@ -16,6 +17,11 @@ export const runtime = 'nodejs';
 // Adding text to an approved document un-approves it, because the reviewer
 // approved the text they saw and not the text that arrived afterwards. That is
 // why this route needs no re-approval logic of its own.
+//
+// An optional body `shelf` ('gym' default, or 'platform') picks the shelf,
+// resolved on the server by libraryShelf.ts. A document is found only on the
+// resolved shelf, so a platform chunk cannot attach to a gym document or the
+// reverse.
 
 // The chunk text is what a coach or athlete will eventually be shown as
 // evidence, and it is stored verbatim. Postgres would accept a multi-megabyte
@@ -34,7 +40,9 @@ export async function POST(request: NextRequest) {
       ordinal?: unknown;
       text_content?: unknown;
       metadata?: unknown;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (typeof body.document_id !== 'string' || !body.document_id.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing document_id' }, { status: 400 });
@@ -66,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const chunk = await createShadowLibraryChunk({
-      organizationId: principal.organizationId,
+      organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       documentId: body.document_id,

@@ -6,7 +6,11 @@ import {
   listAnnotationEvents,
   openAnnotationSet,
 } from '@/src/server/pilot/calibration/annotations';
-import { BOXING_ONTOLOGY_VERSION } from '@/src/server/pilot/calibration/ontology';
+import {
+  ANNOTATABLE_ONTOLOGY_VERSIONS,
+  PROJECT_CREATION_ONTOLOGY_VERSION,
+  isInVocabulary,
+} from '@/src/server/pilot/calibration/ontology';
 import { getCalibrationProject } from '@/src/server/pilot/calibration/projects';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -63,7 +67,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      supported_ontology_version: BOXING_ONTOLOGY_VERSION,
+      supported_ontology_version: PROJECT_CREATION_ONTOLOGY_VERSION,
+      annotatable_ontology_versions: ANNOTATABLE_ONTOLOGY_VERSIONS,
       project,
       clip,
       set,
@@ -139,12 +144,14 @@ export async function POST(request: NextRequest) {
      * of a coach and store their answers under a 0.2 stamp -- data labelled
      * with a vocabulary that never produced it, which is worse than refusing.
      * The refusal is a code change (a new build implements the new version),
-     * never a migration.
+     * never a migration. A version this build merely KNOWS (0.2, before its
+     * rules and screen exist) is refused the same way: knowing a vocabulary is
+     * not being able to label it.
      */
-    if (project.ontology_version !== BOXING_ONTOLOGY_VERSION) {
+    if (!isInVocabulary(ANNOTATABLE_ONTOLOGY_VERSIONS, project.ontology_version)) {
       throw new Error(
         `Forbidden: this project is stamped ${project.ontology_version} and this build `
-        + `implements ${BOXING_ONTOLOGY_VERSION}, so it cannot annotate it`,
+        + `can label ${ANNOTATABLE_ONTOLOGY_VERSIONS.join(', ')}, so it cannot annotate it`,
       );
     }
 

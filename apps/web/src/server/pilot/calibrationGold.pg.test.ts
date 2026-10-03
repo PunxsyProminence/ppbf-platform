@@ -250,7 +250,7 @@ async function stage(options: StageOptions): Promise<Staged> {
       annotationSetId: setId,
       calibrationClipId: clipId,
       annotatorAccountId: annotator,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     });
     const event = await annotations.recordAnnotationEvent({
       organizationId,
@@ -284,7 +284,7 @@ async function stage(options: StageOptions): Promise<Staged> {
     sourceEventIdB: events.b,
     resolutionType: 'accept_a',
     adjudicatorAccountId: adjudicator,
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     expectedCurrentRevision: 0,
     fields: [
       {
@@ -407,7 +407,7 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Gold slice study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR_A,
   });
 
@@ -416,7 +416,7 @@ beforeAll(async () => {
     organizationId: OTHER_ORG_ID,
     calibrationProjectId: OTHER_PROJECT_ID,
     name: 'Another gym study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: OTHER_ANNOTATOR_A,
   });
 });
@@ -471,7 +471,7 @@ describe('nothing arrives as gold', () => {
       sourceEventIdB: staged.eventB,
       resolutionType: 'accept_b',
       adjudicatorAccountId: staged.adjudicator,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 1,
     });
 
@@ -521,7 +521,7 @@ describe('nothing arrives as gold', () => {
       annotationSetIdA: staged.setA,
       annotationSetIdB: staged.setB,
       adjudicatorAccountId: staged.adjudicator,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     };
     // Corrected twice more ...
     for (const expected of [1, 2]) {
@@ -1030,7 +1030,7 @@ describe('a gold record retains where it came from', () => {
       sourceEventIdB: staged.eventA,
       resolutionType: 'unresolvable',
       adjudicatorAccountId: ADJUDICATOR,
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       expectedCurrentRevision: 0,
     });
 
@@ -1205,7 +1205,7 @@ describe('the governance read-out', () => {
       organizationId: ORG_ID,
       calibrationProjectId: projectId,
       name: 'Gold read-out study',
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       createdByAccountId: ANNOTATOR_A,
     });
 

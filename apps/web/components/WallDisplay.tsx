@@ -429,19 +429,33 @@ function Marquee({ board }: { board: WallBoard }) {
 /* ------------------------------------------------------- standing board --- */
 
 /**
- * What the room sees when there is no board: the gym's name, and nothing
- * claimed. No status code, no stack trace, no "Failed to fetch" in 100px type
- * in front of forty people. The masthead above and the clock keep running,
+ * What the room sees when there is no board: the gym's name, one of the gym's
+ * own sayings, and under it what the board is doing. Nothing claimed about the
+ * room. No status code, no stack trace, no "Failed to fetch" in 100px type in
+ * front of forty people. The masthead above and the clock keep running,
  * because they are true without a network.
+ *
+ * The saying is Jason's call (2026-10-03: "when nothing useful is on screen
+ * when loading it should have a quote and a loading ... under the quote these
+ * can be gym quotes as well"). It comes from the owner-approved GYM_SAYINGS,
+ * never a stock boxing quote, on a fixed seed so it does not reshuffle.
  */
+export const WALL_STANDING_SEED = 'wall-standing';
+
 function StandingBoard({ health }: { health: WallHealth }) {
+  const saying = pickSaying('anywhere', WALL_STANDING_SEED);
   return (
-    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[var(--s5)] px-[var(--s7)]">
+    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[var(--s5)] px-[var(--s7)] text-center">
       <p className="wall-standing-crest" aria-hidden="true">
         PPBF
       </p>
-      <p className="wall-standing-line text-5xl">
-        {health === 'never' ? 'The board is coming up.' : 'The board is reconnecting.'}
+      {saying ? (
+        <p className="wall-standing-line text-6xl" data-testid="wall-standing-saying">
+          {saying.line}
+        </p>
+      ) : null}
+      <p className="wall-standing-line text-4xl opacity-70">
+        {health === 'never' ? 'The board is coming up...' : 'The board is reconnecting...'}
       </p>
     </main>
   );
@@ -477,11 +491,16 @@ function FootRule({
             <span className="wall-notice-msg">{board.notice.message}</span>
             {board.notice.author && <span className="wall-notice-by">— {board.notice.author}</span>}
           </p>
-        ) : (
+        ) : board ? (
           // The slot is kept whether or not anyone has posted. An empty line
           // here is the gym choosing not to say anything today, which is a
           // different thing from the slot not existing.
           <p className="wall-notice wall-notice--empty text-4xl">Nothing posted today.</p>
+        ) : (
+          // No board read (still coming up, or too old to be true): the slot
+          // stays, empty. "Nothing posted today" is a claim only a board that
+          // was read can make (#991 class, Lane 14 batch 8 B4; Jason Q2 A).
+          <p className="wall-notice wall-notice--empty text-4xl" aria-hidden="true">&nbsp;</p>
         )}
       </div>
 

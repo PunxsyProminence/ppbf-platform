@@ -219,6 +219,8 @@ function WrongRoleNotice() {
 function PeopleConsoleContent() {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
+  // False until the staff read answers: an unread list is not an empty gym.
+  const [membersAvailable, setMembersAvailable] = useState(false);
   const [guardianLinks, setGuardianLinks] = useState<GuardianLink[]>([]);
   // Distinct from an empty list: the roster read can succeed while the
   // guardian links are absent, and "no links returned" must never be shown as
@@ -245,6 +247,9 @@ function PeopleConsoleContent() {
   // Which guardian link the admin has asked to remove, held so the removal
   // needs a second, explicit confirmation on the row itself.
   const [pendingUnlink, setPendingUnlink] = useState<{ accountId: string; athleteId: string } | null>(null);
+  // The guardian record being moved to a new email, and the email typed.
+  const [pendingMove, setPendingMove] = useState<{ accountId: string; parentId: string } | null>(null);
+  const [moveEmail, setMoveEmail] = useState('');
   /* THE LIGHT ONE.
      POST /api/pilot/admin/accounts/revoke has existed since sessions did and
      nothing on any screen called it. Its sibling in the same directory,
@@ -337,6 +342,7 @@ function PeopleConsoleContent() {
       }
 
       setMembers(membersPayload.members || []);
+      setMembersAvailable(true);
       setOrganizationId(membersPayload.organization_id || '');
 
       // Only an actual array counts as an answer. Anything else leaves every
@@ -355,6 +361,7 @@ function PeopleConsoleContent() {
       if (!rosterRefreshed) {
         setRosterAvailable(false);
       }
+      setMembersAvailable(false);
       setError(loadError instanceof Error ? loadError.message : 'Unable to load your gym roster');
     } finally {
       setLoading(false);
@@ -679,6 +686,49 @@ function PeopleConsoleContent() {
     }
   }
 
+  /**
+   * Moves one guardian record, with every child on it, to the parent's new
+   * email (OD-2026-09-29-004 R4). The server makes that login if it does not
+   * exist, switches the old one off when it has no family left, and refuses
+   * anything else with its own wording, shown verbatim.
+   */
+  async function moveGuardianToEmail(accountId: string, parentId: string) {
+    setBusy(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/guardian-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ parent_id: parentId, from_account_id: accountId, to_email: moveEmail.trim() }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        to_account_id?: string;
+        old_login_switched_off?: boolean;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not move that guardian');
+      }
+
+      setPendingMove(null);
+      setMoveEmail('');
+      setNotice(
+        `Moved to ${payload.to_account_id}. Nothing was sent to them: tell the family to ask for a sign-in link at that address.`
+        + (payload.old_login_switched_off ? ` ${accountId} is switched off.` : ''),
+      );
+      await load();
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : 'Could not move that guardian');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function resetAthleteForm() {
     setAthleteAccountId('');
     setAthleteId('');
@@ -697,13 +747,12 @@ function PeopleConsoleContent() {
 
   /**
    * Writes the pilot.athletes row. The validator rejects the payload outright
-   * if any key is absent or extra, so all ten fields are sent every time and
+   * if any key is absent or extra, so all eight fields are sent every time and
    * none of them may be blank -- the form enforces that client-side because a
-   * blank one comes back as an opaque 500, not a field-level complaint.
+   * blank one comes back as an opaque 500, not a field-level complaint. The
+   * row's created_at and updated_at are the server's clock, so neither is sent.
    */
   async function createAthleteRecord(recordId: string) {
-    const timestamp = new Date().toISOString();
-
     const response = await fetch(`${apiBase()}/api/pilot/athletes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -717,8 +766,6 @@ function PeopleConsoleContent() {
         emergency_contact: athleteEmergencyContact.trim(),
         active_flag: true,
         coach_id: athleteCoachId,
-        created_at: timestamp,
-        updated_at: timestamp,
       }),
     });
 
@@ -1080,6 +1127,10 @@ function PeopleConsoleContent() {
               <div className="frame-in mat-paper pap">
               {loading ? (
                 <p className="t-body p-[var(--s5)]">Loading your gym roster...</p>
+              ) : members.length === 0 && !membersAvailable ? (
+                <p className="t-body p-[var(--s5)]">
+                  The gym roster could not be loaded, so this is not a list of who is in your gym.
+                </p>
               ) : members.length === 0 ? (
                 /* "Nobody here yet" is the empty state ROOM-PURPOSE-DNA names
                    for this room by name, and it was hand-rolled in raw
@@ -1218,6 +1269,56 @@ function PeopleConsoleContent() {
                               })}
                             </ul>
                           )}
+
+                          {/* One mover per guardian record: a parent who changed
+                              their email keeps the same record, children and
+                              consents, on a new login. */}
+                          {isGuardian && guardianLinksAvailable
+                            && [...new Set(memberLinks.map((link) => link.parent_id))].map((parentId) => (
+                              <div key={parentId} className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]">
+                                {pendingMove?.accountId === member.account_id && pendingMove.parentId === parentId ? (
+                                  <>
+                                    <label className="flex flex-col">
+                                      <span className="text-[length:var(--t-xs)]">New email</span>
+                                      <input
+                                        type="email"
+                                        value={moveEmail}
+                                        onChange={(event) => setMoveEmail(event.target.value)}
+                                        className="input"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      disabled={busy || !moveEmail.trim()}
+                                      onClick={() => void moveGuardianToEmail(member.account_id, parentId)}
+                                      className="btn btn--danger px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
+                                    >
+                                      Confirm Move
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => { setPendingMove(null); setMoveEmail(''); }}
+                                      className="btn--lever disabled:opacity-50"
+                                    >
+                                      Keep
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => { setPendingMove({ accountId: member.account_id, parentId }); setMoveEmail(''); }}
+                                    className="btn--lever disabled:opacity-50"
+                                  >
+                                    Move {memberLinks
+                                      .filter((link) => link.parent_id === parentId)
+                                      .map((link) => link.athlete_full_name)
+                                      .join(', ')} To New Email
+                                  </button>
+                                )}
+                              </div>
+                            ))}
 
                           {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
                             /* The state itself is on the Sign-in badge
@@ -1709,6 +1810,10 @@ function PeopleConsoleContent() {
                   <p className="t-muted mb-[var(--s2)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
+                      : loading
+                      ? 'Loading the staff list...'
+                      : !membersAvailable
+                      ? 'The staff list could not be loaded, so no coach can be offered here. Reload the page to try again.'
                       : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}
                   </p>
                   <select

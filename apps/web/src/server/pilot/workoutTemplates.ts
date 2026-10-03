@@ -79,11 +79,15 @@ export interface WorkoutTemplateItemRow {
  *   head_drill_id             the highest version in the item's drill lineage;
  *                             equal to drill_id when the item is current. Null
  *                             for a free-text item, which has no lineage.
+ *   head_drill_name           that head's name, what the coach screen shows
+ *                             for a linked item. Null exactly when
+ *                             head_drill_id is.
  *   uses_older_drill_version  true when a higher version of the item's drill
  *                             exists. Always false for a free-text item.
  */
 export interface WorkoutTemplateItemWithDrillHead extends WorkoutTemplateItemRow {
   head_drill_id: string | null;
+  head_drill_name: string | null;
   uses_older_drill_version: boolean;
 }
 
@@ -148,13 +152,14 @@ export async function getWorkoutTemplateWithItems(
   const items = await query<WorkoutTemplateItemWithDrillHead>(
     `select ${ITEM_FIELDS_QUALIFIED},
             head.drill_id as head_drill_id,
+            head.name as head_drill_name,
             coalesce(head.drill_id <> i.drill_id, false) as uses_older_drill_version
      from pilot.workout_template_items i
      left join pilot.drill_library pinned
        on pinned.organization_id = i.organization_id
       and pinned.drill_id = i.drill_id
      left join lateral (
-       select h.drill_id
+       select h.drill_id, h.name
        from pilot.drill_library h
        where h.organization_id = pinned.organization_id
          and h.lineage_id = pinned.lineage_id

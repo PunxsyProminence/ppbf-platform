@@ -103,6 +103,8 @@ function NoticesAuthoringPage() {
   const session = usePilotSession();
   const [items, setItems] = useState<AnnouncementItem[]>([]);
   const [loadError, setLoadError] = useState('');
+  // True once a read has come back: until then no surface is known to be empty.
+  const [listRead, setListRead] = useState(false);
   const [message, setMessage] = useState('');
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [authorName, setAuthorName] = useState('');
@@ -133,12 +135,14 @@ function NoticesAuthoringPage() {
 
         const payload = (await response.json()) as { announcements?: AnnouncementItem[] };
         setItems(payload.announcements ?? []);
+        setListRead(true);
         setLoadError('');
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
           return;
         }
         setItems([]);
+        setListRead(false);
         setLoadError(error instanceof Error ? error.message : 'Unable to load notices.');
       }
     })();
@@ -291,7 +295,11 @@ function NoticesAuthoringPage() {
             {liveByPlacement.map((group) => (
               <article key={group.placement} className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(51,41,27,.26)] p-[var(--s4)]">
                 <p className="t-eyebrow">{PLACEMENT_LABELS[group.placement]}</p>
-                {group.items.length === 0 ? (
+                {group.items.length === 0 && loadError ? (
+                  <p className="t-body mt-[var(--s2)]">Could not be read. Whether this surface shows a banner is unknown.</p>
+                ) : group.items.length === 0 && !listRead ? (
+                  <p className="t-body mt-[var(--s2)]">Reading notices...</p>
+                ) : group.items.length === 0 ? (
                   <p className="t-body mt-[var(--s2)]">Nothing live. This surface shows no banner.</p>
                 ) : (
                   <ul className="mt-[var(--s2)] space-y-[var(--s2)]">

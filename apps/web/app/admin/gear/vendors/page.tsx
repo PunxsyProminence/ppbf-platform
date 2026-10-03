@@ -315,7 +315,7 @@ function VendorConsole() {
 
         <section className="mt-6">
           <h2 className="font-display text-xl font-black tracking-tight">
-            Suppliers{isLoaded ? ` (${vendors.length}, ${activeCount} current)` : ''}
+            Suppliers{isLoaded && !loadError ? ` (${vendors.length}, ${activeCount} current)` : ''}
           </h2>
 
           {loadError ? (

@@ -48,7 +48,7 @@ jest.mock('./db', () => ({
 import { setVideoArchiveState } from './videoArchive';
 import { readReleasedTeachingFootage } from './teachShadow/releasedFootage';
 import { readTeachShadowCoverage } from './teachShadow/coverage';
-import { BOXING_ONTOLOGY_VERSION } from './calibration/ontology';
+import { BOXING_ONTOLOGY_VERSION_0_1 } from './calibration/ontology';
 
 jest.setTimeout(180_000);
 
@@ -82,10 +82,10 @@ const FOREIGN_VIDEO = 'vid-foreign';
 const CLIP = 'clip-1';
 const SECOND_CLIP = 'clip-2';
 // The real constant, not a plausible-looking '0.1'. coverage.ts filters every
-// labelling count on BOXING_ONTOLOGY_VERSION, so a fixture with a different
+// labelling count on BOXING_ONTOLOGY_VERSION_0_1, so a fixture with a different
 // version reports zero submitted sets and the retraction test passes for the
 // wrong reason -- it would assert 0 before and 0 after.
-const ONTOLOGY = BOXING_ONTOLOGY_VERSION;
+const ONTOLOGY = BOXING_ONTOLOGY_VERSION_0_1;
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;

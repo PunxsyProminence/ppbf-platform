@@ -174,7 +174,7 @@ async function newSetFor(annotatorAccountId: string, clipId = CLIP_ID): Promise<
     annotationSetId: setId,
     calibrationClipId: clipId,
     annotatorAccountId,
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
   });
   return setId;
 }
@@ -294,7 +294,7 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Annotation slice study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR_A,
   });
   CLIP_ID = await newClip('C-MAIN');
@@ -365,7 +365,7 @@ describe('one annotator, one clip, one set', () => {
              (organization_id, annotation_set_id, calibration_clip_id, annotator_account_id,
               ontology_version, status, submitted_at)
            values ($1, $2, $3, $4, $5, 'submitted', null)`,
-          [ORG_ID, crypto.randomUUID(), clipId, ANNOTATOR_A, ontology.BOXING_ONTOLOGY_VERSION],
+          [ORG_ID, crypto.randomUUID(), clipId, ANNOTATOR_A, ontology.BOXING_ONTOLOGY_VERSION_0_1],
         ),
       ).rejects.toThrow(/pilot_calibration_sets_submission_attested/);
     } finally {
@@ -918,7 +918,7 @@ describe('tenancy', () => {
         annotationSetId: crypto.randomUUID(),
         calibrationClipId: clipId,
         annotatorAccountId: ANNOTATOR_A,
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       }),
     ).rejects.toThrow(/pilot_calibration_sets_clip_fk/);
   });

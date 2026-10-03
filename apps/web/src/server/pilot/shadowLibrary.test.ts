@@ -13,8 +13,8 @@ jest.mock('./shadowResearch', () => ({
   ...jest.requireActual('./shadowResearch'),
   createShadowResearchRequirement: jest.fn(),
   listShadowResearchRequirements: jest.fn(),
-  reopenCoverageResolvedGapRequirement: jest.fn(),
   resolveCoveredCapabilityGapRequirements: jest.fn(),
+  syncCapabilityGapRequirement: jest.fn(),
 }));
 jest.mock('./shadowEmbeddings', () => ({
   ...jest.requireActual('./shadowEmbeddings'),
@@ -32,8 +32,8 @@ import { emitShadowEvent } from './shadowEvents';
 import {
   createShadowResearchRequirement,
   listShadowResearchRequirements,
-  reopenCoverageResolvedGapRequirement,
   resolveCoveredCapabilityGapRequirements,
+  syncCapabilityGapRequirement,
 } from './shadowResearch';
 import {
   createShadowLibraryChunk,
@@ -585,10 +585,10 @@ describe('SHADOW library capability coverage counts only servable sources', () =
 });
 
 // R2 (Jason 2026-09-29): the coverage check closes its own gap tickets once a
-// capability grades covered, and reopens a ticket it closed when the gap comes
-// back. The real-database proof is shadowLibraryCoverage.pg.test.ts.
+// capability grades covered, and brings a ticket back when the gap returns.
+// The real-database proof is shadowLibraryCoverage.pg.test.ts.
 describe('SHADOW library capability coverage manages its own gap tickets', () => {
-  const mockReopen = jest.mocked(reopenCoverageResolvedGapRequirement);
+  const mockSync = jest.mocked(syncCapabilityGapRequirement);
   const mockResolveCovered = jest.mocked(resolveCoveredCapabilityGapRequirements);
   const mockCreateRequirement = jest.mocked(createShadowResearchRequirement);
 
@@ -601,11 +601,16 @@ describe('SHADOW library capability coverage manages its own gap tickets', () =>
     matched_sources: matched,
   });
 
+  const gapEvents = () =>
+    mockEmitShadowEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.eventName === 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED');
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockResolvedValue([]);
     jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
-    mockReopen.mockResolvedValue(null);
+    mockSync.mockResolvedValue(null);
     mockResolveCovered.mockResolvedValue([]);
     mockCreateRequirement.mockResolvedValue(1);
   });
@@ -639,32 +644,45 @@ describe('SHADOW library capability coverage manages its own gap tickets', () =>
     expect(recomputed?.payload).toEqual({ rules: 3, closed_research_requirement_ids: [41] });
   });
 
-  it('reopens a ticket the coverage check closed instead of leaving the recurrence ticketless', async () => {
-    mockReopen.mockResolvedValue(41);
+  it('hands every uncovered and partial rule, and no covered one, to the ticket sync with the gap as graded now', async () => {
+    await recomputeWith([ruleRow('cap-covered', 2), ruleRow('cap-uncovered', 0), ruleRow('cap-partial', 1, 2)]);
+
+    expect(mockSync).toHaveBeenCalledTimes(2);
+    expect(mockSync).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      capabilityKey: 'cap-uncovered',
+      sourceStatus: 'missing',
+      createdByAccountId: 'acct-curator',
+      metadata: expect.objectContaining({ capability_key: 'cap-uncovered', coverage_state: 'uncovered' }),
+    }));
+    expect(mockSync).toHaveBeenCalledWith(expect.objectContaining({
+      capabilityKey: 'cap-partial',
+      sourceStatus: 'weak',
+      knowledgeGap: expect.stringContaining('has only 1 qualifying sources'),
+      metadata: expect.objectContaining({ coverage_state: 'partial', matched_sources: 1 }),
+    }));
+    // The generic create, whose on-conflict is a no-op, is no longer the path.
+    expect(mockCreateRequirement).not.toHaveBeenCalled();
+  });
+
+  it('records a gap event when the sync opened, refreshed or reopened a ticket', async () => {
+    mockSync.mockResolvedValue(41);
 
     await recomputeWith([ruleRow('cap-lost-its-source', 0)]);
 
-    expect(mockReopen).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'org-1',
-      capabilityKey: 'cap-lost-its-source',
-      sourceStatus: 'missing',
-      metadata: expect.objectContaining({ capability_key: 'cap-lost-its-source', coverage_state: 'uncovered' }),
-    }));
-    expect(mockCreateRequirement).not.toHaveBeenCalled();
-    expect(mockEmitShadowEvent).toHaveBeenCalledWith(expect.objectContaining({
-      eventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+    expect(gapEvents()).toEqual([expect.objectContaining({
       entityId: 'cap-lost-its-source',
-    }));
+      payload: expect.objectContaining({ coverage_state: 'uncovered' }),
+    })]);
   });
 
-  it('opens a new ticket when there is nothing of its own to reopen', async () => {
-    await recomputeWith([ruleRow('cap-new-gap', 0)]);
+  it('records no gap event when the sync wrote nothing, so an unchanged gap is not re-recorded every recompute', async () => {
+    mockSync.mockResolvedValue(null);
 
-    expect(mockCreateRequirement).toHaveBeenCalledWith(expect.objectContaining({
-      sourceEventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
-      sourceEntityType: 'shadow_library_capability_map',
-      sourceEntityId: 'cap-new-gap',
-    }));
+    await recomputeWith([ruleRow('cap-same-gap', 0), ruleRow('cap-same-partial', 1, 2)]);
+
+    expect(mockSync).toHaveBeenCalledTimes(2);
+    expect(gapEvents()).toEqual([]);
   });
 });
 

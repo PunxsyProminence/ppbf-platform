@@ -218,3 +218,11 @@ test('a file chosen from the device is not called an in-app recording', async ()
   expect(uploads[0]!.get('capture_source')).toBe('file_upload');
   expect(uploads[0]!.get('capture_take_id')).toBeNull();
 });
+
+test('a refused athlete list is reported, not left as an empty required picker', async () => {
+  athleteListStatus = 403;
+  render(<FilmStudyCapturePage />);
+
+  await screen.findByText('The athlete list could not be loaded, so recording is unavailable.');
+  expect(screen.queryByRole('option', { name: 'Neeko Neale' })).toBeNull();
+});

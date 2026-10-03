@@ -108,3 +108,24 @@ test('placing an athlete posts a session-scoped placement', async () => {
     action: 'place', plan_id: 'p-1', group_id: 'g-bags', athlete_id: 'ath-2',
   });
 });
+
+test('a failed groups read says so, never "No groups yet", and holds back the add-group form', async () => {
+  const base = mockFetch({ groups: [] });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('plan_id=')) {
+      return { ok: false, status: 500, json: async () => ({}) } as Response;
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<FloorGroupsPage />);
+  });
+  await act(async () => {
+    fireEvent.change(await screen.findByLabelText('Floor plan'), { target: { value: 'p-1' } });
+  });
+
+  expect(await screen.findByTestId('groups-unreadable')).toBeTruthy();
+  expect(screen.queryByText(/No groups yet/i)).toBeNull();
+  expect(screen.queryByLabelText('Group name')).toBeNull();
+});

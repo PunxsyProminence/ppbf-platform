@@ -210,7 +210,7 @@ async function newSetFor(
     annotationSetId: setId,
     calibrationClipId: clipId,
     annotatorAccountId,
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
   });
   return setId;
 }
@@ -343,14 +343,14 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Blinding slice study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR_A,
   });
   await projects.createCalibrationProject({
     organizationId: OTHER_ORG_ID,
     calibrationProjectId: `${PROJECT_ID}-foreign`,
     name: 'Another gym study',
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: FOREIGN_ANNOTATOR,
   });
 

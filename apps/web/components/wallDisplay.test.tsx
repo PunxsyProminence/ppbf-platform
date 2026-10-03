@@ -337,6 +337,55 @@ describe('empty states', () => {
     expect(screen.getByText('24')).toBeTruthy();
   });
 
+  // Jason 2026-10-03 (Q2 A): "Nothing posted today" is a claim only a board
+  // that was read can make. Before any read lands, or once the board is too
+  // old to be true, the slot stays empty (#991 class, Lane 14 batch 8 B4).
+  it('does not say "Nothing posted today" before any board has been read', () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    render(<WallDisplay />);
+    expect(screen.getByText(/coming up/i)).toBeTruthy();
+    expect(screen.queryByText(/Nothing posted today/i)).toBeNull();
+  });
+
+  it('does not say "Nothing posted today" when the read failed', async () => {
+    fetchMock.mockRejectedValue(new Error('network'));
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.queryByText(/Nothing posted today/i)).toBeNull();
+  });
+
+  // Jason 2026-10-03: "when nothing useful is on screen when loading it should
+  // have a quote and a loading ... under the quote these can be gym quotes".
+  it('puts one of the gym\'s own sayings up, with the status under it, while there is no board', () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    render(<WallDisplay />);
+    const saying = screen.getByTestId('wall-standing-saying');
+    expect(GYM_SAYINGS.map((s) => s.line)).toContain(saying.textContent);
+    const status = screen.getByText(/The board is coming up/);
+    // The status sits under the saying, not above it.
+    expect(saying.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('stops saying "Nothing posted today" once the board is too old to be true', async () => {
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByText(/Nothing posted today/i)).toBeTruthy();
+
+    fetchMock.mockRejectedValue(new Error('network'));
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_ABANDON_MS + 1_000);
+    });
+    await settle();
+
+    await waitFor(() => expect(screen.queryByText(/Nothing posted today/i)).toBeNull());
+    expect(screen.getByText(/reconnecting/i)).toBeTruthy();
+  });
+
+  it('drops the saying once the board is up', async () => {
+    await renderBoard({});
+    expect(screen.queryByTestId('wall-standing-saying')).toBeNull();
+  });
+
   it('keeps the gym\'s voice slot even when nothing is posted', async () => {
     // The slot is the point: an empty line is the gym choosing to say nothing
     // today, which is a different thing from the slot not existing.

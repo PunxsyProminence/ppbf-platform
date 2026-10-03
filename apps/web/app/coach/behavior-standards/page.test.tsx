@@ -111,3 +111,35 @@ test('a concern with no reason is refused before it reaches the server', async (
   expect(capture.posts).toHaveLength(0);
   expect(screen.getByText(/needs an athlete and a reason in your own words/i)).toBeTruthy();
 });
+
+test('a failed standards read says so and never claims no standards are posted', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/behavior-standards')) {
+      return { ok: false, status: 500, json: async () => ({}) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+
+  expect(await screen.findByTestId('standards-unreadable')).toBeTruthy();
+  expect(screen.queryByText(/No standards posted yet/i)).toBeNull();
+});
+
+test('an athlete list that fails does not mark standards that loaded as unreadable', async () => {
+  const base = mockFetch();
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/athletes/list')) throw new TypeError('Failed to fetch');
+    return base(input, init);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+
+  expect((await screen.findAllByText('Reset after frustration')).length).toBeGreaterThan(0);
+  expect(screen.queryByTestId('standards-unreadable')).toBeNull();
+});

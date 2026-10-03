@@ -619,9 +619,12 @@ async function handleShadowChat(
       );
     }
 
+    // A missing or blank question gets the empty-question reply; a bad field
+    // around it gets the generic one below. Telling someone whose question
+    // arrived intact to "Enter a question" names the wrong problem.
+    const questionMissing = typeof rawMessage !== 'string' || rawMessage.trim().length === 0;
     if (
-      typeof rawMessage !== 'string'
-      || rawMessage.trim().length === 0
+      questionMissing
       || (requestedConversationId !== undefined
         && !isUuid(requestedConversationId))
       || (athleteId !== undefined
@@ -638,7 +641,7 @@ async function handleShadowChat(
         {
           success: false,
           state: 'filtered',
-          response: 'Enter a question for SHADOW.',
+          response: questionMissing ? 'Enter a question for SHADOW.' : 'SHADOW could not process that request.',
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
           filtered: true,

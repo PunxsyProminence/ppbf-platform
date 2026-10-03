@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   completeShadowLibraryDocumentIndexing,
   listShadowLibraryReviewQueue,
@@ -14,11 +15,19 @@ type ReviewBody = {
   entityId?: unknown;
   action?: unknown;
   approvalState?: unknown;
+  shelf?: unknown;
 };
+
+// Both methods take an optional `shelf` ('gym' default, or 'platform'; a query
+// parameter on GET, a body field on PATCH), resolved on the server by
+// libraryShelf.ts. Only the platform owner reviews the platform shelf
+// (OD-2026-10-02-013 answer 1B). Gym-shelf review is unchanged, platform owner
+// included (answer 5A, "as today").
 
 // Sources carry either prefix, and both are real. createShadowLibrarySource
 // mints `source_<uuid>`, but the research corpus in
-// seed-data/shadow-research/2026-08-07 is keyed `src_<hash>` -- 1,214 rows of it.
+// seed-data/shadow-research/2026-08-07 is keyed `src_<hash>` -- 1,001 rows of it
+// (measured 2026-10-03; this comment said 1,214 until then).
 // Accepting only `source_` meant every source the importer wrote answered 404
 // here, so the whole imported corpus was unreviewable and therefore permanently
 // unretrievable, since retrieval requires an approved source.
@@ -38,13 +47,15 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
-    const rawLimit = new URL(request.url).searchParams.get('limit');
+    const params = new URL(request.url).searchParams;
+    const organizationId = resolveLibraryShelf(principal, params.get('shelf'), 'review');
+    const rawLimit = params.get('limit');
     const limit = rawLimit === null ? 100 : Number(rawLimit);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
       return NextResponse.json({ error: 'Invalid limit' }, { status: 400 });
     }
     const queue = await listShadowLibraryReviewQueue({
-      organizationId: principal.organizationId,
+      organizationId,
       limit,
     });
     return NextResponse.json(queue);
@@ -58,13 +69,14 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
     const body = await request.json() as ReviewBody;
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'review');
 
     if (body.entityType === 'document' && body.action === 'complete_indexing') {
       if (!isLibraryId(body.entityId, DOCUMENT_ID_PREFIXES)) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
       }
       await completeShadowLibraryDocumentIndexing({
-        organizationId: principal.organizationId,
+        organizationId,
         actorAccountId: principal.accountId,
         actorRole: principal.role,
         documentId: body.entityId,
@@ -87,7 +99,7 @@ export async function PATCH(request: NextRequest) {
     const verificationState = approvalState === 'approved' ? 'verified' : 'unverified';
     if (body.entityType === 'source' && isLibraryId(body.entityId, SOURCE_ID_PREFIXES)) {
       await reviewShadowLibrarySource({
-        organizationId: principal.organizationId,
+        organizationId,
         actorAccountId: principal.accountId,
         actorRole: principal.role,
         sourceId: body.entityId,
@@ -96,7 +108,7 @@ export async function PATCH(request: NextRequest) {
       });
     } else if (body.entityType === 'document' && isLibraryId(body.entityId, DOCUMENT_ID_PREFIXES)) {
       await reviewShadowLibraryDocument({
-        organizationId: principal.organizationId,
+        organizationId,
         actorAccountId: principal.accountId,
         actorRole: principal.role,
         documentId: body.entityId,

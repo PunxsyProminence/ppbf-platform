@@ -6,7 +6,7 @@ the SHADOW interfaces. Server-side domain logic lives in `src/server/pilot/`.
 
 Product and architecture context lives at the repository root — see
 [`../../README.md`](../../README.md), [`../../DEVELOPER_ONBOARDING.md`](../../DEVELOPER_ONBOARDING.md)
-(first-run setup), [`../../SEED_GUIDE.md`](../../SEED_GUIDE.md) (data seeding),
+(first-run setup), [`../../docs/CONTENT_PACKAGE_CONTRACT.md`](../../docs/CONTENT_PACKAGE_CONTRACT.md) (loading gym content; the laptop athlete seeder was retired 2026-10-03, OD-2026-10-03-002 section 10),
 and [`../../AUTH_CONTRACT.md`](../../AUTH_CONTRACT.md) (roles, sessions, guards).
 
 Note: `AGENTS.md` in this directory is maintained by `next dev` itself — this

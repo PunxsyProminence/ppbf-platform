@@ -537,6 +537,13 @@ describe('getWorkoutTemplateWithItems follows drill versions', () => {
       // A free-text item has no lineage, so no head and nothing to be behind.
       ['item-free', null, null, false],
     ]);
+    // The name the coach screen shows is the head's, even for the item still pinned to v1.
+    expect(detail?.items.map((i) => i.head_drill_name)).toEqual([
+      'Jab Drill (revised)',
+      'Jab Drill (revised)',
+      'Footwork Box',
+      null,
+    ]);
     // Strictly boolean, so a client reading it never has to treat null as "false".
     expect(detail?.items.every((i) => typeof i.uses_older_drill_version === 'boolean')).toBe(true);
   });
@@ -566,5 +573,7 @@ describe('getWorkoutTemplateWithItems follows drill versions', () => {
 
     const [item] = (await getWorkoutTemplateWithItems(ORG_A, 'tpl-3'))?.items ?? [];
     expect([item?.head_drill_id, item?.uses_older_drill_version]).toEqual(['drl-a-v1', false]);
+    // Nor does their revision's name reach this gym's screen.
+    expect(item?.head_drill_name).toBe('Cross Drill');
   });
 });

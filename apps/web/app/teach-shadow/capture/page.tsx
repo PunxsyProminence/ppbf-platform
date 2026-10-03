@@ -98,17 +98,28 @@ export default function TeachShadowCapturePage() {
    * who concludes that presses the button again.
    */
   const [attaching, setAttaching] = useState(false);
+  /* Whether the last re-read of this take failed. Its list is then stale,
+     and an empty stale list must not say nothing was recorded: the angle
+     just uploaded may be the one it is missing. */
+  const [anglesUnreadable, setAnglesUnreadable] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  /* Never throws. A re-read that fails after an upload used to surface as
+     the UPLOAD failing ("could not be added"), for a file the server had. */
   const refresh = useCallback(async (recordingSessionId: string) => {
-    const response = await fetch(
-      `${apiBase()}/api/pilot/video/capture-session?recording_session_id=${encodeURIComponent(recordingSessionId)}`,
-      { credentials: 'include' },
-    );
-    const payload = (await response.json().catch(() => ({}))) as { session?: SessionState; error?: string };
-    if (!response.ok) throw new Error(payload.error || 'Unable to read the recording session.');
-    if (payload.session) setSession(payload.session);
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/video/capture-session?recording_session_id=${encodeURIComponent(recordingSessionId)}`,
+        { credentials: 'include' },
+      );
+      const payload = (await response.json().catch(() => ({}))) as { session?: SessionState; error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Unable to read the recording session.');
+      if (payload.session) setSession(payload.session);
+      setAnglesUnreadable(false);
+    } catch {
+      setAnglesUnreadable(true);
+    }
   }, []);
 
   /*
@@ -471,6 +482,11 @@ export default function TeachShadowCapturePage() {
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-eyebrow">Angles on this take</h2>
+                {anglesUnreadable ? (
+                  <p className="t-body mt-[var(--s2)]" role="status" data-testid="angles-unreadable">
+                    This take could not be re-read just now, so the list may be missing angles. It tries again every few seconds.
+                  </p>
+                ) : null}
                 {take && take.files.length > 0 ? (
                   <ul className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                     {take.files.map((takeFile) => (
@@ -479,7 +495,7 @@ export default function TeachShadowCapturePage() {
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : anglesUnreadable ? null : (
                   <p className="t-body mt-[var(--s2)]">
                     Nothing recorded against this take yet. Angles from other phones appear here as they upload.
                   </p>

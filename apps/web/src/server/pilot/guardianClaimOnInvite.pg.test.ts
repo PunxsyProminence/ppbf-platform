@@ -6,7 +6,7 @@
 // `account_id = $account or parent_id = 'par-' || $account`, and the mocked
 // client in staffProvisioning.test.ts answered that query with whatever rows
 // the test handed it -- so every test passed while the real predicate matched
-// nothing. The roster import (scripts/seed-data.ts, #281) writes a guardian
+// nothing. The laptop roster seeder (scripts/seed-data.ts, #281; retired 2026-10-03, OD-2026-10-03-002 section 10) wrote a guardian
 // with a CONTENT-HASHED parent_id and account_id NULL, which satisfies neither
 // side of that OR. The invite therefore inserted a second pilot.parents row for
 // the same human: the account attached to the new row, and the guardian_links
@@ -51,7 +51,7 @@ const ATHLETE_B = 'ATH-CLAIM-B';
 // A third athlete, in the same org, belonging to a different family.
 const ATHLETE_C = 'ATH-CLAIM-C';
 
-// Shaped exactly like scripts/seed-data.ts writes it: `par_<org>_<sha256[:24]>`.
+// Shaped exactly like the retired scripts/seed-data.ts wrote it: `par_<org>_<sha256[:24]>`.
 const IMPORTED_PARENT_ID = 'par_org-claim_9f2c4a7b18d3e05f6a2c4b19';
 const IMPORTED_EMAIL = 'dana.guardian@example.org';
 

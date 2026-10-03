@@ -137,6 +137,10 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  // True when the scheduler read itself failed: the class, record and request
+  // lists are then unread, and must not say "no classes" / "no requests".
+  // An action error or a failed athlete list leaves this false.
+  const [schedulerFailed, setSchedulerFailed] = useState(false);
   const [errorDetail, setErrorDetail] = useState<HoldRefusalDetail | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
 
@@ -180,6 +184,7 @@ export default function SchedulerPage() {
   const loadSchedulerState = useCallback(async () => {
     setLoading(true);
     showError('');
+    let schedulerRead = false;
 
     try {
       const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
@@ -201,6 +206,8 @@ export default function SchedulerPage() {
       setRegistrations(scheduler.registrations || []);
       setCoachingRequests(scheduler.coaching_requests || []);
       setAttendance(scheduler.attendance || []);
+      schedulerRead = true;
+      setSchedulerFailed(false);
 
       if (scheduler.classes.length > 0) {
         const firstClassId = scheduler.classes[0].class_id;
@@ -223,6 +230,7 @@ export default function SchedulerPage() {
         setAthletes([]);
       }
     } catch (error) {
+      if (!schedulerRead) setSchedulerFailed(true);
       showError(error instanceof Error ? error.message : 'Failed to load scheduler state');
     } finally {
       setLoading(false);
@@ -397,7 +405,9 @@ export default function SchedulerPage() {
             <>
               <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Class Schedule</h2>
-                {classes.length === 0 ? (
+                {schedulerFailed ? (
+                  <p className="t-muted mt-[var(--s3)]">The schedule could not be loaded just now.</p>
+                ) : classes.length === 0 ? (
                   <p className="t-muted mt-[var(--s3)]">No classes scheduled yet.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
@@ -669,7 +679,9 @@ export default function SchedulerPage() {
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Parent Review and Records</h3>
                   <div className="mt-3 space-y-2 max-h-[340px] overflow-y-auto">
-                    {registrations.length === 0 && attendance.length === 0 ? (
+                    {schedulerFailed ? (
+                      <p className="t-muted">Records could not be loaded just now.</p>
+                    ) : registrations.length === 0 && attendance.length === 0 ? (
                       <p className="t-muted">No registration or attendance records visible for your role.</p>
                     ) : null}
 
@@ -713,7 +725,9 @@ export default function SchedulerPage() {
               <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Coaching Requests</h3>
                 <div className="mt-3 space-y-2">
-                  {coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}
+                  {schedulerFailed ? (
+                    <p className="t-muted">Coaching requests could not be loaded just now.</p>
+                  ) : coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>

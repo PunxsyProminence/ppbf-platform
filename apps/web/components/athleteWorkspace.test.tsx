@@ -22,6 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
 
@@ -35,6 +36,8 @@ let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
 let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
+// The session read never answers: the workspace stays on 'loading'.
+let sessionListHangs = false;
 let sessionUpdateFails = false;
 let persistSessionUpdates = false;
 let holdDraftSaves = false;
@@ -209,6 +212,7 @@ beforeEach(() => {
   rabbitHolesFail = false;
   storedSessions = [];
   sessionListFails = false;
+  sessionListHangs = false;
   sessionUpdateFails = false;
   persistSessionUpdates = false;
   holdDraftSaves = false;
@@ -275,6 +279,9 @@ beforeEach(() => {
     if (url.includes('/api/pilot/sessions/list')) {
       if (sessionListFails) {
         throw new Error('sessions offline');
+      }
+      if (sessionListHangs) {
+        return new Promise<Response>(() => {});
       }
       return jsonResponse({ items: storedSessions });
     }
@@ -1348,9 +1355,10 @@ describe('authored announcements on the athlete workspace', () => {
     await renderWorkspace();
 
     expect(screen.queryByText('From the Gym')).toBeNull();
-    // A board that could not be read is a blank board, and says nothing about
-    // its own plumbing on top of the page's real work.
-    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
+    // A board that could not be read says so, quietly (Jason 2026-10-03, Lane
+    // 14 batch 8 P5): never "Nothing on the board.", and still no plumbing.
+    expect(screen.queryByText('Nothing on the board.')).toBeNull();
+    expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
     // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
     // the "Pre-Session Self-Report" card, which went with its defaulted slider.
     expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
@@ -1652,7 +1660,70 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
 
-    expect(screen.getByText('Not checked in yet')).toBeTruthy();
+    expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+  });
+
+  test('after check-out Today says checked out, with the time', async () => {
+    // A session from today that check-out completed; its updated_at is the
+    // check-out stamp, 61 minutes after the check-in so a label read off
+    // created_at would show the wrong time. The gym day is taken from
+    // created_at, so the row stays today's whatever the clock says.
+    const checkedOut = new Date(Date.parse(OPEN_SESSION_CREATED_AT) + 61 * 60 * 1000);
+    storedSessions = [openSessionRow({ completed_flag: true, updated_at: checkedOut.toISOString() })];
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText(`Checked out ${formatGymStamp(checkedOut.toISOString())}`)).toBeTruthy();
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+  });
+
+  test('a check-out from a previous gym day is not counted as today', async () => {
+    storedSessions = [openSessionRow({ completed_flag: true, created_at: STALE_CREATED_AT, updated_at: STALE_CREATED_AT })];
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+    expect(screen.queryByText(/^Checked out /)).toBeNull();
+  });
+
+  test('a checked-out session with no stamp still reads as checked out today', async () => {
+    storedSessions = [openSessionRow({ completed_flag: true, updated_at: undefined })];
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText('Checked out today')).toBeTruthy();
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+  });
+
+  test('a failed session read does not tell the athlete they are not checked in', async () => {
+    sessionListFails = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
+    expect(screen.queryByText(/^Checked (in|out) /)).toBeNull();
+  });
+
+  test('while the session read is loading the rail claims nothing', async () => {
+    sessionListHangs = true;
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+    });
+    expect(screen.queryByText('Not checked in yet')).toBeNull();
   });
 
   test('once the check-in is recorded Today stops saying it is missing', async () => {

@@ -6,6 +6,7 @@ import { act, render, screen } from '@testing-library/react';
 
 import Chalkboard, { CHALK_MAX_LENGTH, chalkDateLabel, pickChalkLine } from './Chalkboard';
 import type { AnnouncementItem } from './AnnouncementBanner';
+import { GYM_SAYINGS, pickSaying } from './gymSayings';
 
 // The vocabulary import in AnnouncementBanner's own test pulls the server
 // module; nothing here needs it, but usePilotSession and the component both
@@ -136,11 +137,64 @@ describe('the board on a dashboard', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('is a blank board when the read fails, and says nothing about the failure', async () => {
+  // Jason 2026-10-03 (Q1), replacing blank-on-failure: a board that could not
+  // be read must not say "Nothing on the board." (a coach could rub out a real
+  // line). It shows a gym saying and says it cannot be read -- still no alert,
+  // no status code (#991 class, Lane 14 batch 8 P5).
+  it('says it cannot be read when the read fails, under a gym saying, with no alert', async () => {
     await renderBoard({ announcementsOk: false, role: 'athlete', authProvider: 'ppbf_local' });
 
-    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
+    expect(screen.queryByText('Nothing on the board.')).toBeNull();
+    expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
+    const saying = pickSaying('anywhere', 'chalkboard-athlete_workspace');
+    expect(saying).not.toBeNull();
+    expect(GYM_SAYINGS).toContain(saying);
+    expect(screen.getByText(saying!.line)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows a gym saying and "Loading..." while the read is open, never "Nothing on the board."', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const base = stubFetch({ announcements: [], role: 'athlete', authProvider: 'ppbf_local' });
+    global.fetch = jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/announcements/get')) await held;
+      return base(url);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<Chalkboard placement="athlete_workspace" />);
+    });
+
+    expect(screen.getByText('Loading...')).toBeTruthy();
+    expect(screen.getByText(pickSaying('anywhere', 'chalkboard-athlete_workspace')!.line)).toBeTruthy();
+    expect(screen.queryByText('Nothing on the board.')).toBeNull();
+
+    await act(async () => { release(); await held; });
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
+    expect(screen.queryByText('Loading...')).toBeNull();
+  });
+
+  it('warns a writer while the read is still open, too', async () => {
+    const base = stubFetch({ announcements: [], role: 'coach', authProvider: 'microsoft' });
+    global.fetch = jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/announcements/get')) return new Promise<Response>(() => {});
+      return base(url);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<Chalkboard placement="athlete_workspace" />);
+    });
+
+    expect(screen.getByText('Loading...')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write on the board' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rub it out and write' })).toBeTruthy();
+  });
+
+  it('warns a writer that an unreadable board may hold a line', async () => {
+    await renderBoard({ announcementsOk: false, role: 'coach', authProvider: 'microsoft' });
+
+    expect(screen.getByRole('button', { name: 'Rub it out and write' })).toBeTruthy();
   });
 
   it('writes the line and who wrote it', async () => {

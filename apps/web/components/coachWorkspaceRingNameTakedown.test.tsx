@@ -22,6 +22,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import CoachWorkspace from './CoachWorkspace';
 
+// The floor view at the top of the dashboard repeats names and reports that
+// the panels below also show, which would make every query here ambiguous. It
+// is props-only and reads nothing (coachFloorFocus.test.tsx pins that), and
+// coachWorkspaceFloorFocus.test.tsx covers it mounted in this workspace, so
+// these tests keep to the panels by leaving it out.
+jest.mock('./CoachFloorFocus', () => ({ __esModule: true, default: () => null }));
+
 interface RosterFace {
   athlete_id: string;
   account_id: string | null;

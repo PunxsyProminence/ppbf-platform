@@ -164,6 +164,9 @@ export default function AttendanceDashboardPage() {
   }, [items]);
 
   const isLoading = items === null;
+  // A failed read leaves items as [], which would count as "0 tracked". The
+  // tiles say nothing until there is a real answer.
+  const kpisUnknown = isLoading || Boolean(errorMessage);
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
@@ -190,19 +193,19 @@ export default function AttendanceDashboardPage() {
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Athletes tracked</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
-                {isLoading ? '—' : kpis.totalAthletes}
+                {kpisUnknown ? '—' : kpis.totalAthletes}
               </p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Never checked in</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
-                {isLoading ? '—' : kpis.neverMarked}
+                {kpisUnknown ? '—' : kpis.neverMarked}
               </p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Average rate (marked athletes)</p>
               <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
-                {isLoading ? '—' : formatRate(kpis.averageRate)}
+                {kpisUnknown ? '—' : formatRate(kpis.averageRate)}
               </p>
             </article>
           </section>

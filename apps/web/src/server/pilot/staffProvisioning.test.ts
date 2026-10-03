@@ -516,7 +516,7 @@ describe('guardian link provisioning', () => {
     expect(guardianLinkInsertCalls()).toHaveLength(0);
   });
 
-  // The roster import (scripts/seed-data.ts, #281) writes a guardian's
+  // The laptop roster seeder (scripts/seed-data.ts, #281; retired 2026-10-03, OD-2026-10-03-002 section 10) wrote a guardian's
   // pilot.parents row with a content-hashed parent_id and account_id NULL,
   // already carrying one guardian_link per sibling. Before this, the invite
   // matched only on account_id or par-<accountId>, saw nothing, and inserted a

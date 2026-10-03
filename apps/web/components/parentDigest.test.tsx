@@ -131,6 +131,47 @@ describe('the parent digest', () => {
     expect(screen.queryByText(/Nothing written up yet/)).toBeNull();
   });
 
+  it('says which half could not be read when only one read fails, instead of faking it empty', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({}, false);
+      return jsonResponse({ ok: true, completed_sessions: 2, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText(/coach’s words could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText(/Nothing written up yet/)).toBeNull();
+    // The half that answered still speaks for itself.
+    expect(screen.getByText(/No milestones sealed yet/)).toBeTruthy();
+  });
+
+  it('says milestones could not be read when only that read fails', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/milestones')) return jsonResponse({}, false);
+      return jsonResponse({ ok: true, items: [] });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    expect(await screen.findByText(/Milestones could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText(/No milestones sealed yet/)).toBeNull();
+  });
+
+  it('claims nothing about the lists while there is no child to read for', async () => {
+    installFetch(() => jsonResponse({ ok: true, items: [] }));
+
+    await act(async () => {
+      render(<ParentDigest athleteId={null} childName={null} />);
+    });
+
+    expect(screen.queryByText(/Nothing written up yet/)).toBeNull();
+    expect(screen.queryByText(/No milestones sealed yet/)).toBeNull();
+  });
+
   it('reaches only the two guardian-admitted achievement routes', () => {
     // The source-level boundary, same style as the gym-wall module's test: no
     // path from this component to the session log or any member media.

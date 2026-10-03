@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { BUILDING } from '@/components/buildingMap';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
-import { workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
+import { promptDrills, workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
 import { applyImport } from '@/src/server/pilot/contentImport/apply';
 import { emitContentImportAuditMirror } from '@/src/server/pilot/contentImport/auditRow';
 import { type ImportPlan, packageInputs, planImport } from '@/src/server/pilot/contentImport/plan';
@@ -15,6 +15,7 @@ import { ContentImportRefusal } from '@/src/server/pilot/contentImport/refusal';
 import { CONTRACT_FILE_NAMES, isResearchFile, UPLOAD_LIMITS } from '@/src/server/pilot/contentImport/upload';
 import { validatePackage } from '@/src/server/pilot/contentImport/validate';
 import { withPoolClient, withTransaction } from '@/src/server/pilot/db';
+import { type DrillLibraryRow, listDrillLibrary } from '@/src/server/pilot/drillLibraryV3';
 import { requireMicrosoftAuthenticatedPrincipal, requireRole } from '@/src/server/pilot/http';
 
 // POST /api/pilot/admin/content-import, with the database and the core's
@@ -34,6 +35,7 @@ jest.mock('@/src/server/pilot/contentImport/plan', () => {
   return { ...actual, planImport: jest.fn() };
 });
 jest.mock('@/src/server/pilot/contentImport/apply', () => ({ applyImport: jest.fn() }));
+jest.mock('@/src/server/pilot/drillLibraryV3', () => ({ listDrillLibrary: jest.fn() }));
 jest.mock('@/src/server/pilot/contentImport/auditRow', () => ({ emitContentImportAuditMirror: jest.fn() }));
 
 const mockPrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
@@ -42,6 +44,7 @@ const mockPoolClient = withPoolClient as jest.Mock;
 const mockPlan = planImport as jest.Mock;
 const mockApply = applyImport as jest.Mock;
 const mockMirror = emitContentImportAuditMirror as jest.Mock;
+const mockDrills = listDrillLibrary as jest.Mock;
 
 const WEB_DIR = path.resolve(__dirname, '../../../../..');
 const SEED_DATA_DIR = path.join(WEB_DIR, 'seed-data');
@@ -113,6 +116,7 @@ beforeEach(() => {
     ledgerRows: 1,
   });
   mockMirror.mockResolvedValue(undefined);
+  mockDrills.mockResolvedValue([]);
 });
 
 describe('who may load gym content', () => {
@@ -466,18 +470,114 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
     return GET(new NextRequest('http://localhost/api/pilot/admin/content-import', { method: 'GET' }));
   }
 
-  test('an organization admin gets the prompt the core builds, and no transaction is opened for it', async () => {
+  /** A full library row of `organizationId`, as listDrillLibrary returns it: every column, most of which must not leave. */
+  function libraryRow(organizationId: string, n: number): DrillLibraryRow {
+    return {
+      organization_id: organizationId,
+      drill_id: `drl_version-${organizationId}-${n}`,
+      lineage_id: `drl_lineage-${organizationId}-${n}`,
+      version: 2,
+      supersedes_drill_id: `drl_older-${organizationId}-${n}`,
+      superseded_at: null,
+      name: `Drill ${n} of ${organizationId}`,
+      discipline: 'DISCIPLINE-TEXT',
+      category: 'CATEGORY-TEXT',
+      difficulty: 'DIFFICULTY-TEXT',
+      skill_id: `SK-TEST-0${n}`,
+      target_behavior: 'TARGET-BEHAVIOR-TEXT',
+      purpose: 'PURPOSE-TEXT',
+      standard_setup: 'SETUP-TEXT',
+      execution: 'EXECUTION-TEXT',
+      what_good_looks_like: 'GOOD-TEXT',
+      what_bad_looks_like: 'BAD-TEXT',
+      common_errors: 'ERRORS-TEXT',
+      corrections: 'CORRECTIONS-TEXT',
+      transfer: 'TRANSFER-TEXT',
+      contact_level: 'CONTACT-LEVEL-TEXT',
+      equipment_needed: 'EQUIPMENT-TEXT',
+      requires_coach_authorization: false,
+      content_class: 'CONTENT-CLASS-TEXT',
+      source_ref: 'SOURCE-REF-TEXT',
+      grounding_claim_ids: ['CLAIM-ID-TEXT'],
+      field_provenance: 'PROVENANCE-TEXT',
+      active: true,
+      created_by_account_id: 'author-account-1',
+      created_by_role: 'CREATED-BY-ROLE-TEXT',
+      created_at: '2026-10-01T00:00:00Z',
+      updated_at: '2026-10-01T00:00:00Z',
+    };
+  }
+
+  test("an organization admin gets the prompt built from the session gym's drills, and no transaction is opened for it", async () => {
+    const rows = [libraryRow('org-1', 1), libraryRow('org-1', 2)];
+    mockDrills.mockResolvedValue(rows);
+
     const response = await get();
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ ok: true, dataset: 'workout-templates', prompt: workoutIntakePrompt() });
+    expect(body).toEqual({ ok: true, dataset: 'workout-templates', prompt: workoutIntakePrompt(promptDrills(rows)) });
     expect(mockPrincipal).toHaveBeenCalledTimes(1);
+    // The one read: the gym's current library, for the session's organization, no filter.
+    expect(mockDrills.mock.calls).toEqual([['org-1']]);
     expect(mockTransaction).not.toHaveBeenCalled();
     expect(mockPoolClient).not.toHaveBeenCalled();
-    // Nothing of the session is in it: not the gym, not the account.
+    expect(body.prompt).toContain('- drl_lineage-org-1-1 | Drill 1 of org-1 | SK-TEST-01');
+    expect(body.prompt).toContain('- drl_lineage-org-1-2 | Drill 2 of org-1 | SK-TEST-02');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  test('only drill names, lineage ids and skill codes leave: nothing else of the row, the session or an athlete', async () => {
+    const row = libraryRow('org-1', 1);
+    mockDrills.mockResolvedValue([row]);
+    mockPrincipal.mockResolvedValue(principal({ athleteId: 'ath-should-not-appear' }));
+
+    const body = await (await get()).json();
+    const listed = body.prompt.split('\n').filter((line: string) => line.startsWith('- drl_'));
+    expect(listed).toEqual(['- drl_lineage-org-1-1 | Drill 1 of org-1 | SK-TEST-01']);
+
+    const leaves = new Set(['lineage_id', 'name', 'skill_id']);
+    for (const [column, value] of Object.entries(row)) {
+      if (leaves.has(column)) continue;
+      for (const part of (Array.isArray(value) ? value : [value]).map(String)) {
+        // Every text column above carries a distinctive value; only numbers and booleans (version, active...) are short.
+        if (part.length < 8) continue;
+        expect({ column, found: body.prompt.includes(part) }).toEqual({ column, found: false });
+      }
+    }
+    for (const session of ['admin-1', 'ath-should-not-appear']) expect(body.prompt).not.toContain(session);
+  });
+
+  test('each gym gets its own list: the read follows the session, and the request cannot name another gym', async () => {
+    mockDrills.mockImplementation(async (organizationId: string) => [libraryRow(organizationId, 1)]);
+
+    mockPrincipal.mockResolvedValue(principal({ organizationId: 'org-2', accountId: 'admin-2' }));
+    const response = await GET(new NextRequest(
+      'http://localhost/api/pilot/admin/content-import?organization_id=org-1&organizationId=org-1',
+      { method: 'GET', headers: { 'x-organization-id': 'org-1' } },
+    ));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockDrills.mock.calls).toEqual([['org-2']]);
+    expect(body.prompt).toContain('- drl_lineage-org-2-1 | Drill 1 of org-2 | SK-TEST-01');
     expect(body.prompt).not.toContain('org-1');
-    expect(body.prompt).not.toContain('admin-1');
+  });
+
+  test('a gym with no current drills gets the words-only prompt', async () => {
+    mockDrills.mockResolvedValue([]);
+    const body = await (await get()).json();
+    expect(body.prompt).toBe(workoutIntakePrompt());
+    expect(body.prompt).not.toContain("THE GYM'S DRILLS");
+  });
+
+  test("a failed drill read is an opaque 500, never the driver's message, and no prompt", async () => {
+    mockDrills.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.5:5432 password=hunter2'));
+    const response = await get();
+    const body = await response.json();
+    expect(response.status).toBe(500);
+    expect(body.prompt).toBeUndefined();
+    expect(JSON.stringify(body)).not.toMatch(/ECONNREFUSED|hunter2|10\.0\.0\.5/);
   });
 
   test.each([
@@ -493,6 +593,7 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
 
     expect(response.status).toBe(403);
     expect(body.prompt).toBeUndefined();
+    expect(mockDrills).not.toHaveBeenCalled();
   });
 
   test('a session that is not a Microsoft sign-in is refused, by the same sign-in check as the upload', async () => {

@@ -208,54 +208,81 @@ export default function LabelAgreementPage() {
   const progress = payload?.clip_progress;
   const waiting = progress?.still_to_do_count ?? 0;
   const leftOut = progress?.left_out_count ?? 0;
+  // The ground for every status line, the picker and the error. The error is
+  // in here because .alert--warning is only a 12% tint with light type: on the
+  // bare cream wall it would be as unreadable as the lines it sits among. The
+  // panel is absent when nothing is in it (one study, figures already showing),
+  // not shown empty.
+  const showStatePanel = Boolean(error)
+    || studies === null
+    || studies.length !== 1
+    || (Boolean(studyId) && !payload);
   const rows = payload?.report
     ? Object.entries(payload.report.disagreementRates).filter(([, rate]) => rate.count > 0)
     : [];
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="mx-auto w-full max-w-3xl px-[var(--s4)] py-[var(--s5)]">
-        <p className="t-eyebrow">Teach Shadow</p>
-        <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-2xl)' }}>Label agreement</h1>
+      {/* NO TEXT ON THE WALL. This page used to render its title, its empty
+          state and its "Reading..." line straight onto the bare page ground,
+          which is cream, in the light type that belongs on ink: measured on
+          staging 2026-10-02, the empty-state sentence was 1.03:1, the title
+          1.12:1 and the 11px eyebrow 1.66:1. /teach-shadow reads because every
+          word on it sits on a material (a wood header and leather panels),
+          and the type voices are tuned for those materials, so this page does
+          the same in EVERY state -- loading, empty, picker, report, error.
+          The error alert is inside a panel too: .alert--warning is a
+          12% tint with light type, not a ground of its own. Only the "Back to
+          Teach Shadow" link sits on the wall, in the link colour made for it
+          (6.1:1). */}
+      <main className="mx-auto min-h-screen w-full max-w-3xl px-[var(--s4)] py-[var(--s5)]">
+        <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <p className="t-eyebrow text-[color:var(--brass-200)]">Teach Shadow</p>
+          <h1 className="t-gothic mt-[var(--s2)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>Label agreement</h1>
+        </header>
 
-        {error ? (
-          <div role="alert" className="alert alert--warning mt-[var(--s4)]">
-            <span className="alert-icon" aria-hidden="true">&#9650;</span>
-            <div className="alert-body">
-              <p className="alert-title">Attention</p>
-              <p className="alert-msg">{error}</p>
-            </div>
-          </div>
+        {showStatePanel ? (
+          <section className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)] space-y-[var(--s3)]" data-testid="state-panel">
+            {error ? (
+              <div role="alert" className="alert alert--warning">
+                <span className="alert-icon" aria-hidden="true">&#9650;</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{error}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {studies === null ? <p className="t-body">Reading studies&hellip;</p> : null}
+
+            {studies && studies.length === 0 && !error ? (
+              <p className="t-body">
+                There is no study yet. <Link href="/teach-shadow/cut" className="underline">Cut a study clip</Link> to start one.
+              </p>
+            ) : null}
+
+            {studies && studies.length > 1 ? (
+              <>
+                <label className="t-eyebrow block" htmlFor="study">Study</label>
+                <select
+                  id="study"
+                  className="input"
+                  value={studyId}
+                  onChange={(event) => { setStudyId(event.target.value); setShowDetail(false); }}
+                >
+                  <option value="">Choose a study&hellip;</option>
+                  {studies.map((study) => (
+                    <option key={study.calibration_project_id} value={study.calibration_project_id}>
+                      {study.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : null}
+
+            {studyId && !payload && !error ? <p className="t-body">Reading&hellip;</p> : null}
+          </section>
         ) : null}
-
-        {studies === null ? <p className="t-body mt-[var(--s4)]">Reading studies&hellip;</p> : null}
-
-        {studies && studies.length === 0 && !error ? (
-          <p className="t-body mt-[var(--s4)]">
-            There is no study yet. <Link href="/teach-shadow/cut" className="underline">Cut a study clip</Link> to start one.
-          </p>
-        ) : null}
-
-        {studies && studies.length > 1 ? (
-          <>
-            <label className="t-eyebrow mt-[var(--s4)] block" htmlFor="study">Study</label>
-            <select
-              id="study"
-              className="input mt-[var(--s2)]"
-              value={studyId}
-              onChange={(event) => { setStudyId(event.target.value); setShowDetail(false); }}
-            >
-              <option value="">Choose a study&hellip;</option>
-              {studies.map((study) => (
-                <option key={study.calibration_project_id} value={study.calibration_project_id}>
-                  {study.name}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : null}
-
-        {studyId && !payload && !error ? <p className="t-body mt-[var(--s4)]">Reading&hellip;</p> : null}
 
         {payload ? (
           <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">

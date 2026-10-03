@@ -64,6 +64,7 @@ import { Pool } from 'pg';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 import {
   ACCOUNTS_READ_SQL,
+  ATHLETE_LOGIN_LOCK_SQL,
   RETIRE_ACCOUNTS_SQL,
   countRetiredReasons,
   maskEmailForRole,
@@ -257,11 +258,15 @@ async function main() {
 
     const ids = plan.retire.map((decision) => decision.account_id);
 
+    // Waits out any intake promotion of these athletes, so the retire below
+    // sees what it wrote (lib/account-cleanup-plan.mjs says why).
+    await client.query(ATHLETE_LOGIN_LOCK_SQL, [ids]);
+
     // The statement and the reason for each of its guards are in
     // lib/account-cleanup-plan.mjs, where a real-database test runs it.
     const retired = await client.query(
       RETIRE_ACCOUNTS_SQL,
-      [ids],
+      [ids, plan.retire.map((decision) => decision.athlete_id ?? null)],
     );
 
     // Only the rows the statement above actually retired go on to lose their

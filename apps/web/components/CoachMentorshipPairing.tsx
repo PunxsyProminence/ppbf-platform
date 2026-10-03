@@ -50,6 +50,9 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
   const [mentorId, setMentorId] = useState('');
   const [menteeId, setMenteeId] = useState('');
   const [pairings, setPairings] = useState<MentorshipRow[]>([]);
+  /* A failed read is not "nothing yet": an empty list from a read that never
+     came back must not tell a coach this athlete has no pairings. */
+  const [pairingsUnreadable, setPairingsUnreadable] = useState(false);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -65,6 +68,7 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
   const loadFor = useCallback(async (athleteId: string) => {
     if (!athleteId) {
       setPairings([]);
+      setPairingsUnreadable(false);
       return;
     }
     try {
@@ -75,8 +79,10 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
       if (!response.ok) throw new Error('unavailable');
       const body = (await response.json()) as { items?: MentorshipRow[] };
       setPairings(body.items ?? []);
+      setPairingsUnreadable(false);
     } catch {
       setPairings([]);
+      setPairingsUnreadable(true);
     }
   }, []);
 
@@ -200,7 +206,12 @@ export default function CoachMentorshipPairing({ roster }: CoachMentorshipPairin
       {mentorId && (
         <div className="mt-[var(--s5)]">
           <h3 className="t-label">Already paired</h3>
-          {pairings.length === 0 ? (
+          {pairingsUnreadable ? (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" role="alert" data-testid="pairings-unreadable">
+              This athlete&rsquo;s pairings could not be read, so this cannot say whether they have any.
+              Reload to try again.
+            </p>
+          ) : pairings.length === 0 ? (
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">Nothing yet for this athlete.</p>
           ) : (
             <ul className="mt-[var(--s3)] space-y-[var(--s2)]" role="list">

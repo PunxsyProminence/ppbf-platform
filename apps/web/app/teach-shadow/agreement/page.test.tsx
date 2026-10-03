@@ -296,3 +296,114 @@ test('no study yet points at the cutter', async () => {
     '/teach-shadow/cut',
   );
 });
+
+// READABLE GROUND, IN EVERY STATE. Measured on staging 2026-10-02, this page's
+// text sat straight on the cream page ground in type made for ink: the
+// empty-state sentence at 1.03:1, the title at 1.12:1, the 11px eyebrow at
+// 1.66:1. /teach-shadow reads because every word on it is inside a material
+// (.mat-wood header, .mat-leather panels). jsdom cannot measure pixels, so
+// this pins the structural cause: no element that carries text may sit outside
+// a material, except the one link that is made for the page ground. The alert
+// is not exempt: .alert--warning is a 12% tint with light type, so on the bare
+// wall it is as unreadable as the lines around it.
+const MATERIAL = '.mat-leather, .mat-wood';
+
+function textOnTheWall(container: HTMLElement): string[] {
+  const bare: string[] = [];
+  for (const element of Array.from(container.querySelectorAll('*'))) {
+    const ownText = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? '')
+      .join('')
+      .trim();
+    if (!ownText) continue;
+    if (element.closest(MATERIAL)) continue;
+    if (element.matches('a[href="/teach-shadow"]')) continue;
+    bare.push(`<${element.tagName.toLowerCase()}> ${ownText}`);
+  }
+  return bare;
+}
+
+test('the title and eyebrow are on the wood header, not the wall', async () => {
+  mockFetch([], {});
+  render(<LabelAgreementPage />);
+
+  await screen.findByRole('link', { name: 'Cut a study clip' });
+  const header = screen.getByRole('heading', { level: 1, name: 'Label agreement' }).closest('header');
+  expect(header).toHaveClass('mat-wood');
+  expect(header).toHaveTextContent('Teach Shadow');
+});
+
+test('no text sits on the wall while the studies are loading', () => {
+  global.fetch = jest.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+  const { container } = render(<LabelAgreementPage />);
+
+  expect(screen.getByText('Reading studies…')).toBeInTheDocument();
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall when there is no study yet', async () => {
+  mockFetch([], {});
+  const { container } = render(<LabelAgreementPage />);
+
+  await screen.findByRole('link', { name: 'Cut a study clip' });
+  expect(screen.getByText(/There is no study yet\./).closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall at the study picker, or while a chosen study is read', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith(PROJECTS_URL)) return { ok: true, status: 200, json: async () => ({ projects: [STUDY, OTHER_STUDY] }) };
+    return new Promise(() => {});
+  }) as unknown as typeof fetch;
+  const { container } = render(<LabelAgreementPage />);
+
+  const picker = await screen.findByLabelText('Study');
+  expect(textOnTheWall(container)).toEqual([]);
+
+  fireEvent.change(picker, { target: { value: 'proj-1' } });
+  expect(await screen.findByText('Reading…')).toBeInTheDocument();
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall in the report, the thin report, or the open detail', async () => {
+  mockFetch([STUDY], { 'proj-1': { body: report() } });
+  const view = render(<LabelAgreementPage />);
+
+  await screen.findByTestId('headline');
+  expect(textOnTheWall(view.container)).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Show detail' }));
+  expect(screen.getByTestId('detail')).toBeInTheDocument();
+  expect(textOnTheWall(view.container)).toEqual([]);
+  view.unmount();
+
+  mockFetch([STUDY], { 'proj-1': { body: report({ status: 'insufficient_data', comparison_count: 2 }) } });
+  const thin = render(<LabelAgreementPage />);
+  await screen.findByTestId('below-minimum');
+  expect(textOnTheWall(thin.container)).toEqual([]);
+  thin.unmount();
+
+  mockFetch([STUDY], { 'proj-1': { body: report({ report: null, comparison_count: 0, status: 'insufficient_data' }) } });
+  const empty = render(<LabelAgreementPage />);
+  await screen.findByTestId('headline');
+  expect(textOnTheWall(empty.container)).toEqual([]);
+});
+
+test('no text sits on the wall when a study is refused', async () => {
+  mockFetch([STUDY], { 'proj-1': { status: 403, body: { error: 'Forbidden: role not allowed' } } });
+  const { container } = render(<LabelAgreementPage />);
+
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Forbidden: role not allowed'));
+  expect(screen.getByRole('alert').closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall when the studies themselves cannot be read', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'The studies could not be read.' }) })) as unknown as typeof fetch;
+  const { container } = render(<LabelAgreementPage />);
+
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('The studies could not be read.'));
+  expect(screen.queryByText(/There is no study yet\./)).not.toBeInTheDocument();
+  expect(textOnTheWall(container)).toEqual([]);
+});

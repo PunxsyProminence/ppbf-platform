@@ -17,7 +17,7 @@ import {
   upsertWaiver,
 } from '@/src/server/pilot/intake';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { queryOne } from '@/src/server/pilot/db';
+import { queryOne, withTransaction } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -40,7 +40,6 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
 }));
 jest.mock('@/src/server/pilot/auth', () => ({
   createOrUpdateAthleteAccount: jest.fn(),
-  createParentAccount: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
@@ -67,6 +66,10 @@ jest.mock('@/src/server/pilot/intake', () => ({
     jest.requireActual('@/src/server/pilot/intake').assertAthleteAccountIdProvisionable,
   assertAthleteRecordNotWithdrawn:
     jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotWithdrawn,
+  assertAthleteRecordNotHeldByDeletedLogin:
+    jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotHeldByDeletedLogin,
+  writePromotedAthleteRecord:
+    jest.requireActual('@/src/server/pilot/intake').writePromotedAthleteRecord,
   assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
@@ -105,6 +108,7 @@ const mockAssertGuardianUnchanged = assertGuardianAccountUnchanged as jest.Mocke
 const mockUpsertGuardian = upsertGuardian as jest.MockedFunction<typeof upsertGuardian>;
 const mockLinkGuardianAthlete = linkGuardianAthlete as jest.MockedFunction<typeof linkGuardianAthlete>;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
 const mockUpsertWaiver = upsertWaiver as jest.MockedFunction<typeof upsertWaiver>;
 
 function principal(): PilotPrincipal {
@@ -174,6 +178,15 @@ function pilotAccountsLookups(): unknown[] {
   return mockQueryOne.mock.calls.filter(([sql]) => String(sql).includes('pilot.accounts'));
 }
 
+// The lookups that provisioning a guardian LOGIN would make (by email, by
+// account id). The athlete record's own deleted-login check reads
+// pilot.accounts on every promotion and is not one of them.
+function guardianLoginLookups(): unknown[] {
+  return pilotAccountsLookups().filter(
+    (call) => !String((call as unknown[])[0]).includes('where organization_id = $1 and athlete_id = $2'),
+  );
+}
+
 // The promotion's writes, in order: the athlete record, the athlete's account,
 // the guardian's login, the guardian record and its link, and the case status.
 // A refusal has to come before every one of them.
@@ -192,6 +205,14 @@ beforeEach(() => {
   // lookup result behind, and clearAllMocks would carry it into the next test.
   // Reset, it answers "no such account" -- a new guardian login.
   mockQueryOne.mockReset();
+  // The athlete-record checks run on writePromotedAthleteRecord's transaction
+  // client; it answers from the same stubbed lookups as queryOne.
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn({
+    query: async (sql: string, params: unknown[]) => {
+      const row = await mockQueryOne(sql, params);
+      return { rows: row ? [row] : [] };
+    },
+  }));
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
@@ -576,7 +597,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       const response = await POST(promoteRequest(recordOnly));
 
       expect(response.status).toBe(200);
-      expect(pilotAccountsLookups()).toEqual([]);
+      expect(guardianLoginLookups()).toEqual([]);
       expect(mockStaffProvision).not.toHaveBeenCalled();
     });
   });
@@ -605,7 +626,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     await POST(promoteRequest(recordOnly));
 
     expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
-    expect(pilotAccountsLookups()).toEqual([]);
+    expect(guardianLoginLookups()).toEqual([]);
   });
 
   test('promotion without a guardian still works', async () => {
@@ -789,6 +810,36 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
     );
     expectNothingWritten();
+  });
+
+  // The Build List row "Intake can leave a live athlete whose login is marked
+  // deleted" (OD-2026-09-29-002 item 4), sequential path: the cleanup retired
+  // the athlete's login; a later promotion of the same athlete_id that named
+  // NO account_id ran none of the login checks, and upsertAthlete wrote a
+  // live record whose only login was deleted. The record check now runs on
+  // every promotion, account_id or not.
+  test('an athlete record held by a deleted login is refused 409 before anything is written when no account_id is named', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-old', account_deleted: true } } });
+
+    const response = await POST(athletePromoteRequest({}));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('ATHLETE_RECORD_HELD_BY_DELETED_LOGIN');
+    expect(payload.error).not.toContain('athlete-old');
+    expectNothingWritten();
+  });
+
+  // The same record held by a LIVE login, promoted again with no account_id,
+  // is the ordinary re-run of a promotion and still goes through.
+  test('an athlete record held by a live login still promotes when no account_id is named', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-live', account_deleted: false } } });
+
+    const response = await POST(athletePromoteRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
   });
 
   // Reviewer finding: "use a new account_id" led straight into a second

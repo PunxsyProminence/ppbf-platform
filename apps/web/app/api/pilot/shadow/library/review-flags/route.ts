@@ -16,12 +16,21 @@
 // The learning loop's upsert deliberately returns a topic to 'pending' when
 // NEW negative feedback arrives after a verdict, so resolution is never
 // permanent immunity -- that behavior is pinned by the pg suite.
+//
+// Both methods take an optional `shelf` ('gym' default, or 'platform'; a query
+// parameter on GET, a body field on PATCH), resolved to an organization id by
+// libraryShelf.ts like the sources, documents and chunks routes (#1115). A
+// verdict is a Library write: the platform owner records one on the platform
+// shelf and no longer on a gym's (OD-2026-10-02-015 D3). Until 2026-10-03
+// this route took principal.organizationId directly, so the platform owner
+// could still settle a gym's flags through it.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
@@ -49,6 +58,7 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    const organizationId = resolveLibraryShelf(principal, request.nextUrl.searchParams.get('shelf'), 'read');
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_library_review_flags'] });
 
     const stateParam = request.nextUrl.searchParams.get('state') ?? 'pending';
@@ -65,7 +75,7 @@ export async function GET(request: NextRequest) {
          AND ($2 = 'all' OR review_state = 'pending')
        ORDER BY last_flagged_at DESC
        LIMIT 100`,
-      [principal.organizationId, stateParam],
+      [organizationId, stateParam],
     );
 
     return NextResponse.json({ ok: true, flags });
@@ -78,9 +88,10 @@ export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    const body = await request.json().catch(() => ({}));
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_library_review_flags'] });
 
-    const body = await request.json().catch(() => ({}));
     const flagId = typeof body.flag_id === 'string' ? body.flag_id.trim() : '';
     const reviewState = typeof body.review_state === 'string' ? body.review_state : '';
     const notes = typeof body.notes === 'string' ? body.notes.slice(0, 2000) : undefined;
@@ -104,7 +115,7 @@ export async function PATCH(request: NextRequest) {
          AND flag_id = $2
          AND review_state = 'pending'
        RETURNING flag_id, topic`,
-      [principal.organizationId, flagId, reviewState, principal.accountId],
+      [organizationId, flagId, reviewState, principal.accountId],
     );
     if (!updated) {
       throw new Error('Not found: pending review flag');
@@ -114,7 +125,7 @@ export async function PATCH(request: NextRequest) {
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
-      organization_id: principal.organizationId,
+      organization_id: organizationId,
       entity_type: 'shadow_library_review_flag',
       entity_id: flagId,
       details: {

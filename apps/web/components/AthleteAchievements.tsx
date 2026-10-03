@@ -104,6 +104,7 @@ export default function AthleteAchievements({
   const [program, setProgram] = useState<Program>(DEFAULT_PROGRAM);
   const [completedSessions, setCompletedSessions] = useState(0);
   const [state, setState] = useState<LoadState>('loading');
+  const [recognitionFailed, setRecognitionFailed] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
 
   const isFamily = audience === 'family';
@@ -137,10 +138,16 @@ export default function AthleteAchievements({
 
       /* Recognition and mentorship failing is not the panel failing. The path
          still stands on its own, and an error banner over somebody's wall of
-         compliments is louder than the thing it is apologising for. */
+         compliments is louder than the thing it is apologising for. But the
+         wall must not claim "nothing here yet" when it simply could not be
+         read, so a failed read gets one quiet line in place of that sentence.
+         Mentorship has no empty sentence (the section hides), so it needs none. */
       if (recognitionResponse.ok) {
         const body = (await recognitionResponse.json()) as { items?: RecognitionItem[] };
         setRecognitions(body.items ?? []);
+        setRecognitionFailed(false);
+      } else {
+        setRecognitionFailed(true);
       }
       if (mentorshipResponse.ok) {
         const body = (await mentorshipResponse.json()) as { items?: MentorshipItem[] };
@@ -284,7 +291,11 @@ export default function AthleteAchievements({
           {isFamily ? 'What the coaches have said' : 'From your coaches'}
         </h4>
 
-        {recognitions.length === 0 ? (
+        {recognitionFailed ? (
+          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}`}>
+            The coaches’ notes could not be loaded just now.
+          </p>
+        ) : recognitions.length === 0 ? (
           <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}`}>
             {isFamily
               ? 'Nothing here yet. Coaches write these when they catch somebody doing well.'

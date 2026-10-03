@@ -47,6 +47,10 @@ export default function FloorGroupsPage() {
   const [planForm, setPlanForm] = useState({ plan_on: today(), title: '', rotation_minutes: '' });
   const [groupForm, setGroupForm] = useState({ group_name: '', station_name: '', focus: '' });
   const [placeAthleteId, setPlaceAthleteId] = useState('');
+  /* Whether the chosen day's groups could not be read. An empty list after a
+     failed read must not say "No groups yet", and the add-group form is held
+     back too: its rotation order counts the groups this page can see. */
+  const [groupsUnreadable, setGroupsUnreadable] = useState(false);
 
   const reloadPlans = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/coach/floor-groups`, {
@@ -59,12 +63,18 @@ export default function FloorGroupsPage() {
   }, []);
 
   const reloadGroups = useCallback(async (planId: string) => {
-    const response = await fetch(`${apiBase()}/api/pilot/coach/floor-groups?plan_id=${encodeURIComponent(planId)}`, {
-      credentials: 'include',
-    });
-    if (!response.ok) throw new Error('Unable to load groups.');
-    const payload = (await response.json()) as { groups?: GroupRow[] };
-    setGroups(payload.groups ?? []);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/floor-groups?plan_id=${encodeURIComponent(planId)}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Unable to load groups.');
+      const payload = (await response.json()) as { groups?: GroupRow[] };
+      setGroups(payload.groups ?? []);
+      setGroupsUnreadable(false);
+    } catch {
+      setGroups([]);
+      setGroupsUnreadable(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -126,6 +136,7 @@ export default function FloorGroupsPage() {
     await reloadPlans();
     setSelectedPlanId(result.item.plan_id);
     setGroups([]);
+    setGroupsUnreadable(false);
   };
 
   const handleAddGroup = async () => {
@@ -237,6 +248,7 @@ export default function FloorGroupsPage() {
                     const value = e.target.value;
                     setSelectedPlanId(value || null);
                     setGroups([]);
+                    setGroupsUnreadable(false);
                     if (value) void reloadGroups(value);
                   }}>
                   <option value="">Select a day…</option>
@@ -248,7 +260,14 @@ export default function FloorGroupsPage() {
                 </select>
               </div>
 
-              {selectedPlanId && (
+              {selectedPlanId && groupsUnreadable && (
+                <p className="t-body mb-[var(--s3)]" role="alert" data-testid="groups-unreadable">
+                  The groups for this day could not be read, so this page cannot show who is where.
+                  Pick the day again to retry.
+                </p>
+              )}
+
+              {selectedPlanId && !groupsUnreadable && (
                 <>
                   <p className="t-data mb-[var(--s3)]" style={{ fontSize: 'var(--t-xs)' }}>
                     {groups.length === 0

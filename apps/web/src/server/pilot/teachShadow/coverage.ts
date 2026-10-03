@@ -1,7 +1,7 @@
 import { currentAdjudicationPredicate } from '@/src/server/pilot/calibration/adjudication';
 import { query } from '@/src/server/pilot/db';
 import {
-  BOXING_ONTOLOGY_VERSION,
+  BOXING_ONTOLOGY_VERSION_0_1,
   DEFENSE_TYPES,
   PUNCH_TYPES,
   STANCES,
@@ -276,7 +276,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            where g.organization_id = $1 and g.ontology_version = $2
              and g.governance_state = 'candidate')
            as gold_candidates`,
-      [organizationId, BOXING_ONTOLOGY_VERSION],
+      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
     ),
     query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
       `select e.punch_type, e.stance,
@@ -286,7 +286,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            and e.event_class = 'punch'
            and e.punch_type is not null
         group by e.punch_type, e.stance`,
-      [organizationId, BOXING_ONTOLOGY_VERSION],
+      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
     ),
     query<{ defense_type: string; events: number; clips: number }>(
       `select e.defense_type,
@@ -296,7 +296,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            and e.event_class = 'defense'
            and e.defense_type is not null
         group by e.defense_type`,
-      [organizationId, BOXING_ONTOLOGY_VERSION],
+      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
     ),
   ]);
 
@@ -332,7 +332,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
   }));
 
   return {
-    ontology_version: BOXING_ONTOLOGY_VERSION,
+    ontology_version: BOXING_ONTOLOGY_VERSION_0_1,
     capture: capture[0] ?? {
       recording_sessions: 0,
       capture_takes: 0,

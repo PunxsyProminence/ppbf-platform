@@ -63,7 +63,7 @@ item 23) and the archived V1 build prompt (item 24).
 
 - [apps/web/README.md](apps/web/README.md) — run, test, build
 - [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) — first-run setup
-- [SEED_GUIDE.md](SEED_GUIDE.md) — seed data
+- [docs/CONTENT_PACKAGE_CONTRACT.md](docs/CONTENT_PACKAGE_CONTRACT.md) — loading gym content (the laptop athlete seeder and its SEED_GUIDE.md were retired 2026-10-03, OD-2026-10-03-002 section 10; athletes enter by roster import, intake or the People page)
 
 Database/schema changes use the controlled migration mechanisms already in the
 repository. No HTTP route changes the schema.

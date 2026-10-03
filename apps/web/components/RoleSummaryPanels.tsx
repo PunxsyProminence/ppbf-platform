@@ -47,7 +47,9 @@ interface AthleteSummaryPanelProps {
   // bare number, because a bare number made "still loading" and "the read
   // failed" render as 0 -- which tells a child their coach set them nothing.
   openCoachWork: AthleteCountRead;
-  goalsActive: number;
+  // Same contract as openCoachWork: a failed goals read rendered "Active
+  // Goals 0" while the goals tab said the read failed.
+  goalsActive: AthleteCountRead;
   upcomingSession?: string;
   // No unreadMessages here, deliberately. The athlete has no inbound message
   // feed: the Messages tab is write-only Ask-SHADOW (replies are read in
@@ -81,8 +83,12 @@ interface CoachSummaryPanelProps {
    * always, was told "Nobody is assigned to you yet" directly above their
    * real roster. A claim derived from a column the platform never feeds is
    * not a measurement; it is a sentence that happens to be false.
+   *
+   * null when the roster read FAILED. The emptied list is not an empty floor,
+   * and "Nobody is assigned to you yet" said over a failed read is the same
+   * false sentence by another route.
    */
-  activeAthletes: number;
+  activeAthletes: number | null;
   /*
    * null on each count means "no feed answered this" and renders as a
    * disclosure rather than a number -- the contract ParentSummaryPanel below
@@ -214,10 +220,17 @@ export function AthleteSummaryPanel({
       )}
 
       {/* Goals */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Active Goals</p>
-        <p className="stat-val">{goalsActive}</p>
-      </div>
+      {goalsActive.status === 'read' ? (
+        <div className={STAT_TILE}>
+          <p className="stat-label">Active Goals</p>
+          <p className="stat-val">{goalsActive.count}</p>
+        </div>
+      ) : (
+        <div className={KPI_TILE}>
+          <p className="t-label">Active Goals</p>
+          <p className="t-body mt-[var(--s3)]">{goalsActive.status === 'loading' ? 'Checking...' : 'Unavailable'}</p>
+        </div>
+      )}
 
       {/* Upcoming Session */}
       <div className={`${KPI_TILE} md:col-span-1`}>
@@ -259,6 +272,18 @@ export function CoachSummaryPanel({
      "Nobody is assigned to you yet" a few hundred pixels above the roster
      itself. An empty floor is a real state and still gets this line; it is
      just no longer the only state. */
+  if (activeAthletes === null) {
+    return (
+      <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] mat-leather p-[var(--s5)]">
+        <p className="t-label">Your floor</p>
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+          Your roster could not be read, so this cannot say who is assigned to you.
+        </p>
+        {sessionStatus ? <p className="t-muted mt-[var(--s3)]">{sessionStatus}</p> : null}
+      </div>
+    );
+  }
+
   if (activeAthletes === 0) {
     return (
       <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] mat-leather p-[var(--s5)]">

@@ -29,6 +29,7 @@ function ActivationCodesConsoleContent() {
   const [codes, setCodes] = useState<OutstandingActivationCodeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // Issue form state
   const [accountId, setAccountId] = useState('');
@@ -76,8 +77,10 @@ function ActivationCodesConsoleContent() {
       }
 
       setCodes(payload.codes);
+      setLoadFailed(false);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load activation codes');
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -208,7 +211,12 @@ function ActivationCodesConsoleContent() {
                     );
                   })}
                   {codes.length === 0 && (
-                    <li className="t-body mt-[var(--s2)]">No outstanding activation codes for this organization.</li>
+                    /* A failed read is not an empty list: say it could not be read. */
+                    <li className="t-body mt-[var(--s2)]">
+                      {loadFailed
+                        ? 'Outstanding activation codes could not be loaded, so this is not a list of what is still open.'
+                        : 'No outstanding activation codes for this organization.'}
+                    </li>
                   )}
                 </ul>
               )}
