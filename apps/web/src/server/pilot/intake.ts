@@ -484,8 +484,9 @@ export async function updateIntakeCaseStatus(params: {
   status: IntakeCaseStatus;
   reviewedByAccountId: string;
   reviewNotes?: string;
-}): Promise<void> {
-  await query(
+}, client?: PoolClient): Promise<void> {
+  await writeRows(
+    client,
     `update pilot.intake_cases
      set status = $3,
          reviewed_by_account_id = $4,
@@ -497,7 +498,8 @@ export async function updateIntakeCaseStatus(params: {
     [params.organizationId, params.intakeCaseId, params.status, params.reviewedByAccountId, params.reviewNotes ?? null],
   );
 
-  await query(
+  await writeRows(
+    client,
     `update pilot.intake_documents
      set review_status = $3,
          updated_at = now()
@@ -511,8 +513,9 @@ export async function bindIntakeDocumentsToOwner(params: {
   intakeCaseId: string;
   ownerEntityType: string;
   ownerEntityId: string;
-}): Promise<void> {
-  await query(
+}, client?: PoolClient): Promise<void> {
+  await writeRows(
+    client,
     `update pilot.intake_documents
      set owner_entity_type = $3,
          owner_entity_id = $4,
@@ -521,11 +524,12 @@ export async function bindIntakeDocumentsToOwner(params: {
     [params.organizationId, params.intakeCaseId, params.ownerEntityType, params.ownerEntityId],
   );
 
-  const docs = await query<{
+  const docs = await writeRows<{
     blob_path: string;
     classification: string;
     created_by_account_id: string;
   }>(
+    client,
     `select
        d.blob_path,
        d.classification,
@@ -539,7 +543,8 @@ export async function bindIntakeDocumentsToOwner(params: {
   );
 
   for (const doc of docs) {
-    await query(
+    await writeRows(
+      client,
       `insert into pilot.documents
        (organization_id, document_id, owner_entity_type, owner_entity_id, storage_path, classification, created_by_account_id)
        values ($1,$2,$3,$4,$5,$6,$7)`,
@@ -1670,6 +1675,34 @@ export async function lockAthleteLoginForIntake(
 }
 
 /**
+ * Locks the intake case row on the caller's transaction (`for update`, held
+ * until it ends) and refuses (409) unless the case is still approved. The
+ * route reads the status before its transaction opens; this is the same rule
+ * held under the lock, so a second promotion of the same case that started
+ * before the first committed is refused instead of writing a second athlete.
+ */
+export async function assertIntakeCaseStillApproved(
+  client: PoolClient,
+  organizationId: string,
+  intakeCaseId: string,
+): Promise<void> {
+  const row = await client.query<{ status: string }>(
+    `select status from pilot.intake_cases
+      where organization_id = $1 and intake_case_id = $2
+      for update`,
+    [organizationId, intakeCaseId],
+  );
+  const status = row.rows[0]?.status;
+  if (status !== 'approved') {
+    throw new ConflictError(
+      `Conflict: intake case "${intakeCaseId}" is no longer approved (now ${status ?? 'missing'}). `
+      + 'It was promoted, or changed, while this promotion was waiting. Reload the case before acting on it.',
+      'INTAKE_CASE_NOT_APPROVED',
+    );
+  }
+}
+
+/**
  * Promotion's athlete record: the checks that refuse it, and the write, in one
  * transaction under the athlete-login lock.
  *
@@ -1679,25 +1712,36 @@ export async function lockAthleteLoginForIntake(
  * cleanup from retiring this athlete's login between those checks and the
  * write (lockAthleteLoginForIntake). One pooled connection carries all of it.
  *
- * The athlete's account is written after this commits, outside the lock: from
- * then on the record is live, and the cleanup's retire statement refuses any
- * login a live record stands behind. One window stays open: a named login
- * that has no athlete_id yet is not linked until createOrUpdateAthleteAccount
- * runs, so the cleanup can retire it in between. That write then refuses the
- * deleted login (auth.ts), and the promotion answers 409 with the athlete
- * record written and no login -- a half-done promotion, not a live record
- * held by a deleted login. Closing it needs the account write inside this
- * transaction, which is auth.ts's to change.
+ * Given `callerClient`, all of it runs on the caller's transaction, and the lock is
+ * held until that transaction ends. review-action passes one: the athlete's
+ * login, the guardian's login and record, and the rest of the promotion are
+ * written on the same transaction, so they commit or roll back with the
+ * record, and the cleanup cannot retire the named login between the record
+ * and the link (OD-2026-10-03-002 section 5). This must be the first thing
+ * the caller's transaction does, so the lock comes before any row lock.
+ * Without it, it is a transaction of its own, as before.
+ *
+ * Given `intakeCaseId`, the case row is locked right after the athlete-login
+ * lock and the promotion is refused unless the case is still approved. Two
+ * promotions of one case each passed the route's earlier status read, and
+ * with different athlete_ids they take different athlete-login locks, so both
+ * used to write. The row lock makes the second wait for the first to commit;
+ * it then sees the case promoted and is refused (assertIntakeCaseStillApproved).
  */
 export async function writePromotedAthleteRecord(params: {
   organizationId: string;
   athlete: PilotAthlete;
   accountId?: string;
-}): Promise<void> {
+  intakeCaseId?: string;
+}, callerClient?: PoolClient): Promise<void> {
   const { organizationId, athlete } = params;
   const athleteId = athlete.athlete_id;
-  await withTransaction(async (client) => {
+  const write = async (client: PoolClient): Promise<void> => {
     await lockAthleteLoginForIntake(client, organizationId, athleteId);
+
+    if (params.intakeCaseId) {
+      await assertIntakeCaseStillApproved(client, organizationId, params.intakeCaseId);
+    }
 
     // A withdrawn athlete record: upsertAthlete would rewrite it while it
     // stayed withdrawn. A returning athlete is re-enrolled under a new
@@ -1722,7 +1766,8 @@ export async function writePromotedAthleteRecord(params: {
     }
 
     await upsertAthlete(organizationId, athlete, client);
-  });
+  };
+  await (callerClient ? write(callerClient) : withTransaction(write));
 }
 
 /**
@@ -1778,11 +1823,12 @@ function guardianAccountConflict(parentId: string, accountId: string): ConflictE
  * guardian record to a different login account.
  *
  * upsertGuardian enforces the same rule itself, atomically, and that is the
- * guarantee. This read exists for review-action's promotion, which has no
- * transaction around its writes: without it the athlete record, and any
- * athlete or guardian account the payload names, would already be written
- * when upsertGuardian refused, and the admin would see a refusal for a
- * promotion that had mostly happened.
+ * guarantee. This read exists for review-action's promotion, which had no
+ * transaction around its writes when it was added: without it the athlete
+ * record, and any athlete or guardian account the payload names, were already
+ * written when upsertGuardian refused. The promotion's writes are one
+ * transaction now (OD-2026-10-03-002 section 5), so that refusal rolls them
+ * back; this read still refuses before the transaction opens.
  */
 export async function assertGuardianAccountUnchanged(params: {
   organizationId: string;

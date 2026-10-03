@@ -1,3 +1,5 @@
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
@@ -319,6 +321,12 @@ function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
  * account with active_flag false is refused (409) rather than reactivated
  * (OD-2026-09-30-004 d1). The invite surfaces leave it unset, because
  * re-inviting is how an admin reactivates a login on purpose.
+ *
+ * `client` runs every statement here, reads included, on the caller's
+ * transaction instead of a transaction of its own. Intake promotion passes
+ * it, so the guardian's login commits or rolls back with the athlete record
+ * and the rest of the promotion (OD-2026-10-03-002 section 5). Omitted, the
+ * reads are pooled and the writes are one transaction, as before.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -330,7 +338,15 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   volunteer?: VolunteerRosterAssignment;
   refuseRoleChange?: boolean;
   refuseDeactivatedLogin?: boolean;
-}): Promise<StaffProvisionResult> {
+}, client?: PoolClient): Promise<StaffProvisionResult> {
+  // On the caller's transaction when given. A pooled read there could not see
+  // the caller's own uncommitted rows, and a pooled write could wait on a row
+  // the caller holds -- a wait Postgres does not see as a deadlock.
+  const readOne = async <T extends QueryResultRow>(text: string, values: unknown[]): Promise<T | null> =>
+    client ? (await client.query<T>(text, values)).rows[0] ?? null : queryOne<T>(text, values);
+  const inTransaction = <T>(fn: (tx: PoolClient) => Promise<T>): Promise<T> =>
+    client ? fn(client) : withTransaction(fn);
+
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
   const role = params.role;
@@ -362,7 +378,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     throw new Error('Unsupported role');
   }
 
-  const organization = await queryOne<{ organization_id: string }>(
+  const organization = await readOne<{ organization_id: string }>(
     'select organization_id from pilot.organizations where organization_id = $1',
     [organizationId],
   );
@@ -371,7 +387,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     throw new Error('Missing organization_id: organization does not exist');
   }
 
-  const existing = await queryOne<{
+  const existing = await readOne<{
     account_id: string;
     organization_id: string | null;
     role: PilotRole;
@@ -444,7 +460,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // The account_id is a separate primary key from the email. If the caller
     // supplied a hint that collides with an unrelated account, fail rather
     // than overwrite that account's role and organization.
-    const accountIdCollision = await queryOne<{ account_id: string }>(
+    const accountIdCollision = await readOne<{ account_id: string }>(
       'select account_id from pilot.accounts where account_id = $1',
       [accountId],
     );
@@ -454,7 +470,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     }
   }
 
-  const { guardianLink, volunteerLink } = await withTransaction(async (client) => {
+  const { guardianLink, volunteerLink } = await inTransaction(async (client) => {
     // refuseDeactivatedLogin is held in this statement, not only in the read
     // above: that read is outside the transaction, so an admin deactivating
     // the login after it would otherwise have it turned back on here. With
@@ -768,10 +784,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  * refuseRoleChange, refuseDeactivatedLogin) would refuse or would not use as
  * named.
  *
- * Intake promotion has no transaction around its writes and provisions the
- * guardian's login after the athlete record and the athlete's account. A
- * refusal from provisioning therefore used to land with those already
- * written. This runs the same lookups, writes nothing, and refuses in the same
+ * Intake promotion provisions the guardian's login after the athlete record
+ * and the athlete's account. Before its writes became one transaction
+ * (OD-2026-10-03-002 section 5) a refusal from provisioning landed with those
+ * already written; now it rolls them back, and this still refuses before the
+ * transaction opens. This runs the same lookups, writes nothing, and refuses in the same
  * order, so the caller can refuse first. Provisioning keeps every check it
  * has; this only moves the refusals earlier.
  *
