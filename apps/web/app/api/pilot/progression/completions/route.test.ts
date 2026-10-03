@@ -142,6 +142,7 @@ describe('GET /api/pilot/progression/completions', () => {
   test('athlete can view completions for their own assignment', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(assignmentRow());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([{ completion_id: 'c1' }]);
     const res = await GET(getRequest('assignment_id=asg-1'));
     expect(res.status).toBe(200);
@@ -167,6 +168,7 @@ describe('POST /api/pilot/progression/completions', () => {
 
   test('rejects when the assignment does not belong to the specified athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQueryOne.mockResolvedValueOnce(assignmentRow({ athlete_id: 'ath-other' }));
     const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1' }));
     expect(res.status).toBe(400);
@@ -174,6 +176,7 @@ describe('POST /api/pilot/progression/completions', () => {
 
   test('athlete can record their own completion', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQueryOne.mockResolvedValueOnce(assignmentRow());
     // recordCompletion transaction: lock + status check → insert → lock
     // assignment → count → update %
@@ -264,6 +267,7 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
 
   test('an athlete cannot log a completion against cancelled work, and nothing is written', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQueryOne.mockResolvedValueOnce(assignmentRow({ status: 'cancelled' }));
 
     const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1', notes: 'did it anyway' }));
@@ -296,6 +300,7 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
     // catches it, and it throws before the insert, so the rollback leaves
     // nothing behind.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQueryOne.mockResolvedValueOnce(assignmentRow({ status: 'in_progress' }));
     mockQuery.mockResolvedValueOnce([{ status: 'cancelled' }]); // lock + status check
 
@@ -311,6 +316,7 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
 
   test('open work still takes a new completion, and the status is checked under the lock before the insert', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQueryOne.mockResolvedValueOnce(assignmentRow({ status: 'in_progress' }));
     mockQuery
       .mockResolvedValueOnce([{ status: 'in_progress' }]) // lock + status check

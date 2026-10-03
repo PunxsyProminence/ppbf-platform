@@ -401,6 +401,14 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
     if (!actor.athleteId || actor.athleteId !== athleteId) {
       throw new Error('Forbidden: athlete cannot access another athlete record');
     }
+    // The id match says whose record it is, not that the record is still
+    // there. Deleting an athlete writes deleted_at and ends their sessions
+    // (OD-2026-09-29-002 item 10), but a session that outlived that -- or a
+    // session issued before the mark -- carried the same athleteId, and this
+    // arm admitted it on the match alone. Same live-row rule as the admin arm,
+    // in the actor's own gym because pilot.athletes' key is
+    // (organization_id, athlete_id).
+    await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
     return;
   }
 
@@ -504,7 +512,16 @@ export async function accessibleAthleteIds(
   }
 
   if (actor.role === 'athlete') {
-    return actor.athleteId && distinctIds.includes(actor.athleteId) ? new Set([actor.athleteId]) : new Set();
+    if (!actor.athleteId || !distinctIds.includes(actor.athleteId)) {
+      return new Set();
+    }
+    // Same live-row rule as the athlete arm of assertActorCanAccessAthlete.
+    const ownRow = await queryOne<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes
+       where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
+      [actor.organizationId, actor.athleteId],
+    );
+    return ownRow ? new Set([ownRow.athlete_id]) : new Set();
   }
 
   if (actor.role === 'parent') {

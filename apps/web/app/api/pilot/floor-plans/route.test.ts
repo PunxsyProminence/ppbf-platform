@@ -47,6 +47,7 @@ const GENERATED_AT_PARAM = 3;
 describe('POST /api/pilot/floor-plans', () => {
   test('an unparseable generatedAt falls back to now instead of reaching timestamptz', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([]);
 
     const res = await POST(postRequest({ generatedAt: 'whenever', tasks: [] }));
@@ -58,6 +59,7 @@ describe('POST /api/pilot/floor-plans', () => {
 
   test('a valid generatedAt is preserved', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([]);
 
     const res = await POST(postRequest({ generatedAt: '2026-07-30T12:00:00.000Z', tasks: [] }));
