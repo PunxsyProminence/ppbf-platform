@@ -153,3 +153,21 @@ test('withdrawing needs a reason typed in before it posts', async () => {
   expect(capture.posts).toHaveLength(1);
   expect(capture.posts[0]).toMatchObject({ action: 'withdraw', reason: 'filed in error' });
 });
+
+test('a failed club read says so and never claims no nominations or no members', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/one-percent-club')) {
+      return { ok: false, status: 500, json: async () => ({}) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<OnePercentClubPage />);
+  });
+
+  expect(await screen.findByTestId('nominations-unreadable')).toBeTruthy();
+  expect(screen.getByTestId('members-unreadable')).toBeTruthy();
+  expect(screen.queryByText(/No open nominations/i)).toBeNull();
+  expect(screen.queryByText(/No confirmed members yet/i)).toBeNull();
+});

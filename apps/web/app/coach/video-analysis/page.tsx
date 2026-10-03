@@ -192,6 +192,9 @@ export default function CoachVideoAnalysisPage() {
   const session = usePilotSession();
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videoError, setVideoError] = useState('');
+  /* Only the library READ. videoError also carries open and release
+     failures, which say nothing about whether the library loaded. */
+  const [videosUnreadable, setVideosUnreadable] = useState(false);
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -523,8 +526,10 @@ export default function CoachVideoAnalysisPage() {
         if (!res.ok) throw new Error('Failed to load video library');
         const data = (await res.json()) as { items: VideoSession[] };
         setVideos(data.items ?? []);
+        setVideosUnreadable(false);
         setVideoError('');
       } catch (err) {
+        setVideosUnreadable(true);
         setVideoError(err instanceof Error ? err.message : 'Failed to load video library');
       }
     })();
@@ -1136,7 +1141,12 @@ export default function CoachVideoAnalysisPage() {
                   <option key={v.video_session_id} value={v.video_session_id}>{v.title} · {v.file_name}</option>
                 ))}
               </select>
-              {videos.length === 0 ? (
+              {/* A failed read is not an empty library. */}
+              {videosUnreadable ? (
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]" data-testid="missed-video-unreadable">
+                  The video library could not be read, so this cannot say whether there is footage to record against.
+                </p>
+              ) : videos.length === 0 ? (
                 <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                   No videos in the library yet, so there is nothing to record an observation against.
                 </p>
