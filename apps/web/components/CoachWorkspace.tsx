@@ -846,9 +846,11 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
   return 'cleared';
 }
 
+// --locked means a medical stop (OD-2026-09-29-001). A high pain report is not
+// one, so it sits a rung down with moderate; the badge label still names it.
 function painSeverityTone(severity: CoachPainReport['severity']): BadgeTone {
-  if (severity === 'critical' || severity === 'high') return 'locked';
-  if (severity === 'moderate') return 'restricted';
+  if (severity === 'critical') return 'locked';
+  if (severity === 'high' || severity === 'moderate') return 'restricted';
   return 'monitor';
 }
 
