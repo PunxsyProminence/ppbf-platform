@@ -22,6 +22,7 @@ import {
   type AthleteWellnessTodayRead,
 } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
@@ -2020,6 +2021,26 @@ export default function AthleteWorkspace() {
     'What does soreness score mean for my training?'
   ];
 
+  /* MY CORNER's goals line reads the same state the goals tab does: only an
+     answered read is a number. */
+  const goalsRead: AthleteCountRead = goalsError
+    ? { status: 'unavailable' }
+    : goalsLoading
+      ? { status: 'loading' }
+      : { status: 'read', count: goalsActive };
+
+  /* "Report pain or soreness" in My Corner. The pain report needs a body
+     location before its form can open, so this takes the athlete to the
+     existing report's location picker rather than opening a second report.
+     The card below, its form and its endpoint are unchanged. */
+  const goToPainReport = () => {
+    const picker = document.getElementById('pain-location-select');
+    if (picker) {
+      picker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      picker.focus({ preventScroll: true });
+    }
+  };
+
   return (
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
        (PAGE_MAP), the same room pattern /schedule uses. Law 5 applies to
@@ -2058,15 +2079,37 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        {/* #82: an active training hold, in the athlete's own language.
+            Same self-contained contract as ProfileHeader -- renders nothing
+            when there is no hold. It stands above My Corner so that, when a
+            hold exists, it is the first thing on the screen. */}
+        <TrainingHoldBanner />
+
+        {/* MY CORNER: the day's actions -- check in, report pain, coach work,
+            goals -- at the top of the screen on My Dashboard. This is the
+            Today section that used to sit below the tab rail, moved and
+            restyled; the same handlers, the same reads. See AthleteCorner.tsx. */}
+        {activeTab === 'my-dashboard' && (
+          <AthleteCorner
+            sessionState={storedSessionLoad}
+            identityState={athleteIdentityState}
+            checkedInAt={checkInTime}
+            checkingIn={isCheckingIn}
+            onCheckIn={() => void handleCheckIn()}
+            onRetrySession={() => void loadStoredSessions()}
+            coachWork={openCoachWorkRead}
+            onOpenFloor={() => setActiveTab('athlete-floor')}
+            goals={goalsRead}
+            onOpenGoals={() => setActiveTab('smart-goals')}
+            onReportPain={goToPainReport}
+            onAskShadow={() => setActiveTab('shadow')}
+          />
+        )}
+
         {/* The athlete's own fight card. Self-contained: it fetches its own
             data and renders nothing until it has some, so this is the single
             insertion the profile layer makes into this file. */}
         <ProfileHeader />
-
-        {/* #82: an active training hold, in the athlete's own language.
-            Same self-contained contract as ProfileHeader -- renders nothing
-            when there is no hold. */}
-        <TrainingHoldBanner />
 
         {/* Notices are posted paper on the leather wall. */}
         <AnnouncementBanner
@@ -2158,105 +2201,9 @@ export default function AthleteWorkspace() {
                   the athlete's identity resolves and history exists. */}
               <ThenAndNow athleteId={backendAthleteId} />
 
-              {/* TODAY.
-                  This was a flat row of five identical buttons, which asked the
-                  athlete to already know what needed doing. It states the day
-                  back to them instead: what is true right now, and the one
-                  action each fact implies.
-
-                  Every line here is a read of state this component already
-                  holds. Nothing is counted that was not recorded, and an empty
-                  collection says so in words rather than showing a 0 -- "none
-                  recorded" and "zero" are different claims, and only one of
-                  them is true before anything has happened. */}
-              <section className={PANEL}>
-                <h3 className="t-label">Today</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <p className="t-label">Check in</p>
-                    <p className="t-body text-[color:var(--bone-300)]">
-                      {checkInTime ? `Checked in ${checkInTime}.` : 'You have not checked in today.'}
-                    </p>
-                    {/* This calls the same handler as the Session Log's own
-                        button rather than navigating somewhere -- checking in
-                        is one tap from the first thing an athlete sees, and
-                        both controls stay one behaviour because they are one
-                        handler. */}
-                    {activeSessionRecord ? null : (
-                      <button
-                        type="button"
-                        onClick={() => void handleCheckIn()}
-                        disabled={isCheckingIn}
-                        className="btn btn--kiosk w-full disabled:opacity-50 disabled:grayscale"
-                      >
-                        {isCheckingIn ? 'Checking in...' : 'Start check-in'}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <p className="t-label">Your goals</p>
-                    <p className="t-body text-[color:var(--bone-300)]">
-                      {goalsError
-                        ? 'Not available right now.'
-                        : goalsLoading
-                          ? 'Checking...'
-                          : goalsActive === 0
-                            ? 'No active goals recorded.'
-                            : `${goalsActive} active.`}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('smart-goals')}
-                      className="btn btn--kiosk btn--ghost w-full"
-                    >
-                      Open goals
-                    </button>
-                  </div>
-
-                  {/* The one card on Today that is not about what the athlete
-                      decided: what a coach assigned them. It opens the Floor,
-                      which lists that work -- until A-FIN-04 the Floor held a
-                      plan generated at check-in instead, and the coach's work
-                      was reachable only from a page this card linked away to.
-
-                      Same grammar as its siblings: an empty collection says
-                      "none recorded" rather than showing a 0, and a read that
-                      failed says so instead of reporting nothing assigned. */}
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <p className="t-label">From your coach</p>
-                    <p className="t-body text-[color:var(--bone-300)]">
-                      {assignedWorkError
-                        ? 'Not available right now.'
-                        : assignedWorkLoading
-                          ? 'Checking...'
-                          : openCoachWork.length === 0
-                            ? 'No assigned work recorded.'
-                            : `${openCoachWork.length} still to do.`}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('athlete-floor')}
-                      className="btn btn--kiosk btn--ghost w-full"
-                    >
-                      Open the floor
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-                  <Link href="/schedule" className="btn btn--kiosk btn--ghost">
-                    Open Scheduler
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shadow')}
-                    className="btn btn--kiosk btn--ghost"
-                  >
-                    Ask SHADOW
-                  </button>
-                </div>
-              </section>
+              {/* TODAY moved to MY CORNER at the top of the workspace (above the
+                  fight card), restyled, with the same handlers and reads. See
+                  AthleteCorner.tsx. */}
 
               {/* This help copy predated #597 and kept promising what #597
                   removed: it told the athlete to "check your readiness status"
@@ -2322,8 +2269,9 @@ export default function AthleteWorkspace() {
                     rework that stopped posting it to SHADOW as an observed
                     duration left the box asking for a number no code read. */}
 
-                {/* Pain/Injury Card */}
-                <div className={PANEL_RAISED}>
+                {/* Pain/Injury Card. My Corner's "Report pain or soreness"
+                    brings the athlete here (to the location picker). */}
+                <div id="athlete-pain-report" className={PANEL_RAISED}>
                   <h3 className="t-label mb-[var(--s4)]">Pain/Soreness Report</h3>
                   <div className="space-y-[var(--s4)]">
                     {/* THIS WAS A TICKBOX, AND TICKING IT DID NOTHING.
