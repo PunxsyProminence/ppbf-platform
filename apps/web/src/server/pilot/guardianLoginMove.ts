@@ -24,6 +24,7 @@ import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { guardianAthleteIds } from './guardianAccess';
 
 export interface GuardianLoginMove {
   organizationId: string;
@@ -284,21 +285,19 @@ async function moveInTransaction(
     // of these children would answer consent as both guardians, and the
     // parent consent screen could write only one of its two records
     // (guardianConsent.ts, resolveActingParent).
-    const overlap = await client.query<{ athlete_id: string }>(
-      `select distinct gl.athlete_id
-       from pilot.guardian_links gl
-       join pilot.parents p
-         on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
-       where gl.organization_id = $1 and p.account_id = $2 and p.parent_id <> $3
-         and gl.athlete_id in (
-           select athlete_id from pilot.guardian_links where organization_id = $1 and parent_id = $3
-         )
-       order by gl.athlete_id`,
-      [organizationId, toAccountId, parentId],
+    // Through guardianAccess, the one reader of "which children does this login
+    // guard". It reads committed rows outside this transaction; the target
+    // login's row is locked above, and an invite locks it before writing a
+    // guardian record, so none can be added to it meanwhile.
+    const recordChildren = await client.query<{ athlete_id: string }>(
+      'select athlete_id from pilot.guardian_links where organization_id = $1 and parent_id = $2',
+      [organizationId, parentId],
     );
-    if ((overlap.rowCount ?? 0) > 0) {
+    const targetGuards = new Set(await guardianAthleteIds(organizationId, toAccountId));
+    const overlap = recordChildren.rows.map((row) => row.athlete_id).filter((id) => targetGuards.has(id)).sort();
+    if (overlap.length > 0) {
       throw new ConflictError(
-        `Conflict: login "${toAccountId}" is already a guardian of ${overlap.rows.map((row) => row.athlete_id).join(', ')} `
+        `Conflict: login "${toAccountId}" is already a guardian of ${overlap.join(', ')} `
         + 'through another guardian record. Moving this record there would give one login two guardian places for '
         + 'the same child.',
         'GUARDIAN_MOVE_TARGET_ALREADY_GUARDIAN',
