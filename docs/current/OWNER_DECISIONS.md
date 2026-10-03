@@ -218,6 +218,46 @@ Release 6 carried the coach floor board, My Corner, the failed-read batches
 3, 4, 6 and 7, and the deleted-athlete and sign-in fixes. Whatever merged
 after dispatch is release 7.
 
+
+---
+
+## OD-2026-10-03-012 -- Between the two Claude Code accounts: overwatch assigns lanes, the Fable session writes the code; briefs are lane assignments, not designs
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 in the Fable session
+(`claude.ai/code/session_01PkrS65eqZon2LYsVt8tJAd`), after that session had
+merged the intake audit's build items (#1121-#1124, #1126, #1142, #1146,
+#1147, #1152). This entry is new and edits no earlier entry. It narrows
+nothing in OD-2026-09-28-001 (Claude Code is the only builder); it says how
+the two Claude Code accounts split the building.
+
+### 1. The question
+
+Jason, verbatim: *"Would it better for you to write PRs and have the other
+account execute or PRs with code and the other lane execute"*, then *"So
+should it write PRs and let you code"*. The session's recommendation, as put
+to him: the Fable session writes the code PRs (investigation, tests, evidence
+record) because that is the expensive, verification-heavy step and Fable is
+the account with budget; the other account (overwatch) hands out lanes rather
+than designs, because a lane assignment -- surface, allowed files, what it
+waits on or conflicts with, done condition -- is the one thing that prevents
+the collisions seen that day (#1130 duplicating B3; #1125 and #1147 on one
+file), and a design brief is not evidence and gets re-investigated anyway. For
+the intake audit's remaining items no brief is needed: the audit and
+OD-2026-10-03-002 are the spec. Briefs with SQL go the other way only for
+what the Fable container cannot do (production reads and mutations, a
+coach's drill writing, a visual check, the #941 plate choice).
+
+### 2. The answer
+
+Jason, verbatim: *"Ok can you communicate that to it"*. **Ruling: adopted as
+the working split.** Overwatch assigns lanes (three lines: the surface and the
+files that may be touched; what it waits on or conflicts with; the done
+condition) and keeps the queue and `ACTIVE_WORK.md`. The build session does
+the investigation, the code, the tests and the evidence record, and checks
+`main` and the open PRs before each item. One writer per surface. Recorded in
+`docs/AI_COLLABORATION.md` under "Lane assignment between accounts" so the
+other account reads it on its next item.
+
 ---
 
 ## OD-2026-10-03-010 -- The chalkboard and the gym TV: when there is nothing real to show, a quote with a status line under it (batch 8, PR #1144)
