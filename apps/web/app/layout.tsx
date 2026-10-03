@@ -30,10 +30,10 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+/* metadataBase: without it Next resolves og:image and twitter:image against
+   localhost:3000, which is what production served until now. The bare domain
+   is the canonical public address (Jason, 2026-10-03). */
 export const metadata: Metadata = {
-  /* Without this Next resolves og:image and twitter:image against
-     localhost:3000, which is what production served until now. The bare
-     domain is the canonical public address (Jason, 2026-10-03). */
   metadataBase: new URL("https://punxsyprominence.org"),
   title: {
     default: "PPBF Platform",
