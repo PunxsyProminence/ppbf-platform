@@ -164,6 +164,497 @@ and should not try to.
 
 ---
 
+## OD-2026-10-03-011 -- Release 6 to production: "Reply production" started the release; production moved to revision 0000164 (run 37139084060); the word "Green" came after the run had finished
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, user
+messages of human origin) and read by the records lane in that transcript.
+Both are single-word messages in the overwatch thread; "Reply production"
+answers overwatch's ask, "Green" answers nothing. This entry records what
+each was and what the repository and GitHub show happened. It is new and edits no earlier entry.
+
+### 1. "Reply production" -- start release 6
+
+The release was staged for his go. Overwatch's message (2026-10-03T16:28:27Z,
+answering his "Give link", 16:28:20Z): "**Staging, to look first:**
+https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io -
+**Production approval link:** that only exists once I start the production
+deploy. Reply **"deploy production"** and I'll start it and send the approval
+link right away." (Earlier, 16:04:18Z: "Release 6 is ready whenever you say
+**"deploy production"**.", when release 6 was staged at main `ffa918f0`; main moved
+and it was re-staged at `59877f04` before dispatch.) Jason, whole message (16:29:02Z): *"Reply
+production"*. **Ruling: start the production release of release 6.** The
+words differ from the phrase asked for ("deploy production"); overwatch read
+them as the go and started the chain at once (its write log: "Authorizing
+words: "Reply production""). Recorder's reading, not his words: that "Reply
+production" meant "deploy production".
+
+What ran (OBSERVED with `gh run view 37139084060` on 2026-10-03):
+`deploy-production` run 37139084060, head
+`59877f042cd88994a1e5d181e5543542cfa4ccb8` (main when dispatched; the staged
+image came from staging run 37138614789), created 17:02:55Z. Job `guard`
+succeeded 17:02:59Z-17:03:05Z. Job `build-and-deploy` ran 18:19:55Z-18:22:07Z
+and succeeded; the run was completed at 18:22:08Z. Its log names production
+revisions `app-ppbf-production--0000163` (before) and `--0000164` (after).
+Overwatch's check of `www.punxsyprominence.org` at 18:28Z returned HTTP 200
+(REPORTED by overwatch; not re-run here).
+
+### 2. "Green"
+
+Jason, whole message (2026-10-03T18:28:13.989Z): *"Green"*. It answers no
+question: overwatch's previous message to him (18:23:23Z) said the release was
+"still waiting for your approval". **It is not the approval.** The
+`build-and-deploy` job began at 18:19:55Z and the run finished at 18:22:08Z,
+six minutes before he typed it; GitHub lists one approval on the run, state
+`approved`, made by the account `PunxsyProminence` (the approvals endpoint
+gives no time). Overwatch wrote "Approved by Jason ("Green")" in its handoff
+and "Production approval was Jason's" in its log; the first half is not
+supported by the timing. The approval stays as L2 describes it: Jason's
+per-run click in GitHub. His "Green" is recorded as what he said once the
+release was live, not as the authorization for it.
+
+Release 6 carried the coach floor board, My Corner, the failed-read batches
+3, 4, 6 and 7, and the deleted-athlete and sign-in fixes. Whatever merged
+after dispatch is release 7.
+
+---
+
+## OD-2026-10-03-010 -- The chalkboard and the gym TV: when there is nothing real to show, a quote with a status line under it (batch 8, PR #1144)
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the batch-8 lane's thread (`lane/failed-read-batch8`; "Lane 14 batch 8")
+and read by the records lane in that transcript
+(`~/.claude/projects/C--Dev/bd94c88d-7d81-4dc3-8127-22cd2d1a4c58.jsonl`,
+user messages of human origin). Built by PR #1144 (merge
+`3b34131d778384a631d02058e4fc74367e63cea1`, 2026-10-03T18:40Z), whose body
+quotes the second answer as its scope. This entry is new and edits no earlier
+one.
+
+### 1. The two questions
+
+Put by the lane (11:05:47Z): "**Q1, the chalkboard (`components/Chalkboard.tsx`).**
+If the board's message can't be loaded, the board shows "Nothing on the
+board." on purpose. ... **A (recommended):** when it can't load, the board
+shows a quiet "Board can't be read right now." instead. No banner, no error
+codes, and writing still works. **B:** the board itself stays blank when it
+can't load, but the writing screen warns before posting if the last load
+failed. **C:** keep it as is." and "**Q2, the gym TV (`components/WallDisplay.tsx`).**
+Before the TV has loaded once, the middle says "The board is coming up" but
+the bottom line still says "Nothing posted today." ... **A (recommended):**
+show "Nothing posted today." only after the TV has actually loaded. Until
+then that line stays blank. **B:** keep it as is." Asked again at 13:49:04Z
+together with a mutation-proof question ("**A (recommended):** yes. ... **B:**
+a different way, which you name. **C:** skip the mutation proofs ..."), ending:
+"Your Q1 (chalkboard) and Q2 (gym TV) answers are still open too."
+
+### 2. His answers
+
+Jason, whole message (15:28:59.782Z): *"Q1. Q2 should show an Easter egg
+saying or boxing quote  and on the final choice A"*. The lane read "the
+final choice A" as A on the mutation-proof question and ran the proofs
+(15:29:07Z, "Running the mutation proofs (your A)."): the lane's reading, not
+his words.
+
+Jason, whole message (15:40:56.398Z): *"Q1 and Q2 quotes when nothing useful
+is on screen when loading it should have a quote and a loading  .... under
+the quote these can be gym quotes as well"*.
+
+**Ruling (his words, in the lane's reading at 15:41:12Z: "whenever there's
+nothing real to show (still loading, or the read failed), show a gym saying
+with a status line under it"):** on the chalkboard and the gym TV, when there
+is nothing useful to show, the screen shows a quote with a status line
+("Loading...") under it; the quotes may be gym quotes. This replaces the
+lane's A and B proposals for Q1 and Q2 with his own design.
+
+### 3. What was built, and one open point
+
+PR #1144 (REPORTED from its body; read, not re-run): the chalkboard shows a
+gym saying with "Loading..." under it while the read is open, and with "Can't
+read the board right now." after a failed read; "Nothing on the board." only
+after a read that answered empty. The gym TV shows a saying above "The board
+is coming up..." or "reconnecting..." with no board, and "Nothing posted
+today." only once a board was read. Sayings come only from the
+owner-approved `GYM_SAYINGS` (2026-08-19); no stock boxing quotes, "an
+existing test forbids them" (PR body).
+
+**Open for Jason.** His first message said "an Easter egg saying or boxing
+quote" and his second "these can be gym quotes as well". The build used gym
+sayings only. Whether boxing quotes should also appear is not decided; this
+entry does not decide it.
+
+---
+
+## OD-2026-10-03-009 -- Moving a guardian to a new email's login (OD-2026-09-29-004 R4): organization admins only, the new login is made in the same step, the old login is switched off when it is empty, the contact email follows, nothing is sent (PR #1151)
+
+**Provenance: PRIMARY for his words; the second question's text is not
+recoverable.** Typed by Jason on 2026-10-03 (US Eastern; times UTC) in the
+guardian-login-move lane's thread
+(`~/.claude/projects/C--Dev/5cb1d110-40e6-4546-a550-3a41c0df479c.jsonl`, user
+messages of human origin) and read by the records lane in that transcript.
+Built by PR #1151 (merge `5b139d50ff364a611022948722ecc52a77688fa4`,
+2026-10-03T18:40:48Z). It carries out OD-2026-09-29-004 R4 ("add a
+deliberate "move guardian to a new login" admin action", answer A) and adds
+the four product questions that ruling left open. New; edits no earlier entry.
+
+### 1. Q1-Q4
+
+Put by the lane (10:47:10Z): "**Q1. Who may perform the move?** A
+(recommended): organization admins only (ppbf@), Microsoft sign-in required.
+B: organization admins and the platform owner (Admin@). **Q2. What must the
+new login be?** A (recommended): a parent login that already exists in the
+gym, created first with the usual "invite parent" step. The guardian record's
+contact email also changes to the new login's email. B: the move action
+creates the new login from an email address itself. **Q3. What happens to the
+old login after the move?** A (recommended): it's switched off in the same
+action, unless it still holds another guardian record (another family it's
+attached to), in which case it stays on. B: it always stays on. C: the admin
+picks each time. **Q4. What is the parent told?** A (recommended): nothing
+automatic. The admin tells the family, and the move is recorded in the audit
+log. B: the app emails the new address saying the gym moved the children to
+it." (the lane's plain-English lines under each question are left out) and "You can answer like "all recommended" or "Q1 A, Q2 B..."."
+
+Jason, whole message (11:05:27.875Z): *"go"*. The lane asked (11:05:33Z):
+"Does "go" mean "all recommended" for Q1-Q4? **A (recommended):** yes, all
+recommended. ... **B:** no, here are my answers per question." Jason, whole
+message (11:09:19.552Z): *"go"*. **Ruling: Q1 A, Q3 A, Q4 A (all
+recommended); Q2 A as first worded, then re-asked (section 2).** The lane
+took "go" as A at 11:09:29Z.
+
+### 2. Q2 re-asked, and his answer
+
+At 11:11:48Z the lane reported to overwatch that its own Q2 framing was wrong:
+a reviewer found that "invite the new email first, then move" leaves the
+target login holding two guardian records for the same child (consent stuck,
+one person answering for both), because every parent invite creates its own
+guardian record. It said it was re-asking Jason Q2 in the lane. **The text
+of that re-ask is not in the transcript as a visible message (the session
+crashed about 11:27Z; the only trace is the lane's reasoning note, "move
+action creates the new parent login directly, refusing if it already guards
+these children", and its 16:10:40Z line "**Still needed from you:** Q2 above.
+Pick A (recommended), B or C."). UNVERIFIED: the wording of options A, B and
+C.** Jason, whole message (16:29:25.955Z): *"Go"*. The lane took it as Q2 A
+(16:29:32Z): "the move takes the new email and creates the login in the same
+step". Recorder's reading, not his words: "Go" accepted the recommended A of
+that re-ask; PR #1151's body says the same ("on the Q2 re-ask "Go" (taken as
+A)"). The options are not in this record in writing; if A was not what he
+meant, the move action changes in a later PR.
+
+### 3. What PR #1151 built (its body, read)
+
+`moveGuardianToLogin`: one transaction re-points the guardian record to the
+login for the new email, making a parent login if none exists (Q2 as
+re-asked); refuses any move that would give one login two guardian places for
+a child, a PIN or platform-owner target, a deleted or switched-off target, a
+login in another gym, and a record that is no longer on the login the screen
+showed; switches the old login and its sessions off when it backs no guardian
+record left (Q3); sets the record's contact email to the new login's (Q2);
+writes one audit row on the same transaction and sends nothing (Q4).
+`POST /api/pilot/admin/guardian-login` is `organization_admin` only (Q1). One
+"Move ... To New Email" control per guardian record on `/admin/people`.
+Not checked by a person: the screen has not been used signed in.
+
+---
+
+## OD-2026-10-03-008 -- Intake promotion: merge #1143 as it is and put the rest of the writes in one transaction in a new lane (OD-2026-10-03-002 section 5, option A)
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the intake deleted-login lane's thread
+(`lane/intake-deleted-login-lock`;
+`~/.claude/projects/C--Dev/cbbe2508-df02-4de5-b634-44741e36de09.jsonl`, user
+messages of human origin) and read by the records lane in that transcript. It
+carries out OD-2026-10-03-002 section 5 ("one transaction around intake's
+writes") and is new; it edits no earlier entry.
+
+His request to the lane (18:21:22.247Z), whole message: *"Look at the repo  and make recommendation"*. The lane's question (18:22:23Z): "How should the
+remainder of OD-2026-10-03-002 §5 be delivered? **A. (Recommended)**
+Merge #1143; correct `ACTIVE_WORK.md:213` so the row stays open; open a new
+high-risk lane to put the athlete login write, guardian provisioning and the
+remaining intake writes in the same transaction, with `auth.ts` and
+`staffProvisioning.ts` in its file list. **B.** Extend #1143 to also move the
+athlete login write inside the transaction (about 15 lines in `auth.ts` plus
+one more test case); the guardian and other writes stay for later. **C.**
+Merge #1143 and stop; accept half-done promotions as they are today." Jason,
+whole message (18:35:04.122Z): *"A"*. **Ruling: A.**
+
+What followed (REPORTED by overwatch's log, 18:40Z, and checked on GitHub):
+#1143 merged as `c11c05b35dbe0549c2a0d79c455395aa84d669e2` (2026-10-03T18:35Z);
+overwatch started a new high-risk lane (Opus, two reviewers) for the
+remaining writes. The build-list row "One transaction around intake
+promotion's writes" stays open until that lane's PR merges.
+
+---
+
+## OD-2026-10-03-007 -- The GPU: this PC is set up for ML work; the tablet speed bar is the tighter one (live speed); gate 3 readiness is built on fake data
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`) and
+in the gate-2 GPU lane's thread
+(`~/.claude/projects/C--Dev/7c226384-0a0c-4e47-8199-c316cd81257a.jsonl`),
+user messages of human origin, read by the records lane in those transcripts.
+New; edits no earlier entry. The speed bar's figure of 100 ms is overwatch's
+option text, not his number (section 2).
+
+### 1. Setting up the GPU
+
+Jason (11:32:58.932Z): *"i want to set it ups so you can use my gpu on this
+computer"*. Overwatch (11:33:51Z): "**Question (official):** May I download
+and install this? **A (recommended):** yes. PyTorch with CUDA, about 2.5 GB,
+plus Python 3.12 (about 30 MB) only if 3.14 isn't supported, then the smoke
+test. **B:** check what's needed first, install nothing yet." Jason, whole
+message (11:36:18.779Z): *"this is in the terminal claude desktop app, go
+ahead and set up what ever work we can do in the gpu, i give you permeission
+to access the local terminal to do it"*. **Ruling: set up the GPU work this
+PC allows, through the local terminal.** It authorizes the setup and the
+GPU work on this PC; the later GPU lanes ran under it. Done (OBSERVED by
+overwatch in its transcript; not re-run here): an environment at
+`C:\Dev\ml\.venv` with CUDA PyTorch on the RTX 2060 (6 GB).
+
+### 2. The tablet speed bar
+
+The gate-2 speed test found every candidate model 4 to 30 times faster than
+the draft's bar (tablet WebGPU 31-57 ms per frame; REPORTED in the lane's
+report, `TEACH-BIOMECH-gate2-speed-2026-10-03.md`). Overwatch (16:31Z):
+"**Question (official):** Set the tablet speed bar for marking? **A
+(recommended):** "under 1 second per frame". All sizes pass, so model size
+gets chosen on accuracy once training starts. **B:** a tighter bar, e.g. live
+speed (under 100 ms per frame)." He asked *"Pros cons"* (16:32:55Z) and was
+given them. Jason, whole message (16:35:29.031Z): *"B and check lanes allow
+auto fix"*. **Ruling: B, the tighter bar, live speed.** Overwatch took the
+figure as under 100 ms per frame, the example in the option as put; Jason did
+not name a number.
+
+In the gate-2 lane the same hour he wrote *"We chose the faster"*
+(16:36:26.174Z); asked which of three meanings (A the fastest network; B the
+graphics-chip path, the lane's recommendation; C a stricter speed limit than
+1 second), he wrote *"Let over watch update you on that"* (16:38:07.791Z) and
+then *"C is what it recommends"* (16:39:51.176Z). The lane recorded C, a
+stricter bar. These words fit the "B" above (a tighter bar) and do not match
+either recommendation by its letter: overwatch's recommendation was A, the
+lane's was B. The binding answer is the "B" to overwatch's question; the lane
+messages add no number.
+
+### 3. "allow auto fix"
+
+The second half of that same message, *"check lanes allow auto fix"*, was a
+standing instruction, not an answer. Overwatch's reading (16:35:41Z, to every
+lane with an open PR): "Jason asked lanes to allow auto-fix", meaning each
+lane turns on the desktop app's PR monitor with auto-fix and comment handling
+and auto-archive on close; a lane fixes only within its file list, in new
+commits, with no force-push, and tells overwatch; overwatch still merges.
+INFERRED: the auto-archive part is overwatch's addition (he said earlier,
+15:41:23Z, *"Check lanes archive those that met scope"*).
+
+### 4. Gate 3 readiness on fake data
+
+Overwatch (18:22:06Z): "**Question (official):** Start the next GPU lane?
+**A (recommended):** gate 3 readiness, on fake data only. No footage and no
+app changes. **B:** speech to text. **C:** wait until marking starts."
+Jason, whole message (18:23:00.232Z): *"A"*. **Ruling: build the training
+pipeline for the pose model on fake data only, on this PC's GPU; no footage,
+no app changes, no PRs.** Started as a background agent from the overwatch
+thread after he wrote *"Im remote"* and *"Start thrm"* (18:29Z-18:33Z).
+Not built yet: real training, which waits on coach-marked frames.
+
+---
+
+## OD-2026-10-03-006 -- Body points belong to the person whose own event it is (supersedes the opponent marking of OD-2026-10-02-008 9A); a new "received punch" event class is wanted; the stance label "neutral" is confirmed
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC),
+in two lane threads, and read by the records lane in those transcripts. The
+body-point storage lane (TEACH-BIOMECH-01-b, PR #1150):
+`~/.claude/projects/C--Dev/2930c45b-5e84-4f32-83cc-179a586ee7de.jsonl`. His
+answers there arrived as answers to the lane's question prompts (tool results
+of the `AskUserQuestion` tool, not plain user messages). The ontology lane
+(TEACH-BIOMECH-01-a, PR #1116):
+`~/.claude/projects/C--Dev/6daef632-69f0-459a-a97b-ed06666e0474.jsonl`, plain
+user messages of human origin. New; edits no earlier entry, but **supersedes
+section 3 item 9A of OD-2026-10-02-008** as stated in section 1.
+
+### 1. Who is marked
+
+OD-2026-10-02-008 section 3 recorded **9A:** "Only the person throwing the
+punch or making the defence is marked; the other person only when the event
+is contact against them."
+
+The lane asked (prompt sent 14:32:39Z): "OFFICIAL: OD-2026-10-02-008 9A says
+the other person is marked "only when the event is contact against them".
+Build reading (D-e): opponent body points are recorded only on a PUNCH event
+that has a contact time (clean, glancing, guard or non-target contact) and
+names the opponent; never on a defence (including a block or parry that
+touches the other boxer's glove), and never on a missed punch. Confirm?
+PLAIN: When your boxer's punch lands (even on the gloves or arms), the coach
+also taps the 24 points on the boxer who got hit. ..." with options "Yes, as
+written (Recommended)", "Also on defences with contact", "Only clean or
+glancing hits". Jason's answer (15:32:12.595Z) was free text:
+*"It should be on the individuals action,  so one would get the punch thrown and the other would ge"*. The text ends there as the transcript has it; the
+lane noted it "was cut off".
+
+The lane asked again (15:32:25Z): "OFFICIAL: Your answer read "It should be on
+the individuals action, so one would get the punch thrown and the other would
+ge" and was cut off. I read it as: body points are always tied to a person's
+OWN event. The puncher is marked on the punch event, and the other boxer is
+marked on THEIR OWN event (their defence, or a new 'received the punch'
+event). There is no 'opponent' marking inside the puncher's event. Which
+completion is right? ..." Options: "On their own defence event"; "On a 'got
+hit' moment in the punch"; "New 'received punch' event" ("Add a new event
+type for the person hit, recorded separately. Needs a vocabulary change (a
+later item), so this PR would remove 'opponent' for now."). Jason's answer
+(15:37:51.030Z): *"1 and 3"*.
+
+**Ruling: body points belong to the actor of their own event.** There is no
+"opponent" marking inside the puncher's event. The other boxer is marked on
+their own defence event (option 1), and later through a new "received punch"
+event class (option 3). This replaces the second half of 9A (the other person
+marked "when the event is contact against them"); its first half stands.
+Recorder's reading, not his words: "1 and 3" means both options together, as
+overwatch and the lane read it. Acted on: PR #1150 (merge
+`66b625a4710840627baa435463aa418ccc996766`) drops the `subject` column and
+the opponent rule and removes `BODY_SUBJECTS` from `ontology.ts`.
+**Not built:** the "received punch" event class. It changes the shared
+labelling vocabulary and needs its own item (build-list row added).
+
+### 2. "neutral" (the 01-a lane)
+
+The lane had been told that his 2026-10-02 reply to the neutral question
+("No the stance was correct but you did bring up a good point on guard", in
+OD-2026-10-02-008 section 3b) left the record's definition of "neutral" in
+doubt. It asked (10:38:43Z): "**Official:** What does the lead-side label
+**`neutral`** mean in boxing-ontology-0.2? **A (recommended, and what
+OD-2026-10-02-011 3b records):** "a square stance, feet level, neither side
+leading." **B:** something else. Give the definition in your words."
+Jason, whole message (10:52:48.078Z): *"we decided left and right sides"*.
+The lane answered that points are left and right (settled) and asked
+(10:52:58Z): "**Official:** When a coach records the stance at a marked
+moment, do the choices stay as orthodox, southpaw, neutral, transition and
+unknown, with **neutral = feet level, neither side forward**? **A
+(recommended):** yes, as written. **B:** neutral means something else. Say
+what. **C:** drop neutral, because left and right points already cover it."
+Jason, whole message (10:59:32.966Z): *"A"*. **Ruling: A. The stance choices
+stay orthodox, southpaw, neutral, transition and unknown; neutral is a square
+stance, feet level, neither side leading** (as OD-2026-10-02-011 3b records).
+The `LEAD_SIDES` list stands as built in PR #1116; no code change.
+
+---
+
+## OD-2026-10-03-005 -- The Library chat: when nothing relevant is found, show the closest passages with a confidence level and file a research request for the gap (not yet built)
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the build-list reconcile lane's thread (PR #1125;
+`~/.claude/projects/C--Dev/7c17ea86-f0d3-4820-888e-116254ece9d5.jsonl`, a
+user message of human origin) and read by the records lane in that
+transcript. The lane put the question after its report, and sent his answer
+to overwatch the same hour. New; edits no earlier entry.
+
+The question (lane, 12:30:55Z): "**Official:** When a Library question has no
+relevant approved evidence, should the chat (a) answer "No approved evidence
+found" and log a research need (recommended), or (b) show the closest
+passages labelled low-confidence?" with the plain-English line "When someone
+asks the Library something it has nothing on, should it say "I don't have
+anything on that" and note the gap for research, or show its best guess with a
+warning?". Jason, whole message (15:29:46.439Z): *"B display confidence leve and submit research request to fill gap"*. **Ruling: B, with a research
+request added.** The chat shows the closest passages with a confidence level
+(his "confidence leve" read as "level"), and also files a research request to
+fill the gap; option (a)'s "No approved evidence found" is not the behaviour.
+The recommended (a) logged a research need and (b) as put did not; the
+request is his addition.
+
+State: the cause is on the build list (the search matches any three-letter
+fragment, with no minimum relevance: `shadowLibrary.ts` `tokenizeQuery`,
+the keyword fall-back below `SEMANTIC_SCORE_FLOOR`). A fix is in progress as
+a background agent from the overwatch thread (started 18:33Z); not merged.
+Not built until its PR merges. Whether it reads well on screen is Jason's
+walk.
+
+---
+
+## OD-2026-10-03-004 -- The Fable thread merges its own PRs; when its usage runs out its lanes return to overwatch
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`). The
+first message is a plain user message of human origin; the second was typed
+while overwatch's turn was running and the transcript holds it as a queued
+message of human origin (`attachment` of type `queued_command`,
+`origin.kind: "human"`, enqueued 15:53:06.409Z). Read by the records lane in
+that transcript. New; edits no earlier entry.
+
+**Context.** At 15:17Z-15:18Z the "Fable" thread (a separate Claude session
+under his GitHub account, working research, data and intake) merged five of
+its PRs (#1126, #1121, #1122, #1123, #1124), which moved main under a release
+overwatch had staged. Overwatch's question (15:25:07Z): "**Questions
+(official):** 1. **The Fable thread:** **A (recommended):** it stops merging;
+only overwatch merges. **B:** it may merge its own PRs." Jason, whole
+message (15:50:09.933Z): *"Fable is running in a separate account using up
+remaining usage, on research data work intake, let it merge on it own, and go
+with your recommendation on ui"*. **Ruling: B, over overwatch's
+recommendation. The Fable thread owns research, data and intake work and
+merges its own PRs.** (The tail, "go with your recommendation on ui", is
+recorded in OD-2026-10-03-003.) This is an exception to the L2 rule that
+only overwatch merges lane PRs (OVERWATCH, MERGES); the L2 rule is not
+edited by this entry. Overwatch's stated consequences (15:50:23Z): it will not
+merge or close that thread's PRs; before any production release it
+re-stages at main's latest commit; before giving a lane research, data or
+intake work it checks that thread's open PRs for duplicates.
+
+Jason, whole message (15:53:06.409Z): *"When its usage runs out those lanes
+will return here check in with lanes"*. **Ruling: when the Fable thread's
+usage runs out, the lanes it was running come back to overwatch, and
+overwatch checks in with them.** Recorder's reading, not his words: "its"
+is the Fable thread's, "those lanes" are its research, data and intake lanes.
+
+---
+
+## OD-2026-10-03-003 -- UI problems are logged as found and a UI lane fixes one screen at a time after that file's other work merges; release 6 shipped the coach page as it was
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`) and
+read by the records lane in that transcript. "Agreed on ui" was typed while
+overwatch's turn was running, so the transcript holds it as a queued message
+of human origin (`attachment` of type `queued_command`, `origin.kind:
+"human"`, enqueued 15:25:17.998Z); the other message is a plain user message
+of human origin. New; edits no earlier entry. OD-2026-10-02-004 (nothing in
+the UI is tied down) is unchanged.
+
+### 1. The standing rule
+
+Jason asked (15:23:28Z), whole message: *"Should we fix UI like this as we
+run across it,, does it not affect wiring"*. Overwatch answered that
+removing a duplicate can touch wiring (actions that live only in the old
+section, data loading, tests that pin it, safety lists that must stay
+complete) and put (15:23:43Z): "**Question (official):** Adopt that rule?
+**A (recommended):** yes: log as found, one screen per UI lane, after that
+file's other work merges. **B:** fix each one immediately when found.
+*Plain:* A avoids two Claudes editing the same screen at once and breaking
+each other's work. B is faster per fix but causes clashes like the two
+duplicate PRs today." Jason, whole message (15:25:17.998Z): *"Agreed on ui"*.
+**Ruling: A.** UI problems anyone spots go on the build list as they are
+found; a UI lane takes them one screen at a time, after the lane that owns
+that file has merged. Overwatch read it the same way (15:25:30Z).
+
+### 2. Release 6 and the coach page
+
+Overwatch (15:21:18Z) described the coach page after release 6's #1110: the
+new Floor board on top and the old dashboard unchanged below it, with
+Roster, Needs You Now and Run the Room repeated below as Athlete Roster,
+Safety Escalations and Pain Reports, and Today's Session. It asked: "**Question
+(official):** Ship release 6 with the overlap, or trim it first? **A
+(recommended):** ship as is; the UI lane removes the duplicated old sections
+in a follow-up. **B:** trim first, then ship." The rule above was answered
+first; this question was still open when Jason, whole message (15:50:09.933Z,
+the message also recorded in OD-2026-10-03-004), wrote the tail *"go with
+your recommendation on ui"*. **Ruling: A. Release 6 ships the coach page as
+it is; the trim follows as its own UI lane after the coach-file PRs (batch 3
+#1140, pain colour #1119) merge.** Recorder's reading, not his words: the
+open "ui" recommendation was this question (overwatch read it so at 15:50:23Z:
+"release 6 ships the coach page as is, and the duplicate-dashboard trim
+follows as its own UI lane"). Release 6 went to production (OD-2026-10-03-011);
+the trim is not built (build-list row added).
+
+---
+
 ## OD-2026-10-03-002 -- The intake audit's owner questions: old research-requirement rows deleted; licensed excerpts loaded by the screen and by a workflow from a private location; four rights values; a coach issues a template in one action; a coach sets the competence level; one transaction around intake's writes; the AI prompt's drill list stays as built; the duplicate drill copy not in use is deleted; document-ingest and the laptop seeder retired; callerless routes parked, not deleted
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
