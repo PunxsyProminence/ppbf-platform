@@ -60,6 +60,9 @@ const validBody = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks keeps a mockResolvedValue; reset it so no test inherits a
+  // principal from the one before.
+  mockRequirePrincipal.mockReset();
   mockCreate.mockResolvedValue({ source_id: 'source_1' } as never);
   mockList.mockResolvedValue([]);
 });
@@ -74,7 +77,7 @@ describe('POST /api/pilot/shadow/library/sources', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  test.each(['coach', 'athlete', 'parent', 'volunteer', 'staff'] as const)(
+  test.each(['coach', 'athlete', 'parent', 'board', 'volunteer', 'staff'] as const)(
     'refuses %s, which may read the Library but not curate it',
     async (role) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
@@ -86,7 +89,7 @@ describe('POST /api/pilot/shadow/library/sources', () => {
     },
   );
 
-  test.each(['organization_admin', 'admin', 'platform_owner'] as const)(
+  test.each(['organization_admin', 'admin'] as const)(
     'admits %s',
     async (role) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
@@ -97,6 +100,17 @@ describe('POST /api/pilot/shadow/library/sources', () => {
       expect(mockCreate).toHaveBeenCalledTimes(1);
     },
   );
+
+  // OD-2026-10-02-015 D3: platform material on the platform shelf, gym
+  // material on the gym shelf. The platform owner no longer writes a gym's.
+  test('refuses platform_owner on the gym shelf, with or without naming it', async () => {
+    for (const body of [validBody, { ...validBody, shelf: 'gym' }]) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+      const response = await POST(postRequest(body));
+      expect(response.status).toBe(403);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 
   test('returns the source under the key the seed script reads', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
@@ -255,5 +269,93 @@ describe('PATCH /api/pilot/shadow/library/sources', () => {
     mockReclassify.mockResolvedValueOnce(null);
     const missing = await PATCH(patchRequest({ source_id: 'src-x', classification_domain: 'youth_development_safeguarding' }));
     expect(missing.status).toBe(404);
+  });
+});
+
+// RINT-05a. OD-2026-10-02-013 answer 1B: the platform owner writes the
+// platform shelf in the app. The shelf is a name in the request, resolved to an
+// organization id on the server; no organization id is read from the request.
+describe('the platform shelf on /api/pilot/shadow/library/sources', () => {
+  const NON_OWNERS = ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'board', 'volunteer', 'staff'] as const;
+
+  function patchRequest(body: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/shadow/library/sources', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('platform_owner registers on the platform shelf, not its own organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'platform', organization_id: 'org-attacker' }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+  });
+
+  test.each(NON_OWNERS)('%s gets 403 for shelf: platform on every method', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+
+    const post = await POST(postRequest({ ...validBody, shelf: 'platform' }));
+    const get = await GET(getRequest('?shelf=platform'));
+    const patch = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'ai_ml_data_science', shelf: 'platform' }));
+
+    expect([post.status, get.status, patch.status]).toEqual([403, 403, 403]);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner lists and reclassifies on the platform shelf', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
+    mockReclassify.mockResolvedValueOnce({ source_id: 'src-1' } as never);
+
+    expect((await GET(getRequest('?shelf=platform&organization_id=org-attacker'))).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+
+    const patch = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'ai_ml_data_science', shelf: 'platform' }));
+    expect(patch.status).toBe(200);
+    expect(mockReclassify).toHaveBeenCalledWith('__platform__', 'src-1', 'ai_ml_data_science');
+  });
+
+  // D3 bars the platform owner's gym-shelf WRITES only; reading a gym's
+  // Library is unchanged.
+  test('platform_owner still reads its gym shelf when no shelf is named', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    expect((await GET(getRequest())).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-real' }));
+  });
+
+  test('platform_owner cannot reclassify a gym-shelf source', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await PATCH(patchRequest({ source_id: 'src-1', classification_domain: 'ai_ml_data_science' }));
+
+    expect(response.status).toBe(403);
+    expect(mockReclassify).not.toHaveBeenCalled();
+  });
+
+  test.each([['an organization id', 'org-real'], ['the reserved id', '__platform__'], ['a number', 1]])(
+    'refuses %s as a shelf',
+    async (_label, shelf) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+      const response = await POST(postRequest({ ...validBody, shelf }));
+
+      expect(response.status).toBe(400);
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a gym admin naming the gym shelf is the same as naming none', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'gym' }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-real' }));
   });
 });

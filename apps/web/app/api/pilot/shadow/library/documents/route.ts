@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibraryDocument,
   type ShadowLibraryIngestState,
@@ -15,6 +16,10 @@ export const runtime = 'nodejs';
 // leaves approval_state='pending_review', and searchShadowLibrary additionally
 // requires ingest_state='indexed' with index_completed_at set, which only
 // PATCH /shadow/evidence/review can produce.
+//
+// An optional body `shelf` ('gym' default, or 'platform') picks the shelf,
+// resolved on the server by libraryShelf.ts (platform owner only for
+// 'platform'; the platform owner does not write a gym's shelf).
 
 const INGEST_STATES: Record<ShadowLibraryIngestState, true> = {
   pending: true,
@@ -43,7 +48,9 @@ export async function POST(request: NextRequest) {
       content_sha256?: unknown;
       ingest_state?: unknown;
       metadata?: unknown;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
@@ -98,12 +105,18 @@ export async function POST(request: NextRequest) {
     // platform_owner outright and holds a coach to their assigned athletes,
     // which is the same check searchShadowLibrary runs on the way back out.
     const subjectId = (body.subject_id as string | null | undefined)?.trim() || null;
+    // The platform shelf holds no athlete-scoped material (the database says so
+    // too: pilot_shadow_library_documents_platform_unscoped_check). Refused here
+    // so the caller gets a 400 that says why, not a constraint failure.
+    if (subjectId && parseLibraryShelf(body.shelf) === 'platform') {
+      return NextResponse.json({ ok: false, error: 'subject_id is not allowed on the platform shelf' }, { status: 400 });
+    }
     if (subjectId) {
       await assertActorCanAccessAthlete(principal, subjectId);
     }
 
     const document = await createShadowLibraryDocument({
-      organizationId: principal.organizationId,
+      organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       sourceId: body.source_id,
