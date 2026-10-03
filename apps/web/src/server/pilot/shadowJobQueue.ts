@@ -46,9 +46,47 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
 // lever, which is the failure mode of any guard whose arming is a separate
 // human step.
 //
-// If that shape is unacceptable rather than merely noted, the fix is to derive
-// this from the context-assembling source rather than typing it -- then it
-// moves whenever the rules move. That is an owner call, not a builder one.
+// The owner chose to close that (OD-2026-09-30-007 section 2, S3 "A"): the
+// lever is now pulled by CI. shadowContextContract.test.ts hashes the files
+// below and fails until the version is bumped and a new entry is appended to
+// SHADOW_CONTEXT_CONTRACT_FINGERPRINTS. The number itself stays a number, not
+// the hash: the worker needs ORDER (older = stale and failed, newer = the
+// worker is behind and retries; shadowJobProcessor.ts), and a hash has none.
+//
+// A bump costs only jobs queued across that deploy, and the production deploy
+// already refuses to run while any are waiting. So when in doubt, bump: a
+// comment-only edit to a listed file still trips the test, on purpose.
+
+/**
+ * The files whose code decides what goes into `authorizedContext`, repo
+ * paths relative to apps/web. Add a file here when it starts shaping that
+ * string; access.ts is deliberately absent (it guards who may ask, not what
+ * the context says, and changes too often to bump on).
+ */
+export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
+  'app/api/pilot/shadow/chat/route.ts',
+  'app/api/pilot/shadow/video-analysis/route.ts',
+  'src/server/pilot/omegaPlatformContext.ts',
+  'src/server/pilot/platformLibraryScope.ts',
+  'src/server/pilot/shadowChat.ts',
+  'src/server/pilot/shadowContextBuilder.ts',
+  'src/server/pilot/shadowContextWeights.ts',
+  'src/server/pilot/shadowEvidence.ts',
+  'src/server/pilot/shadowHeavyBag.ts',
+  'src/server/pilot/shadowLibrary.ts',
+  'src/server/pilot/shadowNearMisses.ts',
+  'src/server/pilot/shadowPersonalizationGate.ts',
+  'src/server/pilot/shadowRoleSets.ts',
+];
+
+/**
+ * Append-only: one entry per version, the SHA-256 of the sources above at
+ * that version (see shadowContextContract.test.ts for the exact recipe).
+ * Never edit an existing entry -- bump the version and append.
+ */
+export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; sha256: string }[] = [
+  { version: 2, sha256: 'dc1fe7085dd095d66d1049412c22b5179c8c279166e8eda0ac362037b9b1c1ff' },
+];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
