@@ -511,6 +511,21 @@ describe('deletion still reaches a submitted set\'s events', () => {
 });
 
 describe('two writers at once', () => {
+  /** Resolves once `client`'s backend is waiting on a lock, so the test never
+   * commits the other writer before this one has reached the database. */
+  async function blockedOnLock(client: Client): Promise<void> {
+    const pid = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const row = await db.query<{ wait_event_type: string | null }>(
+        'select wait_event_type from pg_stat_activity where pid = $1',
+        [pid],
+      );
+      if (row.rows[0]?.wait_event_type === 'Lock') return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('NEVER_BLOCKED');
+  }
+
   test('a submission of the set an event is leaving waits for the uncommitted move', async () => {
     const [from, to] = await clipWithSets([ANNOTATOR, SECOND_ANNOTATOR]);
     const eventId = await insertEvent(from);
@@ -528,6 +543,55 @@ describe('two writers at once', () => {
     } finally {
       await writer.end();
       await other.end();
+    }
+    expect(await setOf(ORG_ID, eventId)).toBe(from.setId);
+  });
+
+  test('once the move commits, the waiting submission goes ahead without the event', async () => {
+    const [from, to] = await clipWithSets([ANNOTATOR, SECOND_ANNOTATOR]);
+    const eventId = await insertEvent(from);
+
+    const writer = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    const other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await writer.connect();
+    await other.connect();
+    try {
+      await writer.query('begin');
+      await move(eventId, to, writer);
+      const waiting = blockedOnLock(other);
+      const submission = submit(from, other);
+      await waiting;
+      await writer.query('commit');
+      await submission;
+    } finally {
+      await writer.end();
+      await other.end();
+    }
+    expect(await setOf(ORG_ID, eventId)).toBe(to.setId);
+    expect(await eventCount(from)).toBe(0);
+  });
+
+  test('a move that waits on an uncommitted submission of the set it leaves is refused once it commits', async () => {
+    const [from, to] = await clipWithSets([ANNOTATOR, SECOND_ANNOTATOR]);
+    const eventId = await insertEvent(from);
+
+    const submitter = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    const mover = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await submitter.connect();
+    await mover.connect();
+    try {
+      await submitter.query('begin');
+      await submit(from, submitter);
+      const waiting = blockedOnLock(mover);
+      const moving = move(eventId, to, mover);
+      // Swallowed here and asserted below, so an early rejection is not unhandled.
+      const outcome = moving.then(() => 'moved', (error: Error) => error.message);
+      await waiting;
+      await submitter.query('commit');
+      expect(await outcome).toBe('CALIBRATION_ANNOTATION_SET_SUBMITTED');
+    } finally {
+      await submitter.end();
+      await mover.end();
     }
     expect(await setOf(ORG_ID, eventId)).toBe(from.setId);
   });
