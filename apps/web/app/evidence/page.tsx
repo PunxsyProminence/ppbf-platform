@@ -1,9 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+
+type Shelf = 'gym' | 'platform';
+
+// RINT-05b words. DRAFT, awaiting Jason's approval. The gym shelf is the
+// signed-in account's own organization (libraryShelf.ts), which this page does
+// not know by name, so the label does not name a gym.
+const SHELF_LABELS: Record<Shelf, string> = {
+  gym: "Gym shelf (this account's gym only)",
+  platform: 'Platform shelf (every gym reads this)',
+};
 
 type ReviewState = 'pending_review' | 'approved' | 'rejected';
 
@@ -58,23 +69,56 @@ export default function EvidenceReviewPage() {
   // solved this; the aria-busy note is the same one it renders.
   const [loading, setLoading] = useState(true);
 
+  // RINT-05b (OD-2026-10-02-013 1B and 5A; OD-2026-10-02-015 D2). The platform
+  // owner reviews the platform shelf here, and may switch to the gym shelf it
+  // already reviewed. It opens on the platform shelf, its own. Every other
+  // reviewer sees no switch and its requests name no shelf, as before.
+  const session = usePilotSession();
+  const isPlatformOwner = session.role === 'platform_owner';
+  const [chosenShelf, setChosenShelf] = useState<Shelf | null>(null);
+  const shelf: Shelf = chosenShelf ?? (isPlatformOwner ? 'platform' : 'gym');
+  // Only the newest read may fill the list: a slow answer for the shelf just
+  // left must not land on the one just chosen.
+  const readSeq = useRef(0);
+
   const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review?limit=200`, {
+    const shelfParam = shelf === 'platform' ? '&shelf=platform' : '';
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review?limit=200${shelfParam}`, {
       credentials: 'include',
       cache: 'no-store',
     });
     if (!response.ok) throw new Error('Unable to load the evidence review queue.');
     return response.json() as Promise<ReviewQueue>;
-  }, []);
+  }, [shelf]);
 
   useEffect(() => {
+    // Wait for the session, so the platform owner's first read is its shelf.
+    if (session.loading) return;
+    const seq = ++readSeq.current;
     void fetchQueue().then(
-      setQueue,
-      (failure: unknown) => {
-        setLoadError(failure instanceof Error ? failure.message : 'Unable to load evidence.');
+      (loaded) => {
+        if (seq === readSeq.current) setQueue(loaded);
       },
-    ).finally(() => setLoading(false));
-  }, [fetchQueue]);
+      (failure: unknown) => {
+        if (seq === readSeq.current) setLoadError(failure instanceof Error ? failure.message : 'Unable to load evidence.');
+      },
+    ).finally(() => {
+      if (seq === readSeq.current) setLoading(false);
+    });
+  }, [fetchQueue, session.loading]);
+
+  const where = shelf === 'platform' ? 'on the platform shelf' : 'for this organization';
+
+  // A new shelf starts as an unread list: nothing from the old one stays on
+  // screen, and the empty sentences wait for the new read (the effect above).
+  const chooseShelf = (next: Shelf) => {
+    if (next === shelf) return;
+    setLoading(true);
+    setLoadError('');
+    setActionError('');
+    setQueue({ sources: [], documents: [] });
+    setChosenShelf(next);
+  };
 
   const update = async (payload: Record<string, string>) => {
     const key = `${payload.entityType}:${payload.entityId}:${payload.action}`;
@@ -85,13 +129,15 @@ export default function EvidenceReviewPage() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(shelf === 'platform' ? { ...payload, shelf } : payload),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error ?? 'Evidence review failed.');
       }
-      setQueue(await fetchQueue());
+      const seq = readSeq.current;
+      const refreshed = await fetchQueue();
+      if (seq === readSeq.current) setQueue(refreshed);
     } catch (updateError) {
       setActionError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
     } finally {
@@ -147,9 +193,23 @@ export default function EvidenceReviewPage() {
               to the top -- it is not filtered to a queue. Saying so is what
               makes the empty states below mean what they say. */}
           <p className="t-muted mt-[var(--s3)] max-w-[64ch]">
-            Every source and document held for this organization is listed, with anything awaiting review sorted
-            first.
+            Every source and document held {where} is listed, with anything awaiting review sorted first.
           </p>
+          {isPlatformOwner ? (
+            <div role="group" aria-label="Which shelf to review" className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+              {(['platform', 'gym'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={shelf === option}
+                  onClick={() => chooseShelf(option)}
+                  className={shelf === option ? 'btn' : 'btn btn--ghost'}
+                >
+                  {SHELF_LABELS[option]}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </header>
 
         {error ? (
@@ -184,7 +244,7 @@ export default function EvidenceReviewPage() {
           {!loading && !loadError && queue.sources.length === 0 ? (
             <p className="t-body">
               <span className="text-[color:var(--hide-800)]">
-                No sources have been recorded for this organization yet. This is an empty library, not a cleared
+                No sources have been recorded {where} yet. This is an empty library, not a cleared
                 queue.
               </span>
             </p>
@@ -230,7 +290,7 @@ export default function EvidenceReviewPage() {
           {!loading && !loadError && queue.documents.length === 0 ? (
             <p className="t-body">
               <span className="text-[color:var(--hide-800)]">
-                No documents have been recorded for this organization yet. This is an empty library, not a cleared
+                No documents have been recorded {where} yet. This is an empty library, not a cleared
                 queue.
               </span>
             </p>

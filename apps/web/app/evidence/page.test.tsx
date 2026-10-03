@@ -17,7 +17,7 @@
 // loading state at all.
 
 import type { ReactNode } from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import EvidenceReviewPage from './page';
 
@@ -119,4 +119,113 @@ test('a failed read shows the failure and nothing about the library', async () =
   expect(screen.queryByText(/No sources have been recorded/i)).toBeNull();
   expect(screen.queryByText(/No documents have been recorded/i)).toBeNull();
   expect(screen.queryByText(/Loading the evidence library/i)).toBeNull();
+});
+
+// RINT-05b (OD-2026-10-02-013 1B and 5A; OD-2026-10-02-015 D2). The platform
+// owner opens on the platform shelf and can switch to the gym shelf; its reads
+// and its review actions name the shelf it is looking at. Anyone else gets no
+// switch and requests that name no shelf.
+describe('the shelf switch', () => {
+  interface Seen { gets: string[]; patches: Array<Record<string, unknown>> }
+
+  function mockShelves(role: string | null, seen: Seen) {
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => (role ? { authenticated: true, role } : { authenticated: false }) } as Response;
+      }
+      if (init?.method === 'PATCH') {
+        seen.patches.push(JSON.parse(String(init.body)));
+        return { ok: true, json: async () => ({ ok: true }) } as Response;
+      }
+      seen.gets.push(url);
+      const platform = url.includes('shelf=platform');
+      return {
+        ok: true,
+        json: async () => ({
+          sources: [],
+          documents: [{ ...DOCUMENT, document_id: platform ? 'doc_p' : 'doc_g', document_name: platform ? 'Platform paper' : 'Gym paper' }],
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  test('the platform owner opens on the platform shelf, reviews it there, and can switch to the gym shelf', async () => {
+    const seen: Seen = { gets: [], patches: [] };
+    mockShelves('platform_owner', seen);
+
+    await act(async () => {
+      render(<EvidenceReviewPage />);
+    });
+
+    expect(await screen.findByText('Platform paper')).toBeTruthy();
+    expect(seen.gets).toHaveLength(1);
+    expect(seen.gets[0]).toContain('shelf=platform');
+    expect(screen.getByRole('button', { name: 'Platform shelf (every gym reads this)' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/held on the platform shelf is listed/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Approve + verify' })[0]);
+    });
+    expect(seen.patches).toEqual([
+      { entityType: 'document', entityId: 'doc_p', action: 'review', approvalState: 'approved', shelf: 'platform' },
+    ]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: "Gym shelf (this account's gym only)" }));
+    });
+    expect(await screen.findByText('Gym paper')).toBeTruthy();
+    expect(screen.queryByText('Platform paper')).toBeNull();
+    expect(seen.gets[seen.gets.length - 1]).not.toContain('shelf');
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Approve + verify' })[0]);
+    });
+    expect(seen.patches[1]).toEqual({ entityType: 'document', entityId: 'doc_g', action: 'review', approvalState: 'approved' });
+  });
+
+  test('an organization admin gets no switch, and nothing it sends names a shelf', async () => {
+    const seen: Seen = { gets: [], patches: [] };
+    mockShelves('organization_admin', seen);
+
+    await act(async () => {
+      render(<EvidenceReviewPage />);
+    });
+
+    expect(await screen.findByText('Gym paper')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Which shelf to review' })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Approve + verify' })[0]);
+    });
+    expect(seen.gets.some((url) => url.includes('shelf'))).toBe(false);
+    expect(seen.patches[0]).not.toHaveProperty('shelf');
+  });
+
+  test('a slow answer for the shelf just left does not land on the one just chosen', async () => {
+    let releasePlatform: (() => void) | null = null;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => ({ authenticated: true, role: 'platform_owner' }) } as Response;
+      }
+      if (url.includes('shelf=platform')) {
+        await new Promise<void>((resolve) => { releasePlatform = resolve; });
+        return { ok: true, json: async () => ({ sources: [], documents: [{ ...DOCUMENT, document_name: 'Platform paper' }] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ sources: [], documents: [{ ...DOCUMENT, document_name: 'Gym paper' }] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<EvidenceReviewPage />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: "Gym shelf (this account's gym only)" }));
+    });
+    expect(await screen.findByText('Gym paper')).toBeTruthy();
+    await act(async () => {
+      releasePlatform?.();
+    });
+    expect(screen.getByText('Gym paper')).toBeTruthy();
+    expect(screen.queryByText('Platform paper')).toBeNull();
+  });
 });

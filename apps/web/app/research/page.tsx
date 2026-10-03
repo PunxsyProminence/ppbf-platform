@@ -5,8 +5,10 @@ import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
-import LibraryTextIntakePanel from './LibraryTextIntakePanel';
+import LibraryTextIntakePanel, { SHELF_WORDS } from './LibraryTextIntakePanel';
+import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
@@ -74,11 +76,27 @@ interface LibrarySourceOption {
   metadata?: { general_research?: boolean; classification_domain?: string };
 }
 
+// The sources route returns at most this many rows per request.
+const SOURCES_PAGE_SIZE = 200;
+
+// RINT-05b. DRAFT, awaiting Jason's approval.
+const PLATFORM_SHELF_LABEL = 'Platform shelf (every gym reads this)';
+
 const GENERAL_SOURCE_TYPES = [
   'peer_reviewed', 'clinical_guideline', 'governing_body', 'textbook', 'media', 'other',
 ] as const;
 
 export default function ResearchIntakePage() {
+  // RINT-05b (OD-2026-10-02-013 1B; OD-2026-10-02-015 D2/D3). The platform
+  // owner's curator block works the platform shelf and only that shelf: every
+  // Library read and write below names shelf 'platform' for it, and the
+  // server refuses it a gym-shelf write. Every other curator names no shelf
+  // and sends exactly what it sent before.
+  const session = usePilotSession();
+  const sessionReady = !session.loading;
+  const onPlatformShelf = session.role === 'platform_owner';
+  const shelfBody = onPlatformShelf ? { shelf: 'platform' as const } : {};
+  const shelfQuery = onPlatformShelf ? '&shelf=platform' : '';
   const [items, setItems] = useState<ShadowResearchItem[]>([]);
   const [projectionLoading, setProjectionLoading] = useState(true);
   const [requirements, setRequirements] = useState<ShadowResearchRequirement[]>([]);
@@ -98,6 +116,8 @@ export default function ResearchIntakePage() {
   // the per-requirement answer draft.
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
   const [curatorSources, setCuratorSources] = useState<LibrarySourceOption[] | null>(null);
+  // True when the shelf holds more sources than the picker loaded.
+  const [curatorSourcesTruncated, setCuratorSourcesTruncated] = useState(false);
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const [answerDraft, setAnswerDraft] = useState({ sourceId: '', doi: '', provider: '', note: '' });
   const [answerBusy, setAnswerBusy] = useState(false);
@@ -186,38 +206,64 @@ export default function ResearchIntakePage() {
   // One probe decides whether this viewer curates: the sources list is gated
   // by the same roles as the submission POST, so a 403 here means the panel
   // would be refused anyway and is not rendered at all.
-  const fetchSources = async (signal?: AbortSignal, generalOnly = false) => {
+  const fetchSourcesPage = async (signal: AbortSignal | undefined, generalOnly: boolean, offset: number) => {
     const filter = generalOnly ? '&general_research=true' : '';
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/sources?limit=200${filter}`, {
-      credentials: 'include',
-      signal,
-    });
+    const page = offset > 0 ? `&offset=${offset}` : '';
+    const response = await fetch(
+      `${apiBase()}/api/pilot/shadow/library/sources?limit=${SOURCES_PAGE_SIZE}${filter}${page}${shelfQuery}`,
+      { credentials: 'include', signal },
+    );
     if (!response.ok) return null;
     const payload = (await response.json()) as { sources?: LibrarySourceOption[]; items?: LibrarySourceOption[] };
     return payload.sources ?? payload.items ?? [];
   };
 
-  const refreshGeneralSources = async () => {
-    const general = await fetchSources(undefined, true);
-    if (general !== null) setGeneralSources(general);
+  // The picker's list: the newest LIBRARY_SOURCE_PICKER_CAP sources on the
+  // shelf, a page at a time (RINT-05b; the route caps a page at 200). A shelf
+  // with more says so in the picker instead of hiding the rest silently.
+  const fetchSources = async (signal?: AbortSignal) => {
+    const all: LibrarySourceOption[] = [];
+    for (let offset = 0; offset < LIBRARY_SOURCE_PICKER_CAP; offset += SOURCES_PAGE_SIZE) {
+      const page = await fetchSourcesPage(signal, false, offset);
+      // A later page failing keeps what was loaded, and says the list is short.
+      if (page === null) return offset === 0 ? null : { sources: all, truncated: true };
+      all.push(...page);
+      if (page.length < SOURCES_PAGE_SIZE) return { sources: all, truncated: false };
+    }
+    // Every page came back full: there may be more than were loaded.
+    return { sources: all, truncated: true };
+  };
+
+  const refreshCuratorSources = async (signal?: AbortSignal) => {
+    const loaded = await fetchSources(signal);
+    if (loaded !== null && !signal?.aborted) {
+      setCuratorSources(loaded.sources);
+      setCuratorSourcesTruncated(loaded.truncated);
+    }
+    return loaded;
+  };
+
+  const refreshGeneralSources = async (signal?: AbortSignal) => {
+    const general = await fetchSourcesPage(signal, true, 0);
+    if (general !== null && !signal?.aborted) setGeneralSources(general);
   };
 
   useEffect(() => {
+    // Wait for the session: the platform owner's reads must name its shelf.
+    if (!sessionReady) return undefined;
     const controller = new AbortController();
     void (async () => {
       try {
-        const sources = await fetchSources(controller.signal);
-        if (sources !== null && !controller.signal.aborted) {
-          setCuratorSources(sources);
-          const general = await fetchSources(controller.signal, true);
-          if (general !== null && !controller.signal.aborted) setGeneralSources(general);
-        }
+        const loaded = await refreshCuratorSources(controller.signal);
+        if (loaded !== null && !controller.signal.aborted) await refreshGeneralSources(controller.signal);
       } catch {
         // Not a curator (or offline, or unmounted): the read-only workspace stands.
       }
     })();
     return () => controller.abort();
-  }, []);
+    // shelfQuery follows onPlatformShelf; the fetch helpers are recreated each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionReady, onPlatformShelf]);
 
   async function handleRegisterGeneral() {
     if (!generalDraft.title.trim() || !generalDraft.classification) {
@@ -244,6 +290,7 @@ export default function ResearchIntakePage() {
             classification_domain: generalDraft.classification,
             provenance,
           },
+          ...shelfBody,
         }),
       });
       if (!response.ok) {
@@ -252,8 +299,7 @@ export default function ResearchIntakePage() {
       }
       setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
       setGeneralMessage('Source registered and classified. Evidence review still decides what becomes citable.');
-      const sources = await fetchSources();
-      if (sources !== null) setCuratorSources(sources);
+      await refreshCuratorSources();
       await refreshGeneralSources();
     } catch (error) {
       setGeneralMessage(error instanceof Error ? error.message : 'Unable to register the source.');
@@ -269,7 +315,7 @@ export default function ResearchIntakePage() {
         credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_id: sourceId, classification_domain: classificationDomain }),
+        body: JSON.stringify({ source_id: sourceId, classification_domain: classificationDomain, ...shelfBody }),
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
@@ -713,26 +759,23 @@ export default function ResearchIntakePage() {
                     {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
                   </button>
                 ) : null}
-                {requirement.status === 'open' && curatorSources && curatorSources.length > 0 ? (
+                {/* Not for the platform owner: requirements are the gym's, and a
+                    gym-shelf submission from it is refused (D3). */}
+                {requirement.status === 'open' && !onPlatformShelf && curatorSources && curatorSources.length > 0 ? (
                   <div className="mt-[var(--s3)]">
                     {answeringId === requirement.research_requirement_id ? (
                       <div className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)] space-y-[var(--s3)]">
                         <p className={PAPER_LABEL}>Answer this gap — submission is not an answer until review says so</p>
-                        <label className="field">
-                          <span className={PAPER_LABEL}>Library source</span>
-                          <select
-                            className="select"
-                            value={answerDraft.sourceId}
-                            onChange={(event) => setAnswerDraft((current) => ({ ...current, sourceId: event.target.value }))}
-                          >
-                            <option value="">Choose a registered source…</option>
-                            {curatorSources.map((source) => (
-                              <option key={source.source_id} value={source.source_id}>
-                                {source.title} ({source.source_type})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                        <LibrarySourcePicker
+                          sources={curatorSources}
+                          value={answerDraft.sourceId}
+                          onChange={(sourceId) => setAnswerDraft((current) => ({ ...current, sourceId }))}
+                          label="Library source"
+                          placeholder="Choose a registered source…"
+                          truncated={curatorSourcesTruncated}
+                          showType
+                          labelClassName={PAPER_LABEL}
+                        />
                         <div className="grid gap-[var(--s3)] md:grid-cols-2">
                           <label className="field">
                             <span className={PAPER_LABEL}>DOI / PMID</span>
@@ -789,6 +832,12 @@ export default function ResearchIntakePage() {
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
               General Research Intake
             </h2>
+            {onPlatformShelf ? (
+              <div className="space-y-[var(--s2)]">
+                <span className="plaque">{PLATFORM_SHELF_LABEL.toUpperCase()}</span>
+                <p className="t-body">{SHELF_WORDS.platformNotice}</p>
+              </div>
+            ) : null}
             <p className="t-body text-[color:var(--bone-300)]">
               Register useful research nobody asked for yet. Classification is a filing label you pick and can
               correct — it changes no gate, no tier, no review state. A general source becomes linkable to a
@@ -881,7 +930,13 @@ export default function ResearchIntakePage() {
             ) : null}
           </section>
         ) : null}
-        {curatorSources !== null ? <LibraryTextIntakePanel sources={curatorSources} /> : null}
+        {curatorSources !== null ? (
+          <LibraryTextIntakePanel
+            sources={curatorSources}
+            shelf={onPlatformShelf ? 'platform' : 'gym'}
+            truncated={curatorSourcesTruncated}
+          />
+        ) : null}
       </div>
       </div>
     </RoleStandaloneView>

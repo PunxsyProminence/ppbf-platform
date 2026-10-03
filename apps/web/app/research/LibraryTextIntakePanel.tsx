@@ -15,8 +15,10 @@ import {
   validateIntakeInput,
   type IntakeInput,
   type IntakeResume,
+  type IntakeShelf,
   type PdfPageText,
 } from '@/src/client/libraryTextIntake';
+import LibrarySourcePicker from './LibrarySourcePicker';
 
 /* RINT-01: manual research text intake.
 
@@ -33,7 +35,12 @@ import {
    page by page and keeps nothing; "Use this page" puts that page's words in the
    excerpt with its page filled in, and the entry is saved through the SAME path
    as a pasted one (intake_method stays manual_text). The pages live only in
-   this component's state, in memory. */
+   this component's state, in memory.
+
+   RINT-05b: the page passes shelf 'platform' when the platform owner is signed
+   in (OD-2026-10-02-013 1B; OD-2026-10-02-015 D2/D3). The sources it is given
+   are then the platform shelf's, and every write names that shelf. Any other
+   curator gets no shelf prop and sends exactly what it sent before. */
 
 export interface LibraryTextIntakeSource {
   source_id: string;
@@ -42,6 +49,12 @@ export interface LibraryTextIntakeSource {
 
 // RINT-02 words, all in one place so they can be approved or changed together.
 // DRAFT wording, awaiting Jason's approval (listed in the pull request).
+// RINT-05b words for the platform shelf. DRAFT, awaiting Jason's approval.
+export const SHELF_WORDS = {
+  platformNotice: "Adding to the platform shelf. Every gym's SHADOW can cite this once it is approved.",
+  platformEmpty: 'No sources are registered on the platform shelf yet. Register one under General Research Intake first.',
+};
+
 export const PDF_WORDS = {
   heading: 'Read a PDF',
   help: "Choose the PDF this source's words come from. The app reads it and does not keep it; file the original in the SharePoint Research Archive.",
@@ -86,7 +99,15 @@ type Outcome =
   | { kind: 'incomplete'; message: string }
   | { kind: 'refused'; message: string };
 
-export default function LibraryTextIntakePanel({ sources }: { readonly sources: readonly LibraryTextIntakeSource[] }) {
+export default function LibraryTextIntakePanel({
+  sources,
+  shelf = 'gym',
+  truncated = false,
+}: {
+  readonly sources: readonly LibraryTextIntakeSource[];
+  readonly shelf?: IntakeShelf;
+  readonly truncated?: boolean;
+}) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -125,6 +146,7 @@ export default function LibraryTextIntakePanel({ sources }: { readonly sources: 
       documentName: draft.documentName,
       locator: draft.locator,
       text: draft.text,
+      ...(shelf === 'platform' ? { shelf } : {}),
       ...(linkedPage
         ? { pdfPage: { num: linkedPage.num, text: linkedPage.text, notOnPageMessage: PDF_WORDS.notOnPage(linkedPage.num) } }
         : {}),
@@ -204,24 +226,22 @@ export default function LibraryTextIntakePanel({ sources }: { readonly sources: 
         or reword: SHADOW shows this text as the evidence. It is saved as pending and nothing can cite it
         until it is indexed and approved in Evidence Review.
       </p>
+      {shelf === 'platform' ? <p className="t-body">{SHELF_WORDS.platformNotice}</p> : null}
 
       {sources.length === 0 ? (
         <p className="t-muted" role="status">
-          No sources are registered for this gym yet. Register one under General Research Intake first.
+          {shelf === 'platform'
+            ? SHELF_WORDS.platformEmpty
+            : 'No sources are registered for this gym yet. Register one under General Research Intake first.'}
         </p>
       ) : (
         <>
           <div className="grid gap-[var(--s3)] md:grid-cols-2">
-            <label className="field md:col-span-2">
-              <span className="t-label">Registered source</span>
-              <select aria-label="Registered source" className="select" value={draft.sourceId} disabled={locked}
-                onChange={(event) => setDraft((current) => ({ ...current, sourceId: event.target.value }))}>
-                <option value="">Choose a source…</option>
-                {sources.map((source) => (
-                  <option key={source.source_id} value={source.source_id}>{source.title}</option>
-                ))}
-              </select>
-            </label>
+            <div className="md:col-span-2">
+              <LibrarySourcePicker sources={sources} value={draft.sourceId} disabled={locked}
+                label="Registered source" placeholder="Choose a source…" truncated={truncated}
+                onChange={(sourceId) => setDraft((current) => ({ ...current, sourceId }))} />
+            </div>
             <div className="field md:col-span-2 space-y-[var(--s2)]">
               <span className="t-label">{PDF_WORDS.heading}</span>
               <p className="t-muted">{PDF_WORDS.help} {PDF_WORDS.limit}</p>

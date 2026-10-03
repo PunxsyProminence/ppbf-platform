@@ -425,3 +425,122 @@ test('an unauthenticated visitor gets no workspace shell, only the bounce', asyn
   expect(screen.getByText('Checking access')).toBeTruthy();
   expect(mockReplace).toHaveBeenCalledWith('/login');
 });
+
+// RINT-05b (OD-2026-10-02-013 1B; OD-2026-10-02-015 D2/D3). The platform
+// owner's curator block works the platform shelf: every Library read and write
+// names it, and no gym-shelf write control is offered (the server would refuse
+// it, M1 of #1115). A gym curator's requests carry no shelf at all.
+describe('the platform shelf', () => {
+  interface Seen { gets: string[]; posts: Array<{ url: string; body: Record<string, unknown> }> }
+
+  function mockShelfFetch(role: string, seen: Seen, pageOf: (offset: number) => unknown[] = () => [SOURCE]) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) {
+        return { ok: true, json: async () => ({ authenticated: true, role, auth_provider: 'microsoft' }) } as Response;
+      }
+      if (init?.method === 'POST' || init?.method === 'PATCH') {
+        seen.posts.push({ url, body: JSON.parse(String(init.body)) });
+        if (url.includes('/research-projection')) return { ok: true, json: async () => ({ items: [] }) } as Response;
+        return { ok: true, status: 201, json: async () => ({ ok: true, source: {}, document: { document_id: 'doc_1' } }) } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        seen.gets.push(url);
+        const offset = Number(new URL(url, 'https://app.test').searchParams.get('offset') ?? '0');
+        return { ok: true, json: async () => ({ items: url.includes('general_research=true') ? [] : pageOf(offset) }) } as Response;
+      }
+      if (url.includes('/research-requirements')) {
+        return { ok: true, json: async () => ({ items: [REQUIREMENT] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function registerOne() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Hydration position stand' } });
+      fireEvent.change(screen.getByLabelText('Classification domain'), {
+        target: { value: RESEARCH_CLASSIFICATION_DOMAINS[0].key },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+    });
+  }
+
+  test('the platform owner reads and writes the platform shelf and is offered no gym-shelf write', async () => {
+    const seen: Seen = { gets: [], posts: [] };
+    global.fetch = mockShelfFetch('platform_owner', seen);
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    expect(screen.getByText('PLATFORM SHELF (EVERY GYM READS THIS)')).toBeTruthy();
+    expect(seen.gets.length).toBeGreaterThan(0);
+    expect(seen.gets.every((url) => url.includes('shelf=platform'))).toBe(true);
+
+    // Requirements are the gym's: answering one would be a gym-shelf write.
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByRole('button', { name: 'Answer this gap' })).toBeNull();
+
+    await registerOne();
+    const registration = seen.posts.find((post) => post.url.includes('/library/sources'));
+    expect(registration?.body.shelf).toBe('platform');
+  });
+
+  test('a gym curator names no shelf anywhere and still answers gaps', async () => {
+    const seen: Seen = { gets: [], posts: [] };
+    global.fetch = mockShelfFetch('organization_admin', seen);
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    expect(screen.queryByText('PLATFORM SHELF (EVERY GYM READS THIS)')).toBeNull();
+    expect(seen.gets.length).toBeGreaterThan(0);
+    expect(seen.gets.some((url) => url.includes('shelf'))).toBe(false);
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.getByRole('button', { name: 'Answer this gap' })).toBeTruthy();
+
+    await registerOne();
+    const registration = seen.posts.find((post) => post.url.includes('/library/sources'));
+    expect(registration).toBeTruthy();
+    expect(registration?.body).not.toHaveProperty('shelf');
+  });
+
+  test('the picker loads the newest thousand a page at a time and says when there are more', async () => {
+    const seen: Seen = { gets: [], posts: [] };
+    const fullPage = (offset: number) => Array.from({ length: 200 }, (_, index) => ({
+      source_id: `src_${offset + index}`, title: `Paper ${offset + index}`, source_type: 'peer_reviewed',
+    }));
+    global.fetch = mockShelfFetch('platform_owner', seen, fullPage);
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    const pickerReads = seen.gets.filter((url) => !url.includes('general_research'));
+    expect(pickerReads.map((url) => new URL(url, 'https://app.test').searchParams.get('offset') ?? '0'))
+      .toEqual(['0', '200', '400', '600', '800']);
+    const select = screen.getByLabelText('Registered source') as HTMLSelectElement;
+    expect(select.options).toHaveLength(1 + 1_000);
+    expect(screen.getByText(/Only the newest 1,000 are listed/)).toBeTruthy();
+  });
+
+  test('a short shelf is read once and not called incomplete', async () => {
+    const seen: Seen = { gets: [], posts: [] };
+    global.fetch = mockShelfFetch('organization_admin', seen);
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('General Research Intake');
+    expect(seen.gets.filter((url) => !url.includes('general_research'))).toHaveLength(1);
+    expect(screen.queryByText(/Only the newest/)).toBeNull();
+  });
+});
