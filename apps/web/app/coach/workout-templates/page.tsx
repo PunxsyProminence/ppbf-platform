@@ -216,7 +216,9 @@ function CoachWorkoutTemplates() {
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="plaque">{item.block.replace(/_/g, ' ')}</span>
                         <h4 className="t-command text-[length:var(--t-sm)]">
-                          {item.free_text_drill ?? item.drill_id ?? 'Unnamed drill'}
+                          {/* The lineage head's name; the raw drill_id only
+                              when that row did not resolve. */}
+                          {item.free_text_drill ?? item.head_drill_name ?? item.drill_id ?? 'Unnamed drill'}
                         </h4>
                         {itemPrescription(item) !== '' && (
                           <span className="t-label">{itemPrescription(item)}</span>
