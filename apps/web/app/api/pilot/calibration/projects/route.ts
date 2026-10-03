@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { BOXING_ONTOLOGY_VERSION } from '@/src/server/pilot/calibration/ontology';
+import {
+  ANNOTATABLE_ONTOLOGY_VERSIONS,
+  PROJECT_CREATION_ONTOLOGY_VERSION,
+} from '@/src/server/pilot/calibration/ontology';
 import {
   createCalibrationProject,
   listCalibrationProjects,
@@ -52,8 +55,9 @@ function isStudyNameTaken(error: unknown): boolean {
  * those stay out until somebody needs them.
  *
  * `ontology_version` is returned verbatim on every row rather than assumed.
- * The build implements exactly one vocabulary, and the annotation forms are
- * built from it, so a project stamped with a different version is one this UI
+ * The annotation forms are built from the versions this build can label
+ * (`annotatable_ontology_versions`), so a project stamped with any other
+ * version is one this UI
  * cannot honestly label -- the page shows that rather than rendering 0.1's
  * dropdowns over it, and POST /annotation-set refuses to open a set on it.
  */
@@ -69,7 +73,8 @@ export async function GET(request: NextRequest) {
     // on every page load would bury the writes that matter.
     return NextResponse.json({
       ok: true,
-      supported_ontology_version: BOXING_ONTOLOGY_VERSION,
+      supported_ontology_version: PROJECT_CREATION_ONTOLOGY_VERSION,
+      annotatable_ontology_versions: ANNOTATABLE_ONTOLOGY_VERSIONS,
       projects,
     });
   } catch (error) {
@@ -81,8 +86,8 @@ export async function GET(request: NextRequest) {
  * Start a calibration study.
  *
  * THE ONTOLOGY VERSION IS NOT A PARAMETER. It is stamped from
- * BOXING_ONTOLOGY_VERSION, the one vocabulary this build implements and the
- * one the annotation forms are generated from. A caller-supplied version would
+ * PROJECT_CREATION_ONTOLOGY_VERSION, the vocabulary new studies are created
+ * under, which is always one the annotation forms are generated from. A caller-supplied version would
  * let somebody open a study this UI cannot honestly label, which the GET
  * above already has to warn about for rows that predate the check.
  *
@@ -116,7 +121,7 @@ export async function POST(request: NextRequest) {
         organizationId: principal.organizationId,
         calibrationProjectId: randomUUID(),
         name,
-        ontologyVersion: BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: PROJECT_CREATION_ONTOLOGY_VERSION,
         createdByAccountId: principal.accountId,
       });
     } catch (error) {

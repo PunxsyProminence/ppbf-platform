@@ -12,7 +12,7 @@ import {
   type CalibrationProjectRow,
 } from './projects';
 import {
-  BOXING_ONTOLOGY_VERSION,
+  PROJECT_CREATION_ONTOLOGY_VERSION,
   CLIP_SAMPLING_REASONS,
   isInVocabulary,
   type ClipSamplingReason,
@@ -117,9 +117,10 @@ function requireWholeMs(raw: string, flag: string): number {
  * parser that skipped it would take the argument, discard it, and report
  * success while attributing the clip to somebody else.
  *
- * The ontology version is not a flag either. createCalibrationProject accepts
- * exactly one value -- the version this build implements -- and rejects every
- * other, so offering it as an input would offer a choice that does not exist.
+ * The ontology version is not a flag either. New studies are stamped with
+ * PROJECT_CREATION_ONTOLOGY_VERSION, the same one the routes stamp, so a
+ * study started here is labelled under the same vocabulary as one started
+ * from the page.
  */
 export function parseCalibrationBootstrapArgv(
   argv: readonly string[],
@@ -401,7 +402,7 @@ export async function bootstrapCalibrationClip(
     organizationId: request.organizationId,
     calibrationProjectId: randomUUID(),
     name: request.projectName,
-    ontologyVersion: BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: PROJECT_CREATION_ONTOLOGY_VERSION,
     createdByAccountId: request.createdByAccountId,
   });
 

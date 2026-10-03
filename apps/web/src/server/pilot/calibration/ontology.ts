@@ -33,17 +33,68 @@
 // nothing that reads it, may treat an unlabelled span of video as evidence
 // that nothing happened there.
 
-/** The ontology version stamped onto every calibration project, annotation
- * set, annotation event and adjudicated record.
+/* ------------------------------------------------------------------ *
+ * VERSIONS
+ *
+ * The ontology version is stamped onto every calibration project,
+ * annotation set, annotation event and adjudicated record.
  *
  * Stored per row rather than looked up globally. A calibration project run in
  * March under 0.1 and one run in July under 0.2 are different measurements,
  * and the only way to keep them from being pooled by accident is for each row
  * to carry the vocabulary it was created under. Nothing in this subsystem is
  * permitted to compare or aggregate across two versions without an explicit
- * decision recorded elsewhere. */
-export const BOXING_ONTOLOGY_VERSION = 'boxing-ontology-0.1' as const;
-export type BoxingOntologyVersion = typeof BOXING_ONTOLOGY_VERSION;
+ * decision recorded elsewhere.
+ *
+ * THERE IS NO "CURRENT VERSION" CONSTANT. Once two versions exist, "the
+ * version" means three different things -- what a new study is stamped with,
+ * what the labelling page can honestly label, and what may carry body points
+ * -- and a single constant would let a call site mean one while saying
+ * another. Each question has its own constant below, and every caller names
+ * the one it means.
+ * ------------------------------------------------------------------ */
+
+/** The event vocabulary of this file's arrays above the BODY POINTS section.
+ * Never edited: rows stamped with it keep meaning what they meant. */
+export const BOXING_ONTOLOGY_VERSION_0_1 = 'boxing-ontology-0.1' as const;
+
+/** 0.1's event vocabulary unchanged, plus body points marked at three moments,
+ * a lead side and a guard at each moment, and a stance type once per event
+ * (OD-2026-10-02-008, -011, -014). Defined below under BODY POINTS. */
+export const BOXING_ONTOLOGY_VERSION_0_2 = 'boxing-ontology-0.2' as const;
+
+/** Every version this build knows the meaning of. Knowing a version is not the
+ * same as being able to label it -- see ANNOTATABLE_ONTOLOGY_VERSIONS. */
+export const SUPPORTED_BOXING_ONTOLOGY_VERSIONS = [
+  BOXING_ONTOLOGY_VERSION_0_1,
+  BOXING_ONTOLOGY_VERSION_0_2,
+] as const;
+export type BoxingOntologyVersion = (typeof SUPPORTED_BOXING_ONTOLOGY_VERSIONS)[number];
+
+/** The versions a coach can open and label in this build, and that a project
+ * may be created under.
+ *
+ * 0.1 only, for now. The labelling page's forms and recordAnnotationEvent's
+ * checks are 0.1's; opening a 0.2 project would put 0.1's dropdowns in front
+ * of a coach and store the answers under a 0.2 stamp. 0.2 joins this list when
+ * its rules are enforced and its screen exists -- a code change, never a
+ * migration. */
+export const ANNOTATABLE_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
+  BOXING_ONTOLOGY_VERSION_0_1,
+];
+
+/** The versions whose annotation sets may hold body points, lead sides,
+ * guards and stance types. A 0.1 set never may (OD-2026-10-02-008 4A: old
+ * studies finish on old labels; never mixed). */
+export const BODY_POINT_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
+  BOXING_ONTOLOGY_VERSION_0_2,
+];
+
+/** What a new study is stamped with by the routes and the bootstrap. Stays 0.1
+ * until 0.2 can be labelled end to end, so no study is created that the
+ * current screen cannot label. ontology.test.ts holds it inside
+ * ANNOTATABLE_ONTOLOGY_VERSIONS. */
+export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_1;
 
 /* ------------------------------------------------------------------ *
  * EVENT CLASSES
@@ -326,3 +377,294 @@ export type ClipSamplingReason = (typeof CLIP_SAMPLING_REASONS)[number];
  * this constant to be consulted. */
 export const ANNOTATION_SET_STATUSES = ['in_progress', 'submitted'] as const;
 export type AnnotationSetStatus = (typeof ANNOTATION_SET_STATUSES)[number];
+
+/* ------------------------------------------------------------------ *
+ * BODY POINTS -- boxing-ontology-0.2 only
+ *
+ * A coach hand-marks where each body point is on the paused picture, at three
+ * moments of every punch and every defence (OD-2026-10-02-011 sections 2, 3a).
+ * Nothing here is proposed by a machine: there is no pose tool, so there is
+ * nothing to accept or correct, and a point is either placed or not visible.
+ *
+ * Same rules as the rest of this file: every value is something a coach can
+ * point at; nothing is a judgement of quality; there is no good or bad guard,
+ * no score and no overall number. None of these arrays may be read by a 0.1
+ * set (BODY_POINT_ONTOLOGY_VERSIONS).
+ * ------------------------------------------------------------------ */
+
+/** The 24 body points, in the order a coach marks them. Exactly the list
+ * Jason ratified (OD-2026-10-02-008 section 2): head (nose, chin); trunk
+ * (neck, mid-hip); each arm (shoulder, elbow, wrist, glove); each leg (hip,
+ * knee, ankle); each foot (heel, big toe, small toe).
+ *
+ * Named left and right, never lead and rear: lead and rear are worked out from
+ * the lead side at that moment, never clicked (OD-2026-10-02-011 3b). Midline
+ * points carry no side. The list can grow, but only as a new ontology version
+ * (OD-2026-10-02-008 section 2) -- never by editing this one. */
+export const BODY_POINTS = [
+  'nose',
+  'chin',
+  'neck',
+  'mid_hip',
+  'left_shoulder',
+  'left_elbow',
+  'left_wrist',
+  'left_glove',
+  'left_hip',
+  'left_knee',
+  'left_ankle',
+  'left_heel',
+  'left_big_toe',
+  'left_small_toe',
+  'right_shoulder',
+  'right_elbow',
+  'right_wrist',
+  'right_glove',
+  'right_hip',
+  'right_knee',
+  'right_ankle',
+  'right_heel',
+  'right_big_toe',
+  'right_small_toe',
+] as const;
+export type BodyPoint = (typeof BODY_POINTS)[number];
+
+/** Where to click, for the points Jason gave a rule for (OD-2026-10-02-008
+ * section 2). No other placement rule has been written, and none is invented
+ * here: a point without an entry has no written rule yet. */
+export const BODY_POINT_PLACEMENT_NOTES: Readonly<Partial<Record<BodyPoint, string>>> = {
+  chin: 'the tip of the chin',
+  left_glove: 'the centre of the padded knuckle area',
+  right_glove: 'the centre of the padded knuckle area',
+};
+
+/** A point is placed on the picture, or the coach looked and could not see
+ * it. Those are the only two states (OD-2026-10-02-011 3a: "not visible" is
+ * the only variation). There is no "not marked": a set is not complete until
+ * every point has one of these. */
+export const BODY_POINT_STATES = ['placed', 'not_visible'] as const;
+export type BodyPointState = (typeof BODY_POINT_STATES)[number];
+
+/** The three moments every punch and defence is marked at
+ * (OD-2026-10-02-011 3a). Which moment the middle one is depends on the event:
+ * see MOMENT_KINDS. */
+export const MOMENT_SLOTS = ['start', 'middle', 'end'] as const;
+export type MomentSlot = (typeof MOMENT_SLOTS)[number];
+
+/** What a marked moment is.
+ *
+ * - start, end: the event's own start and end.
+ * - contact: the event's contact time, whenever the event has one.
+ * - full_extension: a punch with no contact -- "the glove at its furthest
+ *   point from the body" (OD-2026-10-02-011 3a). Also a punch where the coach
+ *   cannot tell whether it landed (OD-2026-10-02-016 D2 A).
+ * - furthest_point: a defence with no contact -- the moment the defending body
+ *   part is at its furthest point from where the movement started. The part
+ *   is the head for slip, duck, roll_weave and pull_back; the body for
+ *   step_back, lateral_step and pivot; the defending glove or forearm for
+ *   block, parry, smother and clinch_defense; and the part that moved most for
+ *   other_defense and unclassifiable_defense. The rule is the architect's call
+ *   (OD-2026-10-02-011 3a), made by the stand-in architect for TEACH-BIOMECH-01
+ *   and open to ChatGPT's review.
+ *
+ * There is no 'peak' (OD-2026-10-02-008 3A). */
+export const MOMENT_KINDS = ['start', 'contact', 'full_extension', 'furthest_point', 'end'] as const;
+export type MomentKind = (typeof MOMENT_KINDS)[number];
+
+/** Who the points are on. The person throwing the punch or making the
+ * defence, and the other person only when the event is contact against them
+ * (OD-2026-10-02-008 9A), marked the same way. */
+export const BODY_SUBJECTS = ['actor', 'opponent'] as const;
+export type BodySubject = (typeof BODY_SUBJECTS)[number];
+
+/** Which side leads, recorded at each marked moment (OD-2026-10-02-011 3b).
+ *
+ * - neutral: a square stance, feet level, neither side leading (Jason's
+ *   addition, OD-2026-10-02-011 3b).
+ * - transition: caught mid-switch, in neither stance. The same observation and
+ *   the same token as 0.1's STANCES; one concept, one token.
+ * - unknown: the coach could not tell, e.g. the feet are out of frame
+ *   (OD-2026-10-02-016 D3 A).
+ *
+ * In 0.2 this is meant to replace the event-level `stance`: the TEACH-BIOMECH-01
+ * work order (item C2) has 0.2 events leave `stance` empty. Nothing enforces
+ * that yet. */
+export const LEAD_SIDES = ['orthodox', 'southpaw', 'neutral', 'transition', 'unknown'] as const;
+export type LeadSide = (typeof LEAD_SIDES)[number];
+
+/* ---- Named guards and stance types, by sanctioning body ------------------ *
+ *
+ * Each sanctioning body's named guards and named stances are separate labels,
+ * tagged with their body. No entry is equated with another body's, even where
+ * the manuals describe a similar position: each body has its own reasons for
+ * its names (OD-2026-10-02-011 3b; OD-2026-10-02-014). None is good or bad.
+ *
+ * What lives here: the body, the name as the manual prints it, the printed
+ * page number and the PDF page index (they differ: USA Boxing's printed page
+ * 82 is PDF page 83). What does NOT live here: the manuals' definitions and
+ * stated purposes. They are licensed excerpts and are kept privately, never in
+ * the public repository (OD-2026-10-02-013 section 2).
+ *
+ * Every page below was read in that manual's PDF (SOURCE_MANUALS). An entry
+ * whose page could not be settled carries a null page and says why; an entry
+ * that could not be found at all is left out, never guessed.
+ *
+ * Left out on purpose: plain orthodox and southpaw stance headings (Boxing
+ * Australia's, for one), which are what LEAD_SIDES records; and named
+ * defensive techniques such as AIBA's DOUBLE ARM COVER, which are movements,
+ * not positions held at a moment. */
+
+export const SANCTIONING_BODIES = ['usa_boxing', 'aiba', 'boxing_australia', 'usiba'] as const;
+export type SanctioningBody = (typeof SANCTIONING_BODIES)[number];
+
+export interface SourceManual {
+  bodyName: string;
+  title: string;
+  /** Year or version as the manual states it; null when it states none. */
+  edition: string | null;
+  url: string;
+  /** SHA-256 of the PDF the pages were read in. Page numbers belong to one
+   * file; a different upload of "the same" manual may number differently. */
+  pdfSha256: string;
+}
+
+export const SOURCE_MANUALS: Readonly<Record<SanctioningBody, SourceManual>> = {
+  usa_boxing: {
+    bodyName: 'USA Boxing',
+    title: 'Grassroots Task Force Best Practices Training Manual',
+    edition: 'v.01 (2014)',
+    url: 'https://d36m266ykvepgv.cloudfront.net/uploads/media/lYivrDbNV6/o/usab-gtf-trainingmanual-v-01-1.pdf',
+    pdfSha256: '9b4bcdbdab37a8e15ed1ce6d286803d7c755a49b7fb535a2d80d63cc1a1022e5',
+  },
+  aiba: {
+    bodyName: 'AIBA (now IBA)',
+    title: 'AIBA Coach Manual',
+    edition: null,
+    url: 'https://www.iba.sport/wp-content/uploads/2019/01/AIBA-Coach-Regulations-Manual_WEB_2019_01-1.pdf',
+    pdfSha256: '8f829c0dde8368b121d146ecd6e1d11426b531ca3eec713ff91a6396d8171d7a',
+  },
+  boxing_australia: {
+    bodyName: 'Boxing Australia',
+    title: 'Coach Manual: Bronze',
+    edition: null,
+    url: 'https://cdn.revolutionise.com.au/cups/boxing/files/qxpguvjt2cgkasw6.pdf',
+    pdfSha256: 'f287fa8daf0df4a3e9d4be3e427ca479f52f14abccea52f5fca4086dc4655f61',
+  },
+  usiba: {
+    bodyName: 'United States Intercollegiate Boxing Association (USIBA)',
+    title: 'The Sweet Science 101',
+    edition: '2014',
+    url: 'https://d36m266ykvepgv.cloudfront.net/uploads/media/U3ycXujQ3J/o/the-sweet-science-101.pdf',
+    pdfSha256: 'c668818e2217c3d786ee5f2919c5b8e040d12908b7f6be7caca79d9de995ff4e',
+  },
+};
+
+export interface NamedPositionSource {
+  body: SanctioningBody;
+  /** The heading as the manual prints it, letter case included. */
+  nameAsPrinted: string;
+  /** The page number printed on the manual's page. */
+  printedPage: number | null;
+  /** The page index in the PDF file (1-based). */
+  pdfPage: number | null;
+  /** Required exactly when either page is null: why it is not settled. */
+  unconfirmed?: string;
+}
+
+/** Guard types, recorded at each marked moment (OD-2026-10-02-011 3b). The
+ * named guards and arm positions of all four bodies ("Well put all in"),
+ * except the AIBA stances that OD-2026-10-02-014 moved to STANCE_TYPES.
+ * 'other' and 'unknown' are observations, as everywhere in this file.
+ *
+ * CLASSIFICATION CALLS, not readings (stand-in architect, accepted by
+ * overwatch): AIBA's arm positions printed inside its BOXING STANCE sections
+ * (pp. 124-125, 147-151) are guards because they describe the arms; AIBA's
+ * stance variations 2 and 3 (pp. 210-211) are guards because they vary the
+ * arms, and pair with a stance type recorded once per event; Boxing
+ * Australia's double guard (p. 30) is printed as a defensive reaction and is
+ * recorded as a guard because it is a position the arms hold. */
+export const GUARD_TYPES = [
+  'usa_boxing__high_double_guard',
+  'usa_boxing__half_guard',
+  'aiba__high_shoulder_and_high_lead_arm',
+  'aiba__low_arms',
+  'aiba__lead_hand_high',
+  'aiba__lead_hand_low',
+  'aiba__closed_arms_with_bodyweight_to_front',
+  'aiba__lower_arms_with_bodyweight_to_front',
+  'aiba__lead_hand_high_with_balanced_bodyweight_distribution',
+  'aiba__high_guard',
+  'aiba__double_guard',
+  'aiba__stances_with_closed_guard',
+  'aiba__stances_with_arms_down',
+  'boxing_australia__closed_guard',
+  'boxing_australia__open_guard',
+  'boxing_australia__double_guard_to_the_straight',
+  'other',
+  'unknown',
+] as const;
+export type GuardType = (typeof GUARD_TYPES)[number];
+
+export const GUARD_TYPE_SOURCES: Readonly<Record<Exclude<GuardType, 'other' | 'unknown'>, NamedPositionSource>> = {
+  usa_boxing__high_double_guard: { body: 'usa_boxing', nameAsPrinted: 'High (Double) Guard', printedPage: 82, pdfPage: 83 },
+  usa_boxing__half_guard: { body: 'usa_boxing', nameAsPrinted: 'Half Guard', printedPage: 82, pdfPage: 83 },
+  aiba__high_shoulder_and_high_lead_arm: { body: 'aiba', nameAsPrinted: 'HIGH SHOULDER AND HIGH LEAD ARM', printedPage: 124, pdfPage: 124 },
+  aiba__low_arms: { body: 'aiba', nameAsPrinted: 'LOW ARMS', printedPage: 125, pdfPage: 125 },
+  aiba__lead_hand_high: { body: 'aiba', nameAsPrinted: 'LEAD HAND HIGH', printedPage: 147, pdfPage: 147 },
+  aiba__lead_hand_low: { body: 'aiba', nameAsPrinted: 'LEAD HAND LOW', printedPage: 148, pdfPage: 148 },
+  aiba__closed_arms_with_bodyweight_to_front: { body: 'aiba', nameAsPrinted: 'CLOSED ARMS (WITH BODYWEIGHT TO FRONT)', printedPage: 149, pdfPage: 149 },
+  aiba__lower_arms_with_bodyweight_to_front: { body: 'aiba', nameAsPrinted: 'LOWER ARMS (WITH BODYWEIGHT TO FRONT)', printedPage: 150, pdfPage: 150 },
+  aiba__lead_hand_high_with_balanced_bodyweight_distribution: { body: 'aiba', nameAsPrinted: 'LEAD HAND HIGH (WITH BALANCED BODYWEIGHT DISTRIBUTION)', printedPage: 151, pdfPage: 151 },
+  aiba__high_guard: { body: 'aiba', nameAsPrinted: 'HIGH GUARD', printedPage: 179, pdfPage: 179 },
+  aiba__double_guard: { body: 'aiba', nameAsPrinted: 'DOUBLE GUARD', printedPage: 180, pdfPage: 180 },
+  aiba__stances_with_closed_guard: { body: 'aiba', nameAsPrinted: 'VARIATION 2: STANCES WITH CLOSED GUARD', printedPage: 210, pdfPage: 210 },
+  aiba__stances_with_arms_down: { body: 'aiba', nameAsPrinted: 'VARIATION 3: STANCES WITH ARMS DOWN', printedPage: 211, pdfPage: 211 },
+  boxing_australia__closed_guard: { body: 'boxing_australia', nameAsPrinted: 'Closed guard', printedPage: 11, pdfPage: 11 },
+  boxing_australia__open_guard: { body: 'boxing_australia', nameAsPrinted: 'Open guard', printedPage: 11, pdfPage: 11 },
+  boxing_australia__double_guard_to_the_straight: { body: 'boxing_australia', nameAsPrinted: 'Double Guard to the Straight Lead/Rear Hand', printedPage: 30, pdfPage: 30 },
+};
+
+/** Stance types, recorded once per punch or defence (OD-2026-10-02-014). */
+export const STANCE_TYPES = [
+  'usa_boxing__classic',
+  'aiba__weight_to_lead_leg',
+  'aiba__weight_to_rear_leg',
+  'aiba__up_right_stance',
+  'aiba__crouching_stance',
+  'aiba__frontal_stance',
+  'aiba__frontal_stance_with_closed_arms',
+  'aiba__classic',
+  'aiba__stance_for_long_distance',
+  'aiba__stance_for_medium_distance',
+  'aiba__stance_for_short_distance',
+  'aiba__stances_with_weight_shift_to_rear_leg',
+  'usiba__on_guard',
+  'other',
+  'unknown',
+] as const;
+export type StanceType = (typeof STANCE_TYPES)[number];
+
+export const STANCE_TYPE_SOURCES: Readonly<Record<Exclude<StanceType, 'other' | 'unknown'>, NamedPositionSource>> = {
+  // OD-2026-10-02-014 calls this "USA Boxing's basic stance"; the manual's
+  // heading is "Classic", and its guard entries refer back to it as "the
+  // basic stance".
+  usa_boxing__classic: { body: 'usa_boxing', nameAsPrinted: 'Classic', printedPage: 82, pdfPage: 83 },
+  aiba__weight_to_lead_leg: { body: 'aiba', nameAsPrinted: 'WEIGHT TO LEAD LEG', printedPage: 122, pdfPage: 122 },
+  aiba__weight_to_rear_leg: { body: 'aiba', nameAsPrinted: 'WEIGHT TO REAR LEG', printedPage: 123, pdfPage: 123 },
+  aiba__up_right_stance: { body: 'aiba', nameAsPrinted: 'UP-RIGHT STANCE', printedPage: 126, pdfPage: 126 },
+  aiba__crouching_stance: { body: 'aiba', nameAsPrinted: 'CROUCHING STANCE', printedPage: 127, pdfPage: 127 },
+  aiba__frontal_stance: { body: 'aiba', nameAsPrinted: 'FRONTAL STANCE', printedPage: 128, pdfPage: 128 },
+  aiba__frontal_stance_with_closed_arms: { body: 'aiba', nameAsPrinted: 'FRONTAL STANCE WITH CLOSED ARMS', printedPage: 152, pdfPage: 152 },
+  // Printed as "CLASSIC" twice, in the USA chapter (p. 178) and again in the
+  // Cuba chapter (p. 205); one name in one manual is one label.
+  aiba__classic: { body: 'aiba', nameAsPrinted: 'CLASSIC', printedPage: 178, pdfPage: 178 },
+  aiba__stance_for_long_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR LONG-DISTANCE', printedPage: 206, pdfPage: 206 },
+  aiba__stance_for_medium_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR MEDIUM-DISTANCE', printedPage: 207, pdfPage: 207 },
+  aiba__stance_for_short_distance: { body: 'aiba', nameAsPrinted: 'STANCE FOR SHORT DISTANCE', printedPage: 208, pdfPage: 208 },
+  aiba__stances_with_weight_shift_to_rear_leg: { body: 'aiba', nameAsPrinted: 'VARIATION 1: STANCES WITH WEIGHT SHIFT TO REAR LEG', printedPage: 209, pdfPage: 209 },
+  // Each PDF page of this book is a two-page spread; PDF page 12 is printed
+  // 14-15. The book's contents page starts "Head and Hand Position" on 15, and
+  // this heading follows that section's opening sentence, so it is on 15. The
+  // heading is set in small capitals; its letter case here is a reading.
+  usiba__on_guard: { body: 'usiba', nameAsPrinted: 'Orthodox Hand Position (On-Guard)', printedPage: 15, pdfPage: 12 },
+};

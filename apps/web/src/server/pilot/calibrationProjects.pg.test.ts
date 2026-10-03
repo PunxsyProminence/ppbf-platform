@@ -234,7 +234,7 @@ async function newProject(name: string): Promise<string> {
     organizationId: ORG_ID,
     calibrationProjectId: projectId,
     name,
-    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: COACH_ID,
   });
   return projectId;
@@ -326,7 +326,7 @@ describe('defining a calibration study', () => {
       organizationId: ORG_ID,
       calibrationProjectId: projectId,
       name: 'Pilot calibration round one',
-      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       createdByAccountId: COACH_ID,
     });
 
@@ -346,7 +346,7 @@ describe('defining a calibration study', () => {
         ontologyVersion: 'boxing-ontology-0.2',
         createdByAccountId: COACH_ID,
       }),
-    ).rejects.toThrow(/ontology_version/);
+    ).rejects.toThrow(/ontology_version: .*cannot validate boxing-ontology-0\.2/);
   });
 
   test('the database still accepts an older stamp, so historical rows keep their true version', async () => {
@@ -376,7 +376,7 @@ describe('defining a calibration study', () => {
         organizationId: ORG_ID,
         calibrationProjectId: crypto.randomUUID(),
         name: 'Shared study name',
-        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
         createdByAccountId: COACH_ID,
       });
 
@@ -385,7 +385,7 @@ describe('defining a calibration study', () => {
           organizationId: ORG_ID,
           calibrationProjectId: crypto.randomUUID(),
           name: 'Shared study name',
-          ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+          ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
           createdByAccountId: COACH_ID,
         }),
       ).rejects.toThrow();
@@ -396,7 +396,7 @@ describe('defining a calibration study', () => {
           `insert into pilot.calibration_projects
              (organization_id, calibration_project_id, name, ontology_version, status, created_by_account_id)
            values ($1, $2, 'Shared study name', $3, 'draft', $4)`,
-          [OTHER_ORG_ID, crypto.randomUUID(), ontology.BOXING_ONTOLOGY_VERSION, OTHER_ORG_COACH_ID],
+          [OTHER_ORG_ID, crypto.randomUUID(), ontology.BOXING_ONTOLOGY_VERSION_0_1, OTHER_ORG_COACH_ID],
         ),
       ).resolves.toBeDefined();
     } finally {
@@ -412,7 +412,7 @@ describe('defining a calibration study', () => {
         `insert into pilot.calibration_projects
            (organization_id, calibration_project_id, name, ontology_version, status, created_by_account_id)
          values ($1, $2, 'Other gym study', $3, 'draft', $4)`,
-        [OTHER_ORG_ID, foreignId, ontology.BOXING_ONTOLOGY_VERSION, OTHER_ORG_COACH_ID],
+        [OTHER_ORG_ID, foreignId, ontology.BOXING_ONTOLOGY_VERSION_0_1, OTHER_ORG_COACH_ID],
       );
 
       expect(await calibration.getCalibrationProject(ORG_ID, foreignId)).toBeNull();
@@ -743,7 +743,7 @@ describe('tenancy is enforced by the database, not by the caller', () => {
         `insert into pilot.calibration_projects
            (organization_id, calibration_project_id, name, ontology_version, status, created_by_account_id)
          values ($1, $2, 'Other gym cross-ref', $3, 'draft', $4)`,
-        [OTHER_ORG_ID, foreignProjectId, ontology.BOXING_ONTOLOGY_VERSION, OTHER_ORG_COACH_ID],
+        [OTHER_ORG_ID, foreignProjectId, ontology.BOXING_ONTOLOGY_VERSION_0_1, OTHER_ORG_COACH_ID],
       );
 
       await expect(

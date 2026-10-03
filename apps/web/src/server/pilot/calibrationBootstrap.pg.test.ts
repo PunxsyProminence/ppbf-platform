@@ -402,7 +402,7 @@ describe('establishing a ready video as a calibration study', () => {
       // createCalibrationProject can write, and the ontology version is the
       // only one this build can validate.
       expect(project.status).toBe('draft');
-      expect(project.ontology_version).toBe(ontology.BOXING_ONTOLOGY_VERSION);
+      expect(project.ontology_version).toBe(ontology.BOXING_ONTOLOGY_VERSION_0_1);
       expect(project.organization_id).toBe(ORG_ID);
 
       expect(clip.calibration_project_id).toBe(project.calibration_project_id);
@@ -646,7 +646,7 @@ describe('the creation is recorded, not only stamped on the row', () => {
     expect(projectRow.organization_id).toBe(ORG_ID);
     expect(projectRow.details).toEqual({
       name: project.name,
-      ontology_version: ontology.BOXING_ONTOLOGY_VERSION,
+      ontology_version: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       status: 'draft',
     });
 
