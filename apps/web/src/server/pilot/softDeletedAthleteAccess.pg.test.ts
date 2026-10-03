@@ -846,7 +846,9 @@ describe("a deleted athlete's own session reaches nothing", () => {
       const inGymB = athleteActor(OTHER_ORG_ID, CROSS_ORG_ATHLETE);
 
       await expect(assertActorCanAccessAthlete(inGymA, CROSS_ORG_ATHLETE)).resolves.toBeUndefined();
-      await expect(assertActorCanAccessAthlete(inGymB, CROSS_ORG_ATHLETE)).rejects.toThrow();
+      await expect(assertActorCanAccessAthlete(inGymB, CROSS_ORG_ATHLETE)).rejects.toThrow(
+        'Forbidden: athlete does not belong to organization',
+      );
 
       expect([...(await accessibleAthleteIds(inGymA, [CROSS_ORG_ATHLETE]))]).toEqual([CROSS_ORG_ATHLETE]);
       expect((await accessibleAthleteIds(inGymB, [CROSS_ORG_ATHLETE])).size).toBe(0);
