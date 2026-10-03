@@ -79,15 +79,22 @@ export default function MembershipsPage() {
   const [catalogProgramName, setCatalogProgramName] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
-      method: 'GET',
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load memberships.');
-    const payload = (await response.json()) as { items?: MembershipRow[] };
-    setItems(payload.items ?? []);
-    setListRead(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/memberships`, {
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load memberships.');
+      const payload = (await response.json()) as { items?: MembershipRow[] };
+      setItems(payload.items ?? []);
+      setListRead(true);
+    } catch (error) {
+      // A failed re-read after a write leaves the list stale: rows on screen
+      // stay, but an empty list is no longer a record of none.
+      setListRead(false);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -374,7 +381,7 @@ export default function MembershipsPage() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading memberships...</span>
             </div>
-          ) : !listRead ? (
+          ) : !listRead && items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">Memberships could not be read</div>

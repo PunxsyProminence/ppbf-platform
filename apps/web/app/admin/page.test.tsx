@@ -115,6 +115,25 @@ it('a failed gym-capability read shows each row as unknown, never "Disabled"', a
   }
 });
 
+it('after a gym-capability read comes back, each row states its access and can be flipped', async () => {
+  const fetchMock = jest.fn(async (url: string) => {
+    if (String(url).includes('/api/pilot/admin/gym-capabilities')) {
+      return jsonResponse({ capabilityAccess: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+
+  const buttons = await screen.findAllByRole('button', { name: 'Disabled' });
+  expect(buttons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Unknown' })).toBeNull();
+  expect(screen.queryByText('Gym admin access could not be read.')).toBeNull();
+});
+
 // "It saves as you click," the tracks panel says -- and the save effect was a
 // fire-and-forget `void fetch(...)`, so a refused POST left the admin looking
 // at an assignment that existed only in their tab. The GET succeeds here (the

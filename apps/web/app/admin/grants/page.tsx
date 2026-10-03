@@ -76,15 +76,22 @@ export default function GrantObligationsPage() {
   });
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/admin/grant-obligations`, {
-      method: 'GET',
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load grant obligations.');
-    const payload = (await response.json()) as { items?: ObligationRow[] };
-    setItems(payload.items ?? []);
-    setListRead(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/grant-obligations`, {
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load grant obligations.');
+      const payload = (await response.json()) as { items?: ObligationRow[] };
+      setItems(payload.items ?? []);
+      setListRead(true);
+    } catch (error) {
+      // A failed re-read after a write leaves the list stale: rows on screen
+      // stay, but an empty list is no longer a record of none.
+      setListRead(false);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -224,7 +231,7 @@ export default function GrantObligationsPage() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading obligations...</span>
             </div>
-          ) : !listRead ? (
+          ) : !listRead && items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">Obligations could not be read</div>
