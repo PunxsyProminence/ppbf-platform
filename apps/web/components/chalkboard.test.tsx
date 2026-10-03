@@ -156,9 +156,9 @@ describe('the board on a dashboard', () => {
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => { release = resolve; });
     const base = stubFetch({ announcements: [], role: 'athlete', authProvider: 'ppbf_local' });
-    global.fetch = jest.fn(async (url: unknown, init?: RequestInit) => {
+    global.fetch = jest.fn(async (url: unknown) => {
       if (String(url).includes('/api/pilot/announcements/get')) await held;
-      return base(url, init);
+      return base(url);
     }) as unknown as typeof fetch;
 
     await act(async () => {
