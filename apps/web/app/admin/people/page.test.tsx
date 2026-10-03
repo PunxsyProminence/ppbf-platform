@@ -431,7 +431,7 @@ describe('removing a guardian link', () => {
 
     render(<PeopleConsolePage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Move To New Email' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Alex Johnson, Sam Rivera To New Email' }));
     const confirm = screen.getByRole('button', { name: 'Confirm Move' }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
 
@@ -444,7 +444,7 @@ describe('removing a guardian link', () => {
       from_account_id: 'dana@example.com',
       to_email: 'dana.new@example.com',
     });
-    expect(await screen.findByText(/Moved to dana\.new@example\.com.*dana@example\.com is switched off/)).toBeTruthy();
+    expect(await screen.findByText(/Moved to dana\.new@example\.com\. Nothing was sent.*dana@example\.com is switched off/)).toBeTruthy();
   });
 
   test('shows the server refusal of a move verbatim', async () => {
@@ -455,7 +455,7 @@ describe('removing a guardian link', () => {
 
     render(<PeopleConsolePage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Move To New Email' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Alex Johnson, Sam Rivera To New Email' }));
     fireEvent.change(screen.getByLabelText('New email'), { target: { value: 'x@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Move' }));
 

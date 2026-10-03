@@ -132,8 +132,16 @@ async function resolveTargetLogin(
     [email, organizationId],
   );
   if (inserted.rowCount !== 1) {
-    // An account_id spelled like this email that carries another email, or
-    // none: some other identity holds the id a new login would take.
+    // Either a login for this email was made a moment ago by another move or
+    // an invite (then it is used, and checked like any other), or some other
+    // identity holds the id a new login would take.
+    const madeMeanwhile = await client.query<{ account_id: string }>(
+      'select account_id from pilot.accounts where lower(login_email) = $1 and organization_id = $2',
+      [email, organizationId],
+    );
+    if (madeMeanwhile.rows[0]) {
+      return { accountId: madeMeanwhile.rows[0].account_id, created: false };
+    }
     throw new ConflictError(
       `Conflict: a login with the id "${email}" already exists for a different email, so no login can be made for it.`,
       'GUARDIAN_MOVE_ACCOUNT_ID_TAKEN',
@@ -250,14 +258,15 @@ async function moveInTransaction(
     }
     if (to.is_platform_owner || to.role !== 'parent' || to.membership_role !== 'parent') {
       throw new ConflictError(
-        `Conflict: login "${toAccountId}" is not a parent login. A guardian record moves only to a parent login; `
-        + 'invite the parent with their new email first, then move the record to that login.',
+        `Conflict: ${toEmail} belongs to a login that is not a parent login. A guardian record moves only to a `
+        + 'parent login, so this email cannot be used for the move. Use another email for the parent.',
         'GUARDIAN_MOVE_TARGET_NOT_PARENT',
       );
     }
     if (!to.active_flag || to.membership_active !== true) {
       throw new ConflictError(
-        `Conflict: login "${toAccountId}" is switched off. Move the record only to a login that can sign in.`,
+        `Conflict: login "${toAccountId}" is switched off. Switch it back on on the people screen first, then move `
+        + 'the record to it.',
         'GUARDIAN_MOVE_TARGET_INACTIVE',
       );
     }

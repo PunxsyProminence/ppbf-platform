@@ -718,7 +718,7 @@ function PeopleConsoleContent() {
       setPendingMove(null);
       setMoveEmail('');
       setNotice(
-        `Moved to ${payload.to_account_id}. They sign in with an email link sent to that address.`
+        `Moved to ${payload.to_account_id}. Nothing was sent to them: tell the family to ask for a sign-in link at that address.`
         + (payload.old_login_switched_off ? ` ${accountId} is switched off.` : ''),
       );
       await load();
@@ -1311,7 +1311,10 @@ function PeopleConsoleContent() {
                                     onClick={() => { setPendingMove({ accountId: member.account_id, parentId }); setMoveEmail(''); }}
                                     className="btn--lever disabled:opacity-50"
                                   >
-                                    Move To New Email
+                                    Move {memberLinks
+                                      .filter((link) => link.parent_id === parentId)
+                                      .map((link) => link.athlete_full_name)
+                                      .join(', ')} To New Email
                                   </button>
                                 )}
                               </div>
