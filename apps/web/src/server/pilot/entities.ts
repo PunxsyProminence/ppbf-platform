@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import type { CoachRosterAthlete, PilotAthlete, PilotCoachReview, PilotGoal, PilotSession } from './contracts';
 import { query, queryOne } from './db';
 import { ConflictError } from './errors';
@@ -18,8 +20,18 @@ export async function getAthleteById(organizationId: string, athleteId: string):
  * `not null` column cannot be dropped out from under existing rows in an
  * additive migration.
  */
-export async function upsertAthlete(organizationId: string, payload: PilotAthlete): Promise<void> {
-  await query(
+export async function upsertAthlete(
+  organizationId: string,
+  payload: PilotAthlete,
+  client?: PoolClient,
+): Promise<void> {
+  // On the caller's transaction when a client is passed (intake's promotion
+  // writes the record under its athlete-login lock), else one pooled
+  // statement as before.
+  const run = client
+    ? (text: string, values: unknown[]) => client.query(text, values)
+    : query;
+  await run(
     `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, emergency_contact_note, active_flag, coach_id, created_at, updated_at)
      values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11)
      on conflict (organization_id, athlete_id) do update set

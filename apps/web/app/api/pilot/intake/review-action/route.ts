@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertShadowAuthority,
@@ -23,9 +22,6 @@ import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { requireWaiverStatus, type WaiverStatus } from '@/src/server/pilot/waiverCompliance';
 import {
   assertActorCanAccessIntakeCase,
-  assertAthleteAccountIdProvisionable,
-  assertAthleteRecordNotHeldByDeletedLogin,
-  assertAthleteRecordNotWithdrawn,
   assertGuardianAccountUnchanged,
   bindIntakeDocumentsToOwner,
   createAssessment,
@@ -42,6 +38,7 @@ import {
   upsertGuardian,
   upsertMedicalIntake,
   upsertWaiver,
+  writePromotedAthleteRecord,
 } from '@/src/server/pilot/intake';
 
 export const runtime = 'nodejs';
@@ -496,41 +493,6 @@ export async function POST(request: NextRequest) { // NOSONAR
       full_name: requireString(promotion.guardian.full_name, 'guardian.full_name'),
     };
 
-    // A withdrawn athlete record: upsertAthlete would rewrite it while it
-    // stayed withdrawn. A returning athlete is re-enrolled under a new
-    // athlete_id and a new login (OD-2026-09-30-004 e1).
-    await assertAthleteRecordNotWithdrawn({
-      organizationId: principal.organizationId,
-      athleteId: promotion.athlete.athlete_id,
-    });
-
-    // A live athlete record whose only login was deleted (the account cleanup
-    // retires a login and keeps its athlete_id): refused on EVERY promotion.
-    // This used to run only inside the account_id check below, so a promotion
-    // that named no login skipped it, and upsertAthlete wrote a record shown
-    // as active that could never sign in (OD-2026-09-29-002 item 4; the
-    // Build List row "Intake can leave a live athlete whose login is marked
-    // deleted", path i). Path ii -- serializing these checks against the
-    // cleanup's own write -- is not settled and is not built here.
-    await assertAthleteRecordNotHeldByDeletedLogin({
-      organizationId: principal.organizationId,
-      athleteId: promotion.athlete.athlete_id,
-    });
-
-    // The athlete's account: createOrUpdateAthleteAccount refuses one in
-    // another organization, would re-role a same-organization account of any
-    // other role into a locked athlete account, would re-bind another child's
-    // athlete login to this child's record, would re-provision a deleted login
-    // that still could not sign in, and meets the one-login-per-athlete
-    // constraint only after the athlete record is written. All refused here.
-    if (promotion.athlete.account_id) {
-      await assertAthleteAccountIdProvisionable({
-        accountId: promotion.athlete.account_id,
-        athleteId: promotion.athlete.athlete_id,
-        organizationId: principal.organizationId,
-      });
-    }
-
     if (guardian) {
       // A guardian record that is already linked to a different login is
       // refused by upsertGuardian, but that write comes after the athlete
@@ -561,17 +523,27 @@ export async function POST(request: NextRequest) { // NOSONAR
 
     const athleteCreatedAt = new Date().toISOString();
 
-    await upsertAthlete(principal.organizationId, {
-      athlete_id: promotion.athlete.athlete_id,
-      full_name: promotion.athlete.full_name,
-      dob: promotion.athlete.dob,
-      weight_class: promotion.athlete.weight_class,
-      gym_status: promotion.athlete.gym_status,
-      emergency_contact: promotion.athlete.emergency_contact,
-      active_flag: true,
-      coach_id: promotion.athlete.coach_id,
-      created_at: athleteCreatedAt,
-      updated_at: athleteCreatedAt,
+    // The athlete-record checks -- withdrawn; held by a deleted login, on
+    // every promotion, account_id or not (OD-2026-09-29-002 item 4, path i);
+    // the account_id's refusals -- and the athlete write, in one transaction
+    // under the lock the account cleanup also takes, so the cleanup cannot
+    // retire this athlete's login in between (path ii). The first write of
+    // the promotion; the guardian checks above are reads only.
+    await writePromotedAthleteRecord({
+      organizationId: principal.organizationId,
+      accountId: promotion.athlete.account_id,
+      athlete: {
+        athlete_id: promotion.athlete.athlete_id,
+        full_name: promotion.athlete.full_name,
+        dob: promotion.athlete.dob,
+        weight_class: promotion.athlete.weight_class,
+        gym_status: promotion.athlete.gym_status,
+        emergency_contact: promotion.athlete.emergency_contact,
+        active_flag: true,
+        coach_id: promotion.athlete.coach_id,
+        created_at: athleteCreatedAt,
+        updated_at: athleteCreatedAt,
+      },
     });
 
     // No credential is set here: athlete.pin was refused before the first
