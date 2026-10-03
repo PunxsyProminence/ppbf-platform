@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { getCoachReviewsBySession, getSessionById } from '@/src/server/pilot/entities';
+import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -23,6 +24,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetSessionById = getSessionById as jest.Mock;
 const mockGetCoachReviews = getCoachReviewsBySession as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -61,6 +63,7 @@ describe('GET /api/pilot/coach-reviews/list', () => {
   test('200 for a session the athlete owns', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockGetSessionById.mockResolvedValueOnce({ session_id: 'sess-1', athlete_id: 'ath-1' });
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockGetCoachReviews.mockResolvedValueOnce([]);
 
     const res = await GET(getRequest('sess-1'));

@@ -226,7 +226,8 @@ describe('assertActorCanAccessIntakeCase -- a case with a resolved subject', () 
   });
 
   test('an athlete reaches only their own case', async () => {
-    withDatabase(promotedCase);
+    // inOrganization: the athlete arm now also checks the athlete's own live row.
+    withDatabase({ ...promotedCase, inOrganization: ['ath-1'] });
 
     await expect(
       assertActorCanAccessIntakeCase(actor('athlete', { athleteId: 'ath-1' }), 'org-1', 'case-1'),

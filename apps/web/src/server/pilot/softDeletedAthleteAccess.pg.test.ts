@@ -786,6 +786,100 @@ describe('assertActorCanAccessAthlete, the chokepoint 92 files call', () => {
   });
 });
 
+/* THE ATHLETE'S OWN SESSION. Every door above is someone else reaching the
+   athlete. This one is the athlete reaching themselves: the athlete arm
+   matched actor.athleteId against the requested id and returned, reading no
+   row at all, so a session that outlived the deletion kept the athlete's
+   record open. Deletion revokes sessions (OD-2026-09-29-002 item 10), so this
+   is the second lock, not the only one. */
+function athleteActor(organizationId: string, athleteId: string): ActorIdentity {
+  return { accountId: `acct-athlete-${athleteId}`, role: 'athlete', organizationId, athleteId };
+}
+
+describe("a deleted athlete's own session reaches nothing", () => {
+  test('assertActorCanAccessAthlete refuses the deleted athlete their own record, and admits the live one', async () => {
+    await withDatabase('sda_athlete_self', async () => {
+      // Control: same arm, same gym, a live row.
+      await expect(
+        assertActorCanAccessAthlete(athleteActor(ORG_ID, LIVE_ATHLETE), LIVE_ATHLETE),
+      ).resolves.toBeUndefined();
+
+      const deleted = await refusalOf(
+        assertActorCanAccessAthlete(athleteActor(ORG_ID, DELETED_ATHLETE), DELETED_ATHLETE),
+      );
+      const neverExisted = await refusalOf(
+        assertActorCanAccessAthlete(athleteActor(ORG_ID, 'ATH-NEVER-EXISTED'), 'ATH-NEVER-EXISTED'),
+      );
+      // A deleted record and no record at all refuse alike.
+      expect({ name: deleted.name, message: deleted.message }).toEqual({
+        name: neverExisted.name,
+        message: neverExisted.message,
+      });
+
+      // The id match still comes first: a live athlete asking for another
+      // athlete is refused as before.
+      await expect(
+        assertActorCanAccessAthlete(athleteActor(ORG_ID, LIVE_ATHLETE), DELETED_ATHLETE),
+      ).rejects.toThrow('Forbidden: athlete cannot access another athlete record');
+    });
+  });
+
+  test('accessibleAthleteIds returns nothing to the deleted athlete, and their own id to the live one', async () => {
+    await withDatabase('sda_athlete_self_batched', async () => {
+      const live = await accessibleAthleteIds(athleteActor(ORG_ID, LIVE_ATHLETE), [LIVE_ATHLETE, DELETED_ATHLETE]);
+      expect([...live]).toEqual([LIVE_ATHLETE]);
+
+      const deleted = await accessibleAthleteIds(athleteActor(ORG_ID, DELETED_ATHLETE), [
+        LIVE_ATHLETE,
+        DELETED_ATHLETE,
+      ]);
+      expect(deleted.size).toBe(0);
+    });
+  });
+
+  // CROSS_ORG_ATHLETE is live in organization A and deleted in organization B.
+  // B's athlete holding that id must be refused even though A's row is live:
+  // the row read is the actor's own gym's, not any row with the id.
+  test("the live row must be in the athlete's own gym", async () => {
+    await withDatabase('sda_athlete_self_cross_org', async () => {
+      const inGymA = athleteActor(ORG_ID, CROSS_ORG_ATHLETE);
+      const inGymB = athleteActor(OTHER_ORG_ID, CROSS_ORG_ATHLETE);
+
+      await expect(assertActorCanAccessAthlete(inGymA, CROSS_ORG_ATHLETE)).resolves.toBeUndefined();
+      await expect(assertActorCanAccessAthlete(inGymB, CROSS_ORG_ATHLETE)).rejects.toThrow(
+        'Forbidden: athlete does not belong to organization',
+      );
+
+      expect([...(await accessibleAthleteIds(inGymA, [CROSS_ORG_ATHLETE]))]).toEqual([CROSS_ORG_ATHLETE]);
+      expect((await accessibleAthleteIds(inGymB, [CROSS_ORG_ATHLETE])).size).toBe(0);
+    });
+  });
+
+  test('the batched answer matches the per-candidate gate for every athlete actor', async () => {
+    await withDatabase('sda_athlete_self_parity', async () => {
+      const actors = [
+        athleteActor(ORG_ID, LIVE_ATHLETE),
+        athleteActor(ORG_ID, DELETED_ATHLETE),
+        athleteActor(ORG_ID, CROSS_ORG_ATHLETE),
+        athleteActor(OTHER_ORG_ID, CROSS_ORG_ATHLETE),
+        athleteActor(OTHER_ORG_ID, OTHER_ORG_LIVE_ATHLETE),
+      ];
+      const candidates = [LIVE_ATHLETE, DELETED_ATHLETE, CROSS_ORG_ATHLETE, OTHER_ORG_LIVE_ATHLETE];
+      for (const actor of actors) {
+        const reachable = await accessibleAthleteIds(actor, candidates);
+        for (const athleteId of candidates) {
+          const gateAllows = await assertActorCanAccessAthlete(actor, athleteId).then(
+            () => true,
+            () => false,
+          );
+          const at = { org: actor.organizationId, actor: actor.athleteId, athleteId };
+          expect({ ...at, allowed: reachable.has(athleteId) }).toEqual({ ...at, allowed: gateAllows });
+        }
+      }
+    });
+  });
+});
+
 describe('the deleted row is still there, which is the point of a soft delete', () => {
   test('deletion marked the row rather than removing it', async () => {
     await withDatabase('sda_row_retained', async () => {

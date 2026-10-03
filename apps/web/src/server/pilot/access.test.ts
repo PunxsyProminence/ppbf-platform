@@ -574,15 +574,29 @@ describe('assertActorCanAccessAthlete', () => {
   });
 
   describe('athlete role', () => {
-    test('allows athlete to access own record', async () => {
+    test('allows athlete to access own record while it is live in their gym', async () => {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
       const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
       await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
-      expect(mockQueryOne).not.toHaveBeenCalled();
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('deleted_at is null');
+      expect(params).toEqual(['ath-1', 'org-1']);
+    });
+
+    // Deletion revokes sessions; a session that outlived it still carries the
+    // id. The softDeletedAthleteAccess pg suite proves the predicate on a real row.
+    test('throws Forbidden for the athlete own id when no live row answers', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow(
+        'Forbidden: athlete does not belong to organization',
+      );
     });
 
     test('throws Forbidden when athlete tries to access another athlete record', async () => {
       const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
       await expect(assertActorCanAccessAthlete(actor, 'ath-2')).rejects.toThrow('Forbidden');
+      expect(mockQueryOne).not.toHaveBeenCalled();
     });
 
     test('throws Forbidden when athlete has no athleteId set', async () => {
@@ -829,10 +843,25 @@ describe('accessibleAthleteIds', () => {
   });
 
   describe('athlete role', () => {
-    test('returns only their own id, without querying', async () => {
+    test('returns only their own id while it is live in their gym', async () => {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
       const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
       await expect(accessibleAthleteIds(actor, ['ath-1', 'ath-2'])).resolves.toEqual(new Set(['ath-1']));
-      expect(mockQuery).not.toHaveBeenCalled();
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('deleted_at is null');
+      expect(params).toEqual(['org-1', 'ath-1']);
+    });
+
+    test('returns an empty set when their own row is not live', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
+      await expect(accessibleAthleteIds(actor, ['ath-1'])).resolves.toEqual(new Set());
+    });
+
+    test('does not query when their own id is not among the candidates', async () => {
+      const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
+      await expect(accessibleAthleteIds(actor, ['ath-2'])).resolves.toEqual(new Set());
+      expect(mockQueryOne).not.toHaveBeenCalled();
     });
 
     test('returns an empty set when athleteId is unset', async () => {

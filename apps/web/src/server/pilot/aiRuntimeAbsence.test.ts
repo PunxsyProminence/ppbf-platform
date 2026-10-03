@@ -239,6 +239,8 @@ test('ATHLETE: the REAL assignment read still returns the work assigned to them'
   databaseAnswers([
     ['pilot.drill_assignments', [{ assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope' }]],
   ]);
+  // The access guard's athlete arm reads the athlete's own live row.
+  mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
 
   const response = await progressionAssignmentsGET(
     new NextRequest('http://localhost/api/pilot/progression/assignments?athlete_id=ath-1'),
@@ -253,5 +255,10 @@ test('ATHLETE: the REAL assignment read still returns the work assigned to them'
   const [sql, params] = mockQuery.mock.calls[0];
   expect(sql).toContain('pilot.drill_assignments');
   expect(params).toEqual(expect.arrayContaining(['org-1', 'ath-1']));
-  expect(mockQueryOne).not.toHaveBeenCalled();
+  // Its only single-row read is the guard's live-row check, in the same org.
+  expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  const [guardSql, guardParams] = mockQueryOne.mock.calls[0];
+  expect(guardSql).toContain('pilot.athletes');
+  expect(guardSql).toContain('deleted_at is null');
+  expect(guardParams).toEqual(['ath-1', 'org-1']);
 });

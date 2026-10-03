@@ -164,6 +164,233 @@ and should not try to.
 
 ---
 
+## OD-2026-10-03-018 -- Lanes put their questions to Jason in their own lane
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`). It
+was typed while overwatch's turn was running, so the transcript holds it as a
+queued message of human origin (`attachment` of type `queued_command`,
+`origin.kind: "human"`, enqueued 10:35:00.291Z). Read by the records lane in
+that transcript. New; edits no earlier entry.
+
+It answers no question. Overwatch had just relayed two lanes' questions to him
+(10:33:03Z, the "neutral" stance question from BIOMECH-01a; 10:33:39Z, the
+tablet hand-over's H1-H8). Jason, whole message (10:35:00.291Z): *"i will
+answer the lanes questions in thier lane"*. **Ruling: a lane asks Jason its
+questions in its own session, not through overwatch.** Overwatch read it so
+(10:38:44Z): "from now on each lane asks you its questions directly. I've
+moved the two open ones to their lanes". The rest of the OVERWATCH rule in L2
+(overwatch answers technical, how-to and scope questions) is not changed by
+this entry.
+
+---
+
+## OD-2026-10-03-017 -- Pain reports: critical pain no longer wears the medical-stop colour either; "no restriction on building because of the red color" (PR #1119)
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the pain-tone lane's thread
+(`~/.claude/projects/C--Dev/86de01b8-5d71-4b41-b7d7-7c0df7fa4fed.jsonl`, a
+user message of human origin) and read by the records lane in that
+transcript. Built by PR #1119 (merge
+`1fcfc8c200ed7ede6ecf53df34a908dba028f9e6`, 2026-10-03T17:04:26Z), whose body
+quotes his answer as its scope. New; edits no earlier entry. It applies
+OD-2026-09-29-001 (red is not reserved; `--locked` still means a medical
+stop) and does not change it.
+
+The lane's question (15:30:31Z), after it had moved **high** pain from
+`locked` to `restricted`: "**Critical pain colour.** Should a critical pain
+report keep the medical-stop red (`locked`)? - **A (recommended):** yes, keep
+it red. - **B:** move it down a step too, since a pain report is not itself a
+medical stop." with the plain line "the rule says red means "a medical
+professional said this athlete can't train." So the question is whether a
+critical pain report should look like that, or only like a serious warning."
+Jason, whole message (15:37:15.583Z): *"B there should me no restriction on
+building because of the red color"*. **Ruling: B, over the lane's
+recommendation. A pain report is not a medical stop at any severity; critical
+pain takes the `restricted` tone, like high and moderate; low stays
+`monitor`.** Recorder's reading, not his words: the second half restates
+OD-2026-09-29-001, that red being reserved is no reason to hold back a build.
+
+Built (PR #1119's body, read): `painSeverityTone` in
+`apps/web/components/CoachWorkspace.tsx` maps critical, high and moderate to
+`restricted` and low to `monitor`; no pain severity renders `locked`. Not in
+that PR: the pain-report and escalation card frames still use the locked
+colour at every severity (its "Out of scope"). Not checked by a person on
+screen.
+
+---
+
+## OD-2026-10-03-016 -- Jason can start chips through a remote desktop app; new work goes up as chips again
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, a
+user message of human origin) and read by the records lane in that
+transcript. New; edits no earlier entry.
+
+Earlier that day overwatch had told him (18:28:49Z) "**Remote (phone or
+claude.ai):** chips generally can't be clicked from there" and offered "**A
+(recommended while you're away):** reply **"start them"** and I'll run both
+waiting jobs ... as background agents inside this thread"; he wrote *"Im
+remote"* and overwatch ran them that way (OD-2026-10-03-007 section 4). Jason,
+whole message (19:36:17.652Z): *"If you pull chips up I can access the
+desktop through a remote ap"*. It answers no question put at that moment.
+**Ruling: when he is away, overwatch still offers new work as chips; he starts
+them through a remote desktop app.** Overwatch read it so (19:36:21Z): "chips
+it is from now on; you'll click them through your remote desktop app. The jobs
+already running as background agents carry on here; new work goes up as
+chips." This replaces, for new work, the background-agent route of 18:29Z.
+
+---
+
+## OD-2026-10-03-015 -- The chalkboard and the gym TV show boxing quotes too; a lane gathers attributed quotes for his approval; an in-app quotes library to add, edit and pull quotes from
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, user
+messages of human origin) and read by the records lane in that transcript.
+New. It **settles the open point in OD-2026-10-03-010 section 3** (whether
+boxing quotes should also appear) and edits no other entry.
+
+### 1. Boxing quotes too
+
+Overwatch's re-asked set (19:29:11Z), Q3: "**Q3. Chalkboard and gym TV text**
+- **A:** gym sayings only, as built. - **B:** boxing quotes too." with the
+plain line "you mentioned "or boxing quote" in that lane; A keeps just the
+gym's own sayings." (no recommendation). His first reply (19:30:42.167Z,
+recorded in OD-2026-10-03-014) named "Q3" without a letter; overwatch asked
+again (19:31:06Z): "For the chalkboard and gym TV text, is it **A** gym
+sayings only, or **B** boxing quotes too?" Jason, whole message
+(19:32:09.293Z): *"Q3 B"*. **Ruling: B. When there is nothing real to show,
+the chalkboard and the gym TV may show boxing quotes as well as the gym's
+sayings.** PR #1144's test that forbids stock boxing quotes (its body) was
+written to the earlier build and changes with this.
+
+### 2. Where the quotes come from, and a place to keep them
+
+Overwatch (19:32:19Z): "**Question (official):** Where should the boxing
+quotes come from? - **A (recommended):** a lane gathers well-known,
+attributed boxing quotes from published sources, about 20-30, each with who
+said it and where. You approve the list before it goes on screen. - **B:**
+you supply the quotes yourself." Jason, whole message (19:33:52.681Z): *"A
+and motivational sayings like embrace the suck, be there first, hold fast ect
+we should have a place if posture to update add and pull quotes from it"*.
+**Ruling: A, with two additions of his own.** (1) A lane gathers real,
+attributed boxing quotes with their sources, and he approves the list before
+anything goes on screen. (2) Motivational sayings such as "Embrace the suck",
+"Be there first" and "Hold fast" go in alongside. (3) **The app gets a quotes
+library**: a place in the app to add, update and pull quotes from, which the
+chalkboard and the gym TV read. Recorder's reading, not his words: "a place
+if posture" read as "a place in the app" ("posture" not otherwise
+explained), and "ect" as "etc."; overwatch read it the same way (19:34:02Z):
+"A quotes library in the app: a place where you (and coaches, if you want)
+add, edit and remove sayings and quotes. The chalkboard and gym TV pull from
+it."
+
+State (OBSERVED on GitHub 2026-10-03): the starting list was gathered and sent
+to him for approval (REPORTED by overwatch, 19:38:24Z); PR #1159 (quotes
+library part 1a, storage and seed) is open. Overwatch split the rest: part 1b
+the admin screen; part 2 switches the chalkboard and gym TV to the library
+after he approves the starting list. **Open for Jason:** whether coaches may
+add quotes too, or only the gym admin (overwatch, 19:38:37Z; built
+admin-only for now); and the starting list itself.
+
+---
+
+## OD-2026-10-03-014 -- Overwatch assigns Fable's work through GitHub issues labelled "fable"; Fable builds and opens PRs and stops merging (supersedes the merging half of OD-2026-10-03-004); speed bar 100 ms; guardian move kept as built; "not visible" learned from each point's own location
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, user
+messages of human origin) and read by the records lane in that transcript.
+New. It **supersedes the first ruling of OD-2026-10-03-004** (the Fable
+thread "merges its own PRs") as stated in section 1, and **settles the open
+points of OD-2026-10-03-007 section 2** (the number) **and OD-2026-10-03-009
+section 2** (the guardian re-ask). OD-2026-10-03-012 (overwatch assigns
+lanes, the Fable session writes the code) is consistent with it and unchanged.
+
+### 1. The question set
+
+Overwatch had offered (18:53:25Z) "**A (recommended):** Fable plans as
+`work-order` issues; my lanes build and I merge. **B:** Fable codes draft PRs;
+my lanes check and I merge. **C:** keep today's setup: Fable builds and merges
+in its own area." Jason, whole message (19:28:59.687Z): *"Ok so your gonna
+assign work to it through gir hub ask the questions again"* ("gir hub" read
+as "GitHub"). Overwatch re-asked (19:29:11Z), in part:
+
+- "**Q1. How Fable and overwatch split work** - **A (recommended):** I assign
+  Fable work through GitHub issues labelled `fable`, each with goal, files and
+  "done when". Fable builds it and opens a PR; I scope-check and merge; Fable
+  stops merging on its own. - **B:** same, but Fable keeps merging its own
+  PRs. - **C:** Fable plans, my lanes build."
+- "**Q2. Speed number for the tablet AI** - **A (recommended):** 100 ms per
+  frame. - **B:** another number."
+- "**Q3. Chalkboard and gym TV text** - **A:** gym sayings only, as built. -
+  **B:** boxing quotes too." (no recommendation; see OD-2026-10-03-015)
+- "**Q4. Guardian move, the re-asked option 2** - **A (recommended):** keep
+  what was built in #1151. - **B:** tell me what you meant."
+- "**Q5. How the pose AI learns "not visible"** - **A (recommended):** each
+  point's visibility is read from its own spot, and your rule stays. - **B:**
+  train hidden points as "nothing here", which changes your rule."
+
+ending "Reply like **"1A 2A 3A 4A 5A"**, or "all recommended" (Q3 has no
+recommendation, so name A or B)." Jason, whole message (19:30:42.167Z):
+*"Q3 AND AGREE WITH THE REST OF QS RECOMENDATIONS"*. **Ruling: Q1 A, Q2 A,
+Q4 A, Q5 A.** Q3 was settled by his next message, *"Q3 B"* (19:32:09.293Z;
+OD-2026-10-03-015).
+
+### 2. What each answer decides
+
+- **Q1 A.** Overwatch assigns the Fable session's work as GitHub issues
+  labelled `fable` in `PunxsyProminence/ppbf-platform`, each with the goal,
+  the files allowed and "done when". Fable builds it and opens one PR;
+  overwatch scope-checks and merges. **Fable no longer merges its own PRs.**
+  This supersedes OD-2026-10-03-004's ruling B (*"let it merge on it own"*),
+  and the L2 rule that only overwatch merges lane PRs applies to Fable again.
+  OD-2026-10-03-004's second ruling (when Fable's usage runs out its lanes
+  return to overwatch) is unchanged. Done (REPORTED by overwatch's write log,
+  19:31:06Z): the label `fable` was created, and overwatch gave Jason a text
+  to paste into the Fable thread.
+- **Q2 A.** The tablet speed bar is **under 100 ms per frame**. Jason's "B"
+  in OD-2026-10-03-007 section 2 named no number; this gives it.
+- **Q4 A.** The guardian move stays as PR #1151 built it (the move takes the
+  new email and creates the login in the same step). The unrecoverable wording
+  of the re-ask in OD-2026-10-03-009 section 2 no longer matters to the build.
+- **Q5 A.** The pose model learns whether a point is visible from each point's
+  own location on the image; the rule as overwatch stated it (18:55:46Z), "not-visible points never teach a position", is unchanged. Recorder's
+  reading: this governs the GPU lane's training work, not the app.
+
+---
+
+## OD-2026-10-03-013 -- SHADOW's coach chat gets the stricter Library search too
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, a
+user message of human origin) and read by the records lane in that
+transcript. New; edits no earlier entry. It extends OD-2026-10-03-005 (the
+Library chat's fix) to SHADOW.
+
+Overwatch (19:14:54Z), after the Library fix (PR #1154) was built: "**Question
+(official):** The same search also feeds the **SHADOW coach chat**. With this
+fix, SHADOW no longer uses weak matches as evidence, so it may cite fewer
+sources. Should SHADOW get the stricter search too? - **A (recommended):**
+yes. SHADOW is safer when it isn't built on weak matches. - **B:** no. Keep
+SHADOW on the old search; that's an extra follow-up change." Jason, whole
+message (19:24:10.422Z): *"A"*. **Ruling: A.** Overwatch took it as the answer
+to that question (19:24:30Z: "Taking your **"A"** as the answer to my last
+question: SHADOW gets the stricter search too ... If you meant "A" for a
+different question, say which."); he did not correct it.
+
+Done: PR #1154 merged as `7fc735d1ce06d780f3608e697d9a3746ad19ccb9`
+(2026-10-03T19:44:17Z; OBSERVED on GitHub): whole-word matching, a minimum
+relevance, a confidence level on every answer, a research request on a gap,
+and SHADOW on the same search with its version raised from 3 to 4 (REPORTED
+by overwatch, 19:44:34Z). On `main`, not yet in production (release 7).
+
+---
+
 ## OD-2026-10-03-011 -- Release 6 to production: "Reply production" started the release; production moved to revision 0000164 (run 37139084060); the word "Green" came after the run had finished
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)

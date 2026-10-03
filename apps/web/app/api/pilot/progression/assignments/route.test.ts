@@ -72,6 +72,7 @@ describe('GET /api/pilot/progression/assignments', () => {
 
   test('athlete can read their own assignments', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(getRequest('athlete_id=ath-1'));
     expect(res.status).toBe(200);

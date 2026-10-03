@@ -954,7 +954,7 @@ describe('access is inherited from the block, arm by arm', () => {
     }
   });
 
-  test('a soft-deleted athlete takes their objectives out of staff and guardian reach, two levels up', async () => {
+  test('a soft-deleted athlete takes their objectives out of staff, guardian and their own reach, two levels up', async () => {
     /* The nutrition_body_composition domain is why this case is here rather
        than only on the parent. An objective may now hold a body-composition
        sentence naming a minor; when the gym deletes that athlete, the
@@ -962,15 +962,12 @@ describe('access is inherited from the block, arm by arm', () => {
        through the block. Each refusal is preceded by the read that proves
        the actor had access a moment earlier.
 
-       THE ATHLETE ARM IS EXEMPT, AND THAT IS A FINDING RATHER THAN A
-       DESIGN. assertActorCanAccessAthlete answers the athlete-self question
-       in memory -- actor.athleteId compared to the requested id -- without
-       ever asking whether the athlete row is live, so a withdrawn athlete
-       keeps reading their own objectives. That is access.ts's behavior for
-       every one of its callers, not something this slice introduced. See
-       the parent suite's copy of this case for why it is asserted here and
-       decided elsewhere: whether a withdrawn athlete keeps reading their own
-       record is an owner question, and it is open on module 036. */
+       THE ATHLETE'S OWN READ. This used to be pinned the other way: the
+       guard's athlete arm compared ids in memory and read no row, and
+       whether a deleted athlete keeps reading their own record was open on
+       module 036. Jason answered it in OD-2026-09-29-002 item 10 ("10 C":
+       their login stops and their signed-in sessions end), and the athlete
+       arm now requires the live row, so the athlete is refused too. */
     const client = await seeded('adbo_read_deleted');
     try {
       for (const actor of [ADMIN, COACH, ATHLETE, GUARDIAN]) {
@@ -987,9 +984,9 @@ describe('access is inherited from the block, arm by arm', () => {
         expect(await listObjectivesForBlock(actor, BLOCK_ID)).toEqual([]);
       }
 
-      // The gap, stated as behavior. If access.ts's athlete arm gains the
-      // deleted_at predicate, this fails and names the decision that moved.
-      expect((await getBlockObjective(ATHLETE, 'obj-mine'))?.objective_id).toBe('obj-mine');
+      // The athlete's own read drops out too (see the note above).
+      expect(await getBlockObjective(ATHLETE, 'obj-mine')).toBeNull();
+      expect(await listObjectivesForBlock(ATHLETE, BLOCK_ID)).toEqual([]);
 
       // The row is untouched: an access rule, not a delete.
       const stored = await client.query(

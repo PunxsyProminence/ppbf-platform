@@ -1119,30 +1119,22 @@ describe('reads reach exactly the people who can already reach the athlete', () 
     }
   });
 
-  test('a soft-deleted athlete drops out of the staff and guardian reads -- and NOT out of their own', async () => {
+  test('a soft-deleted athlete drops out of the staff, guardian and their own reads', async () => {
     /* The #706 / #690 shape, inherited rather than re-implemented: deletion
        writes deleted_at and the authorization queries require a live row.
        This suite would have had no way to notice either half if it had
        hand-picked its migrations -- athletes.deleted_at belongs to a
        migration it never names.
 
-       THE SECOND HALF IS A FINDING, NOT A DESIGN. Three of
-       assertActorCanAccessAthlete's four arms ask the database and so
-       inherit the filter. The athlete arm does not ask it at all -- it
-       compares actor.athleteId to the requested id in memory and returns --
-       so a withdrawn athlete keeps reading their own blocks. That is
-       access.ts's behavior for all 92 of its callers, not something this
-       slice introduced, and softDeletedAthleteAccess.pg.test.ts covers the
-       admin, coach and guardian arms and not this one.
-
-       It is asserted here rather than fixed here for two reasons. Fixing it
-       means changing the chokepoint every athlete-facing surface calls,
-       inside a PR about development blocks. And whether a withdrawn athlete
-       keeps reading their OWN record is an owner decision with a real
-       argument on each side (retention says no, data portability says yes),
-       not a defect with one obvious repair. Recorded as an open question on
-       module 036; if the answer is "no", the fix is one predicate in
-       access.ts and this test flips to the refusal. */
+       THE ATHLETE'S OWN READS. This test used to pin the opposite: the
+       guard's athlete arm compared ids in memory and read no row, so a
+       deleted athlete kept reading their own blocks, and whether they should
+       was an open owner question on module 036. Jason answered it in
+       OD-2026-09-29-002 item 10 ("10 C": the record is marked deleted, their
+       login stops and their signed-in sessions end), and the athlete arm now
+       requires the live row (softDeletedAthleteAccess.pg.test.ts proves the
+       guard itself). As this note said it would, the test flipped to the
+       refusal. */
     const client = await seeded('adb_read_deleted');
     try {
       for (const actor of [ADMIN, COACH, ATHLETE, GUARDIAN]) {
@@ -1161,12 +1153,11 @@ describe('reads reach exactly the people who can already reach the athlete', () 
           .not.toContain('block-mine');
       }
 
-      // The gap, stated as behavior so it cannot be forgotten or misread as
-      // covered. If access.ts's athlete arm gains the deleted_at predicate,
-      // this assertion fails and points at the decision that changed.
-      expect((await getDevelopmentBlock(ATHLETE, 'block-mine'))?.block_id).toBe('block-mine');
+      // The athlete's own reads drop out too: the athlete arm now requires the
+      // live row (see the note at the top of this test).
+      expect(await getDevelopmentBlock(ATHLETE, 'block-mine')).toBeNull();
       expect((await listDevelopmentBlocks(ATHLETE)).map((row) => row.block_id))
-        .toEqual(['block-mine']);
+        .not.toContain('block-mine');
 
       // The row itself is untouched: this is an access rule, not a delete.
       const stored = await client.query(
