@@ -439,6 +439,17 @@ describe('the runner', () => {
         `select pg_get_functiondef('pilot.calibration_body_moments_guard()'::regprocedure) as def`,
       );
       expect(guard.rows[0].def).toContain(`'${ontology.BOXING_ONTOLOGY_VERSION_0_3}'`);
+
+      // The moments guard alone left at 0.2 is still not ready.
+      const start = sql.indexOf('create or replace function pilot.calibration_body_moments_guard()');
+      const endMarker = '$pilot_calibration_body_moments_guard$;';
+      const end = sql.indexOf(endMarker, sql.indexOf('begin', start)) + endMarker.length;
+      expect(start).toBeGreaterThan(-1);
+      await client.query(asBefore03(sql.slice(start, end)));
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+      await runner.applyMigrationTransaction(client, sql);
     } finally {
       await client.end();
     }
