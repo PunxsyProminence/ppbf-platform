@@ -67,6 +67,8 @@ test('unsupported claims are gone and Jason\'s figures replace them', () => {
   expect(text).toContain('People have come through our doors since 2024');
   expect(text).toContain('For youth. Adults $20 a month.');
   expect(text).toContain('IRS-recognized 501(c)(3)');
+  expect(text).toContain('supported by donations');
+  expect(text).not.toContain('run on donations');
 });
 
 test('JSON-LD matches the visible facts', () => {
@@ -85,6 +87,10 @@ test('JSON-LD matches the visible facts', () => {
   expect(a['@type']).toBe('PostalAddress');
   expect(`${a.streetAddress}, ${a.addressLocality}, ${a.addressRegion} ${a.postalCode}`).toBe(PHYSICAL);
   expect(about).toContain(`Established${ld.foundingDate}`);
+  // Founder kept on Jason's say-so (2026-10-03); pinned so it cannot drift.
+  expect(ld.founder).toEqual({ '@type': 'Person', name: 'Jason Neale', jobTitle: 'Head Coach/Governor' });
+  expect(about).toContain('Head Coach / GovernorJason Neale');
+  expect(about).toContain(ld.areaServed.name);
 });
 
 test('canonical and metadataBase use the bare domain', () => {

@@ -10,8 +10,9 @@ import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
    legal name and EIN -- PA Articles of Incorporation (file 0013779917,
    3/22/2024), IRS CP 575 E and Letter 947 (04/11/2024); addresses -- Jason,
    2026-10-03 ("220 N Jefferson is the physical address", "the PO box is the
-   office mailing address"). The office at 204 Pennsylvania Ave is
-   deliberately not published. */
+   office mailing address"). The private office address is deliberately
+   not published, here or in comments. Founder -- Jason, 2026-10-03 (he is
+   the incorporator on the PA Articles). */
 const org = {
   brand: "Punxsy Prominence Boxing & Fitness",
   legalName: "Punxsy Prominence Boxing and Fitness",
@@ -218,7 +219,7 @@ export default function HomePage() {
             The Room
           </h2>
           <p className="t-body mt-[var(--s3)] max-w-[68ch]">
-            One building in Punxsutawney, run on donations. Come see it before you commit to anything —
+            One building in Punxsutawney, supported by donations. Come see it before you commit to anything —
             that is the right way round.
           </p>
           <div className="mt-[var(--s5)] grid gap-[var(--s5)] sm:grid-cols-2 lg:grid-cols-3">
