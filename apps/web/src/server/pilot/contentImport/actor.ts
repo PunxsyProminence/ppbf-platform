@@ -4,7 +4,7 @@ import { PLATFORM_LIBRARY_ORGANIZATION_ID } from '../platformLibraryScope';
 import { ContentImportRefusal } from './refusal';
 
 // WHO MAY LOAD CONTENT INTO AN ORGANIZATION. Enforced here, in code, for both
-// callers of the engine (the seed CLI now, the upload route later), because
+// callers of the engine (the seed CLI and the upload route, /admin/content-import), because
 // until now the rule lived only in workflow input text
 // (seed-reference-data.yml, seed_account_id description) and the retired
 // per-dataset loaders recorded whatever role the account had (their
