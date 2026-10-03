@@ -257,6 +257,17 @@ List row "Intake can leave a live athlete whose login is marked deleted"
 (`apps/web/src/server/pilot/intake.ts:1653-1657` at `03f5c649`) is to be
 read before the change.
 
+Status (2026-10-03): PR #1143 (another session) builds this as one transaction
+around the withdrawn check, the deleted-login check and the athlete write, with a
+per-athlete `pg_advisory_xact_lock` taken inside that transaction on both the
+intake and the cleanup side. Put to Jason in the session as a question (a
+transaction alone does not close the race the row names; the lock in #1143 is
+not the rejected "shared advisory lock" design) with the recommendation to
+accept it. Jason, 2026-10-03: *"Go with what you recommend"*. So the ruling's
+"no advisory lock" is superseded: the transaction is the decision, and #1143's
+lock inside it satisfies it. #1143 was open at `18c3faa5` when this was recorded;
+its merge is its own lane's.
+
 ### 6. Q6 -- how an athlete's competence level is recorded
 
 As put: "Competence levels and cohorts are imported, but nothing records an
