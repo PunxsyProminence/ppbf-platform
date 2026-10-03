@@ -2,7 +2,7 @@ import { query, queryOne } from '../db';
 import { athleteNotDeletedSql } from '../deletedAthletes';
 import { getVideoSessionById } from '../videoSessions';
 import {
-  BOXING_ONTOLOGY_VERSION,
+  ANNOTATABLE_ONTOLOGY_VERSIONS,
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   isInVocabulary,
@@ -114,10 +114,11 @@ function requireNonEmpty(value: unknown, field: string): string {
 /**
  * The ontology version a new project may be created under.
  *
- * Only the version this build actually implements. A project stamped
- * 'boxing-ontology-0.2' by a client would be a row whose vocabulary no code
- * here can validate against -- its events would be checked by 0.1's rules
- * while claiming to be 0.2, which is worse than refusing outright.
+ * Only a version this build can label (ANNOTATABLE_ONTOLOGY_VERSIONS). A
+ * project stamped 'boxing-ontology-0.2' before 0.2's event rules exist would
+ * be a row whose vocabulary no code here can validate against -- its events
+ * would be checked by 0.1's rules while claiming to be 0.2, which is worse than
+ * refusing outright.
  *
  * The DATABASE deliberately accepts any non-empty string, so historical rows
  * under an older version keep their true stamp and remain readable. It is
@@ -126,9 +127,10 @@ function requireNonEmpty(value: unknown, field: string): string {
  */
 function requireSupportedOntologyVersion(value: unknown): string {
   const version = requireNonEmpty(value, 'ontology_version');
-  if (version !== BOXING_ONTOLOGY_VERSION) {
+  if (!isInVocabulary(ANNOTATABLE_ONTOLOGY_VERSIONS, version)) {
     throw new Error(
-      `Missing ontology_version: this build implements ${BOXING_ONTOLOGY_VERSION} and cannot validate ${version}`,
+      `Missing ontology_version: this build can label ${ANNOTATABLE_ONTOLOGY_VERSIONS.join(', ')} `
+      + `and cannot validate ${version}`,
     );
   }
   return version;

@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { BOXING_ONTOLOGY_VERSION } from '@/src/server/pilot/calibration/ontology';
+import { BOXING_ONTOLOGY_VERSION_0_1 } from '@/src/server/pilot/calibration/ontology';
 import {
   createCalibrationProject,
   listCalibrationProjects,
@@ -165,7 +165,7 @@ describe('POST /api/pilot/calibration/projects', () => {
     expect(mockCreateProject).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'org-1',
       name: 'Calibration round 2',
-      ontologyVersion: BOXING_ONTOLOGY_VERSION,
+      ontologyVersion: BOXING_ONTOLOGY_VERSION_0_1,
       createdByAccountId: 'coach-1',
     }));
     expect(mockCreateProject.mock.calls[0]![0]).not.toHaveProperty('status');
