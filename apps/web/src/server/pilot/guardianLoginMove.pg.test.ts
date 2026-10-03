@@ -278,6 +278,25 @@ describe('moveGuardianToLogin', () => {
     }
   });
 
+  test('a move that fails at commit leaves no audit row claiming it happened', async () => {
+    // A deferred trigger refuses the record's update only at COMMIT, after the
+    // audit row was written. On the move's transaction the audit row goes with
+    // it; written anywhere else it would survive and record a move that never
+    // happened.
+    await client.query(`create or replace function pilot.glm_refuse_commit() returns trigger language plpgsql as $$
+      begin raise exception 'glm: commit refused'; end $$`);
+    await client.query(`create constraint trigger glm_refuse_commit after update on pilot.parents
+      deferrable initially deferred for each row execute function pilot.glm_refuse_commit()`);
+    try {
+      await expect(move.moveGuardianToLogin(request())).rejects.toThrow('glm: commit refused');
+      expect(await parentLogin()).toBe(OLD_LOGIN);
+      expect(await moveAudits()).toEqual([]);
+    } finally {
+      await client.query('drop trigger glm_refuse_commit on pilot.parents');
+      await client.query('drop function pilot.glm_refuse_commit()');
+    }
+  });
+
   const refusals: Array<[string, () => Promise<void>, Partial<Parameters<MoveModule['moveGuardianToLogin']>[0]>, number, string]> = [
     ['the same login', async () => {}, { toAccountId: OLD_LOGIN }, 400, 'GUARDIAN_MOVE_SAME_LOGIN'],
     ['an unknown guardian record', async () => {}, { parentId: 'par-nope' }, 404, 'GUARDIAN_RECORD_NOT_FOUND'],
