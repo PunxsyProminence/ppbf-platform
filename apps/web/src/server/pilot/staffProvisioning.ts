@@ -581,8 +581,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       // guardian of two athletes ends up with two links rather than two
       // guardian records that each resolve half their family.
       //
-      // THE ROSTER IMPORT GETS THERE FIRST. scripts/seed-data.ts writes a
-      // pilot.parents row per guardian on the roster with a content-hashed
+      // THE ROSTER IMPORT GETS THERE FIRST. The laptop seeder (scripts/seed-data.ts,
+      // retired 2026-10-03, OD-2026-10-03-002 section 10) wrote a pilot.parents row per guardian on the roster with a content-hashed
       // parent_id and account_id left NULL -- deliberately, because importing a
       // family must not mint logins. That row already carries a guardian_link per
       // sibling. Matching only on account_id or the derived id therefore missed

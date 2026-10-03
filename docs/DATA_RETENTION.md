@@ -311,6 +311,16 @@ live:
 - assigning or transferring the gym's admin seat to or from a deleted login, and granting or
   revoking master SHADOW access on one (`promoteAccountToOrganizationAdmin`,
   `transferOrganizationAdmin`, `setAccountMasterShadowAccess`).
+- the platform owner's athlete-shell route (`createAthleteAccount`, `auth.ts`): naming a deleted
+  login as the new `account_id`, in any organization, or an athlete record a deleted login still
+  holds (the second with the same message as mode `create` above). It only ever inserted, so it
+  never wrote to a deleted login; it answered "already exists" or "already linked" without saying
+  why;
+- the stranded-guardian repair (`repairStrandedGuardianAuthProvider`), which made a deleted login
+  matchable by Microsoft sign-in again;
+- the platform-owner bootstrap (`createOrUpdateMicrosoftPlatformOwnerAccount`), whose upsert set a
+  deleted login active again and reported success. Its lookup is not scoped: the route is
+  platform-level.
 
 Intake re-promoting a withdrawn athlete, or naming a deleted login, is refused the same way
 (#1047). A gym's admin is told a login is deleted only when it is in their own gym: every lookup
@@ -319,14 +329,12 @@ gym, or moves to one while an invite is being written, gets only "account alread
 another organization". The platform owner's routes are cross-organization by role and are not
 scoped. Linking a guardian to a withdrawn athlete's record is not refused; that is unchanged.
 
-**Still open (checked 2026-09-30):** three routed paths still write to a login without reading
-`deleted_at`: the platform owner's athlete-shell route (`createAthleteAccount`,
-`apps/web/src/server/pilot/auth.ts`), the stranded-guardian repair
-(`repairStrandedGuardianAuthProvider`, same file), and the platform-owner bootstrap
-(`createOrUpdateMicrosoftPlatformOwnerAccount`, same file). None can reopen the login, because
-sign-in refuses it. Four more functions in that file have no deleted check and no caller in the
-app (`resetAccountPin`, `activateAccountPin`, `createCoachAccount`, `createParentAccount`).
-Revoking a deleted login's sessions is still allowed. A returning staff member or guardian cannot
+**Still open (checked 2026-10-03):** the platform owner's user-create route
+(`createAthleteAccountPendingActivation`, `auth.ts`) only inserts and refuses any existing
+`account_id` with "Account already exists", deleted or not, without naming the reason. The four
+local-PIN functions with no deleted check and no caller in the app (`resetAccountPin`,
+`activateAccountPin`, `createCoachAccount`, `createParentAccount`), and `createOrRotateAdminAccount`
+with them, were deleted. Revoking a deleted login's sessions is still allowed. A returning staff member or guardian cannot
 be given a login at the email their deleted login holds until that row is purged or the email is
 freed by a database fix. Nothing in the app clears
 `deleted_at`, so a deletion cannot be undone from any screen (the 1-year restore is not built),

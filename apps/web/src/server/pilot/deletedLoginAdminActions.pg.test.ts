@@ -845,3 +845,117 @@ describe('privilege to a deleted login', () => {
     expect((await auth.setAccountMasterShadowAccess('acct-staff', true)).hasMasterShadowAccess).toBe(true);
   });
 });
+
+// The three routed paths DATA_RETENTION.md listed as still open. The athlete
+// shell only inserts, so it never wrote to a deleted login; it answered
+// "already linked" or "already exists" and said nothing about why. The
+// stranded-guardian repair and the platform-owner bootstrap did write.
+describe('the platform owner\'s athlete shell, the guardian repair and the owner bootstrap', () => {
+  test('athlete shell: a record a deleted login still holds is refused 409 without naming that login', async () => {
+    await insertAthlete('ath-held');
+    await insertAccount('acct-gone-athlete', 'athlete', { athleteId: 'ath-held', deleted: true });
+
+    const refusal = auth.createAthleteAccount('acct-new', 'ath-held', ORG);
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN' });
+    await expect(refusal).rejects.not.toThrow('acct-gone-athlete');
+    expect(await accountRow('acct-new')).toBeNull();
+  });
+
+  test('athlete shell: naming a deleted login as the account_id is refused 409 as deleted, in any organization', async () => {
+    await insertAthlete('ath-free');
+    await insertAccount('acct-gone', 'athlete', { deleted: true });
+    await insertAccount('acct-gone-other', 'coach', { organizationId: OTHER_ORG, deleted: true, microsoft: true });
+
+    await expect(auth.createAthleteAccount('acct-gone', 'ath-free', ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+      message: DELETED_MESSAGE('acct-gone'),
+    });
+    await expect(auth.createAthleteAccount('acct-gone-other', 'ath-free', ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+    });
+    expect(await accountRow('acct-gone')).toMatchObject({ athlete_id: null, active_flag: false, deleted: true });
+  });
+
+  test('athlete shell: a live holder, a live account_id and a free record behave as before', async () => {
+    await insertAthlete('ath-held-live');
+    await insertAthlete('ath-free');
+    await insertAccount('acct-live-athlete', 'athlete', { athleteId: 'ath-held-live' });
+    await insertAccount('acct-live-coach', 'coach', { microsoft: true });
+
+    await expect(auth.createAthleteAccount('acct-new', 'ath-held-live', ORG)).rejects.toThrow(
+      'Athlete is already linked to another account',
+    );
+    await expect(auth.createAthleteAccount('acct-live-coach', 'ath-free', ORG)).rejects.toThrow('Account already exists');
+    await auth.createAthleteAccount('acct-shell', 'ath-free', ORG);
+    expect(await accountRow('acct-shell')).toMatchObject({ athlete_id: 'ath-free', pin_hash: null, active_flag: false });
+  });
+
+  // Deleted, and active again: the one state the repair's own active_flag
+  // condition does not already exclude, so this pins the deleted condition.
+  test('guardian repair: a deleted login is refused 409 and not repaired, even with active_flag set again', async () => {
+    await insertAccount('acct-gone-parent', 'parent', { email: 'gone-parent@example.org', deleted: true });
+    await db.query('update pilot.accounts set active_flag = true where account_id = $1', ['acct-gone-parent']);
+    const before = await db.queryOne('select * from pilot.accounts where account_id = $1', ['acct-gone-parent']);
+
+    await expect(auth.repairStrandedGuardianAuthProvider('acct-gone-parent', ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+    });
+    expect(await db.queryOne('select * from pilot.accounts where account_id = $1', ['acct-gone-parent'])).toEqual(before);
+  });
+
+  test('guardian repair: a deleted login in another organization gets the not-found answer', async () => {
+    await insertAccount('acct-gone-parent', 'parent', {
+      organizationId: OTHER_ORG,
+      email: 'gone-parent@example.org',
+      deleted: true,
+    });
+
+    await expect(auth.repairStrandedGuardianAuthProvider('acct-gone-parent', ORG)).rejects.toThrow(/^Not found:/);
+  });
+
+  test('guardian repair: a stranded login that is not deleted is still repaired', async () => {
+    await insertAccount('acct-stranded', 'parent', { email: 'stranded@example.org' });
+
+    await expect(auth.repairStrandedGuardianAuthProvider('acct-stranded', ORG)).resolves.toMatchObject({
+      account_id: 'acct-stranded',
+    });
+    const row = await db.queryOne<{ auth_provider: string }>(
+      'select auth_provider from pilot.accounts where account_id = $1',
+      ['acct-stranded'],
+    );
+    expect(row?.auth_provider).toBe('microsoft');
+  });
+
+  test.each([
+    ['found by its email', 'owner-gone', 'owner@example.org', undefined],
+    ['found by the account id hint', 'owner-gone', 'someone-else@example.org', 'owner-gone'],
+  ])('owner bootstrap: a deleted login %s is refused 409, left inactive, and gets no membership', async (_label, accountId, email, hint) => {
+    await insertAccount(accountId, 'coach', { email: 'owner@example.org', deleted: true, microsoft: true });
+    const before = await db.queryOne('select * from pilot.accounts where account_id = $1', [accountId]);
+
+    await expect(
+      auth.createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: email, organizationId: OTHER_ORG, accountIdHint: hint }),
+    ).rejects.toMatchObject({ status: 409, code: 'DELETED_LOGIN', message: DELETED_MESSAGE(accountId) });
+
+    expect(await db.queryOne('select * from pilot.accounts where account_id = $1', [accountId])).toEqual(before);
+    expect(
+      await db.query('select 1 from pilot.organization_memberships where account_id = $1 and organization_id = $2', [
+        accountId,
+        OTHER_ORG,
+      ]),
+    ).toHaveLength(0);
+  });
+
+  test('owner bootstrap: creates a new owner, and updates a live one, as before', async () => {
+    const created = await auth.createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'New-Owner@example.org', organizationId: ORG });
+    expect(created).toEqual({ accountId: 'new-owner@example.org', organizationId: ORG, created: true });
+
+    await insertAccount('owner-live', 'coach', { email: 'live-owner@example.org', active: false, microsoft: true });
+    const updated = await auth.createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'live-owner@example.org', organizationId: ORG });
+    expect(updated).toEqual({ accountId: 'owner-live', organizationId: ORG, created: false });
+    expect(await accountRow('owner-live')).toMatchObject({ role: 'platform_owner', active_flag: true });
+  });
+});

@@ -124,8 +124,8 @@ describe('what it gives back', () => {
   );
 
   // The column is `not null`, but nothing in the schema forbids '' -- the
-  // write path's requireString does, and scripts/seed-data.ts does not use
-  // it. A blank note rendered on a coach's screen is a note that says nothing
+  // write path's requireString does, and the laptop seeder (scripts/seed-data.ts,
+  // retired 2026-10-03, OD-2026-10-03-002 section 10) did not use it. A blank note rendered on a coach's screen is a note that says nothing
   // while looking like one was written.
   it.each([
     ['an empty string', ''],

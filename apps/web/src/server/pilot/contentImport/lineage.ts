@@ -24,6 +24,8 @@ export interface DrillHead {
   discipline: string;
   name: string;
   skillId: string;
+  /** false when the current version is withdrawn. Still the head (a revision names it); not linkable by a step. */
+  active: boolean;
 }
 
 export interface VersionHead {
@@ -40,8 +42,9 @@ export async function drillLineageHeads(client: DbClient, organizationId: string
     discipline: string;
     name: string;
     skill_id: string | null;
+    active: boolean;
   }>(
-    `select lineage_id, drill_id, version, discipline, name, skill_id
+    `select lineage_id, drill_id, version, discipline, name, skill_id, active
        from pilot.drill_library
       where organization_id = $1 and superseded_at is null`,
     [organizationId],
@@ -56,6 +59,7 @@ export async function drillLineageHeads(client: DbClient, organizationId: string
         discipline: row.discipline,
         name: row.name,
         skillId: row.skill_id ?? '',
+        active: row.active === true,
       },
     ]),
   );

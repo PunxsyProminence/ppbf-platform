@@ -35,8 +35,10 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
-//                                              ^ BUMPED for the near-miss
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 3;
+// 3: the first bump made by the fingerprint below -- #1133, #1132 and
+// others changed watched files after v2 was recorded.
+// 2 was BUMPED for the near-miss
 // audience gate. It should have been bumped BY that change and was not: #975
 // altered what goes into `authorizedContext` for athlete and parent -- exactly
 // the trigger named above -- and touched only shadowChat.ts, its test and two
@@ -46,9 +48,51 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
 // lever, which is the failure mode of any guard whose arming is a separate
 // human step.
 //
-// If that shape is unacceptable rather than merely noted, the fix is to derive
-// this from the context-assembling source rather than typing it -- then it
-// moves whenever the rules move. That is an owner call, not a builder one.
+// The owner chose to close that (OD-2026-09-30-007 section 2, S3 "A"): the
+// lever is now pulled by CI. shadowContextContract.test.ts hashes the files
+// below and fails until the version is bumped and a new entry is appended to
+// SHADOW_CONTEXT_CONTRACT_FINGERPRINTS. The number itself stays a number, not
+// the hash: the worker needs ORDER (older = stale and failed, newer = the
+// worker is behind and retries; shadowJobProcessor.ts), and a hash has none.
+//
+// A bump costs only jobs queued across that deploy, and the production deploy
+// already refuses to run while any are waiting. So when in doubt, bump: a
+// comment-only edit to a listed file still trips the test, on purpose.
+
+/**
+ * The files whose code decides what goes into `authorizedContext`, repo
+ * paths relative to apps/web. Add a file here when it starts shaping that
+ * string; access.ts is deliberately absent (it guards who may ask, not what
+ * the context says, and changes too often to bump on).
+ */
+export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
+  'app/api/pilot/shadow/chat/route.ts',
+  'app/api/pilot/shadow/video-analysis/route.ts',
+  'src/server/pilot/libraryServability.ts',
+  'src/server/pilot/omegaPlatformContext.ts',
+  'src/server/pilot/platformLibraryScope.ts',
+  'src/server/pilot/shadowChat.ts',
+  'src/server/pilot/shadowChatCapabilities.ts',
+  'src/server/pilot/shadowContextBuilder.ts',
+  'src/server/pilot/shadowContextWeights.ts',
+  'src/server/pilot/shadowEvidence.ts',
+  'src/server/pilot/shadowHeavyBag.ts',
+  'src/server/pilot/shadowLibrary.ts',
+  'src/server/pilot/shadowNearMisses.ts',
+  'src/server/pilot/shadowPersonalizationGate.ts',
+  'src/server/pilot/shadowRoleSets.ts',
+  'src/server/pilot/shadowUnlocks.ts',
+];
+
+/**
+ * Append-only: one entry per version, the SHA-256 of the sources above at
+ * that version (see shadowContextContract.test.ts for the exact recipe).
+ * Never edit an existing entry -- bump the version and append.
+ */
+export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; sha256: string }[] = [
+  { version: 2, sha256: '7ae5ffd399407dbd80638f016239074db05387891d96c74c45d5084590f37389' },
+  { version: 3, sha256: 'f5b4fe633606652fcec80021320b447abc2b804892de8eadafa18353263bfbba' },
+];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 

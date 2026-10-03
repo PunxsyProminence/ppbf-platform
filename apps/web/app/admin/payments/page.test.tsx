@@ -128,3 +128,19 @@ test('while the platform account is unregistered, the slot shows the owner the e
   // And the boundary holds even here: configuration opens onboarding, not charging.
   expect(screen.getByText(/Configuration only opens onboarding/)).toBeTruthy();
 });
+
+test('a failed read never says a lane is "not connected" or offers a first connect', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+    String(input).includes('/payments/accounts')
+      ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+      : ({ ok: true, json: async () => ({ ready: false, enabled: false, remainingSteps: [] }) } as Response),
+  ) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<PaymentsSettingsPage />);
+  });
+
+  expect(screen.getByText('Payment settings could not be read')).toBeTruthy();
+  expect(screen.queryByText('not connected')).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Connect Stripe account' })).toBeNull();
+});

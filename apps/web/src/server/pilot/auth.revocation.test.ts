@@ -18,11 +18,8 @@ jest.mock('./security', () => ({
 }));
 
 import {
-  createCoachAccount,
-  createOrRotateAdminAccount,
   createOrUpdateAthleteAccount,
   createOrUpdateMicrosoftPlatformOwnerAccount,
-  createParentAccount,
   promoteAccountToOrganizationAdmin,
   revokeAllSessionsForAccountInOrganization,
   setAccountActiveStatus,
@@ -65,31 +62,6 @@ describe('session revocation after credential changes', () => {
     await createOrUpdateAthleteAccount('acct-new', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(0);
   });
-
-  test('createCoachAccount revokes sessions when updating an existing account', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org-1' }]);
-    await createCoachAccount('acct-1', '123456', 'org-1');
-    expect(revokeCalls()).toHaveLength(1);
-  });
-
-  test('createParentAccount revokes sessions when updating an existing account', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org-1' }]);
-    await createParentAccount('acct-1', '123456', 'org-1');
-    expect(revokeCalls()).toHaveLength(1);
-  });
-
-  test('createOrRotateAdminAccount always revokes sessions and assigns a matching active membership', async () => {
-    await createOrRotateAdminAccount('acct-1', '123456', 'org-1', 'organization_admin');
-    expect(revokeCalls()).toHaveLength(1);
-    expect(membershipCalls()).toHaveLength(1);
-    expect(membershipCalls()[0][1]).toEqual(['acct-1', 'org-1', 'organization_admin']);
-  });
-
-  test('createOrRotateAdminAccount assigns a platform_owner membership when rotating a platform owner', async () => {
-    await createOrRotateAdminAccount('owner-1', '123456', 'org-1', 'platform_owner');
-    expect(membershipCalls()).toHaveLength(1);
-    expect(membershipCalls()[0][1]).toEqual(['owner-1', 'org-1', 'platform_owner']);
-  });
 });
 
 describe('session revocation after provider/role/organization changes', () => {
@@ -97,12 +69,14 @@ describe('session revocation after provider/role/organization changes', () => {
     mockQueryOne
       .mockResolvedValueOnce(null) // no existing account by email
       .mockResolvedValueOnce({ account_id: 'owner-1' }); // existing account by id
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'owner-1' }] }); // the upsert wrote it
     await createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'owner@example.com', organizationId: 'org-1', accountIdHint: 'owner-1' });
     expect(revokeCalls()).toHaveLength(1);
   });
 
   test('createOrUpdateMicrosoftPlatformOwnerAccount does not revoke for a brand-new account', async () => {
     mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'new-owner@example.com' }] }); // the upsert wrote it
     await createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'new-owner@example.com', organizationId: 'org-1' });
     expect(revokeCalls()).toHaveLength(0);
   });

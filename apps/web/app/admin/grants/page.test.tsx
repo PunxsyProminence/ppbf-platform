@@ -89,3 +89,34 @@ test('advancing a row PATCHes the ledger with the target status', async () => {
 
   expect(capture.patches).toEqual([{ obligation_id: 'ob-1', status: 'submitted' }]);
 });
+
+test('a failed read says the obligations could not be read, never "No obligations on record"', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+
+  render(<GrantObligationsPage />);
+
+  await screen.findByText('Obligations could not be read');
+  expect(screen.queryByText('No obligations on record')).toBeNull();
+});
+
+test('a failed re-read after a create does not go back to "No obligations on record"', async () => {
+  let gets = 0;
+  global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') return { ok: true, json: async () => ({ item: {} }) } as Response;
+    gets += 1;
+    return gets === 1
+      ? ({ ok: true, json: async () => ({ items: [] }) } as Response)
+      : ({ ok: false, status: 500, json: async () => ({}) } as Response);
+  }) as unknown as typeof fetch;
+
+  render(<GrantObligationsPage />);
+
+  await screen.findByText('No obligations on record');
+  fireEvent.click(screen.getByRole('button', { name: 'Add obligation' }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save obligation' }));
+  });
+
+  await screen.findByText('Obligations could not be read');
+  expect(screen.queryByText('No obligations on record')).toBeNull();
+});
