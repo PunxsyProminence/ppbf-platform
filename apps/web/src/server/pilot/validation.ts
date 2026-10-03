@@ -143,6 +143,27 @@ export function validateAthletePayload(payload: unknown): PilotAthlete {
   };
 }
 
+const ATHLETE_TIMESTAMP_FIELDS = ['created_at', 'updated_at'] as const;
+
+/**
+ * The create route's validator. The row's created_at and updated_at are the
+ * server's clock, `now`, never the caller's: a device clock that runs slow or
+ * fast would otherwise misdate the roster row, and the reused-id check compares
+ * that time with a submission's. A caller that still sends either timestamp (a
+ * People tab opened before this changed) is not refused -- the values are
+ * dropped, so the tab keeps working and nothing it says reaches the row.
+ */
+export function validateAthleteCreatePayload(payload: unknown, now: string): PilotAthlete {
+  const record = asRecord(payload);
+  assertOnlyAllowedKeys(
+    record,
+    ATHLETE_FIELDS.filter((field) => !(ATHLETE_TIMESTAMP_FIELDS as readonly string[]).includes(field)),
+    ATHLETE_TIMESTAMP_FIELDS,
+  );
+
+  return validateAthletePayload({ ...record, created_at: now, updated_at: now });
+}
+
 export function validateGoalPayload(payload: unknown): PilotGoal {
   const record = asRecord(payload);
   assertOnlyAllowedKeys(record, GOAL_FIELDS, GOAL_OPTIONAL_FIELDS);

@@ -1607,14 +1607,18 @@ describe('roster readiness comes from the board feed, honestly', () => {
     expect(screen.queryByText(/entered by staff during intake review/i)).toBeNull();
   });
 
-  test('a failed feed reads as no signal, never as zero flags', async () => {
+  // Was "reads as no signal": "No fresh readiness check-ins" is still a claim a
+  // failed read cannot support (Lane 14, batch 3), so the tile says it failed.
+  test('a failed feed reads as could-not-be-read, never as zero flags or no check-ins', async () => {
     await renderWorkspace({
       athletesList: threeAthletes,
       readinessBoard: () => jsonResponse({}, { ok: false, status: 500 }),
     });
 
-    expect(screen.getByText('No signal')).toBeTruthy();
+    expect(screen.getByText(/Readiness could not be read/)).toBeTruthy();
     expect(screen.getByText(/do not read this as .zero flags./)).toBeTruthy();
+    expect(screen.queryByText('No signal')).toBeNull();
+    expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
   });
 
   test('a healthy feed with no fresh check-ins reads the same as no signal', async () => {

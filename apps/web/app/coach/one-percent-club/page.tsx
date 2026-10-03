@@ -55,19 +55,29 @@ export default function OnePercentClubPage() {
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /* Whether the last read of nominations and members failed. Not
+     errorMessage, which also carries form validation: lists left empty by a
+     failed read must not claim there are no nominations or no members. */
+  const [clubUnreadable, setClubUnreadable] = useState(false);
 
   const [nominateForm, setNominateForm] = useState({ athlete_id: '', note: '', milestone_key: '' });
   const [withdrawReason, setWithdrawReason] = useState<Record<string, string>>({});
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/coach/one-percent-club`, {
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load the 1% Club.');
-    const payload = (await response.json()) as { items?: NominationRow[]; members?: NominationRow[] };
-    setNominations(payload.items ?? []);
-    setMembers(payload.members ?? []);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/one-percent-club`, {
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load the 1% Club.');
+      const payload = (await response.json()) as { items?: NominationRow[]; members?: NominationRow[] };
+      setNominations(payload.items ?? []);
+      setMembers(payload.members ?? []);
+      setClubUnreadable(false);
+    } catch (error) {
+      if (!signal?.aborted) setClubUnreadable(true);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -240,7 +250,12 @@ export default function OnePercentClubPage() {
 
               <section className="mat-leather mb-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-label mb-[var(--s3)]">Open nominations</h2>
-                {openNominations.length === 0 ? (
+                {clubUnreadable ? (
+                  <p className="t-body" data-testid="nominations-unreadable">
+                    The nominations could not be read, so this page cannot say whether any are open.
+                    Reload to try again.
+                  </p>
+                ) : openNominations.length === 0 ? (
                   <p className="t-body">No open nominations. File one above, or wait for a peer or coach to.</p>
                 ) : (
                   <ul className="space-y-[var(--s3)]">
@@ -293,7 +308,12 @@ export default function OnePercentClubPage() {
 
               <section className="mat-leather mb-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-label mb-[var(--s3)]">1% Club members</h2>
-                {members.length === 0 ? (
+                {clubUnreadable ? (
+                  <p className="t-body" data-testid="members-unreadable">
+                    The members could not be read, so this page cannot say who is in the club.
+                    Reload to try again.
+                  </p>
+                ) : members.length === 0 ? (
                   <p className="t-body">No confirmed members yet.</p>
                 ) : (
                   <ul className="space-y-[var(--s2)]">

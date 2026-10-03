@@ -44,8 +44,8 @@ function postRequest(body: Record<string, unknown>) {
   });
 }
 
-function getRequest() {
-  return new NextRequest('http://localhost/api/pilot/shadow/library/capability-coverage', { method: 'GET' });
+function getRequest(search = '') {
+  return new NextRequest(`http://localhost/api/pilot/shadow/library/capability-coverage${search}`, { method: 'GET' });
 }
 
 const validRule = {
@@ -154,6 +154,71 @@ describe('POST /api/pilot/shadow/library/capability-coverage', () => {
     const response = await POST(postRequest({ ...validRule, ...override }));
 
     expect(response.status).toBe(400);
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+});
+
+// OD-2026-10-02-013 answer 1B and OD-2026-10-02-015 D3, through
+// libraryShelf.ts: the platform owner works the platform shelf and no longer
+// writes a gym's. Coverage rules and the recompute that opens and closes
+// research requirements are Library writes, so they go through the same
+// resolver as sources, documents and chunks (#1115).
+describe('the shelf (OD-2026-10-02-015 D3)', () => {
+  const NON_OWNERS = ['organization_admin', 'admin', 'coach'] as const;
+
+  test('refuses platform_owner a gym-shelf rule, with or without naming the shelf', async () => {
+    for (const body of [validRule, { ...validRule, shelf: 'gym' }]) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+      expect((await POST(postRequest(body))).status).toBe(403);
+    }
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  test('refuses platform_owner a gym-shelf recompute', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    expect((await POST(postRequest({ action: 'recompute' }))).status).toBe(403);
+    expect(mockRecompute).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner writes and recomputes on the platform shelf, not its own organization', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
+
+    expect((await POST(postRequest({ ...validRule, shelf: 'platform', organization_id: 'org-attacker' }))).status).toBe(201);
+    expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+
+    expect((await POST(postRequest({ action: 'recompute', shelf: 'platform' }))).status).toBe(200);
+    expect(mockRecompute).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+  });
+
+  test.each(NON_OWNERS)('%s gets 403 for shelf: platform on both methods', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+
+    expect((await POST(postRequest({ ...validRule, shelf: 'platform' }))).status).toBe(403);
+    expect((await GET(getRequest('?shelf=platform'))).status).toBe(403);
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner lists the platform shelf when it names it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    expect((await GET(getRequest('?shelf=platform'))).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('__platform__');
+  });
+
+  // D3 bars the platform owner's gym-shelf WRITES only; reading is unchanged.
+  test('platform_owner still reads its gym shelf when no shelf is named', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    expect((await GET(getRequest())).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-real');
+  });
+
+  test('an unknown shelf is a 400, not a write', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    expect((await POST(postRequest({ ...validRule, shelf: 'everyone' }))).status).toBe(400);
     expect(mockUpsert).not.toHaveBeenCalled();
   });
 });

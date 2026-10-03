@@ -67,6 +67,8 @@ jest.mock('@/src/server/pilot/intake', () => ({
     jest.requireActual('@/src/server/pilot/intake').assertAthleteAccountIdProvisionable,
   assertAthleteRecordNotWithdrawn:
     jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotWithdrawn,
+  assertAthleteRecordNotHeldByDeletedLogin:
+    jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotHeldByDeletedLogin,
   assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
@@ -172,6 +174,15 @@ function stubAccounts(accounts: {
 
 function pilotAccountsLookups(): unknown[] {
   return mockQueryOne.mock.calls.filter(([sql]) => String(sql).includes('pilot.accounts'));
+}
+
+// The lookups that provisioning a guardian LOGIN would make (by email, by
+// account id). The athlete record's own deleted-login check reads
+// pilot.accounts on every promotion and is not one of them.
+function guardianLoginLookups(): unknown[] {
+  return pilotAccountsLookups().filter(
+    (call) => !String((call as unknown[])[0]).includes('where organization_id = $1 and athlete_id = $2'),
+  );
 }
 
 // The promotion's writes, in order: the athlete record, the athlete's account,
@@ -576,7 +587,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       const response = await POST(promoteRequest(recordOnly));
 
       expect(response.status).toBe(200);
-      expect(pilotAccountsLookups()).toEqual([]);
+      expect(guardianLoginLookups()).toEqual([]);
       expect(mockStaffProvision).not.toHaveBeenCalled();
     });
   });
@@ -605,7 +616,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     await POST(promoteRequest(recordOnly));
 
     expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
-    expect(pilotAccountsLookups()).toEqual([]);
+    expect(guardianLoginLookups()).toEqual([]);
   });
 
   test('promotion without a guardian still works', async () => {
@@ -789,6 +800,36 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
     );
     expectNothingWritten();
+  });
+
+  // The Build List row "Intake can leave a live athlete whose login is marked
+  // deleted" (OD-2026-09-29-002 item 4), sequential path: the cleanup retired
+  // the athlete's login; a later promotion of the same athlete_id that named
+  // NO account_id ran none of the login checks, and upsertAthlete wrote a
+  // live record whose only login was deleted. The record check now runs on
+  // every promotion, account_id or not.
+  test('an athlete record held by a deleted login is refused 409 before anything is written when no account_id is named', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-old', account_deleted: true } } });
+
+    const response = await POST(athletePromoteRequest({}));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('ATHLETE_RECORD_HELD_BY_DELETED_LOGIN');
+    expect(payload.error).not.toContain('athlete-old');
+    expectNothingWritten();
+  });
+
+  // The same record held by a LIVE login, promoted again with no account_id,
+  // is the ordinary re-run of a promotion and still goes through.
+  test('an athlete record held by a live login still promotes when no account_id is named', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-live', account_deleted: false } } });
+
+    const response = await POST(athletePromoteRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
   });
 
   // Reviewer finding: "use a new account_id" led straight into a second

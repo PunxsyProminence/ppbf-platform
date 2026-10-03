@@ -136,6 +136,20 @@ describe('GET the workspace', () => {
     expect(mockListEvents).toHaveBeenCalledWith('org-1', 'set-mine');
   });
 
+  test('says which vocabulary new studies use and which ones this build can label', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockGetClip.mockResolvedValue(CLIP);
+    mockClippable.mockResolvedValue({ videoSessionId: 'vid-1', athleteId: 'ath-1' });
+    mockGetProject.mockResolvedValue(PROJECT);
+    mockListSets.mockResolvedValue([MY_SET]);
+    mockListEvents.mockResolvedValue([]);
+
+    const body = await (await GET(get())).json();
+
+    expect(body.supported_ontology_version).toBe('boxing-ontology-0.1');
+    expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1']);
+  });
+
   test('the other annotator leaves no trace anywhere in the response', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     mockGetClip.mockResolvedValue(CLIP);

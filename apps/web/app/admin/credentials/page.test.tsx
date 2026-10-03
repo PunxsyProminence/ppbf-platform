@@ -130,3 +130,20 @@ test('a submitted row with a document offers a view-document link, scoped to tha
   const link = await screen.findByRole('link', { name: /view document/i });
   expect(link.getAttribute('href')).toContain('/api/pilot/credentials/document/acct-9/ct-safesport');
 });
+
+// The #991 class: a read that failed must never be rendered as "no records".
+describe.each([
+  ['refused', () => jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) } as Response))],
+  ['rejected', () => jest.fn(async () => { throw new Error('network down'); })],
+])('a %s credential queue read', (_label, makeFetch) => {
+  test('says it could not be loaded, not that there are no records', async () => {
+    global.fetch = makeFetch() as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<AdminCredentialsPage />);
+    });
+
+    expect(await screen.findByText(/credential queue could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText(/no staff credential records yet/i)).toBeNull();
+  });
+});

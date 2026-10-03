@@ -83,6 +83,9 @@ export default function FilmStudyCapturePage() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        // A refused read is a failed read, not an empty roster: without this
+        // the required picker came up empty and said nothing.
+        if (!response.ok) throw new Error('athlete list refused');
         const payload = (await response.json().catch(() => ({}))) as {
           items?: Array<{ athlete_id: string; full_name: string }>;
         };

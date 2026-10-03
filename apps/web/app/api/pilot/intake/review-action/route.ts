@@ -24,6 +24,7 @@ import { requireWaiverStatus, type WaiverStatus } from '@/src/server/pilot/waive
 import {
   assertActorCanAccessIntakeCase,
   assertAthleteAccountIdProvisionable,
+  assertAthleteRecordNotHeldByDeletedLogin,
   assertAthleteRecordNotWithdrawn,
   assertGuardianAccountUnchanged,
   bindIntakeDocumentsToOwner,
@@ -499,6 +500,19 @@ export async function POST(request: NextRequest) { // NOSONAR
     // stayed withdrawn. A returning athlete is re-enrolled under a new
     // athlete_id and a new login (OD-2026-09-30-004 e1).
     await assertAthleteRecordNotWithdrawn({
+      organizationId: principal.organizationId,
+      athleteId: promotion.athlete.athlete_id,
+    });
+
+    // A live athlete record whose only login was deleted (the account cleanup
+    // retires a login and keeps its athlete_id): refused on EVERY promotion.
+    // This used to run only inside the account_id check below, so a promotion
+    // that named no login skipped it, and upsertAthlete wrote a record shown
+    // as active that could never sign in (OD-2026-09-29-002 item 4; the
+    // Build List row "Intake can leave a live athlete whose login is marked
+    // deleted", path i). Path ii -- serializing these checks against the
+    // cleanup's own write -- is not settled and is not built here.
+    await assertAthleteRecordNotHeldByDeletedLogin({
       organizationId: principal.organizationId,
       athleteId: promotion.athlete.athlete_id,
     });

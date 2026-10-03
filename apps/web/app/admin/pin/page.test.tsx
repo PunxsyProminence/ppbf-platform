@@ -151,3 +151,18 @@ describe('the athlete credential desk', () => {
     expect(screen.queryByLabelText(/Confirm PIN/i)).toBeNull();
   });
 });
+
+// The #991 class: a read that failed must never be rendered as "no athletes".
+describe.each([
+  ['refused', () => jest.fn(async () => jsonResponse({ error: 'Directory unavailable' }, false, 500))],
+  ['rejected', () => jest.fn(async () => { throw new Error('network down'); })],
+])('a %s athlete directory read', (_label, makeFetch) => {
+  it('says the list could not be loaded, not that the organization has no athletes', async () => {
+    global.fetch = makeFetch() as unknown as typeof fetch;
+
+    render(<PinManagementPage />);
+
+    expect(await screen.findByText(/athlete list could not be loaded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no athletes found in this organization/i)).toBeNull();
+  });
+});

@@ -40,18 +40,30 @@ export default function BehaviorStandardsPage() {
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /* Whether the standards READ failed. Not errorMessage, which also carries
+     form validation: an empty list after a failed read must not claim that
+     no standards are posted. */
+  const [standardsUnreadable, setStandardsUnreadable] = useState(false);
 
   const [recognizeForm, setRecognizeForm] = useState({ standard_id: '', athlete_id: '', note: '' });
   const [concernForm, setConcernForm] = useState({ athlete_id: '', reason: '', severity: 'moderate' });
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/coach/behavior-standards`, {
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load standards.');
-    const payload = (await response.json()) as { items?: StandardRow[] };
-    setStandards(payload.items ?? []);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/behavior-standards`, {
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load standards.');
+      const payload = (await response.json()) as { items?: StandardRow[] };
+      setStandards(payload.items ?? []);
+      setStandardsUnreadable(false);
+    } catch (error) {
+      // Set here, not in the caller's catch: that one also catches the
+      // athlete list, which says nothing about the standards.
+      if (!signal?.aborted) setStandardsUnreadable(true);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -162,6 +174,11 @@ export default function BehaviorStandardsPage() {
             <div className="flex justify-center py-[var(--s6)]">
               <span className="working">Loading standards...</span>
             </div>
+          ) : standardsUnreadable ? (
+            <p className="t-body" data-testid="standards-unreadable">
+              The standards could not be read, so this page cannot say whether any are posted.
+              Reload to try again.
+            </p>
           ) : standards.length === 0 ? (
             <p className="t-body">
               No standards posted yet. An admin posts them, and each one names the recognition that

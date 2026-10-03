@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
@@ -13,9 +14,8 @@ import {
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
   createShadowResearchRequirement,
   listShadowResearchRequirements,
-  reopenCoverageResolvedGapRequirement,
   resolveCoveredCapabilityGapRequirements,
-  type ShadowResearchRequirementRow,
+  syncCapabilityGapRequirement,
 } from './shadowResearch';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
@@ -468,29 +468,8 @@ async function ensureCoverageGapResearchRequirement(input: {
   actorRole: string;
   row: ShadowCoverageComputationRow;
   coverageState: ShadowCoverageState;
-  /**
-   * The org's open research requirements, fetched ONCE by the caller
-   * (recomputeShadowCapabilityCoverage evaluates every capability rule in
-   * one pass, and every row's dedup check reads the same list -- refetching
-   * it per row was a full-list query for every non-covered rule instead of
-   * one for the whole recompute). Each row here corresponds to a distinct
-   * capability_map_id/capability_key, so no row's newly-created requirement
-   * can ever be a duplicate a LATER row in the same pass needs to see: the
-   * list snapshotted before the loop is exactly the set every row needs to
-   * check against.
-   */
-  openItems: readonly ShadowResearchRequirementRow[];
 }): Promise<void> {
   if (input.coverageState === 'covered' || input.coverageState === 'unknown') {
-    return;
-  }
-
-  const duplicate = input.openItems.some((item) => {
-    const metadata = (item.metadata ?? {}) as Record<string, unknown>;
-    return metadata.capability_key === input.row.capability_key && metadata.coverage_state === input.coverageState;
-  });
-
-  if (duplicate) {
     return;
   }
 
@@ -504,36 +483,25 @@ async function ensureCoverageGapResearchRequirement(input: {
     required_source_types: input.row.required_source_types,
   };
 
-  // A gap that comes back after the coverage check closed its ticket reopens
-  // that same ticket. The unique index allows one ticket per capability, so a
-  // create here would land on the resolved row and leave it resolved -- the
-  // recurrence would have no open ticket at all. A ticket a person resolved
-  // by hand is not reopened; see reopenCoverageResolvedGapRequirement.
-  const reopenedId = await reopenCoverageResolvedGapRequirement({
+  // One statement opens, refreshes or reopens the capability's single ticket;
+  // see syncCapabilityGapRequirement for which rows it may touch. It returns
+  // null when nothing was written -- the ticket already says exactly this, or
+  // a person resolved it and the capability has not been covered since -- and
+  // then there is no new gap to record either. Emitting regardless re-recorded
+  // the same gap on every recompute.
+  const changedId = await syncCapabilityGapRequirement({
     organizationId: input.organizationId,
     capabilityKey: input.row.capability_key,
     researchRequirement: fields.requirement,
     knowledgeGap: fields.knowledgeGap,
     sourceStatus: fields.sourceStatus,
+    createdByAccountId: input.actorAccountId,
+    createdByRole: input.actorRole,
     metadata,
   });
 
-  if (reopenedId === null) {
-    await createShadowResearchRequirement({
-      organizationId: input.organizationId,
-      sourceEventName: CAPABILITY_GAP_SOURCE_EVENT_NAME,
-      sourceEntityType: CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
-      sourceEntityId: input.row.capability_key,
-      researchRequirement: fields.requirement,
-      knowledgeGap: fields.knowledgeGap,
-      evidenceLabel: input.row.capability_key,
-      sourceStatus: fields.sourceStatus,
-      sourceConfidenceTier: 'INSUFFICIENT',
-      sourceVerificationState: 'unknown',
-      createdByAccountId: input.actorAccountId,
-      createdByRole: input.actorRole,
-      metadata,
-    });
+  if (changedId === null) {
+    return;
   }
 
   await emitShadowEvent({
@@ -765,6 +733,10 @@ export async function listShadowLibraryReviewQueue(input: {
          on c.organization_id = d.organization_id
         and c.document_id = d.document_id
        where d.organization_id = $1
+         -- A document filed against an athlete leaves the curator queue when
+         -- that athlete is deleted (deletion scope B, "10 C"); gym-wide
+         -- documents (subject_id null) are untouched.
+         and ${athleteNotDeletedSql('d', 'subject_id')}
        group by
          d.document_id,
          d.source_id,
@@ -1582,10 +1554,6 @@ export async function recomputeShadowCapabilityCoverage(input: {
       [input.organizationId, rows.map((row) => row.capability_map_id), states],
     );
 
-    // Fetched ONCE for the whole pass -- see ensureCoverageGapResearchRequirement's
-    // own comment on why every row in this pass may safely share one snapshot.
-    const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
-
     for (const [index, row] of rows.entries()) {
       await ensureCoverageGapResearchRequirement({
         organizationId: input.organizationId,
@@ -1593,7 +1561,6 @@ export async function recomputeShadowCapabilityCoverage(input: {
         actorRole: input.actorRole,
         row,
         coverageState: states[index],
-        openItems,
       });
     }
 

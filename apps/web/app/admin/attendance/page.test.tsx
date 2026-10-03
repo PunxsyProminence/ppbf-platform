@@ -98,3 +98,29 @@ test('a failed trend fetch does not break the rest of the dashboard', async () =
   await screen.findByText('Jordan T.');
   expect(screen.queryByText(/Weekly trend/)).toBeNull();
 });
+
+// The #991 class: a read that failed must never be counted as zero athletes.
+function tileValue(label: string): string {
+  const eyebrow = screen.getByText(label);
+  const value = eyebrow.nextElementSibling;
+  if (!value) throw new Error(`tile "${label}" has no value`);
+  return value.textContent ?? '';
+}
+
+describe.each([
+  ['refused', () => jsonResponse({ error: 'Unable to load attendance summary.' }, false)],
+  ['rejected', () => { throw new Error('network down'); }],
+])('a %s attendance summary read', (_label, summaryAnswer) => {
+  test('leaves the counts unstated instead of showing 0 tracked and 0 never checked in', async () => {
+    global.fetch = jest.fn(async (url: string) => {
+      if (String(url).includes('trend=1')) return jsonResponse({ trend: [] });
+      return summaryAnswer();
+    }) as unknown as typeof fetch;
+
+    render(<AttendanceDashboardPage />);
+
+    await screen.findByText(/attendance could not be loaded/i);
+    expect(tileValue('Athletes tracked')).toBe('—');
+    expect(tileValue('Never checked in')).toBe('—');
+  });
+});

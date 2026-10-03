@@ -568,6 +568,33 @@ describe('workout templates', () => {
     expect(rows).toEqual([{ created_by_account_id: admin, created_by_role: 'organization_admin' }]);
   });
 
+  // OD-2026-10-03-002 section 7: the AI workout prompt carries the gym's
+  // current ACTIVE reference drills, and the upload refuses what the prompt
+  // would never offer. A withdrawn head is still the head of its lineage
+  // (lineage.ts), so the refusal is the validator's, not the head query's.
+  it('an item naming a withdrawn drill is refused at plan with withdrawn_drill; the same step in words loads', async () => {
+    const admin = await createGymWithDisciplines('gym_withdrawn_drill');
+    const lineage = fixtureDrillId('retired-pivot');
+    await insertDrill('gym_withdrawn_drill', lineage);
+    await client.query("update pilot.drill_library set active = false where organization_id = 'gym_withdrawn_drill' and drill_id = $1", [lineage]);
+
+    const linked = await plan('gym_withdrawn_drill', admin, templatePackage(
+      [templateRow('new:pivot-day', { name: 'Pivot day' })],
+      [itemRow('new:pivot-day', 1, lineage)],
+    ));
+    expect(linked.blocking.map((finding) => [finding.code, finding.file, finding.line, finding.column])).toEqual([
+      ['withdrawn_drill', ITEMS_CSV, 2, 'drill_id'],
+    ]);
+    expect(linked.blocking[0].message).toContain('free_text_drill');
+
+    const inWords = await applyCommitted('gym_withdrawn_drill', admin, templatePackage(
+      [templateRow('new:pivot-day', { name: 'Pivot day' })],
+      [itemRow('new:pivot-day', 1, '', { free_text_drill: 'Pivot off the lead foot, three rounds' })],
+    ));
+    expect(inWords.plan.blocking).toEqual([]);
+    expect(inWords.written['workout-templates']).toEqual({ inserted: [MINT.template('Pivot day')], updated: [], ledgerRows: 0 });
+  });
+
   it('a changed template creates v2 (active) and supersedes v1 (active=false, superseded_at); v1 keeps its items', async () => {
     const admin = await createGymWithDisciplines('gym_revise');
     const jab = fixtureDrillId('revise:jab');

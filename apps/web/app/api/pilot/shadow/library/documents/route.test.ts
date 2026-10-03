@@ -122,28 +122,30 @@ describe('POST /api/pilot/shadow/library/documents', () => {
       expect(mockAssertAthlete).not.toHaveBeenCalled();
     });
 
-    test('refuses platform_owner, which must not author athlete-scoped evidence', async () => {
-      // Omega is broader in breadth and strictly narrower in depth. It may
-      // curate an organization's doctrine but must never reach a named
-      // athlete's record, so the real assertActorCanAccessAthlete is used here
-      // rather than the mock -- this asserts the actual boundary, not a stub.
-      const { assertActorCanAccessAthlete: real } = jest.requireActual('@/src/server/pilot/access');
-      mockAssertAthlete.mockImplementationOnce(real);
+    test('refuses platform_owner athlete-scoped evidence on the gym shelf', async () => {
+      // Omega is broader in breadth and strictly narrower in depth: it must
+      // never reach a named athlete's record. Since OD-2026-10-02-015 D3 it
+      // does not write a gym's shelf at all, so the refusal now comes from the
+      // shelf resolver, before the per-athlete check is ever reached. (On the
+      // platform shelf, an athlete-scoped document is a 400; see below.)
       mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
 
       const response = await POST(postRequest({ ...validBody, subject_id: 'ath-9' }));
 
       expect(response.status).toBe(403);
+      expect(mockAssertAthlete).not.toHaveBeenCalled();
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    test('still admits platform_owner for doctrine with no subject', async () => {
+    // OD-2026-10-02-015 D3: the platform owner no longer writes a gym's
+    // shelf, doctrine included. Its shelf is the platform one (tests below).
+    test('refuses platform_owner on the gym shelf even for doctrine with no subject', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
 
       const response = await POST(postRequest(validBody));
 
-      expect(response.status).toBe(201);
-      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(403);
+      expect(mockCreate).not.toHaveBeenCalled();
     });
 
     test('treats a blank subject_id as absent rather than as a subject', async () => {
@@ -203,5 +205,48 @@ describe('POST /api/pilot/shadow/library/documents', () => {
     const response = await POST(postRequest(validBody));
 
     expect(response.status).toBe(409);
+  });
+});
+
+// RINT-05a: the platform shelf, resolved on the server (OD-2026-10-02-013 1B).
+describe('the platform shelf on POST /api/pilot/shadow/library/documents', () => {
+  test('platform_owner registers a document on the platform shelf', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'platform', organization_id: 'org-attacker' }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+  });
+
+  test.each(['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'board', 'volunteer', 'staff'] as const)(
+    '%s gets 403 for shelf: platform',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+      const response = await POST(postRequest({ ...validBody, shelf: 'platform' }));
+
+      expect(response.status).toBe(403);
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  test('refuses an athlete-scoped document on the platform shelf before the database does', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'platform', subject_id: 'ath-9' }));
+
+    expect(response.status).toBe(400);
+    expect(mockAssertAthlete).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('an unknown shelf is a 400', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, shelf: 'everyone' }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

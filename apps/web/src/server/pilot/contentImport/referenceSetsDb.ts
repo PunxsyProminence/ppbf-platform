@@ -59,7 +59,7 @@ export async function loadDatabaseReferenceSets(client: DbClient, organizationId
     disciplines: new Set(disciplines.rows.map((row) => row.discipline)),
     levelOrdinals: new Set(levels.rows.map((row) => Number(row.ordinal))),
     drills: new Map(
-      [...drills.values()].map((head) => [head.lineageId, { discipline: head.discipline, name: head.name, skillId: head.skillId }]),
+      [...drills.values()].map((head) => [head.lineageId, { discipline: head.discipline, name: head.name, skillId: head.skillId, active: head.active }]),
     ),
     templates: new Set(templates.keys()),
     scripts: new Set(scripts.keys()),

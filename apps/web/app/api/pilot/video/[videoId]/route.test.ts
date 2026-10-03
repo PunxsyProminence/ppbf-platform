@@ -38,7 +38,7 @@ const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
  * deliberately the WORST-CASE REAL ONE: no guardian links and no consent rows.
  *
  * That is not a convenience default, it is the measured default state of a
- * roster-imported athlete. scripts/seed-data.ts writes no waiver row; both
+ * roster-imported athlete. The laptop seeder (scripts/seed-data.ts, retired 2026-10-03, OD-2026-10-03-002 section 10) wrote no waiver row; both
  * intake writers call upsertWaiver without parentId, so their rows have
  * parent_id NULL and currentConsentByGuardian cannot see them. The only writer
  * of a visible row is the guardian's own console. So if this route ever starts

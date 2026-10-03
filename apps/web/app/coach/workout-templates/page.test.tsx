@@ -182,6 +182,42 @@ describe('coach workout templates page', () => {
     expect(screen.getByText('drl-solo').closest('li')).not.toHaveTextContent(/older drill version/i);
   });
 
+  it('a linked item shows its drill name, and the raw drill_id only when no name resolved', async () => {
+    // Seeded template items all carry a drill_id, which is a key, not
+    // something a coach can read off a tablet.
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({
+        template: BOXING_FUNDAMENTALS,
+        items: [
+          item({
+            item_id: 'wti-named',
+            drill_id: 'drl_dbb0347500e7eb',
+            free_text_drill: null,
+            head_drill_id: 'drl_dbb0347500e7eb',
+            head_drill_name: 'Touch to Reposition',
+            uses_older_drill_version: false,
+          }),
+          item({
+            item_id: 'wti-unresolved',
+            ordinal: 2,
+            drill_id: 'drl_missing',
+            free_text_drill: null,
+            head_drill_id: null,
+            head_drill_name: null,
+            uses_older_drill_version: false,
+          }),
+        ],
+      })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Touch to Reposition' })).toBeInTheDocument();
+    expect(screen.queryByText('drl_dbb0347500e7eb')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'drl_missing' })).toBeInTheDocument();
+  });
+
   it('an empty catalog says so honestly', async () => {
     mockFetch(() => jsonResponse({ templates: [] }));
 

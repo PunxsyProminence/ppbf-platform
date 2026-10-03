@@ -469,6 +469,40 @@ describe('a live athlete record held by a deleted login', () => {
     ).rejects.toMatchObject({ status: 409, code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN' });
   });
 
+  // The Build List row "Intake can leave a live athlete whose login is marked
+  // deleted" (OD-2026-09-29-002 item 4), sequential path: the account cleanup
+  // retires the login (deleted_at set, active_flag off, athlete_id kept, as
+  // scripts/pilot-cleanup-accounts.mjs leaves it); a later promotion of the
+  // same athlete_id that names NO account_id used to run no login check at
+  // all. The record check review-action now runs on every promotion refuses
+  // it, with the same code, and does not name the deleted login.
+  test('the record check refuses the record with 409 when no account_id is named', async () => {
+    await expect(
+      intake.assertAthleteRecordNotHeldByDeletedLogin({ athleteId: ATHLETE, organizationId: ORG }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+      message: expect.not.stringContaining(OLD_LOGIN),
+    });
+  });
+
+  test('the record check passes a record held by a live login, and names that login', async () => {
+    await insertAthlete('ATH-LIVE');
+    await insertAthleteLogin('acct-live', 'ATH-LIVE');
+
+    await expect(
+      intake.assertAthleteRecordNotHeldByDeletedLogin({ athleteId: 'ATH-LIVE', organizationId: ORG }),
+    ).resolves.toEqual({ account_id: 'acct-live' });
+  });
+
+  test('the record check passes a record with no login at all', async () => {
+    await insertAthlete('ATH-NO-LOGIN');
+
+    await expect(
+      intake.assertAthleteRecordNotHeldByDeletedLogin({ athleteId: 'ATH-NO-LOGIN', organizationId: ORG }),
+    ).resolves.toBeNull();
+  });
+
   test('the write refuses both namings and writes nothing', async () => {
     await expect(auth.createOrUpdateAthleteAccount(OLD_LOGIN, ATHLETE, ORG)).rejects.toMatchObject({
       status: 409,

@@ -219,6 +219,8 @@ function WrongRoleNotice() {
 function PeopleConsoleContent() {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
+  // False until the staff read answers: an unread list is not an empty gym.
+  const [membersAvailable, setMembersAvailable] = useState(false);
   const [guardianLinks, setGuardianLinks] = useState<GuardianLink[]>([]);
   // Distinct from an empty list: the roster read can succeed while the
   // guardian links are absent, and "no links returned" must never be shown as
@@ -337,6 +339,7 @@ function PeopleConsoleContent() {
       }
 
       setMembers(membersPayload.members || []);
+      setMembersAvailable(true);
       setOrganizationId(membersPayload.organization_id || '');
 
       // Only an actual array counts as an answer. Anything else leaves every
@@ -355,6 +358,7 @@ function PeopleConsoleContent() {
       if (!rosterRefreshed) {
         setRosterAvailable(false);
       }
+      setMembersAvailable(false);
       setError(loadError instanceof Error ? loadError.message : 'Unable to load your gym roster');
     } finally {
       setLoading(false);
@@ -697,13 +701,12 @@ function PeopleConsoleContent() {
 
   /**
    * Writes the pilot.athletes row. The validator rejects the payload outright
-   * if any key is absent or extra, so all ten fields are sent every time and
+   * if any key is absent or extra, so all eight fields are sent every time and
    * none of them may be blank -- the form enforces that client-side because a
-   * blank one comes back as an opaque 500, not a field-level complaint.
+   * blank one comes back as an opaque 500, not a field-level complaint. The
+   * row's created_at and updated_at are the server's clock, so neither is sent.
    */
   async function createAthleteRecord(recordId: string) {
-    const timestamp = new Date().toISOString();
-
     const response = await fetch(`${apiBase()}/api/pilot/athletes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -717,8 +720,6 @@ function PeopleConsoleContent() {
         emergency_contact: athleteEmergencyContact.trim(),
         active_flag: true,
         coach_id: athleteCoachId,
-        created_at: timestamp,
-        updated_at: timestamp,
       }),
     });
 
@@ -1080,6 +1081,10 @@ function PeopleConsoleContent() {
               <div className="frame-in mat-paper pap">
               {loading ? (
                 <p className="t-body p-[var(--s5)]">Loading your gym roster...</p>
+              ) : members.length === 0 && !membersAvailable ? (
+                <p className="t-body p-[var(--s5)]">
+                  The gym roster could not be loaded, so this is not a list of who is in your gym.
+                </p>
               ) : members.length === 0 ? (
                 /* "Nobody here yet" is the empty state ROOM-PURPOSE-DNA names
                    for this room by name, and it was hand-rolled in raw
@@ -1709,6 +1714,10 @@ function PeopleConsoleContent() {
                   <p className="t-muted mb-[var(--s2)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
+                      : loading
+                      ? 'Loading the staff list...'
+                      : !membersAvailable
+                      ? 'The staff list could not be loaded, so no coach can be offered here. Reload the page to try again.'
                       : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}
                   </p>
                   <select

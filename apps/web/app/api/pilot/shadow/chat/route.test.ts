@@ -3237,3 +3237,34 @@ describe('a question over the length limit', () => {
     expect(payload.response).toBe('Enter a question for SHADOW.');
   });
 });
+
+describe('a bad field beside an intact question', () => {
+  // These shared the empty question's reply, so a request whose question
+  // arrived intact was told "Enter a question for SHADOW." for a bad
+  // conversation, athlete, tier, session type or async flag.
+  test.each([
+    ['conversation', { conversationId: 'not-a-uuid' }],
+    ['athlete', { athleteId: '   ' }],
+    ['tier', { tier: 'title_fight' }],
+    ['session type', { sessionType: 'not_a_session_type' }],
+    ['async flag', { preferAsync: 'yes' }],
+  ])('a bad %s gets the generic reply, not the empty-question one', async (_field, fields) => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'How should I pivot as a southpaw?', ...fields }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.state).toBe('filtered');
+    expect(payload.response).toBe('SHADOW could not process that request.');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('a missing question beside a bad field still gets the empty-question reply', async () => {
+    const response = await POST(postRequest({ message: '', tier: 'title_fight' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.response).toBe('Enter a question for SHADOW.');
+  });
+});

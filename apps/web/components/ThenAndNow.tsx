@@ -59,11 +59,22 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
   const [firstMilestone, setFirstMilestone] = useState<MilestoneItem | null>(null);
   const [latestMilestone, setLatestMilestone] = useState<MilestoneItem | null>(null);
   const [latestRecognition, setLatestRecognition] = useState<RecognitionItem | null>(null);
+  // Which reads failed. The frame stays quiet (no banner), but it must not
+  // say "day one goes up here" or "0 sessions" about a record it never read.
+  const [sessionsFailed, setSessionsFailed] = useState(false);
+  const [milestonesFailed, setMilestonesFailed] = useState(false);
 
   useEffect(() => {
     if (!athleteId) return undefined;
     let cancelled = false;
+    // Which reads have answered, so a throw part-way marks only the rest.
+    let sessionsRead = false;
+    let milestonesRead = false;
     void (async () => {
+      // Reset inside the async body (not the effect body) so a new athlete
+      // never inherits the previous one's failure.
+      setSessionsFailed(false);
+      setMilestonesFailed(false);
       try {
         const [sessionsResponse, milestonesResponse, recognitionResponse] = await Promise.all([
           fetch(`${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`, {
@@ -91,6 +102,9 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             setSessionCount((payload.items ?? []).length);
             setFirstSession(dates[0] ?? null);
           }
+          sessionsRead = true;
+        } else if (!cancelled) {
+          setSessionsFailed(true);
         }
         if (milestonesResponse.ok) {
           const payload = (await milestonesResponse.json()) as { items?: MilestoneItem[] };
@@ -99,14 +113,21 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
             setFirstMilestone(byDate[0] ?? null);
             setLatestMilestone(byDate[byDate.length - 1] ?? null);
           }
+          milestonesRead = true;
+        } else if (!cancelled) {
+          setMilestonesFailed(true);
         }
         if (recognitionResponse.ok) {
           const payload = (await recognitionResponse.json()) as { items?: RecognitionItem[] };
           if (!cancelled) setLatestRecognition(payload.items?.[0] ?? null);
         }
       } catch {
-        // The frame stays empty rather than failing loud: this panel is a
-        // keepsake, not an instrument, and its empty state is designed.
+        // Quiet rather than loud: this panel is a keepsake, not an instrument.
+        // Quiet still means saying it could not be read, not drawing day one.
+        if (!cancelled) {
+          if (!sessionsRead) setSessionsFailed(true);
+          if (!milestonesRead) setMilestonesFailed(true);
+        }
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -125,7 +146,9 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
     <section className="mat-leather rounded-[var(--r-md)] p-[var(--s5)]" aria-label="Then and now">
       <p className="t-eyebrow">Then and now</p>
 
-      {!hasHistory ? (
+      {!hasHistory && (sessionsFailed || milestonesFailed) ? (
+        <p className="t-muted mt-[var(--s3)]">This frame could not be loaded just now.</p>
+      ) : !hasHistory ? (
         <p className="t-body mt-[var(--s3)]" style={{ fontSize: 'var(--t-md)' }}>
           Day one goes up here the day it happens. This frame fills itself.
         </p>
@@ -146,9 +169,13 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
           </div>
           <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
             <p className="t-label">Now</p>
-            <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
-              <span className="t-data">{sessionCount}</span> {sessionCount === 1 ? 'session' : 'sessions'} on the card
-            </p>
+            {sessionsFailed ? (
+              <p className="t-muted mt-[var(--s2)]">Sessions could not be loaded just now.</p>
+            ) : (
+              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
+                <span className="t-data">{sessionCount}</span> {sessionCount === 1 ? 'session' : 'sessions'} on the card
+              </p>
+            )}
             {latestMilestone && (
               <p className="t-muted mt-[var(--s2)]">
                 Latest seal: <span className="capitalize">{prettyKey(latestMilestone.milestone_key)}</span>
