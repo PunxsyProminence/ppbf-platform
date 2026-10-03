@@ -250,3 +250,19 @@ it('reports a refused roster read instead of showing eight empty seats as fact',
   await screen.findByText('Forbidden: role not allowed');
   expect(screen.queryByRole('button', { name: /assign seat/i })).toBeNull();
 });
+
+// The #991 class: a read that failed must never be rendered as eight unfilled
+// seats, in the list, the header count, or the assign form's seat picker.
+describe.each([
+  ['refused', () => jest.fn(async () => jsonResponse({ error: 'Unable to load the board roster' }, false, 500))],
+  ['rejected', () => jest.fn(async () => { throw new Error('network down'); })],
+])('a %s roster read', (_label, makeFetch) => {
+  it('says the roster could not be loaded instead of showing every seat unfilled', async () => {
+    await renderPage(makeFetch());
+
+    expect(await screen.findByText(/board roster could not be loaded/i)).toBeTruthy();
+    expect(screen.queryByText('Unfilled')).toBeNull();
+    expect(screen.queryByText(/of 8 filled/)).toBeNull();
+    expect(screen.queryByRole('option', { name: /unfilled/ })).toBeNull();
+  });
+});

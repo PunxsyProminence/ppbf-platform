@@ -345,7 +345,8 @@ function BoardSeatsConsole() {
               <p className="t-eyebrow">Governance</p>
               <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Board Seats</h1>
               <p className="t-body mt-[var(--s3)] max-w-2xl">
-                Who holds each of the eight governing seats. {filledSeatCount} of {boardSeatConfigs.length} filled.
+                Who holds each of the eight governing seats.{' '}
+                {rosterAvailable ? `${filledSeatCount} of ${boardSeatConfigs.length} filled.` : ''}
                 {organizationId && (
                   <>
                     {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationId}</span>
@@ -391,6 +392,11 @@ function BoardSeatsConsole() {
           <div className="frame-in mat-leather">
           {loading ? (
             <p className="t-body p-[var(--s5)]">Loading the board roster...</p>
+          ) : !rosterAvailable ? (
+            /* A failed read is not eight empty seats: say it could not be read. */
+            <p className="t-body p-[var(--s5)]">
+              The board roster could not be loaded, so who holds each seat is not known here.
+            </p>
           ) : (
             <ul className="divide-y divide-[color:var(--hide-700)]">
               {seatRoster.map(({ config, primary, additional }) => (
@@ -461,7 +467,8 @@ function BoardSeatsConsole() {
           </div>
         </section>
 
-        {canManage && (
+        {/* Its seat picker would list every seat as unfilled on a failed read. */}
+        {canManage && rosterAvailable && (
           <form onSubmit={assign} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assign a seat</h2>

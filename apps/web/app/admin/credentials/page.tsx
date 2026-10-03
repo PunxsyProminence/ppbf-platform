@@ -43,6 +43,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function AdminCredentialsPage() {
   const [items, setItems] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function AdminCredentialsPage() {
     if (!response.ok) throw new Error('Unable to load the credential queue.');
     const payload = (await response.json()) as { items?: QueueRow[] };
     setItems(payload.items ?? []);
+    setLoadFailed(false);
   }, []);
 
   useEffect(() => {
@@ -68,6 +70,7 @@ export default function AdminCredentialsPage() {
       } catch (error) {
         if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load the credential queue.');
+        setLoadFailed(true);
         setLoading(false);
       }
     })();
@@ -297,6 +300,9 @@ export default function AdminCredentialsPage() {
             <div className="flex justify-center py-[var(--s6)]">
               <span className="working">Loading the credential queue...</span>
             </div>
+          ) : loadFailed ? (
+            /* A failed read is not an empty queue: say it could not be read. */
+            <p className="empty-msg">The credential queue could not be loaded, so this is not a list of what is on file.</p>
           ) : items.length === 0 ? (
             <p className="empty-msg">No staff credential records yet.</p>
           ) : (
