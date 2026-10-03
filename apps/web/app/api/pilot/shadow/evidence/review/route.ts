@@ -26,7 +26,8 @@ type ReviewBody = {
 
 // Sources carry either prefix, and both are real. createShadowLibrarySource
 // mints `source_<uuid>`, but the research corpus in
-// seed-data/shadow-research/2026-08-07 is keyed `src_<hash>` -- 1,214 rows of it.
+// seed-data/shadow-research/2026-08-07 is keyed `src_<hash>` -- 1,001 rows of it
+// (measured 2026-10-03; this comment said 1,214 until then).
 // Accepting only `source_` meant every source the importer wrote answered 404
 // here, so the whole imported corpus was unreviewable and therefore permanently
 // unretrievable, since retrieval requires an approved source.

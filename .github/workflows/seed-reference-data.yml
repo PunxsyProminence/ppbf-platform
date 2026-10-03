@@ -15,7 +15,8 @@
 #
 # ONE LOADER. Every dataset goes through the content-import core
 # (apps/web/src/server/pilot/contentImport/, CLI scripts/pilot-content-import.ts)
-# -- the same plan and apply the in-app upload screen will call later. The
+# -- the same plan and apply the in-app upload screen (/admin/content-import,
+# #1031) calls. The
 # seven per-dataset seed-*.mjs loaders it replaced are gone (IMP-10); they were
 # insert-only, so a revised row was skipped without a word, which R2 ("new
 # stuff gets added if there is nothing to update") rules out. Now a changed item
