@@ -33,10 +33,23 @@ const QUOTE_WRITE_ROLES = ['organization_admin', 'admin'] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+async function readBody(request: NextRequest): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json().catch(() => null);
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ValidationError('Request body must be a JSON object.');
+  }
+  return body as Record<string, unknown>;
+}
+
+// Postgres cannot store a NUL or an unpaired surrogate (an encoding error, not a
+// check violation), so refuse them here as input errors rather than as a 500.
+const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 function optionalText(value: unknown, field: string, max: number): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string') throw new ValidationError(`${field} must be text.`);
   const trimmed = value.trim();
+  if (UNSTORABLE.test(trimmed)) throw new ValidationError(`${field} contains characters that cannot be stored.`);
   // Postgres length() counts characters, so count them the same way (not UTF-16 units).
   if ([...trimmed].length > max) throw new ValidationError(`${field} is too long (${max} characters at most).`);
   return trimmed;
@@ -85,7 +98,7 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...QUOTE_WRITE_ROLES]);
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = await readBody(request);
     const quoteType = optionalType(body.quote_type);
     if (!quoteType) throw new ValidationError('Missing quote_type.');
 
@@ -111,9 +124,10 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...QUOTE_WRITE_ROLES]);
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = await readBody(request);
     const quoteId = typeof body.quote_id === 'string' ? body.quote_id.trim() : '';
-    if (!UUID.test(quoteId)) throw new ValidationError('Missing quote_id.');
+    if (!quoteId) throw new ValidationError('Missing quote_id.');
+    if (!UUID.test(quoteId)) throw new ValidationError('quote_id is not valid.');
 
     const patch: QuotePatch = {
       quoteText: body.quote_text === undefined ? undefined : requiredText(body.quote_text, 'quote_text', QUOTE_TEXT_MAX),
@@ -131,7 +145,7 @@ export async function PATCH(request: NextRequest) {
     if (!quote) return hiddenNotFound();
 
     await audit(principal, 'update', quote.quote_id, {
-      changed: Object.keys(body).filter((key) => key !== 'quote_id'),
+      changed: Object.entries(patch).filter(([, value]) => value !== undefined).map(([key]) => key),
       active: quote.active,
     });
     return NextResponse.json({ ok: true, quote });

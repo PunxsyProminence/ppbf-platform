@@ -147,3 +147,27 @@ test('the length limit counts characters, not UTF-16 units', async () => {
   const res = await POST(bodyRequest('POST', { ...NEW_QUOTE, quote_text: '\u{1F94A}'.repeat(280) }));
   expect(res.status).toBe(200);
 });
+
+test('the legacy admin role writes too, and the update audit lists only fields that changed', async () => {
+  mockPrincipal.mockResolvedValue(principal({ role: 'admin' }));
+  expect((await POST(bodyRequest('POST', NEW_QUOTE))).status).toBe(200);
+
+  expect((await PATCH(bodyRequest('PATCH', { quote_id: QUOTE_ID, active: false, foo: 'bar', organization_id: 'x' }))).status).toBe(200);
+  expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({
+    event_type: 'update', details: expect.objectContaining({ changed: ['active'] }),
+  }));
+});
+
+test('a body that is not a JSON object, or holds an unstorable character, is a 400 not a 500', async () => {
+  mockPrincipal.mockResolvedValue(principal({}));
+  const raw = (method: 'POST' | 'PATCH', body: string) =>
+    new NextRequest('http://localhost/api/pilot/quotes', { method, headers: { 'content-type': 'application/json' }, body });
+
+  for (const body of ['not json', 'null', '[]', '"text"']) {
+    expect((await POST(raw('POST', body))).status).toBe(400);
+    expect((await PATCH(raw('PATCH', body))).status).toBe(400);
+  }
+  expect((await POST(bodyRequest('POST', { ...NEW_QUOTE, quote_text: 'bad\u0000text' }))).status).toBe(400);
+  expect((await POST(bodyRequest('POST', { ...NEW_QUOTE, speaker: 'lone\uD800' }))).status).toBe(400);
+  expect(mockCreate).not.toHaveBeenCalled();
+});

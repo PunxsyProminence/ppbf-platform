@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
@@ -51,6 +51,10 @@ export default function QuotesPage() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Set once the person touches the Shown choice while editing. The form shows one
+  // moment, so a quote stored with several is only rewritten when they change it.
+  const [shownChanged, setShownChanged] = useState(false);
+  const inFlight = useRef(false);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/quotes`, { credentials: 'include', signal });
@@ -77,6 +81,9 @@ export default function QuotesPage() {
   }, [reload]);
 
   async function send(method: 'POST' | 'PATCH', body: Record<string, unknown>, failure: string) {
+    // A ref, not the busy state: two quick clicks can both pass a state check.
+    if (inFlight.current) return false;
+    inFlight.current = true;
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/quotes`, {
@@ -89,15 +96,23 @@ export default function QuotesPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `${failure} (${response.status})`);
       }
-      await reload();
-      setErrorMessage(null);
-      return true;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : failure);
+      inFlight.current = false;
+      setBusy(false);
       return false;
+    }
+    // The write went through. A failed refresh is reported on its own and never as a failed write.
+    try {
+      await reload();
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage('Saved, but the list could not be refreshed. Reload the page.');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
+    return true;
   }
 
   const handleSave = async () => {
@@ -110,19 +125,24 @@ export default function QuotesPage() {
       speaker: form.speaker,
       quote_type: form.quote_type,
       source: form.source,
-      shown: [form.shown],
     };
     const saved = editingId
-      ? await send('PATCH', { quote_id: editingId, ...fields }, 'Unable to save the quote.')
-      : await send('POST', { ...fields, active: form.active }, 'Unable to add the quote.');
+      ? await send(
+          'PATCH',
+          { quote_id: editingId, ...fields, ...(shownChanged ? { shown: [form.shown] } : {}) },
+          'Unable to save the quote.',
+        )
+      : await send('POST', { ...fields, shown: [form.shown], active: form.active }, 'Unable to add the quote.');
     if (saved) {
       setForm(EMPTY_FORM);
       setEditingId(null);
+      setShownChanged(false);
     }
   };
 
   const startEdit = (quote: QuoteRow) => {
     setEditingId(quote.quote_id);
+    setShownChanged(false);
     setForm({
       quote_text: quote.quote_text,
       speaker: quote.speaker,
@@ -163,7 +183,7 @@ export default function QuotesPage() {
             <div className="grid gap-[var(--s3)] md:grid-cols-2">
               <div className="field md:col-span-2">
                 <label className="t-label" htmlFor="quote-text">Quote</label>
-                <textarea id="quote-text" className="input" rows={2} maxLength={280} value={form.quote_text}
+                <textarea id="quote-text" className="input" rows={2} value={form.quote_text}
                   onChange={(e) => setForm((f) => ({ ...f, quote_text: e.target.value }))} />
               </div>
               <div className="field">
@@ -188,7 +208,10 @@ export default function QuotesPage() {
               <div className="field">
                 <label className="t-label" htmlFor="quote-shown">Shown</label>
                 <select id="quote-shown" className="input" value={form.shown}
-                  onChange={(e) => setForm((f) => ({ ...f, shown: e.target.value as QuoteShown }))}>
+                  onChange={(e) => {
+                    setShownChanged(true);
+                    setForm((f) => ({ ...f, shown: e.target.value as QuoteShown }));
+                  }}>
                   {(Object.keys(SHOWN_LABELS) as QuoteShown[]).map((moment) => (
                     <option key={moment} value={moment}>{SHOWN_LABELS[moment]}</option>
                   ))}
@@ -208,7 +231,7 @@ export default function QuotesPage() {
               </button>
               {editingId && (
                 <button type="button" className="btn btn--ghost" disabled={busy}
-                  onClick={() => { setEditingId(null); setForm(EMPTY_FORM); }}>
+                  onClick={() => { setEditingId(null); setShownChanged(false); setForm(EMPTY_FORM); }}>
                   Cancel
                 </button>
               )}
@@ -240,10 +263,12 @@ export default function QuotesPage() {
                       {TYPE_LABELS[quote.quote_type]} · {quote.shown.map((m) => SHOWN_LABELS[m]).join(', ')}
                     </span>
                     <button type="button" className="btn btn--ghost" disabled={busy}
+                      aria-label={`Edit: ${quote.quote_text}`}
                       onClick={() => startEdit(quote)}>
                       Edit
                     </button>
                     <button type="button" className="btn btn--ghost" disabled={busy}
+                      aria-label={`${quote.active ? 'Switch off' : 'Switch on'}: ${quote.quote_text}`}
                       onClick={() => void send('PATCH', { quote_id: quote.quote_id, active: !quote.active }, 'Unable to change the quote.')}>
                       {quote.active ? 'Switch off' : 'Switch on'}
                     </button>
