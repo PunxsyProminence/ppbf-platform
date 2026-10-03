@@ -203,6 +203,7 @@ export type FindingCode =
   | 'duplicate_id'
   | 'duplicate_value'
   | 'orphan_reference'
+  | 'withdrawn_drill'
   | 'minted_id_exists'
   | 'literal_organization'
   | 'literal_account'
@@ -251,7 +252,8 @@ export interface ReferenceSets {
   skillCodes: ReadonlySet<string>;
   disciplines: ReadonlySet<string>;
   levelOrdinals: ReadonlySet<number>;
-  drills: ReadonlyMap<string, { discipline: string; name: string; skillId: string }>;
+  /** active: false when the drill's current version is withdrawn; a step may not link it (withdrawn_drill). */
+  drills: ReadonlyMap<string, { discipline: string; name: string; skillId: string; active: boolean }>;
   templates: ReadonlySet<string>;
   scripts: ReadonlySet<string>;
   blocks: ReadonlySet<string>;

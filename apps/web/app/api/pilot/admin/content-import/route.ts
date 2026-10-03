@@ -134,8 +134,10 @@ async function admit(request: NextRequest) {
  * browse list: current versions only (active, not superseded). promptDrills()
  * keeps three fields of each row (lineage key, name, primary skill code); the
  * rest of the row, and anything of the session, does not reach the text.
- * Which drill states count as "the gym's list" is the owner's open question;
- * the current library versions are the proposed default.
+ * Which drill states count as "the gym's list" was settled on 2026-10-03
+ * (OD-2026-10-03-002 section 7): the current active library versions, as
+ * built. The upload agrees: a step naming a withdrawn drill is refused at
+ * validation (validate.ts, withdrawn_drill).
  */
 export async function GET(request: NextRequest) {
   try {
