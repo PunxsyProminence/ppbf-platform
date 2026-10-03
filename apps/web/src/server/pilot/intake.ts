@@ -1521,6 +1521,53 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
  * Lives here, not in auth.ts: it is an intake provisioning check, and auth.ts
  * is the sign-in surface credentialPolicyDrift.test.ts guards.
  */
+/**
+ * Refuses, before any write, an athlete record that a DELETED login still
+ * holds -- whether or not the promotion names an account_id.
+ *
+ * This used to live only inside assertAthleteAccountIdProvisionable, which
+ * review-action ran only when promotion.athlete.account_id was present. A
+ * promotion that named no login therefore skipped it, and upsertAthlete wrote
+ * a live athlete record whose only login was deleted: the record shown as
+ * active, the athlete unable to sign in, and nothing saying why (the Build
+ * List row "Intake can leave a live athlete whose login is marked deleted",
+ * OD-2026-09-29-002 item 4). review-action now runs this check on every
+ * promotion, and the account_id check above still runs it as its own first
+ * step on the record.
+ *
+ * Returns the live login the record holds, or null, so the account_id check
+ * can tell a second login from the same one without a second read.
+ *
+ * The deleted login's id is not named -- it may belong to a record purged
+ * long ago, which no screen shows any more.
+ */
+export async function assertAthleteRecordNotHeldByDeletedLogin(params: {
+  athleteId: string;
+  organizationId: string;
+}): Promise<{ account_id: string } | null> {
+  // The login this athlete record holds, if any: at most one, by the
+  // constraint.
+  const heldBy = await queryOne<{ account_id: string; account_deleted: boolean }>(
+    `select account_id, ${accountDeletedSql('a')} as account_deleted
+     from pilot.accounts a
+     where organization_id = $1 and athlete_id = $2
+     limit 1`,
+    [params.organizationId, params.athleteId],
+  );
+
+  if (heldBy && isDeletedAccount(heldBy)) {
+    throw new ConflictError(
+      `Conflict: athlete record "${params.athleteId}" is still held by a login that was deleted. Intake does not `
+      + 'restore a deleted login, and an athlete record takes one login, so intake cannot give this record a new '
+      + 'one. If this is a returning athlete whose old record was removed, promote under a new athlete_id with a '
+      + "new account_id; otherwise the old login's hold on this record needs a database fix.",
+      'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+    );
+  }
+
+  return heldBy ? { account_id: heldBy.account_id } : null;
+}
+
 export async function assertAthleteAccountIdProvisionable(params: {
   accountId: string;
   athleteId: string;
@@ -1570,26 +1617,10 @@ export async function assertAthleteAccountIdProvisionable(params: {
     }
   }
 
-  // The login this athlete record holds, if any: at most one, by the
-  // constraint. The deleted login's id is not named -- it may belong to a
-  // record purged long ago, which no screen shows any more.
-  const heldBy = await queryOne<{ account_id: string; account_deleted: boolean }>(
-    `select account_id, ${accountDeletedSql('a')} as account_deleted
-     from pilot.accounts a
-     where organization_id = $1 and athlete_id = $2
-     limit 1`,
-    [params.organizationId, params.athleteId],
-  );
-
-  if (heldBy && isDeletedAccount(heldBy)) {
-    throw new ConflictError(
-      `Conflict: athlete record "${params.athleteId}" is still held by a login that was deleted. Intake does not `
-      + 'restore a deleted login, and an athlete record takes one login, so intake cannot give this record a new '
-      + 'one. If this is a returning athlete whose old record was removed, promote under a new athlete_id with a '
-      + "new account_id; otherwise the old login's hold on this record needs a database fix.",
-      'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
-    );
-  }
+  const heldBy = await assertAthleteRecordNotHeldByDeletedLogin({
+    athleteId: params.athleteId,
+    organizationId: params.organizationId,
+  });
 
   if (heldBy && heldBy.account_id !== params.accountId) {
     throw new ConflictError(
