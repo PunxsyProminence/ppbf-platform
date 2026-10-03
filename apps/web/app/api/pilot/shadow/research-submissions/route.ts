@@ -4,6 +4,7 @@ import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/sr
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   getShadowResearchRequirementById,
   subjectAthleteIdOf,
@@ -38,6 +39,17 @@ export const runtime = 'nodejs';
 //
 // Nothing in this route can resolve a requirement: there is no code path
 // from here to shadow_research_requirements.status.
+//
+// Every method takes an optional `shelf` ('gym' default, or 'platform'; a
+// query parameter on GET, a body field on POST and PATCH), resolved to an
+// organization id by libraryShelf.ts like the sources, documents and chunks
+// routes (#1115). Filing a source against a requirement and reviewing that
+// link are Library writes: the platform owner does them on the platform
+// shelf and no longer on a gym's (OD-2026-10-02-015 D3). Until 2026-10-03
+// this route took principal.organizationId directly, so the platform owner
+// could still write a gym's submissions through it. The existence checks
+// below read the SAME resolved shelf as the write, so a platform-shelf
+// submission can only name a platform-shelf requirement, source and document.
 
 /**
  * MAY THIS ACTOR READ THE SUBMISSIONS ON THIS REQUIREMENT?
@@ -84,6 +96,8 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
+    const organizationId = resolveLibraryShelf(principal, request.nextUrl.searchParams.get('shelf'), 'read');
+    const actor = { ...principal, organizationId };
 
     // Batch mode: ?research_requirement_ids=1,2,3 answers only the computed
     // ladder for each id, so the workspace list needs one request, not N.
@@ -101,12 +115,12 @@ export async function GET(request: NextRequest) {
          if existence leaks. */
       const readable: number[] = [];
       for (const id of ids) {
-        if (await mayReadRequirement(principal, id)) {
+        if (await mayReadRequirement(actor, id)) {
           readable.push(id);
         }
       }
-      const statuses = await getRequirementStatusesInOrg(principal.organizationId, readable);
-      const states = await getAnswerStates(principal.organizationId, statuses);
+      const statuses = await getRequirementStatusesInOrg(organizationId, readable);
+      const states = await getAnswerStates(organizationId, statuses);
       return NextResponse.json({
         answer_states: Object.fromEntries([...states.entries()].map(([id, state]) => [String(id), state])),
       });
@@ -121,12 +135,12 @@ export async function GET(request: NextRequest) {
     /* One refusal for "does not exist", "another organization" and "a child
        you may not reach". research_requirement_id is a bigserial, so telling
        those apart is exactly what an enumerating caller wants. */
-    if (!(await mayReadRequirement(principal, requirementId))) return hiddenNotFound();
+    if (!(await mayReadRequirement(actor, requirementId))) return hiddenNotFound();
 
-    const status = await getRequirementStatusInOrg(principal.organizationId, requirementId);
+    const status = await getRequirementStatusInOrg(organizationId, requirementId);
     if (status === null) return hiddenNotFound();
 
-    const items = await listSubmissionsForRequirement(principal.organizationId, requirementId);
+    const items = await listSubmissionsForRequirement(organizationId, requirementId);
     return NextResponse.json({
       items,
       answer_state: deriveAnswerState(status, items),
@@ -147,7 +161,9 @@ export async function POST(request: NextRequest) {
       document_id?: string | null;
       provenance?: Record<string, unknown>;
       submission_note?: string;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     // Normalized once, used everywhere below: a blank document_id means "no
     // document", never an empty-string FK value headed for a 500.
@@ -168,18 +184,18 @@ export async function POST(request: NextRequest) {
 
     // Org isolation: FKs prove existence, not tenancy. "Doesn't exist" and
     // "exists in another organization" collapse into one hidden not-found.
-    if ((await getRequirementStatusInOrg(principal.organizationId, requirementId)) === null) {
+    if ((await getRequirementStatusInOrg(organizationId, requirementId)) === null) {
       return hiddenNotFound();
     }
-    if (!(await sourceExistsInOrg(principal.organizationId, sourceId))) {
+    if (!(await sourceExistsInOrg(organizationId, sourceId))) {
       return hiddenNotFound();
     }
-    if (documentId && !(await documentExistsInOrg(principal.organizationId, documentId))) {
+    if (documentId && !(await documentExistsInOrg(organizationId, documentId))) {
       return hiddenNotFound();
     }
 
     const item = await createResearchSubmission({
-      organizationId: principal.organizationId,
+      organizationId,
       researchRequirementId: requirementId,
       sourceId,
       documentId,
@@ -209,7 +225,9 @@ export async function PATCH(request: NextRequest) {
       submission_id?: string;
       applicability_state?: string;
       review_note?: string;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (!body.submission_id?.trim()) {
       throw new ValidationError('Missing submission_id.');
@@ -220,7 +238,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const item = await reviewResearchSubmission({
-      organizationId: principal.organizationId,
+      organizationId,
       submissionId: body.submission_id,
       applicabilityState: body.applicability_state,
       reviewNote: body.review_note,

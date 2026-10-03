@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   listShadowCapabilityCoverage,
   recomputeShadowCapabilityCoverage,
@@ -24,6 +25,14 @@ export const runtime = 'nodejs';
 //
 // POST carries two operations because the seed script calls it both ways:
 // {action:'recompute'} regrades, anything else upserts a rule.
+//
+// Both methods take an optional `shelf` ('gym' default, or 'platform'; a query
+// parameter on GET, a body field on POST), resolved to an organization id by
+// libraryShelf.ts like the sources, documents and chunks routes (#1115). A
+// rule and a recompute are Library writes: the platform owner makes them on
+// the platform shelf and no longer on a gym's (OD-2026-10-02-015 D3). Until
+// 2026-10-03 this route took principal.organizationId directly, so the
+// platform owner could still write a gym's coverage rules through it.
 
 const MAX_SOURCE_TYPES = 20;
 
@@ -34,8 +43,9 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    const organizationId = resolveLibraryShelf(principal, new URL(request.url).searchParams.get('shelf'), 'read');
 
-    const items = await listShadowCapabilityCoverage(principal.organizationId);
+    const items = await listShadowCapabilityCoverage(organizationId);
     return NextResponse.json({ ok: true, items });
   } catch (error) {
     return jsonError(error);
@@ -53,7 +63,9 @@ export async function POST(request: NextRequest) {
       required_source_types?: unknown;
       minimum_authority_tier?: unknown;
       minimum_source_count?: unknown;
+      shelf?: unknown;
     };
+    const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (body.action !== undefined && body.action !== 'recompute') {
       return NextResponse.json({ ok: false, error: 'Unsupported action' }, { status: 400 });
@@ -61,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     if (body.action === 'recompute') {
       const items = await recomputeShadowCapabilityCoverage({
-        organizationId: principal.organizationId,
+        organizationId,
         actorAccountId: principal.accountId,
         actorRole: principal.role,
       });
@@ -126,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     await upsertShadowCapabilityMap({
-      organizationId: principal.organizationId,
+      organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       capabilityKey: body.capability_key,
