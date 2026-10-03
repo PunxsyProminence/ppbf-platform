@@ -39,6 +39,7 @@ interface MockOptions {
   rosterOk?: boolean;
   onPost?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
   onDelete?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
+  onGuardianMove?: (body: Record<string, unknown>) => Record<string, unknown>;
   onActivationReset?: (body: Record<string, unknown>) => Record<string, unknown>;
   onAthleteAccount?: (body: Record<string, unknown>) => Record<string, unknown>;
   onAthleteRecord?: (body: Record<string, unknown>) => Record<string, unknown>;
@@ -55,6 +56,11 @@ function fetchMock(options: MockOptions = {}) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       const payload = options.onAthleteRecord?.(body) ?? { ok: true };
       return { ok: payload.ok === true, status: payload.ok === true ? 201 : 409, json: async () => payload } as Response;
+    }
+    if (url.includes('/api/pilot/admin/guardian-login')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const payload = options.onGuardianMove?.(body) ?? { ok: true, to_account_id: body.to_email, old_login_switched_off: true };
+      return { ok: payload.ok === true, status: payload.ok === true ? 200 : 409, json: async () => payload } as Response;
     }
     if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
@@ -411,6 +417,49 @@ describe('removing a guardian link', () => {
     fireEvent.click(screen.getByRole('button', { name: /Confirm Remove/i }));
 
     expect(await screen.findByText(/only athlete this guardian is linked to/i)).toBeTruthy();
+  });
+
+  test('moves the guardian record to a new email only after it is typed and confirmed', async () => {
+    const moves: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      ...LINKED,
+      onGuardianMove: (body) => {
+        moves.push(body);
+        return { ok: true, to_account_id: 'dana.new@example.com', old_login_switched_off: true };
+      },
+    }) as never;
+
+    render(<PeopleConsolePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move To New Email' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm Move' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('New email'), { target: { value: ' dana.new@example.com ' } });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(moves).toHaveLength(1));
+    expect(moves[0]).toEqual({
+      parent_id: 'par-1',
+      from_account_id: 'dana@example.com',
+      to_email: 'dana.new@example.com',
+    });
+    expect(await screen.findByText(/Moved to dana\.new@example\.com.*dana@example\.com is switched off/)).toBeTruthy();
+  });
+
+  test('shows the server refusal of a move verbatim', async () => {
+    global.fetch = fetchMock({
+      ...LINKED,
+      onGuardianMove: () => ({ ok: false, error: 'Conflict: login "x" is already a guardian of ath-1' }),
+    }) as never;
+
+    render(<PeopleConsolePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move To New Email' }));
+    fireEvent.change(screen.getByLabelText('New email'), { target: { value: 'x@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Move' }));
+
+    expect(await screen.findByText(/is already a guardian of ath-1/)).toBeTruthy();
   });
 });
 
