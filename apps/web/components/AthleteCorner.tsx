@@ -25,7 +25,9 @@ import React from 'react';
  * this button does not open a second report: it takes the athlete to the
  * existing Pain/Soreness Report card and puts the cursor in its location
  * picker. The card, its form and its endpoint are untouched. It never waits on
- * a read and nothing here can cover it.
+ * a read. A training hold, when there is one, renders directly AFTER it (the
+ * afterPain slot) rather than above the corner, where a full hold notice
+ * pushed it off a phone's first screen.
  *
  * CHECKED IN ONLY WHEN THE READ SAYS SO. "Checked in" comes from the session
  * read the Session Log uses. While that read is in flight the corner says it
@@ -60,6 +62,12 @@ export interface AthleteCornerProps {
   readonly onOpenGoals: () => void;
   readonly onReportPain: () => void;
   readonly onAskShadow: () => void;
+  /** Today's session was already checked out of (no session open now). */
+  readonly checkedOutToday?: boolean;
+  /** The last check-in attempt failed; its full explanation is further down. */
+  readonly checkInFailed?: boolean;
+  /** Rendered right after the pain panel, full width: the training-hold notice. */
+  readonly afterPain?: React.ReactNode;
 }
 
 function countLine(read: CornerCountRead, none: string, some: (count: number) => string): string {
@@ -81,6 +89,9 @@ export default function AthleteCorner({
   onOpenGoals,
   onReportPain,
   onAskShadow,
+  checkedOutToday = false,
+  checkInFailed = false,
+  afterPain,
 }: AthleteCornerProps) {
   const sessionKnown = identityState === 'resolved' && sessionState === 'loaded';
 
@@ -93,6 +104,8 @@ export default function AthleteCorner({
     checkInLine = 'Could not tell whether you are checked in. Try again before you check in a second time.';
   } else if (checkedInAt) {
     checkInLine = `Checked in ${checkedInAt}.`;
+  } else if (checkedOutToday) {
+    checkInLine = 'Checked out today. Check in again if you are back on the floor.';
   } else {
     checkInLine = 'You have not checked in today.';
   }
@@ -110,6 +123,8 @@ export default function AthleteCorner({
           </button>
         </div>
 
+        {afterPain ? <div className="athlete-corner__wide">{afterPain}</div> : null}
+
         <div className="athlete-corner__panel" data-corner-panel="check-in">
           <p className="athlete-corner__label">Check in</p>
           <p
@@ -118,6 +133,11 @@ export default function AthleteCorner({
           >
             {checkInLine}
           </p>
+          {sessionKnown && !checkedInAt && checkInFailed && (
+            <p role="alert" className="athlete-corner__alert">
+              That check-in did not save. Try again, or tell a coach you are here.
+            </p>
+          )}
           {sessionKnown && !checkedInAt && (
             <button
               type="button"

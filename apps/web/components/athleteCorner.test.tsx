@@ -159,3 +159,24 @@ test('says nothing about clearance', () => {
   render(<AthleteCorner {...props({ checkedInAt: '4:05 PM' })} />);
   expect(document.body.textContent).not.toMatch(/clear/i);
 });
+
+/* Review findings, 2026-10-03. */
+test('after a check-out today, the corner says checked out -- not "not checked in" -- and offers a fresh check-in', () => {
+  render(<AthleteCorner {...props({ checkedOutToday: true })} />);
+  const panel = document.querySelector('[data-corner-panel="check-in"]') as HTMLElement;
+  expect(panel.textContent).toContain('Checked out today.');
+  expect(panel.textContent).not.toContain('You have not checked in today.');
+  expect(checkIn().getByRole('button', { name: 'Start check-in' })).toBeTruthy();
+});
+
+test('a check-in that failed is said in the corner, where the tap was', () => {
+  render(<AthleteCorner {...props({ checkInFailed: true })} />);
+  expect(checkIn().getByRole('alert').textContent).toContain('That check-in did not save');
+});
+
+test('the training-hold notice sits right after the pain report, never ahead of it', () => {
+  render(<AthleteCorner {...props({ afterPain: <p>Training is paused for you right now</p> })} />);
+  const cells = Array.from(document.querySelectorAll('.athlete-corner__grid > *'));
+  expect(cells[0].getAttribute('data-corner-panel')).toBe('pain');
+  expect(cells[1].textContent).toBe('Training is paused for you right now');
+});

@@ -30,6 +30,8 @@ type FetchCall = { url: string; method: string; body: Record<string, unknown> };
 const fetchCalls: FetchCall[] = [];
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListMode: 'answer' | 'fail' | 'pending' = 'answer';
+let checkInPostFails = false;
+let activeHold: Record<string, unknown> | null = null;
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, json: async () => body } as unknown as Response;
@@ -48,6 +50,8 @@ beforeEach(() => {
   fetchCalls.length = 0;
   storedSessions = [];
   sessionListMode = 'answer';
+  checkInPostFails = false;
+  activeHold = null;
   Element.prototype.scrollIntoView = jest.fn();
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -59,7 +63,10 @@ beforeEach(() => {
       if (sessionListMode === 'pending') return new Promise<Response>(() => {});
       return jsonResponse({ items: storedSessions });
     }
-    if (url.endsWith('/api/pilot/sessions') && method === 'POST') return jsonResponse({ ok: true });
+    if (url.endsWith('/api/pilot/sessions') && method === 'POST') {
+      return checkInPostFails ? jsonResponse({ error: 'Internal server error' }, false) : jsonResponse({ ok: true });
+    }
+    if (url.includes('/api/pilot/training-holds')) return jsonResponse({ ok: true, hold: activeHold });
     if (url.includes('/api/pilot/athlete/check-in')) return jsonResponse({ today: null, recent: [] });
     if (url.includes('/api/pilot/progression/assignments')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/goals/list')) return jsonResponse({ items: [] });
@@ -170,4 +177,38 @@ test('the old Today section no longer repeats the corner\'s controls below it', 
   await renderWorkspace();
   expect(screen.getAllByRole('button', { name: 'Start check-in' })).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Open the floor' })).toHaveLength(1);
+});
+
+test('after today\'s session was checked out, the corner says so instead of "not checked in"', async () => {
+  const now = new Date().toISOString();
+  storedSessions = [{
+    session_id: 'session_done', athlete_id: 'ath_test', date: now.slice(0, 10), rpe: '6', rpe_method: 'SESSION_RPE',
+    notes: '', completed_flag: true, created_at: now, updated_at: now,
+  }];
+  await renderWorkspace();
+  expect(await corner().findByText(/^Checked out today\./)).toBeTruthy();
+  expect(corner().queryByText('You have not checked in today.')).toBeNull();
+});
+
+test('a check-in that fails says so in the corner', async () => {
+  checkInPostFails = true;
+  await renderWorkspace();
+  fireEvent.click(await corner().findByRole('button', { name: 'Start check-in' }));
+  expect(await corner().findByText(/That check-in did not save/)).toBeTruthy();
+});
+
+test('with a training hold, the hold notice comes right after Report pain, inside the corner', async () => {
+  activeHold = {
+    scope: 'all_training',
+    athlete_explanation: 'Rest the shoulder this week.',
+    placed_by_name: 'Coach J.',
+    lift_condition_text: null,
+  };
+  await renderWorkspace();
+  const headline = await corner().findByText('Training is paused for you right now');
+  const pain = corner().getByRole('button', { name: 'Report pain or soreness' });
+  // Document order: the pain button comes first.
+  expect(pain.compareDocumentPosition(headline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // And it is shown once, not again above the corner.
+  expect(screen.getAllByText('Training is paused for you right now')).toHaveLength(1);
 });

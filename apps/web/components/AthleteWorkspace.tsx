@@ -730,6 +730,10 @@ export default function AthleteWorkspace() {
      be checked against is what the athlete can see. */
   const [notesFailedDraft, setNotesFailedDraft] = useState<string | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
+  /* Whether the last check-in attempt failed. My Corner sits at the top of the
+     screen and the sync message that explains a failure renders below the tab
+     content, so the corner needs its own signal to say the tap did not land. */
+  const [checkInFailed, setCheckInFailed] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   /* The athlete's answer to the post-session effort question, if they gave
@@ -1612,9 +1616,11 @@ export default function AthleteWorkspace() {
     if (!backendAthleteId) {
       setBackendSyncMessage("That check-in did not take -- you are not signed in, so nothing was saved. "
         + "There is no session to check out of, so tell a coach you are here.");
+      setCheckInFailed(true);
       return;
     }
 
+    setCheckInFailed(false);
     setIsCheckingIn(true);
 
     const sessionId = `session_${Date.now()}`;
@@ -1693,10 +1699,12 @@ export default function AthleteWorkspace() {
         const payload = (await sessionResponse.json().catch(() => ({ error: 'That check-in did not take.' }))) as { error?: string };
         setBackendSyncMessage(`${payload.error || 'That check-in did not take.'} `
           + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
+        setCheckInFailed(true);
       }
     } catch (error) {
       setBackendSyncMessage(`${error instanceof Error ? error.message : 'That check-in did not take.'} `
         + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
+      setCheckInFailed(true);
     } finally {
       setIsCheckingIn(false);
     }
@@ -2033,6 +2041,13 @@ export default function AthleteWorkspace() {
      location before its form can open, so this takes the athlete to the
      existing report's location picker rather than opening a second report.
      The card below, its form and its endpoint are unchanged. */
+  /* A session from today that the athlete already checked out of. Read off the
+     sessions the workspace already holds (re-read after every check-out), so
+     the corner can say "checked out" instead of "not checked in" -- which was
+     false after a check-out. */
+  const gymToday = gymDayIso(new Date());
+  const checkedOutToday = storedSessions.some((session) => session.completed && gymDayIso(session.createdAt) === gymToday);
+
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');
     if (picker) {
@@ -2081,9 +2096,11 @@ export default function AthleteWorkspace() {
 
         {/* #82: an active training hold, in the athlete's own language.
             Same self-contained contract as ProfileHeader -- renders nothing
-            when there is no hold. It stands above My Corner so that, when a
-            hold exists, it is the first thing on the screen. */}
-        <TrainingHoldBanner />
+            when there is no hold. On My Dashboard it sits inside My Corner,
+            directly after the pain report (so a hold can never push Report
+            pain off the first screen); on every other tab it stands here,
+            first. */}
+        {activeTab !== 'my-dashboard' && <TrainingHoldBanner />}
 
         {/* MY CORNER: the day's actions -- check in, report pain, coach work,
             goals -- at the top of the screen on My Dashboard. This is the
@@ -2103,6 +2120,9 @@ export default function AthleteWorkspace() {
             onOpenGoals={() => setActiveTab('smart-goals')}
             onReportPain={goToPainReport}
             onAskShadow={() => setActiveTab('shadow')}
+            checkedOutToday={checkedOutToday}
+            checkInFailed={checkInFailed}
+            afterPain={<TrainingHoldBanner />}
           />
         )}
 
