@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   listShadowCapabilityCoverage,
   recomputeShadowCapabilityCoverage,
@@ -24,6 +25,11 @@ export const runtime = 'nodejs';
 //
 // POST carries two operations because the seed script calls it both ways:
 // {action:'recompute'} regrades, anything else upserts a rule.
+//
+// Both arms write the gym's rows (a rule, or the research tickets a regrade
+// opens and closes), so both are gym-shelf writes the platform owner no longer
+// makes (OD-2026-10-02-015 D3, refused in libraryShelf.ts). GET is a read and
+// stays as it was. There is no platform-shelf option here.
 
 const MAX_SOURCE_TYPES = 20;
 
@@ -46,6 +52,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    const organizationId = resolveLibraryShelf(principal, undefined, 'write');
 
     const body = (await request.json().catch(() => ({}))) as {
       action?: unknown;
@@ -61,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     if (body.action === 'recompute') {
       const items = await recomputeShadowCapabilityCoverage({
-        organizationId: principal.organizationId,
+        organizationId,
         actorAccountId: principal.accountId,
         actorRole: principal.role,
       });
@@ -126,7 +133,7 @@ export async function POST(request: NextRequest) {
     }
 
     await upsertShadowCapabilityMap({
-      organizationId: principal.organizationId,
+      organizationId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       capabilityKey: body.capability_key,

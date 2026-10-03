@@ -158,6 +158,52 @@ describe('POST /api/pilot/shadow/library/capability-coverage', () => {
   });
 });
 
+// OD-2026-10-02-015 D3: the platform owner no longer writes a gym's shelf.
+// Both POST arms write gym rows; GET is a read and stays open to it.
+describe('platform owner (D3)', () => {
+  test.each([
+    ['a rule upsert', validRule],
+    ['a recompute', { action: 'recompute' }],
+  ])('is refused %s, before any write', async (_label, body) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest(body));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.code).toBe('LIBRARY_GYM_SHELF_PLATFORM_OWNER_WRITE_FORBIDDEN');
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockRecompute).not.toHaveBeenCalled();
+  });
+
+  test('ignores a shelf field: there is no platform-shelf option on this route', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest({ ...validRule, shelf: 'platform' }));
+
+    expect(response.status).toBe(403);
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  test('still reads coverage', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-real');
+  });
+
+  test('an admin still writes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('admin'));
+
+    const response = await POST(postRequest({ action: 'recompute' }));
+
+    expect(response.status).toBe(200);
+    expect(mockRecompute).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-real' }));
+  });
+});
+
 describe('GET /api/pilot/shadow/library/capability-coverage', () => {
   test('lists coverage for the session organization', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());

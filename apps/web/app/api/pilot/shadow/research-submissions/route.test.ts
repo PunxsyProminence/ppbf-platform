@@ -189,6 +189,47 @@ describe('POST org isolation', () => {
   });
 });
 
+// OD-2026-10-02-015 D3: filing a link is a gym-shelf write the platform owner
+// no longer makes. Reading and the applicability verdict (review, answer 5A of
+// OD-2026-10-02-013) stay as they were.
+describe('platform owner (D3)', () => {
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'platform_owner' }));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockDocumentExists.mockResolvedValue(true);
+  });
+
+  test('is refused a link, before any read or write', async () => {
+    const response = await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', document_id: 'doc-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.code).toBe('LIBRARY_GYM_SHELF_PLATFORM_OWNER_WRITE_FORBIDDEN');
+    expect(mockRequirementStatus).not.toHaveBeenCalled();
+    expect(mockSourceExists).not.toHaveBeenCalled();
+    expect(mockDocumentExists).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('still reviews a submission', async () => {
+    mockReview.mockResolvedValue({ submission_id: 's-1' });
+
+    const response = await PATCH(patchRequest({ submission_id: 's-1', applicability_state: 'responsive' }));
+
+    expect(response.status).toBe(200);
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1', reviewedByAccountId: 'acct-1' }));
+  });
+
+  test('still reads submissions', async () => {
+    mockList.mockResolvedValue([]);
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(200);
+  });
+});
+
 describe('PATCH review', () => {
   beforeEach(() => {
     mockRequirePrincipal.mockResolvedValue(principal({}));

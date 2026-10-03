@@ -4,6 +4,7 @@ import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/sr
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   getShadowResearchRequirementById,
   subjectAthleteIdOf,
@@ -38,6 +39,11 @@ export const runtime = 'nodejs';
 //
 // Nothing in this route can resolve a requirement: there is no code path
 // from here to shadow_research_requirements.status.
+//
+// Filing a link (POST) is a gym-shelf write, which the platform owner no
+// longer makes (OD-2026-10-02-015 D3, refused in libraryShelf.ts). Its
+// applicability verdict (PATCH) is review and stays as it was
+// (OD-2026-10-02-013 answer 5A).
 
 /**
  * MAY THIS ACTOR READ THE SUBMISSIONS ON THIS REQUIREMENT?
@@ -140,6 +146,9 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
+    // Refused before any read, so the platform owner learns nothing about
+    // which requirements, sources or documents exist.
+    const organizationId = resolveLibraryShelf(principal, undefined, 'write');
 
     const body = (await request.json()) as {
       research_requirement_id?: number;
@@ -168,18 +177,18 @@ export async function POST(request: NextRequest) {
 
     // Org isolation: FKs prove existence, not tenancy. "Doesn't exist" and
     // "exists in another organization" collapse into one hidden not-found.
-    if ((await getRequirementStatusInOrg(principal.organizationId, requirementId)) === null) {
+    if ((await getRequirementStatusInOrg(organizationId, requirementId)) === null) {
       return hiddenNotFound();
     }
-    if (!(await sourceExistsInOrg(principal.organizationId, sourceId))) {
+    if (!(await sourceExistsInOrg(organizationId, sourceId))) {
       return hiddenNotFound();
     }
-    if (documentId && !(await documentExistsInOrg(principal.organizationId, documentId))) {
+    if (documentId && !(await documentExistsInOrg(organizationId, documentId))) {
       return hiddenNotFound();
     }
 
     const item = await createResearchSubmission({
-      organizationId: principal.organizationId,
+      organizationId: organizationId,
       researchRequirementId: requirementId,
       sourceId,
       documentId,
