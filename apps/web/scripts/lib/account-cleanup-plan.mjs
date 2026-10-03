@@ -93,7 +93,8 @@ export const ACCOUNTS_READ_SQL = `select a.account_id,
         order by a.organization_id, a.role, a.login_email nulls last, a.account_id`;
 
 /**
- * Retires the planned accounts ($1 = account ids).
+ * Retires the planned accounts ($1 = account ids; $2 = the athlete_id the
+ * read returned for each, in the same order, null where it had none).
  *
  * Every clause after the first restates a guarantee the planner already
  * makes. They are here because this is the statement that writes, and a WHERE
@@ -106,12 +107,19 @@ export const ACCOUNTS_READ_SQL = `select a.account_id,
  *   - no live athlete record behind the login: a deleted login keeps its hold
  *     on (organization_id, athlete_id), so the child could not be given
  *     another one.
+ *   - the athlete_id is still the one the plan read. ATHLETE_LOGIN_LOCK_SQL
+ *     takes no key for a login with no athlete_id, and intake can link such a
+ *     login to a new athlete after its record commits. If this statement
+ *     waited on that row, PostgreSQL re-checks the row's new version but runs
+ *     the `not exists` on this statement's older snapshot, which cannot see
+ *     the new record; this clause refuses the changed row instead.
  */
 export const RETIRE_ACCOUNTS_SQL = `update pilot.accounts
           set deleted_at = now(),
               active_flag = false,
               updated_at = now()
         where account_id = any($1::text[])
+          and athlete_id is not distinct from ($2::text[])[array_position($1::text[], account_id)]
           and role <> 'parent'
           and deleted_at is null
           and account_id not ilike 'gate\\_%'
@@ -123,6 +131,30 @@ export const RETIRE_ACCOUNTS_SQL = `update pilot.accounts
                and t.deleted_at is null
           )
         returning account_id`;
+
+/**
+ * Takes the athlete-login lock for every planned login that holds an athlete
+ * id ($1 = account ids), on the cleanup's transaction, before
+ * RETIRE_ACCOUNTS_SQL runs.
+ *
+ * Intake's promotion takes the same key (lockAthleteLoginForIntake in
+ * src/server/pilot/intake.ts) around its checks and its athlete write. Without
+ * a lock on both sides, intake could find the login not yet deleted while the
+ * cleanup found no athlete record yet, and the two together left a live
+ * athlete record held by a deleted login. Holding it here, the retire
+ * statement runs after any promotion of that athlete has committed, and its
+ * `not exists` guard sees the record. Keys are taken in hash order, so two
+ * cleanups never wait on each other in a cycle; the cleanup holds no row lock
+ * while it waits, so it cannot deadlock with intake either.
+ */
+export const ATHLETE_LOGIN_LOCK_SQL = `select pg_advisory_xact_lock(k.key)
+         from (
+           select distinct hashtext('ppbf.athlete-login:' || a.organization_id || ':' || a.athlete_id) as key
+             from pilot.accounts a
+            where a.account_id = any($1::text[])
+              and a.athlete_id is not null
+            order by key
+         ) k`;
 
 /** Roles that can administer an organization, for the last-admin guard. */
 const ADMIN_ROLES = Object.freeze(['platform_owner', 'organization_admin', 'admin']);
