@@ -471,6 +471,19 @@ export type MomentSlot = (typeof MOMENT_SLOTS)[number];
 export const MOMENT_KINDS = ['start', 'contact', 'full_extension', 'furthest_point', 'end'] as const;
 export type MomentKind = (typeof MOMENT_KINDS)[number];
 
+/** In 0.2, the punch results that carry a contact time, and the only ones.
+ * A punch that made contact is marked at contact (OD-2026-10-02-011 3a: "start,
+ * contact, end"). A miss, and a punch whose landing can't be told, carry none
+ * and are marked at full extension (-011 3a; -016 D2 A, which chose full
+ * extension over "the coach's best guess of contact"). The
+ * calibration-body-point-rules migration holds this on the event row. */
+export const CONTACT_RESULTS_WITH_CONTACT: readonly ContactResult[] = [
+  'clean_target_contact',
+  'glancing_target_contact',
+  'guard_contact',
+  'non_target_contact',
+];
+
 /* Whose points: always the person whose action the event is. There is no
  * subject list and no "opponent": the other boxer is marked on their own event
  * (their defence, and later a received-punch event), never inside the
@@ -487,9 +500,8 @@ export type MomentKind = (typeof MOMENT_KINDS)[number];
  * - unknown: the coach could not tell, e.g. the feet are out of frame
  *   (OD-2026-10-02-016 D3 A).
  *
- * In 0.2 this is meant to replace the event-level `stance`: the TEACH-BIOMECH-01
- * work order (item C2) has 0.2 events leave `stance` empty. Nothing enforces
- * that yet. */
+ * In 0.2 this replaces the event-level `stance`: a 0.2 event's `stance` and
+ * `peak_ms` stay empty (calibration-body-point-rules migration). */
 export const LEAD_SIDES = ['orthodox', 'southpaw', 'neutral', 'transition', 'unknown'] as const;
 export type LeadSide = (typeof LEAD_SIDES)[number];
 
@@ -625,7 +637,8 @@ export const GUARD_TYPE_SOURCES: Readonly<Record<Exclude<GuardType, 'other' | 'u
   boxing_australia__double_guard_to_the_straight: { body: 'boxing_australia', nameAsPrinted: 'Double Guard to the Straight Lead/Rear Hand', printedPage: 30, pdfPage: 30 },
 };
 
-/** Stance types, recorded once per punch or defence (OD-2026-10-02-014). */
+/** Stance types, recorded once per punch or defence (OD-2026-10-02-014), on
+ * the event's actor, in pilot.calibration_event_stance_labels. */
 export const STANCE_TYPES = [
   'usa_boxing__classic',
   'aiba__weight_to_lead_leg',
