@@ -310,7 +310,9 @@ describe('provisionAthleteActivation', () => {
     await expect(refusal).rejects.toThrow(/^Not found: /);
     const error = await refusal.catch((caught: unknown) => caught);
     expect(jsonError(error).status).toBe(404);
-    expect(callsMatching(/select 1 from pilot\.accounts a/)).toHaveLength(1);
+    const deletedLookups = callsMatching(/select 1 from pilot\.accounts a/);
+    expect(deletedLookups).toHaveLength(1);
+    expect(deletedLookups[0][1]).toEqual(['acct-none', 'org-1']);
     expect(callsMatching(/insert into pilot\.account_activation_tokens/)).toHaveLength(0);
   });
 });

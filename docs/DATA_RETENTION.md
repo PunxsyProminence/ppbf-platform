@@ -332,8 +332,9 @@ scoped. Linking a guardian to a withdrawn athlete's record is not refused; that 
 **Still open (checked 2026-10-03):** the organization admin's user-create route
 (`platform/users/create`, `createAthleteAccountPendingActivation` in `auth.ts`) now names a
 deleted login in the admin's own organization (409 `DELETED_LOGIN`). It does not check the
-athlete record it names: one already held by a login, deleted or not, is left to the unique index
-`uq_pilot_accounts_org_athlete`, which by code reading answers 500 rather than a reason. The four
+athlete record it names: one already held by a login, deleted or not, is left to the
+one-login-per-athlete-record unique constraint (`ATHLETE_LOGIN_UNIQUE_CONSTRAINTS` in `auth.ts`),
+which by code reading answers 500 rather than a reason. The four
 local-PIN functions with no deleted check and no caller in the app (`resetAccountPin`,
 `activateAccountPin`, `createCoachAccount`, `createParentAccount`), and `createOrRotateAdminAccount`
 with them, were deleted. Revoking a deleted login's sessions is still allowed. A returning staff member or guardian cannot
