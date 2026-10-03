@@ -140,7 +140,8 @@ test('a failed pain-report read is shown on the floor first, never as "nothing n
   });
 
   expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Pain reports could not be read' })).toBeTruthy();
+  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(floor().getByText('Pain reports')).toBeTruthy();
 });
 
 test('a failed escalation read is shown on the floor first, ahead of any report', async () => {
@@ -149,7 +150,8 @@ test('a failed escalation read is shown on the floor first, ahead of any report'
   });
 
   expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Safety escalations could not be read' })).toBeTruthy();
+  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(floor().getByText('Safety escalations')).toBeTruthy();
 });
 
 test('with every read healthy and empty, the floor says nothing has been reported', async () => {

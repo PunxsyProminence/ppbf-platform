@@ -66,7 +66,6 @@ function props(overrides: Partial<CoachFloorFocusProps> = {}): CoachFloorFocusPr
     items: [escalation(), PAIN],
     feeds: LOADED,
     readinessState: 'loaded',
-    sessionStatus: 'No session in progress. Session Scripts is where a live delivery starts.',
     sessionState: 'loaded',
     sessionLive: false,
     sessionMode: 'Group',
@@ -140,7 +139,8 @@ test('a failed read is put first and is never read out as "nothing needs you"', 
   render(<CoachFloorFocus {...props({ items: [], feeds })} />);
 
   expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Pain reports could not be read' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(screen.getByText('Pain reports')).toBeTruthy();
   expect(screen.getByRole('alert').textContent).toContain('Do not read this as "no athlete reported pain".');
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   expect(onRetry).toHaveBeenCalledTimes(1);
@@ -154,7 +154,8 @@ test('a feed still loading is never read out as "nothing needs you" either', () 
   ];
   render(<CoachFloorFocus {...props({ items: [], feeds })} />);
   expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Checking safety escalations...' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Still checking' })).toBeTruthy();
+  expect(screen.getByText('Safety escalations')).toBeTruthy();
 });
 
 test('readiness is shown as its band in words, and an athlete with no reading is never shown as fine', () => {
@@ -346,4 +347,21 @@ test('an empty roster draws no dial', () => {
   render(<CoachFloorFocus {...props({ athletes: [] })} />);
   expect(gauge('Readings').textContent).toContain('0 of 0');
   expect(gauge('Readings').querySelector('.coach-floor-focus__dial')).toBeNull();
+});
+
+test('no heading on the board carries a feed panel\'s name, and the session sentence is not repeated', () => {
+  const feeds: FocusFeed[] = [
+    { name: 'Safety escalations', state: 'loading' },
+    { name: 'Pain reports', state: 'error', error: 'boom' },
+    { name: 'Family barrier reports', state: 'loaded' },
+  ];
+  render(<CoachFloorFocus {...props({ feeds })} />);
+  for (const heading of screen.getAllByRole('heading')) {
+    expect(heading.textContent ?? '').not.toMatch(/safety escalations|pain reports|barrier reports/i);
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+  for (const heading of screen.getAllByRole('heading')) {
+    expect(heading.textContent ?? '').not.toMatch(/safety escalations|pain reports|barrier reports/i);
+  }
+  expect(screen.queryByText(/Session in progress|No session in progress/)).toBeNull();
 });

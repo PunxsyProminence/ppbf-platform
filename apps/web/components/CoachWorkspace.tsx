@@ -2500,7 +2500,6 @@ export default function CoachWorkspace() {
             onSelectAthlete={showAthleteOnRoster}
             items={floorFocusItems}
             feeds={floorFocusFeeds}
-            sessionStatus={sessionStatus}
             sessionState={liveRunState === 'unavailable' ? 'error' : liveRunState}
             sessionLive={liveRunState === 'loaded' && liveRun !== null}
             sessionPaused={liveRun?.is_paused ?? false}

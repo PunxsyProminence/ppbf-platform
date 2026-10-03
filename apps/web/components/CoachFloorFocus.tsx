@@ -21,6 +21,12 @@ import React, { useMemo, useState } from 'react';
  * the next item and changes no record: nothing is marked seen, nothing is
  * stored. coachFloorFocus.test.tsx pins both.
  *
+ * NOTHING HERE REPEATS A SENTENCE OR A HEADING THE PANELS BELOW ALREADY SAY:
+ * the session line lives in the panel and the Session gauge says none /
+ * running / paused; a waiting or failed feed is named in a label over a
+ * generic heading, so no heading here carries a panel's name. A coach seeing
+ * the same line twice is noise, and coach-journey.spec.ts finds each once.
+ *
  * A READ THAT FAILED IS NEVER "NOTHING NEEDS YOU". A feed that could not be
  * read, or is still loading, is itself an item at the front of the queue, and
  * the all-clear line only appears when every feed answered and none had
@@ -114,7 +120,6 @@ export interface CoachFloorFocusProps {
   readonly readinessState: 'loading' | 'error' | 'loaded';
   /** The pain feed's window, so the all-clear line says no more than it read. */
   readonly painWindowDays?: number | null;
-  readonly sessionStatus: string;
   /** Whether the live-run read answered. A failed read is not "no session". */
   readonly sessionState: 'loading' | 'error' | 'loaded';
   readonly sessionLive: boolean;
@@ -193,7 +198,6 @@ export default function CoachFloorFocus({
   feeds,
   readinessState,
   painWindowDays = null,
-  sessionStatus,
   sessionState,
   sessionLive,
   sessionPaused = false,
@@ -286,7 +290,6 @@ export default function CoachFloorFocus({
     <section aria-label="The floor" className="coach-floor-focus rounded-[var(--r-lg)]">
       <header className="coach-floor-focus__head">
         <h2 className="coach-floor-focus__title">The Floor</h2>
-        <p role="status">{sessionStatus}</p>
       </header>
 
       <dl aria-label="Today at a glance" className="coach-floor-focus__gauges">
@@ -344,9 +347,8 @@ export default function CoachFloorFocus({
 
           {currentFeed && (
             <div className="coach-floor-focus__item" data-focus-kind="feed">
-              <h4 className="t-command">
-                {currentFeed.state === 'loading' ? `Checking ${currentFeed.name.toLowerCase()}...` : `${currentFeed.name} could not be read`}
-              </h4>
+              <p className="coach-floor-focus__label">{currentFeed.name}</p>
+              <h4 className="t-command">{currentFeed.state === 'loading' ? 'Still checking' : 'Could not be read'}</h4>
               {currentFeed.state === 'error' && (
                 <p role="alert" className="coach-floor-focus__alert">
                   {currentFeed.error} {currentFeed.failureMeaning}
