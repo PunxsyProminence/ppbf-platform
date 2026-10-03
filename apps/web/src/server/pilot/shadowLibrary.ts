@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
@@ -732,6 +733,10 @@ export async function listShadowLibraryReviewQueue(input: {
          on c.organization_id = d.organization_id
         and c.document_id = d.document_id
        where d.organization_id = $1
+         -- A document filed against an athlete leaves the curator queue when
+         -- that athlete is deleted (deletion scope B, "10 C"); gym-wide
+         -- documents (subject_id null) are untouched.
+         and ${athleteNotDeletedSql('d', 'subject_id')}
        group by
          d.document_id,
          d.source_id,
