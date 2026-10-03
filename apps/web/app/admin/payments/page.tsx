@@ -130,6 +130,15 @@ function PaymentsSettings() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading payment settings...</span>
             </div>
+          ) : setup === null ? (
+            // Set only by a read that came back: without it, "not connected"
+            // and "Connect Stripe account" would be claims nobody read.
+            <div className="mat-leather rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-title">Payment settings could not be read</div>
+                <p className="empty-msg mx-auto">Whether a Stripe account is connected is unknown. Reload the page to try again.</p>
+              </div>
+            </div>
           ) : (
             <>
               <div className="grid gap-[var(--s4)] md:grid-cols-2">

@@ -1611,22 +1611,33 @@ export default function AdminCapabilitiesPage() {
                     )}
                     {switchboardCapabilities.map((capability) => {
                       const allowed = !!gymCapabilityAccess[capability.capabilityId];
+                      // Until the gym's access has been read, an absent entry is
+                      // not "not allowed": say what is unknown, and refuse a flip
+                      // the autosave would not keep.
+                      const accessUnread = !gymCapabilityHydrated;
                       return (
                         <div key={capability.capabilityId} className="flex items-center justify-between gap-3 border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-3">
                           <div>
                             <p className="t-command">{capability.capabilityId}</p>
-                            <p className="text-[length:var(--t-xs)] text-[var(--bone-400)]">Gym admins can {allowed ? 'toggle this capability' : 'not yet toggle this capability'}.</p>
+                            <p className="text-[length:var(--t-xs)] text-[var(--bone-400)]">
+                              {accessUnread
+                                ? gymCapabilityStoreError
+                                  ? 'Gym admin access could not be read.'
+                                  : 'Reading gym admin access...'
+                                : `Gym admins can ${allowed ? 'toggle this capability' : 'not yet toggle this capability'}.`}
+                            </p>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
+                            disabled={accessUnread}
                             className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
-                              allowed
+                              allowed && !accessUnread
                                 ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                 : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
-                            {allowed ? 'Enabled' : 'Disabled'}
+                            {accessUnread ? 'Unknown' : allowed ? 'Enabled' : 'Disabled'}
                           </button>
                         </div>
                       );
