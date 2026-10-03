@@ -1681,7 +1681,13 @@ export async function lockAthleteLoginForIntake(
  *
  * The athlete's account is written after this commits, outside the lock: from
  * then on the record is live, and the cleanup's retire statement refuses any
- * login a live record stands behind.
+ * login a live record stands behind. One window stays open: a named login
+ * that has no athlete_id yet is not linked until createOrUpdateAthleteAccount
+ * runs, so the cleanup can retire it in between. That write then refuses the
+ * deleted login (auth.ts), and the promotion answers 409 with the athlete
+ * record written and no login -- a half-done promotion, not a live record
+ * held by a deleted login. Closing it needs the account write inside this
+ * transaction, which is auth.ts's to change.
  */
 export async function writePromotedAthleteRecord(params: {
   organizationId: string;
