@@ -4,8 +4,8 @@
 
 /**
  * Which rung a pain severity is painted on. --locked means a medical stop and
- * nothing else (OD-2026-09-29-001); a high pain report is not one, so it must
- * not wear that badge. Critical stays on --locked until Jason rules otherwise.
+ * nothing else (OD-2026-09-29-001); a pain report is not one at any severity
+ * (Jason, 2026-10-03), so none of them may wear that badge.
  * Every surface that paints a severity is checked: the pain report card, the
  * escalation card, and the floor view that repeats both.
  */
@@ -98,7 +98,7 @@ test.each([
   ['high', 'badge--restricted'],
   ['moderate', 'badge--restricted'],
   ['low', 'badge--monitor'],
-  ['critical', 'badge--locked'],
+  ['critical', 'badge--restricted'],
 ])('a %s pain report and escalation are painted %s everywhere', async (severity, tone) => {
   const badges = await severityBadges(severity);
   // Pain card, escalation card, and the floor view's current item.
