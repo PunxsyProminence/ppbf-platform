@@ -26,7 +26,8 @@ describe('org quotes schema ownership', () => {
     const statements = code.match(/`[^`]*pilot\.org_quotes[^`]*`/g) ?? [];
     expect(statements.length).toBeGreaterThanOrEqual(4);
     for (const statement of statements) {
-      expect(statement).toMatch(/organization_id/);
+      // Reads and updates filter on the organization; the insert supplies it.
+      expect(statement).toMatch(/where\s+organization_id\s*=\s*\$1|insert into pilot\.org_quotes\s*\(\s*organization_id/);
     }
   });
 

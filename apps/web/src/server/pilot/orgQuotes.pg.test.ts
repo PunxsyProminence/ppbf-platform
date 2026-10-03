@@ -264,6 +264,57 @@ describe('org_quotes migration and orgQuotes.ts against the real schema', () => 
     await expect(quotes.createQuote({ organizationId: ORG_B, ...base })).resolves.toBeDefined();
   });
 
+  test('updateQuote can clear speaker and source to empty and change text, type and moments', async () => {
+    const made = await quotes.createQuote({
+      organizationId: ORG_A, quoteText: 'Edit me', speaker: 'Someone', quoteType: 'motivational',
+      source: 'Somewhere', shown: ['anywhere'], active: true,
+    });
+    const updated = await quotes.updateQuote(ORG_A, made.quote_id, {
+      quoteText: 'Edited', speaker: '', source: '', quoteType: 'boxing_quote',
+      shown: ['after-hard-session', 'after-hard-session'],
+    });
+    expect(updated).toMatchObject({
+      quote_text: 'Edited', speaker: '', source: '', quote_type: 'boxing_quote',
+      shown: ['after-hard-session'], active: true,
+    });
+  });
+
+  test('an edit that collides with another quote in the same organization is refused', async () => {
+    const [a, b] = (await quotes.listQuotes(SEEDED_ORG)).slice(0, 2);
+    await expect(quotes.updateQuote(SEEDED_ORG, a.quote_id, { quoteText: b.quote_text.toLowerCase() }))
+      .rejects.toThrow('already in the library');
+  });
+
+  test('over-length text, speaker and source are refused as validation errors', async () => {
+    const base = {
+      organizationId: ORG_A, quoteText: 'Length probe', speaker: '', quoteType: 'gym_saying' as const,
+      source: '', shown: ['anywhere' as const], active: true,
+    };
+    await expect(quotes.createQuote({ ...base, quoteText: 'x'.repeat(281) })).rejects.toThrow('limits');
+    await expect(quotes.createQuote({ ...base, speaker: 'x'.repeat(121) })).rejects.toThrow('limits');
+    await expect(quotes.createQuote({ ...base, source: 'x'.repeat(501) })).rejects.toThrow('limits');
+  });
+
+  test('re-running the migration skips a seed line whose words the gym now holds under another id', async () => {
+    const bare = await freshDatabase('ppbf_test_quotes_conflict', [SEEDED_ORG]);
+    try {
+      await applyMigrationTransaction(bare, migrationSql);
+      await bare.query(`delete from pilot.org_quotes where quote_text = 'NO HYPE. JUST WORK.'`);
+      await bare.query(
+        `insert into pilot.org_quotes (organization_id, quote_id, quote_text, quote_type, shown, active)
+         values ($1, gen_random_uuid(), 'NO HYPE. JUST WORK.', 'motivational', array['anywhere'], false)`,
+        [SEEDED_ORG],
+      );
+      await applyMigrationTransaction(bare, migrationSql);
+      const { rows } = await bare.query(
+        `select quote_type, active from pilot.org_quotes where quote_text = 'NO HYPE. JUST WORK.'`,
+      );
+      expect(rows).toEqual([{ quote_type: 'motivational', active: false }]);
+    } finally {
+      await bare.end();
+    }
+  });
+
   test('the table refuses a bad type, an empty moment list and blank text', async () => {
     const insert = (type: string, shown: string[], text: string) =>
       main.query(

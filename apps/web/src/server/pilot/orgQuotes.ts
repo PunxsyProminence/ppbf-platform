@@ -70,9 +70,16 @@ export async function listLiveQuotes(organizationId: string): Promise<OrgQuote[]
 }
 
 // 23505 = unique_violation: the same words are already in this gym's library.
+// 23514 = check_violation: a value outside the table's limits (blank or too
+// long text, an unknown type or moment). The routes validate first; this keeps
+// a limit they miss from surfacing as a raw database error.
 function rethrowDuplicate(error: unknown): never {
-  if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505') {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  if (code === '23505') {
     throw new ValidationError('That quote is already in the library.');
+  }
+  if (code === '23514') {
+    throw new ValidationError('That quote is outside the limits for a library entry.');
   }
   throw error;
 }
@@ -100,7 +107,7 @@ export async function createQuote(params: {
         params.speaker,
         params.quoteType,
         params.source,
-        params.shown,
+        [...new Set(params.shown)],
         params.active,
       ],
     );
@@ -148,7 +155,7 @@ export async function updateQuote(
         patch.speaker ?? null,
         patch.quoteType ?? null,
         patch.source ?? null,
-        patch.shown ?? null,
+        patch.shown ? [...new Set(patch.shown)] : null,
         patch.active ?? null,
       ],
     );
