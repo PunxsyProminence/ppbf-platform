@@ -17,7 +17,7 @@ const org = {
   brand: "Punxsy Prominence Boxing & Fitness",
   legalName: "Punxsy Prominence Boxing and Fitness",
   ein: "99-2073622",
-  url: "https://punxsyprominence.org",
+  url: "https://www.punxsyprominence.org",
   domain: "punxsyprominence.org",
   email: "admin@punxsyprominence.org",
   donationsEmail: "treasurer@punxsyprominence.org",

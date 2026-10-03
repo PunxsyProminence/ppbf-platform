@@ -79,7 +79,7 @@ test('JSON-LD matches the visible facts', () => {
   expect(text).toContain(`EIN ${ld.taxID}`);
   expect(ld.taxID).toBe('99-2073622');
   expect(ld.nonprofitStatus).toBe('https://schema.org/Nonprofit501c3');
-  expect(ld.url).toBe('https://punxsyprominence.org/');
+  expect(ld.url).toBe('https://www.punxsyprominence.org/');
   expect(ld.email).toBe('admin@punxsyprominence.org');
   expect(text).toContain(ld.email);
   expect(text).toContain(ld.name);
@@ -93,9 +93,9 @@ test('JSON-LD matches the visible facts', () => {
   expect(about).toContain(ld.areaServed.name);
 });
 
-test('canonical and metadataBase use the bare domain', () => {
-  expect(metadata.alternates?.canonical).toBe('https://punxsyprominence.org/');
-  expect(String(rootMetadata.metadataBase)).toBe('https://punxsyprominence.org/');
+test('canonical and metadataBase use the www address', () => {
+  expect(metadata.alternates?.canonical).toBe('https://www.punxsyprominence.org/');
+  expect(String(rootMetadata.metadataBase)).toBe('https://www.punxsyprominence.org/');
 });
 
 test('the share-card alt text claims youth are free, not every family', () => {
