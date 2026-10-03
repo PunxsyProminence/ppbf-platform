@@ -619,6 +619,10 @@ describe('the add-athlete form', () => {
     expect(await screen.findByText(/Account already exists/i)).toBeTruthy();
     expect(recordPosts).toHaveLength(1);
     expect(recordPosts[0].athlete_id).toBe('ath-002');
+    // The row's creation time is the server's clock, not this device's: the
+    // page must not send one for the route to be tempted by.
+    expect(recordPosts[0]).not.toHaveProperty('created_at');
+    expect(recordPosts[0]).not.toHaveProperty('updated_at');
 
     // The reload has put ath-002 on the roster. The field must still hold it,
     // locked, rather than having moved on to ath-003.

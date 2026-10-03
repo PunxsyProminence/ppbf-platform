@@ -701,13 +701,12 @@ function PeopleConsoleContent() {
 
   /**
    * Writes the pilot.athletes row. The validator rejects the payload outright
-   * if any key is absent or extra, so all ten fields are sent every time and
+   * if any key is absent or extra, so all eight fields are sent every time and
    * none of them may be blank -- the form enforces that client-side because a
-   * blank one comes back as an opaque 500, not a field-level complaint.
+   * blank one comes back as an opaque 500, not a field-level complaint. The
+   * row's created_at and updated_at are the server's clock, so neither is sent.
    */
   async function createAthleteRecord(recordId: string) {
-    const timestamp = new Date().toISOString();
-
     const response = await fetch(`${apiBase()}/api/pilot/athletes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -721,8 +720,6 @@ function PeopleConsoleContent() {
         emergency_contact: athleteEmergencyContact.trim(),
         active_flag: true,
         coach_id: athleteCoachId,
-        created_at: timestamp,
-        updated_at: timestamp,
       }),
     });
 
