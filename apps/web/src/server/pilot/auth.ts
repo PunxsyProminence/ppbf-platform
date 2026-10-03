@@ -806,96 +806,122 @@ export async function createOrUpdateAthleteAccount(
   maybeOrganizationId?: string,
 ): Promise<void> {
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
+  await withTransaction((client) => createOrUpdateAthleteAccountWithClient(client, accountId, athleteId, organizationId));
+}
 
-  // A second login for this athlete record, refused by the table's unique
-  // constraint inside either write, becomes the 409 the pre-write check gives.
-  const refuseSecondLogin = (error: unknown): never => {
+/**
+ * createOrUpdateAthleteAccount on the caller's transaction. Intake promotion
+ * calls this so the athlete's login is written in the same transaction, and
+ * under the same athlete-login lock, as the athlete record and the rest of the
+ * promotion: a promotion that fails after this runs leaves no login behind,
+ * and the account cleanup cannot retire the login between the record and the
+ * link (OD-2026-10-03-002 section 5).
+ *
+ * Every statement runs on `client`, the existence read included. A statement
+ * on another pooled connection could wait on a row this transaction has
+ * locked, and Postgres would not see that wait as a deadlock.
+ */
+export async function createOrUpdateAthleteAccountWithClient(
+  client: PoolClient,
+  accountId: string,
+  athleteId: string,
+  organizationId: string,
+): Promise<void> {
+  try {
+    await writeAthleteAccount(client, accountId, athleteId, organizationId);
+  } catch (error) {
+    // A second login for this athlete record, refused by the table's unique
+    // constraint inside either write, becomes the 409 the pre-write check
+    // gives.
     throw athleteAlreadyHasLoginConflict(error, athleteId);
-  };
+  }
+}
 
+async function writeAthleteAccount(
+  client: PoolClient,
+  accountId: string,
+  athleteId: string,
+  organizationId: string,
+): Promise<void> {
   // Check if account exists and verify ownership
-  const existingAccount = await query<{ organization_id: string }>(
+  const existingAccount = await client.query<{ organization_id: string }>(
     'select organization_id from pilot.accounts where account_id = $1',
     [accountId]
   );
 
-  if (existingAccount.length > 0) {
-    const existingOrgId = existingAccount[0].organization_id;
+  if (existingAccount.rows.length > 0) {
+    const existingOrgId = existingAccount.rows[0].organization_id;
     if (existingOrgId !== organizationId) {
       // Account exists in a different organization—reject to prevent cross-tenant takeover
       throw new Error('Account already exists in another organization');
     }
 
-    await withTransaction(async (client) => {
-      // Same organization—update is allowed. The PIN is changing, so revoke
-      // every existing session for this account in the same transaction.
-      //
-      // Only an athlete login that is bound to no athlete record, or already
-      // to this one, is updated. Without the last two conditions this update
-      // turned a coach's, parent's or admin's login into a locked athlete
-      // login, and re-bound another child's login to this child's record.
-      // intake.ts's assertAthleteAccountIdProvisionable refuses both before
-      // promotion's first write; this holds the rule in the write itself, so
-      // a change between that check and this statement is still refused.
-      //
-      // Nor a login marked deleted: this update left deleted_at set, so the
-      // re-provisioned login could never sign in. A re-enrolled athlete gets a
-      // new login and the deleted one stays deleted (OD-2026-09-30-004 e1).
-      const updated = await client.query<{ account_id: string }>(
-        `update pilot.accounts a set
-           role = $1,
-           athlete_id = $2,
-           pin_hash = $3,
-           active_flag = $4,
-           updated_at = now()
-         where account_id = $5 and organization_id = $6
-           and role = 'athlete'
-           and (athlete_id is null or athlete_id = $2)
-           and not ${accountDeletedSql('a')}
-         returning account_id`,
-        ['athlete', athleteId, null, false, accountId, organizationId],
-      );
+    // Same organization—update is allowed. The PIN is changing, so revoke
+    // every existing session for this account in the same transaction.
+    //
+    // Only an athlete login that is bound to no athlete record, or already
+    // to this one, is updated. Without the last two conditions this update
+    // turned a coach's, parent's or admin's login into a locked athlete
+    // login, and re-bound another child's login to this child's record.
+    // intake.ts's assertAthleteAccountIdProvisionable refuses both before
+    // promotion's first write; this holds the rule in the write itself, so
+    // a change between that check and this statement is still refused.
+    //
+    // Nor a login marked deleted: this update left deleted_at set, so the
+    // re-provisioned login could never sign in. A re-enrolled athlete gets a
+    // new login and the deleted one stays deleted (OD-2026-09-30-004 e1).
+    const updated = await client.query<{ account_id: string }>(
+      `update pilot.accounts a set
+         role = $1,
+         athlete_id = $2,
+         pin_hash = $3,
+         active_flag = $4,
+         updated_at = now()
+       where account_id = $5 and organization_id = $6
+         and role = 'athlete'
+         and (athlete_id is null or athlete_id = $2)
+         and not ${accountDeletedSql('a')}
+       returning account_id`,
+      ['athlete', athleteId, null, false, accountId, organizationId],
+    );
 
-      if (updated.rows.length === 0) {
-        // Thrown inside the transaction, so nothing below runs and nothing is
-        // committed. Worded to be true for every way the where clause can
-        // miss, since this statement cannot tell which one it was.
-        throw new ConflictError(
-          `Conflict: account_id "${accountId}" cannot be made the login for athlete record "${athleteId}". `
-          + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
-          + 'or already to this one, can be. Use a different account_id.',
-          'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
-        );
-      }
-      await client.query(
-        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-         values ($1, $2, 'athlete', false)
-         on conflict (account_id, organization_id) do update
-           set role = 'athlete',
-               active_flag = false,
-               updated_at = now()`,
-        [accountId, organizationId],
+    if (updated.rows.length === 0) {
+      // Thrown inside the transaction, so nothing below runs and nothing is
+      // committed. Worded to be true for every way the where clause can
+      // miss, since this statement cannot tell which one it was.
+      throw new ConflictError(
+        `Conflict: account_id "${accountId}" cannot be made the login for athlete record "${athleteId}". `
+        + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
+        + 'or already to this one, can be. Use a different account_id.',
+        'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
       );
-      await revokeAllSessionsForAccountTx(client, accountId);
-    }).catch(refuseSecondLogin);
+    }
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = false,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
+    await revokeAllSessionsForAccountTx(client, accountId);
   } else {
-    await withTransaction(async (client) => {
-      // New account—create it
-      await client.query(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [accountId, 'athlete', organizationId, athleteId, null, false, false],
-      );
-      await client.query(
-        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-         values ($1, $2, 'athlete', false)
-         on conflict (account_id, organization_id) do update
-           set role = 'athlete',
-               active_flag = false,
-               updated_at = now()`,
-        [accountId, organizationId],
-      );
-    }).catch(refuseSecondLogin);
+    // New account—create it
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [accountId, 'athlete', organizationId, athleteId, null, false, false],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = false,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
   }
 }
 

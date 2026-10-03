@@ -1,13 +1,26 @@
 import {
   INTAKE_CHUNK_TARGET_LENGTH,
   INTAKE_MAX_TEXT_LENGTH,
+  INTAKE_METHOD,
+  PDF_READ_MAX_BYTES,
+  TEXT_ORIGIN_PDF_PAGE,
+  isTextFromPage,
   normalizeIntakeText,
+  pdfPageLocator,
+  readLibraryPdf,
   rejoinIntakeChunks,
   splitIntakeText,
   submitLibraryTextIntake,
   validateIntakeInput,
   type IntakeInput,
 } from './libraryTextIntake';
+import { MANUAL_TEXT_INTAKE_COMPLETE_SQL } from '@/src/server/pilot/shadowLibrary';
+import { LIBRARY_PDF_MAX_BYTES } from '@/src/server/pilot/libraryPdfText';
+
+// RINT-02 imports the server's gate SQL and size limit only to pin the client
+// to them. Neither module's heavy dependency is wanted here.
+jest.mock('pdf-parse', () => ({ PDFParse: class {} }));
+jest.mock('@/src/server/pilot/db', () => ({}));
 
 // What these pin (RINT-01): the split is mechanical and lossless, ordinals are
 // contiguous from 0, the document is written once and before any chunk, the
@@ -236,5 +249,218 @@ describe('submitLibraryTextIntake', () => {
     const { impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 409 }));
     const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
     expect(result).toMatchObject({ ok: false, writtenChunks: 0, resume: { nextOrdinal: 0 } });
+  });
+});
+
+// ---- RINT-02: the PDF path -------------------------------------------------
+// A PDF-sourced excerpt is written through the SAME two routes as a pasted one
+// and keeps intake_method 'manual_text' (the only value the completeness gate
+// keys on), its origin in a separate key; the excerpt must be words from the
+// chosen page; and the reader call sends the file to the reader route only.
+
+const PAGE_TEXT = 'Session RPE tracked training\nload in adolescent boxers  across a twelve week block.';
+const NOT_ON_PAGE = 'NOT ON PAGE (test sentence)';
+
+function pdfInput(overrides: Partial<IntakeInput> = {}): IntakeInput {
+  return {
+    sourceId: 'source_abc',
+    documentName: 'Methods',
+    locator: 'p. 12',
+    text: PAGE_TEXT,
+    pdfPage: { num: 12, text: PAGE_TEXT, notOnPageMessage: NOT_ON_PAGE },
+    ...overrides,
+  };
+}
+
+interface PdfCall {
+  url: string;
+  body: Record<string, unknown>;
+}
+
+function jsonFetch() {
+  const calls: PdfCall[] = [];
+  const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const call: PdfCall = { url: String(input), body: JSON.parse(String(init?.body)) };
+    calls.push(call);
+    const isDocument = call.url.endsWith('/library/documents');
+    return {
+      status: 201,
+      ok: true,
+      json: async () => (isDocument ? { ok: true, document: { document_id: 'doc_1' } } : { ok: true }),
+    } as Response;
+  }) as typeof fetch;
+  return { calls, impl };
+}
+
+describe('isTextFromPage', () => {
+  it('accepts the whole page, a trimmed span, and the page with its whitespace changed', () => {
+    expect(isTextFromPage(PAGE_TEXT, PAGE_TEXT)).toBe(true);
+    expect(isTextFromPage('boxers across a twelve week', PAGE_TEXT)).toBe(true);
+    expect(isTextFromPage('  Session RPE   tracked\ntraining ', PAGE_TEXT)).toBe(true);
+  });
+
+  it('refuses reworded, retyped or empty text', () => {
+    expect(isTextFromPage('Session RPE followed training load', PAGE_TEXT)).toBe(false);
+    expect(isTextFromPage('boxers across a thirteen week block', PAGE_TEXT)).toBe(false);
+    expect(isTextFromPage('   ', PAGE_TEXT)).toBe(false);
+  });
+});
+
+describe('pdfPageLocator', () => {
+  it('names the page the way a citation does', () => {
+    expect(pdfPageLocator(12)).toBe('p. 12');
+  });
+});
+
+describe('validateIntakeInput with a PDF page', () => {
+  it('passes words from the page and refuses anything else with the panel\'s sentence', () => {
+    expect(validateIntakeInput(pdfInput())).toBeNull();
+    expect(validateIntakeInput(pdfInput({ text: 'boxers across a twelve week' }))).toBeNull();
+    expect(validateIntakeInput(pdfInput({ text: 'an invented sentence' }))).toBe(NOT_ON_PAGE);
+  });
+
+  it('leaves a pasted entry (no pdfPage) alone', () => {
+    expect(validateIntakeInput(pdfInput({ pdfPage: undefined, text: 'an invented sentence' }))).toBeNull();
+  });
+});
+
+describe('submitLibraryTextIntake with a PDF page', () => {
+  it('writes the document and chunks through the RINT-01 routes, intake_method manual_text, origin in its own key', async () => {
+    const { calls, impl } = jsonFetch();
+
+    const result = await submitLibraryTextIntake('', pdfInput(), { fetchImpl: impl });
+
+    expect(result).toMatchObject({ ok: true, documentId: 'doc_1' });
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/pilot/shadow/library/documents',
+      '/api/pilot/shadow/library/chunks',
+    ]);
+    expect(calls[0].body.metadata).toEqual({
+      intake_method: 'manual_text',
+      text_origin: 'pdf_page',
+      locator: 'p. 12',
+      chunk_count: 1,
+      text_length: PAGE_TEXT.length,
+    });
+    expect(calls[1].body.metadata).toMatchObject({ intake_method: 'manual_text', locator: 'p. 12' });
+  });
+
+  it('sends nothing at all when the text is not from the page', async () => {
+    const { calls, impl } = jsonFetch();
+
+    const result = await submitLibraryTextIntake('', pdfInput({ text: 'an invented sentence' }), { fetchImpl: impl });
+
+    expect(result).toMatchObject({ ok: false, message: NOT_ON_PAGE, resume: null });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a pasted entry carries no text_origin', async () => {
+    const { calls, impl } = jsonFetch();
+
+    await submitLibraryTextIntake('', pdfInput({ pdfPage: undefined }), { fetchImpl: impl });
+
+    expect(calls[0].body.metadata).not.toHaveProperty('text_origin');
+    expect((calls[0].body.metadata as Record<string, unknown>).intake_method).toBe('manual_text');
+  });
+});
+
+describe('MUST NOT CHANGE: a PDF excerpt is still held to the completeness gate', () => {
+  it('uses the exact intake_method value the gate SQL keys on', () => {
+    // MANUAL_TEXT_INTAKE_COMPLETE_SQL applies its chunk-count check only when
+    // metadata.intake_method = <this literal>; any other value passes the gate
+    // unchecked, which would let a half-saved PDF excerpt be indexed.
+    const gateLiteral = /intake_method'\s+is distinct from\s+'([^']+)'/.exec(MANUAL_TEXT_INTAKE_COMPLETE_SQL)?.[1];
+    expect(gateLiteral).toBe('manual_text');
+    expect(INTAKE_METHOD).toBe(gateLiteral);
+    expect(TEXT_ORIGIN_PDF_PAGE).not.toBe(INTAKE_METHOD);
+  });
+
+  it('writes the document metadata the gate reads: that intake_method and a chunk_count it accepts', async () => {
+    const { calls, impl } = jsonFetch();
+    await submitLibraryTextIntake('', pdfInput(), { fetchImpl: impl });
+    const metadata = calls[0].body.metadata as Record<string, unknown>;
+
+    expect(metadata.intake_method).toBe(/is distinct from\s+'([^']+)'/.exec(MANUAL_TEXT_INTAKE_COMPLETE_SQL)?.[1]);
+    const countPattern = /chunk_count'\s+~\s+'([^']+)'/.exec(MANUAL_TEXT_INTAKE_COMPLETE_SQL)?.[1];
+    expect(countPattern).toBeDefined();
+    expect(new RegExp(countPattern as string).test(String(metadata.chunk_count))).toBe(true);
+  });
+
+  it('the file-size limit here is the server\'s', () => {
+    expect(PDF_READ_MAX_BYTES).toBe(LIBRARY_PDF_MAX_BYTES);
+  });
+});
+
+describe('readLibraryPdf', () => {
+  function pdfFile(size?: number): File {
+    const file = new File(['%PDF-1.7 body'], 'paper.pdf', { type: 'application/pdf' });
+    if (size !== undefined) Object.defineProperty(file, 'size', { value: size });
+    return file;
+  }
+
+  function answer(status: number, json: unknown) {
+    const seen: { url: string; init: RequestInit | undefined }[] = [];
+    const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), init });
+      return { status, ok: status < 400, json: async () => json } as Response;
+    }) as typeof fetch;
+    return { seen, impl };
+  }
+
+  it('posts the file as multipart to the reader route only, and returns the pages', async () => {
+    const { seen, impl } = answer(200, {
+      ok: true,
+      pages: [{ num: 1, text: 'one' }, { num: 2, text: '' }],
+    });
+
+    const result = await readLibraryPdf('https://app.test', pdfFile(), { fetchImpl: impl });
+
+    expect(result).toEqual({
+      ok: true,
+      pages: [{ num: 1, text: 'one' }, { num: 2, text: '' }],
+      emptyPageCount: 1,
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].url).toBe('https://app.test/api/pilot/shadow/library/pdf-text');
+    expect(seen[0].init?.method).toBe('POST');
+    expect(seen[0].init?.body).toBeInstanceOf(FormData);
+    expect((seen[0].init?.body as FormData).get('file')).toBeInstanceOf(File);
+    // The browser must set the boundary itself.
+    expect(seen[0].init?.headers).toBeUndefined();
+  });
+
+  it('does not even send a file over the limit', async () => {
+    const { seen, impl } = answer(200, { ok: true, pages: [] });
+
+    const result = await readLibraryPdf('', pdfFile(PDF_READ_MAX_BYTES + 1), { fetchImpl: impl });
+
+    expect(result).toEqual({ ok: false, status: 413, serverMessage: null });
+    expect(seen).toHaveLength(0);
+  });
+
+  it('passes on the route\'s own sentence for a refusal', async () => {
+    const { impl } = answer(422, { ok: false, error: 'That PDF could not be read.' });
+
+    expect(await readLibraryPdf('', pdfFile(), { fetchImpl: impl })).toEqual({
+      ok: false,
+      status: 422,
+      serverMessage: 'That PDF could not be read.',
+    });
+  });
+
+  it('reports status and no message for a refusal without one', async () => {
+    const { impl } = answer(403, null);
+
+    expect(await readLibraryPdf('', pdfFile(), { fetchImpl: impl })).toEqual({ ok: false, status: 403, serverMessage: null });
+  });
+
+  it('never throws: no answer is status 0, and a malformed page list is a failure', async () => {
+    const down = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
+    expect(await readLibraryPdf('', pdfFile(), { fetchImpl: down })).toEqual({ ok: false, status: 0, serverMessage: null });
+
+    const { impl } = answer(200, { ok: true, pages: [{ num: 'one', text: 5 }] });
+    expect(await readLibraryPdf('', pdfFile(), { fetchImpl: impl })).toMatchObject({ ok: false });
   });
 });

@@ -17,8 +17,8 @@ jest.mock('./security', () => ({
   verifyPin: jest.fn(),
 }));
 
-import { createAthleteAccount, createOrUpdateAthleteAccount } from './auth';
-import { query } from './db';
+import { createAthleteAccount, createOrUpdateAthleteAccount, createOrUpdateAthleteAccountWithClient } from './auth';
+import { query, withTransaction } from './db';
 import { ConflictError } from './errors';
 
 const mockQuery = query as jest.Mock;
@@ -31,39 +31,52 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// The existence read and the writes all run on one client: the transaction
+// createOrUpdateAthleteAccount opens, or, through
+// createOrUpdateAthleteAccountWithClient, intake promotion's own
+// (OD-2026-10-03-002 section 5). The first query is the existence read.
 describe('createOrUpdateAthleteAccount', () => {
+  function existingAccount(rows: Array<{ organization_id: string }>) {
+    currentClient.query.mockResolvedValueOnce({ rows });
+  }
+
   test('inserts a new pending athlete account and assigns inactive membership when none exists yet', async () => {
-    mockQuery.mockResolvedValueOnce([]); // no existing account
-
-    await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
-
-    expect(currentClient.query).toHaveBeenCalledTimes(2);
-
-    const [insertSql, insertParams] = currentClient.query.mock.calls[0];
-    expect(insertSql).toContain('insert into pilot.accounts');
-    expect(insertParams).toEqual(['acct_1', 'athlete', 'org_1', 'athlete_1', null, false, false]);
-
-    const [membershipSql, membershipParams] = currentClient.query.mock.calls[1];
-    expect(membershipSql).toContain('pilot.organization_memberships');
-    expect(membershipParams).toEqual(['acct_1', 'org_1']);
-  });
-
-  test('updates the existing account to pending state, reassigns inactive membership, and revokes sessions on rerun', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]); // existing account
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_1' }] }); // the update wrote it
+    existingAccount([]);
 
     await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
 
     expect(currentClient.query).toHaveBeenCalledTimes(3);
 
-    const [updateSql, updateParams] = currentClient.query.mock.calls[0];
+    const [selectSql, selectParams] = currentClient.query.mock.calls[0];
+    expect(selectSql).toContain('select organization_id from pilot.accounts');
+    expect(selectParams).toEqual(['acct_1']);
+
+    const [insertSql, insertParams] = currentClient.query.mock.calls[1];
+    expect(insertSql).toContain('insert into pilot.accounts');
+    expect(insertParams).toEqual(['acct_1', 'athlete', 'org_1', 'athlete_1', null, false, false]);
+
+    const [membershipSql, membershipParams] = currentClient.query.mock.calls[2];
+    expect(membershipSql).toContain('pilot.organization_memberships');
+    expect(membershipParams).toEqual(['acct_1', 'org_1']);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('updates the existing account to pending state, reassigns inactive membership, and revokes sessions on rerun', async () => {
+    existingAccount([{ organization_id: 'org_1' }]);
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_1' }] }); // the update wrote it
+
+    await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
+
+    expect(currentClient.query).toHaveBeenCalledTimes(4);
+
+    const [updateSql, updateParams] = currentClient.query.mock.calls[1];
     expect(updateSql).toContain('update pilot.accounts');
     expect(updateParams).toEqual(['athlete', 'athlete_1', null, false, 'acct_1', 'org_1']);
 
-    const [membershipSql] = currentClient.query.mock.calls[1];
+    const [membershipSql] = currentClient.query.mock.calls[2];
     expect(membershipSql).toContain('pilot.organization_memberships');
 
-    const [revokeSql, revokeParams] = currentClient.query.mock.calls[2];
+    const [revokeSql, revokeParams] = currentClient.query.mock.calls[3];
     expect(revokeSql).toContain('pilot.session_tokens');
     expect(revokeParams).toEqual(['acct_1']);
   });
@@ -72,12 +85,12 @@ describe('createOrUpdateAthleteAccount', () => {
   // this one. It used to turn a coach's, parent's or admin's login into a
   // locked athlete login, and re-bind another child's login to this child.
   test('the update is held to an athlete login that is unbound or already this athlete\'s', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]);
+    existingAccount([{ organization_id: 'org_1' }]);
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_1' }] });
 
     await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
 
-    const [updateSql] = currentClient.query.mock.calls[0];
+    const [updateSql] = currentClient.query.mock.calls[1];
     const normalized = String(updateSql).replace(/\s+/g, ' ');
     expect(normalized).toContain(
       "where account_id = $5 and organization_id = $6 and role = 'athlete' and (athlete_id is null or athlete_id = $2)",
@@ -86,7 +99,7 @@ describe('createOrUpdateAthleteAccount', () => {
   });
 
   test('when the update touches no row, it is refused 409 and nothing else runs', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]);
+    existingAccount([{ organization_id: 'org_1' }]);
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // coach's login, or another child's
 
     const refusal = await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1').then(
@@ -103,7 +116,7 @@ describe('createOrUpdateAthleteAccount', () => {
     );
     // No membership write and no session revocation: the coach, or the other
     // child, keeps their sessions.
-    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(currentClient.query).toHaveBeenCalledTimes(2);
   });
 
   // OD-2026-09-29-002 item 4: the one-login-per-athlete constraint, under
@@ -112,7 +125,7 @@ describe('createOrUpdateAthleteAccount', () => {
   test.each(['accounts_organization_id_athlete_id_key', 'uq_pilot_accounts_org_athlete'])(
     'a new login refused by %s is a 409, not a raw unique violation',
     async (constraint) => {
-      mockQuery.mockResolvedValueOnce([]);
+      existingAccount([]);
       currentClient.query.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505', constraint }));
 
       await expect(createOrUpdateAthleteAccount('acct_2', 'athlete_1', 'org_1')).rejects.toMatchObject({
@@ -122,8 +135,24 @@ describe('createOrUpdateAthleteAccount', () => {
     },
   );
 
+  test('the caller\'s-transaction form maps the same violation, on the client it is given', async () => {
+    const callerClient = fakeClient();
+    callerClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(
+        Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'uq_pilot_accounts_org_athlete' }),
+      );
+
+    await expect(
+      createOrUpdateAthleteAccountWithClient(callerClient as never, 'acct_2', 'athlete_1', 'org_1'),
+    ).rejects.toMatchObject({ status: 409, code: 'ATHLETE_ALREADY_HAS_LOGIN' });
+    expect(callerClient.query).toHaveBeenCalledTimes(2);
+    expect(currentClient.query).not.toHaveBeenCalled();
+    expect(withTransaction).not.toHaveBeenCalled();
+  });
+
   test('any other unique violation is passed on unchanged', async () => {
-    mockQuery.mockResolvedValueOnce([]);
+    existingAccount([]);
     const other = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'accounts_pkey' });
     currentClient.query.mockRejectedValueOnce(other);
 
@@ -131,13 +160,15 @@ describe('createOrUpdateAthleteAccount', () => {
   });
 
   test('rejects reassigning an account that belongs to another organization', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_other' }]);
+    existingAccount([{ organization_id: 'org_other' }]);
 
     await expect(createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1')).rejects.toThrow(
       'Account already exists in another organization',
     );
 
-    expect(currentClient.query).not.toHaveBeenCalled();
+    // The existence read only: nothing written.
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(currentClient.query.mock.calls[0][0]).toContain('select organization_id from pilot.accounts');
   });
 });
 

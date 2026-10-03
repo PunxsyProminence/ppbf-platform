@@ -10,7 +10,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import LibraryTextIntakePanel from './LibraryTextIntakePanel';
+import LibraryTextIntakePanel, { PDF_WORDS } from './LibraryTextIntakePanel';
 import { splitIntakeText } from '@/src/client/libraryTextIntake';
 
 const SOURCES = [
@@ -141,5 +141,183 @@ describe('LibraryTextIntakePanel', () => {
     expect(screen.queryByLabelText('Source text')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByRole('status').textContent).toContain('Register one under General Research Intake first');
+  });
+});
+
+// ---- RINT-02: reading a PDF -------------------------------------------------
+// What these pin at the screen: choosing a PDF lists its pages (a page with no
+// text has no button); "Use this page" fills the excerpt and its page; a
+// trimmed span saves through the same two routes with intake_method
+// manual_text; retyped words are refused with nothing sent; a refusal from the
+// reader is shown, not swallowed; and the PDF is never sent anywhere but the
+// reader route.
+
+
+const PAGE_ONE = 'First page, about hydration and weight.';
+const PAGE_TWO = 'Session RPE tracked training load in adolescent boxers across a twelve week block, and the agreement held.';
+
+interface PdfCall {
+  url: string;
+  isForm: boolean;
+  body: Record<string, unknown> | null;
+}
+
+function installPdfFetch(readerAnswer: { status: number; json?: unknown }) {
+  const calls: PdfCall[] = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const isForm = init?.body instanceof FormData;
+    calls.push({ url, isForm, body: isForm ? null : JSON.parse(String(init?.body)) });
+    if (url.endsWith('/library/pdf-text')) {
+      return { status: readerAnswer.status, ok: readerAnswer.status < 400, json: async () => readerAnswer.json ?? {} } as Response;
+    }
+    const isDocument = url.endsWith('/library/documents');
+    return {
+      status: 201,
+      ok: true,
+      json: async () => (isDocument ? { ok: true, document: { document_id: 'doc_pdf' } } : { ok: true }),
+    } as Response;
+  }) as unknown as typeof fetch;
+  return calls;
+}
+
+const READER_OK = {
+  status: 200,
+  json: {
+    ok: true,
+    page_count: 3,
+    empty_page_count: 1,
+    pages: [
+      { num: 1, text: PAGE_ONE },
+      { num: 2, text: PAGE_TWO },
+      { num: 3, text: '' },
+    ],
+  },
+};
+
+async function choosePdf() {
+  const file = new File(['%PDF-1.7 body'], 'paper.pdf', { type: 'application/pdf' });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(PDF_WORDS.fileLabel), { target: { files: [file] } });
+  });
+}
+
+describe('LibraryTextIntakePanel: reading a PDF (RINT-02)', () => {
+  it('lists the pages, gives a page with no text no button, and sends the file only to the reader route', async () => {
+    const calls = installPdfFetch(READER_OK);
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    await choosePdf();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain('/api/pilot/shadow/library/pdf-text');
+    expect(calls[0].isForm).toBe(true);
+    expect(screen.getByText(PDF_WORDS.page(1))).toBeTruthy();
+    expect(screen.getByText(PDF_WORDS.page(3))).toBeTruthy();
+    expect(screen.getByText(PDF_WORDS.pageEmpty)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /^Use this page/ })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: `${PDF_WORDS.usePage}: ${PDF_WORDS.page(3)}` })).toBeNull();
+  });
+
+  it('puts the page in the excerpt with its page filled in, and saves it as manual_text with its origin', async () => {
+    const calls = installPdfFetch(READER_OK);
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_a' } });
+    fireEvent.change(screen.getByLabelText('Excerpt label'), { target: { value: 'Agreement' } });
+    await choosePdf();
+    await click(`${PDF_WORDS.usePage}: ${PDF_WORDS.page(2)}`);
+
+    expect((screen.getByLabelText('Source text') as HTMLTextAreaElement).value).toBe(PAGE_TWO);
+    expect((screen.getByLabelText('Where in the source') as HTMLInputElement).value).toBe('p. 2');
+
+    await click('Save to Library as pending');
+
+    const writes = calls.slice(1);
+    expect(writes.map((call) => call.url.split('/library/')[1])).toEqual(['documents', 'chunks']);
+    expect(writes.every((call) => !call.isForm)).toBe(true);
+    expect(writes[0].body).toMatchObject({
+      source_id: 'source_a',
+      document_name: 'Agreement',
+      metadata: { intake_method: 'manual_text', text_origin: 'pdf_page', locator: 'p. 2' },
+    });
+    expect(writes[1].body).toMatchObject({ text_content: PAGE_TWO });
+    expect(calls.some((call) => call.url.includes('/evidence/review'))).toBe(false);
+    expect(screen.getByRole('status').textContent).toContain('Pending Review');
+    // The PDF stays for the next excerpt; the page link does not.
+    expect(screen.getAllByRole('button', { name: /^Use this page/ })).toHaveLength(2);
+    expect((screen.getByLabelText('Source text') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('saves a trimmed span of the page', async () => {
+    const calls = installPdfFetch(READER_OK);
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    fillForm();
+    await choosePdf();
+    await click(`${PDF_WORDS.usePage}: ${PDF_WORDS.page(2)}`);
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'adolescent boxers across a twelve week block' } });
+    expect(screen.queryByText(PDF_WORDS.notOnPage(2))).toBeNull();
+    await click('Save to Library as pending');
+
+    expect(calls[1].body).toMatchObject({ metadata: { intake_method: 'manual_text', text_origin: 'pdf_page' } });
+    expect(calls[2].body).toMatchObject({ text_content: 'adolescent boxers across a twelve week block' });
+  });
+
+  it('refuses retyped words, says so, and sends nothing', async () => {
+    const calls = installPdfFetch(READER_OK);
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    fillForm();
+    await choosePdf();
+    await click(`${PDF_WORDS.usePage}: ${PDF_WORDS.page(2)}`);
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Session RPE followed load in teen boxers.' } });
+
+    expect(screen.getAllByText(PDF_WORDS.notOnPage(2)).length).toBeGreaterThan(0);
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1);
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent === PDF_WORDS.notOnPage(2))).toBe(true);
+  });
+
+  it('Clear PDF drops the pages and the link, so pasted text saves without an origin', async () => {
+    const calls = installPdfFetch(READER_OK);
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    fillForm();
+    await choosePdf();
+    await click(`${PDF_WORDS.usePage}: ${PDF_WORDS.page(2)}`);
+    await click(PDF_WORDS.clear);
+
+    expect(screen.queryByText(PDF_WORDS.page(2))).toBeNull();
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Typed afterwards, not on any page.' } });
+    await click('Save to Library as pending');
+
+    expect(calls[1].body?.metadata).not.toHaveProperty('text_origin');
+    expect(calls[1].body?.metadata).toMatchObject({ intake_method: 'manual_text' });
+  });
+
+  it('says a scan has no readable text and offers no pages', async () => {
+    installPdfFetch({ status: 200, json: { ok: true, page_count: 1, empty_page_count: 1, pages: [{ num: 1, text: '' }] } });
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    await choosePdf();
+
+    expect(screen.getByRole('alert').textContent).toBe(PDF_WORDS.noText);
+    expect(screen.queryByText(PDF_WORDS.page(1))).toBeNull();
+  });
+
+  it.each([
+    [413, null, PDF_WORDS.limit],
+    [401, null, PDF_WORDS.signIn],
+    [403, null, PDF_WORDS.forbidden],
+    [500, null, PDF_WORDS.readFailed],
+    [422, { ok: false, error: 'That PDF could not be read.' }, 'That PDF could not be read.'],
+  ])('shows a %s from the reader instead of swallowing it', async (status, json, expected) => {
+    installPdfFetch({ status, json });
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    await choosePdf();
+
+    expect(screen.getByRole('alert').textContent).toBe(expected);
+    expect(screen.queryByRole('button', { name: /^Use this page/ })).toBeNull();
+  });
+
+  it('shows no PDF reader when the gym has no registered source', () => {
+    render(<LibraryTextIntakePanel sources={[]} />);
+    expect(screen.queryByLabelText(PDF_WORDS.fileLabel)).toBeNull();
   });
 });

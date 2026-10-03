@@ -25,6 +25,17 @@ export const INTAKE_MAX_TEXT_LENGTH = 48_000;
 
 export const INTAKE_METHOD = 'manual_text';
 
+// Where a PDF-sourced excerpt says it came from (RINT-02). This is a SEPARATE
+// metadata key on purpose, never a different intake_method: the completeness
+// gate in shadowLibrary.ts (MANUAL_TEXT_INTAKE_COMPLETE_SQL) runs only when
+// intake_method is exactly 'manual_text', so a PDF excerpt must keep that value
+// to keep being held to it. libraryTextIntake.test.ts pins both.
+export const TEXT_ORIGIN_PDF_PAGE = 'pdf_page';
+
+// Mirrors LIBRARY_PDF_MAX_BYTES in the server's libraryPdfText.ts (a client
+// file cannot import it: it pulls in the parser). The route test pins them equal.
+export const PDF_READ_MAX_BYTES = 10 * 1024 * 1024;
+
 export interface IntakeChunk {
   ordinal: number;
   text: string;
@@ -40,6 +51,11 @@ export interface IntakeInput {
   documentName: string;
   locator: string;
   text: string;
+  // Set when the text was taken from a page of a PDF read in this browser
+  // session (RINT-02). The text must then be words that appear on that page,
+  // and the document is stamped with text_origin. notOnPageMessage is the
+  // sentence shown when it is not; the panel owns the wording.
+  pdfPage?: { num: number; text: string; notOnPageMessage: string };
 }
 
 // Everything needed to finish a submission whose document exists but whose
@@ -133,6 +149,91 @@ export function formatIntakeCount(value: number): string {
   return COUNT_FORMAT.format(value);
 }
 
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * True when `excerpt` is a run of the page's own words: after collapsing every
+ * run of whitespace to one space, the excerpt appears in the page text. A trimmed
+ * span passes; a retyped or reworded one does not. This keeps the PDF path to
+ * "the source's own words" (OD-2026-10-02-006 s.2). It is a check in the
+ * curator's browser, not a server guarantee: the server stores nothing from the
+ * PDF and cannot compare it with what is later submitted.
+ */
+export function isTextFromPage(excerpt: string, pageText: string): boolean {
+  const wanted = collapseWhitespace(excerpt);
+  return wanted.length > 0 && collapseWhitespace(pageText).includes(wanted);
+}
+
+/** "p. 12" for the page a curator chose. */
+export function pdfPageLocator(pageNumber: number): string {
+  return `p. ${pageNumber}`;
+}
+
+export interface PdfPageText {
+  num: number;
+  text: string;
+}
+
+export type PdfReadResult =
+  | { ok: true; pages: PdfPageText[]; emptyPageCount: number }
+  // serverMessage is the route's own sentence for a refusal it authored (a
+  // too-long or unreadable PDF); null when there was none or no answer at all.
+  | { ok: false; status: number; serverMessage: string | null };
+
+// A parse can take 15 s on the server; this only stops a request that never
+// answers from leaving the picker on "Reading".
+const PDF_READ_TIMEOUT_MS = 45_000;
+
+/**
+ * Sends the chosen PDF to the reader route and returns its pages. The route
+ * keeps nothing; the pages exist only in what this returns. Never throws.
+ */
+export async function readLibraryPdf(
+  apiBaseUrl: string,
+  file: File,
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<PdfReadResult> {
+  if (file.size > PDF_READ_MAX_BYTES) return { ok: false, status: 413, serverMessage: null };
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    // No Content-Type header: the browser must set it, with the boundary.
+    const response = await fetchImpl(`${apiBaseUrl}/api/pilot/shadow/library/pdf-text`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(PDF_READ_TIMEOUT_MS) : undefined,
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+    if (response.status === 200 && body.ok === true && Array.isArray(body.pages)) {
+      const pages: PdfPageText[] = [];
+      for (const page of body.pages) {
+        const row = typeof page === 'object' && page !== null ? (page as Record<string, unknown>) : null;
+        if (!row || typeof row.num !== 'number' || typeof row.text !== 'string') {
+          return { ok: false, status: 0, serverMessage: null };
+        }
+        pages.push({ num: row.num, text: row.text });
+      }
+      return {
+        ok: true,
+        pages,
+        emptyPageCount: pages.filter((page) => page.text === '').length,
+      };
+    }
+    return {
+      ok: false,
+      status: response.status,
+      serverMessage: typeof body.error === 'string' && body.error ? body.error : null,
+    };
+  } catch {
+    return { ok: false, status: 0, serverMessage: null };
+  }
+}
+
 const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** Null when the input may be submitted; otherwise the sentence to show. */
@@ -151,6 +252,9 @@ export function validateIntakeInput(input: IntakeInput): string | null {
   }
   if (text.length > INTAKE_MAX_TEXT_LENGTH) {
     return `This text is ${formatIntakeCount(text.length)} characters. One entry holds up to ${formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)}; split it into separate labelled excerpts.`;
+  }
+  if (input.pdfPage && !isTextFromPage(text, input.pdfPage.text)) {
+    return input.pdfPage.notOnPageMessage;
   }
   return null;
 }
@@ -238,6 +342,7 @@ export async function submitLibraryTextIntake(
       document_name: input.documentName.trim(),
       metadata: {
         intake_method: INTAKE_METHOD,
+        ...(input.pdfPage ? { text_origin: TEXT_ORIGIN_PDF_PAGE } : {}),
         locator,
         chunk_count: chunks.length,
         text_length: rejoinIntakeChunks(chunks).length,
