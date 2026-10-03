@@ -360,7 +360,7 @@ describe('SHADOW library semantic search', () => {
 
     await searchShadowLibrary(searchInput);
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '\\M')");
+    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '(s|es)?\\M')");
   });
 
   it('stays fully on the keyword path when the feature is disabled', async () => {
@@ -370,7 +370,7 @@ describe('SHADOW library semantic search', () => {
     await searchShadowLibrary(searchInput);
     expect(mockEmbedText).not.toHaveBeenCalled();
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '\\M')");
+    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '(s|es)?\\M')");
   });
 });
 
@@ -391,7 +391,7 @@ describe('SHADOW library keyword relevance', () => {
   it('matches whole words, with the term list as a parameter and no authority bonus in the score', async () => {
     await searchShadowLibrary({ ...input, queryText: 'jab footwork' });
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(String(sql)).toContain("~ ('\\m' || term || '\\M')");
+    expect(String(sql)).toContain("~ ('\\m' || term || '(s|es)?\\M')");
     expect(String(sql)).not.toMatch(/like\s+'%'/);
     const scoreExpr = String(sql).slice(String(sql).indexOf('select count(*)'), String(sql).indexOf(') as score'));
     expect(scoreExpr).toContain('cardinality');
@@ -404,6 +404,11 @@ describe('SHADOW library keyword relevance', () => {
     expect(mockQuery.mock.calls[0][1]?.[3]).toEqual(['jab']);
   });
 
+  it('folds plain plurals so "drills" still finds "drill"', async () => {
+    await searchShadowLibrary({ ...input, queryText: 'jab drills punches glass' });
+    expect(mockQuery.mock.calls[0][1]?.[3]).toEqual(['jab', 'drill', 'punche', 'glass']);
+  });
+
   it('runs no query at all when the question has no meaningful word left', async () => {
     const ranked = await searchShadowLibraryRanked({ ...input, queryText: 'what is the way to do it' });
     expect(ranked.relevant).toEqual([]);
@@ -414,7 +419,7 @@ describe('SHADOW library keyword relevance', () => {
   it('splits rows at the keyword relevance bar', async () => {
     mockQuery.mockResolvedValueOnce([
       { ...kwRow('a'), score: 1 },
-      { ...kwRow('b'), score: 0.5 },
+      { ...kwRow('b'), score: 0.6 },
       { ...kwRow('c'), score: 0.25 },
     ] as never);
     const ranked = await searchShadowLibraryRanked({ ...input, queryText: 'alpha beta gamma delta' });
@@ -426,8 +431,8 @@ describe('SHADOW library keyword relevance', () => {
   it('maps score to a plain confidence level on each path', () => {
     expect(confidenceLevelForScore('keyword', 1)).toBe('high');
     expect(confidenceLevelForScore('keyword', 0.8)).toBe('high');
-    expect(confidenceLevelForScore('keyword', 0.5)).toBe('medium');
-    expect(confidenceLevelForScore('keyword', 0.49)).toBe('low');
+    expect(confidenceLevelForScore('keyword', 0.6)).toBe('medium');
+    expect(confidenceLevelForScore('keyword', 0.59)).toBe('low');
     expect(confidenceLevelForScore('semantic', 0.5)).toBe('high');
     expect(confidenceLevelForScore('semantic', 0.3)).toBe('medium');
     expect(confidenceLevelForScore('semantic', 0.29)).toBe('low');
@@ -499,7 +504,6 @@ describe('SHADOW library claim honesty', () => {
     expect(result.evidenceCount).toBe(2);
     expect(result.distinctSourceCount).toBe(2);
     expect(result.confidence).toBe(0.78);    expect(result.confidenceLevel).toBe('high');
-    expect(result.answer).toMatch(/^Confidence: high\./);
   });
 
   // JASON'S RULING 2026-10-03: below the relevance bar the closest passages are
@@ -519,6 +523,8 @@ describe('SHADOW library claim honesty', () => {
     expect(result.evidence).toHaveLength(1);
     expect(result.evidenceCount).toBe(0);
     expect(result.answer).toMatch(/^Confidence: low\./);
+    expect(result.answer).toContain('Closest Library passages');
+    expect(result.answer).not.toContain('Library-backed answer');
     expect(result.researchRequirementId).toBe(101);
     expect(createShadowResearchRequirement).toHaveBeenCalledTimes(1);
   });
@@ -552,7 +558,7 @@ describe('SHADOW library claim honesty', () => {
   });
 
   it('a real match with two sources is supported and opens no research requirement', async () => {
-    mockQuery.mockResolvedValueOnce([evidenceRow('src-a', 0.6), evidenceRow('src-b', 0.55)] as never);
+    mockQuery.mockResolvedValueOnce([evidenceRow('src-a', 0.7), evidenceRow('src-b', 0.65)] as never);
 
     const result = await createShadowLibraryClaim({
       organizationId: 'org-1',

@@ -120,10 +120,10 @@ describe('confidence level', () => {
     expect(result.confidenceLevel).toBe('low');
   });
 
-  test('a server that omits the level reads as low, never as a level nothing computed', async () => {
+  test('a server that omits the level leaves it unset, never a level nothing computed', async () => {
     const fetchImpl = jest.fn(async () => jsonResponse(200, { ok: true, claim }));
     const result = await askLibrary('', 'q', fetchImpl as unknown as typeof fetch);
-    expect(result.confidenceLevel).toBe('low');
+    expect(result.confidenceLevel).toBeUndefined();
   });
 });
 

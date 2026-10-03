@@ -38,7 +38,7 @@ export const SEMANTIC_SCORE_FLOOR = 0.15;
 //   keyword:  share of the question's meaningful words found as WHOLE words.
 export const SEMANTIC_RELEVANCE_BAR = 0.3;
 export const SEMANTIC_HIGH_CONFIDENCE = 0.5;
-export const KEYWORD_RELEVANCE_BAR = 0.5;
+export const KEYWORD_RELEVANCE_BAR = 0.6;
 export const KEYWORD_HIGH_CONFIDENCE = 0.8;
 
 export type ShadowLibraryConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
@@ -405,10 +405,13 @@ function tokenizeQuery(queryText: string): string[] {
     .split(/[^a-z0-9]+/)
     .map((value) => value.trim())
     .filter((value) => value.length >= 3 && !QUERY_STOPWORDS.has(value));
-  return [...new Set(terms)].slice(0, 8);
+  // Plain plural folding ("drills" finds "drill" and "drills") so whole-word
+  // matching does not lose the recall the old substring match had for free.
+  const stems = terms.map((term) => (term.length >= 4 && term.endsWith('s') && !term.endsWith('ss') ? term.slice(0, -1) : term));
+  return [...new Set(stems)].slice(0, 8);
 }
 
-function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
+function buildClaimNarrative(results: ShadowLibrarySearchResult[], closestOnly = false): string {
   const topEvidence = results.slice(0, 3);
   const sourceSummary = topEvidence
     .map((item) => `${item.source_title} (tier ${item.authority_tier})`)
@@ -418,7 +421,8 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
     .join(' ')
     .slice(0, 500);
 
-  return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
+  const lead = closestOnly ? 'Closest Library passages' : 'Library-backed answer from current SHADOW evidence';
+  return `${lead}: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
 }
 
 interface ShadowClaimResearchRequirement {
@@ -1356,7 +1360,7 @@ export async function searchShadowLibraryRanked(input: ShadowLibrarySearchInput)
          (
            select count(*)::float / cardinality($4::text[])
              from unnest($4::text[]) as term
-            where lower(c.text_content || ' ' || d.document_name || ' ' || s.title) ~ ('\\m' || term || '\\M')
+            where lower(coalesce(c.text_content, '') || ' ' || coalesce(d.document_name, '') || ' ' || coalesce(s.title, '')) ~ ('\\m' || term || '(s|es)?\\M')
          ) as score
        from pilot.shadow_library_chunks c
        join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
@@ -1489,8 +1493,8 @@ export async function createShadowLibraryClaim(input: {
     status === 'unsupported'
       ? 'SHADOW Library does not currently have qualifying evidence for this question. A research requirement has been opened or matched so the gap becomes organizational learning work.'
       : belowBarOnly
-        ? `Confidence: low. The Library has no passage that clearly answers this question; these are the closest passages and may not be relevant. A research requirement has been opened or matched to fill the gap. ${buildClaimNarrative(evidence)}`
-        : `Confidence: ${confidenceLevel}. ${buildClaimNarrative(evidence)}`;
+        ? `Confidence: low. The Library has no passage that clearly answers this question; these are the closest passages and may not be relevant. A research requirement has been opened or matched to fill the gap. ${buildClaimNarrative(evidence, true)}`
+        : buildClaimNarrative(evidence);
 
   await emitShadowEvent({
     organizationId: input.organizationId,

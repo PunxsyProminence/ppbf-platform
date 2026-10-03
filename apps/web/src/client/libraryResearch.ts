@@ -26,7 +26,8 @@ export interface LibraryClaimAnswer {
   status: LibraryClaimStatus;
   // Plain level the server derived from how well the best passage matched.
   // 'low' means the passages shown are only the closest, not a real answer.
-  confidenceLevel: LibraryConfidenceLevel;
+  // Absent when the server predates the field.
+  confidenceLevel?: LibraryConfidenceLevel;
   answer: string;
   evidence: LibraryEvidenceItem[];
   // Present when the Library found nothing and logged the gap -- the server
@@ -156,11 +157,9 @@ export async function askLibrary(
 
   return {
     status: claim.status,
-    // An older server omits the field: fall back to the safe reading of the
-    // status rather than showing a level nothing computed.
-    confidenceLevel: isConfidenceLevel(claim.confidenceLevel)
-      ? claim.confidenceLevel
-      : claim.status === 'unsupported' ? 'none' : 'low',
+    // An older server omits the field: leave it unset rather than show a level
+    // nothing computed.
+    confidenceLevel: isConfidenceLevel(claim.confidenceLevel) ? claim.confidenceLevel : undefined,
     answer: claim.answer,
     evidence: parseEvidence(claim.evidence),
     researchRequirementId,
