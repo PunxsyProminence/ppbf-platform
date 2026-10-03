@@ -1329,7 +1329,14 @@ export async function upsertOrganizationMembership(accountId: string, organizati
     // athlete's redemption could deadlock (membershipRedemptionLockOrder.pg.test.ts).
     // No conditions and no result read: this only takes the lock. Whether the
     // account may be changed is decided by the update below, as before.
-    await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [accountId]);
+    //
+    // FOR UPDATE, not the FOR NO KEY UPDATE redemption takes: the update
+    // below can move the login to another gym, and organization_id is in the
+    // unique index uq_pilot_accounts_org_account, so that update needs FOR
+    // UPDATE. Taken any weaker here, it would be upgraded mid-transaction,
+    // waiting on any open transaction that inserted a row referencing this
+    // account -- a new deadlock the old order could not form.
+    await client.query('select 1 from pilot.accounts where account_id = $1 for update', [accountId]);
 
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
