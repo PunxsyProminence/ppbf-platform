@@ -66,9 +66,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
 export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
   'app/api/pilot/shadow/chat/route.ts',
   'app/api/pilot/shadow/video-analysis/route.ts',
+  'src/server/pilot/libraryServability.ts',
   'src/server/pilot/omegaPlatformContext.ts',
   'src/server/pilot/platformLibraryScope.ts',
   'src/server/pilot/shadowChat.ts',
+  'src/server/pilot/shadowChatCapabilities.ts',
   'src/server/pilot/shadowContextBuilder.ts',
   'src/server/pilot/shadowContextWeights.ts',
   'src/server/pilot/shadowEvidence.ts',
@@ -77,6 +79,7 @@ export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
   'src/server/pilot/shadowNearMisses.ts',
   'src/server/pilot/shadowPersonalizationGate.ts',
   'src/server/pilot/shadowRoleSets.ts',
+  'src/server/pilot/shadowUnlocks.ts',
 ];
 
 /**
@@ -85,7 +88,7 @@ export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
  * Never edit an existing entry -- bump the version and append.
  */
 export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; sha256: string }[] = [
-  { version: 2, sha256: 'dc1fe7085dd095d66d1049412c22b5179c8c279166e8eda0ac362037b9b1c1ff' },
+  { version: 2, sha256: '7ae5ffd399407dbd80638f016239074db05387891d96c74c45d5084590f37389' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
