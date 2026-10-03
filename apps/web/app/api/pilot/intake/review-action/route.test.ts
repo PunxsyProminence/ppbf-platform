@@ -17,7 +17,7 @@ import {
   upsertWaiver,
 } from '@/src/server/pilot/intake';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { queryOne } from '@/src/server/pilot/db';
+import { queryOne, withTransaction } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -67,6 +67,8 @@ jest.mock('@/src/server/pilot/intake', () => ({
     jest.requireActual('@/src/server/pilot/intake').assertAthleteAccountIdProvisionable,
   assertAthleteRecordNotWithdrawn:
     jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotWithdrawn,
+  writePromotedAthleteRecord:
+    jest.requireActual('@/src/server/pilot/intake').writePromotedAthleteRecord,
   assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
@@ -105,6 +107,7 @@ const mockAssertGuardianUnchanged = assertGuardianAccountUnchanged as jest.Mocke
 const mockUpsertGuardian = upsertGuardian as jest.MockedFunction<typeof upsertGuardian>;
 const mockLinkGuardianAthlete = linkGuardianAthlete as jest.MockedFunction<typeof linkGuardianAthlete>;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
 const mockUpsertWaiver = upsertWaiver as jest.MockedFunction<typeof upsertWaiver>;
 
 function principal(): PilotPrincipal {
@@ -170,8 +173,13 @@ function stubAccounts(accounts: {
   });
 }
 
+// Lookups of pilot.accounts other than the athlete record's own hold, which
+// every promotion now makes (the deleted-login check runs with or without an
+// athlete account_id).
 function pilotAccountsLookups(): unknown[] {
-  return mockQueryOne.mock.calls.filter(([sql]) => String(sql).includes('pilot.accounts'));
+  return mockQueryOne.mock.calls.filter(
+    ([sql]) => String(sql).includes('pilot.accounts') && !String(sql).includes('athlete_id = $2'),
+  );
 }
 
 // The promotion's writes, in order: the athlete record, the athlete's account,
@@ -192,6 +200,14 @@ beforeEach(() => {
   // lookup result behind, and clearAllMocks would carry it into the next test.
   // Reset, it answers "no such account" -- a new guardian login.
   mockQueryOne.mockReset();
+  // The athlete-record checks run on writePromotedAthleteRecord's transaction
+  // client; it answers from the same stubbed lookups as queryOne.
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn({
+    query: async (sql: string, params: unknown[]) => {
+      const row = await mockQueryOne(sql, params);
+      return { rows: row ? [row] : [] };
+    },
+  }));
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
@@ -814,6 +830,32 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     // The deleted login's id is not named.
     expect(payload.error).not.toContain('athlete-old');
     expectNothingWritten();
+  });
+
+  // The sequential path (OD-2026-09-29-002 item 4): the account cleanup
+  // retired the athlete's never-redeemed login while no athlete row existed,
+  // then intake promoted the same athlete_id with no account_id. The check
+  // used to run only inside the account_id branch, so the record was written.
+  test('an athlete record held by a deleted login is refused 409 even when the promotion names no account_id', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-old', account_deleted: true } } });
+
+    const response = await POST(athletePromoteRequest({}));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('ATHLETE_RECORD_HELD_BY_DELETED_LOGIN');
+    expect(payload.error).not.toContain('athlete-old');
+    expectNothingWritten();
+  });
+
+  test('promotion with no account_id onto a record whose login is live still writes the record', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-old', account_deleted: false } } });
+
+    const response = await POST(athletePromoteRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
   });
 
   test('provisions the athlete account credential-less when account_id is given without a pin', async () => {

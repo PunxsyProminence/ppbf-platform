@@ -7,9 +7,10 @@ import {
   isOrganizationAdminRole,
   type ActorIdentity,
 } from './access';
-import type { PilotRole } from './contracts';
-import { query, queryOne } from './db';
+import type { PilotAthlete, PilotRole } from './contracts';
+import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount } from './deletedAccountSignIn';
+import { upsertAthlete } from './entities';
 import { ConflictError } from './errors';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
@@ -575,6 +576,15 @@ async function writeRows<T extends QueryResultRow>(
     return query<T>(text, values);
   }
   return (await client.query<T>(text, values)).rows;
+}
+
+/** writeRows's read twin: the first row, on the caller's transaction if given. */
+async function readOne<T extends QueryResultRow>(
+  client: PoolClient | undefined,
+  text: string,
+  values: unknown[],
+): Promise<T | null> {
+  return (await writeRows<T>(client, text, values))[0] ?? null;
 }
 
 export async function upsertEmergencyContact(params: {
@@ -1525,13 +1535,14 @@ export async function assertAthleteAccountIdProvisionable(params: {
   accountId: string;
   athleteId: string;
   organizationId: string;
-}): Promise<void> {
-  const existing = await queryOne<{
+}, client?: PoolClient): Promise<void> {
+  const existing = await readOne<{
     organization_id: string;
     role: PilotRole;
     athlete_id: string | null;
     account_deleted: boolean;
   }>(
+    client,
     `select organization_id, role, athlete_id, ${accountDeletedSql('a')} as account_deleted
      from pilot.accounts a where account_id = $1`,
     [params.accountId],
@@ -1573,7 +1584,8 @@ export async function assertAthleteAccountIdProvisionable(params: {
   // The login this athlete record holds, if any: at most one, by the
   // constraint. The deleted login's id is not named -- it may belong to a
   // record purged long ago, which no screen shows any more.
-  const heldBy = await queryOne<{ account_id: string; account_deleted: boolean }>(
+  const heldBy = await readOne<{ account_id: string; account_deleted: boolean }>(
+    client,
     `select account_id, ${accountDeletedSql('a')} as account_deleted
      from pilot.accounts a
      where organization_id = $1 and athlete_id = $2
@@ -1582,13 +1594,7 @@ export async function assertAthleteAccountIdProvisionable(params: {
   );
 
   if (heldBy && isDeletedAccount(heldBy)) {
-    throw new ConflictError(
-      `Conflict: athlete record "${params.athleteId}" is still held by a login that was deleted. Intake does not `
-      + 'restore a deleted login, and an athlete record takes one login, so intake cannot give this record a new '
-      + 'one. If this is a returning athlete whose old record was removed, promote under a new athlete_id with a '
-      + "new account_id; otherwise the old login's hold on this record needs a database fix.",
-      'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
-    );
+    throw athleteRecordHeldByDeletedLogin(params.athleteId);
   }
 
   if (heldBy && heldBy.account_id !== params.accountId) {
@@ -1598,6 +1604,119 @@ export async function assertAthleteAccountIdProvisionable(params: {
       'ATHLETE_ALREADY_HAS_LOGIN',
     );
   }
+}
+
+function athleteRecordHeldByDeletedLogin(athleteId: string): ConflictError {
+  return new ConflictError(
+    `Conflict: athlete record "${athleteId}" is still held by a login that was deleted. Intake does not `
+    + 'restore a deleted login, and an athlete record takes one login, so intake cannot give this record a new '
+    + 'one. If this is a returning athlete whose old record was removed, promote under a new athlete_id with a '
+    + "new account_id; otherwise the old login's hold on this record needs a database fix.",
+    'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+  );
+}
+
+/**
+ * Refuses promoting onto an athlete_id that a login marked deleted still
+ * holds, whether or not the promotion names an account_id.
+ *
+ * assertAthleteAccountIdProvisionable makes the same refusal, but only runs
+ * when the payload carries athlete.account_id. Without one, a login the
+ * account cleanup retired while no athlete row existed was never looked at,
+ * and upsertAthlete wrote a live athlete record held by a deleted login
+ * (OD-2026-09-29-002 item 4; the build-list row "Intake can leave a live
+ * athlete whose login is marked deleted").
+ */
+export async function assertAthleteRecordNotHeldByDeletedLogin(params: {
+  organizationId: string;
+  athleteId: string;
+}, client?: PoolClient): Promise<void> {
+  // At most one login holds an athlete record, by unique (organization_id,
+  // athlete_id) on pilot.accounts.
+  const heldBy = await readOne<{ account_deleted: boolean }>(
+    client,
+    `select ${accountDeletedSql('a')} as account_deleted
+     from pilot.accounts a
+     where organization_id = $1 and athlete_id = $2
+     limit 1`,
+    [params.organizationId, params.athleteId],
+  );
+
+  if (heldBy && isDeletedAccount(heldBy)) {
+    throw athleteRecordHeldByDeletedLogin(params.athleteId);
+  }
+}
+
+/**
+ * Takes the athlete-login lock for (organizationId, athleteId) on the
+ * caller's transaction, held until it commits or rolls back.
+ *
+ * The account cleanup (scripts/pilot-cleanup-accounts.mjs) takes the same key,
+ * ATHLETE_LOGIN_LOCK_SQL in scripts/lib/account-cleanup-plan.mjs, for every
+ * login it is about to retire. Intake's checks and its athlete write run
+ * under it, so the two cannot interleave: if the cleanup goes first, intake's
+ * checks run after its commit and see the deleted login; if intake goes
+ * first, the cleanup's retire runs after intake's commit and its `not exists`
+ * guard sees the live athlete record. Plain reads could not do this -- each
+ * side could check before the other wrote. intakeDeletedLoginRace.pg.test.ts
+ * proves both orders, and fails if either key text changes alone.
+ */
+export async function lockAthleteLoginForIntake(
+  client: PoolClient,
+  organizationId: string,
+  athleteId: string,
+): Promise<void> {
+  await client.query(
+    `select pg_advisory_xact_lock(hashtext('ppbf.athlete-login:' || $1::text || ':' || $2::text))`,
+    [organizationId, athleteId],
+  );
+}
+
+/**
+ * Promotion's athlete record: the checks that refuse it, and the write, in one
+ * transaction under the athlete-login lock.
+ *
+ * Refused: a withdrawn record, a record a deleted login holds (with or without
+ * an account_id), and, when account_id is given, every refusal of
+ * assertAthleteAccountIdProvisionable. The lock is what keeps the account
+ * cleanup from retiring this athlete's login between those checks and the
+ * write (lockAthleteLoginForIntake). One pooled connection carries all of it.
+ *
+ * The athlete's account is written after this commits, outside the lock: from
+ * then on the record is live, and the cleanup's retire statement refuses any
+ * login a live record stands behind.
+ */
+export async function writePromotedAthleteRecord(params: {
+  organizationId: string;
+  athlete: PilotAthlete;
+  accountId?: string;
+}): Promise<void> {
+  const { organizationId, athlete } = params;
+  const athleteId = athlete.athlete_id;
+  await withTransaction(async (client) => {
+    await lockAthleteLoginForIntake(client, organizationId, athleteId);
+
+    // A withdrawn athlete record: upsertAthlete would rewrite it while it
+    // stayed withdrawn. A returning athlete is re-enrolled under a new
+    // athlete_id and a new login (OD-2026-09-30-004 e1).
+    await assertAthleteRecordNotWithdrawn({ organizationId, athleteId }, client);
+    await assertAthleteRecordNotHeldByDeletedLogin({ organizationId, athleteId }, client);
+
+    // The athlete's account: createOrUpdateAthleteAccount refuses one in
+    // another organization, would re-role a same-organization account of any
+    // other role into a locked athlete account, would re-bind another child's
+    // athlete login to this child's record, would re-provision a deleted login
+    // that still could not sign in, and meets the one-login-per-athlete
+    // constraint only after the athlete record is written. All refused here.
+    if (params.accountId) {
+      await assertAthleteAccountIdProvisionable(
+        { accountId: params.accountId, athleteId, organizationId },
+        client,
+      );
+    }
+
+    await upsertAthlete(organizationId, athlete, client);
+  });
 }
 
 /**
@@ -1614,8 +1733,9 @@ export async function assertAthleteAccountIdProvisionable(params: {
 export async function assertAthleteRecordNotWithdrawn(params: {
   organizationId: string;
   athleteId: string;
-}): Promise<void> {
-  const row = await queryOne<{ withdrawn: boolean }>(
+}, client?: PoolClient): Promise<void> {
+  const row = await readOne<{ withdrawn: boolean }>(
+    client,
     `select deleted_at is not null as withdrawn
      from pilot.athletes where organization_id = $1 and athlete_id = $2`,
     [params.organizationId, params.athleteId],
