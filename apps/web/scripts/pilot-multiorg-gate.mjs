@@ -123,7 +123,6 @@ async function bootstrapAccount(accountId, pin, organizationId, organizationName
 }
 
 async function createAthleteAsOrgAdmin(client, athleteId, coachId) {
-  const nowIso = new Date().toISOString();
   await client.call('/api/pilot/athletes', {
     method: 'POST',
     body: {
@@ -135,8 +134,6 @@ async function createAthleteAsOrgAdmin(client, athleteId, coachId) {
       emergency_contact: 'Parent 555-0100',
       active_flag: true,
       coach_id: coachId,
-      created_at: nowIso,
-      updated_at: nowIso,
     },
   });
 }
