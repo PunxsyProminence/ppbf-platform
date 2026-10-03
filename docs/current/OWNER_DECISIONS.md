@@ -164,6 +164,54 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-015 -- Research intake part 2: the platform shelf is worked from the existing pages; Admin@ stops writing the gym shelf; admin uploads are not linked to the Library; archive wiring later; a submission still never resolves a requirement
+
+**Provenance: PRIMARY.** Typed by Jason in the overwatch thread on 2026-10-02
+(his evening; 2026-10-03 UTC) and read in that transcript
+(`~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`). This
+entry is new and edits no earlier one. It follows OD-2026-10-02-013. Nothing
+in it is built.
+
+A read-only planning step (overwatch's background agent; plan file
+`Documents\PPBF-overwatch\lane-inbox\RINT-part2-plan-DRAFT.md`) found what the
+next pieces need. Overwatch put them to him, recommendation on each, ending
+'Reply like "D2 A D3 A D4 A D5 later D6 A", or tell me which to skip':
+
+- "D2: Admin@ works the platform shelf from the existing research and
+  evidence pages, not a separate new page. Recommend yes."
+- "D3: today Admin@ can also write to the gym's shelf from the research page.
+  I'd remove that so it matches your "platform for platform, gym for gym".
+  Recommend yes."
+- "D4: linking admin uploads to the library, as you picked it, would pull
+  athlete intake files into research. Every upload type on that admin page
+  today is athlete intake: medical forms, waivers and the like. That clashes
+  with keeping whole PDFs in SharePoint. Recommend: let the PDF reader being
+  built now cover it instead, and drop that item."
+- "D5: wiring research originals into the SharePoint archive needs a
+  database change, a new production secret, and proof the app may write to
+  that library. Recommend: later, as its own item."
+- "D6: keep the rule that "a submission never resolves a requirement"
+  (recorded, binding). Recommend keep."
+
+Jason, whole message (02:19:19Z): *"Agree with recomendtions"*.
+
+- **D2.** The platform owner (Admin@) works the platform shelf
+  (`__platform__`) from the existing `/research` and `/evidence` pages, not a
+  new page (carries out OD-2026-10-02-013 answer 1B).
+- **D3.** Admin@ no longer writes to a gym's shelf from `/research`
+  (`apps/web/src/server/pilot/shadowRoleSets.ts:112-116`, as the plan read
+  it), matching his "platform for platform gym for gym".
+- **D4.** RINT-03 (linking `/admin/shadow` uploads to a Library source) is
+  dropped; the PDF reader of RINT-02 covers research PDFs. Athlete intake
+  files stay out of research.
+- **D5.** RINT-04 (wiring research originals into the SharePoint Research
+  Archive) waits, as its own item; it needs a migration, a production secret
+  and proof of write access to that library.
+- **D6.** The rule that a research submission never resolves a requirement
+  stands; RINT-06 is not built.
+
+---
+
 ## OD-2026-10-02-014 -- Named stance types are labelled too, once per event, by sanctioning body
 
 **Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread on
