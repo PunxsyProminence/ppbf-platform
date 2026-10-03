@@ -667,8 +667,9 @@ describe('capability coverage (real database)', () => {
   });
 
   // R1 (Jason 2026-09-29): what search serves from the shared platform shelf
-  // is coverage too. Written by hand because no principal can exist in
-  // __platform__ -- the importer is its only writer.
+  // is coverage too. Written by hand because this suite does not go through
+  // the routes; in the app the platform owner writes __platform__ by naming
+  // shelf='platform' (libraryShelf.ts), and the importer writes it too.
   test('a gym rule answered only by the platform shelf reads covered, and search serves the same evidence', async () => {
     const PLATFORM = '__platform__';
     await rawQuery(

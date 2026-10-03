@@ -12,14 +12,15 @@
  * nothing until something clears it.
  *
  * PATCH /api/pilot/shadow/evidence/review clears rows one at a time, and it
- * stays the right surface for a gym reviewing its own material. It cannot do
- * this job:
+ * stays the right surface for a gym reviewing its own material. It was not the
+ * tool for this job:
  *
- *   * It scopes every write to `principal.organizationId`, and no account may
- *     belong to the reserved platform organization -- the platform library scope
- *     migration asserts that org has no members and no memberships. So the
- *     platform baseline is unreachable through the API by construction, not by
- *     omission.
+ *   * When this script was written it scoped every write to
+ *     `principal.organizationId`, and no account may belong to the reserved
+ *     platform organization, so the baseline was unreachable through the API.
+ *     Since #1115 the platform owner reaches the platform shelf there by sending
+ *     shelf='platform' (libraryShelf.ts; OD-2026-10-02-013 answer 1B), one row
+ *     at a time. The bulk attestation below is still this script's job.
  *   * Until the change that accompanies this script, its id validator accepted
  *     only `source_`-prefixed ids while the corpus is keyed `src_`, so every
  *     imported source answered 404 there regardless of organization.

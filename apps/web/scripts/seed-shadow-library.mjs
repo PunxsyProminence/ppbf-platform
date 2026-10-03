@@ -15,9 +15,11 @@ const SESSION_COOKIE_NAME = 'ppbf_pilot_session';
 // work for seeding, and not because of a misconfiguration: PIN sessions are
 // athlete self-service only -- loginWithAccountIdAndPin returns null for any
 // role other than 'athlete', explicitly so that privileged local sessions are
-// never minted -- while writing to the Library requires organization_admin,
-// admin or platform_owner. So a PIN login can only ever produce a session that
-// is refused by every endpoint below.
+// never minted -- while writing to a gym's Library requires organization_admin
+// or admin. (platform_owner writes the platform shelf only; its writes to a
+// gym's shelf are refused, OD-2026-10-02-015 D3, libraryShelf.ts.) So a PIN
+// login can only ever produce a session that is refused by every endpoint
+// below.
 //
 // The bootstrap step that preceded it is gone for the same reason:
 // /api/pilot/admin/bootstrap now refuses every request ("privileged accounts
@@ -35,8 +37,8 @@ Populates the SHADOW Library with the canonical doctrine source, its document
 and chunks, and the capability coverage rules.
 
 Authentication:
-  Sign in to the platform as an organization_admin, admin or platform_owner,
-  then copy the value of the '${SESSION_COOKIE_NAME}' cookie and pass it as
+  Sign in to the gym as an organization_admin or admin (a platform_owner
+  session is refused on the gym's shelf with 403), then copy the value of the '${SESSION_COOKIE_NAME}' cookie and pass it as
   PILOT_SESSION_COOKIE. The session must be Microsoft-authenticated; a PIN
   session is athlete-only and will be refused by every write below.
 
@@ -124,7 +126,8 @@ async function call(pathname, { method = 'GET', body } = {}) {
         `${method} ${pathname} failed (${response.status}): ${JSON.stringify(payload)}\n\n`
         + `The session in PILOT_SESSION_COOKIE was rejected. A 401 means it is expired or not a\n`
         + `session at all; a 403 means it belongs to an account that cannot curate the Library --\n`
-        + `that requires organization_admin, admin or platform_owner. Run with --help for details.`,
+        + `that requires organization_admin or admin of the gym; platform_owner is refused on a\n`
+        + `gym's shelf. Run with --help for details.`,
       );
     }
     throw new Error(`${method} ${pathname} failed (${response.status}): ${JSON.stringify(payload)}`);

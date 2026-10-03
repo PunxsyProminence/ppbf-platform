@@ -64,10 +64,12 @@ describe('SHADOW role sets', () => {
       expect(() => requireRole(actor('platform_owner'), [...ORGANIZATION_MEMBER_ROLES])).toThrow('Forbidden');
     });
 
-    it('may curate an organization library, which holds doctrine rather than PHI', () => {
-      // The depth restriction is enforced per-document instead: a document
-      // carrying a subject_id is athlete-scoped, and the documents route runs
-      // assertActorCanAccessAthlete, which refuses platform_owner outright.
+    it('is in the curator role list (its gym-shelf writes are refused by libraryShelf.ts)', () => {
+      // The list admits platform_owner for the platform shelf and /evidence
+      // review. libraryShelf.ts refuses its writes to a gym's shelf
+      // (OD-2026-10-02-015 D3), and a document carrying a subject_id is
+      // athlete-scoped: the documents route runs assertActorCanAccessAthlete,
+      // which refuses platform_owner outright.
       expect(SHADOW_LIBRARY_CURATOR_ROLES).toContain('platform_owner');
       expect(() => requireRole(actor('platform_owner'), [...SHADOW_LIBRARY_CURATOR_ROLES])).not.toThrow();
     });

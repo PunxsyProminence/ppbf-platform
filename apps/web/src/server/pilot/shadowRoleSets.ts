@@ -103,12 +103,15 @@ export const BOARD_SUMMARY_ROLES: readonly PilotRole[] = [
 // same authority, so the write path must not be broader or narrower than the
 // approval path it feeds.
 //
-// platform_owner is present because organization doctrine is operational
-// content, not PHI. That is not a general athlete-data grant: a document
-// carrying a subject_id is athlete-scoped, and the documents route runs
-// assertActorCanAccessAthlete for those, which refuses platform_owner
-// outright. Omega can curate an organization's doctrine; it cannot author
-// evidence about a named athlete.
+// platform_owner is present because it curates the platform shelf
+// (OD-2026-10-02-013 answer 1B) and reviews on /evidence (answer 5A). Passing
+// this list does not let it write a gym's shelf: libraryShelf.ts
+// (resolveLibraryShelf) is where a platform_owner write to a gym's shelf is
+// refused, and where the platform shelf is refused to everyone else
+// (OD-2026-10-02-015 D3: "platform for platform, gym for gym"). It is also not
+// an athlete-data grant: a document carrying a subject_id is athlete-scoped,
+// and the documents route runs assertActorCanAccessAthlete for those, which
+// refuses platform_owner outright.
 export const SHADOW_LIBRARY_CURATOR_ROLES: readonly PilotRole[] = [
   'organization_admin',
   'admin',
