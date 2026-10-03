@@ -39,9 +39,9 @@ interface SessionNoteRow {
   // cannot hold.
   //
   // What the schema does NOT enforce is non-emptiness. That comes from
-  // validateSessionPayload's requireString on the write path, and
-  // scripts/seed-data.ts inserts straight from CSV without it -- so '' rows
-  // are reachable and this read has to handle them.
+  // validateSessionPayload's requireString on the write path, and the laptop
+  // seeder (scripts/seed-data.ts, retired 2026-10-03, OD-2026-10-03-002 section 10) inserted straight from CSV
+  // without it -- so '' rows may exist and this read has to handle them.
   notes: string;
 }
 

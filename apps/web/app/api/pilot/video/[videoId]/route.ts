@@ -133,8 +133,8 @@ interface VideoSessionRow {
  * currentConsentByGuardian filters `parent_id is not null`.
  *
  * WHAT IS STILL INVISIBLE HERE, and it is the majority of waiver rows.
- * scripts/seed-data.ts, which bulk-imports athletes and guardian_links, writes
- * no waiver row at all; both intake writers (intake/domain-upsert,
+ * The laptop seeder (scripts/seed-data.ts, retired 2026-10-03, OD-2026-10-03-002 section 10), which bulk-imported
+ * athletes and guardian_links, wrote no waiver row at all; both intake writers (intake/domain-upsert,
  * intake/review-action) call upsertWaiver without parentId, so an admin
  * recording "photo and media -- signed" through app/admin/consent still lands
  * a row with parent_id NULL that this gate cannot see.

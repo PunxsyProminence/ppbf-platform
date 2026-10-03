@@ -119,7 +119,6 @@
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "seed:shadow:research": "node scripts/import-shadow-research.mjs",
     "seed:shadow:research:dry": "node scripts/import-shadow-research.mjs --dry-run",
-    "rehearse:seed-guardians": "node scripts/rehearse-seed-guardians.mjs",
     "rehearse:shadow:research": "node scripts/rehearse-shadow-research-import.mjs",
     "seed:drill-library": "tsx scripts/pilot-content-import.ts apply --dataset drill-library",
     "seed:drill-library:dry": "tsx scripts/pilot-content-import.ts apply --dry-run --dataset drill-library",
