@@ -66,6 +66,11 @@ function prettyKey(key: string): string {
 export default function ParentDigest({ athleteId, childName }: ParentDigestProps) {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  // One half failing while the other answers still makes a digest, but the
+  // failed half must say so: an empty list from a failed read is not "nothing
+  // written up yet".
+  const [recognitionFailed, setRecognitionFailed] = useState(false);
+  const [milestoneFailed, setMilestoneFailed] = useState(false);
   const [recognitions, setRecognitions] = useState<RecognitionItem[]>([]);
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
   const [sessionCount, setSessionCount] = useState<number | null>(null);
@@ -82,6 +87,8 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
     void (async () => {
       setLoading(true);
       setFailed(false);
+      setRecognitionFailed(false);
+      setMilestoneFailed(false);
       try {
         const [recognitionResponse, milestoneResponse] = await Promise.all([
           fetch(
@@ -108,6 +115,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
           if (!cancelled) setRecognitions((payload.items ?? []).slice(0, SHOWN));
         } else {
           setRecognitions([]);
+          setRecognitionFailed(true);
         }
         if (milestoneResponse.ok) {
           const payload = (await milestoneResponse.json()) as {
@@ -123,6 +131,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
         } else {
           setMilestones([]);
           setSessionCount(null);
+          setMilestoneFailed(true);
         }
       } catch {
         if (!cancelled) {
@@ -195,12 +204,18 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
         </div>
       )}
 
-      {!loading && !failed && (
+      {/* No child yet (the hub's child list is loading or failed): there is
+          nobody to read for, so the lists stay unsaid rather than empty. */}
+      {athleteId && !loading && !failed && (
         <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
           {/* What the coach said, verbatim and attributed. */}
           <div>
             <h4 className="t-label">What the coach said</h4>
-            {recognitions.length === 0 ? (
+            {recognitionFailed ? (
+              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
+                The coach’s words could not be loaded just now.
+              </p>
+            ) : recognitions.length === 0 ? (
               <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
                 Nothing written up yet. When a coach taps out a recognition, their words land here, signed.
               </p>
@@ -222,7 +237,11 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
           {/* What was reached. */}
           <div>
             <h4 className="t-label">Reached</h4>
-            {milestones.length === 0 ? (
+            {milestoneFailed ? (
+              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
+                Milestones could not be loaded just now.
+              </p>
+            ) : milestones.length === 0 ? (
               <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--card-ink-muted)]">
                 No milestones sealed yet. They arrive with the work, at the pace the work happens.
               </p>

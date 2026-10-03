@@ -86,6 +86,7 @@ function stubFetch(options: {
   awards?: Array<{ milestone_key: string; awarded_by_role: string; awarded_at: string }>;
   completedSessions?: number;
   athleteId?: string | null;
+  milestonesFail?: boolean;
 }) {
   const mock = jest.fn(async (url: unknown) => {
     const href = String(url);
@@ -100,6 +101,9 @@ function stubFetch(options: {
       return { ok: status === 200, status, json: async () => ({ ok: true, card: card() }) } as Response;
     }
     if (href.includes('/api/pilot/achievements/milestones')) {
+      if (options.milestonesFail) {
+        return { ok: false, status: 500, json: async () => ({ ok: false }) } as Response;
+      }
       return {
         ok: true,
         status: 200,
@@ -256,6 +260,15 @@ describe('the print room', () => {
     expect(container.querySelectorAll('.print-sheet')).toHaveLength(2);
     expect(screen.getByText('No certificate to print')).toBeTruthy();
     expect(screen.getByText(/Nothing is missing and nothing is late/)).toBeTruthy();
+  });
+
+  it('says the certificate could not be loaded, not that nothing is missing, when that read fails', async () => {
+    const { container } = await renderRoom({ milestonesFail: true });
+
+    expect(container.querySelectorAll('.print-sheet')).toHaveLength(2);
+    expect(screen.getByText('The certificate could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('No certificate to print')).toBeNull();
+    expect(screen.queryByText(/Nothing is missing and nothing is late/)).toBeNull();
   });
 
   it('counts a milestone the session ledger earned, with no award row behind it', async () => {

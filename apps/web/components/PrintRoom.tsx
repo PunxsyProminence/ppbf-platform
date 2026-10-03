@@ -74,6 +74,9 @@ export default function PrintRoom() {
   const [card, setCard] = useState<FightCardPayload | null>(null);
   const [awards, setAwards] = useState<MilestoneAwardRow[]>([]);
   const [completedSessions, setCompletedSessions] = useState(0);
+  // The milestone read failing is not "nothing to print": the sheet says it
+  // could not be read instead of "nothing is missing and nothing is late".
+  const [awardsFailed, setAwardsFailed] = useState(false);
   const [state, setState] = useState<LoadState>('loading');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
 
@@ -131,6 +134,8 @@ export default function PrintRoom() {
             const body = (await achievementResponse.json()) as AchievementPayload;
             setAwards(body.items ?? []);
             setCompletedSessions(body.completed_sessions ?? 0);
+          } else {
+            setAwardsFailed(true);
           }
         }
 
@@ -241,7 +246,17 @@ export default function PrintRoom() {
         <div className="print-stack">
           <PrintableFightCard card={card} />
 
-          {chosen ? (
+          {awardsFailed ? (
+            <PrintSheet
+              eyebrow="Not loaded"
+              title="The certificate could not be loaded"
+              footNote="Reload before printing to get the certificate sheet."
+            >
+              <p className="print-cert-lead">
+                The record of what {card.displayName} has reached could not be read just now.
+              </p>
+            </PrintSheet>
+          ) : chosen ? (
             <PrintableCertificate
               athleteName={card.displayName}
               milestone={chosen}

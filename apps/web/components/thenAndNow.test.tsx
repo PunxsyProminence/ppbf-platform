@@ -83,6 +83,35 @@ describe('the then-and-now frame', () => {
     expect(await screen.findByText(/This frame fills itself/)).toBeTruthy();
   });
 
+  it('says the frame could not be loaded, not that day one is coming, when the reads fail', async () => {
+    installFetch(() => jsonResponse({}, false));
+
+    await act(async () => {
+      render(<ThenAndNow athleteId="ath-1" />);
+    });
+
+    expect(await screen.findByText(/could not be loaded just now/)).toBeTruthy();
+    expect(screen.queryByText(/This frame fills itself/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('does not print "0 sessions" when only the session read fails', async () => {
+    installFetch((url) => {
+      if (url.includes('/sessions/list')) return jsonResponse({}, false);
+      if (url.includes('/achievements/milestones')) {
+        return jsonResponse({ ok: true, items: [{ milestone_key: 'first_week', note: '', awarded_at: '2026-01-19T00:00:00Z' }] });
+      }
+      return jsonResponse({ ok: true, items: [] });
+    });
+
+    await act(async () => {
+      render(<ThenAndNow athleteId="ath-1" />);
+    });
+
+    expect(await screen.findByText(/Sessions could not be loaded just now/)).toBeTruthy();
+    expect(screen.queryByText(/sessions on the card/)).toBeNull();
+  });
+
   it('renders nothing at all without a resolved athlete identity', () => {
     const { container } = render(<ThenAndNow athleteId={null} />);
     expect(container.firstChild).toBeNull();
