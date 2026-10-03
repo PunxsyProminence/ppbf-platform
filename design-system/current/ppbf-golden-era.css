@@ -3177,6 +3177,300 @@
   color: var(--brass-200);
 }
 
+/* THE FLOOR AS A COMMAND BOARD (components/CoachFloorFocus.tsx). Jason's
+   layout call of 2026-10-03: the Canva Command Center panel board -- brass
+   gauges along the top, three panels below -- in the look of his Canva
+   references: tan cotton canvas, stitched old brown leather patches, brass
+   rivets, cartoon brass dials, old oxidised stains at the corners. All CSS,
+   no images. Scoped to .coach-floor-focus; no plate lines.
+
+   No status token here (the locked, restricted, monitor, cleared rungs or
+   their inks): those mean a readiness or medical state (OD-2026-09-29-001),
+   and decoration in them would read as one. Status colour reaches this board
+   only through the badges, which carry their words. The urgent band is rust;
+   a failed read is said in words, bold, in brass.
+
+   Size rules sit at ONE class on purpose (.coach-floor-focus__btn, __badge):
+   they beat the legacy .btn / .badge by coming later in the sheet, and stay
+   under the gym-floor type floor in kioskTypeFloor.test.ts, which a
+   two-class rule would take back. Readability floors held here: every
+   control at --tap (55px), every line of text at --t-md (19.1px) or larger;
+   text on canvas is dark ink, text on leather is bone. Under ~600px of board
+   width the panels stack into one column. */
+.coach-floor-focus {
+  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  padding: var(--s5);
+  border: 2px solid #6a4a2a;
+  color: #2a1c10;
+  background-color: #bfa57a;
+  background-image:
+    radial-gradient(ellipse 18% 14% at 3% 4%, rgba(90,20,16,.42), rgba(90,20,16,0) 70%),
+    radial-gradient(ellipse 12% 20% at 97% 2%, rgba(90,20,16,.38), rgba(90,20,16,0) 70%),
+    radial-gradient(ellipse 14% 10% at 96% 97%, rgba(90,20,16,.3), rgba(90,20,16,0) 70%),
+    repeating-linear-gradient(0deg, rgba(60,40,20,.06) 0 1px, rgba(0,0,0,0) 1px 3px),
+    repeating-linear-gradient(90deg, rgba(60,40,20,.05) 0 1px, rgba(0,0,0,0) 1px 3px),
+    radial-gradient(ellipse at 50% 40%, #c9b089, #b0966c 85%);
+  box-shadow: inset 0 0 40px rgba(60,35,15,.45), 0 4px 14px rgba(0,0,0,.5);
+  font-size: var(--t-md);
+  line-height: 1.35;
+}
+.coach-floor-focus::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed rgba(70,45,22,.55);
+  border-radius: calc(var(--r-lg) - 4px);
+  pointer-events: none;
+}
+/* One size for the whole board, inherited; nothing here names a bare
+   element, so the desk ladders elsewhere are untouched. */
+.coach-floor-focus__label {
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--brass-200);
+}
+.coach-floor-focus__head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  text-align: center;
+}
+.coach-floor-focus__title {
+  font-family: var(--font-stencil);
+  font-size: var(--t-2xl);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #241B12;
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+}
+.coach-floor-focus__head p { color: #2a1c10; }
+
+/* Gauges: riveted brass plates. A cartoon dial with a needle appears only
+   where the count has a real scale (readings out of roster); the others are
+   counters, because a needle on a bare count would point at nothing. */
+.coach-floor-focus__gauges {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: 0;
+}
+@container (min-width: 560px) {
+  .coach-floor-focus__gauges { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.coach-floor-focus__gauge {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s3) var(--s2);
+  border: 2px solid #7a5a22;
+  border-radius: 12px;
+  background-image: linear-gradient(180deg, var(--brass-200), var(--brass-300) 55%, var(--brass-400));
+  box-shadow: inset 0 2px 0 rgba(255,248,224,.65), inset 0 -3px 5px rgba(0,0,0,.35), 0 3px 0 #5a4018, 0 5px 10px rgba(0,0,0,.4);
+  color: #1d150b;
+  text-align: center;
+}
+.coach-floor-focus__gauge::before,
+.coach-floor-focus__gauge::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f6e7bf, #6b4c18 75%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.5);
+}
+.coach-floor-focus__gauge::before { left: 7px; }
+.coach-floor-focus__gauge::after { right: 7px; }
+.coach-floor-focus__gauge dd { margin: 0; }
+.coach-floor-focus__gauge-label {
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.coach-floor-focus__gauge-value {
+  font-size: var(--t-2xl);
+  font-weight: 800;
+  line-height: 1.05;
+}
+.coach-floor-focus__gauge[data-gauge-state="alert"] .coach-floor-focus__gauge-value { color: #6e0f0a; }
+.coach-floor-focus__gauge[data-gauge-state="unknown"] .coach-floor-focus__gauge-sub { font-weight: 700; }
+.coach-floor-focus__dial {
+  position: relative;
+  width: 76px;
+  height: 40px;
+  overflow: hidden;
+  border: 3px solid #6b4c18;
+  border-bottom: 0;
+  border-radius: 76px 76px 0 0;
+  background:
+    repeating-conic-gradient(from -90deg at 50% 100%, #1d150b 0 1.5deg, rgba(0,0,0,0) 1.5deg 18deg),
+    radial-gradient(circle at 50% 100%, #f1e6c8 62%, #e0d0a6 63%);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,.35);
+}
+.coach-floor-focus__needle {
+  position: absolute;
+  left: calc(50% - 2px);
+  bottom: 0;
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  background: #6e0f0a;
+  transform-origin: 50% 100%;
+  transform: rotate(calc(-90deg + var(--turn, 0) * 180deg));
+}
+.coach-floor-focus__needle::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1d150b;
+}
+
+/* Three stitched leather patches. */
+.coach-floor-focus__columns {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s4);
+}
+@container (min-width: 600px) {
+  .coach-floor-focus__columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); }
+}
+.coach-floor-focus__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+  padding: var(--s4);
+  border: 1px solid #2c1a0d;
+  border-radius: 12px;
+  color: var(--bone-100);
+  background-color: #5a3820;
+  background-image:
+    radial-gradient(ellipse at 20% 15%, rgba(255,220,170,.10), rgba(0,0,0,0) 45%),
+    radial-gradient(ellipse at 80% 85%, rgba(0,0,0,.28), rgba(0,0,0,0) 55%),
+    repeating-radial-gradient(circle at 30% 30%, rgba(0,0,0,.05) 0 2px, rgba(0,0,0,0) 2px 5px),
+    linear-gradient(170deg, #6a4426, #5a3820 50%, #4a2d19);
+  box-shadow: inset 0 1px 0 rgba(255,220,170,.18), inset 0 -2px 6px rgba(0,0,0,.4), 0 4px 10px rgba(40,20,5,.55);
+}
+.coach-floor-focus__panel::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed rgba(231,200,138,.5);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.coach-floor-focus__panel > * { position: relative; }
+.coach-floor-focus__panel-title {
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--brass-200);
+  border-bottom: 1px solid rgb(var(--brass-300-rgb) / .4);
+  padding-bottom: var(--s2);
+}
+.coach-floor-focus__athletes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coach-floor-focus__athlete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s2);
+  border: 1px solid rgba(231,200,138,.35);
+  border-radius: 8px;
+  background: rgba(30,16,6,.35);
+  color: var(--bone-100);
+  text-align: left;
+}
+.coach-floor-focus__athlete:hover { border-color: var(--brass-300); }
+.coach-floor-focus__athlete-name { flex: 1 1 8ch; min-width: 0; overflow-wrap: anywhere; }
+.coach-floor-focus__medal {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--brass-400);
+  background: radial-gradient(circle at 35% 30%, #7a5532, #3f2615);
+  font-weight: 800;
+}
+.coach-floor-focus__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+  text-align: center;
+}
+.coach-floor-focus__item h4 { font-size: var(--t-lg); overflow-wrap: anywhere; }
+.coach-floor-focus__item[data-focus-kind="urgent"] {
+  border-left: 5px solid var(--rust-300);
+  padding-left: var(--s3);
+}
+.coach-floor-focus__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  width: 100%;
+  text-align: left;
+}
+.coach-floor-focus__details dl { display: flex; flex-direction: column; gap: var(--s2); margin: 0; }
+.coach-floor-focus__details dl > div { display: flex; flex-wrap: wrap; column-gap: var(--s3); }
+.coach-floor-focus__details dd { margin: 0; color: var(--bone-200); }
+.coach-floor-focus__quiet { color: var(--bone-300); }
+.coach-floor-focus__alert { color: var(--brass-200); font-weight: 700; }
+.coach-floor-focus__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s3);
+}
+.coach-floor-focus__btn {
+  min-height: var(--tap);
+  font-size: var(--t-md);
+  padding-inline: var(--s3);
+  justify-content: center;
+  text-align: center;
+}
+.coach-floor-focus__panel > .coach-floor-focus__btn { width: 100%; }
+.coach-floor-focus__row > .coach-floor-focus__btn { flex: 1 1 auto; }
+/* A ghost control on leather needs an edge to read as a control: a stitched
+   tab. Colour and border only; the size stays on the one-class rule above. */
+.coach-floor-focus__btn.btn--ghost {
+  border: 2px solid rgba(231,200,138,.55);
+  background-color: rgba(30,16,6,.4);
+  color: var(--bone-100);
+}
+.coach-floor-focus__badge { font-size: var(--t-md); letter-spacing: .04em; white-space: nowrap; }
+.coach-floor-focus__badge i { font-size: 1em; }
+
 /* ==========================================================================
    GOLDEN ERA 010 — THE FILE (Research Inbox)
    ==========================================================================
