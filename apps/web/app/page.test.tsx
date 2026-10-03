@@ -91,3 +91,10 @@ test('canonical and metadataBase use the bare domain', () => {
   expect(metadata.alternates?.canonical).toBe('https://punxsyprominence.org/');
   expect(String(rootMetadata.metadataBase)).toBe('https://punxsyprominence.org/');
 });
+
+test('the share-card alt text claims youth are free, not every family', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const alt = require('fs').readFileSync(require('path').join(__dirname, 'opengraph-image.alt.txt'), 'utf8');
+  expect(alt).toContain('free for youth');
+  expect(alt).not.toMatch(/free for all/i);
+});
