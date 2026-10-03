@@ -15,7 +15,7 @@ import {
   refuseIfLoginDeleted,
   type AccountDeletionFlag,
 } from './deletedAccountSignIn';
-import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
+import { PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
@@ -230,7 +230,15 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
-  const organizationId = data.organization_id || getPilotDefaultOrganizationId();
+  // No organization means no session. This used to fall back to the
+  // deployment's default organization, which would scope the session to an
+  // organization the account was never placed in. The column is not null, so
+  // this only fires if that constraint is ever lost; it must then refuse.
+  const organizationId = data.organization_id;
+  if (!organizationId) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'no_organization' });
+    return null;
+  }
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
     console.warn('pilot-auth login rejected', { accountId, reason: 'organization_not_active' });
     return null;
@@ -325,7 +333,11 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     return null;
   }
 
-  const organizationId = data.organization_id || getPilotDefaultOrganizationId();
+  // No organization means no session, as in the PIN path.
+  const organizationId = data.organization_id;
+  if (!organizationId) {
+    return null;
+  }
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
     return null;
   }
@@ -453,7 +465,13 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     return null;
   }
 
-  const organizationId = row.organization_id || getPilotDefaultOrganizationId();
+  // No organization means no principal, as at sign-in. The membership join
+  // above already drops such a row; this keeps the refusal from depending on
+  // that join's shape.
+  const organizationId = row.organization_id;
+  if (!organizationId) {
+    return null;
+  }
   if (!row.is_platform_owner && row.organization_status && row.organization_status !== 'active') {
     return null;
   }
