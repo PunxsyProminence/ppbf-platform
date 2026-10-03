@@ -44,6 +44,7 @@ import {
   redeemActivationCode,
 } from './activation';
 import { query, withTransaction } from './db';
+import { jsonError } from './http';
 import { DEFAULT_FIRST_LOGIN_PIN } from './pinPolicy';
 import { hashPin } from './security';
 
@@ -300,6 +301,17 @@ describe('provisionAthleteActivation', () => {
     expect(callsMatching(/set superseded_at = now\(\)/)).toHaveLength(1);
     const [membershipSql] = callsMatching(/insert into pilot\.organization_memberships/)[0];
     expect(membershipSql).toContain("active_flag = false");
+  });
+
+  // An unknown account, or one another gym holds, is the admin's typo, not a
+  // server failure: jsonError answers 404 only for a "Not found" message.
+  test('reset of an account it cannot find answers 404, after asking whether the login was deleted', async () => {
+    const refusal = provisionAthleteActivation({ accountId: 'acct-none', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'reset' });
+    await expect(refusal).rejects.toThrow(/^Not found: /);
+    const error = await refusal.catch((caught: unknown) => caught);
+    expect(jsonError(error).status).toBe(404);
+    expect(callsMatching(/select 1 from pilot\.accounts a/)).toHaveLength(1);
+    expect(callsMatching(/insert into pilot\.account_activation_tokens/)).toHaveLength(0);
   });
 });
 
