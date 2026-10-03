@@ -79,7 +79,7 @@ interface LibrarySourceOption {
 // The sources route returns at most this many rows per request.
 const SOURCES_PAGE_SIZE = 200;
 
-// RINT-05b. DRAFT, awaiting Jason's approval.
+// RINT-05b. Approved by Jason in the RINT-05b lane, 2026-10-03.
 const PLATFORM_SHELF_LABEL = 'Platform shelf (every gym reads this)';
 
 const GENERAL_SOURCE_TYPES = [
@@ -223,15 +223,28 @@ export default function ResearchIntakePage() {
   // with more says so in the picker instead of hiding the rest silently.
   const fetchSources = async (signal?: AbortSignal) => {
     const all: LibrarySourceOption[] = [];
+    const seen = new Set<string>();
+    // Offsets over a newest-first list shift when a source is registered
+    // mid-read, so a row can come back twice; it is listed once.
+    const add = (page: LibrarySourceOption[]) => {
+      for (const source of page) {
+        if (!seen.has(source.source_id)) {
+          seen.add(source.source_id);
+          all.push(source);
+        }
+      }
+    };
     for (let offset = 0; offset < LIBRARY_SOURCE_PICKER_CAP; offset += SOURCES_PAGE_SIZE) {
       const page = await fetchSourcesPage(signal, false, offset);
       // A later page failing keeps what was loaded, and says the list is short.
       if (page === null) return offset === 0 ? null : { sources: all, truncated: true };
-      all.push(...page);
+      add(page);
       if (page.length < SOURCES_PAGE_SIZE) return { sources: all, truncated: false };
     }
-    // Every page came back full: there may be more than were loaded.
-    return { sources: all, truncated: true };
+    // Every page came back full. Only a source past the cap makes the list
+    // short; a shelf of exactly the cap is complete.
+    const beyond = await fetchSourcesPage(signal, false, LIBRARY_SOURCE_PICKER_CAP);
+    return { sources: all, truncated: beyond === null || beyond.length > 0 };
   };
 
   const refreshCuratorSources = async (signal?: AbortSignal) => {

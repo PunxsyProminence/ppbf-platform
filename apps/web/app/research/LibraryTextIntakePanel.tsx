@@ -47,14 +47,15 @@ export interface LibraryTextIntakeSource {
   title: string;
 }
 
-// RINT-02 words, all in one place so they can be approved or changed together.
-// DRAFT wording, awaiting Jason's approval (listed in the pull request).
-// RINT-05b words for the platform shelf. DRAFT, awaiting Jason's approval.
+// RINT-05b words for the platform shelf. Approved by Jason in the RINT-05b
+// lane, 2026-10-03 ("Approve all five").
 export const SHELF_WORDS = {
   platformNotice: "Adding to the platform shelf. Every gym's SHADOW can cite this once it is approved.",
   platformEmpty: 'No sources are registered on the platform shelf yet. Register one under General Research Intake first.',
 };
 
+// RINT-02 words, all in one place so they can be approved or changed together.
+// DRAFT wording, awaiting Jason's approval (listed in the pull request).
 export const PDF_WORDS = {
   heading: 'Read a PDF',
   help: "Choose the PDF this source's words come from. The app reads it and does not keep it; file the original in the SharePoint Research Archive.",

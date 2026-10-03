@@ -229,3 +229,64 @@ describe('the shelf switch', () => {
     expect(screen.queryByText('Platform paper')).toBeNull();
   });
 });
+
+test('a session read that never answers still lets the gym shelf load, after a short wait', async () => {
+  jest.useFakeTimers();
+  try {
+    const gets: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/auth/session')) return new Promise(() => {});
+      gets.push(url);
+      return Promise.resolve({ ok: true, json: async () => ({ sources: [], documents: [DOCUMENT] }) } as Response);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<EvidenceReviewPage />);
+    });
+    expect(gets).toHaveLength(0);
+    expect(screen.getByText(/Loading the evidence library/i)).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    expect(gets).toHaveLength(1);
+    expect(gets[0]).not.toContain('shelf');
+    expect(await screen.findByText('Adolescent load tolerance')).toBeTruthy();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('a review refresh that lands after a shelf switch does not overwrite the new shelf', async () => {
+  let releasePatch: (() => void) | null = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/api/pilot/auth/session')) {
+      return { ok: true, json: async () => ({ authenticated: true, role: 'platform_owner' }) } as Response;
+    }
+    if (init?.method === 'PATCH') {
+      await new Promise<void>((resolve) => { releasePatch = resolve; });
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }
+    const platform = url.includes('shelf=platform');
+    return { ok: true, json: async () => ({ sources: [], documents: [{ ...DOCUMENT, document_name: platform ? 'Platform paper' : 'Gym paper' }] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<EvidenceReviewPage />);
+  });
+  await screen.findByText('Platform paper');
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve + verify' })[0]);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: "Gym shelf (this account's gym only)" }));
+  });
+  expect(await screen.findByText('Gym paper')).toBeTruthy();
+  await act(async () => {
+    releasePatch?.();
+  });
+  expect(screen.getByText('Gym paper')).toBeTruthy();
+  expect(screen.queryByText('Platform paper')).toBeNull();
+});

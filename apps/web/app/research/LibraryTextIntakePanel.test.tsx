@@ -354,6 +354,6 @@ describe('LibraryTextIntakePanel on the platform shelf', () => {
 
   it('says when the shelf holds more sources than the picker lists', () => {
     render(<LibraryTextIntakePanel sources={SOURCES} shelf="platform" truncated />);
-    expect(screen.getByText(/Only the newest 1,000 are listed/)).toBeTruthy();
+    expect(screen.getByText(/Only the newest 2 are listed/)).toBeTruthy();
   });
 });

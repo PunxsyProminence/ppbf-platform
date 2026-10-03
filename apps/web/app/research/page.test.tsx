@@ -525,7 +525,7 @@ describe('the platform shelf', () => {
     await screen.findByText('General Research Intake');
     const pickerReads = seen.gets.filter((url) => !url.includes('general_research'));
     expect(pickerReads.map((url) => new URL(url, 'https://app.test').searchParams.get('offset') ?? '0'))
-      .toEqual(['0', '200', '400', '600', '800']);
+      .toEqual(['0', '200', '400', '600', '800', '1000']);
     const select = screen.getByLabelText('Registered source') as HTMLSelectElement;
     expect(select.options).toHaveLength(1 + 1_000);
     expect(screen.getByText(/Only the newest 1,000 are listed/)).toBeTruthy();
@@ -542,5 +542,54 @@ describe('the platform shelf', () => {
     await screen.findByText('General Research Intake');
     expect(seen.gets.filter((url) => !url.includes('general_research'))).toHaveLength(1);
     expect(screen.queryByText(/Only the newest/)).toBeNull();
+  });
+});
+
+describe('the picker at the cap', () => {
+  function pagedFetch(pageOf: (offset: number) => unknown[] | null, gets: string[]) {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/library/sources')) {
+        gets.push(url);
+        if (url.includes('general_research=true')) return { ok: true, json: async () => ({ items: [] }) } as Response;
+        const offset = Number(new URL(url, 'https://app.test').searchParams.get('offset') ?? '0');
+        const page = pageOf(offset);
+        return page === null
+          ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+          : ({ ok: true, json: async () => ({ items: page }) } as Response);
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+  const rows = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    source_id: `src_${from + index}`, title: `Paper ${from + index}`, source_type: 'peer_reviewed',
+  }));
+
+  test('a shelf of exactly 1,000 is complete, not cut short', async () => {
+    global.fetch = pagedFetch((offset) => (offset < 1_000 ? rows(offset, 200) : []), []);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('General Research Intake');
+    expect((screen.getByLabelText('Registered source') as HTMLSelectElement).options).toHaveLength(1 + 1_000);
+    expect(screen.queryByText(/Only the newest/)).toBeNull();
+  });
+
+  test('a page that fails part-way keeps what loaded and says how many that is', async () => {
+    global.fetch = pagedFetch((offset) => (offset === 0 ? rows(0, 200) : null), []);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('General Research Intake');
+    expect(screen.getByText(/Only the newest 200 are listed/)).toBeTruthy();
+  });
+
+  test('a row repeated across pages is listed once', async () => {
+    global.fetch = pagedFetch((offset) => (offset === 0 ? rows(0, 200) : offset === 200 ? rows(199, 3) : []), []);
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText('General Research Intake');
+    expect((screen.getByLabelText('Registered source') as HTMLSelectElement).options).toHaveLength(1 + 202);
   });
 });

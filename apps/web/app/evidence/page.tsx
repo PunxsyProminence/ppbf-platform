@@ -8,7 +8,7 @@ import { apiBase } from '@/lib/apiBase';
 
 type Shelf = 'gym' | 'platform';
 
-// RINT-05b words. DRAFT, awaiting Jason's approval. The gym shelf is the
+// RINT-05b words, approved by Jason in the RINT-05b lane, 2026-10-03. The gym shelf is the
 // signed-in account's own organization (libraryShelf.ts), which this page does
 // not know by name, so the label does not name a gym.
 const SHELF_LABELS: Record<Shelf, string> = {
@@ -45,6 +45,13 @@ interface ReviewQueue {
   documents: ReviewDocument[];
 }
 
+const EMPTY_QUEUE: ReviewQueue = { sources: [], documents: [] };
+
+type ReadResult = { shelf: Shelf; queue: ReviewQueue } | { shelf: Shelf; error: string };
+
+// How long the page waits for its own session read before reading the gym shelf.
+const SESSION_WAIT_MS = 5_000;
+
 /* Law 3: approval state is a queue outcome -- glyph + uppercase label on the
    ladder. Law 7 handles the rejected outcome separately, as an ink stamp. */
 const APPROVAL_BADGES: Record<ReviewState, { className: string; glyph: string; label: string }> = {
@@ -54,21 +61,6 @@ const APPROVAL_BADGES: Record<ReviewState, { className: string; glyph: string; l
 };
 
 export default function EvidenceReviewPage() {
-  const [queue, setQueue] = useState<ReviewQueue>({ sources: [], documents: [] });
-  const [loadError, setLoadError] = useState('');
-  const [actionError, setActionError] = useState('');
-  // A failed first read and a failed review action are different facts. When
-  // the read failed the page does not know what the library holds, so the
-  // empty sentences below must not speak; a failed action says nothing about
-  // the list that is already on screen.
-  const error = loadError || actionError;
-  const [busyKey, setBusyKey] = useState('');
-  // Before the first read resolved, this page asserted both of its empty
-  // sentences at once -- an admin opening it saw "No sources" and "No
-  // documents" while the request was still in flight. /research already
-  // solved this; the aria-busy note is the same one it renders.
-  const [loading, setLoading] = useState(true);
-
   // RINT-05b (OD-2026-10-02-013 1B and 5A; OD-2026-10-02-015 D2). The platform
   // owner reviews the platform shelf here, and may switch to the gym shelf it
   // already reviewed. It opens on the platform shelf, its own. Every other
@@ -77,8 +69,36 @@ export default function EvidenceReviewPage() {
   const isPlatformOwner = session.role === 'platform_owner';
   const [chosenShelf, setChosenShelf] = useState<Shelf | null>(null);
   const shelf: Shelf = chosenShelf ?? (isPlatformOwner ? 'platform' : 'gym');
-  // Only the newest read may fill the list: a slow answer for the shelf just
-  // left must not land on the one just chosen.
+  // The page waits for the session so the platform owner's first read is its
+  // own shelf, but not forever: a session answer that never comes falls back
+  // to the gym-shelf read every reviewer had before this change. A late
+  // platform-owner answer then moves the page to the platform shelf.
+  const [sessionWaitOver, setSessionWaitOver] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSessionWaitOver(true), SESSION_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  const roleKnown = !session.loading || sessionWaitOver;
+
+  // What the last read answered, and for which shelf. The list, the failure
+  // and the empty sentences are shown only for the shelf on screen: anything
+  // else is a read still owed, which is the loading state. Before the first
+  // read resolved, this page asserted both of its empty sentences at once --
+  // an admin opening it saw "No sources" and "No documents" while the request
+  // was still in flight. /research already solved this; the aria-busy note is
+  // the same one it renders.
+  const [result, setResult] = useState<ReadResult | null>(null);
+  const loading = result === null || result.shelf !== shelf;
+  const queue: ReviewQueue = !loading && 'queue' in result ? result.queue : EMPTY_QUEUE;
+  const loadError = !loading && 'error' in result ? result.error : '';
+  const [actionError, setActionError] = useState('');
+  // A failed first read and a failed review action are different facts. When
+  // the read failed the page does not know what the library holds, so the
+  // empty sentences below must not speak; a failed action says nothing about
+  // the list that is already on screen.
+  const error = loadError || actionError;
+  const [busyKey, setBusyKey] = useState('');
+  // Only the newest read may fill the list.
   const readSeq = useRef(0);
 
   const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
@@ -92,36 +112,35 @@ export default function EvidenceReviewPage() {
   }, [shelf]);
 
   useEffect(() => {
-    // Wait for the session, so the platform owner's first read is its shelf.
-    if (session.loading) return;
+    if (!roleKnown) return;
     const seq = ++readSeq.current;
+    const readShelf = shelf;
     void fetchQueue().then(
       (loaded) => {
-        if (seq === readSeq.current) setQueue(loaded);
+        if (seq === readSeq.current) setResult({ shelf: readShelf, queue: loaded });
       },
       (failure: unknown) => {
-        if (seq === readSeq.current) setLoadError(failure instanceof Error ? failure.message : 'Unable to load evidence.');
+        if (seq === readSeq.current) {
+          setResult({ shelf: readShelf, error: failure instanceof Error ? failure.message : 'Unable to load evidence.' });
+        }
       },
-    ).finally(() => {
-      if (seq === readSeq.current) setLoading(false);
-    });
-  }, [fetchQueue, session.loading]);
+    );
+  }, [fetchQueue, roleKnown, shelf]);
 
   const where = shelf === 'platform' ? 'on the platform shelf' : 'for this organization';
 
-  // A new shelf starts as an unread list: nothing from the old one stays on
-  // screen, and the empty sentences wait for the new read (the effect above).
   const chooseShelf = (next: Shelf) => {
     if (next === shelf) return;
-    setLoading(true);
-    setLoadError('');
     setActionError('');
-    setQueue({ sources: [], documents: [] });
     setChosenShelf(next);
   };
 
   const update = async (payload: Record<string, string>) => {
     const key = `${payload.entityType}:${payload.entityId}:${payload.action}`;
+    // Taken before the request: a shelf switch while it is in flight starts a
+    // newer read, and this refresh must then not overwrite it.
+    const seq = readSeq.current;
+    const actingShelf = shelf;
     setBusyKey(key);
     setActionError('');
     try {
@@ -129,15 +148,14 @@ export default function EvidenceReviewPage() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(shelf === 'platform' ? { ...payload, shelf } : payload),
+        body: JSON.stringify(actingShelf === 'platform' ? { ...payload, shelf: actingShelf } : payload),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error ?? 'Evidence review failed.');
       }
-      const seq = readSeq.current;
       const refreshed = await fetchQueue();
-      if (seq === readSeq.current) setQueue(refreshed);
+      if (seq === readSeq.current) setResult({ shelf: actingShelf, queue: refreshed });
     } catch (updateError) {
       setActionError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
     } finally {

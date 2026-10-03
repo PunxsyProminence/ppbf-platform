@@ -90,7 +90,7 @@ export default function LibrarySourcePicker({
           ? `${formatIntakeCount(matchCount)} of ${formatIntakeCount(sources.length)} sources match.`
           : `${formatIntakeCount(sources.length)} sources.`}
         {truncated
-          ? ` Only the newest ${formatIntakeCount(LIBRARY_SOURCE_PICKER_CAP)} are listed; an older source will not appear here.`
+          ? ` Only the newest ${formatIntakeCount(sources.length)} are listed; an older source will not appear here.`
           : ''}
       </p>
     </div>
