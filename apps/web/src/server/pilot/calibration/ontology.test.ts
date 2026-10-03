@@ -29,6 +29,7 @@ import {
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   CONTACT_RESULTS,
+  CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
   DEFENSE_TYPES,
   EVENT_CLASSES,
@@ -417,6 +418,17 @@ describe('boxing-ontology-0.2 body points', () => {
     // Jason 2026-10-03 ("1 and 3"): the other boxer is marked on their own event.
     const exported = Object.keys(await import('./ontology'));
     expect(exported.filter((name) => /SUBJECT|OPPONENT/i.test(name))).toEqual([]);
+  });
+
+  test('in 0.2, only a punch that made contact carries a contact time', () => {
+    // OD-2026-10-02-011 3a (contact, else full extension); -016 D2 A (can't
+    // tell -> full extension). Every other result is a miss or can't-tell.
+    expect([...CONTACT_RESULTS_WITH_CONTACT]).toEqual([
+      'clean_target_contact', 'glancing_target_contact', 'guard_contact', 'non_target_contact',
+    ]);
+    expect(CONTACT_RESULTS.filter((result) => !CONTACT_RESULTS_WITH_CONTACT.includes(result))).toEqual([
+      'no_contact', 'uncertain_contact',
+    ]);
   });
 
   test('lead side is 0.1 stance plus neutral, one token per concept', () => {
