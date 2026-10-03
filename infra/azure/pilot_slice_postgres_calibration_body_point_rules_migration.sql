@@ -10,7 +10,7 @@
 --     punch or defence (OD-2026-10-02-014), on the person whose action the
 --     event is. One per event; no subject column: the other boxer is marked
 --     on their own event (Jason 2026-10-03, "It should be on the individuals
---     action", then "1 and 3"; #1150 body; OD being recorded 2026-10-03). Only a 0.2 set may hold one; a submitted
+--     action", then "1 and 3"; OD-2026-10-03-006). Only a 0.2 set may hold one; a submitted
 --     set's are frozen; deleting the event, set, clip, footage or
 --     organization still removes them.
 --   * On a 0.2 event row: no 0.1 `stance` (lead side at each moment replaces
