@@ -471,11 +471,12 @@ export type MomentSlot = (typeof MOMENT_SLOTS)[number];
 export const MOMENT_KINDS = ['start', 'contact', 'full_extension', 'furthest_point', 'end'] as const;
 export type MomentKind = (typeof MOMENT_KINDS)[number];
 
-/** Who the points are on. The person throwing the punch or making the
- * defence, and the other person only when the event is contact against them
- * (OD-2026-10-02-008 9A), marked the same way. */
-export const BODY_SUBJECTS = ['actor', 'opponent'] as const;
-export type BodySubject = (typeof BODY_SUBJECTS)[number];
+/* Whose points: always the person whose action the event is. There is no
+ * subject list and no "opponent": the other boxer is marked on their own event
+ * (their defence, and later a received-punch event), never inside the
+ * puncher's (Jason 2026-10-03, "It should be on the individuals action" then
+ * "1 and 3", superseding OD-2026-10-02-008 9A's marking of the other person
+ * on contact). */
 
 /** Which side leads, recorded at each marked moment (OD-2026-10-02-011 3b).
  *
