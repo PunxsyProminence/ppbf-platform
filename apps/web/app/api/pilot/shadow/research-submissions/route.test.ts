@@ -212,6 +212,13 @@ describe('platform owner (D3)', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  test('ignores a shelf field: there is no platform-shelf option on this route', async () => {
+    const response = await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', shelf: 'platform' }));
+
+    expect(response.status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   test('still reviews a submission', async () => {
     mockReview.mockResolvedValue({ submission_id: 's-1' });
 

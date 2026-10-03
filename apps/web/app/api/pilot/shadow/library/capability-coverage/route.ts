@@ -26,10 +26,11 @@ export const runtime = 'nodejs';
 // POST carries two operations because the seed script calls it both ways:
 // {action:'recompute'} regrades, anything else upserts a rule.
 //
-// Both arms write the gym's rows (a rule, or the research tickets a regrade
-// opens and closes), so both are gym-shelf writes the platform owner no longer
-// makes (OD-2026-10-02-015 D3, refused in libraryShelf.ts). GET is a read and
-// stays as it was. There is no platform-shelf option here.
+// Both arms are curator writes on the gym's Library (a coverage rule, or a
+// regrade that stores coverage and opens and closes the gym's research
+// tickets), so the platform owner no longer makes them (OD-2026-10-02-015 D3,
+// refused in libraryShelf.ts). GET is a read and stays as it was. There is no
+// platform-shelf option here.
 
 const MAX_SOURCE_TYPES = 20;
 
