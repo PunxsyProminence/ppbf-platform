@@ -97,6 +97,12 @@ const LEGACY_READERS = new Set<string>([
      branch is: schoolwork and community-service hours are real, and they are
      not evidence about a training plan. */
   'src/server/pilot/blockReview.ts',
+  // Left join to the ONE activity a sparring segment is linked to, for that
+  // activity's occurred_on (the day sparred when the segment has no
+  // session_date of its own). Not a participation read: no count, no rate,
+  // never crossed with another attendance source; attendance_reconciled has
+  // no per-activity row to answer it.
+  'src/server/pilot/sparringExposure.ts',
 ]);
 
 const SCANNED_DIRECTORIES = ['app', 'components', 'src'];

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 // pilot.sparring_exposure and pilot.session_load are owned by
 // infra/azure/pilot_slice_postgres_sparring_exposure_and_load_migration.sql,
@@ -17,6 +18,17 @@ import { query, queryOne } from './db';
 // duration) is computed only where explicitly asked for
 // (deriveUnvalidatedSessionLoad), is never stored, and is always labelled
 // unvalidated -- see the migration header for why.
+//
+// LINKED OR UNLINKED. A segment either points at a pilot.activity_log row
+// (activity_id) or stands alone on a gym day (session_date), per
+// pilot_slice_postgres_sparring_exposure_session_date_migration.sql. Most
+// athletes have no sign-in account, and activity_log rows require one, so the
+// coach floor entry writes unlinked rows. Nothing here creates an
+// activity_log row, so nothing here touches attendance or tenure.
+//
+// DELETED ATHLETES ARE NEVER READ. Every reader here filters on the athlete
+// row's own deleted_at (deletedAthletes.ts, deletion scope B), and a deleted
+// sparring partner reads back as null.
 
 export type SparringType = 'hard' | 'play' | 'technical' | 'game' | 'conditioned';
 export type CoachObservedIntensity = 'light' | 'moderate' | 'firm' | 'unclear';
@@ -28,7 +40,9 @@ export type NextSessionQuality = 'better' | 'same' | 'slightly_down' | 'clearly_
 export interface SparringExposureRow {
   organization_id: string;
   exposure_id: string;
-  activity_id: string;
+  activity_id: string | null;
+  /** Gym day (YYYY-MM-DD). Required when activity_id is null. */
+  session_date: string | null;
   athlete_id: string;
   segment_number: number;
   sparring_type: SparringType;
@@ -69,7 +83,7 @@ export interface SessionLoadRow {
 }
 
 const EXPOSURE_FIELDS =
-  'organization_id, exposure_id, activity_id, athlete_id, segment_number, sparring_type, '
+  'organization_id, exposure_id, activity_id, session_date::text as session_date, athlete_id, segment_number, sparring_type, '
   + 'time_under_impact_sec, round_equivalent, partner_athlete_id, headgear_worn, glove_oz, '
   + 'coach_observed_intensity, coach_observed_head_contact, athlete_presentation, coach_note, '
   + 'supervising_coach_account_id, stopped_early, stop_rule_id, stop_reason, device_type, '
@@ -81,9 +95,17 @@ const LOAD_FIELDS =
 
 export interface RecordSparringExposureInput {
   organizationId: string;
-  activityId: string;
+  /** At least one of activityId / sessionDate is required (pilot_sparring_exposure_session_date_or_activity). */
+  activityId?: string | null;
+  /** Gym day, YYYY-MM-DD. Never defaulted here: the server's UTC day is the wrong day every evening. */
+  sessionDate?: string | null;
   athleteId: string;
-  segmentNumber: number;
+  /**
+   * Omitted = the next number for this athlete within the activity (linked)
+   * or the gym day (unlinked), computed inside the insert. An entry that loses
+   * a race for that number is retried, never overwritten.
+   */
+  segmentNumber?: number;
   sparringType: SparringType;
   timeUnderImpactSec: number;
   roundEquivalent?: number | null;
@@ -109,24 +131,60 @@ export interface RecordSparringExposureInput {
  * pilot_sparring_exposure_stop -- silence is not a record.
  */
 export async function recordSparringExposure(input: RecordSparringExposureInput): Promise<SparringExposureRow> {
+  const auto = input.segmentNumber === undefined;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await insertSparringExposure(input);
+    } catch (error) {
+      const retry = auto
+        && attempt < AUTO_SEGMENT_ATTEMPTS
+        && error instanceof Error
+        && error.message === 'SPARRING_EXPOSURE_SEGMENT_DUPLICATE';
+      if (!retry) throw error;
+    }
+  }
+}
+
+// Both unique keys on segment_number: the original one for linked rows, the
+// partial one for unlinked rows (session-date migration).
+const SEGMENT_DUPLICATE_CONSTRAINTS: ReadonlySet<string> = new Set([
+  'pilot_sparring_exposure_segment_uq',
+  'pilot_sparring_exposure_session_segment_uq',
+]);
+
+// An auto-numbered entry only races another entry for the same athlete on the
+// same day, so a handful of attempts covers any realistic tablet collision.
+const AUTO_SEGMENT_ATTEMPTS = 5;
+
+async function insertSparringExposure(input: RecordSparringExposureInput): Promise<SparringExposureRow> {
   const exposureId = randomUUID();
 
   try {
+    // $5 null = the next segment number within the same key the unique
+    // constraints use: the activity when linked, the gym day when not.
     const row = await queryOne<SparringExposureRow>(
       `insert into pilot.sparring_exposure
          (organization_id, exposure_id, activity_id, athlete_id, segment_number, sparring_type,
           time_under_impact_sec, round_equivalent, partner_athlete_id, headgear_worn, glove_oz,
           coach_observed_intensity, coach_observed_head_contact, athlete_presentation, coach_note,
           supervising_coach_account_id, stopped_early, stop_rule_id, stop_reason, device_type,
-          device_event_count, device_note)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          device_event_count, device_note, session_date)
+       values ($1,$2,$3,$4,
+               coalesce($5::integer, (
+                 select coalesce(max(prior.segment_number), 0) + 1
+                 from pilot.sparring_exposure prior
+                 where prior.organization_id = $1
+                   and prior.athlete_id = $4
+                   and (($3::text is not null and prior.activity_id = $3)
+                     or ($3::text is null and prior.activity_id is null and prior.session_date = $23::date)))),
+               $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::date)
        returning ${EXPOSURE_FIELDS}`,
       [
         input.organizationId,
         exposureId,
-        input.activityId,
+        input.activityId ?? null,
         input.athleteId,
-        input.segmentNumber,
+        input.segmentNumber ?? null,
         input.sparringType,
         input.timeUnderImpactSec,
         input.roundEquivalent ?? null,
@@ -144,6 +202,7 @@ export async function recordSparringExposure(input: RecordSparringExposureInput)
         input.deviceType ?? null,
         input.deviceEventCount ?? null,
         input.deviceNote ?? null,
+        input.sessionDate ?? null,
       ],
     );
     if (!row) {
@@ -152,30 +211,92 @@ export async function recordSparringExposure(input: RecordSparringExposureInput)
     return row;
   } catch (error) {
     const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
-    if (code === '23505' && constraint === 'pilot_sparring_exposure_segment_uq') {
+    if (code === '23505' && typeof constraint === 'string' && SEGMENT_DUPLICATE_CONSTRAINTS.has(constraint)) {
       throw new Error('SPARRING_EXPOSURE_SEGMENT_DUPLICATE');
     }
     if (code === '23514' && constraint === 'pilot_sparring_exposure_stop') {
       throw new Error('SPARRING_EXPOSURE_STOP_REASON_REQUIRED');
     }
+    if (code === '23514' && constraint === 'pilot_sparring_exposure_session_date_or_activity') {
+      throw new Error('SPARRING_EXPOSURE_SESSION_DATE_REQUIRED');
+    }
     throw error;
   }
 }
 
+export interface SparringExposureListRow extends SparringExposureRow {
+  /** The gym day sparred: session_date, else the linked activity's occurred_on. */
+  sparring_day: string;
+}
+
+// Read shape. Two differences from the stored row:
+//   * sparring_day -- window filters and ordering use the day the sparring
+//     happened, never created_at, so an entry typed up days later still
+//     belongs to the day sparred.
+//   * a partner who has since been deleted is returned as null: deletion
+//     scope B reaches every row that names the athlete, not only rows they own.
+const LIST_FIELDS = EXPOSURE_FIELDS.replace(
+  'partner_athlete_id,',
+  'case when partner_deleted then null else partner_athlete_id end as partner_athlete_id,',
+) + ', sparring_day::text as sparring_day';
+
 export async function listSparringExposure(
   organizationId: string,
-  filter: { athleteId?: string; activityId?: string; since?: string; until?: string } = {},
-): Promise<SparringExposureRow[]> {
-  return query<SparringExposureRow>(
-    `select ${EXPOSURE_FIELDS}
-     from pilot.sparring_exposure
-     where organization_id = $1
-       and ($2::text is null or athlete_id = $2)
-       and ($3::text is null or activity_id = $3)
-       and ($4::timestamptz is null or created_at >= $4)
-       and ($5::timestamptz is null or created_at <= $5)
-     order by created_at desc, segment_number asc`,
-    [organizationId, filter.athleteId ?? null, filter.activityId ?? null, filter.since ?? null, filter.until ?? null],
+  filter: { athleteId?: string; activityId?: string; sinceDay?: string; untilDay?: string; limit?: number } = {},
+): Promise<SparringExposureListRow[]> {
+  return query<SparringExposureListRow>(
+    `select ${LIST_FIELDS}
+     from (
+       select e.*,
+              coalesce(e.session_date, linked.occurred_on) as sparring_day,
+              exists (
+                select 1 from pilot.athletes partner
+                 where partner.organization_id = e.organization_id
+                   and partner.athlete_id = e.partner_athlete_id
+                   and partner.deleted_at is not null) as partner_deleted
+       from pilot.sparring_exposure e
+       left join pilot.activity_log linked
+         on linked.organization_id = e.organization_id and linked.activity_id = e.activity_id
+       where e.organization_id = $1
+         and ($2::text is null or e.athlete_id = $2)
+         and ($3::text is null or e.activity_id = $3)
+         and ${athleteNotDeletedSql('e')}
+     ) exposure
+     where ($4::date is null or sparring_day >= $4::date)
+       and ($5::date is null or sparring_day <= $5::date)
+     order by sparring_day desc, created_at desc, segment_number desc
+     ${filter.limit ? 'limit $6' : ''}`,
+    [
+      organizationId,
+      filter.athleteId ?? null,
+      filter.activityId ?? null,
+      filter.sinceDay ?? null,
+      filter.untilDay ?? null,
+      ...(filter.limit ? [filter.limit] : []),
+    ],
+  );
+}
+
+export interface ActiveStopRule {
+  universal_rule_id: string;
+  ordinal: number;
+  condition_text: string;
+  rule_kind: string;
+}
+
+/**
+ * The gym's current stored-once stop rules (pilot.universal_stop_rules, active
+ * and not superseded), so a coach recording an early stop can name the rule
+ * that fired. The list the coach picks from and the check the write path runs
+ * are this one query, so the two cannot disagree.
+ */
+export async function listActiveUniversalStopRules(organizationId: string): Promise<ActiveStopRule[]> {
+  return query<ActiveStopRule>(
+    `select universal_rule_id, ordinal, condition_text, rule_kind
+     from pilot.universal_stop_rules
+     where organization_id = $1 and active and superseded_at is null
+     order by ordinal asc`,
+    [organizationId],
   );
 }
 
@@ -195,9 +316,10 @@ export interface SparringExposureCounts {
 export async function getSparringExposureCounts(
   organizationId: string,
   athleteId: string,
-  since?: string,
+  /** Gym day (YYYY-MM-DD), inclusive; compared against the day sparred. */
+  sinceDay?: string,
 ): Promise<SparringExposureCounts> {
-  const segments = await listSparringExposure(organizationId, { athleteId, since });
+  const segments = await listSparringExposure(organizationId, { athleteId, sinceDay });
   const segmentsByType: Record<SparringType, number> = {
     hard: 0, play: 0, technical: 0, game: 0, conditioned: 0,
   };
@@ -282,6 +404,7 @@ export async function listSessionLoad(
        and ($2::text is null or athlete_id = $2)
        and ($3::text is null or activity_id = $3)
        and ($4::text is null or rated_by = $4)
+       and ${athleteNotDeletedSql('pilot.session_load')}
      order by rated_at desc`,
     [organizationId, filter.athleteId ?? null, filter.activityId ?? null, filter.ratedBy ?? null],
   );
