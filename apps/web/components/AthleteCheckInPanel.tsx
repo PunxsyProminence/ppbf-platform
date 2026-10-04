@@ -13,6 +13,9 @@ import {
   wellnessAnchor,
 } from '@/src/shared/wellnessScales';
 
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
+
+import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import SleepTrend from './SleepTrend';
 
 // The athlete's own "I'm here, and this is how I am".
@@ -275,7 +278,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           {bodyMassNotice !== '' && (
             <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
           )}
-          <OwnBodyMass />
+          <OwnBodyMass onCorrected={() => setBodyMassNotice('')} />
         </div>
 
         {recent.length > 1 && (
@@ -430,156 +433,60 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
 // to share four words would couple this file to that one's internals.
 const PANEL_RAISED_CLASS = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
 
-/* Correcting a mistyped weight (Jason 2026-10-04, "Athlete or their coach").
-   One small form, used here for the athlete's own entry and in CoachWorkspace
-   for the athlete's coach. It sends the value and unit as typed; the server
-   validates and decides who may correct. `onSubmit` answers the sentence to
-   show: the server's refusal, or what was saved. */
-export function BodyMassCorrectForm({ onSubmit }: {
-  onSubmit: (value: number, unit: 'lb' | 'kg') => Promise<string>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState('');
-  const [unit, setUnit] = useState<'lb' | 'kg'>('lb');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-
-  if (!open) {
-    return (
-      <div className="space-y-[var(--s2)]">
-        <button type="button" className="btn btn--kiosk btn--ghost" onClick={() => { setOpen(true); setMessage(''); }}>
-          Correct this weight
-        </button>
-        {message !== '' && <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{message}</p>}
-      </div>
-    );
-  }
-
-  async function save() {
-    const parsed = Number(value.trim());
-    if (value.trim() === '' || !Number.isFinite(parsed)) {
-      setMessage('Enter the correct weight as a number.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const result = await onSubmit(parsed, unit);
-      setMessage(result);
-      setOpen(false);
-      setValue('');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-[var(--s2)]">
-      <label className="t-label block" htmlFor="body-mass-correction">Correct weight</label>
-      <div className="flex gap-[var(--s2)]">
-        <input
-          id="body-mass-correction"
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          className="input input--kiosk"
-        />
-        <select
-          aria-label="Correct weight unit"
-          value={unit}
-          onChange={(event) => setUnit(event.target.value === 'kg' ? 'kg' : 'lb')}
-          className="input input--kiosk"
-          style={{ width: 'auto' }}
-        >
-          <option value="lb">lb</option>
-          <option value="kg">kg</option>
-        </select>
-      </div>
-      <div className="flex gap-[var(--s2)]">
-        <button type="button" className="btn btn--kiosk" disabled={saving} onClick={() => { void save(); }}>
-          Save correction
-        </button>
-        <button type="button" className="btn btn--kiosk btn--ghost" disabled={saving} onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-      </div>
-      {message !== '' && <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{message}</p>}
-    </div>
-  );
+interface OwnBodyMassRead {
+  latest: { pounds: number; observed_at: string } | null;
+  correctable_entries: BodyMassEntryView[];
 }
 
-/** POSTs a correction and answers the sentence BodyMassCorrectForm shows.
- *  `fields` carries the route's own keys (athlete_id for the coach route). */
-export async function postBodyMassCorrection(
-  path: string,
-  fields: Record<string, string>,
-  value: number,
-  unit: 'lb' | 'kg',
-): Promise<{ message: string; payload: Record<string, unknown> | null }> {
-  try {
-    const response = await fetch(`${apiBase()}${path}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...fields, body_mass: value, body_mass_unit: unit }),
-    });
-    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!response.ok) {
-      return {
-        message: typeof payload?.error === 'string' ? payload.error : 'The correction was not saved. Try again.',
-        payload: null,
-      };
-    }
-    return { message: `Corrected to ${value} ${unit}. The earlier entry stays on record.`, payload };
-  } catch {
-    return { message: 'The correction was not saved. Try again.', payload: null };
-  }
-}
-
-interface OwnLatestBodyMass {
-  observation_id: string;
-  pounds: number;
-  observed_at: string;
-  correctable: boolean;
-}
-
-/* The athlete's own latest weigh-in, with "Correct" while it is inside the
-   correction window. A failed read shows nothing: the check-in itself is done. */
-function OwnBodyMass() {
-  const [latest, setLatest] = useState<OwnLatestBodyMass | null>(null);
+/* The athlete's own latest weigh-in and the entries they can still correct
+   (Jason 2026-10-04, "Athlete or their coach"). A failed read shows nothing:
+   the check-in itself is already done. */
+function OwnBodyMass({ onCorrected }: { onCorrected: () => void }) {
+  const [read, setRead] = useState<OwnBodyMassRead | null>(null);
   const path = '/api/pilot/athlete/check-in/body-mass';
+
+  const accept = (value: unknown) => {
+    const record = value as { latest?: { pounds?: unknown; observed_at?: unknown } | null; correctable_entries?: unknown } | null;
+    if (!record) return setRead(null);
+    const latest = record.latest && typeof record.latest.pounds === 'number' && typeof record.latest.observed_at === 'string'
+      ? { pounds: record.latest.pounds, observed_at: record.latest.observed_at }
+      : null;
+    setRead({ latest, correctable_entries: parseBodyMassEntries(record.correctable_entries) });
+  };
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}${path}`, { method: 'GET', credentials: 'include' });
-        const payload = response?.ok ? ((await response.json()) as { body_mass?: OwnLatestBodyMass | null }) : null;
-        if (!cancelled) setLatest(payload?.body_mass ?? null);
+        const payload = response?.ok ? ((await response.json()) as { body_mass?: unknown }) : null;
+        if (!cancelled) accept(payload?.body_mass ?? null);
       } catch {
-        // No weight shown; the check-in itself is already done.
+        // No weight shown.
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  if (!latest) return null;
+  if (!read) return null;
   return (
     <div className="space-y-[var(--s2)]" data-testid="own-body-mass">
-      <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
-        Your latest body mass: {latest.pounds} lb, logged {latest.observed_at.slice(0, 10)}.
-      </p>
-      {latest.correctable && (
-        <BodyMassCorrectForm
-          onSubmit={async (value, unit) => {
-            const result = await postBodyMassCorrection(path, { observation_id: latest.observation_id }, value, unit);
-            const next = result.payload?.body_mass as OwnLatestBodyMass | null | undefined;
-            if (next) setLatest(next);
-            return result.message;
-          }}
-        />
+      {read.latest && (
+        <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+          Your latest body mass: {read.latest.pounds} lb, logged {formatGymDateNumeric(read.latest.observed_at) ?? read.latest.observed_at}.
+        </p>
       )}
+      <BodyMassEntryList
+        entries={read.correctable_entries}
+        onCorrect={async (entry, value, unit) => {
+          const result = await postBodyMassCorrection(path, { observation_id: entry.observation_id }, value, unit);
+          if (result.ok) {
+            onCorrected();
+            if (result.payload) accept(result.payload.body_mass ?? null);
+          }
+          return result;
+        }}
+      />
     </div>
   );
 }

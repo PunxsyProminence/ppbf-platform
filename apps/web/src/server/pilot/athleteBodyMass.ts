@@ -122,8 +122,19 @@ export interface BodyMassChange {
   days: number;
 }
 
+export interface BodyMassEntry {
+  observation_id: string;
+  kilograms: number;
+  pounds: number;
+  observed_at: string;
+}
+
 export interface BodyMassSummary {
-  latest: { observation_id: string; kilograms: number; pounds: number; observed_at: string } | null;
+  latest: BodyMassEntry | null;
+  /** Current entries inside the correction window, newest first. Includes an
+   *  out-of-range slip (700 for 70.0) the flag leaves out, since that is the
+   *  entry most likely to need correcting. */
+  correctable_entries: BodyMassEntry[];
   /** MVP-12: the latest weigh-in against the one closest to 7 days earlier. */
   change: BodyMassChange | null;
   /** The largest change between any two weigh-ins in the 7 days up to the
@@ -224,6 +235,7 @@ export async function summarizeBodyMass(
          from pilot.shadow_formula_observations successor
          where successor.organization_id = o.organization_id
            and successor.supersedes_observation_id = o.observation_id
+           and successor.observation_kind = 'body_weight'
        )
      order by o.observed_at asc, o.observation_id asc`,
     [
@@ -237,8 +249,22 @@ export async function summarizeBodyMass(
     .map((row) => weighIn(row, organizationId, athleteId))
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
+  const correctable = rows
+    .map((row) => {
+      const raw = row.numeric_value == null ? null : Number(row.numeric_value);
+      if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+      if (row.unit !== 'kilograms' && row.unit !== 'pounds') return null;
+      const observedAt = new Date(row.observed_at).toISOString();
+      if (!bodyMassCorrectable(observedAt, now)) return null;
+      const kilograms = row.unit === 'pounds' ? toKilograms(raw, 'lb') : raw;
+      return { observation_id: row.observation_id, kilograms, pounds: toPounds(kilograms), observed_at: observedAt };
+    })
+    .filter((entry): entry is BodyMassEntry => entry !== null)
+    .reverse();
+
   const empty: BodyMassSummary = {
     latest: null,
+    correctable_entries: correctable,
     change: null,
     largest_change_in_window: null,
     flagged: false,
@@ -362,12 +388,18 @@ export async function bodyMassVisibleTo(
 // Everyone else is refused, including a coach who only shares the gym, a
 // parent, the organization admin and the platform owner.
 //
-// WHEN: an entry observed in the last BODY_MASS_CORRECTION_DAYS days. It is the
-// flag's own window: a slip older than that no longer moves the flag, so there
-// is nothing a late correction would fix. A correction is itself an entry and
-// can be corrected again inside the same window.
+// WHEN: an entry observed in the last BODY_MASS_CORRECTION_DAYS days -- the
+// recommended 7, plus the day of tolerance MVP-12 allows when it picks the
+// weigh-in "7 days earlier" (BODY_MASS_TOLERANCE_HOURS). Without that day an
+// 8-day-old entry could raise the flag and not be correctable. The window is
+// counted from the original entry's time, so correcting a correction does not
+// extend it.
+//
+// LEFT OUT FROM BOTH SIDES: the generic observations route refuses to supersede
+// a body_weight entry, and summarizeBodyMass counts only a body_weight
+// successor as replacing one, so no other path can make a weight disappear.
 
-export const BODY_MASS_CORRECTION_DAYS = BODY_MASS_WINDOW_DAYS;
+export const BODY_MASS_CORRECTION_DAYS = BODY_MASS_WINDOW_DAYS + BODY_MASS_TOLERANCE_HOURS / 24;
 
 /** Is an entry observed at this time still inside the correction window? */
 export function bodyMassCorrectable(observedAt: string, now: Date = new Date()): boolean {

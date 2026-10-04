@@ -86,21 +86,29 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
 
 ### Correcting a mistyped weight
 Jason 2026-10-04: "Athlete or their coach".
-- Athlete: `GET /api/pilot/athlete/check-in/body-mass` returns their own latest
-  weigh-in (`observation_id`, `pounds`, `observed_at`, `correctable`). It does
-  not include the flag. `POST` with `{ observation_id, body_mass, body_mass_unit }`
-  corrects one of their own entries.
+- Each body-mass summary carries `latest` and `correctable_entries`, newest
+  first: every current entry from the last 8 days, including an out-of-range
+  slip that the flag ignores. Each entry has `observation_id`, `kilograms`,
+  `pounds` and `observed_at`.
+- Athlete: `GET /api/pilot/athlete/check-in/body-mass` returns
+  `{ body_mass: { latest, correctable_entries } | null }`, without the flag.
+  `POST` with `{ observation_id, body_mass, body_mass_unit }` corrects one of
+  their own entries.
 - Coach: `POST /api/pilot/coach/athlete-body-mass` with `{ athlete_id,
   observation_id, body_mass, body_mass_unit }`. Only the assigned or covering
   coach may correct, for adults too. The GET answers `can_correct`.
 - Refused with `403`: everyone else, including a coach who only shares the gym,
   the organization admin, a parent and the platform owner.
-- Only entries observed in the last 7 days can be corrected, which is the
-  flag's window; anything older answers `409 BODY_MASS_CORRECTION_WINDOW`.
+- The window is 8 days: the recommended 7, plus the day of tolerance MVP-12
+  allows when it picks the weigh-in "7 days earlier". Older entries answer
+  `409 BODY_MASS_CORRECTION_WINDOW`.
 - A correction writes a new `body_weight` observation that supersedes the old
   one, at the old one's `observed_at`. The old entry is never edited or
-  deleted; it stays on record. Reads and the flag use only entries that
-  nothing supersedes.
+  deleted; it stays on record. Reads and the flag use only entries that no
+  `body_weight` entry supersedes.
+- `POST /api/pilot/shadow/formulas/observations` refuses (`409`) any
+  supersede that involves a weight, so these two routes are the only way to
+  correct one.
 - Each entry can be corrected once (`409 BODY_MASS_ALREADY_CORRECTED`). To fix
   it again, correct the newer entry.
 - The audit row names both entries and holds no weights.

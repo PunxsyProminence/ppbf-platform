@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import {
-  bodyMassCorrectable,
   bodyMassInputError,
   correctBodyMass,
   summarizeBodyMass,
@@ -29,8 +28,8 @@ function requireOwnAthleteId(principal: { athleteId?: string | null }): string {
 }
 
 async function ownLatest(organizationId: string, athleteId: string) {
-  const { latest } = await summarizeBodyMass(organizationId, athleteId);
-  return latest ? { ...latest, correctable: bodyMassCorrectable(latest.observed_at) } : null;
+  const { latest, correctable_entries } = await summarizeBodyMass(organizationId, athleteId);
+  return latest || correctable_entries.length > 0 ? { latest, correctable_entries } : null;
 }
 
 export async function GET(request: NextRequest) {

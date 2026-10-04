@@ -26,6 +26,7 @@ import {
   type FormulaUnit,
   type ObservationKind,
 } from '@/src/server/pilot/formulas/types';
+import { queryOne } from '@/src/server/pilot/db';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 
@@ -115,6 +116,24 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, body.athleteId);
+    // A weight is corrected only through correctBodyMass (athlete or their
+    // coach, a 7-day window, audited; Jason 2026-10-04). Superseding one here
+    // -- or superseding something with a weight -- would skip all of that.
+    if (body.supersedesObservationId != null) {
+      const replaced = body.kind === 'body_weight'
+        ? { observation_kind: 'body_weight' }
+        : await queryOne<{ observation_kind: string }>(
+          `select observation_kind from pilot.shadow_formula_observations
+           where organization_id = $1 and observation_id = $2`,
+          [principal.organizationId, body.supersedesObservationId.trim()],
+        );
+      if (replaced?.observation_kind === 'body_weight') {
+        return NextResponse.json(
+          { ok: false, error: 'Body mass is corrected from the check-in or the coach\'s body mass panel.' },
+          { status: 409 },
+        );
+      }
+    }
     await assertShadowRuntimeReadiness({
       requiredTables: [
         'shadow_formula_observations',

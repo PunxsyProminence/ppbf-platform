@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
 import {
-  bodyMassCorrectable,
   bodyMassInputError,
   bodyMassVisibleTo,
   canCorrectBodyMass,
@@ -60,13 +59,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// `can_correct` tells the screen whether to offer "Correct": this reader is
-// the athlete's own (assigned or covering) coach and the latest entry is
-// inside the correction window. The POST below decides again on its own.
+// `can_correct` tells the screen whether to offer "Correct" on the summary's
+// correctable_entries: this reader is the athlete's own (assigned or covering)
+// coach and there is an entry inside the correction window. The POST below
+// decides again on its own.
 async function readable(principal: PilotPrincipal, athleteId: string) {
   const summary = await summarizeBodyMass(principal.organizationId, athleteId);
   if (!summary.latest) return { body_mass: null, can_correct: false };
-  const canCorrect = bodyMassCorrectable(summary.latest.observed_at)
+  const canCorrect = summary.correctable_entries.length > 0
     && (await canCorrectBodyMass(principal, athleteId));
   return { body_mass: summary, can_correct: canCorrect };
 }

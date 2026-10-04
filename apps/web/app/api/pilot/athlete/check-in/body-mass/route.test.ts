@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
-import { saveFormulaObservation } from '@/src/server/pilot/formulas/repository';
+import { FormulaRepositoryError, saveFormulaObservation } from '@/src/server/pilot/formulas/repository';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -52,6 +52,7 @@ beforeEach(() => {
   jest.useFakeTimers().setSystemTime(NOW);
   weighIns = [
     { athlete_id: 'ath-1', observation_id: 'ath-1-old', numeric_value: 60, unit: 'kilograms', observed_at: new Date(NOW.getTime() - 8 * DAY).toISOString() },
+    { athlete_id: 'ath-1', observation_id: 'ath-1-older', numeric_value: 60, unit: 'kilograms', observed_at: new Date(NOW.getTime() - 9 * DAY).toISOString() },
     // Mistyped: 48 for 60.
     { athlete_id: 'ath-1', observation_id: 'ath-1-latest', numeric_value: 48, unit: 'kilograms', observed_at: new Date(NOW.getTime() - DAY).toISOString() },
     { athlete_id: 'ath-2', observation_id: 'ath-2-latest', numeric_value: 70, unit: 'kilograms', observed_at: new Date(NOW.getTime() - DAY).toISOString() },
@@ -89,6 +90,9 @@ beforeEach(() => {
   mockSave.mockImplementation(async (input: {
     athleteId: string; value: number; unit: string; observedAt: string; supersedesObservationId: string;
   }) => {
+    if (weighIns.some((row) => row.supersedes === input.supersedesObservationId)) {
+      throw new FormulaRepositoryError('SUPERSEDED_OBSERVATION', 'Observation already has a different immutable successor.');
+    }
     const saved = {
       athlete_id: input.athleteId,
       observation_id: `fix-of-${input.supersedesObservationId}`,
@@ -133,13 +137,17 @@ describe('the athlete corrects their own weight', () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     const response = await GET(new NextRequest('http://localhost/api/pilot/athlete/check-in/body-mass'));
     const payload = (await response.json()) as Record<string, unknown>;
+    const latest = {
+      observation_id: 'ath-1-latest',
+      kilograms: 48,
+      pounds: 105.8,
+      observed_at: new Date(NOW.getTime() - DAY).toISOString(),
+    };
     expect(payload).toEqual({
       body_mass: {
-        observation_id: 'ath-1-latest',
-        kilograms: 48,
-        pounds: 105.8,
-        observed_at: new Date(NOW.getTime() - DAY).toISOString(),
-        correctable: true,
+        latest,
+        // 60 kg from 8 days ago is the edge of the window and still listed.
+        correctable_entries: [latest, expect.objectContaining({ observation_id: 'ath-1-old' })],
       },
     });
   });
@@ -150,7 +158,7 @@ describe('the athlete corrects their own weight', () => {
     expect(status).toBe(200);
     expect(payload).toMatchObject({
       corrected: { observation_id: 'fix-of-ath-1-latest', supersedes_observation_id: 'ath-1-latest' },
-      body_mass: { observation_id: 'fix-of-ath-1-latest', kilograms: 59.87, correctable: true },
+      body_mass: { latest: { observation_id: 'fix-of-ath-1-latest', kilograms: 59.87 } },
     });
     expect(weighIns.find((row) => row.observation_id === 'ath-1-latest')).toMatchObject({ numeric_value: 48 });
     expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
@@ -188,8 +196,8 @@ describe('refusals', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('an entry older than 7 days is refused (409)', async () => {
-    const { status, payload } = await correctAs({}, { observation_id: 'ath-1-old' });
+  test('an entry older than 8 days is refused (409)', async () => {
+    const { status, payload } = await correctAs({}, { observation_id: 'ath-1-older' });
     expect(status).toBe(409);
     expect(payload.code).toBe('BODY_MASS_CORRECTION_WINDOW');
     expect(mockSave).not.toHaveBeenCalled();
@@ -200,4 +208,12 @@ describe('refusals', () => {
     expect(status).toBe(400);
     expect(mockSave).not.toHaveBeenCalled();
   });
+});
+
+test('an entry already corrected is refused (409); the correction can be corrected instead', async () => {
+  expect((await correctAs({})).status).toBe(200);
+  const again = await correctAs({}, { body_mass: 133 });
+  expect(again.status).toBe(409);
+  expect(again.payload.code).toBe('BODY_MASS_ALREADY_CORRECTED');
+  expect((await correctAs({}, { observation_id: 'fix-of-ath-1-latest', body_mass: 133 })).status).toBe(200);
 });

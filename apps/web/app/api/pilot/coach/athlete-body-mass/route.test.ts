@@ -77,6 +77,8 @@ interface FakeWeighIn {
   unit: string;
   observed_at: string;
   supersedes?: string;
+  /** Absent means body_weight. */
+  kind?: string;
 }
 
 let athletes: FakeAthlete[];
@@ -208,11 +210,14 @@ beforeEach(() => {
     // Honoured only when the SQL says it: an entry something supersedes is
     // left out.
     const currentOnly = text.includes('successor.supersedes_observation_id = o.observation_id');
+    const weightSuccessorsOnly = text.includes("successor.observation_kind = 'body_weight'");
     return weighIns
       .filter((row) => row.organization_id === organizationId
         && row.athlete_id === athleteId
+        && (row.kind ?? 'body_weight') === 'body_weight'
         && (!currentOnly || !weighIns.some((other) => other.organization_id === row.organization_id
-          && other.supersedes === row.observation_id))
+          && other.supersedes === row.observation_id
+          && (!weightSuccessorsOnly || (other.kind ?? 'body_weight') === 'body_weight')))
         && row.observed_at > from
         && row.observed_at <= to)
       .sort((a, b) => a.observed_at.localeCompare(b.observed_at));
@@ -480,26 +485,63 @@ describe('correcting a weight: everyone else is refused and nothing is written',
 });
 
 describe('correcting a weight: which entries', () => {
-  test('an entry older than 7 days is refused (409) and nothing is written', async () => {
-    const { status, payload } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-prior' });
+  // The window is 7 days plus MVP-12's day of tolerance: the flag can compare
+  // against an entry up to 8 days back, so that entry must be correctable.
+  const addEntry = (id: string, kilograms: number, msBeforeNow: number) => weighIns.push({
+    organization_id: 'org-1', athlete_id: 'ath-youth', observation_id: id,
+    numeric_value: kilograms, unit: 'kilograms', observed_at: new Date(NOW.getTime() - msBeforeNow).toISOString(),
+  });
+
+  test('an entry older than 8 days is refused (409) and nothing is written', async () => {
+    addEntry('ath-youth-old', 61, 8 * DAY + 60_000);
+    const { status, payload } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-old' });
     expect(status).toBe(409);
     expect(payload.code).toBe('BODY_MASS_CORRECTION_WINDOW');
     expect(mockSave).not.toHaveBeenCalled();
   });
 
-  test('an entry exactly 7 days old can still be corrected', async () => {
-    weighIns.push({
-      organization_id: 'org-1', athlete_id: 'ath-youth', observation_id: 'ath-youth-edge',
-      numeric_value: 58, unit: 'kilograms', observed_at: new Date(NOW.getTime() - 7 * DAY).toISOString(),
+  test('the entry the flag compares against, 8 days back, can be corrected, and that clears a flag it caused', async () => {
+    // The 60 kg prior was the slip; the athlete weighed 57.
+    const { status, payload } = await correctAs({ accountId: 'coach-record' }, {
+      observation_id: 'ath-youth-prior', body_mass: 57, body_mass_unit: 'kg',
     });
-    const { status } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-edge' });
     expect(status).toBe(200);
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 56.4 }, flagged: false });
   });
 
-  test('a latest entry outside the window is not offered for correction', async () => {
-    weighIns = weighIns.filter((row) => row.observation_id !== 'ath-youth-latest');
+  test('every current entry in the window is listed for correction, newest first, including an out-of-range slip', async () => {
+    addEntry('ath-youth-slip', 564, 2 * DAY);
     const { payload } = await readAs({ accountId: 'coach-record' });
-    expect(payload).toMatchObject({ body_mass: { latest: { kilograms: 60 } }, can_correct: false });
+    const listed = (payload.body_mass as { correctable_entries: { observation_id: string }[] }).correctable_entries;
+    expect(listed.map((entry) => entry.observation_id)).toEqual(['ath-youth-latest', 'ath-youth-slip', 'ath-youth-prior']);
+    // The slip is listed but still kept out of the latest weight and the flag.
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 56.4 } });
+
+    const fixed = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-slip', body_mass: 56.4, body_mass_unit: 'kg' });
+    expect(fixed.status).toBe(200);
+  });
+
+  test('a superseded entry is not listed', async () => {
+    await correctAs({ accountId: 'coach-record' });
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    const listed = (payload.body_mass as { correctable_entries: { observation_id: string }[] }).correctable_entries;
+    expect(listed.map((entry) => entry.observation_id)).toEqual(['fix-of-ath-youth-latest', 'ath-youth-prior']);
+  });
+
+  test('nothing in the window: no "Correct" offered', async () => {
+    weighIns = weighIns.filter((row) => row.athlete_id !== 'ath-youth');
+    addEntry('ath-youth-old', 60, 9 * DAY);
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    expect(payload).toMatchObject({ body_mass: { latest: { kilograms: 60 }, correctable_entries: [] }, can_correct: false });
+  });
+
+  test('only a weight replaces a weight: a successor of another kind does not hide it', async () => {
+    weighIns.push({
+      organization_id: 'org-1', athlete_id: 'ath-youth', observation_id: 'pain-1', numeric_value: 3,
+      unit: 'kilograms', observed_at: NOW.toISOString(), supersedes: 'ath-youth-latest', kind: 'pain_report',
+    });
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 56.4 }, flagged: true });
   });
 
   test('an entry already corrected is refused (409); the correction can be corrected instead', async () => {
