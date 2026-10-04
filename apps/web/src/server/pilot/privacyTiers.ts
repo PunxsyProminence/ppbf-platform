@@ -384,6 +384,16 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: "A 'medical' category is a health signal; it stays off the athlete-safe projection with the rest.",
   },
+  'athlete_contact_caps.highest_allowed_stage': {
+    tier: 'organization',
+    enforcedBy: ['athleteContactCaps.ts#assertCapAccess'],
+    note:
+      'A coach-set sparring limit for one child (map item 15). Staff only: an active coach or admin '
+      + 'membership here AND assertActorCanAccessAthlete for that athlete; athletes, guardians, board '
+      + 'and platform_owner are refused. Whether the athlete or family should see their own cap is not '
+      + 'decided, so nothing shows it to them. Same gate covers max_hard_open_sessions_per_7_days and '
+      + 'note, which share the row.',
+  },
   'scheduler_attendance.note': {
     tier: 'organization',
     enforcedBy: [
@@ -421,6 +431,7 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.documents',
   'pilot.compliance_violations',
   'pilot.training_holds',
+  'pilot.athlete_contact_caps',
 ];
 
 /**
