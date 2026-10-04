@@ -7,7 +7,7 @@ import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
-import { pinLoginPermitted, usesPin } from './credentialPolicy';
+import { pinLoginPermitted, requiredCredentialFor, usesPin } from './credentialPolicy';
 import {
   accountDeletedSql,
   deletedLoginConflict,
@@ -90,6 +90,28 @@ export interface PilotPrincipal {
    * consumer reads it off those.
    */
   pinAuthPermitted?: boolean;
+}
+
+/**
+ * Whether a session signed in under the account's home role may act with
+ * `sessionRole`, the membership's. The credential a sign-in demanded was the
+ * home role's (every sign-in path asks credentialPolicy about pilot.accounts.role),
+ * so the membership role may not need a stronger one: a parent's magic link
+ * must not become an organization_admin session, which needs Microsoft. A
+ * Microsoft sign-in is enough for a magic-link role; nothing else crosses. A
+ * membership naming platform_owner is honoured only for the platform owner's
+ * own account row.
+ */
+export function sessionCredentialFits(input: {
+  homeRole: PilotRole;
+  sessionRole: PilotRole;
+  isPlatformOwner: boolean;
+}): boolean {
+  if (input.sessionRole === 'platform_owner' && !input.isPlatformOwner) return false;
+  if (input.sessionRole === input.homeRole) return true;
+  const proven = requiredCredentialFor({ role: input.homeRole });
+  const needed = requiredCredentialFor({ role: input.sessionRole });
+  return proven === needed || (proven === 'microsoft' && needed === 'magic_link');
 }
 
 /**
@@ -297,6 +319,17 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
+  // The session acts with the membership role (resolvePrincipal); the PIN
+  // must be a credential that role admits too.
+  if (data.membership_role && !sessionCredentialFits({
+    homeRole: data.role,
+    sessionRole: data.membership_role,
+    isPlatformOwner: data.is_platform_owner,
+  })) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'membership_role_credential_mismatch' });
+    return null;
+  }
+
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
   const expiresAt = computeSessionExpiry();
@@ -371,6 +404,20 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
   }
 
   if (data.role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
+    throw new Error('Forbidden: platform owner identity mismatch');
+  }
+
+  // The session acts with the membership role (resolvePrincipal), so that
+  // role must be one this Microsoft sign-in admits, and a platform_owner
+  // membership is asked the same identity question as the account row.
+  if (data.membership_role && !sessionCredentialFits({
+    homeRole: data.role,
+    sessionRole: data.membership_role,
+    isPlatformOwner: data.is_platform_owner,
+  })) {
+    throw new Error('Forbidden: membership role does not fit this sign-in');
+  }
+  if (data.membership_role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
     throw new Error('Forbidden: platform owner identity mismatch');
   }
 
@@ -509,6 +556,22 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     return null;
   }
   if (!row.is_platform_owner && row.organization_status && row.organization_status !== 'active') {
+    return null;
+  }
+
+  // The session was signed in under the home role's credential; the
+  // membership role may not need a stronger one (sessionCredentialFits).
+  if (!sessionCredentialFits({
+    homeRole: row.home_role,
+    sessionRole: row.role,
+    isPlatformOwner: row.is_platform_owner,
+  })) {
+    console.warn('pilot-auth session refused: membership role does not fit its sign-in', {
+      accountId: row.account_id,
+      organizationId,
+      homeRole: row.home_role,
+      membershipRole: row.role,
+    });
     return null;
   }
 
@@ -1275,9 +1338,9 @@ export async function upsertOrganizationMembership(accountId: string, organizati
       throw new Error('Missing account_id');
     }
 
-    // pilot.accounts.role/organization_id are read live on every request
-    // (resolvePrincipal doesn't scope role to the session's own
-    // organization), so ANY membership mutation here can change what an
+    // pilot.accounts.role/organization_id and the membership rows are read
+    // live on every request (resolvePrincipal), so ANY membership mutation
+    // here can change what an
     // existing session resolves to -- a brand-new membership in another
     // organization, a role change, a reactivation, or a deactivation all
     // rewrite those columns. Fail closed and always revoke rather than try

@@ -41,6 +41,9 @@ function validRow(overrides: Record<string, unknown> = {}) {
     has_master_shadow_access: false,
     organization_status: 'active',
     ...overrides,
+    // resolvePrincipal reads the account's home role beside the membership
+    // role; these rows have no drift, so the two are the same.
+    home_role: overrides.home_role ?? overrides.role ?? 'athlete',
   };
 }
 

@@ -79,6 +79,8 @@ function sessionRow(organizationId: string | null, overrides: Record<string, unk
     must_change_pin: false,
     holds_board_seat: false,
     ...overrides,
+    // resolvePrincipal reads the home role beside the membership role; no drift here.
+    home_role: overrides.home_role ?? overrides.role ?? 'coach',
   };
 }
 

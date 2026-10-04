@@ -404,19 +404,18 @@ describe('every sign-in path: the session resolves to the membership role', () =
     expect(driftWarnings()).toEqual([]);
   });
 
-  test('password: a parent whose home membership says volunteer signs in and resolves as volunteer', async () => {
+  test('password: a parent signs in and resolves as parent', async () => {
     await seedAccount({
       accountId: 'srm-parent-pw',
       homeRole: 'parent',
-      homeMembershipRole: 'volunteer',
       authProvider: 'magic_link',
       loginEmail: 'parent.pw@srm.test',
       passwordHash: await hashPassword(PASSWORD),
     });
 
     const login = await loginWithEmailAndPassword('parent.pw@srm.test', PASSWORD);
-    expect(login?.principal).toMatchObject({ organizationId: HOME_ORG, role: 'volunteer' });
-    expect((await resolvePrincipal(requestWithSession(login!.token)))?.role).toBe('volunteer');
+    expect(login?.principal).toMatchObject({ organizationId: HOME_ORG, role: 'parent' });
+    expect((await resolvePrincipal(requestWithSession(login!.token)))?.role).toBe('parent');
   });
 
   test('magic link: a parent whose home membership says volunteer redeems a link and resolves as volunteer', async () => {
@@ -438,6 +437,145 @@ describe('every sign-in path: the session resolves to the membership role', () =
     expect(redeemed.ok).toBe(true);
     expect(redeemed.principal).toMatchObject({ organizationId: HOME_ORG, role: 'volunteer' });
     expect((await resolvePrincipal(requestWithSession(redeemed.session!.token)))?.role).toBe('volunteer');
+  });
+});
+
+describe('a credential must fit the membership role as well as the home role', () => {
+  // Every sign-in asks credentialPolicy about the HOME role. The session acts
+  // with the membership role, so a membership that needs a stronger credential
+  // than the one presented is refused -- on the sign-in, and on any session
+  // already held. Without this, a hand-edited membership turned a parent's
+  // password or magic link into an organization_admin session with no
+  // Microsoft sign-in.
+
+  test('password: a parent whose home membership says organization_admin is refused and no session is written', async () => {
+    await seedAccount({
+      accountId: 'srm-pw-admin',
+      homeRole: 'parent',
+      homeMembershipRole: 'organization_admin',
+      authProvider: 'magic_link',
+      loginEmail: 'pw.admin@srm.test',
+      passwordHash: await hashPassword(PASSWORD),
+    });
+
+    expect(await loginWithEmailAndPassword('pw.admin@srm.test', PASSWORD)).toBeNull();
+    expect(warn.mock.calls).toContainEqual([
+      'pilot-auth password login rejected',
+      { reason: 'membership_role_credential_mismatch' },
+    ]);
+    const sessions = await client.query(`select 1 from pilot.session_tokens where account_id = 'srm-pw-admin'`);
+    expect(sessions.rowCount).toBe(0);
+  });
+
+  test('password: a parent whose home membership says volunteer is refused (a password is a parent credential only)', async () => {
+    await seedAccount({
+      accountId: 'srm-pw-volunteer',
+      homeRole: 'parent',
+      homeMembershipRole: 'volunteer',
+      authProvider: 'magic_link',
+      loginEmail: 'pw.volunteer@srm.test',
+      passwordHash: await hashPassword(PASSWORD),
+    });
+
+    expect(await loginWithEmailAndPassword('pw.volunteer@srm.test', PASSWORD)).toBeNull();
+  });
+
+  test('magic link: a parent whose home membership says organization_admin is refused and the link is not used up', async () => {
+    await seedAccount({
+      accountId: 'srm-link-admin',
+      homeRole: 'parent',
+      homeMembershipRole: 'organization_admin',
+      authProvider: 'magic_link',
+      loginEmail: 'link.admin@srm.test',
+    });
+    const linkToken = 'srm-link-admin-token';
+    await client.query(
+      `insert into pilot.magic_link_tokens (token_hash, account_id, organization_id, sent_to_email, expires_at)
+       values ($1, $2, $3, $4, now() + interval '15 minutes')`,
+      [hashToken(linkToken), 'srm-link-admin', HOME_ORG, 'link.admin@srm.test'],
+    );
+
+    expect(await redeemMagicLink(linkToken)).toEqual({ ok: false, reason: 'ACCOUNT_NOT_MAGIC_LINK' });
+    const link = await client.query<{ consumed_at: Date | null }>(
+      'select consumed_at from pilot.magic_link_tokens where token_hash = $1',
+      [hashToken(linkToken)],
+    );
+    expect(link.rows[0].consumed_at).toBeNull();
+  });
+
+  test('PIN: an athlete whose home membership says coach is refused before any session is written', async () => {
+    await seedAccount({
+      accountId: 'srm-pin-coach',
+      homeRole: 'athlete',
+      homeMembershipRole: 'coach',
+      authProvider: 'ppbf_local',
+      athleteId: 'ATH-SRM-2',
+      pinHash: await hashPin(PIN),
+    });
+
+    expect(await loginWithAccountIdAndPin('srm-pin-coach', PIN)).toBeNull();
+    expect(warn.mock.calls).toContainEqual([
+      'pilot-auth login rejected',
+      { accountId: 'srm-pin-coach', reason: 'membership_role_credential_mismatch' },
+    ]);
+    const sessions = await client.query(`select 1 from pilot.session_tokens where account_id = 'srm-pin-coach'`);
+    expect(sessions.rowCount).toBe(0);
+  });
+
+  test('Microsoft: a membership naming platform_owner on an account that is not the platform owner is refused', async () => {
+    await seedAccount({
+      accountId: 'srm-ms-owner',
+      homeRole: 'organization_admin',
+      homeMembershipRole: 'platform_owner',
+      authProvider: 'microsoft',
+      loginEmail: 'ms.owner@srm.test',
+    });
+
+    await expect(loginWithMicrosoftEmail('ms.owner@srm.test'))
+      .rejects.toThrow('Forbidden: membership role does not fit this sign-in');
+    const sessions = await client.query(`select 1 from pilot.session_tokens where account_id = 'srm-ms-owner'`);
+    expect(sessions.rowCount).toBe(0);
+  });
+
+  test('an existing session: a parent with an organization_admin membership in another gym resolves to nobody there', async () => {
+    await seedAccount({
+      accountId: 'srm-session-admin',
+      homeRole: 'parent',
+      authProvider: 'magic_link',
+      loginEmail: 'session.admin@srm.test',
+    });
+    await addMembership('srm-session-admin', OTHER_ORG, 'organization_admin');
+
+    expect(await resolvePrincipal(requestWithSession(await seedSession('srm-session-admin', OTHER_ORG)))).toBeNull();
+    expect(warn.mock.calls).toContainEqual([
+      'pilot-auth session refused: membership role does not fit its sign-in',
+      {
+        accountId: 'srm-session-admin',
+        organizationId: OTHER_ORG,
+        homeRole: 'parent',
+        membershipRole: 'organization_admin',
+      },
+    ]);
+    // Control: at home, where the membership is parent, the same account resolves.
+    expect((await resolvePrincipal(requestWithSession(await seedSession('srm-session-admin', HOME_ORG))))?.role)
+      .toBe('parent');
+  });
+
+  test('an existing session: a platform_owner membership without is_platform_owner resolves to nobody', async () => {
+    await seedAccount({
+      accountId: 'srm-session-owner',
+      homeRole: 'organization_admin',
+      authProvider: 'microsoft',
+      loginEmail: 'session.owner@srm.test',
+    });
+    await addMembership('srm-session-owner', OTHER_ORG, 'platform_owner');
+
+    const token = await seedSession('srm-session-owner', OTHER_ORG);
+    expect(await resolvePrincipal(requestWithSession(token))).toBeNull();
+
+    // Control: the same membership on the platform owner's own account row resolves.
+    await client.query(`update pilot.accounts set is_platform_owner = true where account_id = 'srm-session-owner'`);
+    expect((await resolvePrincipal(requestWithSession(token)))?.role).toBe('platform_owner');
   });
 });
 
@@ -480,6 +618,12 @@ describe('magic link after a move to another gym', () => {
       `select 1 from pilot.session_tokens where account_id = 'srm-parent-moved' and revoked_at is null`,
     );
     expect(sessions.rowCount).toBe(0);
+    // Refused before the claim: the link is not used up.
+    const link = await client.query<{ consumed_at: Date | null }>(
+      'select consumed_at from pilot.magic_link_tokens where token_hash = $1',
+      [hashToken(linkToken)],
+    );
+    expect(link.rows[0].consumed_at).toBeNull();
   });
 
   test('control: the same sequence without the move signs the parent in as parent', async () => {

@@ -1,4 +1,4 @@
-import { homeMembershipRoleSql, type PilotPrincipal } from './auth';
+import { homeMembershipRoleSql, sessionCredentialFits, type PilotPrincipal } from './auth';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { passwordLoginPermitted } from './credentialPolicy';
@@ -146,6 +146,18 @@ export async function loginWithEmailAndPassword(
   const reason = ineligibleReason(data);
   if (!data || reason) {
     return rejected(reason ?? 'unknown_or_inactive_account');
+  }
+  // The session acts with the membership role (auth.ts resolvePrincipal), so
+  // a password must be a credential that role admits too.
+  if (data.membership_role && (
+    !passwordLoginPermitted({ role: data.membership_role })
+    || !sessionCredentialFits({
+      homeRole: data.role,
+      sessionRole: data.membership_role,
+      isPlatformOwner: data.is_platform_owner,
+    })
+  )) {
+    return rejected('membership_role_credential_mismatch');
   }
   // No organization means no session, as on every sign-in path (auth.ts). It
   // used to fall back to the deployment's default organization.
