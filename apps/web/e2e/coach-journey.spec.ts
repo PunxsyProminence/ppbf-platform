@@ -104,10 +104,15 @@ test.describe('Coach journey', () => {
       },
     });
 
-    // Twice on purpose, and both are checked: the KPI summary sentence and the
-    // Today's Session panel. A coach who reads either must not be told the
-    // opposite by the other.
-    await expect(page.getByText('Session in progress -- running 25m 30s.')).toBeVisible();
+    // Twice on purpose, and both are checked: the floor board's Session gauge
+    // and the Today's Session panel. A coach who reads either must not be told
+    // the opposite by the other. (The KPI summary sentence that used to say it
+    // left the Dashboard in the 2026-10-03 trim; the gauge took its place.)
+    const sessionGauge = page
+      .getByRole('region', { name: 'The floor' })
+      .locator('.coach-floor-focus__gauge')
+      .filter({ has: page.locator('.coach-floor-focus__gauge-label', { hasText: /^Session$/ }) });
+    await expect(sessionGauge.locator('.coach-floor-focus__gauge-value')).toHaveText('Running');
     // 1530 server-side seconds, rendered as the panel's own elapsed field. Not
     // a figure this page counted.
     await expect(page.getByText('25m 30s', { exact: true })).toBeVisible();

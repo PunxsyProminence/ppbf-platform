@@ -66,14 +66,18 @@ afterEach(() => {
 });
 
 describe('coach home: a failed read is not an empty one', () => {
+  // The "Your floor" summary shows off the Dashboard; on the Dashboard the
+  // floor board's Roster panel says the same (coachFloorFocus.test.tsx).
   test('a failed roster read does not say nobody is assigned', async () => {
     await renderWith('athletes');
+    openTab('Goals');
     expect(await screen.findByText(/Your roster could not be read/)).toBeTruthy();
     expect(screen.queryByText(/Nobody is assigned to you yet/)).toBeNull();
   });
 
   test('an empty roster that answered still says nobody is assigned', async () => {
     await renderWith(null, []);
+    openTab('Goals');
     expect(await screen.findByText(/Nobody is assigned to you yet/)).toBeTruthy();
     expect(screen.queryByText(/Your roster could not be read/)).toBeNull();
   });

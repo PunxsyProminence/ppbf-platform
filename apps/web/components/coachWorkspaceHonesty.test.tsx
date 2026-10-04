@@ -380,8 +380,10 @@ describe('the hub does not deny a capability the platform has', () => {
     // shown as the number, never as the roster-derived guess the old panel used.
     expect(screen.queryByText('11')).not.toBeNull();
     expect(screen.queryByText('Not recorded for this run')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href'))
-      .toBe('/coach/session-scripts');
+    // The way back to the run is the floor board's Run the Room button
+    // (coachFloorFocus.test.tsx pins its href); Today's Session no longer
+    // repeats it.
+    expect(screen.queryByRole('link', { name: 'Return to live delivery' })).toBeNull();
   });
 
   test('a paused run says paused rather than showing a clock that looks like it is running', async () => {
@@ -399,11 +401,15 @@ describe('the hub does not deny a capability the platform has', () => {
     // "nothing is running" here would undo that.
     await renderWorkspace({ liveRun: () => jsonResponse({}, { ok: false, status: 503 }) });
 
-    // Twice on purpose: the KPI summary line and the Today's Session panel
-    // both say it, and a coach who reads either one must not be told the
-    // opposite by the other.
-    expect(screen.queryAllByText(/could not be checked/i).length).toBe(2);
+    // Both places that report it say so, and a coach who reads either one
+    // must not be told the opposite by the other: Today's Session on the
+    // Dashboard, and the summary line, which shows on the other tabs (the
+    // floor board's Session gauge takes its place on the Dashboard).
+    expect(screen.queryAllByText(/could not be checked/i).length).toBe(1);
     expect(screen.queryByText('No session in progress.')).toBeNull();
+    openTab('Goals');
+    expect(screen.queryAllByText(/could not be checked/i).length).toBe(1);
+    expect(screen.queryByText(/No session in progress/i)).toBeNull();
   });
 
   test('a healthy read with nothing running says so plainly', async () => {
@@ -792,6 +798,11 @@ describe('safety escalations inbox', () => {
     expect(screen.queryAllByText(/Near miss/).length).toBeGreaterThan(0);
     // An athlete the roster read could not name is shown by id, not dropped.
     expect(screen.queryByText('Athlete ID ath_unknown')).not.toBeNull();
+    // On the Dashboard the board is the one place to acknowledge (pinned in
+    // coachWorkspaceFloorFocus.test.tsx); on any other tab the board is
+    // absent and the panel offers it on every open row.
+    expect(screen.queryAllByRole('button', { name: 'Acknowledge' })).toHaveLength(0);
+    openTab('Goals');
     expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
   });
 
@@ -805,6 +816,8 @@ describe('safety escalations inbox', () => {
         return jsonResponse({ ok: true, escalation: escalation({ status: 'acknowledged' }) });
       },
     });
+    // The panel's own button: off the Dashboard, where the board is absent.
+    openTab('Goals');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
@@ -828,6 +841,7 @@ describe('safety escalations inbox', () => {
         });
       },
     });
+    openTab('Goals');
 
     fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
     fireEvent.click(screen.getByRole('button', { name: /Acknowledg/ }));
@@ -845,6 +859,7 @@ describe('safety escalations inbox', () => {
       escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
       escalationsPost: () => jsonResponse({ error: 'Missing escalation record' }, { ok: false, status: 400 }),
     });
+    openTab('Goals');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
@@ -1677,8 +1692,9 @@ describe('the hub links to the session-delivery surfaces', () => {
   // scripts page, floor groups, the drill library, the cue library and the
   // template catalog were all reachable only by typing the URL. These pin
   // the Quick Actions links that make that loop part of the coach's day.
+  // Session Scripts left this row on 2026-10-03: the floor board's Run the
+  // Room is the one door to it on the Dashboard (coachFloorFocus.test.tsx).
   test.each([
-    ["Session Scripts: Run Tonight's Plan", '/coach/session-scripts'],
     ["Today's Floor Groups", '/coach/floor-groups'],
     ['Open Drill Library', '/coach/drills'],
     ['Open Cue Library', '/coach/cue-library'],
@@ -1706,7 +1722,12 @@ describe('the hub links to the session-delivery surfaces', () => {
 
     expect(screen.queryByRole('link', { name: /SHADOW Chat/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Write a Rabbit Hole' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open SHADOW Intel' })).toBeTruthy();
+    // The tab row is the one door to SHADOW Intel; the Quick Actions copy of
+    // it left on 2026-10-03, along with Open Live Floor and Process Tasks.
+    expect(screen.getByRole('button', { name: /^SHADOW Intel/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open SHADOW Intel' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Live Floor' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Process Tasks' })).toBeNull();
   });
 });
 
@@ -2125,6 +2146,8 @@ describe('the coach summary row claims only what was actually read', () => {
        So the count was permanently 0 and this sentence printed above every
        real roster in the gym. */
     await renderWorkspace({ athletesList: roster });
+    // The summary row is off the Dashboard (the floor board's gauges cover it there).
+    openTab('Goals');
 
     expect(screen.queryByText(/Nobody is assigned to you yet/i)).toBeNull();
   });
@@ -2133,6 +2156,8 @@ describe('the coach summary row claims only what was actually read', () => {
     // The other direction. An empty floor is a real state and keeps its line;
     // it is just no longer the only state the panel can reach.
     await renderWorkspace({ athletesList: () => jsonResponse({ items: [] }) });
+    // The summary row is off the Dashboard (the floor board's gauges cover it there).
+    openTab('Goals');
 
     expect(screen.queryByText(/Nobody is assigned to you yet/i)).not.toBeNull();
   });
@@ -2160,6 +2185,8 @@ describe('the coach summary row claims only what was actually read', () => {
       athletesList: roster,
       reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
     });
+    // The summary row is off the Dashboard (the floor board's gauges cover it there).
+    openTab('Goals');
 
     for (const label of ['Injuries', 'Reviews', 'Due']) {
       expect([label, tileValue(label)]).toEqual([label, 'Unavailable']);
@@ -2172,6 +2199,8 @@ describe('the coach summary row claims only what was actually read', () => {
        while telling a coach nothing. A queue that WAS read and holds nothing
        is the good news they came for. */
     await renderWorkspace({ athletesList: roster });
+    // The summary row is off the Dashboard (the floor board's gauges cover it there).
+    openTab('Goals');
 
     expect(tileValue('Reviews')).toBe('0');
     expect(tileValue('Due')).toBe('0');

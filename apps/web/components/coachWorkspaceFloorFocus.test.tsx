@@ -235,6 +235,76 @@ test('every open escalation, pain report and barrier report the panels hold is o
   expect(floor().getByText('Family barrier report')).toBeTruthy();
 });
 
+/* ONE PLACE PER ACTION (Jason 2026-10-03, option A). On the Dashboard every
+   report action is on the board and nowhere else, and the full lists below it
+   stay complete -- acknowledged rows included -- so nothing a coach could see
+   before is lost. Off the Dashboard the board is absent and the lists keep
+   their own buttons, so the actions are never unreachable. */
+test('on the Dashboard each report action is on the board only, and the full lists stay complete below it', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    escalationsGet: () => jsonResponse({
+      ok: true,
+      escalations: [
+        escalation(),
+        escalation({ escalation_id: 'esc_2', athlete_id: 'ath_unknown', severity: 'critical', reason: 'Second open one.' }),
+        escalation({ escalation_id: 'esc_3', status: 'acknowledged', reason: 'Already seen.' }),
+      ],
+    }),
+    painReports: () => jsonResponse({
+      ok: true,
+      windowDays: 14,
+      truncated: false,
+      painReports: [{
+        nearMissId: 'nm_1', athleteId: 'ath_1', athleteName: 'Jordan P.', severity: 'moderate', painScore: 5,
+        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete',
+      }],
+    }),
+    barrierReports: () => jsonResponse({
+      ok: true,
+      truncated: false,
+      barrierReports: [{
+        note_id: 'note-1', athlete_id: 'ath_1', athlete_name: 'Jordan P.', reporter_role: 'parent',
+        note_type: 'transportation_barrier', note_text: 'We lost our ride on Tuesdays.', created_at: '2026-08-10T10:00:00.000Z',
+      }],
+    }),
+  });
+
+  // The full lists: every escalation, open and acknowledged, every report.
+  expect(screen.getByRole('heading', { name: 'Athlete Pain Reports' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Safety Escalations' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Family Barrier Reports' })).toBeTruthy();
+  expect(screen.getByText('Pain score 8 reported after sparring round.')).toBeTruthy();
+  expect(screen.getByText('Second open one.')).toBeTruthy();
+  expect(screen.getByText('Already seen.')).toBeTruthy();
+  expect(screen.getAllByText(/Acknowledge it from Needs You Now/)).toHaveLength(2);
+  expect(screen.getByText('Left shoulder')).toBeTruthy();
+  expect(screen.getByText('We lost our ride on Tuesdays.')).toBeTruthy();
+
+  // No action below the board: none until the coach opens an item on it.
+  expect(screen.queryAllByRole('button', { name: 'Acknowledge' })).toHaveLength(0);
+  expect(screen.queryAllByRole('link', { name: /record what you did/i })).toHaveLength(0);
+  expect(screen.queryAllByRole('link', { name: /Message Home/ })).toHaveLength(0);
+
+  // Each one, opened on the board, is there exactly once on the page.
+  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(1);
+  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
+  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+
+  // Off the Dashboard the board is gone and the lists carry the actions.
+  fireEvent.click(screen.getByRole('button', { name: /^Goals/ }));
+  expect(screen.queryByRole('region', { name: 'The floor' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
+  expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: /Message Home/ })).toHaveLength(1);
+});
+
 test('a live-run read that failed shows the session gauge as unknown, never "None"', async () => {
   installFetch();
   const base = global.fetch as jest.Mock;
