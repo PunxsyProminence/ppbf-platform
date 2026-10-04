@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } fro
 import { query } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
+import { untaggedVideoSql } from '@/src/server/pilot/videoClipTags';
 
 export const runtime = 'nodejs';
 
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest) {
            and athlete_id = $2
            and status = 'ready'
            ${mediaFilter}
+           ${await untaggedVideoSql('pilot.video_sessions')}
          order by created_at desc limit $3`,
         [principal.organizationId, principal.athleteId, limit],
       );
@@ -134,6 +136,7 @@ export async function GET(request: NextRequest) {
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
          where organization_id = $1 and athlete_id = $2 and status = 'ready' ${mediaFilter}
+           ${await untaggedVideoSql('pilot.video_sessions')}
          order by created_at desc limit $3`,
         [principal.organizationId, athleteId, limit],
       );

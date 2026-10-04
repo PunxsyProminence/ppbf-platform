@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { assertVideoHasNoLiveClipTags, TaggedClipNotPublishableError } from '@/src/server/pilot/videoClipTags';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/videoDestination', () => ({
@@ -19,7 +20,13 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/videoClipTags', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoClipTags'),
+  assertVideoHasNoLiveClipTags: jest.fn(),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockNoClipTags = jest.mocked(assertVideoHasNoLiveClipTags);
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 
@@ -394,4 +401,24 @@ describe('POST /api/pilot/publications/create', () => {
     expect((await res.json()).video_status).toBe('quarantined');
     expect(mockQuery).not.toHaveBeenCalled();
   });
+});
+
+// Tagged sparring and bout clips are staff film study only (owner,
+// 2026-10-03). A publication names one athlete and its consent gate checks
+// that one; a clip showing two would pass on the first child's consent alone.
+test('a tagged clip cannot be drafted into a publication', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+  mockQueryOne
+    .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+    .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1', status: 'ready' });
+  mockNoClipTags.mockRejectedValueOnce(new TaggedClipNotPublishableError());
+
+  const res = await POST(
+    postRequest({ video_session_id: 'vid-1', athlete_id: 'ath-1', publication_type: 'research_library', title: 'Bout' }),
+  );
+
+  expect(res.status).toBe(409);
+  expect((await res.json()).code).toBe('TAGGED_CLIP_NOT_PUBLISHABLE');
+  expect(mockNoClipTags).toHaveBeenCalledWith('org-1', 'vid-1');
+  expect(mockQuery).not.toHaveBeenCalled();
 });

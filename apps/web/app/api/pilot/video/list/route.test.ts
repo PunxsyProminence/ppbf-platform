@@ -15,6 +15,14 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+// The tagged-clip predicate (videoClipTags.ts). Doubled with a sentinel so
+// these tests can see WHERE it lands; the embedded-pg suite proves the real
+// predicate, and that it is empty before the migration is applied.
+const UNTAGGED_SENTINEL = 'and /*UNTAGGED_ONLY*/ true';
+jest.mock('@/src/server/pilot/videoClipTags', () => ({
+  untaggedVideoSql: jest.fn(async () => 'and /*UNTAGGED_ONLY*/ true'),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 
@@ -261,5 +269,35 @@ describe('GET /api/pilot/video/list', () => {
       expect(res.status).toBe(200);
       expect(mockQuery).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining([100]));
     });
+  });
+});
+
+/*
+ * Tagged sparring and bout clips are STAFF ONLY (owner, 2026-10-03). A clip
+ * uploaded under one athlete still carries that athlete_id, so without this
+ * filter its title would show up in that athlete's and their parents' list.
+ */
+describe('GET /api/pilot/video/list tagged clips', () => {
+  test('the athlete list leaves tagged clips out', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQuery.mockResolvedValueOnce([]);
+    await GET(request());
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining(UNTAGGED_SENTINEL), ['org-1', 'ath-1', 50]);
+  });
+
+  test('the parent list leaves tagged clips out', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([]);
+    await GET(request('http://localhost/api/pilot/video/list?athlete_id=ath-1'));
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining(UNTAGGED_SENTINEL), ['org-1', 'ath-1', 50]);
+  });
+
+  test('staff lists are not filtered: coaches review tagged clips', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([]);
+    await GET(request());
+    expect(mockQuery.mock.calls[0][0]).not.toContain(UNTAGGED_SENTINEL);
   });
 });

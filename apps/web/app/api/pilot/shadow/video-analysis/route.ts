@@ -15,10 +15,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
+import { ConflictError } from '@/src/server/pilot/errors';
+import {
+  assertGuardianMediaConsent,
+  checkGuardianMediaConsent,
+  GuardianConsentMissingError,
+} from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { enqueueJob, getJobStatusForActor, SHADOW_CONTEXT_CONTRACT_VERSION } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
@@ -115,6 +121,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // jsonError already turns GuardianConsentMissingError into the same 409
     // shape those routes use, so no separate catch is needed here.
     await assertGuardianMediaConsent(principal.organizationId, video.athlete_id);
+    // A tagged sparring or bout clip shows its other athletes to the model
+    // too (owner, 2026-10-03: any tagged athlete's consent block blocks the
+    // whole clip). Each must have every guardian's signed consent, and none
+    // of those may be photo-only. (assertGuardianMediaConsent alone does not
+    // read covers_video; the video's own athlete is still checked only by it.)
+    for (const subject of await listLiveTagSubjects(principal.organizationId, video.video_session_id)) {
+      if (subject.athlete_deleted) {
+        return hiddenNotFound();
+      }
+      const consent = await checkGuardianMediaConsent(principal.organizationId, subject.athlete_id);
+      if (!consent.ok) {
+        throw new GuardianConsentMissingError(subject.athlete_id, consent.missingParentIds);
+      }
+      if (consent.perGuardian.some((guardian) => guardian.coversVideo === false)) {
+        throw new ConflictError(
+          'Blocked: a guardian of one of the athletes in this clip signed a photo-only media consent that does not cover video.',
+          'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+        );
+      }
+    }
 
     const jobId = await enqueueJob({
       jobType: 'film_study',

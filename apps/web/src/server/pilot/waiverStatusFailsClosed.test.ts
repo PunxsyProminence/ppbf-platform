@@ -309,8 +309,10 @@ describe('every direct reader of a consent status is registered', () => {
         + 'missing paperwork. Fails closed.',
     ],
     [
-      'app/api/pilot/video/[videoId]/route.ts',
-      'THE ONE THAT FAILED OPEN, and the reason this file exists. Its refusals '
+      'src/server/pilot/videoPlaybackConsent.ts',
+      'THE ONE THAT FAILED OPEN, and the reason this file exists: the playback '
+        + 'gate of /api/pilot/video/[videoId], moved here unchanged (2026-10-04) '
+        + 'so clip-tag routes share it rather than copy it. Its refusals '
         + 'are positive matches, so a value outside the vocabulary matched '
         + 'neither and the route minted a 60-minute credential for a minor. It '
         + 'normalises now and refuses an unreadable status outright; registered '
@@ -389,7 +391,7 @@ describe('every direct reader of a consent status is registered', () => {
 
   test('it finds the reader that failed open, which the imports above could not', () => {
     // The specific claim the review made and this half answers.
-    expect(filesComparingAgainstAConsentLiteral()).toContain('app/api/pilot/video/[videoId]/route.ts');
+    expect(filesComparingAgainstAConsentLiteral()).toContain('src/server/pilot/videoPlaybackConsent.ts');
   });
 
   test('no file compares against a consent status without being registered', () => {

@@ -577,6 +577,63 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     }
   });
 
+  test("link candidates are this athlete's own records in this gym, pain reports only, and none once deleted", async () => {
+    const athleteId = 'ath-candidates';
+    await addAthlete(ORG_A, athleteId);
+    await addAthlete(ORG_B, athleteId);
+    const olderHold = await addHold(ORG_A, athleteId);
+    const hold = await addHold(ORG_A, athleteId);
+    const plan = await addPlan(ORG_A, athleteId, '2026-09-21');
+    const clearance = await addClearance(ORG_A, athleteId);
+    const pain = await addNearMiss(ORG_A, athleteId, 'athlete_pain_report');
+    await addNearMiss(ORG_A, athleteId, 'coach_flag');
+    await addHold(ORG_B, athleteId);
+    await addPlan(ORG_B, athleteId, null);
+    await addClearance(ORG_B, athleteId);
+    await addNearMiss(ORG_B, athleteId, 'athlete_pain_report');
+    await addHold(ORG_A, OTHER_ATHLETE);
+    await addPlan(ORG_A, OTHER_ATHLETE, null);
+    await addClearance(ORG_A, OTHER_ATHLETE);
+    await addNearMiss(ORG_A, OTHER_ATHLETE, 'athlete_pain_report');
+
+    const candidates = await injuries.listLinkCandidates(ORG_A, athleteId);
+    // Newest first.
+    expect(candidates.holds.map((h) => h.hold_id)).toEqual([hold, olderHold]);
+    expect(candidates.plans).toEqual([
+      expect.objectContaining({ plan_id: plan, triggering_event: 'confirmed_concussion', earliest_return_date: '2026-09-21' }),
+    ]);
+    expect(candidates.clearances.map((c) => c.status_id)).toEqual([clearance]);
+    expect(candidates.painReports.map((n) => n.near_miss_id)).toEqual([pain]);
+    // Ids, kinds and dates only: no reason text, notes or descriptions travel.
+    expect(Object.keys(candidates.holds[0]).sort()).toEqual(['hold_id', 'placed_at', 'scope', 'status']);
+    expect(Object.keys(candidates.plans[0]).sort()).toEqual([
+      'earliest_return_date',
+      'event_date',
+      'plan_id',
+      'status',
+      'triggering_event',
+    ]);
+    expect(Object.keys(candidates.clearances[0]).sort()).toEqual(['effective_at', 'status', 'status_id']);
+    expect(Object.keys(candidates.painReports[0]).sort()).toEqual(['created_at', 'near_miss_id', 'severity']);
+
+    // At most twenty of a kind, the newest.
+    const many: string[] = [];
+    for (let i = 0; i < 21; i += 1) many.push(await addNearMiss(ORG_A, athleteId, 'athlete_pain_report'));
+    const capped = await injuries.listLinkCandidates(ORG_A, athleteId);
+    expect(capped.painReports.map((n) => n.near_miss_id)).toEqual(many.slice(1).reverse());
+
+    await db.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [
+      ORG_A,
+      athleteId,
+    ]);
+    expect(await injuries.listLinkCandidates(ORG_A, athleteId)).toEqual({
+      holds: [],
+      plans: [],
+      clearances: [],
+      painReports: [],
+    });
+  });
+
   test('the retention purge removes the rows with the athlete, every kind of link included', async () => {
     const athleteId = 'ath-purged';
     await addAthlete(ORG_A, athleteId);

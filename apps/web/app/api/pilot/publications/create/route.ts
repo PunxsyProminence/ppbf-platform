@@ -12,6 +12,7 @@ import {
   getOrganizationPublications,
 } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError, parseSafeLimit } from '@/src/server/pilot/http';
+import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
@@ -152,6 +153,10 @@ export async function POST(request: NextRequest) {
      * draft made from it would carry that footage past every subsequent check.
      */
     await assertVideoIsFilmStudyMedia(principal.organizationId, body.video_session_id);
+    // A tagged sparring or bout clip shows more than the one athlete a
+    // publication names; tagged clips are staff film study only (owner,
+    // 2026-10-03).
+    await assertVideoHasNoLiveClipTags(principal.organizationId, body.video_session_id);
 
     const publication = await createPublication({
       organizationId: principal.organizationId,

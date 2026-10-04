@@ -4,6 +4,8 @@ import { GET } from './route';
 import { queryOne } from '@/src/server/pilot/db';
 import { checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { accessibleAthleteIds } from '@/src/server/pilot/access';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -29,7 +31,21 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
   return { ...actual, checkGuardianMediaConsent: jest.fn() };
 });
 
+// Clip tags (videoClipTags.ts). Defaults to "no tags", so every test above
+// the tagged-clip block describes an ordinary single-athlete video.
+jest.mock('@/src/server/pilot/videoClipTags', () => ({
+  listLiveTagSubjects: jest.fn(async () => []),
+}));
+
+// Real implementation by default; the tagged-clip tests set the coach's scope.
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, accessibleAthleteIds: jest.fn(actual.accessibleAthleteIds) };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockTagSubjects = jest.mocked(listLiveTagSubjects);
+const mockAccessible = jest.mocked(accessibleAthleteIds);
 const mockQueryOne = queryOne as jest.Mock;
 const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
 
@@ -681,4 +697,148 @@ test('teaching footage is not playable through the ordinary video route', async 
   const res = await call();
 
   expect(res.status).toBe(404);
+});
+
+/*
+ * TAGGED CLIPS (sparring and bout film). Owner decisions, Jason 2026-10-03:
+ * staff only; a coach may watch when ANY athlete in the clip is theirs; and a
+ * consent block for ANY athlete in the clip blocks it for everyone.
+ */
+describe('GET /api/pilot/video/[videoId] tagged clips', () => {
+  const tagged = (...ids: string[]) => ids.map((athlete_id) => ({ athlete_id, athlete_deleted: false }));
+
+  afterEach(() => {
+    mockTagSubjects.mockReset();
+    mockTagSubjects.mockResolvedValue([]);
+    mockAccessible.mockReset();
+  });
+
+  function consentFor(byAthlete: Record<string, ConsentCheckResult>) {
+    mockCheckConsent.mockImplementation(async (_org, athleteId) => byAthlete[athleteId] ?? NO_CONSENT_ON_FILE);
+  }
+
+  test.each(['athlete', 'parent'] as const)('role %s never plays a tagged clip, even of their own athlete', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role, athleteId: 'ath-1' }));
+    // Everything else would admit them: the athlete is live and theirs.
+    mockQueryOne.mockResolvedValue({ athlete_id: 'ath-1' });
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1', 'ath-2'));
+    mockAccessible.mockResolvedValue(new Set(['ath-1']));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(mockCheckConsent).not.toHaveBeenCalled();
+  });
+
+  test('a coach with none of the tagged athletes is refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'coach-9' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1', 'ath-2'));
+    mockAccessible.mockResolvedValueOnce(new Set());
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(mockAccessible).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-9' }), ['ath-1', 'ath-1', 'ath-2']);
+    expect((await res.json()).stream_url).toBeUndefined();
+  });
+
+  test('a coach with ONE of the tagged athletes plays the clip when every athlete clears consent', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'coach-2' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1', 'ath-2'));
+    mockAccessible.mockResolvedValueOnce(new Set(['ath-2']));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).stream_url).toBe('https://blob.example/sas');
+    const checked = mockCheckConsent.mock.calls.map(([, athleteId]) => athleteId).sort();
+    expect(checked).toEqual(['ath-1', 'ath-2']);
+  });
+
+  test.each([
+    ['withdrawn', guardian('par-2', 'withdrawn', true), 'GUARDIAN_CONSENT_WITHDRAWN'],
+    ['photo-only', guardian('par-2', 'signed', false), 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'],
+  ] as const)('ONE %s consent for the OTHER athlete blocks the clip for the coach', async (_label, block, code) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'coach-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1', 'ath-2'));
+    mockAccessible.mockResolvedValueOnce(new Set(['ath-1']));
+    consentFor({
+      'ath-1': consentResult([guardian('par-1', 'signed', true)]),
+      'ath-2': consentResult([block]),
+    });
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe(code);
+    expect(body.error).toMatch(/more than one athlete/);
+    expect(body.stream_url).toBeUndefined();
+  });
+
+  test.each([
+    ['withdrawn', guardian('par-2', 'withdrawn', true), 'GUARDIAN_CONSENT_WITHDRAWN'],
+    ['photo-only', guardian('par-2', 'signed', false), 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'],
+  ] as const)('ONE %s consent blocks the clip for an organization admin too', async (_label, block, code) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: null }));
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1', 'ath-2'));
+    consentFor({ 'ath-2': consentResult([block]) });
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe(code);
+  });
+
+  test('an unattributed clip tagged to athletes is no longer open to every coach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'coach-9' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: null }));
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-1'));
+    mockAccessible.mockResolvedValueOnce(new Set());
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+  });
+
+  test("a deleted athlete's tag hides the clip, like that athlete's own footage", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockTagSubjects.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', athlete_deleted: false },
+      { athlete_id: 'ath-2', athlete_deleted: true },
+    ]);
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+  });
+
+  test("tagging another athlete does not bring back a DELETED athlete's own video", async () => {
+    // Video of ath-1, who has since been deleted, tagged with ath-2 only.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce(null);
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-2'));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(mockCheckConsent).not.toHaveBeenCalled();
+  });
+
+  test("...and a coach of the live tagged athlete is refused it too", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'coach-2' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce(null);
+    mockTagSubjects.mockResolvedValueOnce(tagged('ath-2'));
+    mockAccessible.mockResolvedValueOnce(new Set(['ath-2']));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+  });
 });
