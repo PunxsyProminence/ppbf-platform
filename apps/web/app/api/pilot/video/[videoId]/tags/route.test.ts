@@ -14,6 +14,7 @@ import {
 } from '@/src/server/pilot/videoClipTags';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertVideoIsFilmStudyMedia, VideoDestinationError } from '@/src/server/pilot/videoDestination';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -27,6 +28,10 @@ jest.mock('@/src/server/pilot/access', () => {
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/videoSessions', () => ({ getVideoSessionById: jest.fn() }));
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({ assertConsentCoversVideo: jest.fn() }));
+jest.mock('@/src/server/pilot/videoDestination', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoDestination'),
+  assertVideoIsFilmStudyMedia: jest.fn(),
+}));
 // Only the database calls are doubled; the module's own rules are proved by
 // videoClipTags.pg.test.ts against a real schema.
 jest.mock('@/src/server/pilot/videoClipTags', () => ({
@@ -48,6 +53,7 @@ const mockListForVideo = jest.mocked(listLiveClipTagsForVideo);
 const mockSubjects = jest.mocked(listLiveTagSubjects);
 const mockRemove = jest.mocked(removeClipTag);
 const mockConsent = jest.mocked(assertConsentCoversVideo);
+const mockFilmStudy = jest.mocked(assertVideoIsFilmStudyMedia);
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -110,6 +116,7 @@ beforeEach(() => {
   mockAssertAccess.mockResolvedValue(undefined);
   mockAdd.mockResolvedValue(tagRow());
   mockConsent.mockResolvedValue(undefined);
+  mockFilmStudy.mockResolvedValue(undefined);
 });
 
 describe('who may tag', () => {
@@ -242,10 +249,14 @@ describe('removing a tag', () => {
   test('a coach cannot remove the tag on another coach\'s athlete', async () => {
     mockGetTag.mockResolvedValueOnce(tagRow({ athlete_id: 'ath-2' }));
     mockAssertAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    // Even when that athlete's consent blocks: the answer must not differ,
+    // or the route becomes an oracle on another coach's athlete's consent.
+    mockConsent.mockRejectedValue(new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN'));
 
     const res = await del();
 
     expect(res.status).toBe(404);
+    expect(mockConsent).not.toHaveBeenCalled();
     expect(mockRemove).not.toHaveBeenCalled();
   });
 
@@ -283,8 +294,11 @@ describe('removing a tag', () => {
     const res = await del();
 
     expect(res.status).toBe(200);
-    expect(mockConsent).not.toHaveBeenCalled();
     expect(mockRemove).toHaveBeenCalledWith({ organizationId: 'org-1', tagId: 'vct-1', removedByAccountId: 'admin-1' });
+    // The deliberate exception is visible in the audit trail.
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ action: 'video_clip_tag_removed', consent_blocked: true }),
+    }));
   });
 
   test('a consent lookup fault refuses the removal rather than allowing it', async () => {
@@ -302,3 +316,66 @@ describe('removing a tag', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('review follow-ups', () => {
+  test("every read is scoped to the caller's organization", async () => {
+    mockGetTag.mockResolvedValueOnce(tagRow());
+    mockRemove.mockResolvedValueOnce(tagRow());
+    await post({ athlete_id: 'ath-1', event_kind: 'sparring' });
+    await del();
+    expect(mockVideo).toHaveBeenCalledWith('org-1', 'vid-1');
+    expect(mockSubjects).toHaveBeenCalledWith('org-1', 'vid-1');
+    expect(mockGetTag).toHaveBeenCalledWith('org-1', 'vct-1');
+  });
+
+  test('Teach Shadow footage reads as not found', async () => {
+    mockVideo.mockResolvedValueOnce(video(null));
+    mockFilmStudy.mockRejectedValueOnce(new VideoDestinationError());
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+    expect(res.status).toBe(404);
+    expect(mockListForVideo).not.toHaveBeenCalled();
+  });
+
+  test.each(['coach', 'organization_admin'] as const)(
+    "a clip with a deleted tagged athlete reads as not found (%s)",
+    async (role) => {
+      mockPrincipal.mockResolvedValueOnce(principal({ role }));
+      mockSubjects.mockResolvedValueOnce([
+        { athlete_id: 'ath-1', athlete_deleted: false },
+        { athlete_id: 'ath-2', athlete_deleted: true },
+      ]);
+      const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+      expect(res.status).toBe(404);
+      expect(mockListForVideo).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    { competition_id: 42 },
+    { note: 123 },
+    { note: {} },
+    { athlete_id: ['ath-1'] },
+  ])('a non-text field is refused, not silently dropped (%o)', async (bad) => {
+    const res = await post({ athlete_id: 'ath-1', event_kind: 'competition', competition_id: 'comp-1', ...bad });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CLIP_TAG_FIELD_TYPE');
+    expect(mockAdd).not.toHaveBeenCalled();
+  });
+
+  test('a refused tag writes no audit row', async () => {
+    mockAdd.mockRejectedValueOnce(new ConflictError('dup', 'CLIP_TAG_DUPLICATE'));
+    const res = await post({ athlete_id: 'ath-1', event_kind: 'sparring' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('CLIP_TAG_DUPLICATE');
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a removal that lost a race reads as not found and writes no audit row', async () => {
+    mockGetTag.mockResolvedValueOnce(tagRow());
+    mockRemove.mockResolvedValueOnce(null);
+    const res = await del();
+    expect(res.status).toBe(404);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+

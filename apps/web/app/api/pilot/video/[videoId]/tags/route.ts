@@ -19,6 +19,7 @@ import {
   type ClipEventKind,
 } from '@/src/server/pilot/videoClipTags';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
@@ -40,8 +41,18 @@ async function staffCanSeeVideo(
 ): Promise<boolean> {
   const video = await getVideoSessionById(organizationId, videoSessionId);
   if (!video) return false;
+  // Teach Shadow footage is anonymous and never a clip; it reads as not
+  // found here, as it does on playback.
+  try {
+    await assertVideoIsFilmStudyMedia(organizationId, videoSessionId);
+  } catch {
+    return false;
+  }
+  const tagged = await listLiveTagSubjects(organizationId, videoSessionId);
+  // A deleted athlete's footage reads as not found, as on playback.
+  if (tagged.some((subject) => subject.athlete_deleted)) return false;
   if (isOrganizationAdminRole(principal.role)) return true;
-  const subjects = (await listLiveTagSubjects(organizationId, videoSessionId)).map((s) => s.athlete_id);
+  const subjects = tagged.map((subject) => subject.athlete_id);
   if (video.athlete_id) subjects.push(video.athlete_id);
   if (subjects.length === 0) return true;
   return (await accessibleAthleteIds(principal, subjects)).size > 0;
@@ -79,6 +90,11 @@ export async function POST(
     const { videoId } = await params;
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 
+    for (const field of ['athlete_id', 'competition_id', 'note'] as const) {
+      if (body?.[field] !== undefined && body?.[field] !== null && typeof body?.[field] !== 'string') {
+        throw new ValidationError(`${field} must be text.`, 'CLIP_TAG_FIELD_TYPE');
+      }
+    }
     const athleteId = optionalText(body?.athlete_id);
     const eventKind = body?.event_kind;
     if (!athleteId) {
@@ -143,7 +159,17 @@ export async function DELETE(
       return hiddenNotFound();
     }
     // A coach removes tags on athletes who are theirs; an admin, any.
-    if (!isOrganizationAdminRole(principal.role)) {
+    let consentBlocked = false;
+    if (isOrganizationAdminRole(principal.role)) {
+      // The admin's removal is the deliberate exception that can let a
+      // blocked clip play again, so the audit row says when it was one.
+      try {
+        await assertConsentCoversVideo(principal.organizationId, tag.athlete_id);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) throw error;
+        consentBlocked = true;
+      }
+    } else {
       try {
         await assertActorCanAccessAthlete(principal, tag.athlete_id);
       } catch {
@@ -189,6 +215,7 @@ export async function DELETE(
         action: 'video_clip_tag_removed',
         video_session_id: videoId,
         athlete_id: removed.athlete_id,
+        consent_blocked: consentBlocked,
       },
     });
 
