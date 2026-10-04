@@ -1,9 +1,10 @@
-import { query } from './db';
-import { assertVideoHasNoLiveClipTags, listLiveTagSubjects, untaggedVideoSql } from './videoClipTags';
+import { query, withTransaction } from './db';
+import { addClipTag, assertVideoHasNoLiveClipTags, listLiveTagSubjects, untaggedVideoSql } from './videoClipTags';
 
 jest.mock('./db', () => ({ query: jest.fn(), withTransaction: jest.fn() }));
 
 const mockQuery = jest.mocked(query);
+const mockTransaction = jest.mocked(withTransaction);
 
 afterEach(() => {
   mockQuery.mockReset();
@@ -61,3 +62,72 @@ describe('after the migration is applied', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * addClipTag's checks under the video lock, driven through a scripted
+ * transaction client. The same rules against a real schema are in
+ * videoClipTags.pg.test.ts.
+ */
+describe('addClipTag under the video lock', () => {
+  type Row = Record<string, unknown>;
+  function scripted(responses: { match: string; rows: Row[] }[]) {
+    const statements: string[] = [];
+    const client = {
+      query: jest.fn(async (text: string) => {
+        statements.push(text);
+        const hit = responses.find((r) => text.includes(r.match));
+        return { rows: hit ? hit.rows : [] };
+      }),
+    };
+    mockTransaction.mockImplementationOnce(async (fn) => fn(client as never));
+    return statements;
+  }
+  const input = {
+    organizationId: 'org-1',
+    videoSessionId: 'vid-1',
+    athleteId: 'ath-2',
+    eventKind: 'competition' as const,
+    competitionId: 'comp-1',
+    note: '',
+    taggedByAccountId: 'coach-1',
+  };
+  const video = { match: 'for update', rows: [{ capture_take_id: null, status: 'ready' }] };
+
+  test('a clip already tagged to another event refuses a different one', async () => {
+    const statements = scripted([
+      video,
+      { match: 'select event_kind, competition_id', rows: [{ event_kind: 'sparring', competition_id: null }] },
+    ]);
+    await expect(addClipTag(input)).rejects.toMatchObject({ code: 'CLIP_TAG_EVENT_MISMATCH' });
+    expect(statements.some((sql) => sql.includes('insert into pilot.video_clip_tags'))).toBe(false);
+  });
+
+  test('a clip tagged to another competition refuses this one', async () => {
+    scripted([
+      video,
+      { match: 'select event_kind, competition_id', rows: [{ event_kind: 'competition', competition_id: 'comp-2' }] },
+    ]);
+    await expect(addClipTag(input)).rejects.toMatchObject({ code: 'CLIP_TAG_EVENT_MISMATCH' });
+  });
+
+  test('a withdrawn entry does not admit a competition tag', async () => {
+    const statements = scripted([
+      video,
+      { match: 'from pilot.external_competition_entries', rows: [{ status: 'withdrawn' }] },
+    ]);
+    await expect(addClipTag(input)).rejects.toMatchObject({ code: 'CLIP_TAG_NOT_ENTERED' });
+    expect(statements.some((sql) => sql.includes('insert into pilot.video_clip_tags'))).toBe(false);
+  });
+
+  test('an entered athlete on a clip of the same event is tagged', async () => {
+    const statements = scripted([
+      video,
+      { match: 'select event_kind, competition_id', rows: [{ event_kind: 'competition', competition_id: 'comp-1' }] },
+      { match: 'from pilot.external_competition_entries', rows: [{ status: 'entered' }] },
+      { match: 'insert into pilot.video_clip_tags', rows: [{ tag_id: 'vct-2' }] },
+    ]);
+    await expect(addClipTag(input)).resolves.toMatchObject({ tag_id: 'vct-2' });
+    expect(statements.some((sql) => sql.includes('insert into pilot.video_clip_tags'))).toBe(true);
+  });
+});
+

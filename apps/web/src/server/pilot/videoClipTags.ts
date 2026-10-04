@@ -197,6 +197,36 @@ export async function addClipTag(input: {
       );
     }
 
+    // One event per clip: a bout film and a sparring film are different
+    // things, and a clip listed under two competitions would be wrong under
+    // both. Read under the video lock, so two taggings cannot disagree.
+    const existing = await client.query<{ event_kind: string; competition_id: string | null }>(
+      `select event_kind, competition_id from pilot.video_clip_tags
+        where organization_id = $1 and video_session_id = $2 and removed_at is null
+        limit 1`,
+      [input.organizationId, input.videoSessionId],
+    );
+    const current = existing.rows[0];
+    if (current && (current.event_kind !== input.eventKind || current.competition_id !== input.competitionId)) {
+      throw new ConflictError(
+        'This clip is already tagged to a different event. Every athlete on one clip shares its event.',
+        'CLIP_TAG_EVENT_MISMATCH',
+      );
+    }
+
+    // The foreign key proves an entry row exists; withdrawing keeps the row
+    // with status 'withdrawn'. Only an athlete still entered is tagged.
+    if (input.eventKind === 'competition') {
+      const entry = await client.query<{ status: string }>(
+        `select status from pilot.external_competition_entries
+          where organization_id = $1 and competition_id = $2 and athlete_id = $3`,
+        [input.organizationId, input.competitionId, input.athleteId],
+      );
+      if (entry.rows[0]?.status !== 'entered') {
+        throw new ValidationError('That athlete is not entered in that competition.', 'CLIP_TAG_NOT_ENTERED');
+      }
+    }
+
     try {
       const inserted = await client.query<ClipTagRow>(
         `insert into pilot.video_clip_tags

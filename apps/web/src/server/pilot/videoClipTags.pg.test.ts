@@ -298,6 +298,25 @@ describe('video_clip_tags migration and videoClipTags.ts against the real schema
     })).rejects.toMatchObject({ code: 'CLIP_TAG_NOT_ENTERED' });
   });
 
+  test('a withdrawn entry does not admit a competition tag', async () => {
+    await main.query(
+      `insert into pilot.external_competition_entries
+         (organization_id, entry_id, competition_id, athlete_id, status, created_by_account_id)
+       values ($1, 'entry-b-withdrawn', $2, $3, 'withdrawn', $4)`,
+      [ORG, COMPETITION, ATHLETE_B, COACH_A],
+    );
+    await expect(tags.addClipTag({
+      ...base, videoSessionId: 'vid-bout', athleteId: ATHLETE_B, eventKind: 'competition', competitionId: COMPETITION,
+    })).rejects.toMatchObject({ code: 'CLIP_TAG_NOT_ENTERED' });
+  });
+
+  test('every athlete on one clip shares its event', async () => {
+    // vid-bout is already a competition clip for athlete A.
+    await expect(tags.addClipTag({
+      ...base, videoSessionId: 'vid-bout', athleteId: ATHLETE_B, eventKind: 'sparring',
+    })).rejects.toMatchObject({ code: 'CLIP_TAG_EVENT_MISMATCH' });
+  });
+
   test('a competition tag must name the competition; a sparring tag must not', async () => {
     await expect(tags.addClipTag({
       ...base, videoSessionId: 'vid-spar', athleteId: ATHLETE_A, eventKind: 'competition',
