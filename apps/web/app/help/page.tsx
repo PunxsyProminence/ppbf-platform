@@ -26,7 +26,7 @@ export default function HelpCenterPage() {
             <Link href="/admin" className="btn btn--ghost">
               Admin Hub
             </Link>
-            <Link href="/public" className="btn btn--ghost">
+            <Link href="/" className="btn btn--ghost">
               Public Portal
             </Link>
           </div>
