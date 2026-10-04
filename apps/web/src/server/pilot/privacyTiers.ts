@@ -384,6 +384,18 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: 'Written FOR the athlete: age-appropriate, non-punitive, required at placement.',
   },
+  'athlete_injuries.staff_note': {
+    tier: 'organization',
+    enforcedBy: [
+      'athleteInjuries.ts#listFamilyInjuries',
+      '../../../app/api/pilot/athlete/injuries/route.ts#GET',
+      '../../../app/api/pilot/coach/injuries/route.ts#assertStanding',
+    ],
+    note:
+      'What a person reported or a clinician stated, in staff words. Coaches and organization admins read it '
+      + 'through /api/pilot/coach/injuries; the athlete and their guardians read their own injuries through the '
+      + 'family projection, which never selects this column (owner decision 2026-10-04).',
+  },
   'training_holds.reason_category': {
     tier: 'organization',
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],

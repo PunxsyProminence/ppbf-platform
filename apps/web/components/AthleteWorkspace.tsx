@@ -13,6 +13,7 @@ import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
+import MyInjuries from './MyInjuries';
 import TrainingHoldBanner from './TrainingHoldBanner';
 import {
   AthleteSummaryPanel,
@@ -3185,6 +3186,7 @@ export default function AthleteWorkspace() {
               }}
             />
           )}
+          {activeTab === 'bio-checkin' && <MyInjuries />}
 
 
           {/* DRILL LIBRARY */}
