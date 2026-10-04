@@ -16,6 +16,8 @@ import { queryOne } from './db';
 import { downloadPilotVideoFile } from './blob';
 import { analyzeFramesWithVision, extractFrames } from './shadowFilmStudy';
 import { createFilmStudyProposal } from './shadowFilmStudyProposals';
+import { assertGuardianMediaConsent, checkGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
+import { listLiveTagSubjects } from './videoClipTags';
 
 jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
@@ -42,6 +44,14 @@ jest.mock('./shadowFilmStudy', () => ({
 jest.mock('./shadowFilmStudyProposals', () => ({
   createFilmStudyProposal: jest.fn(),
 }));
+// Consent is re-read when the job runs (filmStudyConsent.ts). Only the two
+// reads are mocked; the playback scope gate that interprets them runs real.
+jest.mock('./guardianConsent', () => ({
+  ...jest.requireActual('./guardianConsent'),
+  assertGuardianMediaConsent: jest.fn(),
+  checkGuardianMediaConsent: jest.fn(),
+}));
+jest.mock('./videoClipTags', () => ({ listLiveTagSubjects: jest.fn() }));
 
 const mockClaim = jest.mocked(claimNextJob);
 const mockComplete = jest.mocked(completeJob);
@@ -51,6 +61,18 @@ const mockDownload = jest.mocked(downloadPilotVideoFile);
 const mockExtract = jest.mocked(extractFrames);
 const mockAnalyze = jest.mocked(analyzeFramesWithVision);
 const mockCreateProposal = jest.mocked(createFilmStudyProposal);
+const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
+const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
+const mockTagSubjects = jest.mocked(listLiveTagSubjects);
+
+function consent(coversVideo: boolean, status = 'signed') {
+  return {
+    ok: status === 'signed',
+    guardianIds: ['parent-1'],
+    missingParentIds: status === 'signed' ? [] : ['parent-1'],
+    perGuardian: [{ parentId: 'parent-1', status, coversVideo, publicUseAllowed: false, signedAt: null }],
+  };
+}
 
 const PROPOSAL_ID = '55555555-5555-4555-8555-555555555555';
 const OBSERVATION = 'The lead hand returns below the chin after the jab in the later frames.';
@@ -104,6 +126,9 @@ beforeEach(() => {
   process.env.AZURE_AI_VISION_DEPLOYMENT_NAME = 'gpt-5-vision-shadow';
 
   mockClaim.mockResolvedValue(filmStudyJob());
+  mockAssertConsent.mockResolvedValue(undefined);
+  mockCheckConsent.mockImplementation(async () => consent(true));
+  mockTagSubjects.mockResolvedValue([]);
   mockQueryOne.mockResolvedValue({
     role: 'coach',
     athlete_id: null,
@@ -267,5 +292,86 @@ describe('film study executor', () => {
     expect(result.error).toBe('SHADOW_JOB_CONTEXT_INVALID');
     expect(mockDownload).not.toHaveBeenCalled();
     expect(mockFail).toHaveBeenCalled();
+  });
+});
+
+/*
+ * CONSENT AT RUN TIME. A queued job carries only the fact that a request was
+ * allowed when it was made; a guardian can withdraw or narrow to photo-only
+ * while it waits. The worker asks again before reading the blob, and again
+ * before persisting a proposal.
+ */
+describe('film study executor re-checks consent when the job runs', () => {
+  test.each([
+    ['withdrawn', consent(false, 'withdrawn')],
+    ['photo-only', consent(false)],
+  ])("the video's own athlete: %s consent refuses before any download", async (_label, result) => {
+    mockCheckConsent.mockImplementation(async (_org, id) => (id === 'ATH-1' ? result : consent(true)));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(mockAnalyze).not.toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    expect(mockComplete).not.toHaveBeenCalled();
+    // A guardian's decision, not a blip: not retried.
+    expect(mockFail).toHaveBeenCalledWith(expect.anything(), 'SHADOW_FILM_CONSENT_BLOCKED', { retryable: false });
+  });
+
+  test.each([
+    ['withdrawn', consent(false, 'withdrawn')],
+    ['photo-only', consent(false)],
+  ])('a tagged athlete: %s consent refuses before any download', async (_label, result) => {
+    mockTagSubjects.mockResolvedValue([{ athlete_id: 'ATH-2', athlete_deleted: false }]);
+    mockCheckConsent.mockImplementation(async (_org, id) => (id === 'ATH-2' ? result : consent(true)));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(mockTagSubjects).toHaveBeenCalledWith('org-1', 'vs-1');
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+  });
+
+  test('missing consent (no signature on file) refuses', async () => {
+    mockAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ATH-1', ['parent-1']));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(mockDownload).not.toHaveBeenCalled();
+  });
+
+  test('a tag naming a deleted athlete refuses', async () => {
+    mockTagSubjects.mockResolvedValue([{ athlete_id: 'ATH-2', athlete_deleted: true }]);
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(mockDownload).not.toHaveBeenCalled();
+  });
+
+  test('a withdrawal landing during inference stops the proposal being written', async () => {
+    let reads = 0;
+    mockCheckConsent.mockImplementation(async () => (++reads === 1 ? consent(true) : consent(false, 'withdrawn')));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(mockAnalyze).toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    expect(await tempDirsCreated()).toEqual([]);
+  });
+
+  test('a database fault while reading consent is retryable, never read as consent', async () => {
+    mockCheckConsent.mockRejectedValue(new Error('connection reset'));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_JOB_EXECUTION_FAILED');
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(mockFail).toHaveBeenCalledWith(expect.anything(), 'SHADOW_JOB_EXECUTION_FAILED');
   });
 });

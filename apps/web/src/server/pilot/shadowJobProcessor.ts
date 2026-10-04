@@ -31,6 +31,9 @@ import {
   isFilmStudyVisionConfigured,
 } from './shadowFilmStudy';
 import { createFilmStudyProposal } from './shadowFilmStudyProposals';
+import { assertFilmStudyConsent } from './filmStudyConsent';
+import { PilotError } from './errors';
+import { GuardianConsentMissingError } from './guardianConsent';
 import type { PilotRole } from './contracts';
 import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
@@ -414,7 +417,11 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     // otherwise burn their full retry budget proving it.
     // CONTRACT_AHEAD is deliberately absent here: that job is fine and this
     // worker is behind, so it must keep its payload and stay claimable.
-    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN' || errorCode === 'SHADOW_JOB_CONTEXT_CONTRACT_STALE') {
+    if (
+      errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN'
+      || errorCode === 'SHADOW_JOB_CONTEXT_CONTRACT_STALE'
+      || errorCode === 'SHADOW_FILM_CONSENT_BLOCKED'
+    ) {
       await failJob(job, errorCode, { retryable: false });
     } else {
       await failJob(job, errorCode);
@@ -987,6 +994,30 @@ function parseFilmStudyContext(payload: Record<string, unknown>): FilmStudyJobCo
 }
 
 /**
+ * A consent refusal (409 conflict, missing consent, or a tag naming a deleted
+ * athlete, 404) becomes SHADOW_FILM_CONSENT_BLOCKED, which the worker fails
+ * without retrying: it is a guardian's decision, not a blip. Anything else --
+ * a database error mid-read -- propagates and stays retryable, so a consent
+ * read that could not be completed never counts as consent.
+ */
+async function assertFilmStudyConsentAtRunTime(
+  organizationId: string,
+  context: FilmStudyJobContext,
+): Promise<void> {
+  try {
+    await assertFilmStudyConsent(organizationId, context.videoSessionId, context.athleteId);
+  } catch (error) {
+    if (
+      error instanceof GuardianConsentMissingError
+      || (error instanceof PilotError && (error.status === 409 || error.status === 404))
+    ) {
+      throw new Error('SHADOW_FILM_CONSENT_BLOCKED');
+    }
+    throw error;
+  }
+}
+
+/**
  * Film Study: frames -> vision -> a PROPOSED observation awaiting a coach.
  *
  * Retention (#103, non-negotiable): the video is read into a per-job temp
@@ -1014,6 +1045,11 @@ async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Re
   if (!organizationId) {
     throw new Error('SHADOW_JOB_CONTEXT_INVALID');
   }
+
+  // Consent is read again HERE, not trusted from the request: a guardian can
+  // withdraw, or narrow to photo-only, while the job waits in the queue.
+  // Checked before the blob is read, so refused footage is never downloaded.
+  await assertFilmStudyConsentAtRunTime(organizationId, context);
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-film-job-'));
   try {
@@ -1043,6 +1079,10 @@ async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Re
     if (!observationCheck.valid || observationCheck.filtered) {
       throw new Error('SHADOW_FILM_OBSERVATION_FILTERED');
     }
+
+    // And once more before anything is persisted: inference takes seconds,
+    // and a withdrawal that lands during it must not still produce a proposal.
+    await assertFilmStudyConsentAtRunTime(organizationId, context);
 
     const proposal = await createFilmStudyProposal({
       organizationId,

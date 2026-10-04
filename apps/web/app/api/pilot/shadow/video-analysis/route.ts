@@ -15,16 +15,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { ConflictError } from '@/src/server/pilot/errors';
-import {
-  assertGuardianMediaConsent,
-  checkGuardianMediaConsent,
-  GuardianConsentMissingError,
-} from '@/src/server/pilot/guardianConsent';
+import { assertFilmStudyConsent, FilmStudyTaggedAthleteDeletedError } from '@/src/server/pilot/filmStudyConsent';
 import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { enqueueJob, getJobStatusForActor, SHADOW_CONTEXT_CONTRACT_VERSION } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
-import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
@@ -114,32 +108,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await assertVideoIsFilmStudyMedia(principal.organizationId, videoSessionId);
 
     // T-008: 'ready' only means the content-safety scan passed -- it says
-    // nothing about guardian media consent. The video-publication approval
-    // path (video-compliance/route.ts, publications/publish/route.ts) has
-    // gated on this same precondition since T-008; Film Study opens the same
-    // footage to AI analysis and must not be a side door around that gate.
-    // jsonError already turns GuardianConsentMissingError into the same 409
-    // shape those routes use, so no separate catch is needed here.
-    await assertGuardianMediaConsent(principal.organizationId, video.athlete_id);
-    // A tagged sparring or bout clip shows its other athletes to the model
-    // too (owner, 2026-10-03: any tagged athlete's consent block blocks the
-    // whole clip). Each must have every guardian's signed consent, and none
-    // of those may be photo-only. (assertGuardianMediaConsent alone does not
-    // read covers_video; the video's own athlete is still checked only by it.)
-    for (const subject of await listLiveTagSubjects(principal.organizationId, video.video_session_id)) {
-      if (subject.athlete_deleted) {
-        return hiddenNotFound();
-      }
-      const consent = await checkGuardianMediaConsent(principal.organizationId, subject.athlete_id);
-      if (!consent.ok) {
-        throw new GuardianConsentMissingError(subject.athlete_id, consent.missingParentIds);
-      }
-      if (consent.perGuardian.some((guardian) => guardian.coversVideo === false)) {
-        throw new ConflictError(
-          'Blocked: a guardian of one of the athletes in this clip signed a photo-only media consent that does not cover video.',
-          'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
-        );
-      }
+    // nothing about guardian media consent. Film Study opens the footage to
+    // AI analysis and must not be a side door around the consent gates.
+    // filmStudyConsent.ts checks the video's own athlete AND every tagged
+    // athlete against both the playback scope gate (withdrawn, photo-only,
+    // unreadable) and the every-guardian-signed rule; the worker asks the
+    // same question again when the job runs. jsonError maps the refusals to
+    // the same 409 shapes the other consent routes use.
+    try {
+      await assertFilmStudyConsent(principal.organizationId, video.video_session_id, video.athlete_id);
+    } catch (error) {
+      if (error instanceof FilmStudyTaggedAthleteDeletedError) return hiddenNotFound();
+      throw error;
     }
 
     const jobId = await enqueueJob({

@@ -86,7 +86,23 @@ beforeEach(() => {
   mockVideo.mockResolvedValue(readyVideo as never);
   mockEnqueue.mockResolvedValue('job-1' as never);
   mockTagSubjects.mockResolvedValue([]);
+  // Every guardian signed, video included, unless a test says otherwise. The
+  // playback scope gate (videoPlaybackConsent.ts) runs REAL against this.
+  mockCheckConsent.mockImplementation(async () => signedConsent(true));
 });
+
+function signedConsent(coversVideo: boolean, status = 'signed') {
+  return {
+    ok: status === 'signed',
+    guardianIds: ['parent-1'],
+    missingParentIds: status === 'signed' ? [] : ['parent-1'],
+    perGuardian: [{ parentId: 'parent-1', status, coversVideo, publicUseAllowed: false, signedAt: null }],
+  };
+}
+
+function consentFor(athleteId: string, result: ReturnType<typeof signedConsent>) {
+  mockCheckConsent.mockImplementation(async (_org, id) => (id === athleteId ? result : signedConsent(true)));
+}
 
 describe('POST video-analysis enqueues Film Study', () => {
 
@@ -189,6 +205,32 @@ describe('POST video-analysis enqueues Film Study', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
+  /*
+   * THE DEFECT THIS CLOSES: the video's OWN athlete was checked only by
+   * assertGuardianMediaConsent, which never reads covers_video, so a
+   * photo-only guardian did not stop analysis of their own child's video.
+   */
+  test("refuses when the video's own athlete's guardian signed photo-only", async () => {
+    consentFor('ATH-1', signedConsent(false));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test("refuses when the video's own athlete's guardian withdrew consent", async () => {
+    consentFor('ATH-1', signedConsent(false, 'withdrawn'));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
   test('refuses a video that has not been scanned', async () => {
     // Uploads are born 'quarantined' (#125); the worker must never open an
     // unscanned or infected file.
@@ -256,30 +298,35 @@ describe('POST video-analysis enqueues Film Study', () => {
  * (owner, 2026-10-03: any tagged athlete's consent block blocks the clip).
  */
 describe('POST video-analysis on a tagged clip', () => {
-  const signed = (coversVideo: boolean) => ({
-    ok: true,
-    guardianIds: ['parent-2'],
-    missingParentIds: [],
-    perGuardian: [{ parentId: 'parent-2', status: 'signed', coversVideo, publicUseAllowed: false, signedAt: null }],
-  });
   const tagB = [{ athlete_id: 'ATH-2', athlete_deleted: false }];
 
-  test("refuses when the OTHER tagged athlete's consent is missing or withdrawn", async () => {
+  test("refuses when the OTHER tagged athlete's consent is missing", async () => {
     mockTagSubjects.mockResolvedValueOnce(tagB);
-    mockCheckConsent.mockResolvedValueOnce({
-      ok: false, guardianIds: ['parent-2'], missingParentIds: ['parent-2'], perGuardian: [],
+    mockAssertConsent.mockImplementation(async (_org, id) => {
+      if (id === 'ATH-2') throw new GuardianConsentMissingError('ATH-2', ['parent-2']);
     });
 
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 
     expect(response.status).toBe(409);
-    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
+    expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test("refuses when the OTHER tagged athlete's guardian withdrew", async () => {
+    mockTagSubjects.mockResolvedValueOnce(tagB);
+    consentFor('ATH-2', signedConsent(false, 'withdrawn'));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   test("refuses when the OTHER tagged athlete's guardian signed photo-only", async () => {
     mockTagSubjects.mockResolvedValueOnce(tagB);
-    mockCheckConsent.mockResolvedValueOnce(signed(false));
+    consentFor('ATH-2', signedConsent(false));
 
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 
@@ -290,12 +337,13 @@ describe('POST video-analysis on a tagged clip', () => {
 
   test('queues when every tagged athlete has signed video consent', async () => {
     mockTagSubjects.mockResolvedValueOnce(tagB);
-    mockCheckConsent.mockResolvedValueOnce(signed(true));
 
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 
     expect(response.status).toBe(202);
     expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
     expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
   });
 
@@ -305,6 +353,7 @@ describe('POST video-analysis on a tagged clip', () => {
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'Not found' });
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
