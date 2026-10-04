@@ -578,9 +578,49 @@ interface CoachAthleteCheckIn {
  */
 type WellnessCheckInRead =
   | { readonly status: 'loading'; readonly athleteId: string }
-  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: CoachAthleteCheckIn | null }
+  | {
+    readonly status: 'loaded';
+    readonly athleteId: string;
+    readonly today: CoachAthleteCheckIn | null;
+    readonly bodyMass: CoachBodyMass | 'unavailable' | null;
+  }
   | { readonly status: 'no_access'; readonly athleteId: string }
   | { readonly status: 'unavailable'; readonly athleteId: string };
+
+/* Latest weigh-in and seven-day change, as GET
+   /api/pilot/coach/athlete-body-mass returns it in `body_mass`
+   (src/server/pilot/athleteBodyMass.ts). Null when there is no
+   weigh-in in the last month OR when this coach may not see it -- a youth's
+   weight goes only to their assigned or covering coach and the organization
+   admin -- and the screen does not try to tell those apart. The flag sentence
+   is the server's, shown as written. */
+interface CoachBodyMass {
+  readonly pounds: number;
+  readonly observedAt: string;
+  readonly flagText: string | null;
+}
+
+const BODY_MASS_READ_FAILED =
+  'Body mass could not be loaded, so a weight-change flag may not be shown. Try again in a minute.';
+
+function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { latest?: unknown; flag_text?: unknown };
+  const latest = record.latest as { pounds?: unknown; observed_at?: unknown } | null | undefined;
+  if (
+    !latest
+    || typeof latest.pounds !== 'number'
+    || !Number.isFinite(latest.pounds)
+    || typeof latest.observed_at !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    pounds: latest.pounds,
+    observedAt: latest.observed_at,
+    flagText: typeof record.flag_text === 'string' ? record.flag_text : null,
+  };
+}
 
 /* The panel's sentences, named once so the component and its tests agree on
    the exact words and so each outcome keeps words no other outcome uses. */
@@ -2023,6 +2063,26 @@ export default function CoachWorkspace() {
 
     const superseded = () => controller.signal.aborted || wellnessAthleteRef.current !== athleteId;
 
+    /* Body mass comes from its own route (coach/athlete-body-mass), which has
+       a narrower gate for a youth than the check-in has. Fetched beside the
+       check-in and never allowed to fail or delay it: any refusal or error is
+       simply no weight shown. */
+    const bodyMassRead = fetch(
+      `${apiBase()}/api/pilot/coach/athlete-body-mass?athlete_id=${encodeURIComponent(athleteId)}`,
+      { method: 'GET', credentials: 'include', signal: controller.signal },
+    )
+      .then(async (response): Promise<CoachBodyMass | 'unavailable' | null> => {
+        // A 403 is the athlete-level refusal the check-in read reports on its
+        // own; anything else that fails is a weight read that did not happen,
+        // which is NOT "no weight" -- a flag may be sitting unread.
+        if (response.status === 403) return null;
+        if (!response.ok) return 'unavailable';
+        const payload = (await response.json()) as { body_mass?: unknown };
+        if (payload.body_mass === null) return null;
+        return parseCoachBodyMass(payload.body_mass) ?? 'unavailable';
+      })
+      .catch((): 'unavailable' | null => (controller.signal.aborted ? null : 'unavailable'));
+
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/coach/athlete-check-in?athlete_id=${encodeURIComponent(athleteId)}`,
@@ -2053,7 +2113,16 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('wellness check-in response unreadable');
       }
-      setWellnessRead({ status: 'loaded', athleteId, today: parsed });
+      setWellnessRead({ status: 'loaded', athleteId, today: parsed, bodyMass: null });
+      // The weight joins the panel when it arrives; a slow weight read never
+      // holds the check-in on "loading".
+      const bodyMass = await bodyMassRead;
+      if (superseded() || bodyMass === null) {
+        return;
+      }
+      setWellnessRead((current) => (current?.status === 'loaded' && current.athleteId === athleteId
+        ? { ...current, bodyMass }
+        : current));
     } catch (error) {
       if (superseded()) {
         return;
@@ -3540,6 +3609,23 @@ export default function CoachWorkspace() {
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today === null && (
                     <p className="t-muted">{WELLNESS_NO_CHECK_IN_TODAY}</p>
+                  )}
+
+                  {wellnessShown?.status === 'loaded' && wellnessShown.bodyMass === 'unavailable' && (
+                    <p className="t-muted" data-testid="coach-body-mass-unavailable">{BODY_MASS_READ_FAILED}</p>
+                  )}
+
+                  {wellnessShown?.status === 'loaded' && wellnessShown.bodyMass !== null && wellnessShown.bodyMass !== 'unavailable' && (
+                    <div className="space-y-[var(--s2)]" data-testid="coach-body-mass">
+                      <p className="t-body">
+                        Body mass: {wellnessShown.bodyMass.pounds} lb, logged {formatGymDateNumeric(wellnessShown.bodyMass.observedAt)}.
+                      </p>
+                      {wellnessShown.bodyMass.flagText !== null && (
+                        <p className="t-body font-semibold text-[color:var(--status-warning)]" role="status">
+                          {wellnessShown.bodyMass.flagText}
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (

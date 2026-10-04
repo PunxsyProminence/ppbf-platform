@@ -5,6 +5,8 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { WELLNESS_COLUMNS, checkIn } from '@/src/server/pilot/athleteCheckIns';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { recordCheckInBodyMass } from '@/src/server/pilot/athleteBodyMass';
+import { FormulaRepositoryError } from '@/src/server/pilot/formulas/repository';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -12,6 +14,11 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+
+jest.mock('@/src/server/pilot/athleteBodyMass', () => {
+  const actual = jest.requireActual('@/src/server/pilot/athleteBodyMass');
+  return { ...actual, recordCheckInBodyMass: jest.fn() };
+});
 
 jest.mock('@/src/server/pilot/athleteCheckIns', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteCheckIns');
@@ -26,6 +33,7 @@ jest.mock('@/src/server/pilot/athleteCheckIns', () => {
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCheckIn = checkIn as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockRecordBodyMass = recordCheckInBodyMass as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -157,4 +165,98 @@ test('a repeat check-in is idempotent: acknowledged, not double-counted, not re-
   const payload = await response.json();
   expect(payload.already_checked_in).toBe(true);
   expect(mockAudit).not.toHaveBeenCalled();
+});
+
+describe('optional body mass (elite-boxing item 5)', () => {
+  const row = { check_in_id: 'ci-1', checked_in_on: '2026-10-04', created_at: '2026-10-04T17:00:00.000Z' };
+
+  test('a weight in pounds is stored as kilograms on the athlete own body_weight record', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: true });
+
+    const response = await POST(postRequest({ body_mass: 150, body_mass_unit: 'lb' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.body_mass_saved).toBe(true);
+    expect(mockRecordBodyMass).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'ath-1',
+      checkInId: 'ci-1',
+      kilograms: 68.04,
+      observedAt: '2026-10-04T17:00:00.000Z',
+      accountId: 'acct-1',
+    });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ body_mass_sent: true }),
+    }));
+  });
+
+  test('no weight sent, nothing recorded', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: true });
+
+    const payload = await (await POST(postRequest({ energy: 3 }))).json();
+    expect(payload.body_mass_saved).toBe(false);
+    expect(mockRecordBodyMass).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [{ body_mass: 150 }],
+    [{ body_mass: 150, body_mass_unit: 'stone' }],
+    [{ body_mass: 'heavy', body_mass_unit: 'lb' }],
+    [{ body_mass: 5, body_mass_unit: 'kg' }],
+  ])('a refused weight %j refuses the check-in before anything is written', async (body) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    const response = await POST(postRequest(body));
+    expect(response.status).toBe(400);
+    expect(mockCheckIn).not.toHaveBeenCalled();
+    expect(mockRecordBodyMass).not.toHaveBeenCalled();
+  });
+
+  test('a repeat submission may add a missing weight, but cannot replace a stored one', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: false });
+    mockRecordBodyMass.mockRejectedValueOnce(new FormulaRepositoryError('IDEMPOTENCY_CONFLICT', 'different payload'));
+
+    const response = await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }));
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: false });
+  });
+
+  test('any other storage failure is a stated partial success: check-in saved and audited, weight failed', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: true });
+    mockRecordBodyMass.mockRejectedValueOnce(new Error('database down'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      item: row, already_checked_in: false, body_mass_saved: false, body_mass_failed: true,
+    });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_id: 'ci-1' }));
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  test('a conflict is not a failure', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: false });
+    mockRecordBodyMass.mockRejectedValueOnce(new FormulaRepositoryError('IDEMPOTENCY_CONFLICT', 'different payload'));
+
+    const payload = await (await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }))).json();
+    expect(payload).toMatchObject({ body_mass_saved: false, body_mass_failed: false });
+  });
+
+  test('a retry after that failure stores the missing weight on the existing check-in', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: false });
+
+    const payload = await (await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }))).json();
+    expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: true });
+    expect(mockRecordBodyMass).toHaveBeenCalledWith(expect.objectContaining({ checkInId: 'ci-1', kilograms: 70 }));
+  });
 });
