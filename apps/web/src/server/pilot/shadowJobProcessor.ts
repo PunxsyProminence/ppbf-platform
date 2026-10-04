@@ -107,7 +107,8 @@ export function isValidJobType(value: string): value is JobType {
   return JOB_TYPES.has(value as JobType);
 }
 
-async function loadCurrentJobActor(job: {
+// Exported for sessionRoleFromMembership.pg.test.ts.
+export async function loadCurrentJobActor(job: {
   organizationId: string;
   accountId: string;
 }): Promise<ActorIdentity> {
@@ -117,7 +118,11 @@ async function loadCurrentJobActor(job: {
     is_platform_owner: boolean;
     organization_status: string | null;
   }>(
-     `select a.role, a.athlete_id, a.is_platform_owner, o.status as organization_status
+     // The role in the JOB's organization: the membership's, as
+     // resolvePrincipal reads it for a session (auth.ts). pilot.accounts.role
+     // is the home role, and only a platform owner admitted below without a
+     // membership here falls back to it.
+     `select coalesce(om.role, a.role) as role, a.athlete_id, a.is_platform_owner, o.status as organization_status
       from pilot.accounts a
       left join pilot.organization_memberships om
         on om.account_id = a.account_id
