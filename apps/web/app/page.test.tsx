@@ -156,3 +156,9 @@ test('the server page reads form labels from a plain module, never from the clie
   expect(page).not.toMatch(/import\s+\w*\s*,?\s*\{[^}]*\}\s*from\s*["']@\/components\/PublicInterestForm["']/);
   expect(options).not.toMatch(/^\s*['"]use client['"]/);
 });
+
+test('the footer links the privacy notice', () => {
+  const { container } = renderPage();
+  const footerLinks = Array.from(container.querySelectorAll('footer a')).map((a) => a.getAttribute('href'));
+  expect(footerLinks).toContain('/privacy');
+});

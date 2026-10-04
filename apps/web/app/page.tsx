@@ -661,6 +661,9 @@ export default function HomePage() {
             <p className="t-data">
               <a href={`mailto:${org.email}`}>{org.email}</a>
             </p>
+            <p className="t-body">
+              <Link href="/privacy">Privacy</Link>
+            </p>
             <Link href="/login" className="btn btn--ghost mt-[var(--s2)]">
               Log In
             </Link>

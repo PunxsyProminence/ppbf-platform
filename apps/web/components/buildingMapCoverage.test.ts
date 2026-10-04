@@ -45,6 +45,7 @@ const EXCLUDED: Record<string, string> = {
   '/change-pin': 'the way in',
   '/auth/link': 'the way in -- magic-link landing, arrived at from an email',
   '/launch': 'a one-line re-export of /operations, not a second surface',
+  '/privacy': 'public privacy notice, reached from the front page form and footer -- not a room of the building',
   '/public': 'permanent redirect to / (one front page, Jason 2026-10-03) -- the Public Page door points at / itself',
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
 

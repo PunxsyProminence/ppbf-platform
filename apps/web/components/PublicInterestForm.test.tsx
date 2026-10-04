@@ -1,7 +1,11 @@
 /** @jest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { ReactNode } from 'react';
+
 import PublicInterestForm from './PublicInterestForm';
+
+jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -36,8 +40,7 @@ test('submits name and email straight away, without a consent field', async () =
 
 test("says who the form is for and what the information is used for, in Jason's words", () => {
   render(<PublicInterestForm />);
-  expect(screen.getByText('This form is for people 13 or older.')).toBeTruthy();
-  expect(screen.getByText('We use what you send only to answer you. We do not sell or share it.')).toBeTruthy();
-  // No Privacy link until the privacy page exists (separate lane).
-  expect(screen.queryByRole('link', { name: /privacy/i })).toBeNull();
+  expect(screen.getByText('This form is for people 13 or older; a parent or guardian can send it for a younger child.')).toBeTruthy();
+  expect(screen.getByText(/We use what you send only to answer you\. We do not sell or share it\./)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Privacy' }).getAttribute('href')).toBe('/privacy');
 });

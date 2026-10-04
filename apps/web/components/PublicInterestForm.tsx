@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type SyntheticEvent } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -154,10 +155,13 @@ export default function PublicInterestForm() {
 
       {confirmation && <p className="t-body" role="status">{confirmation}</p>}
 
-      {/* Jason's wording, relayed by overwatch 2026-10-04. The Privacy link
-          comes with the privacy page, which is a separate lane. */}
-      <p className="t-muted">This form is for people 13 or older.</p>
-      <p className="t-muted">We use what you send only to answer you. We do not sell or share it.</p>
+      {/* Jason's wording, relayed by overwatch 2026-10-04. */}
+      <p className="t-muted">
+        This form is for people 13 or older; a parent or guardian can send it for a younger child.
+      </p>
+      <p className="t-muted">
+        We use what you send only to answer you. We do not sell or share it. <Link href="/privacy">Privacy</Link>
+      </p>
     </form>
   );
 }
