@@ -84,7 +84,7 @@ export default function SparringCapsPage() {
         ) : roster === null ? (
           <p className="t-body" role="status">Loading your roster…</p>
         ) : roster.length === 0 ? (
-          <p className="t-body">No athletes you coach or cover.</p>
+          <p className="t-body">No athletes you can set caps for.</p>
         ) : (
           <ul className="space-y-[var(--s3)]">
             {roster.map((athlete) => (

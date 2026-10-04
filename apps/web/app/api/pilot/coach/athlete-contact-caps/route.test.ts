@@ -196,7 +196,11 @@ describe('POST action accessible_athletes (the cap page roster)', () => {
   it('returns the ids the module admits, for the session actor, and writes nothing', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     mockAccessible.mockResolvedValue(new Set(['ath-1']));
-    const response = await post({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-2'] });
+    const response = await post({
+      action: 'accessible_athletes',
+      athlete_ids: ['ath-1', 'ath-2'],
+      actor: { accountId: 'someone-else', role: 'organization_admin', organizationId: 'org-1' },
+    });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, athlete_ids: ['ath-1'] });
     expect(mockAccessible).toHaveBeenCalledWith(
@@ -217,6 +221,15 @@ describe('POST action accessible_athletes (the cap page roster)', () => {
     expect(mockAccessible).not.toHaveBeenCalled();
     expect(mockSet).not.toHaveBeenCalled();
   });
+
+  it.each([['a number', 5], ['a string', 'x'], ['a list', [1, 2]], ['true', true]])(
+    'a body that is %s is a 400, not a server error',
+    async (_label, body) => {
+      mockPrincipal.mockResolvedValue(COACH);
+      expect((await post(body)).status).toBe(400);
+      expect(mockSet).not.toHaveBeenCalled();
+    },
+  );
 
   it('roles that can never hold a cap are refused before the module runs', async () => {
     mockPrincipal.mockResolvedValue({ ...COACH, role: 'parent' });

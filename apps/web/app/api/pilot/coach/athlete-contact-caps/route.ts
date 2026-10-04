@@ -109,8 +109,11 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...CONTACT_CAP_ROLES]);
 
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) throw new ValidationError('Missing request body');
+    const parsed: unknown = await request.json().catch(() => null);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new ValidationError('Request body must be a JSON object');
+    }
+    const body = parsed as Record<string, unknown>;
 
     if ('action' in body) {
       if (body.action !== 'accessible_athletes') {

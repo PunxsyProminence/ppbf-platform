@@ -40,10 +40,10 @@ function serve(handlers: {
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
-    if (url.includes('/api/pilot/athletes/list')) {
+    if (url.endsWith('/api/pilot/athletes/list')) {
       return handlers.roster ? handlers.roster() : respond({ items: ROSTER });
     }
-    if (url.includes('/api/pilot/coach/athlete-contact-caps') && init?.method === 'POST') {
+    if (url.endsWith('/api/pilot/coach/athlete-contact-caps') && init?.method === 'POST') {
       return handlers.allowed ? handlers.allowed() : respond({ ok: true, athlete_ids: ['ath-mine', 'ath-covered'] });
     }
     if (url.includes('/api/pilot/coach/athlete-contact-caps')) {
@@ -65,7 +65,8 @@ test('offers only the athletes the cap route will open, asked for by the whole r
   expect(screen.queryByText('Lee Other')).toBeNull();
 
   const ask = calls.find((c) => c.init?.method === 'POST');
-  expect(ask?.url).toContain('/api/pilot/coach/athlete-contact-caps');
+  expect(ask?.url.endsWith('/api/pilot/coach/athlete-contact-caps')).toBe(true);
+  expect(ask?.init?.credentials).toBe('include');
   expect(JSON.parse(String(ask?.init?.body))).toEqual({
     action: 'accessible_athletes',
     athlete_ids: ['ath-mine', 'ath-covered', 'ath-other'],
@@ -94,13 +95,13 @@ test.each([
   serve(handlers);
   render(<SparringCapsPage />);
   expect(await screen.findByText(/Your roster could not be loaded/)).toBeTruthy();
-  expect(screen.queryByText(/No athletes you coach or cover/)).toBeNull();
+  expect(screen.queryByText(/No athletes you can set caps for/)).toBeNull();
 });
 
 test('an empty allowed list says so plainly', async () => {
   serve({ allowed: () => respond({ ok: true, athlete_ids: [] }) });
   render(<SparringCapsPage />);
-  expect(await screen.findByText('No athletes you coach or cover.')).toBeTruthy();
+  expect(await screen.findByText('No athletes you can set caps for.')).toBeTruthy();
 });
 
 test('links back to the clearance board and promises no block', async () => {

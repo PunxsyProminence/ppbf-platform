@@ -591,6 +591,20 @@ describe('athleteContactCaps.ts against real rows', () => {
       }
       // Another gym's admin reaches their own gym's athlete and none of this gym's.
       expect(await sorted(OTHER_ADMIN)).toEqual([OTHER_ATHLETE_ID]);
+
+      // And the filter IS the gate: for every actor and athlete, "in the set"
+      // equals "the per-athlete read is not refused". A later drift between
+      // the two fails here, whatever the fixed expectations above say.
+      const actors = [ADMIN, OTHER_ADMIN, COACH, LAPSED_COACH, VISITING_COACH, UNASSIGNED_COACH,
+        HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
+      for (const actor of actors) {
+        const admitted = await contactCapAccessibleAthleteIds(actor, all);
+        for (const athleteId of all) {
+          const gateAdmits = await listContactCapHistory(actor, athleteId).then(() => true, () => false);
+          expect({ who: actor.accountId, athleteId, inSet: admitted.has(athleteId) })
+            .toEqual({ who: actor.accountId, athleteId, inSet: gateAdmits });
+        }
+      }
     } finally {
       await client.end();
     }
