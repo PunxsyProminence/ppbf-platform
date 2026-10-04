@@ -169,3 +169,43 @@ describe('review fixes', () => {
     expect(summary.flagged).toBe(false);
   });
 });
+
+describe('option B: any two weigh-ins within the 7 days up to the latest (Jason 2026-10-04)', () => {
+  test('a Monday-to-Friday cut flags with no weigh-in a week earlier', async () => {
+    mockQuery.mockResolvedValue([row('mon', 70, 5 * DAY), row('fri', 66, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.change).toBeNull();
+    expect(summary.largest_change_in_window).toMatchObject({ percent: -5.7, days: 4 });
+    expect(summary.flagged).toBe(true);
+    expect(summary.flag_text).toBe('Weight down 5.7% in 4 days (154.3 lb → 145.5 lb). Check in with the athlete.');
+  });
+
+  test('a dip and recovery inside the week flags even when day 0 and day 7 match', async () => {
+    mockQuery.mockResolvedValue([row('d0', 70, 8 * DAY), row('d5', 66, 3 * DAY), row('d7', 69.5, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.change).toMatchObject({ percent: -0.7 });
+    expect(summary.flagged).toBe(true);
+    expect(summary.flag_text).toMatch(/^Weight down 5\.7% in 5 days/);
+  });
+
+  test('the sentence names the larger of the two changes', async () => {
+    // 7-day-back: 100 -> 93 (-7%). Inside the week: 100 -> 93 as well, and
+    // 98 -> 93 is smaller, so -7% is named.
+    mockQuery.mockResolvedValue([row('p', 100, 8 * DAY), row('m', 98, 4 * DAY), row('l', 93, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.flag_text).toMatch(/^Weight down 7\.0% in 7 days/);
+  });
+
+  test('two weigh-ins the same day read "within a day"', async () => {
+    mockQuery.mockResolvedValue([row('am', 70, DAY + 6 * 60 * 60 * 1_000), row('pm', 66, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.flag_text).toBe('Weight down 5.7% within a day (154.3 lb → 145.5 lb). Check in with the athlete.');
+  });
+
+  test('a weigh-in older than the week before the latest is not part of the window', async () => {
+    mockQuery.mockResolvedValue([row('old', 80, 9 * DAY + 60 * 60 * 1_000), row('l', 70, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.largest_change_in_window).toBeNull();
+    expect(summary.flagged).toBe(false);
+  });
+});

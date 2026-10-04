@@ -74,9 +74,15 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
   (`assertActorCanAccessAthlete`). Anyone else gets `body_mass: null`, the same
   as "no weigh-in".
 - Parent: `GET /api/pilot/parent/body-mass?athlete_id=` -- linked children only.
-- The flag: latest weigh-in against the one closest to 7 days earlier (±24 h).
-  More than 5% of the earlier weight, up or down, sets `flagged` and a
-  `flag_text` sentence. A prompt for the coach; nothing acts on it.
+- The flag (Jason 2026-10-04: ">5% in 7 days"; "B: any >5% within 7 days"):
+  raised when, by more than 5% of the earlier weight, up or down, either the
+  latest weigh-in differs from the one closest to 7 days earlier (±24 h, MVP-12:
+  `change`), or any two weigh-ins in the 7 days up to the latest differ
+  (`largest_change_in_window`). `flag_text` names the larger, e.g. "Weight down
+  6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete." Youth
+  parents see an adult-free version of the same read: the parent route answers
+  only for a youth. Weigh-ins outside 20–250 kg are left out. Nothing acts on
+  the flag.
 
 ## What each number means
 
