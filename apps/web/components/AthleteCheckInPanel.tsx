@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -13,6 +13,9 @@ import {
   wellnessAnchor,
 } from '@/src/shared/wellnessScales';
 
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
+
+import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import SleepTrend from './SleepTrend';
 
 // The athlete's own "I'm here, and this is how I am".
@@ -275,6 +278,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           {bodyMassNotice !== '' && (
             <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
           )}
+          <OwnBodyMass onCorrected={() => setBodyMassNotice('')} />
         </div>
 
         {recent.length > 1 && (
@@ -428,3 +432,61 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
 // as a module-private constant, and exporting it from a 3,000-line component
 // to share four words would couple this file to that one's internals.
 const PANEL_RAISED_CLASS = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
+
+interface OwnBodyMassRead {
+  latest: { pounds: number; observed_at: string } | null;
+  correctable_entries: BodyMassEntryView[];
+}
+
+/* The athlete's own latest weigh-in and the entries they can still correct
+   (Jason 2026-10-04, "Athlete or their coach"). A failed read shows nothing:
+   the check-in itself is already done. */
+function OwnBodyMass({ onCorrected }: { onCorrected: () => void }) {
+  const [read, setRead] = useState<OwnBodyMassRead | null>(null);
+  const path = '/api/pilot/athlete/check-in/body-mass';
+
+  const accept = (value: unknown) => {
+    const record = value as { latest?: { pounds?: unknown; observed_at?: unknown } | null; correctable_entries?: unknown } | null;
+    if (!record) return setRead(null);
+    const latest = record.latest && typeof record.latest.pounds === 'number' && typeof record.latest.observed_at === 'string'
+      ? { pounds: record.latest.pounds, observed_at: record.latest.observed_at }
+      : null;
+    setRead({ latest, correctable_entries: parseBodyMassEntries(record.correctable_entries) });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}${path}`, { method: 'GET', credentials: 'include' });
+        const payload = response?.ok ? ((await response.json()) as { body_mass?: unknown }) : null;
+        if (!cancelled) accept(payload?.body_mass ?? null);
+      } catch {
+        // No weight shown.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!read) return null;
+  return (
+    <div className="space-y-[var(--s2)]" data-testid="own-body-mass">
+      {read.latest && (
+        <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+          Your latest body mass: {read.latest.pounds} lb, logged {formatGymDateNumeric(read.latest.observed_at) ?? read.latest.observed_at}.
+        </p>
+      )}
+      <BodyMassEntryList
+        entries={read.correctable_entries}
+        onCorrect={async (entry, value, unit) => {
+          const result = await postBodyMassCorrection(path, { observation_id: entry.observation_id }, value, unit);
+          if (result.ok) {
+            onCorrected();
+            if (result.payload) accept(result.payload.body_mass ?? null);
+          }
+          return result;
+        }}
+      />
+    </div>
+  );
+}

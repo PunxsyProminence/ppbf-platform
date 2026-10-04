@@ -1,7 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
-import { bodyMassVisibleTo, summarizeBodyMass } from '@/src/server/pilot/athleteBodyMass';
+import {
+  bodyMassInputError,
+  bodyMassVisibleTo,
+  canCorrectBodyMass,
+  correctBodyMass,
+  summarizeBodyMass,
+  toKilograms,
+  type BodyMassUnit,
+} from '@/src/server/pilot/athleteBodyMass';
+import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -42,10 +51,51 @@ export async function GET(request: NextRequest) {
     await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
 
     if (!(await bodyMassVisibleTo(principal, principal.organizationId, athleteId))) {
-      return NextResponse.json({ body_mass: null });
+      return NextResponse.json({ body_mass: null, can_correct: false });
     }
-    const summary = await summarizeBodyMass(principal.organizationId, athleteId);
-    return NextResponse.json({ body_mass: summary.latest ? summary : null });
+    return NextResponse.json(await readable(principal, athleteId));
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+// `can_correct` tells the screen whether to offer "Correct" on the summary's
+// correctable_entries: this reader is the athlete's own (assigned or covering)
+// coach and there is an entry inside the correction window. The POST below
+// decides again on its own.
+async function readable(principal: PilotPrincipal, athleteId: string) {
+  const summary = await summarizeBodyMass(principal.organizationId, athleteId);
+  if (!summary.latest) return { body_mass: null, can_correct: false };
+  const canCorrect = summary.correctable_entries.length > 0
+    && (await canCorrectBodyMass(principal, athleteId));
+  return { body_mass: summary, can_correct: canCorrect };
+}
+
+// Correct a mistyped weight (Jason 2026-10-04, "Athlete or their coach").
+// Coach only, and only the athlete's assigned or covering coach -- the
+// organization admin reads the weight but does not correct it. The old entry
+// is superseded, not deleted (athleteBodyMass.ts, correctBodyMass).
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['coach']);
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
+    if (!athleteId) throw new ValidationError('Missing athlete_id.');
+    const observationId = typeof body.observation_id === 'string' ? body.observation_id.trim() : '';
+    if (!observationId) throw new ValidationError('Missing observation_id.');
+    if (typeof body.body_mass !== 'number') throw new ValidationError('body_mass must be a number.');
+    const problem = bodyMassInputError(body.body_mass, body.body_mass_unit);
+    if (problem) throw new ValidationError(problem);
+    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
+
+    const corrected = await correctBodyMass(principal, {
+      athleteId,
+      observationId,
+      kilograms: toKilograms(body.body_mass, body.body_mass_unit as BodyMassUnit),
+    });
+    return NextResponse.json({ corrected, ...(await readable(principal, athleteId)) });
   } catch (error) {
     return jsonError(error);
   }

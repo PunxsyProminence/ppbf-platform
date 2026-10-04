@@ -97,7 +97,7 @@ describe('summarizeBodyMass', () => {
   test('one weigh-in gives a latest weight and no change', async () => {
     mockQuery.mockResolvedValue([row('a', 70, DAY)]);
     const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
-    expect(summary.latest).toEqual({ kilograms: 70, pounds: 154.3, observed_at: new Date(NOW.getTime() - DAY).toISOString() });
+    expect(summary.latest).toEqual({ observation_id: 'a', kilograms: 70, pounds: 154.3, observed_at: new Date(NOW.getTime() - DAY).toISOString() });
     expect(summary.change).toBeNull();
     expect(summary.flagged).toBe(false);
   });

@@ -55,6 +55,7 @@ import {
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
+import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -598,14 +599,17 @@ interface CoachBodyMass {
   readonly pounds: number;
   readonly observedAt: string;
   readonly flagText: string | null;
+  /* Shown with "Correct" only when the route answers can_correct: this coach
+     is the athlete's own and an entry is inside the correction window. */
+  readonly correctable: readonly BodyMassEntryView[];
 }
 
 const BODY_MASS_READ_FAILED =
   'Body mass could not be loaded, so a weight-change flag may not be shown. Try again in a minute.';
 
-function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
+function parseCoachBodyMass(value: unknown, canCorrect: unknown): CoachBodyMass | null {
   if (!value || typeof value !== 'object') return null;
-  const record = value as { latest?: unknown; flag_text?: unknown };
+  const record = value as { latest?: unknown; flag_text?: unknown; correctable_entries?: unknown };
   const latest = record.latest as { pounds?: unknown; observed_at?: unknown } | null | undefined;
   if (
     !latest
@@ -619,6 +623,7 @@ function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
     pounds: latest.pounds,
     observedAt: latest.observed_at,
     flagText: typeof record.flag_text === 'string' ? record.flag_text : null,
+    correctable: canCorrect === true ? parseBodyMassEntries(record.correctable_entries) : [],
   };
 }
 
@@ -2077,9 +2082,9 @@ export default function CoachWorkspace() {
         // which is NOT "no weight" -- a flag may be sitting unread.
         if (response.status === 403) return null;
         if (!response.ok) return 'unavailable';
-        const payload = (await response.json()) as { body_mass?: unknown };
+        const payload = (await response.json()) as { body_mass?: unknown; can_correct?: unknown };
         if (payload.body_mass === null) return null;
-        return parseCoachBodyMass(payload.body_mass) ?? 'unavailable';
+        return parseCoachBodyMass(payload.body_mass, payload.can_correct) ?? 'unavailable';
       })
       .catch((): 'unavailable' | null => (controller.signal.aborted ? null : 'unavailable'));
 
@@ -3625,6 +3630,28 @@ export default function CoachWorkspace() {
                           {wellnessShown.bodyMass.flagText}
                         </p>
                       )}
+                      <BodyMassEntryList
+                        entries={wellnessShown.bodyMass.correctable}
+                        onCorrect={async (entry, value, unit) => {
+                          const athleteId = wellnessShown.athleteId;
+                          const result = await postBodyMassCorrection(
+                            '/api/pilot/coach/athlete-body-mass',
+                            { athlete_id: athleteId, observation_id: entry.observation_id },
+                            value,
+                            unit,
+                          );
+                          // The corrected summary replaces the shown one, flag included.
+                          const next = result.payload
+                            ? parseCoachBodyMass(result.payload.body_mass, result.payload.can_correct)
+                            : null;
+                          if (next) {
+                            setWellnessRead((current) => (current?.status === 'loaded' && current.athleteId === athleteId
+                              ? { ...current, bodyMass: next }
+                              : current));
+                          }
+                          return result;
+                        }}
+                      />
                     </div>
                   )}
 

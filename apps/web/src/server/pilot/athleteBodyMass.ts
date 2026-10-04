@@ -1,8 +1,10 @@
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
+import { writePilotAuditEvent } from './audit';
 import { queryOne, query } from './db';
+import { ForbiddenError, NotFoundError, PilotError } from './errors';
 import { calculateSevenDayWeightChange } from './formulas/engine';
 import { deterministicKey } from './formulas/identity';
-import { saveFormulaObservation } from './formulas/repository';
+import { FormulaRepositoryError, saveFormulaObservation } from './formulas/repository';
 import type { NumericObservation } from './formulas/types';
 import { isMinor } from './wallDisplay';
 
@@ -120,8 +122,19 @@ export interface BodyMassChange {
   days: number;
 }
 
+export interface BodyMassEntry {
+  observation_id: string;
+  kilograms: number;
+  pounds: number;
+  observed_at: string;
+}
+
 export interface BodyMassSummary {
-  latest: { kilograms: number; pounds: number; observed_at: string } | null;
+  latest: BodyMassEntry | null;
+  /** Current entries inside the correction window, newest first. Includes an
+   *  out-of-range slip (700 for 70.0) the flag leaves out, since that is the
+   *  entry most likely to need correcting. */
+  correctable_entries: BodyMassEntry[];
   /** MVP-12: the latest weigh-in against the one closest to 7 days earlier. */
   change: BodyMassChange | null;
   /** The largest change between any two weigh-ins in the 7 days up to the
@@ -222,6 +235,7 @@ export async function summarizeBodyMass(
          from pilot.shadow_formula_observations successor
          where successor.organization_id = o.organization_id
            and successor.supersedes_observation_id = o.observation_id
+           and successor.observation_kind = 'body_weight'
        )
      order by o.observed_at asc, o.observation_id asc`,
     [
@@ -235,8 +249,22 @@ export async function summarizeBodyMass(
     .map((row) => weighIn(row, organizationId, athleteId))
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
+  const correctable = rows
+    .map((row) => {
+      const raw = row.numeric_value == null ? null : Number(row.numeric_value);
+      if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+      if (row.unit !== 'kilograms' && row.unit !== 'pounds') return null;
+      const observedAt = new Date(row.observed_at).toISOString();
+      if (!bodyMassCorrectable(observedAt, now)) return null;
+      const kilograms = row.unit === 'pounds' ? toKilograms(raw, 'lb') : raw;
+      return { observation_id: row.observation_id, kilograms, pounds: toPounds(kilograms), observed_at: observedAt };
+    })
+    .filter((entry): entry is BodyMassEntry => entry !== null)
+    .reverse();
+
   const empty: BodyMassSummary = {
     latest: null,
+    correctable_entries: correctable,
     change: null,
     largest_change_in_window: null,
     flagged: false,
@@ -248,6 +276,7 @@ export async function summarizeBodyMass(
   if (!current) return empty;
 
   const latest = {
+    observation_id: current.observationId,
     kilograms: current.value!,
     pounds: toPounds(current.value!),
     observed_at: current.observedAt,
@@ -343,4 +372,133 @@ export async function bodyMassVisibleTo(
   } catch {
     return false;
   }
+}
+
+// CORRECTING A MISTYPED WEIGHT (Jason 2026-10-04, "Athlete or their coach").
+//
+// A correction never edits or deletes the entry it fixes. It writes a new
+// body_weight observation that supersedes the old one (the formula store's own
+// supersedes_observation_id, one successor per entry), at the old entry's
+// observed_at so the history keeps its order. summarizeBodyMass reads only
+// entries nothing supersedes, so the flag is computed from corrected values;
+// the original stays in the table, on record and out of the flag.
+//
+// WHO: the athlete, for their own record, or a coach assigned to or covering
+// that athlete -- the two arms of assertActorCanAccessAthlete Jason named.
+// Everyone else is refused, including a coach who only shares the gym, a
+// parent, the organization admin and the platform owner.
+//
+// WHEN: an entry observed in the last BODY_MASS_CORRECTION_DAYS days -- the
+// recommended 7, plus the day of tolerance MVP-12 allows when it picks the
+// weigh-in "7 days earlier" (BODY_MASS_TOLERANCE_HOURS). Without that day an
+// 8-day-old entry could raise the flag and not be correctable. The window is
+// counted from the original entry's time, so correcting a correction does not
+// extend it.
+//
+// LEFT OUT FROM BOTH SIDES: the generic observations route refuses to supersede
+// a body_weight entry, and summarizeBodyMass counts only a body_weight
+// successor as replacing one, so no other path can make a weight disappear.
+
+export const BODY_MASS_CORRECTION_DAYS = BODY_MASS_WINDOW_DAYS + BODY_MASS_TOLERANCE_HOURS / 24;
+
+/** Is an entry observed at this time still inside the correction window? */
+export function bodyMassCorrectable(observedAt: string, now: Date = new Date()): boolean {
+  const observedMs = Date.parse(observedAt);
+  return Number.isFinite(observedMs)
+    && observedMs >= now.getTime() - BODY_MASS_CORRECTION_DAYS * DAY_MS;
+}
+
+/** May this actor correct this athlete's body mass? A refusal by the access
+ *  gate (or a failure reaching it) answers no. */
+export async function canCorrectBodyMass(actor: ActorIdentity, athleteId: string): Promise<boolean> {
+  if (actor.role !== 'athlete' && actor.role !== 'coach') return false;
+  try {
+    await assertActorCanAccessAthlete(actor, athleteId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Replaces one current body_weight entry with a corrected value. The caller
+ *  has validated the new value with bodyMassInputError. */
+export async function correctBodyMass(
+  actor: ActorIdentity,
+  input: { athleteId: string; observationId: string; kilograms: number },
+  now: Date = new Date(),
+): Promise<{ observation_id: string; supersedes_observation_id: string }> {
+  if (!(await canCorrectBodyMass(actor, input.athleteId))) {
+    throw new ForbiddenError('Only the athlete or their own coach can correct a body mass entry.');
+  }
+  const organizationId = actor.organizationId;
+  const original = await queryOne<{ context_id: string; observed_at: string | Date }>(
+    `select o.context_id, o.observed_at
+     from pilot.shadow_formula_observations o
+     where o.organization_id = $1
+       and o.athlete_id = $2
+       and o.observation_id = $3
+       and o.observation_kind = 'body_weight'`,
+    [organizationId, input.athleteId, input.observationId],
+  );
+  if (!original) throw new NotFoundError('That body mass entry was not found.');
+  const observedAt = new Date(original.observed_at).toISOString();
+  if (!bodyMassCorrectable(observedAt, now)) {
+    throw new PilotError(
+      409,
+      `Only body mass entries from the last ${BODY_MASS_CORRECTION_DAYS} days can be corrected.`,
+      'BODY_MASS_CORRECTION_WINDOW',
+    );
+  }
+
+  const idempotencyKey = `body-mass-correction:${input.observationId}`;
+  let saved;
+  try {
+    saved = await saveFormulaObservation({
+      organizationId,
+      athleteId: input.athleteId,
+      contextId: original.context_id,
+      kind: 'body_weight',
+      value: input.kilograms,
+      unit: 'kilograms',
+      observedAt,
+      source: {
+        type: 'manual',
+        quality: 'moderate',
+        referenceId: deterministicKey('body-mass-correction', {
+          organizationId,
+          observationId: input.observationId,
+        }),
+        qualityNotes: actor.role === 'athlete'
+          ? 'Corrected by the athlete.'
+          : 'Corrected by the athlete’s coach.',
+      },
+      idempotencyKey,
+      supersedesObservationId: input.observationId,
+      createdByAccountId: actor.accountId,
+    });
+  } catch (error) {
+    if (
+      error instanceof FormulaRepositoryError
+      && (error.code === 'SUPERSEDED_OBSERVATION' || error.code === 'IDEMPOTENCY_CONFLICT')
+    ) {
+      throw new PilotError(
+        409,
+        'That entry was already corrected. Reload and correct the newer entry.',
+        'BODY_MASS_ALREADY_CORRECTED',
+      );
+    }
+    throw error;
+  }
+
+  // The weights themselves stay out of the audit row; the observations hold them.
+  await writePilotAuditEvent({
+    event_type: 'update',
+    actor_account_id: actor.accountId,
+    actor_role: actor.role,
+    organization_id: organizationId,
+    entity_type: 'athlete_body_mass',
+    entity_id: saved.observationId,
+    details: { athlete_id: input.athleteId, supersedes_observation_id: input.observationId },
+  });
+  return { observation_id: saved.observationId, supersedes_observation_id: input.observationId };
 }

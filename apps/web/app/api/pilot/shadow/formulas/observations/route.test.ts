@@ -882,3 +882,47 @@ describe('an observation that completes an input set triggers its formula', () =
     }));
   });
 });
+
+describe('a weight is corrected only through the body mass correction (Jason 2026-10-04, "Athlete or their coach")', () => {
+  const weight = {
+    athleteId: 'athlete-1',
+    contextId: 'check-in:ci-1',
+    kind: 'body_weight',
+    value: 70,
+    unit: 'kilograms',
+    observedAt: '2026-08-18T18:00:00.000Z',
+    idempotencyKey: 'weight-fix',
+  };
+
+  test('a body_weight that supersedes anything is refused here, and nothing is written', async () => {
+    const response = await postObservation(jsonRequest({ ...weight, supersedesObservationId: 'observation-1' }));
+    expect(response.status).toBe(409);
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+
+  test('another kind superseding a body_weight entry is refused, and nothing is written', async () => {
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => (
+      sql.includes('select observation_kind from pilot.shadow_formula_observations')
+        && params[0] === 'org-1' && params[1] === 'weight-1'
+        ? { observation_kind: 'body_weight' }
+        : null));
+    const response = await postObservation(jsonRequest({
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+      kind: 'punch_landed',
+      value: 18,
+      unit: 'count',
+      observedAt: '2026-08-18T18:00:00.000Z',
+      idempotencyKey: 'punch-over-weight',
+      supersedesObservationId: 'weight-1',
+    }));
+    expect(response.status).toBe(409);
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+
+  test('a new body_weight with nothing superseded is still accepted here', async () => {
+    const response = await postObservation(jsonRequest(weight));
+    expect(response.status).not.toBe(409);
+    expect(mockSaveObservation).toHaveBeenCalledTimes(1);
+  });
+});
