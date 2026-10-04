@@ -544,6 +544,52 @@ export default function ParentHub() {
     return () => controller.abort();
   }, [activeChildId]);
 
+  /* The selected child's latest weigh-in and seven-day change
+     (/api/pilot/parent/body-mass; elite-boxing item 5). Keyed by athlete like
+     childCard, so a slow answer for one child never shows under another's
+     name. Null when there is nothing in the last month or the read failed;
+     the card is simply absent then. */
+  const [childBodyMass, setChildBodyMass] = useState<{
+    athleteId: string;
+    pounds: number;
+    observedAt: string;
+    flagText: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!activeChildId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/parent/body-mass?athlete_id=${encodeURIComponent(activeChildId)}`,
+          { method: 'GET', credentials: 'include', signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        const payload = response.ok
+          ? (await response.json().catch(() => ({}))) as {
+            body_mass?: { latest?: { pounds?: unknown; observed_at?: unknown }; flag_text?: unknown } | null;
+          }
+          : {};
+        if (controller.signal.aborted) return;
+        const latest = payload.body_mass?.latest;
+        setChildBodyMass(
+          latest && typeof latest.pounds === 'number' && typeof latest.observed_at === 'string'
+            ? {
+              athleteId: activeChildId,
+              pounds: latest.pounds,
+              observedAt: latest.observed_at,
+              flagText: typeof payload.body_mass?.flag_text === 'string' ? payload.body_mass.flag_text : null,
+            }
+            : null,
+        );
+      } catch {
+        if (!controller.signal.aborted) setChildBodyMass(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [activeChildId]);
+  const shownBodyMass = childBodyMass?.athleteId === activeChildId ? childBodyMass : null;
+
   const activeChild = children.find(c => c.id === activeChildId);
   // Only the card that was read for the child now selected. See the note on
   // the childCard state for why the match happens here.
@@ -870,6 +916,18 @@ export default function ParentHub() {
                   Both the portrait and the ring name on it have already been
                   through the visibility gate server-side. */}
               {shownCard && <FightCard card={shownCard} />}
+
+              {shownBodyMass && (
+                <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]" data-testid="parent-body-mass">
+                  <p className="t-label">Body mass</p>
+                  <p className="t-body mt-[var(--s2)]">
+                    {shownBodyMass.pounds} lb, logged {new Date(shownBodyMass.observedAt).toLocaleDateString()}.
+                  </p>
+                  {shownBodyMass.flagText && (
+                    <p className="t-body mt-[var(--s2)] font-semibold" role="status">{shownBodyMass.flagText}</p>
+                  )}
+                </div>
+              )}
 
               {/* The paper version. Scoped to the child currently selected, and
                   the print route re-checks the guardian link server-side before

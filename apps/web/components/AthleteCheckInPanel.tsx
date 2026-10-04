@@ -157,6 +157,8 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   // the keys present here are sent -- this object IS rule 1 above.
   const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>({});
   const [sleepHours, setSleepHours] = useState('');
+  const [bodyMass, setBodyMass] = useState('');
+  const [bodyMassUnit, setBodyMassUnit] = useState<'lb' | 'kg'>('lb');
   const [note, setNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -178,6 +180,16 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           return;
         }
         body.sleep_hours = parsed;
+      }
+      const trimmedBodyMass = bodyMass.trim();
+      if (trimmedBodyMass !== '') {
+        const parsed = Number(trimmedBodyMass);
+        if (!Number.isFinite(parsed)) {
+          setSaveError('Body mass must be a number, or left blank.');
+          return;
+        }
+        body.body_mass = parsed;
+        body.body_mass_unit = bodyMassUnit;
       }
       const trimmedNote = note.trim();
       if (trimmedNote !== '') body.note = trimmedNote;
@@ -307,6 +319,37 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             onChange={(event) => setSleepHours(event.target.value)}
             className="input input--kiosk"
           />
+        </div>
+
+        <div className="space-y-[var(--s2)]">
+          <label className="t-label block" htmlFor="check-in-body-mass">
+            Body mass (optional)
+          </label>
+          {/* Stored as the same body_weight record the sparring form writes,
+              so both feed the seven-day weight change. Blank means not
+              answered. */}
+          <div className="flex gap-[var(--s2)]">
+            <input
+              id="check-in-body-mass"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={bodyMass}
+              placeholder="Leave blank to skip"
+              onChange={(event) => setBodyMass(event.target.value)}
+              className="input input--kiosk"
+            />
+            <select
+              aria-label="Body mass unit"
+              value={bodyMassUnit}
+              onChange={(event) => setBodyMassUnit(event.target.value === 'kg' ? 'kg' : 'lb')}
+              className="input input--kiosk"
+              style={{ width: 'auto' }}
+            >
+              <option value="lb">lb</option>
+              <option value="kg">kg</option>
+            </select>
+          </div>
         </div>
 
         <button
