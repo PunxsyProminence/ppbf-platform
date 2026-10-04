@@ -164,6 +164,61 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-020 -- Jump tests: both CMJ height and broad jump, best of 3, a coach records either or both (settles OD-2026-10-04-007's open Q1)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the overwatch
+thread (`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`,
+tool use `toolu_013hq58EBSgKC7EWkZTWuw2e`; asked 2026-10-04T16:20:33Z,
+answered 16:21:57Z). Read by overwatch in that transcript. Extends
+OD-2026-10-04-007, which recorded his earlier reply "can it be both or either"
+as a question, not a ruling; edits no earlier entry.
+
+Asked: "build both jump tests — CMJ height and broad jump, best of 3 — and let
+a coach record either or both?" Jason chose *"Both, either or both
+(Recommended)"*, option text "As built; #1188 merges." **Ruling: the app offers
+both jump tests (countermovement jump height and broad jump, each best of 3);
+a coach records either or both.** Built in #1188.
+
+---
+
+## OD-2026-10-04-021 -- Body points: drop the ankles from the app's point list in a new ontology version
+
+**Provenance: PRIMARY.** Same AskUserQuestion as OD-2026-10-04-020 (tool use
+`toolu_013hq58EBSgKC7EWkZTWuw2e`, answered 2026-10-04T16:21:57Z). New; edits no
+earlier entry. Context: in the stick-figure GPU lane Jason directed a fake-data
+rerun without ankles; that rerun improved point accuracy but did not cure
+left/right foot swaps (reported to him in the same question).
+
+Asked: "drop ankle dots from real coach markings, or keep them for now?"
+Options offered: "Keep ankles, test only (Recommended)", "Drop ankles in app"
+("New ontology version without ankles: records entry + a lane."), "Keep GPU lane
+open". Jason chose *"Drop ankles in app"* (not the recommended option).
+**Ruling: a new body-point ontology version drops left_ankle and right_ankle;
+earlier versions are not edited.** How it becomes annotatable, and what happens
+to marks already made against older versions, is for the lane that builds it to
+put to Jason.
+
+---
+
+## OD-2026-10-04-022 -- PR #941 (drill library "cabinet") closed; the #1197 release check is run by Jason
+
+**Provenance: PRIMARY.** Same AskUserQuestion as OD-2026-10-04-020 (tool use
+`toolu_013hq58EBSgKC7EWkZTWuw2e`, answered 2026-10-04T16:21:57Z). New.
+
+Asked about #941, "the old drill library 'cabinet' screen (stale since 10-01,
+conflicts with main)": Jason chose *"Close it (Recommended)"*, option text
+"Drop it; the drill library stays as it is today." **Ruling: #941 is closed
+unmerged.** Overwatch closed it the same day.
+
+Asked how to run the release check for #1197 (counting production accounts
+whose home role disagrees with their gym membership, before the fix reaches
+production): Jason chose *"I run it (Recommended)"*, option text "Overwatch
+gives you a read-only query as a Run-button command; you paste the counts
+back." **Ruling: Jason runs the read-only count; #1197 does not reach
+production before he has.**
+
+---
+
 ## OD-2026-10-04-019 -- Adult pathway write roles: coaches and organization admins may place stages, tick goals and switch the minor allowance (extends OD-2026-10-04-002 to organization admins)
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the adult
