@@ -582,7 +582,7 @@ type WellnessCheckInRead =
     readonly status: 'loaded';
     readonly athleteId: string;
     readonly today: CoachAthleteCheckIn | null;
-    readonly bodyMass: CoachBodyMass | null;
+    readonly bodyMass: CoachBodyMass | 'unavailable' | null;
   }
   | { readonly status: 'no_access'; readonly athleteId: string }
   | { readonly status: 'unavailable'; readonly athleteId: string };
@@ -599,6 +599,9 @@ interface CoachBodyMass {
   readonly observedAt: string;
   readonly flagText: string | null;
 }
+
+const BODY_MASS_READ_FAILED =
+  'Body mass could not be loaded, so a weight-change flag may not be shown. Try again in a minute.';
 
 function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
   if (!value || typeof value !== 'object') return null;
@@ -2068,10 +2071,17 @@ export default function CoachWorkspace() {
       `${apiBase()}/api/pilot/coach/athlete-body-mass?athlete_id=${encodeURIComponent(athleteId)}`,
       { method: 'GET', credentials: 'include', signal: controller.signal },
     )
-      .then(async (response) => (response.ok
-        ? parseCoachBodyMass(((await response.json()) as { body_mass?: unknown }).body_mass)
-        : null))
-      .catch(() => null);
+      .then(async (response): Promise<CoachBodyMass | 'unavailable' | null> => {
+        // A 403 is the athlete-level refusal the check-in read reports on its
+        // own; anything else that fails is a weight read that did not happen,
+        // which is NOT "no weight" -- a flag may be sitting unread.
+        if (response.status === 403) return null;
+        if (!response.ok) return 'unavailable';
+        const payload = (await response.json()) as { body_mass?: unknown };
+        if (payload.body_mass === null) return null;
+        return parseCoachBodyMass(payload.body_mass) ?? 'unavailable';
+      })
+      .catch((): 'unavailable' | null => (controller.signal.aborted ? null : 'unavailable'));
 
     try {
       const response = await fetch(
@@ -3601,7 +3611,11 @@ export default function CoachWorkspace() {
                     <p className="t-muted">{WELLNESS_NO_CHECK_IN_TODAY}</p>
                   )}
 
-                  {wellnessShown?.status === 'loaded' && wellnessShown.bodyMass !== null && (
+                  {wellnessShown?.status === 'loaded' && wellnessShown.bodyMass === 'unavailable' && (
+                    <p className="t-muted" data-testid="coach-body-mass-unavailable">{BODY_MASS_READ_FAILED}</p>
+                  )}
+
+                  {wellnessShown?.status === 'loaded' && wellnessShown.bodyMass !== null && wellnessShown.bodyMass !== 'unavailable' && (
                     <div className="space-y-[var(--s2)]" data-testid="coach-body-mass">
                       <p className="t-body">
                         Body mass: {wellnessShown.bodyMass.pounds} lb, logged {formatGymDateNumeric(wellnessShown.bodyMass.observedAt)}.

@@ -226,14 +226,29 @@ describe('optional body mass (elite-boxing item 5)', () => {
     expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: false });
   });
 
-  test('any other storage failure is an error, not a silent loss -- and the check-in is still audited', async () => {
+  test('any other storage failure is a stated partial success: check-in saved and audited, weight failed', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     mockCheckIn.mockResolvedValue({ row, created: true });
     mockRecordBodyMass.mockRejectedValueOnce(new Error('database down'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const response = await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }));
-    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      item: row, already_checked_in: false, body_mass_saved: false, body_mass_failed: true,
+    });
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_id: 'ci-1' }));
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  test('a conflict is not a failure', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: false });
+    mockRecordBodyMass.mockRejectedValueOnce(new FormulaRepositoryError('IDEMPOTENCY_CONFLICT', 'different payload'));
+
+    const payload = await (await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }))).json();
+    expect(payload).toMatchObject({ body_mass_saved: false, body_mass_failed: false });
   });
 
   test('a retry after that failure stores the missing weight on the existing check-in', async () => {

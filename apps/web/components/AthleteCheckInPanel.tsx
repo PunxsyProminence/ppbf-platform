@@ -223,7 +223,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
       if ('body_mass' in body) {
         setBodyMassNotice(payload.body_mass_saved === true
           ? `Body mass saved: ${body.body_mass} ${body.body_mass_unit}.`
-          : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
+          : payload.body_mass_failed === true
+            ? 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'
+            : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
       }
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {

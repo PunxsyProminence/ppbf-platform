@@ -116,7 +116,13 @@ export async function POST(request: NextRequest) {
     // (a failed write is retried, not lost); it can never replace a stored
     // weight -- that is an idempotency conflict, answered body_mass_saved
     // false with the stored value unchanged.
+    //
+    // ANY OTHER FAILURE IS A PARTIAL SUCCESS, NOT A 500. The check-in and its
+    // audit are already committed; a 500 would tell the athlete the check-in
+    // failed, and after a reload the form is gone, so they could never say
+    // the weight was lost. body_mass_failed lets the screen say exactly that.
     let bodyMassSaved = false;
+    let bodyMassFailed = false;
     if (typeof body.body_mass === 'number') {
       try {
         await recordCheckInBodyMass({
@@ -129,7 +135,14 @@ export async function POST(request: NextRequest) {
         });
         bodyMassSaved = true;
       } catch (error) {
-        if (!(error instanceof FormulaRepositoryError && error.code === 'IDEMPOTENCY_CONFLICT')) throw error;
+        if (!(error instanceof FormulaRepositoryError && error.code === 'IDEMPOTENCY_CONFLICT')) {
+          bodyMassFailed = true;
+          console.error({
+            event: 'check-in-body-mass-write-failed',
+            check_in_id: result.row.check_in_id,
+            errorClass: error instanceof Error ? error.name : typeof error,
+          });
+        }
       }
     }
 
@@ -137,6 +150,7 @@ export async function POST(request: NextRequest) {
       item: result.row,
       already_checked_in: !result.created,
       body_mass_saved: bodyMassSaved,
+      body_mass_failed: bodyMassFailed,
     });
   } catch (error) {
     return jsonError(error);

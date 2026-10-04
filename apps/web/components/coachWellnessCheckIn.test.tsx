@@ -1195,7 +1195,7 @@ describe('body mass rides beside the check-in from its own route (elite-boxing i
     expect(within(panel()).queryByTestId('coach-body-mass')).toBeNull();
   });
 
-  it('a failed weight read never fails the check-in', async () => {
+  it('a failed weight read never fails the check-in, and says it failed rather than looking like no weight', async () => {
     await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
       bodyMass: () => jsonResponse({}, { ok: false, status: 500 }),
     });
@@ -1203,5 +1203,16 @@ describe('body mass rides beside the check-in from its own route (elite-boxing i
 
     await within(panel()).findByText(/Today's report for Jordan P\./);
     expect(within(panel()).queryByTestId('coach-body-mass')).toBeNull();
+    expect((await within(panel()).findByTestId('coach-body-mass-unavailable')).textContent)
+      .toMatch(/could not be loaded/);
+  });
+
+  it('an unreadable weight body is a failed read too', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse({ body_mass: { latest: 'nonsense' } }),
+    });
+    await pickAthlete('Jordan P.');
+
+    await within(panel()).findByTestId('coach-body-mass-unavailable');
   });
 });

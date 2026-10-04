@@ -14,11 +14,12 @@ function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 400, json: async () => body } as unknown as Response;
 }
 
-function installFetch(saved = true): jest.Mock {
+function installFetch(saved = true, failed = false): jest.Mock {
   const fetchMock = jest.fn(async () => jsonResponse({
     item: { check_in_id: 'ci-1' },
     already_checked_in: false,
     body_mass_saved: saved,
+    body_mass_failed: failed,
   }));
   global.fetch = fetchMock as unknown as typeof fetch;
   return fetchMock;
@@ -80,10 +81,11 @@ function savedRecord() {
 }
 
 test.each([
-  [true, 'Body mass saved: 152.4 lb.'],
-  [false, 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.'],
-])('after saving (stored: %s) the athlete is told what happened to the weight', async (saved, sentence) => {
-  installFetch(saved);
+  [true, false, 'Body mass saved: 152.4 lb.'],
+  [false, false, 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.'],
+  [false, true, 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'],
+])('after saving (stored: %s, failed: %s) the athlete is told what happened to the weight', async (saved, failed, sentence) => {
+  installFetch(saved, failed);
   const { rerender } = render(
     <AthleteCheckInPanel today={null} recent={[]} loading={false} loadError={null} onSaved={() => undefined} />,
   );
