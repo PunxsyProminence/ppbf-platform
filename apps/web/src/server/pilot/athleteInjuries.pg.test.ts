@@ -634,6 +634,37 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     });
   });
 
+  test('the family projection carries no staff field, reads the plan date, and leaves out voided, other-gym and deleted rows', async () => {
+    const athleteId = 'ath-family';
+    await addAthlete(ORG_A, athleteId);
+    await addAthlete(ORG_B, athleteId);
+    const plan = await addPlan(ORG_A, athleteId, '2026-09-25');
+    const linked = await record(ORG_A, athleteId, {
+      injuryDate: '2026-09-02', linkedRttPlanId: plan, staffNote: 'Staff only: says it is fine, limps.',
+    });
+    const own = await record(ORG_A, athleteId, { injuryDate: '2026-08-01', expectedReturnDate: '2026-08-15' });
+    const voided = await record(ORG_A, athleteId, { injuryDate: '2026-07-01' });
+    await injuries.markInjuryEnteredInError({ organizationId: ORG_A, injuryId: voided.injury_id, updatedByAccountId: COACH });
+    await record(ORG_B, athleteId, { injuryDate: '2026-09-03' });
+
+    const rows = await injuries.listFamilyInjuries(ORG_A, athleteId);
+    expect(rows.map((r) => r.injury_id)).toEqual([linked.injury_id, own.injury_id]);
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual([
+        'body_area', 'context', 'expected_return_date', 'injury_date', 'injury_id', 'injury_type', 'reported_by', 'returned_on',
+      ]);
+    }
+    expect(JSON.stringify(rows)).not.toContain('limps');
+    expect(rows[0].expected_return_date).toBe('2026-09-25');
+    expect(rows[1].expected_return_date).toBe('2026-08-15');
+
+    await db.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [
+      ORG_A,
+      athleteId,
+    ]);
+    expect(await injuries.listFamilyInjuries(ORG_A, athleteId)).toEqual([]);
+  });
+
   test('the retention purge removes the rows with the athlete, every kind of link included', async () => {
     const athleteId = 'ath-purged';
     await addAthlete(ORG_A, athleteId);

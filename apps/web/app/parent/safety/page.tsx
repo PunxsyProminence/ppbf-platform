@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import RefusalStamp from '@/components/RefusalStamp';
+import MyInjuries from '@/components/MyInjuries';
 
 type TrainingHoldScope = 'all_training' | 'contact_only' | 'conditioning_only';
 
@@ -250,6 +251,8 @@ export default function GuardianSafetyPage() {
                       </div>
                     </div>
                   ) : null}
+
+                  <MyInjuries athleteId={item.athlete_id} />
 
                   <div className="mt-[var(--s4)]">
                     <p className="t-label">Waivers</p>
