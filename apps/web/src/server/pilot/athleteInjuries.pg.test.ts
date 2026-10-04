@@ -343,6 +343,32 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     ).rejects.toThrow("The linked training hold is not one of this athlete's records.");
   });
 
+  test("another gym's record for a child with the same athlete id cannot be linked", async () => {
+    const theirs = {
+      linkedHoldId: await addHold(ORG_B, ATHLETE),
+      linkedRttPlanId: await addPlan(ORG_B, ATHLETE, null),
+      linkedClearanceStatusId: await addClearance(ORG_B, ATHLETE),
+      linkedPainReportId: await addNearMiss(ORG_B, ATHLETE, 'athlete_pain_report'),
+    };
+    for (const [field, id] of Object.entries(theirs)) {
+      await expect(record(ORG_A, ATHLETE, { [field]: id })).rejects.toThrow("is not one of this athlete's records.");
+    }
+  });
+
+  test("the plan's return date is read from this gym's plan, never another gym's plan with the same id", async () => {
+    const planId = await addPlan(ORG_A, ATHLETE, '2026-09-21');
+    await db.query(
+      `insert into pilot.return_to_training_plans (organization_id, plan_id, athlete_id, triggering_event,
+         event_date, authority_source, earliest_return_date, entered_by_account_id, entered_by_role)
+       values ($1, $2, $3, 'injury', '2026-09-01', 'physician', '2027-01-01', $4, 'coach')`,
+      [ORG_B, planId, ATHLETE, COACH],
+    );
+    const row = await record(ORG_A, ATHLETE, { linkedRttPlanId: planId });
+    const listed = (await injuries.listInjuriesForAthlete(ORG_A, ATHLETE)).filter((r) => r.injury_id === row.injury_id);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].plan_earliest_return_date).toBe('2026-09-21');
+  });
+
   test('a linked plan is the only expected-return source, in the module and in the database', async () => {
     const plan = await addPlan(ORG_A, ATHLETE, '2026-09-30');
     await expect(record(ORG_A, ATHLETE, { linkedRttPlanId: plan, expectedReturnDate: '2026-09-25' })).rejects.toThrow(
@@ -367,6 +393,11 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     await expect(record(ORG_A, ATHLETE, { expectedReturnDate: '2026-08-31' })).rejects.toThrow(
       'expectedReturnDate cannot be before injuryDate.',
     );
+    for (const impossible of ['2026-02-31', '2026-04-31', '0000-01-01', '2026-13-01', '2026-9-1']) {
+      await expect(record(ORG_A, ATHLETE, { injuryDate: impossible })).rejects.toThrow(
+        'injuryDate must be a date (YYYY-MM-DD).',
+      );
+    }
     await expect(record(ORG_A, ATHLETE, { injuryType: 'concussion' })).rejects.toThrow('injuryType must be one of');
     await expect(record(ORG_A, ATHLETE, { reportedBy: 'shadow' })).rejects.toThrow('reportedBy must be one of');
     await expect(
@@ -437,12 +468,83 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     ).rejects.toThrow('Injury record not found.');
   });
 
-  test('the retention purge removes the rows with the athlete, linked hold and plan included', async () => {
+  test('an athlete deleted while an injury is being recorded is refused, not written', async () => {
+    const athleteId = 'ath-deleted-mid-write';
+    await addAthlete(ORG_A, athleteId);
+    const deleter = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await deleter.connect();
+    try {
+      await deleter.query('begin');
+      await deleter.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [ORG_A, athleteId],
+      );
+      const write = record(ORG_A, athleteId);
+      const settled = write.then(() => 'written', (error: Error) => error.message);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await deleter.query('commit');
+      expect(await settled).toBe('Athlete not found.');
+    } finally {
+      await deleter.end();
+    }
+    const left = await db.query(
+      'select count(*)::int as n from pilot.athlete_injuries where organization_id = $1 and athlete_id = $2',
+      [ORG_A, athleteId],
+    );
+    expect(left.rows[0].n).toBe(0);
+  });
+
+  test('an edit that races an entered-in-error mark is refused, not reported as saved', async () => {
+    const row = await record(ORG_A, ATHLETE);
+    const marker = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await marker.connect();
+    try {
+      await marker.query('begin');
+      await marker.query(
+        `update pilot.athlete_injuries set entered_in_error = true where organization_id = $1 and injury_id = $2`,
+        [ORG_A, row.injury_id],
+      );
+      const edit = injuries.updateInjury({
+        organizationId: ORG_A,
+        injuryId: row.injury_id,
+        fields: { ...base, staffNote: 'late edit' },
+        updatedByAccountId: COACH,
+      });
+      const settled = edit.then(() => 'saved', (error: Error) => error.message);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await marker.query('commit');
+      expect(await settled).toBe('Injury record not found.');
+    } finally {
+      await marker.end();
+    }
+  });
+
+  test('the runner refuses to commit against a database the migration did not make ready', async () => {
+    const admin = new Client({ connectionString: connectionStringFor('postgres') });
+    await admin.connect();
+    await admin.query('drop database if exists ppbf_test_injuries_bare');
+    await admin.query('create database ppbf_test_injuries_bare');
+    await admin.end();
+    const bare = new Client({ connectionString: connectionStringFor('ppbf_test_injuries_bare') });
+    await bare.connect();
+    try {
+      await expect(applyMigrationTransaction(bare, 'select 1')).rejects.toThrow('ATHLETE_INJURIES_TABLE_NOT_READY');
+    } finally {
+      await bare.end();
+    }
+  });
+
+  test('the retention purge removes the rows with the athlete, every kind of link included', async () => {
     const athleteId = 'ath-purged';
     await addAthlete(ORG_A, athleteId);
     const hold = await addHold(ORG_A, athleteId);
     const plan = await addPlan(ORG_A, athleteId, null);
-    await record(ORG_A, athleteId, { linkedHoldId: hold, linkedRttPlanId: plan });
+    await record(ORG_A, athleteId, {
+      linkedHoldId: hold,
+      linkedRttPlanId: plan,
+      linkedClearanceStatusId: await addClearance(ORG_A, athleteId),
+      linkedPainReportId: await addNearMiss(ORG_A, athleteId, 'athlete_pain_report'),
+    });
     // The same statement pilot-cleanup-deleted-data.mjs runs.
     await db.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG_A, athleteId]);
     const left = await db.query(

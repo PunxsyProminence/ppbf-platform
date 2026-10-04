@@ -52,22 +52,28 @@ function resolveSslConfig() {
 }
 
 // Asserts the table, its index, the cascade to the athlete (which is what puts
-// these rows in the retention purge) and the one-return-source guard, so an
-// environment that got the table without either cannot pass readiness.
+// these rows in the retention purge), the plan and hold links and the
+// one-return-source guard, each looked up ON THIS TABLE, so an environment that
+// got the table without any of them cannot pass readiness.
 const READINESS_QUERY = `
+  with c as (
+    select conname, confdeltype from pg_constraint
+    where conrelid = to_regclass('pilot.athlete_injuries')
+  )
   select
     to_regclass('pilot.athlete_injuries') is not null as athlete_injuries_ready,
     exists (
       select 1 from pg_indexes
-      where schemaname = 'pilot' and indexname = 'idx_athlete_injuries_athlete'
+      where schemaname = 'pilot' and tablename = 'athlete_injuries'
+        and indexname = 'idx_athlete_injuries_athlete'
     ) as athlete_index_ready,
     exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_athlete_injuries_athlete_fk' and confdeltype = 'c'
+      select 1 from c where conname = 'pilot_athlete_injuries_athlete_fk' and confdeltype = 'c'
     ) as athlete_cascade_ready,
+    exists (select 1 from c where conname = 'pilot_athlete_injuries_rtt_plan_fk') as rtt_plan_fk_ready,
+    exists (select 1 from c where conname = 'pilot_athlete_injuries_hold_fk') as hold_fk_ready,
     exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_athlete_injuries_one_return_source'
+      select 1 from c where conname = 'pilot_athlete_injuries_one_return_source'
     ) as one_return_source_ready
 `;
 

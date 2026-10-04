@@ -110,7 +110,10 @@ function oneOf<T extends string>(values: readonly T[], value: unknown, field: st
 
 function dateOrNull(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
-  if (typeof value !== 'string' || !ISO_DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  // Round-trip, not Date.parse alone: Date.parse rolls 2026-02-31 forward to
+  // March 3 instead of refusing it, and Postgres would then refuse it as a 500.
+  const parsed = typeof value === 'string' && ISO_DATE.test(value) ? new Date(`${value}T00:00:00Z`) : null;
+  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value || value < '0001-01-01') {
     throw new ValidationError(`${field} must be a date (YYYY-MM-DD).`);
   }
   return value;
@@ -188,32 +191,39 @@ async function assertLiveAthlete(client: PoolClient, organizationId: string, ath
 }
 
 // Each linked record must name THIS athlete in THIS organization. The foreign
-// keys prove a record exists; only this proves it is the right child's.
+// keys prove a record exists; only this proves it is the right child's -- and
+// for the clearance and pain-report links, whose keys are a bare uuid, only
+// this keeps the link inside the organization. `for share` holds each linked
+// row until commit, so it cannot vanish between this check and the write.
 const LINK_CHECKS: ReadonlyArray<{ field: keyof InjuryLinks; label: string; sql: string }> = [
   {
     field: 'linkedRttPlanId',
     label: 'return-to-training plan',
     sql: `select 1 from pilot.return_to_training_plans
-           where organization_id = $1 and athlete_id = $2 and plan_id = $3`,
+           where organization_id = $1 and athlete_id = $2 and plan_id = $3
+           for share`,
   },
   {
     field: 'linkedHoldId',
     label: 'training hold',
     sql: `select 1 from pilot.training_holds
-           where organization_id = $1 and athlete_id = $2 and hold_id = $3`,
+           where organization_id = $1 and athlete_id = $2 and hold_id = $3
+           for share`,
   },
   {
     field: 'linkedClearanceStatusId',
     label: 'clearance record',
     sql: `select 1 from pilot.shadow_medical_administrative_status
-           where organization_id = $1 and athlete_id = $2 and status_id = $3::uuid`,
+           where organization_id = $1 and athlete_id = $2 and status_id = $3::uuid
+           for share`,
   },
   {
     field: 'linkedPainReportId',
     label: 'pain report',
     sql: `select 1 from pilot.shadow_near_misses
            where organization_id = $1 and athlete_id = $2 and near_miss_id = $3::uuid
-             and metadata->>'trigger' = 'athlete_pain_report'`,
+             and metadata->>'trigger' = 'athlete_pain_report'
+           for share`,
   },
 ];
 
@@ -237,10 +247,14 @@ async function selectInjury(
   client: PoolClient,
   organizationId: string,
   injuryId: string,
+  lock = false,
 ): Promise<AthleteInjuryRow | null> {
+  // `for update of i` on the edit path: a concurrent edit or error mark waits
+  // for this transaction instead of being silently overwritten or reported as
+  // saved when nothing was.
   const result = await client.query<AthleteInjuryRow>(
     `select ${COLUMNS} from ${FROM}
-      where i.organization_id = $1 and i.injury_id = $2::uuid and ${athleteNotDeletedSql('i')}`,
+      where i.organization_id = $1 and i.injury_id = $2::uuid and ${athleteNotDeletedSql('i')}${lock ? ' for update of i' : ''}`,
     [organizationId, injuryId],
   );
   return result.rows[0] ?? null;
@@ -292,13 +306,13 @@ export async function updateInjury(input: {
 }): Promise<AthleteInjuryRow> {
   const fields = validateFields(input.fields);
   return withTransaction(async (client) => {
-    const existing = await selectInjury(client, input.organizationId, input.injuryId);
+    const existing = await selectInjury(client, input.organizationId, input.injuryId, true);
     if (!existing || existing.entered_in_error) {
       throw new NotFoundError('Injury record not found.');
     }
     await assertLiveAthlete(client, input.organizationId, existing.athlete_id);
     await assertLinksBelongToAthlete(client, input.organizationId, existing.athlete_id, fields);
-    await client.query(
+    const updated = await client.query(
       `update pilot.athlete_injuries
           set injury_date = $3, body_area = $4, injury_type = $5, context = $6, reported_by = $7,
               staff_note = $8, expected_return_date = $9, returned_on = $10,
@@ -312,6 +326,9 @@ export async function updateInjury(input: {
         fields.linkedClearanceStatusId, fields.linkedPainReportId, input.updatedByAccountId,
       ],
     );
+    if (updated.rowCount !== 1) {
+      throw new NotFoundError('Injury record not found.');
+    }
     const row = await selectInjury(client, input.organizationId, input.injuryId);
     if (!row) throw new Error('Updated injury could not be read back.');
     return row;
