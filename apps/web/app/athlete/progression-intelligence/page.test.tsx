@@ -621,6 +621,12 @@ describe('W-D4B: opening the drill an assignment was issued against', () => {
         routed.push('rabbit-hole');
         return json({ ok: true, rabbit_holes: [] });
       }
+      // The skill path (map item 16) reads on every load; a GET, routed so
+      // the assertions below still see every other call.
+      if (url.includes('/athlete/skill-progression') && (init?.method ?? 'GET') === 'GET') {
+        routed.push('skill-path');
+        return json({ steps: [], acrossAll: [], records: {}, unlinked: 0 });
+      }
       routed.push(`unrouted ${url}`);
       return json({ items: [] });
     });
@@ -1179,5 +1185,111 @@ describe('W-D4B: opening the drill an assignment was issued against', () => {
       expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
       expect(completionWrites(fetchMock)).toEqual([]);
     });
+  });
+});
+
+// The skill path (map item 16). Its order comes from the server; these pin what
+// the page does with it: steps in order, "not mapped yet" instead of an empty
+// list, the athlete's own SKILL-01 drills, and a failed read that says so
+// without blanking the rest of the page.
+describe('your skill path', () => {
+  const PATH = {
+    steps: [
+      {
+        step: 1,
+        families: [{ familyId: 'SKILL-01', name: 'Stance / Guard / Reset', prerequisites: [] }],
+      },
+      {
+        step: 2,
+        families: [
+          {
+            familyId: 'SKILL-02',
+            name: 'Jab System',
+            prerequisites: [{ familyId: 'SKILL-01', name: 'Stance / Guard / Reset' }],
+          },
+        ],
+      },
+    ],
+    acrossAll: [{ familyId: 'SKILL-11', name: 'Skill Under Fatigue', registryText: 'core skills seeded' }],
+    records: {
+      'SKILL-01': {
+        state: 'mapped',
+        items: [{ assignment_id: 'asg-9', drill_display_name: 'Guard reset off the jab', status: 'in_progress' }],
+      },
+      'SKILL-02': { state: 'not_mapped' },
+      'SKILL-11': { state: 'not_mapped' },
+    },
+    unlinked: 1,
+  };
+
+  function mockPath(pathResponse: () => Promise<Response>) {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (url.includes('/athlete/skill-progression')) return pathResponse();
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('steps render in the order the server sends, each with what it needs', async () => {
+    global.fetch = mockPath(async () => ({ ok: true, json: async () => PATH }) as Response) as unknown as typeof fetch;
+
+    render(<AthleteProgressionIntelligencePage />);
+
+    const section = await screen.findByRole('region', { name: 'Your Skill Path' });
+    await within(section).findByText('Stance / Guard / Reset');
+    const steps = within(section).getAllByText(/^Step \d$/).map((n) => n.textContent);
+    expect(steps).toEqual(['Step 1', 'Step 2']);
+    expect(within(section).getByText('Starts here')).toBeTruthy();
+    expect(within(section).getByText('Needs: Stance / Guard / Reset')).toBeTruthy();
+    expect(within(section).getByText('Alongside every step')).toBeTruthy();
+  });
+
+  test("the athlete's own SKILL-01 drill is listed; unmapped families say so instead of looking empty", async () => {
+    global.fetch = mockPath(async () => ({ ok: true, json: async () => PATH }) as Response) as unknown as typeof fetch;
+
+    render(<AthleteProgressionIntelligencePage />);
+
+    const section = await screen.findByRole('region', { name: 'Your Skill Path' });
+    expect(await within(section).findByText('Guard reset off the jab')).toBeTruthy();
+    expect(within(section).getAllByText(/^Not mapped yet/)).toHaveLength(2);
+    expect(within(section).getByText(/1 of your drills is not linked to a skill family yet/)).toBeTruthy();
+  });
+
+  test('a mapped family with no drills says none are assigned, not "not mapped"', async () => {
+    const empty = { ...PATH, records: { ...PATH.records, 'SKILL-01': { state: 'mapped', items: [] } }, unlinked: 0 };
+    global.fetch = mockPath(async () => ({ ok: true, json: async () => empty }) as Response) as unknown as typeof fetch;
+
+    render(<AthleteProgressionIntelligencePage />);
+
+    const section = await screen.findByRole('region', { name: 'Your Skill Path' });
+    expect(await within(section).findByText('None of your assigned drills are in this family yet.')).toBeTruthy();
+    expect(within(section).queryByText(/not linked to a skill family/)).toBeNull();
+  });
+
+  test('a failed path read says so and leaves the rest of the page standing', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = mockPath(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+
+    render(<AthleteProgressionIntelligencePage />);
+
+    expect(await screen.findByText(/Your skill path did not load/)).toBeTruthy();
+    expect(await screen.findByText('No progression gaps assigned')).toBeTruthy();
+    expect(screen.queryByText(/500/)).toBeNull();
+  });
+
+  test('a body without the path shape is treated as a failed read, not an empty path', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = mockPath(async () => ({ ok: true, json: async () => ({ items: [] }) }) as Response) as unknown as typeof fetch;
+
+    render(<AthleteProgressionIntelligencePage />);
+
+    expect(await screen.findByText(/Your skill path did not load/)).toBeTruthy();
   });
 });

@@ -17,6 +17,18 @@ import {
   type TransferFailureRow,
 } from './progressionSuggestions';
 import type { AthletePerformanceRow } from './performanceAnalytics';
+import { LOAD_JUMP_RATIO, type LoadJumpReading } from './weeklySessionLoad';
+
+function loadJump(overrides: Partial<LoadJumpReading> = {}): LoadJumpReading {
+  return {
+    athlete_id: 'ath-1',
+    acute_load: 2000,
+    usual_weekly_load: 1000,
+    ratio: 2,
+    prior_weeks_with_load: 4,
+    ...overrides,
+  };
+}
 
 function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerformanceRow {
   return {
@@ -258,6 +270,57 @@ test('an athlete with quiet data produces no suggestions at all', () => {
 // half): only a gap whose detected_from names a rule with a non-empty field
 // list gets a justification, and it gets exactly that rule's fields -- never
 // the full rollup, and never a field another rule owns.
+describe('load_jumped', () => {
+  const NONE: never[] = [];
+
+  test('fires at exactly the ratio threshold, with the numbers a coach can check', () => {
+    const suggestions = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ ratio: LOAD_JUMP_RATIO })]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('load_jumped');
+    expect(suggestions[0].gap_type).toBe('endurance');
+    expect(suggestions[0].evidence).toEqual({
+      acute_load: 2000,
+      usual_weekly_load: 1000,
+      ratio: 2,
+      prior_weeks_with_load: 4,
+    });
+    expect(suggestions[0].suggested_description).toContain('2000 over the last 7 days');
+    expect(suggestions[0].suggested_description).toContain('usual week of 1000');
+    expect(suggestions[0].suggested_description).toContain('unvalidated');
+  });
+
+  test('silent just below the threshold', () => {
+    const suggestions = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ ratio: LOAD_JUMP_RATIO - 0.01 })]);
+    expect(suggestions).toEqual([]);
+  });
+
+  test('an open endurance gap suppresses it', () => {
+    const open = new Map([['ath-1', new Set(['endurance'])]]);
+    expect(deriveSuggestions([], NO_STALLED, open, NONE, NONE, [loadJump()])).toEqual([]);
+  });
+
+  test('one endurance suggestion per athlete: readiness falling already speaks for them', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS })],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      NONE,
+      NONE,
+      [loadJump(), loadJump({ athlete_id: 'ath-2' })],
+    );
+    expect(suggestions.map((s) => [s.athlete_id, s.rule])).toEqual([
+      ['ath-1', 'readiness_falling'],
+      ['ath-2', 'load_jumped'],
+    ]);
+  });
+
+  test('the wording is a prompt to look, never a diagnosis, limit or deload order', () => {
+    const [suggestion] = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ ratio: 3.4 })]);
+    expect(suggestion.suggested_description).toMatch(/Worth a look\.$/);
+    expect(suggestion.suggested_description).not.toMatch(/deload|reduce|injur|risk|limit|overtrain|readiness/i);
+  });
+});
+
 describe('ruleFromDetectedFrom', () => {
   test('reads the rule out of a confirmed-suggestion gap', () => {
     expect(ruleFromDetectedFrom('deterministic_rule:readiness_falling')).toBe('readiness_falling');
@@ -374,6 +437,7 @@ describe('buildGapJustifications', () => {
       [
         'assignments_stalled',
         'competition_loss_unresolved',
+        'load_jumped',
         'readiness_falling',
         'training_days_dropping',
         'transfer_check_failed',

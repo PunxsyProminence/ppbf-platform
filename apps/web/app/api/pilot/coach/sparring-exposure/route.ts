@@ -1,10 +1,19 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  type ActorIdentity,
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
   requireRole,
 } from '@/src/server/pilot/access';
+import {
+  CONTACT_STAGES,
+  type CapReading,
+  type CapWarning,
+  type ContactStage,
+  entryCapWarnings,
+  readCapForEntry,
+} from '@/src/server/pilot/athleteContactCaps';
 import { gymToday } from '@/src/server/pilot/competenceCohorts';
 import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -12,6 +21,7 @@ import {
   type AthletePresentation,
   type CoachObservedHeadContact,
   type CoachObservedIntensity,
+  countHardOrOpenSparringDays,
   getSparringExposureCounts,
   listActiveUniversalStopRules,
   listSparringExposure,
@@ -50,6 +60,16 @@ export const runtime = 'nodejs';
 // refused rather than silently dropped, so a client cannot believe it stored a
 // field it did not. To add a field (e.g. a ladder stage), add it to
 // ENTRY_FIELDS and parseEntry together.
+//
+// THE CAP CHECK (map item 15). An entry may carry its contact-ladder stage
+// (optional; omitted = not recorded). Both GET and POST return `cap_check`:
+// the coach-set cap for this athlete ('set' / 'none' = no cap set / 'unknown'
+// = could not be read -- never shown as no cap) and the raw count of gym days
+// with hard or open sparring in the 7 gym days ending today (GET) or on the
+// entry's day (POST, entry included). POST adds `warnings` when the saved
+// entry is above the cap. WARN ONLY (Jason, 2026-10-04): the entry has
+// already saved when the check runs, and nothing here refuses it. Sessions =
+// gym days.
 
 const SPARRING_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -62,6 +82,7 @@ const ENTRY_FIELDS: ReadonlySet<string> = new Set([
   'athlete_id',
   'session_date',
   'sparring_type',
+  'contact_stage',
   'time_under_impact_sec',
   'round_equivalent',
   'partner_athlete_id',
@@ -87,6 +108,65 @@ function requiredEnum<T extends string>(value: unknown, field: string, allowed: 
     throw new ValidationError(`Unsupported ${field}: must be one of ${allowed.join(', ')}`);
   }
   return value as T;
+}
+
+function optionalStage(value: unknown): ContactStage | null {
+  if (value === undefined || value === null) return null;
+  return requiredEnum(value, 'contact_stage', CONTACT_STAGES);
+}
+
+function actorOf(principal: { accountId: string; role: ActorIdentity['role']; organizationId: string; athleteId: string | null }): ActorIdentity {
+  return {
+    accountId: principal.accountId,
+    role: principal.role,
+    organizationId: principal.organizationId,
+    athleteId: principal.athleteId,
+  };
+}
+
+interface CapCheck {
+  cap_state: CapReading['state'];
+  cap: CapReading['cap'];
+  /** Raw count; sessions = gym days. Null = could not be counted (never shown as 0). */
+  hard_open_days_in_7: number | null;
+  /** The last of those 7 gym days. */
+  through_day: string;
+  warnings?: CapWarning[];
+}
+
+/**
+ * Never throws: on POST the entry has already saved, and on GET the entries
+ * are what the coach came for. A cap that cannot be read is 'unknown'; a count
+ * that cannot be taken is null; neither is shown as "no cap" or "0".
+ */
+async function capCheck(
+  actor: ActorIdentity,
+  athleteId: string,
+  throughDay: string,
+  entry?: { contactStage: ContactStage | null; sparringType: string },
+): Promise<CapCheck> {
+  const [reading, days] = await Promise.all([
+    // readCapForEntry already never throws; this keeps that true here even if
+    // it changes, because a throw now would report a SAVED entry as failed.
+    Promise.resolve().then(() => readCapForEntry(actor, athleteId)).catch((error: unknown): CapReading => {
+      console.error({ event: 'sparring-cap-read-failed', name: error instanceof Error ? error.name : 'unknown' });
+      return { state: 'unknown', cap: null };
+    }),
+    Promise.resolve().then(() => countHardOrOpenSparringDays(actor.organizationId, athleteId, throughDay)).catch((error: unknown) => {
+      console.error({ event: 'sparring-hard-open-count-failed', name: error instanceof Error ? error.name : 'unknown' });
+      return null;
+    }),
+  ]);
+  const check: CapCheck = {
+    cap_state: reading.state,
+    cap: reading.cap,
+    hard_open_days_in_7: days,
+    through_day: throughDay,
+  };
+  if (entry) {
+    check.warnings = entryCapWarnings(reading, { ...entry, sparringDay: throughDay }, days);
+  }
+  return check;
 }
 
 function optionalBoolean(value: unknown, field: string): boolean | null {
@@ -191,6 +271,7 @@ function parseEntry(body: Record<string, unknown>): ParsedEntry {
     athleteId,
     sessionDate: parseSessionDate(body.session_date),
     sparringType: requiredEnum(body.sparring_type, 'sparring_type', SPARRING_TYPES),
+    contactStage: optionalStage(body.contact_stage),
     timeUnderImpactSec: time,
     roundEquivalent,
     partnerAthleteId,
@@ -230,10 +311,11 @@ export async function GET(request: NextRequest) {
     // Compared against the day sparred, not when the entry was typed.
     const sinceDay = daysBefore(gymToday(), windowDays - 1);
 
-    const [rows, counts, stopRules] = await Promise.all([
+    const [rows, counts, stopRules, check] = await Promise.all([
       listSparringExposure(principal.organizationId, { athleteId, sinceDay, limit: ENTRY_LIMIT + 1 }),
       getSparringExposureCounts(principal.organizationId, athleteId, sinceDay),
       listActiveUniversalStopRules(principal.organizationId),
+      capCheck(actorOf(principal), athleteId, gymToday()),
     ]);
 
     // counts covers the whole window; entries stops at ENTRY_LIMIT and says so.
@@ -244,6 +326,7 @@ export async function GET(request: NextRequest) {
       entries_truncated: rows.length > ENTRY_LIMIT,
       counts,
       stop_rules: stopRules,
+      cap_check: check,
     });
   } catch (error) {
     return jsonError(error);
@@ -294,7 +377,12 @@ export async function POST(request: NextRequest) {
         organizationId: principal.organizationId,
         supervisingCoachAccountId: principal.accountId,
       });
-      return NextResponse.json({ entry: saved }, { status: 201 });
+      // After the save, never before: a cap can only warn.
+      const check = await capCheck(actorOf(principal), entry.athleteId, saved.session_date ?? gymToday(), {
+        contactStage: saved.contact_stage,
+        sparringType: saved.sparring_type,
+      });
+      return NextResponse.json({ entry: saved, cap_check: check }, { status: 201 });
     } catch (error) {
       if (error instanceof Error && error.message === 'SPARRING_EXPOSURE_SEGMENT_DUPLICATE') {
         throw new ConflictError('Another entry for this athlete was saved at the same moment. Try again.');

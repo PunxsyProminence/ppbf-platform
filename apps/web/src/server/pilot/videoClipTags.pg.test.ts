@@ -487,6 +487,25 @@ describe('video_clip_tags migration and videoClipTags.ts against the real schema
     expect(all.map((c) => c.athlete_id)).not.toContain(ATHLETE_DELETED);
   });
 
+  test("a clip whose partner was deleted is left out of the live athlete's list too", async () => {
+    await main.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag,
+          coach_id, created_at, updated_at)
+       values ($1, 'ath-partner-gone', 'ath-partner-gone', '2011-01-01', '120lb', 'active', 'Contact', true, $2, now(), now())`,
+      [ORG, COACH_B],
+    );
+    await insertVideo(main, 'vid-partner-gone', { athleteId: null });
+    await tags.addClipTag({ ...base, videoSessionId: 'vid-partner-gone', athleteId: ATHLETE_A, eventKind: 'sparring' });
+    await tags.addClipTag({ ...base, videoSessionId: 'vid-partner-gone', athleteId: 'ath-partner-gone', eventKind: 'sparring' });
+    const before = await tags.listTaggedClips({ organizationId: ORG, athleteIds: [ATHLETE_A], limit: 50 });
+    expect(before.map((c) => c.video_session_id)).toContain('vid-partner-gone');
+
+    await main.query(`update pilot.athletes set deleted_at = now() where athlete_id = 'ath-partner-gone'`);
+    const after = await tags.listTaggedClips({ organizationId: ORG, athleteIds: [ATHLETE_A], limit: 50 });
+    expect(after.map((c) => c.video_session_id)).not.toContain('vid-partner-gone');
+  });
+
   test('teaching footage never appears in a clip list, even if a raw row tags it', async () => {
     await main.query(
       `insert into pilot.video_clip_tags
