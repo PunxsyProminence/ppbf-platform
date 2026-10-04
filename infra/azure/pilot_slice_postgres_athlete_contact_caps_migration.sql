@@ -1,6 +1,8 @@
 -- Athlete contact caps (pilot.athlete_contact_caps): the limits a COACH sets
 -- for one athlete's sparring -- the highest contact stage they may spar at,
 -- and the most hard or open sparring sessions they may do in any 7 days.
+-- The count has no upper bound: any whole number a coach chooses is stored
+-- (zero means none); the app does not decide what is too many.
 --
 -- THESE ARE COACH-SET DATA, NOT AN APP RECOMMENDATION. The sparring-exposure
 -- migration refuses "no recommended limit", and that refusal stands: nothing
@@ -40,16 +42,18 @@ create table if not exists pilot.athlete_contact_caps (
   max_hard_open_sessions_per_7_days integer null
     constraint pilot_athlete_contact_caps_sessions_check check (
       max_hard_open_sessions_per_7_days is null
-      or max_hard_open_sessions_per_7_days between 0 and 14
+      or max_hard_open_sessions_per_7_days >= 0
     ),
   note                              text not null default ''
     constraint pilot_athlete_contact_caps_note_check check (length(note) <= 1000),
   set_by_account_id                 text not null,
   set_by_role                       text not null
     constraint pilot_athlete_contact_caps_role_check check (set_by_role in ('coach', 'organization_admin', 'admin')),
-  -- clock_timestamp(), not now(): now() is the transaction's start, so two
-  -- caps written in one transaction would tie and "newest" would be a coin toss.
   set_at                            timestamptz not null default clock_timestamp(),
+  -- Insertion order. "Newest" is decided by this, never by a timestamp: two
+  -- writes in the same clock tick cannot tie, so the cap in force is always
+  -- the last one written.
+  cap_seq                           bigint generated always as identity,
   primary key (organization_id, cap_id),
   constraint pilot_athlete_contact_caps_athlete_fk
     foreign key (organization_id, athlete_id)
@@ -58,5 +62,5 @@ create table if not exists pilot.athlete_contact_caps (
 );
 
 -- The cap in force is the newest row per athlete; this is the read path.
-create index if not exists idx_athlete_contact_caps_athlete_set_at
-  on pilot.athlete_contact_caps(organization_id, athlete_id, set_at desc);
+create index if not exists idx_athlete_contact_caps_athlete_seq
+  on pilot.athlete_contact_caps(organization_id, athlete_id, cap_seq desc);

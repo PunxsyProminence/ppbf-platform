@@ -168,9 +168,19 @@ describe('POST', () => {
     ['a fractional count', { max_hard_open_sessions_per_7_days: 1.5 }],
     ['a note that is not text', { note: 7 }],
     ['no athlete', { athlete_id: '' }],
+    ['a body that omits both limits', { highest_allowed_stage: undefined, max_hard_open_sessions_per_7_days: undefined, note: 'x' }],
+    ['a body that omits the session limit', { highest_allowed_stage: 'none', max_hard_open_sessions_per_7_days: undefined }],
+    ['a body that omits the stage', { highest_allowed_stage: undefined, max_hard_open_sessions_per_7_days: 2 }],
   ])('refuses %s with a 400 and writes nothing', async (_label, patch) => {
     mockPrincipal.mockResolvedValue(COACH);
-    const response = await post({ athlete_id: 'ath-1', ...patch });
+    // A complete, valid body, so each case is refused for its own reason.
+    // JSON drops `undefined`, which is how a case omits a key.
+    const response = await post({
+      athlete_id: 'ath-1',
+      highest_allowed_stage: null,
+      max_hard_open_sessions_per_7_days: null,
+      ...patch,
+    });
     expect(response.status).toBe(400);
     expect(mockSet).not.toHaveBeenCalled();
   });

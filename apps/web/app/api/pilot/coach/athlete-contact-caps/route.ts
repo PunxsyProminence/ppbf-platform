@@ -22,7 +22,11 @@ export const dynamic = 'force-dynamic';
  *
  *   GET  ?athlete_id=   the cap in force (null = no cap set) and its history
  *   POST { athlete_id, highest_allowed_stage, max_hard_open_sessions_per_7_days, note }
- *                       records a new cap; both limits null clears it
+ *                       records a new cap; both limits null clears it. Both
+ *                       limit keys must be PRESENT (null or "" to leave one
+ *                       empty): a body that omits them is refused, so a
+ *                       partial or stale client can never clear a cap by
+ *                       accident.
  *
  * Coach-set data only: the route stores what a coach chose and reads it back.
  * It proposes no number and computes no score (see athleteContactCaps.ts), and
@@ -104,6 +108,11 @@ export async function POST(request: NextRequest) {
 
     const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
     if (!athleteId) throw new ValidationError('Missing athlete_id');
+    for (const key of ['highest_allowed_stage', 'max_hard_open_sessions_per_7_days']) {
+      if (!(key in body)) {
+        throw new ValidationError(`${key} is required (send null to leave it empty)`);
+      }
+    }
     if (body.note !== undefined && typeof body.note !== 'string') {
       throw new ValidationError('note must be text');
     }

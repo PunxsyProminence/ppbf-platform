@@ -12,7 +12,8 @@ import { ForbiddenError, ValidationError } from './errors';
  *   highest_allowed_stage              -- a rung of the contact ladder drills,
  *                                         templates and cohorts already use;
  *   max_hard_open_sessions_per_7_days  -- how many hard or open sparring
- *                                         sessions in any 7 days.
+ *                                         sessions in any 7 days (any whole
+ *                                         number from 0; no app-set ceiling).
  *
  * COACH-SET DATA, NEVER AN APP NUMBER. Nothing in this module proposes,
  * defaults, derives or scores a limit -- the sparring-exposure migration's
@@ -45,7 +46,6 @@ export type ContactStage = 'none' | 'light_technical' | 'conditioned' | 'control
 
 export const CONTACT_CAP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
-export const MAX_SESSIONS_CEILING = 14;
 export const NOTE_MAX = 1000;
 const HISTORY_LIMIT = 20;
 
@@ -84,8 +84,10 @@ export function contactCapShapeError(input: ContactCapInput): string | null {
     return `highest_allowed_stage must be one of: ${CONTACT_STAGES.join(', ')}`;
   }
   const max = input.maxHardOpenSessionsPer7Days;
-  if (max !== null && (!Number.isInteger(max) || max < 0 || max > MAX_SESSIONS_CEILING)) {
-    return `max_hard_open_sessions_per_7_days must be a whole number from 0 to ${MAX_SESSIONS_CEILING}`;
+  // The only upper bound is the column's storage limit (Postgres integer),
+  // so an absurd value is a 400 rather than a database error -- not a policy.
+  if (max !== null && (!Number.isInteger(max) || max < 0 || max > 2147483647)) {
+    return 'max_hard_open_sessions_per_7_days must be a whole number, 0 or more';
   }
   if (input.note.length > NOTE_MAX) {
     return `note must be ${NOTE_MAX} characters or fewer`;
@@ -152,7 +154,7 @@ export async function getCurrentContactCap(
   return queryOne<AthleteContactCapRow>(
     `select ${FIELDS} from pilot.athlete_contact_caps
       where organization_id = $1 and athlete_id = $2
-      order by set_at desc, cap_id desc
+      order by cap_seq desc
       limit 1`,
     [actor.organizationId, athleteId],
   );
@@ -167,7 +169,7 @@ export async function listContactCapHistory(
   return query<AthleteContactCapRow>(
     `select ${FIELDS} from pilot.athlete_contact_caps
       where organization_id = $1 and athlete_id = $2
-      order by set_at desc, cap_id desc
+      order by cap_seq desc
       limit ${HISTORY_LIMIT}`,
     [actor.organizationId, athleteId],
   );

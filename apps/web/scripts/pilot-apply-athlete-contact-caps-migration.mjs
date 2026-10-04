@@ -60,8 +60,8 @@ const READINESS_QUERY = `
     exists (
       select 1 from pg_indexes
       where schemaname = 'pilot' and tablename = 'athlete_contact_caps'
-        and indexname = 'idx_athlete_contact_caps_athlete_set_at'
-    ) as athlete_set_at_index_ready,
+        and indexname = 'idx_athlete_contact_caps_athlete_seq'
+    ) as athlete_seq_index_ready,
     (
       select count(*) = 5 from pg_constraint
       where conrelid = to_regclass('pilot.athlete_contact_caps')

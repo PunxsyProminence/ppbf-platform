@@ -58,7 +58,7 @@ describe('athlete contact caps schema ownership', () => {
     ]) {
       expect(migration).toContain(name);
     }
-    expect(migration).toMatch(/create index if not exists idx_athlete_contact_caps_athlete_set_at/i);
+    expect(migration).toMatch(/create index if not exists idx_athlete_contact_caps_athlete_seq/i);
     expect(migration).not.toMatch(/^\s*begin\s*;/im);
     expect(migration).not.toMatch(/^\s*commit\s*;/im);
   });
@@ -66,7 +66,7 @@ describe('athlete contact caps schema ownership', () => {
   test('the runner reads this migration and checks readiness before committing', () => {
     expect(runner).toContain('pilot_slice_postgres_athlete_contact_caps_migration.sql');
     expect(runner).toContain('ATHLETE_CONTACT_CAPS_TABLE_NOT_READY');
-    expect(runner).toContain('idx_athlete_contact_caps_athlete_set_at');
+    expect(runner).toContain('idx_athlete_contact_caps_athlete_seq');
     expect(runner).toContain('pilot_athlete_contact_caps_stage_check');
     expect(runner).toContain('POSTGRES_TARGET_MISMATCH');
     expect(runner).toContain('rejectUnauthorized: true');

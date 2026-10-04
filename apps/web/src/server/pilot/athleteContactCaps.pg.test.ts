@@ -6,7 +6,7 @@
 // What needs a real database to prove:
 //   * the migration creates the table from nothing, re-applies as a no-op,
 //     and the runner's readiness check refuses a database it never reached;
-//   * the ladder, the 0-14 session range, the note length and the setter's
+//   * the ladder, a non-negative session count, the note length and the setter's
 //     role are DATABASE refusals, and a cap cannot name another gym's athlete;
 //   * caps are append-only: the newest row is in force, a clear is a row,
 //     and no earlier row is ever changed;
@@ -358,7 +358,8 @@ describe('athlete contact caps migration', () => {
       await expect(insertRaw(client, { highest_allowed_stage: 'hard_sparring' })).rejects.toThrow(
         /pilot_athlete_contact_caps_stage_check/,
       );
-      await expect(insertRaw(client, { max: 15 })).rejects.toThrow(/pilot_athlete_contact_caps_sessions_check/);
+      // No app-set ceiling: a high count a coach chooses is stored as typed.
+      await expect(insertRaw(client, { max: 21 })).resolves.toBeDefined();
       await expect(insertRaw(client, { max: -1 })).rejects.toThrow(/pilot_athlete_contact_caps_sessions_check/);
       await expect(insertRaw(client, { note: 'x'.repeat(1001) })).rejects.toThrow(
         /pilot_athlete_contact_caps_note_check/,
@@ -436,6 +437,27 @@ describe('athleteContactCaps.ts against real rows', () => {
 
       // A cap on one athlete says nothing about another.
       expect(await getCurrentContactCap(COACH, SECOND_ATHLETE_ID)).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('two caps with the same timestamp: the one written last is in force', async () => {
+    const client = await migratedDatabase('caps_tie');
+    try {
+      // Forced identical set_at, written in order: open first, then none.
+      // A timestamp-ordered read would have to guess; insertion order decides.
+      for (const stage of ['open_sparring', 'none']) {
+        await client.query(
+          `insert into pilot.athlete_contact_caps
+             (organization_id, cap_id, athlete_id, highest_allowed_stage, set_by_account_id, set_by_role, set_at)
+           values ($1, gen_random_uuid(), $2, $3, $4, 'coach', '2026-10-04T12:00:00Z')`,
+          [ORG_ID, ATHLETE_ID, stage, COACH_ID],
+        );
+      }
+      expect((await getCurrentContactCap(COACH, ATHLETE_ID))?.highest_allowed_stage).toBe('none');
+      const history = await listContactCapHistory(COACH, ATHLETE_ID);
+      expect(history.map((row) => row.highest_allowed_stage)).toEqual(['none', 'open_sparring']);
     } finally {
       await client.end();
     }
@@ -559,7 +581,7 @@ describe('athleteContactCaps.ts against real rows', () => {
         setContactCap({ ...base, highestAllowedStage: 'sparring' as never, maxHardOpenSessionsPer7Days: null }),
       ).rejects.toBeInstanceOf(ValidationError);
       await expect(
-        setContactCap({ ...base, highestAllowedStage: null, maxHardOpenSessionsPer7Days: 15 }),
+        setContactCap({ ...base, highestAllowedStage: null, maxHardOpenSessionsPer7Days: -1 }),
       ).rejects.toBeInstanceOf(ValidationError);
       await expect(
         setContactCap({ ...base, highestAllowedStage: null, maxHardOpenSessionsPer7Days: 1.5 }),
