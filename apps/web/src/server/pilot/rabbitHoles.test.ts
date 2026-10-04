@@ -59,6 +59,9 @@ function checkVocabulary(sql: string, pattern: RegExp): string[] {
 
 const RABBIT_HOLES_SQL = readInfra('pilot_slice_postgres_rabbit_holes_migration.sql');
 const PROGRESSION_SQL = readInfra('pilot_slice_postgres_progression_migration.sql');
+// gap_type's CHECK was widened after the table shipped; this file is now where
+// that vocabulary is written down.
+const GAP_TYPE_SQL = readInfra('pilot_slice_postgres_progression_gap_recovery_migration.sql');
 
 function lessonRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -113,7 +116,7 @@ describe('the anchor vocabularies match their sources', () => {
   // union, a ninth board seat -- any of them lands here rather than in a coach
   // discovering the write is refused.
   test('gap_type and severity are the progression CHECKs', () => {
-    const gapTypes = checkVocabulary(PROGRESSION_SQL, /check \(gap_type in \(([^)]*)\)\)/);
+    const gapTypes = checkVocabulary(GAP_TYPE_SQL, /check \(gap_type in \(([^)]*)\)\)/);
     const severities = checkVocabulary(PROGRESSION_SQL, /check \(severity in \(([^)]*)\)\)/);
 
     expect([...RABBIT_HOLE_CLOSED_ANCHOR_KEYS.gap_type].sort()).toEqual([...gapTypes].sort());
