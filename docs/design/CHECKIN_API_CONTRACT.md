@@ -79,9 +79,9 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
   latest weigh-in differs from the one closest to 7 days earlier (±24 h, MVP-12:
   `change`), or any two weigh-ins in the 7 days up to the latest differ
   (`largest_change_in_window`). `flag_text` names the larger, e.g. "Weight down
-  6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete." Youth
-  parents see an adult-free version of the same read: the parent route answers
-  only for a youth. Weigh-ins outside 20–250 kg are left out. Nothing acts on
+  6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete." The
+  parent route answers only for a youth (an adult has no parent surface).
+  Weigh-ins outside 20–250 kg are left out. Nothing acts on
   the flag.
 
 ## What each number means
