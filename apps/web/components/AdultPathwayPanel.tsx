@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import { ADULT_PATHWAY_STAGES } from '@/src/shared/adultPathwayStages';
@@ -64,8 +64,6 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
   const [confirmingOff, setConfirmingOff] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  // Synchronous guard: two clicks before React re-renders must not send twice.
-  const inFlight = useRef(false);
 
   // `quiet` re-reads after a save without dropping back to "Reading…", so the
   // panel (and the control the coach just pressed) stays on screen.
@@ -87,8 +85,6 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
 
   const send = useCallback(
     async (body: Record<string, unknown>) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
       setBusy(true);
       setError('');
       try {
@@ -111,7 +107,6 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
       } catch {
         setError('That was not saved. Try again.');
       } finally {
-        inFlight.current = false;
         setBusy(false);
       }
     },
