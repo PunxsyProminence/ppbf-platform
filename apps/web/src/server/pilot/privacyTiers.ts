@@ -426,6 +426,7 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.documents',
   'pilot.compliance_violations',
   'pilot.training_holds',
+  'pilot.athlete_injuries',
 ];
 
 /**
