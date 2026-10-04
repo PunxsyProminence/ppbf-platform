@@ -181,3 +181,39 @@ test('a network failure on remove says it could not be removed', async () => {
   fireEvent.click(screen.getByText('Remove'));
   expect(await screen.findByText('The tag could not be removed right now. Try again.')).toBeTruthy();
 });
+
+test('a competition tag sends the competition, and a change is reported to the page', async () => {
+  mockFetch(
+    { status: 200, body: { consent_blocked: false, items: [] } },
+    { status: 201, body: { ...TAG, event_kind: 'competition', competition_id: 'Golden Gloves' } },
+    { status: 200, body: { consent_blocked: false, items: [] } },
+  );
+  const onTagsChanged = jest.fn();
+  render(<ClipTagsPanel videoId="vid-1" athletes={ATHLETES} onTagsChanged={onTagsChanged} />);
+  await screen.findByText('No athletes tagged on this clip yet.');
+  fireEvent.change(screen.getByLabelText('Athlete to tag'), { target: { value: 'ath-1' } });
+  fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'competition' } });
+  fireEvent.change(screen.getByLabelText('Competition (optional)'), { target: { value: ' Golden Gloves ' } });
+  fireEvent.click(screen.getByText('Tag athlete'));
+  expect(await screen.findByText('Tagged Avery Stone.')).toBeTruthy();
+  expect(JSON.parse(String(calls()[1][1]?.body))).toMatchObject({ event_kind: 'competition', competition_id: 'Golden Gloves' });
+  expect(onTagsChanged).toHaveBeenCalledTimes(1);
+});
+
+test('an athlete missing from the roster is never shown as a raw id', async () => {
+  mockFetch({ status: 200, body: { consent_blocked: false, items: [{ ...TAG, athlete_id: 'ath-zz9', note: '' }] } });
+  render(<ClipTagsPanel videoId="vid-1" athletes={ATHLETES} />);
+  expect(await screen.findByText('An athlete not on your roster · Sparring')).toBeTruthy();
+  expect(screen.queryByText(/ath-zz9/)).toBeNull();
+});
+
+test('an ended session says to sign in again', async () => {
+  mockFetch(
+    { status: 200, body: { consent_blocked: false, items: [TAG] } },
+    { status: 401, body: { error: 'Unauthorized' } },
+  );
+  render(<ClipTagsPanel videoId="vid-1" athletes={ATHLETES} />);
+  await screen.findByText('Avery Stone · Sparring · Keeps hands high');
+  fireEvent.click(screen.getByText('Remove'));
+  expect(await screen.findByText('Your session has ended. Sign in again, then retry.')).toBeTruthy();
+});

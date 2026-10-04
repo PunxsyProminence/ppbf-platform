@@ -1061,3 +1061,41 @@ describe('recording what the model missed', () => {
     await screen.findByText('Head stayed still on the slip.');
   });
 });
+
+describe('clip tags on the video library', () => {
+  test('Tags opens the panel on that video, and tagging re-reads Tagged Clips', async () => {
+    const base = mockFetch({ videos: () => [video({ status: 'ready' })], athletes: () => [athlete()] });
+    let tagged = false;
+    const clipsReads: number[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/video/vid-1/tags')) {
+        if (init?.method === 'POST') {
+          tagged = true;
+          return { ok: true, status: 201, json: async () => ({ tag_id: 'tag-1' }) } as Response;
+        }
+        const items = tagged
+          ? [{ tag_id: 'tag-1', athlete_id: 'ath-1', event_kind: 'sparring', competition_id: null, note: '', created_at: '2026-10-01T00:00:00Z' }]
+          : [];
+        return { ok: true, status: 200, json: async () => ({ consent_blocked: false, items }) } as Response;
+      }
+      if (url.includes('/api/pilot/video/clips')) {
+        clipsReads.push(clipsReads.length);
+        return { ok: true, status: 200, json: async () => ({ items: [] }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await screen.findByText('No tagged clips yet.');
+    const readsBefore = clipsReads.length;
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tags' }));
+    await screen.findByText('No athletes tagged on this clip yet.');
+    fireEvent.change(screen.getByLabelText('Athlete to tag'), { target: { value: 'ath-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tag athlete' }));
+
+    expect(await screen.findByText('Marcus Reed · Sparring')).toBeTruthy();
+    await waitFor(() => expect(clipsReads.length).toBeGreaterThan(readsBefore));
+  });
+});

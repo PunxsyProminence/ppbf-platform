@@ -78,3 +78,18 @@ test('a 200 without items is a failed read', async () => {
   render(<TaggedClipsList athletes={ATHLETES} />);
   expect(await screen.findByText('Tagged clips could not be read right now.')).toBeTruthy();
 });
+
+test('a new refreshKey reads the list again', async () => {
+  mockFetch({ status: 200, body: { items: [] } });
+  const { rerender } = render(<TaggedClipsList athletes={ATHLETES} refreshKey={0} />);
+  await screen.findByText('No tagged clips yet.');
+  mockFetch({ status: 200, body: { items: [CLIP] } });
+  rerender(<TaggedClipsList athletes={ATHLETES} refreshKey={1} />);
+  expect(await screen.findByText('Bout vs. North')).toBeTruthy();
+});
+
+test('an ended session says to sign in again', async () => {
+  mockFetch({ status: 401, body: { error: 'Unauthorized' } });
+  render(<TaggedClipsList athletes={ATHLETES} />);
+  expect(await screen.findByText(/Sign in again to see tagged clips/)).toBeTruthy();
+});

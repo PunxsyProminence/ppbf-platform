@@ -202,6 +202,7 @@ export default function CoachVideoAnalysisPage() {
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   // The one Video Library row whose clip tags are open (staff tagging, OD-2026-10-04-003).
   const [taggingVideoId, setTaggingVideoId] = useState<string | null>(null);
+  const [clipTagsVersion, setClipTagsVersion] = useState(0);
   const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
   const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
   // Which videos this reviewer has actually opened for review. A SET of ids
@@ -921,7 +922,7 @@ export default function CoachVideoAnalysisPage() {
                     </button>
                   </div>
                   {taggingVideoId === v.video_session_id ? (
-                    <ClipTagsPanel videoId={v.video_session_id} athletes={athletes} />
+                    <ClipTagsPanel videoId={v.video_session_id} athletes={athletes} onTagsChanged={() => setClipTagsVersion((n) => n + 1)} />
                   ) : null}
                 </div>
               ))}
@@ -929,7 +930,7 @@ export default function CoachVideoAnalysisPage() {
           )}
         </section>
 
-        <TaggedClipsList athletes={athletes} />
+        <TaggedClipsList athletes={athletes} refreshKey={clipTagsVersion} />
 
         {/* How often this gym's coaches have accepted what the model proposed.
             Sits ABOVE the queue on purpose: a coach about to spend twenty

@@ -39,6 +39,7 @@ export async function clipTagRefusal(res: Response, action: 'add' | 'remove'): P
   const body = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
   const serverText = typeof body?.error === 'string' && body.error.trim() ? body.error : null;
   if (body?.code === 'CLIP_TAG_REMOVAL_NEEDS_ADMIN' && serverText) return serverText;
+  if (res.status === 401) return 'Your session has ended. Sign in again, then retry.';
   if (res.status === 403) {
     return action === 'add'
       ? 'You can tag only athletes you coach. Ask an organization admin to tag this athlete.'
@@ -49,12 +50,20 @@ export async function clipTagRefusal(res: Response, action: 'add' | 'remove'): P
   return action === 'add' ? 'The tag could not be saved right now. Try again.' : 'The tag could not be removed right now. Try again.';
 }
 
+/** An athlete's name from the roster; never a raw id on screen. */
+export function athleteName(athletes: readonly ClipAthleteOption[], id: string): string {
+  return athletes.find((a) => a.athlete_id === id)?.full_name ?? 'An athlete not on your roster';
+}
+
 export default function ClipTagsPanel({
   videoId,
   athletes,
+  onTagsChanged,
 }: {
   readonly videoId: string;
   readonly athletes: readonly ClipAthleteOption[];
+  /** Told after a tag is added or removed, so a clip list can read again. */
+  readonly onTagsChanged?: () => void;
 }) {
   const [tags, setTags] = useState<ClipTag[] | null>(null);
   const [blocked, setBlocked] = useState(false);
@@ -67,7 +76,7 @@ export default function ClipTagsPanel({
   const [busy, setBusy] = useState(false);
 
   const url = `${apiBase()}/api/pilot/video/${encodeURIComponent(videoId)}/tags`;
-  const nameOf = (id: string) => athletes.find((a) => a.athlete_id === id)?.full_name ?? id;
+  const nameOf = (id: string) => athleteName(athletes, id);
 
   // Bumped after a tag is added or removed, to read the list again.
   const [version, setVersion] = useState(0);
@@ -123,6 +132,7 @@ export default function ClipTagsPanel({
       setNote('');
       setMessage(`Tagged ${nameOf(athleteId)}.`);
       load();
+      onTagsChanged?.();
     } catch {
       setMessage('The tag could not be saved right now. Try again.');
     } finally {
@@ -141,6 +151,7 @@ export default function ClipTagsPanel({
       }
       setMessage(`Removed the tag for ${nameOf(tag.athlete_id)}.`);
       load();
+      onTagsChanged?.();
     } catch {
       setMessage('The tag could not be removed right now. Try again.');
     } finally {

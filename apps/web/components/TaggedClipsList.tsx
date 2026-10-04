@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
-import { clipTagRefusal, type ClipAthleteOption } from './ClipTagsPanel';
+import { athleteName, type ClipAthleteOption } from './ClipTagsPanel';
 
 /**
  * Tagged sparring and bout clips for review, through /api/pilot/video/clips.
@@ -27,7 +27,14 @@ interface TaggedClip {
   recorded_at: string;
 }
 
-export default function TaggedClipsList({ athletes }: { readonly athletes: readonly ClipAthleteOption[] }) {
+export default function TaggedClipsList({
+  athletes,
+  refreshKey = 0,
+}: {
+  readonly athletes: readonly ClipAthleteOption[];
+  /** Changes when a tag is added or removed elsewhere on the page. */
+  readonly refreshKey?: number;
+}) {
   const [athleteId, setAthleteId] = useState('');
   const [clips, setClips] = useState<TaggedClip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +45,16 @@ export default function TaggedClipsList({ athletes }: { readonly athletes: reado
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/video/clips${query}`, { credentials: 'include' });
+        if (res.status === 401) {
+          if (live) setError('Your session has ended. Sign in again to see tagged clips.');
+          return;
+        }
         if (res.status === 403) {
           if (live) setError('You can list clips only for athletes you coach.');
           return;
         }
         if (!res.ok) {
-          const text = res.status === 400 ? await clipTagRefusal(res, 'add') : null;
-          if (live) setError(text ?? 'Tagged clips could not be read right now.');
+          if (live) setError('Tagged clips could not be read right now.');
           return;
         }
         const payload = (await res.json().catch(() => null)) as { items?: unknown } | null;
@@ -57,9 +67,9 @@ export default function TaggedClipsList({ athletes }: { readonly athletes: reado
     return () => {
       live = false;
     };
-  }, [athleteId]);
+  }, [athleteId, refreshKey]);
 
-  const nameOf = (id: string) => athletes.find((a) => a.athlete_id === id)?.full_name ?? id;
+  const nameOf = (id: string) => athleteName(athletes, id);
 
   return (
     <section aria-label="Tagged clips" className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
