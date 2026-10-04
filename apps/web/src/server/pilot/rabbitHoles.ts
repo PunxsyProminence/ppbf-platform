@@ -50,7 +50,7 @@ import type { ShadowEvidenceTier } from './shadowEvidenceTier';
 // the other direction -- it reads the CHECK constraints and the registries and
 // asserts nothing has been left out of a list here.
 const CLOSED_ANCHOR_KEYS = {
-  gap_type: ['technique', 'strength', 'endurance', 'skill', 'mental', 'tactical'],
+  gap_type: ['technique', 'strength', 'endurance', 'skill', 'mental', 'tactical', 'recovery'],
   severity: ['critical', 'high', 'medium', 'low'],
   formula_id: FORMULA_IDS,
   board_seat: boardSeatConfigs.map((seat) => seat.slug),

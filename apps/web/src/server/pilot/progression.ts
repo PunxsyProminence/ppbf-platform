@@ -17,7 +17,7 @@ const SEVERITY_RANK_SQL = `case severity
 export interface ProgressionGap {
   gap_id: string;
   athlete_id: string;
-  gap_type: 'technique' | 'strength' | 'endurance' | 'skill' | 'mental' | 'tactical';
+  gap_type: 'technique' | 'strength' | 'endurance' | 'skill' | 'mental' | 'tactical' | 'recovery';
   gap_description: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   status: 'identified' | 'assigned' | 'in_progress' | 'completed' | 'deferred';

@@ -40,7 +40,8 @@ import {
 //     is already on the coach's board.
 //
 // gap_type must land inside the schema's check constraint
-// ('technique','strength','endurance','skill','mental','tactical'), so each
+// ('technique','strength','endurance','skill','mental','tactical','recovery';
+// 'recovery' added by pilot_slice_postgres_progression_gap_recovery_migration.sql), so each
 // rule maps to the nearest honest bucket and the evidence carries the detail.
 
 export const READINESS_DROP_POINTS = 1.0;
@@ -59,7 +60,7 @@ export type SuggestionRule =
 export interface GapSuggestion {
   athlete_id: string;
   rule: SuggestionRule;
-  gap_type: 'endurance' | 'mental' | 'skill' | 'technique';
+  gap_type: 'endurance' | 'mental' | 'skill' | 'technique' | 'recovery';
   suggested_description: string;
   evidence: Record<string, number | string>;
 }
