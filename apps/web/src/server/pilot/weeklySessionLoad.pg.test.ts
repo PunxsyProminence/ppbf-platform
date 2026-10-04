@@ -63,10 +63,20 @@ const ATHLETE_ID = 'ath-weekly-load-1';
 const OTHER_ATHLETE_ID = 'ath-weekly-load-2';
 const SELF_REPORT = 'athlete_post_session_self_report';
 
-// Noon in Punxsutawney on Sunday 2026-10-04 (EDT, UTC-4).
-const GYM_NOON_OCT_4 = new Date('2026-10-04T16:00:00Z');
-// 10:30pm in Punxsutawney on 2026-10-04 -- already 2026-10-05 in UTC.
-const GYM_EVENING_OCT_4 = new Date('2026-10-05T02:30:00Z');
+// A fixed gym day far from the day this suite runs, on purpose: with a date
+// near "now", a query that wrongly used the server's current_date would agree
+// with the pinned instant by luck and pass. (It did, once: the first draft used
+// the day it was written.) Mid-January keeps clear of daylight-saving changes.
+// Noon in Punxsutawney on 2025-01-15 (EST, UTC-5).
+const GYM_NOON = new Date('2025-01-15T17:00:00Z');
+// 10:30pm in Punxsutawney on 2025-01-15 -- already 2025-01-16 in UTC.
+const GYM_EVENING = new Date('2025-01-16T03:30:00Z');
+
+/** The gym calendar date `days` before 2025-01-15 (negative = after). */
+function gymDaysBefore(days: number): string {
+  const base = Date.UTC(2025, 0, 15);
+  return new Date(base - days * 86_400_000).toISOString().slice(0, 10);
+}
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -235,14 +245,14 @@ afterEach(async () => {
 
 describe('weekly session load on real Postgres', () => {
   test('week 0 is the last 7 gym days, today included; the window ends after week 4', async () => {
-    await addSession({ date: '2026-10-05', rpe: 9, minutes: 100 }); // future: left out
-    await addSession({ date: '2026-10-04', rpe: 5, minutes: 60 }); // today: week 0
-    await addSession({ date: '2026-09-28', rpe: 4, minutes: 50 }); // 6 days back: week 0
-    await addSession({ date: '2026-09-27', rpe: 3, minutes: 40 }); // 7 days back: week 1
-    await addSession({ date: '2026-08-31', rpe: 2, minutes: 30 }); // 34 days back: week 4
-    await addSession({ date: '2026-08-30', rpe: 9, minutes: 100 }); // 35 days back: left out
+    await addSession({ date: gymDaysBefore(-1), rpe: 9, minutes: 100 }); // future: left out
+    await addSession({ date: gymDaysBefore(0), rpe: 5, minutes: 60 }); // today: week 0
+    await addSession({ date: gymDaysBefore(6), rpe: 4, minutes: 50 }); // 6 days back: week 0
+    await addSession({ date: gymDaysBefore(7), rpe: 3, minutes: 40 }); // 7 days back: week 1
+    await addSession({ date: gymDaysBefore(34), rpe: 2, minutes: 30 }); // 34 days back: week 4
+    await addSession({ date: gymDaysBefore(35), rpe: 9, minutes: 100 }); // 35 days back: left out
 
-    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON_OCT_4);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
     expect(byWeek(rows)).toEqual({ 0: 300 + 200, 1: 120, 4: 60 });
     expect(rows.find((row) => row.week_index === 0)?.session_count).toBe(2);
   });
@@ -251,46 +261,46 @@ describe('weekly session load on real Postgres', () => {
     const { rows: [clock] } = await client.query<{ utc_date: string; gym_date: string }>(
       `select ($1::timestamptz)::date::text as utc_date,
               ($1::timestamptz at time zone 'America/New_York')::date::text as gym_date`,
-      [GYM_EVENING_OCT_4.toISOString()],
+      [GYM_EVENING.toISOString()],
     );
-    expect(clock).toEqual({ utc_date: '2026-10-05', gym_date: '2026-10-04' });
+    expect(clock).toEqual({ utc_date: '2025-01-16', gym_date: '2025-01-15' });
 
-    await addSession({ date: '2026-09-28', rpe: 4, minutes: 50 }); // 6 gym days back: week 0
-    await addSession({ date: '2026-10-05', rpe: 9, minutes: 100 }); // tomorrow in the gym: left out
+    await addSession({ date: gymDaysBefore(6), rpe: 4, minutes: 50 }); // 6 gym days back: week 0
+    await addSession({ date: gymDaysBefore(-1), rpe: 9, minutes: 100 }); // tomorrow in the gym: left out
 
-    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_EVENING_OCT_4);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_EVENING);
     expect(byWeek(rows)).toEqual({ 0: 200 });
   });
 
   test('only athlete post-session self-reports with both RPE and minutes are summed', async () => {
-    await addSession({ date: '2026-10-03', rpe: 5, minutes: 60 }); // counts: 300
-    await addSession({ date: '2026-10-03', rpe: 8, minutes: 90, method: 'UNKNOWN' }); // readiness slider era
-    await addSession({ date: '2026-10-03', rpe: 6, minutes: null }); // no minutes
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 60 }); // counts: 300
+    await addSession({ date: gymDaysBefore(1), rpe: 8, minutes: 90, method: 'UNKNOWN' }); // readiness slider era
+    await addSession({ date: gymDaysBefore(1), rpe: 6, minutes: null }); // no minutes
     // (A self-report with no rating cannot exist: the rpe-semantics migration's
     // pilot_sessions_rpe_method_agrees_with_value check refuses it.)
 
-    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON_OCT_4);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
     expect(byWeek(rows)).toEqual({ 0: 300 });
     expect(rows[0].session_count).toBe(1);
   });
 
   test('scoped to the organization and to the athletes asked for', async () => {
-    await addSession({ date: '2026-10-03', rpe: 5, minutes: 60 });
-    await addSession({ date: '2026-10-03', rpe: 9, minutes: 100, orgId: OTHER_ORG_ID });
-    await addSession({ date: '2026-10-03', rpe: 9, minutes: 100, athleteId: OTHER_ATHLETE_ID });
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 60 });
+    await addSession({ date: gymDaysBefore(1), rpe: 9, minutes: 100, orgId: OTHER_ORG_ID });
+    await addSession({ date: gymDaysBefore(1), rpe: 9, minutes: 100, athleteId: OTHER_ATHLETE_ID });
 
-    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON_OCT_4);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
     expect(rows.map((row) => [row.athlete_id, Number(row.week_load)])).toEqual([[ATHLETE_ID, 300]]);
   });
 
   test('real rows through readLoadJumps: a doubled week reads 2.0 against the usual week', async () => {
-    await addSession({ date: '2026-10-02', rpe: 5, minutes: 100 }); // week 0: 500
-    await addSession({ date: '2026-10-03', rpe: 5, minutes: 100 }); // week 0: 500
-    await addSession({ date: '2026-09-25', rpe: 5, minutes: 100 }); // week 1: 500
-    await addSession({ date: '2026-09-18', rpe: 5, minutes: 100 }); // week 2: 500
-    await addSession({ date: '2026-09-11', rpe: 5, minutes: 100 }); // week 3: 500
+    await addSession({ date: gymDaysBefore(2), rpe: 5, minutes: 100 }); // week 0: 500
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 100 }); // week 0: 500
+    await addSession({ date: gymDaysBefore(9), rpe: 5, minutes: 100 }); // week 1: 500
+    await addSession({ date: gymDaysBefore(16), rpe: 5, minutes: 100 }); // week 2: 500
+    await addSession({ date: gymDaysBefore(23), rpe: 5, minutes: 100 }); // week 3: 500
 
-    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON_OCT_4);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
     expect(readLoadJumps(ORG_ID, rows)).toEqual([
       {
         athlete_id: ATHLETE_ID,
