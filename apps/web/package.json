@@ -201,6 +201,7 @@
     "test:migrations:athlete-mental-skills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMentalSkills.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-injuries": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteInjuries.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-contact-caps": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteContactCaps.pg.test.ts --testTimeout=180000",
+    "test:migrations:adult-pathway-module": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/adultPathway.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-pathway": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athletePathwayMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:video-clip-tags": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoClipTags.pg.test.ts --testTimeout=180000",
     "test:migrations:sparring-exposure-contact-stage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sparringExposureContactStage.pg.test.ts --testTimeout=180000",

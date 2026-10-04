@@ -143,12 +143,14 @@ describe('the promoted denylists are pinned exactly', () => {
   // pinned exactly, the same way MINOR_CIRCLE is -- shrinking a denylist is
   // an edit somebody has to make in two places, on purpose, with a diff
   // that says so.
-  it('the forbidden tables are exactly the fifteen clinical/safety/conduct tables', () => {
+  it('the forbidden tables are exactly the sixteen clinical/safety/conduct tables', () => {
     expect([...PUBLIC_SURFACE_FORBIDDEN_TABLES].sort()).toEqual([
       'pilot.assessments',
       // A coach's sparring limits for one child (map item 15).
       'pilot.athlete_contact_caps',
       'pilot.athlete_injuries',
+      // Why a coach let a minor onto the adult pathway (map item 17).
+      'pilot.athlete_pathway_minor_allowances',
       'pilot.coach_observations',
       'pilot.compliance_violations',
       'pilot.documents',
