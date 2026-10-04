@@ -23,6 +23,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { ATHLETE_COMPETITION_HISTORY_SQL } from './externalCompetition';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -57,6 +59,7 @@ let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let competitionSql: string;
 let baseSchemaSql: string;
+let deletionSql: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -150,6 +153,7 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   competitionSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_external_competition_migration.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  deletionSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -231,6 +235,71 @@ describe('competition results migration', () => {
         `update pilot.external_competition_entries set result = 'won', lesson_note = '' where organization_id = $1 and entry_id = 'entry-1'`,
         [ORG_ID],
       );
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// Per-athlete bout history (map item 10). The statement is the module's own
+// export, run here against the real migrations -- not restated -- so a column
+// or predicate that drifts from the schema fails this suite.
+describe('athlete bout history read', () => {
+  test('one athlete, entered only, newest first; deleted athletes and other gyms return nothing', async () => {
+    const client = await freshDatabase('compresults_history');
+    try {
+      await client.query(migrationSql);
+      await client.query(deletionSql);
+      const OTHER_ATHLETE = 'ath-compresults-2';
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Athlete', '2011-01-01', '110', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_ID, OTHER_ATHLETE, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.external_competitions
+           (organization_id, competition_id, competition_name, competition_date, status, location, created_by_account_id)
+         values ($1, 'comp-old', 'Spring Box-Off', '2026-03-01', 'completed', 'Altoona', $2),
+                ($1, 'comp-new', 'Golden Gloves Regional', '2026-09-01', 'completed', '', $2),
+                ($1, 'comp-next', 'Winter Classic', '2026-12-01', 'planned', '', $2),
+                ($1, 'comp-gone', 'Withdrawn Show', '2026-10-01', 'planned', '', $2)`,
+        [ORG_ID, ADMIN_ID],
+      );
+      await client.query(
+        `insert into pilot.external_competition_entries
+           (organization_id, entry_id, competition_id, athlete_id, status, result, lesson_note, created_by_account_id)
+         values ($1, 'e-old', 'comp-old', $2, 'entered', 'lost', 'dropped the right hand', $4),
+                ($1, 'e-new', 'comp-new', $2, 'entered', 'won', '', $4),
+                ($1, 'e-next', 'comp-next', $2, 'entered', null, '', $4),
+                ($1, 'e-gone', 'comp-gone', $2, 'withdrawn', null, '', $4),
+                ($1, 'e-other', 'comp-new', $3, 'entered', 'lost', 'other athlete lesson', $4)`,
+        [ORG_ID, ATHLETE_ID, OTHER_ATHLETE, ADMIN_ID],
+      );
+
+      const history = await client.query(ATHLETE_COMPETITION_HISTORY_SQL, [ORG_ID, ATHLETE_ID]);
+      expect(history.rows.map((row) => [row.entry_id, row.competition_date, row.competition_status, row.result, row.lesson_note]))
+        .toEqual([
+          ['e-next', '2026-12-01', 'planned', null, ''],
+          ['e-new', '2026-09-01', 'completed', 'won', ''],
+          ['e-old', '2026-03-01', 'completed', 'lost', 'dropped the right hand'],
+        ]);
+      expect(history.rows[2]).toMatchObject({ competition_name: 'Spring Box-Off', location: 'Altoona' });
+
+      // Same athlete id, another gym: nothing.
+      expect((await client.query(ATHLETE_COMPETITION_HISTORY_SQL, [OTHER_ORG_ID, ATHLETE_ID])).rows).toEqual([]);
+
+      // Deleted athlete: the entry rows are still stored, the read returns none.
+      await client.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect((await client.query(ATHLETE_COMPETITION_HISTORY_SQL, [ORG_ID, ATHLETE_ID])).rows).toEqual([]);
+      const stored = await client.query(
+        `select count(*)::int as n from pilot.external_competition_entries where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(stored.rows[0].n).toBe(4);
     } finally {
       await client.end();
     }

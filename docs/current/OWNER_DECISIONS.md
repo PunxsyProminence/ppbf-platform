@@ -164,6 +164,182 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-013 -- Sparring cap staff note: it stays on the clearance board, labelled as holding no medical details
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the sparring
+caps lane, "Sparring stages + coach-set caps (after sparring screen)"
+(`~/.claude/projects/C--Dev/42a7f511-6af8-4339-828d-fed4471df7fe.jsonl`, tool use
+`toolu_01W5qUgaM3sn4JLPN57uowVz`; asked 2026-10-04T07:14:35.620Z, answered
+2026-10-04T14:28:30.892Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-004 (warn only over a cap); edits no earlier
+entry.
+
+Asked: "The Sparring cap panel sits on the clearance board
+(/coach/sports-medicine), whose 2026-08-15 rule bars clinical notes. Each cap
+can carry an optional free-text staff note (up to 1000 characters), which could
+end up holding medical reasons ... Which do you choose? (A, Recommended) Drop the
+note from this board ... (B) Keep the note, labelled 'no medical details here',
+shown on the board. (C) Keep the note but move the whole Sparring cap panel off
+the clearance board to its own coach page." Jason chose *"Keep note, labelled"*
+(not marked Recommended; the recommended option was "Drop note here"), option
+text "Note stays on the board with a label 'staff only - no medical details
+here'. Relies on coaches following the label." **Ruling: the cap's free-text
+staff note stays on the clearance board, with the label "staff only - no medical
+details here".** The other options were "Drop note here (Recommended)" and "Move
+panel to own page".
+
+---
+
+## OD-2026-10-04-012 -- Weekly training-load "look at this athlete" flag: raised at 2.0x the athlete's usual week, and the coach sees both the numbers and the multiple
+
+**Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (two questions)
+in the weekly load flag lane, "Weekly training-load "look at this athlete" flag"
+(`~/.claude/projects/C--Dev/d59d76cc-f07f-4ef1-9b33-643c9ea17385.jsonl`, tool use
+`toolu_01NFYw2Kn4pnqYruWKLMCwRz`; asked 2026-10-04T08:01:47.288Z, answered
+2026-10-04T14:30:14.116Z). Read by script from that transcript (records pass,
+2026-10-04). New; edits no earlier entry.
+
+**Threshold.** Asked: "Load-jump flag rule (acute:chronic, Rule 6 'load_jumped'):
+which threshold should raise the coach prompt?" (acute = last 7 days' total
+session load, RPE x minutes; chronic = average weekly load over the 4 weeks
+before, needing at least 3 of those 4 weeks logged; a prompt only, never a
+score, limit or order). Jason chose *"2.0x"* (the label in the transcript uses
+the multiplication sign), not marked Recommended, option text "Official: ratio
+>= 2.0. Plain: only when the week is double the usual. Few prompts, only big
+jumps." **Ruling: the load-jump prompt is raised when the athlete's last 7 days'
+load is at least 2.0 times their usual weekly load.** The other options were
+"1.5x (Recommended)" and "1.3x".
+
+**Numbers shown.** Asked: "Should the athlete's weekly numbers (this week's load
+and their usual week) show in the prompt, or just the multiple?" Jason chose
+*"Show both (Recommended)"*, option text "Official: evidence shows acute load,
+chronic weekly average, ratio, weeks of data, labelled 'unvalidated'. Plain:
+coach can check the maths by hand, same as the other suggestions do." **Ruling:
+the prompt shows the acute load, the chronic weekly average, the ratio and the
+weeks of data, labelled 'unvalidated'.** The other option was "Multiple only".
+
+---
+
+## OD-2026-10-04-011 -- Mental skills track: imagery from the Imagery Rehearsal drill, athletes type their own self-talk cues, minors may use it and linked guardians read the log
+
+**Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (three questions)
+in the mental skills lane, "Mental skills track (goals, imagery, self-talk)"
+(`~/.claude/projects/C--Dev/41ac7937-10a2-407c-ac96-6adbfc0e4eab.jsonl`, tool use
+`toolu_01UKWjmGqvKHDbgaFum8GEtn`; asked 2026-10-04T03:04:47.224Z, answered
+2026-10-04T03:12:03.625Z). Read by script from that transcript (records pass,
+2026-10-04). New; edits no earlier entry.
+
+**Imagery content.** Asked: "Q1 (official): Imagery session content source for
+the athlete mental-skills track?" Jason chose *"Imagery Rehearsal drill
+(Recommended)"*, option text "Official: reuse the seed drill 'Imagery Rehearsal'
+(SK-REV-02) authored steps, shown to you for approval first. Plain: the drill
+already in the library -- pick one technique, picture it, then do it. Already
+written, nothing invented." **Ruling: imagery sessions use the steps of the
+Imagery Rehearsal drill (SK-REV-02), shown to Jason for approval first.** The
+other options were "More VIZ scenarios" and "Jason writes scripts".
+
+**Self-talk.** Asked: "Q2 (official): Self-talk cue entry model: athlete free
+text (max ~60 chars, tagged instructional or motivational) vs. selection from a
+coach-authored cue list?" Jason chose *"Athlete types own (Recommended)"*, option
+text "Official: free text, short limit, athlete tags it 'technique' or 'effort'
+(the split the self-talk review supports); coach can read it. Plain: their own
+words stick better; coach sees exactly what they wrote." **Ruling: the athlete
+types their own short self-talk cue and tags it; the coach can read it.** The
+option text says the tag is 'technique' or 'effort'; the question text says
+"instructional or motivational"; the transcript does not reconcile the two
+labels. The other options were "Pick from coach list" and "Both".
+
+**Minors.** Asked: "Q3 (official): Minor athletes' access and guardian
+visibility for mental-skills entries?" Jason chose *"Minors yes, guardian sees
+(Recommended)"*, option text "Official: all athletes; linked guardian gets read
+access to the log, same as development blocks. Plain: kids use it; parents can
+see what they logged, matching how blocks already work." **Ruling: minor
+athletes may use the mental skills track and their linked guardian may read
+their log.** The other options were "Minors yes, coach only" and "Adults only for
+now".
+
+---
+
+## OD-2026-10-04-010 -- Adult pathway placement: minors only with a coach flag; the coach gives a reason; no date of birth counts as a minor
+
+**Provenance: PRIMARY.** Jason's answers to two AskUserQuestions in the adult
+pathway lane, "Adult pathway stages (Foundation -> Elite)"
+(`~/.claude/projects/C--Dev/d32d7163-448d-4f65-a425-7b2496e44dcc.jsonl`). First: tool use
+`toolu_015eLo5rBT6MmVGuawxHMFQu`, asked 2026-10-04T05:00:10.999Z, answered
+2026-10-04T14:27:27.250Z. Second: tool use `toolu_01Fb2e567Z4GmDZHxMMCRwK8`,
+asked 2026-10-04T14:27:40.630Z, answered 2026-10-04T14:31:10.876Z. Read by
+script from that transcript (records pass, 2026-10-04). Extends
+OD-2026-10-04-002 (stage source, names and goals); edits no earlier entry.
+
+**Who may be placed.** Asked: "Eligibility for pathway placement: who may a coach
+place on the adult pathway (Foundation -> Elite)? A) Adults only ... (Recommended
+...). B) Any age -- coach decides. C) Minors allowed only when a coach sets a
+per-athlete flag." Jason chose *"C) Minors with a coach flag"*, option text
+"Kids allowed only after a coach turns on a per-athlete switch. Adds a stored
+flag (bigger build)." **Ruling: a minor may be placed on the adult pathway only
+after a coach sets a per-athlete flag.** The other options were "A) Adults only
+(Recommended)" and "B) Any age, coach decides".
+
+**Flag details.** Asked: "Coach flag details for option C: (1) When a coach
+switches the pathway on for a minor, must they write a short reason ...? (2) An
+athlete with NO date of birth on file is treated as a minor (the app's existing
+rule) -- so they also need the flag. OK? Recommended: reason required;
+unknown-dob treated as minor." Jason chose *"Reason required; unknown = minor
+(Recommended)"*, option text "Coach writes why; no-birthday athletes need the
+flag too. Every switch-on and switch-off is kept on record." **Ruling: switching
+the flag on requires a written reason; an athlete with no date of birth on file
+is treated as a minor and needs the flag; every switch-on and switch-off is kept
+on record.** The other options were "No reason; unknown = minor" and "Reason
+required; unknown = adult".
+
+---
+
+## OD-2026-10-04-009 -- Tagged clips: staff clip lists hide the title and note of a clip whose playback a consent block stops
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the video
+tagging lane, "Video tagging: sparring and bout clips to athletes"
+(`~/.claude/projects/C--Dev/adc36815-821b-4839-a202-abd4f0051cea.jsonl`, tool use
+`toolu_017DdpKS6iEwchEwEH2gYw8J`; asked 2026-10-04T07:32:18.964Z, answered
+2026-10-04T14:28:54.816Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-003 (its multi-athlete consent ruling, "any
+block blocks all"); edits no earlier entry.
+
+Asked: "Should staff clip lists hide the title and note of a clip whose playback
+a consent block stops? (Recommended: A, hide; it matches your 'any block blocks
+all' rule.)" Jason chose *"A) Hide (Recommended)"*, option text "Plain: if a
+clip can't be played because one kid's parent said no to video, it doesn't show
+in any coach's clip list either. The title can't name that child to other
+coaches. It comes back on its own if consent is restored or that kid is
+untagged." **Ruling: a staff clip list hides the title and note of a clip whose
+playback a consent block stops.** The other option was "B) Show".
+
+Built in #1190 (open at the time of this record).
+
+---
+
+## OD-2026-10-04-008 -- Injury family view: athletes and guardians keep all the built fields (training or competition, who reported it, expected and actual return); staff notes stay hidden
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the injury
+record lane, "Injury log (body area, type, return)"
+(`~/.claude/projects/C--Dev/9863d78a-dd0d-44c7-a482-ca1eaaf334d6.jsonl`, tool use
+`toolu_01TQHcqR6JrnUgJkUF8PUK7F`; asked 2026-10-04T07:35:53.159Z, answered
+2026-10-04T14:29:02.283Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-001 (its Visibility ruling named "date, body
+area, type, return date"); edits no earlier entry.
+
+Asked: "Family injury view, field set: ... The built view also shows (a)
+training vs competition and (b) who reported it (athlete / parent / coach saw it
+/ clinician stated it), plus the actual return date. Keep those extra fields for
+athletes and guardians? Recommended: Keep all." Jason chose *"Keep all
+(Recommended)"*, option text "Families see date, body area, type,
+training/competition, who reported it, expected return and actual return.
+Nothing changes in PR C." **Ruling: the athlete and guardian injury view shows
+date, body area, type, training or competition, who reported it, expected return
+and actual return; staff notes remain hidden.** The other option was "Only the
+four".
+
+---
+
 ## OD-2026-10-04-007 -- Jump test and coach skill ratings: 1-5 rating wording draft approved; jump test choice not settled
 
 **Provenance: PRIMARY (typed reply, not an AskUserQuestion).** Jason's reply in

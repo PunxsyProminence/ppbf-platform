@@ -5,6 +5,7 @@ import {
   FAMILY_MEMBER_CODES,
   SKILL_FAMILY_IDS,
   SKILL_FAMILY_NAMES,
+  SKILL_FAMILY_PREREQUISITES,
   UNMAPPED_SKILL_CODES,
   isSkillFamilyId,
   memberCodesForFamily,
@@ -241,6 +242,43 @@ describe('an unexpandable family refuses instead of returning nothing', () => {
     } catch (error) {
       expect((error as { code?: string }).code).toBe('UNKNOWN_SKILL_FAMILY');
       expect((error as { status?: number }).status).toBe(400);
+    }
+  });
+});
+
+describe('SKILL_FAMILY_PREREQUISITES', () => {
+  /*
+    Pinned to the Prerequisites column of the Skill_Index sheet in
+    00_MASTER_SKILL_REGISTRY.xlsx, as read 2026-10-03 and confirmed by Jason
+    as the D1-A source the same day. A change here is a change to which skill
+    an athlete is told comes first, and must arrive as a deliberate edit to
+    this table, not a side effect.
+  */
+  test('matches the registry, family by family', () => {
+    expect(SKILL_FAMILY_PREREQUISITES).toEqual({
+      'SKILL-01': { kind: 'families', families: [] },
+      'SKILL-02': { kind: 'families', families: ['SKILL-01'] },
+      'SKILL-03': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+      'SKILL-04': { kind: 'families', families: ['SKILL-01'] },
+      'SKILL-05': { kind: 'families', families: ['SKILL-01', 'SKILL-03', 'SKILL-04'] },
+      'SKILL-06': { kind: 'families', families: ['SKILL-01'] },
+      'SKILL-07': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+      'SKILL-08': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+      'SKILL-09': { kind: 'families', families: ['SKILL-02', 'SKILL-08'] },
+      'SKILL-10': { kind: 'families', families: ['SKILL-01', 'SKILL-02', 'SKILL-03', 'SKILL-04', 'SKILL-05'] },
+      'SKILL-11': { kind: 'across_all', registryText: 'core skills seeded' },
+      'SKILL-12': { kind: 'across_all', registryText: 'registry + film inputs' },
+    });
+  });
+
+  test('every family has an entry and no family needs itself', () => {
+    for (const id of SKILL_FAMILY_IDS) {
+      const entry = SKILL_FAMILY_PREREQUISITES[id];
+      expect(entry).toBeDefined();
+      if (entry.kind === 'families') {
+        expect(entry.families).not.toContain(id);
+        for (const p of entry.families) expect(isSkillFamilyId(p)).toBe(true);
+      }
     }
   });
 });

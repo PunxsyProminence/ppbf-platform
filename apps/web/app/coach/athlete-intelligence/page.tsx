@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import AthleteDrillExposurePanel from '@/components/AthleteDrillExposurePanel';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -364,6 +365,10 @@ export default function AthleteIntelligencePage() {
               </p>
             </>
           )}
+
+          {/* DRILL EXPOSURE HAS NO OTHER SCREEN, so unlike the three sources above it is rendered
+              here in full. Its own read, so a failed formula read does not hide it. */}
+          {athleteId && <AthleteDrillExposurePanel key={athleteId} athleteId={athleteId} />}
 
           <div className="mt-[var(--s5)]">
             <Link href="/coach/transfer-check" className="btn btn--ghost">Transfer Check</Link>{' '}
