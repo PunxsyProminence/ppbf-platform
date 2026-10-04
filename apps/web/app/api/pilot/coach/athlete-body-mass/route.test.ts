@@ -153,6 +153,15 @@ beforeEach(() => {
       return hit ? { context_id: `ctx-${hit.observation_id}`, observed_at: hit.observed_at } : null;
     }
 
+    if (text.includes('from pilot.guardian_links')) {
+      // acct-parent is ath-youth's linked parent: they may READ the weight
+      // (parent route), never correct it.
+      const [organizationId, athleteId, accountId] = values;
+      return organizationId === 'org-1' && athleteId === 'ath-youth' && accountId === 'acct-parent'
+        ? { athlete_id: athleteId }
+        : null;
+    }
+
     if (text.includes('from pilot.coach_coverage')) {
       const [organizationId, athleteId, coachId] = values;
       const windowed = text.includes('expires_at > now()');
@@ -465,7 +474,7 @@ describe('correcting a weight: everyone else is refused and nothing is written',
     ['coach whose coverage has lapsed', { accountId: 'coach-lapsed' }, 'ath-youth'],
     ['organization admin', { accountId: 'acct-admin', role: 'organization_admin' as const }, 'ath-youth'],
     ['legacy admin role', { accountId: 'acct-admin', role: 'admin' as const }, 'ath-youth'],
-    ['parent', { accountId: 'acct-parent', role: 'parent' as const }, 'ath-youth'],
+    ['the athlete's linked parent', { accountId: 'acct-parent', role: 'parent' as const }, 'ath-youth'],
     ['platform owner', { accountId: 'acct-owner', role: 'platform_owner' as const }, 'ath-youth'],
     ['the athlete (their path is the athlete route)', { accountId: 'acct-ath', role: 'athlete' as const, athleteId: 'ath-youth' }, 'ath-youth'],
     ['another athlete', { accountId: 'acct-other', role: 'athlete' as const, athleteId: 'ath-adult' }, 'ath-youth'],
