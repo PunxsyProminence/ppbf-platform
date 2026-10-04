@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -10,14 +10,19 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // 7 days. Rendered closed inside each athlete row of the clearance board; it
 // reads nothing until a coach opens it.
 //
-// COACH-SET, NEVER APP-MADE. The form starts empty and stays empty until a
-// coach chooses; the app offers no suggested stage and no suggested count.
-// "No cap set" is said as exactly that. A cap is a limit, not a clinical note,
-// so it sits within the 2026-08-15 rule for this board.
+// COACH-SET, NEVER APP-MADE. With no cap set the form is empty and the app
+// offers no suggested stage or count; "No cap set" is said as exactly that.
+// With a cap set, the form starts from THAT cap -- the coach's own numbers --
+// because saving replaces the whole cap: an empty field would otherwise erase
+// the limit the coach did not mean to touch.
+//
+// THE NOTE (Jason, 2026-10-04: "Keep note, labelled"). A cap is a limit, not
+// a clinical note, so it sits within the 2026-08-15 rule for this board. The
+// optional staff note stays, shown here, labelled to keep medical detail out.
 //
 // WARN, NEVER BLOCK (Jason, 2026-10-04: "Warn only"). Nothing here stops
-// sparring; the entry screen will show this cap and warn when an entry goes
-// over it.
+// sparring. The sparring screen does not check caps yet; the text below says
+// so rather than promise a warning that is not live.
 //
 // Authorization is the route's: this panel sends the form and shows what the
 // server answers.
@@ -54,7 +59,22 @@ function describeCap(cap: CapRow): string[] {
 function isCapRow(value: unknown): value is CapRow {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
-  return typeof row.cap_id === 'string' && typeof row.set_at === 'string';
+  return typeof row.cap_id === 'string'
+    && typeof row.set_at === 'string'
+    && typeof row.set_by_name === 'string'
+    && typeof row.note === 'string'
+    && (row.highest_allowed_stage === null
+      || (typeof row.highest_allowed_stage === 'string'
+        && (CAP_STAGE_ORDER as readonly string[]).includes(row.highest_allowed_stage)))
+    && (row.max_hard_open_sessions_per_7_days === null
+      || (typeof row.max_hard_open_sessions_per_7_days === 'number'
+        && Number.isInteger(row.max_hard_open_sessions_per_7_days)));
+}
+
+/** A cap in force must actually limit something; "set" with both empty is malformed. */
+function isSetCap(value: unknown): value is CapRow {
+  return isCapRow(value)
+    && (value.highest_allowed_stage !== null || value.max_hard_open_sessions_per_7_days !== null);
 }
 
 export default function ContactCapPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
@@ -64,9 +84,26 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // Each read gets a number; only the newest read of an OPEN panel may land.
+  // A reply that arrives after the coach closed the panel, or after a newer
+  // read started, is dropped -- so a panel never reopens itself.
+  const latestRead = useRef(0);
+  const isOpen = useRef(false);
+
+  const fillForm = useCallback((cap: CapRow | null) => {
+    setStage(cap?.highest_allowed_stage ?? '');
+    setSessions(cap?.max_hard_open_sessions_per_7_days !== null && cap?.max_hard_open_sessions_per_7_days !== undefined
+      ? String(cap.max_hard_open_sessions_per_7_days)
+      : '');
+    setNote(cap?.note ?? '');
+  }, []);
 
   const read = useCallback(async () => {
+    const ticket = latestRead.current + 1;
+    latestRead.current = ticket;
+    isOpen.current = true;
     setReading({ state: 'loading' });
+    const landed = () => isOpen.current && latestRead.current === ticket;
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/coach/athlete-contact-caps?athlete_id=${encodeURIComponent(athleteId)}`,
@@ -79,16 +116,30 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
         || payload.ok !== true
         || !Array.isArray(payload.history)
         || !payload.history.every(isCapRow)
-        || (payload.cap !== null && !isCapRow(payload.cap))
+        || !('cap' in payload)
+        || (payload.cap !== null && !isSetCap(payload.cap))
       ) {
         throw new Error('unreadable');
       }
-      setReading({ state: 'loaded', cap: payload.cap as CapRow | null, history: payload.history as CapRow[] });
+      if (!landed()) return;
+      const cap = payload.cap as CapRow | null;
+      setReading({ state: 'loaded', cap, history: payload.history as CapRow[] });
+      fillForm(cap);
     } catch {
       // Unknown is never shown as "no cap set".
-      setReading({ state: 'unavailable' });
+      if (landed()) setReading({ state: 'unavailable' });
     }
-  }, [athleteId]);
+  }, [athleteId, fillForm]);
+
+  const toggle = useCallback(() => {
+    setRefusal(null);
+    if (isOpen.current) {
+      isOpen.current = false;
+      setReading({ state: 'closed' });
+    } else {
+      void read();
+    }
+  }, [read]);
 
   const save = useCallback(
     async (clear: boolean) => {
@@ -96,7 +147,8 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
       const trimmed = sessions.trim();
       let count: number | null = null;
       if (!clear && trimmed !== '') {
-        count = Number(trimmed);
+        // Digits only: "1e2" or "0x10" are not something a coach typed as a count.
+        count = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
         // No ceiling of the app's own: any whole number from 0 is the coach's
         // to choose. The only bound is what the database column can hold.
         if (!Number.isInteger(count) || count < 0 || count > 2147483647) {
@@ -126,9 +178,7 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
           );
           return;
         }
-        setStage('');
-        setSessions('');
-        setNote('');
+        // The read that follows fills the form from the cap now in force.
         await read();
       } catch {
         setRefusal('The cap was not saved — the connection failed. Nothing changed.');
@@ -148,8 +198,8 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
         type="button"
         className="btn btn--ghost"
         aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => (open ? setReading({ state: 'closed' }) : void read())}
+        aria-controls={open ? panelId : undefined}
+        onClick={toggle}
       >
         {open ? 'Hide sparring cap' : 'Sparring cap'}
       </button>
@@ -230,18 +280,22 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
                 </div>
               </div>
               <div className="field mt-[var(--s3)]">
-                <label className="t-label" htmlFor={`${panelId}-note`}>Note for staff (optional)</label>
+                <label className="t-label" htmlFor={`${panelId}-note`}>Staff note (optional)</label>
                 <input
                   id={`${panelId}-note`}
                   className="input"
                   maxLength={1000}
+                  aria-describedby={`${panelId}-note-hint`}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                 />
+                <p id={`${panelId}-note-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
+                  Shown on this board. No medical details here — those belong in the clearance record.
+                </p>
               </div>
               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>
-                Saving replaces the cap in force; the old one stays in the history below. Going over a cap
-                warns on the sparring screen and does not block — the coach decides.
+                Saving replaces the cap in force; the old one stays in the history below. A cap never
+                blocks sparring — the coach decides. The sparring screen does not check caps yet.
               </p>
               <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                 <button
@@ -262,10 +316,13 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
 
               {refusal ? (
                 <div className="mt-[var(--s3)]" role="alert">
-                  <span className="stamp stamp--brass stamp--flat">
-                    <i aria-hidden="true">▲</i> NOT SAVED
-                  </span>
-                  <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
+                  {/* Plain body text, not the brass stamp: brass ink on this
+                      paper panel reads below text contrast. ▲ is the
+                      CANNOT_BE_DONE glyph, never the medical red. */}
+                  <p className="t-body font-semibold">
+                    <span aria-hidden="true">▲ </span>NOT SAVED
+                  </p>
+                  <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
                 </div>
               ) : null}
 
