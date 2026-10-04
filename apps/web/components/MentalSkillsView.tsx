@@ -21,11 +21,28 @@ export interface MentalGoal {
 }
 
 export interface MentalSkillsData {
-  current_cue: { cue_text: string; cue_kind: SelfTalkCueKind; logged_on: string } | null;
+  current_cue: { entry_id?: string; cue_text: string; cue_kind: SelfTalkCueKind; logged_on: string } | null;
   imagery_sessions: Array<{ entry_id: string; minutes: number; logged_on: string }>;
 }
 
 export type LoadState = 'loading' | 'loaded' | 'unavailable';
+
+/** A Remove button next to an entry. Only the athlete's own page passes
+ * onRemove (OD-2026-10-04-023: the athlete removes their own, nobody else);
+ * without it the view stays read-only. */
+function RemoveButton({ entryId, label, onRemove, disabled }: {
+  readonly entryId: string | undefined;
+  readonly label: string;
+  readonly onRemove: ((entryId: string) => void) | undefined;
+  readonly disabled: boolean;
+}) {
+  if (!onRemove || !entryId) return null;
+  return (
+    <button type="button" onClick={() => onRemove(entryId)} disabled={disabled} aria-label={label} className="btn btn--ghost ml-[var(--s3)] disabled:opacity-50">
+      Remove
+    </button>
+  );
+}
 
 export default function MentalSkillsView({
   state,
@@ -33,12 +50,16 @@ export default function MentalSkillsView({
   goals,
   goalsState,
   subjectLabel,
+  onRemove,
+  removing = false,
 }: {
   readonly state: LoadState;
   readonly data: MentalSkillsData | null;
   readonly goals: readonly MentalGoal[];
   readonly goalsState: LoadState;
   readonly subjectLabel: string;
+  readonly onRemove?: (entryId: string) => void;
+  readonly removing?: boolean;
 }) {
   return (
     <div className="space-y-[var(--s5)]">
@@ -74,6 +95,7 @@ export default function MentalSkillsView({
                 <p className="t-label m-0">
                   {CUE_KIND_LABELS[data.current_cue.cue_kind] ?? data.current_cue.cue_kind}
                   {formatGymDayShort(data.current_cue.logged_on) ? ` · set ${formatGymDayShort(data.current_cue.logged_on)}` : ''}
+                  <RemoveButton entryId={data.current_cue.entry_id} label="Remove this cue" onRemove={onRemove} disabled={removing} />
                 </p>
               </>
             ) : (
@@ -90,6 +112,12 @@ export default function MentalSkillsView({
                 {data.imagery_sessions.map((session) => (
                   <li key={session.entry_id} className="t-data">
                     {formatGymDayShort(session.logged_on) ?? session.logged_on}: {session.minutes} min
+                    <RemoveButton
+                      entryId={session.entry_id}
+                      label={`Remove the ${session.minutes} min session from ${formatGymDayShort(session.logged_on) ?? session.logged_on}`}
+                      onRemove={onRemove}
+                      disabled={removing}
+                    />
                   </li>
                 ))}
               </ul>

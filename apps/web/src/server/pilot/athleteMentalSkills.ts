@@ -7,7 +7,7 @@ import { gymDayIso, type GymTimeInput } from '../../lib/gymTime';
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
-import { ForbiddenError, ValidationError } from './errors';
+import { ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 // Athlete mental skills (map item 21): the athlete's own self-talk cue and a
 // log of the short imagery sessions they did.
@@ -18,6 +18,12 @@ import { ForbiddenError, ValidationError } from './errors';
 // record or a covering coach, and the org admin. platform_owner and board are
 // refused there. Unlike the wellness check-in read (org-wide for any coach by
 // owner decision 2026-09-22), nothing here widens that gate.
+//
+// REMOVE (OD-2026-10-04-023). The athlete may remove their own entry, and
+// nobody else may. Removal HIDES the entry from every read; the row stays,
+// with removed_at/removed_by, and the removal has its own audit record. There
+// is no edit. Removed entries still count toward the daily limit, so add and
+// remove cannot be used to get past it.
 //
 // WHAT THIS MODULE REFUSES TO COMPUTE. No score, no adherence percentage, no
 // weekly total against a target, no judgement of the cue. Reads return what
@@ -40,6 +46,8 @@ export const IMAGERY_CONTENT_KEYS = ['imagery-rehearsal'] as const;
 /** Entries of both kinds per athlete per gym day. Far above real use; it only
  * stops a script on one session from filling the table. */
 export const DAILY_ENTRY_LIMIT = 20;
+
+const ENTRY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
@@ -211,8 +219,49 @@ export async function logImagerySession(
   ).rows[0]);
 }
 
+/**
+ * The athlete removes one of their own entries. Self-only, like the writes:
+ * the update is scoped to the session's own athlete, so another athlete's
+ * entry, an already-removed entry and an unknown id all match nothing and get
+ * the same 404 -- the reply never says whether someone else's entry exists.
+ * The update and its audit record share one transaction. The audit details
+ * carry the athlete, kind and day, never the athlete's words.
+ */
+export async function removeMentalSkillsEntry(actor: ActorIdentity, entryId: unknown): Promise<{ entry_id: string }> {
+  const athleteId = await requireSelfAthlete(actor);
+  if (typeof entryId !== 'string' || !ENTRY_ID_PATTERN.test(entryId)) {
+    throw new ValidationError('entry_id must be an entry id.');
+  }
+
+  return withTransaction(async (client) => {
+    const removed = await client.query<{ entry_id: string; kind: string; logged_on: string }>(
+      `update pilot.athlete_mental_skill_entries
+       set removed_at = now(), removed_by = $4
+       where organization_id = $1 and athlete_id = $2 and entry_id = $3::uuid and removed_at is null
+       returning entry_id::text as entry_id, kind, logged_on::text as logged_on`,
+      [actor.organizationId, athleteId, entryId, actor.accountId],
+    );
+    const row = removed.rows[0];
+    if (!row) throw new NotFoundError('That entry was not found.', 'MENTAL_SKILLS_ENTRY_NOT_FOUND');
+
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'athlete_mental_skill_entry',
+        entity_id: row.entry_id,
+        details: { athlete_id: athleteId, kind: row.kind, logged_on: row.logged_on, action: 'removed' },
+      },
+      client,
+    );
+    return { entry_id: row.entry_id };
+  });
+}
+
 /** One athlete's current cue and recent imagery sessions, for anyone the
- * per-athlete gate admits. The gate runs before any row is read. */
+ * per-athlete gate admits. Removed entries are never returned, to anyone. The gate runs before any row is read. */
 export async function readMentalSkills(actor: ActorIdentity, athleteId: string): Promise<MentalSkillsView> {
   await assertActorCanAccessAthlete(actor, athleteId);
 
@@ -220,7 +269,7 @@ export async function readMentalSkills(actor: ActorIdentity, athleteId: string):
     queryOne<SelfTalkCue>(
       `select entry_id::text as entry_id, cue_text, cue_kind, logged_on::text as logged_on
        from pilot.athlete_mental_skill_entries
-       where organization_id = $1 and athlete_id = $2 and kind = 'self_talk_cue'
+       where organization_id = $1 and athlete_id = $2 and kind = 'self_talk_cue' and removed_at is null
        order by created_at desc, entry_id desc
        limit 1`,
       [actor.organizationId, athleteId],
@@ -228,7 +277,7 @@ export async function readMentalSkills(actor: ActorIdentity, athleteId: string):
     query<ImagerySessionEntry>(
       `select entry_id::text as entry_id, minutes, content_key, logged_on::text as logged_on
        from pilot.athlete_mental_skill_entries
-       where organization_id = $1 and athlete_id = $2 and kind = 'imagery_session'
+       where organization_id = $1 and athlete_id = $2 and kind = 'imagery_session' and removed_at is null
        order by created_at desc, entry_id desc
        limit $3`,
       [actor.organizationId, athleteId, RECENT_SESSIONS_LIMIT],

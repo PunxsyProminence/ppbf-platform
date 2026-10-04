@@ -4,6 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import {
   logImagerySession,
   readMentalSkills,
+  removeMentalSkillsEntry,
   setSelfTalkCue,
 } from '@/src/server/pilot/athleteMentalSkills';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -14,7 +15,9 @@ export const dynamic = 'force-dynamic';
 
 // Athlete mental skills, family side (map item 21). GET: the athlete reads
 // their own; a guardian names which linked child. POST: the athlete only,
-// for their own record -- there is no athlete_id to aim at anyone else.
+// for their own record -- there is no athlete_id to aim at anyone else. The
+// same holds for {action: 'remove', entry_id}: the athlete hides one of their
+// own entries (soft remove, OD-2026-10-04-023); nobody else removes anything.
 // Staff read through /api/pilot/coach/mental-skills. The access rule lives in
 // athleteMentalSkills.ts, not here.
 
@@ -56,7 +59,10 @@ export async function POST(request: NextRequest) {
 
     const parsed: unknown = await request.json().catch(() => ({}));
     const body = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
-    // The module writes the entry and its audit record in one transaction.
+    // The module writes the entry (or the removal) and its audit record in one transaction.
+    if (body.action === 'remove') {
+      return NextResponse.json(await removeMentalSkillsEntry(principal, body.entry_id));
+    }
     if (body.kind === 'self_talk_cue') {
       const cue = await setSelfTalkCue(principal, { cueText: body.cue_text, cueKind: body.cue_kind });
       return NextResponse.json({ current_cue: cue }, { status: 201 });

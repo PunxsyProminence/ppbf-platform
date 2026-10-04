@@ -26,6 +26,7 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-mentalskills-pg-test-${Date.now()}
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const MIGRATION_FILE = 'pilot_slice_postgres_athlete_mental_skills_migration.sql';
+const REMOVE_MIGRATION_FILE = 'pilot_slice_postgres_athlete_mental_skills_remove_migration.sql';
 const TEST_DB_NAME = 'ppbf_test_mental_skills';
 
 const ORG = 'org-mental-a';
@@ -49,6 +50,10 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-athlete-mental-skills-migration.mjs',
 );
+const REMOVE_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-athlete-mental-skills-remove-migration.mjs',
+);
 
 // Jest's CJS transform rewrites a bare `import()` into `require()`, which
 // cannot load an ESM .mjs runner. Building the import through `new Function`
@@ -64,6 +69,8 @@ let mental: typeof import('./athleteMentalSkills');
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 let migrationSql: string;
+let applyRemoveMigration: (client: Client, sql: string) => Promise<void>;
+let removeMigrationSql: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -151,6 +158,9 @@ beforeAll(async () => {
     client: Client,
     sql: string,
   ) => Promise<void>;
+  removeMigrationSql = await fs.readFile(path.join(INFRA_DIR, REMOVE_MIGRATION_FILE), 'utf8');
+  const removeRunnerModule = await nativeDynamicImport(pathToFileURL(REMOVE_RUNNER_PATH).href);
+  applyRemoveMigration = removeRunnerModule.applyMigrationTransaction as typeof applyRemoveMigration;
 });
 
 afterAll(async () => {
@@ -241,6 +251,7 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
     main = await freshDatabase(TEST_DB_NAME, [ORG, OTHER_ORG]);
     await seedPeople(main);
     await applyMigrationTransaction(main, migrationSql);
+    await applyRemoveMigration(main, removeMigrationSql);
 
     process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
     // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
@@ -257,6 +268,7 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
   test('re-running the migration is a no-op that keeps existing rows', async () => {
     await mental.logImagerySession(secondAthlete, { minutes: 5 });
     await applyMigrationTransaction(main, migrationSql);
+    await applyRemoveMigration(main, removeMigrationSql);
     const view = await mental.readMentalSkills(secondAthlete, SECOND_ATHLETE);
     expect(view.imagery_sessions).toHaveLength(1);
   });
@@ -468,5 +480,121 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
     } finally {
       await probe.end();
     }
+  });
+
+  describe('remove (OD-2026-10-04-023): self-only soft remove', () => {
+    const storedRow = async (entryId: string) => (
+      await main.query(
+        `select removed_at, removed_by, cue_text, minutes from pilot.athlete_mental_skill_entries
+         where organization_id = $1 and entry_id = $2::uuid`,
+        [ORG, entryId],
+      )
+    ).rows[0];
+    const auditRows = async (entryId: string) => (
+      await main.query(
+        `select event_type, actor_account_id, details from pilot.audit_events
+         where entity_type = 'athlete_mental_skill_entry' and entity_id = $1 order by created_at`,
+        [entryId],
+      )
+    ).rows;
+
+    test('the athlete removes their own entry: hidden from the athlete, guardian, coach and admin; row and audit remain', async () => {
+      const earlier = await mental.setSelfTalkCue(athlete, { cueText: 'chin down', cueKind: 'instructional' });
+      const later = await mental.setSelfTalkCue(athlete, { cueText: 'secret words', cueKind: 'motivational' });
+      const session = await mental.logImagerySession(athlete, { minutes: 9 });
+
+      expect(await mental.removeMentalSkillsEntry(athlete, later.entry_id)).toEqual({ entry_id: later.entry_id });
+      expect(await mental.removeMentalSkillsEntry(athlete, session.entry_id)).toEqual({ entry_id: session.entry_id });
+
+      for (const reader of [athlete, parent, coach, admin]) {
+        const view = await mental.readMentalSkills(reader, ATHLETE);
+        // The earlier cue is current again; the removed one is gone.
+        expect(view.current_cue?.entry_id).toBe(earlier.entry_id);
+        expect(view.imagery_sessions.map((s) => s.entry_id)).not.toContain(session.entry_id);
+        expect(JSON.stringify(view)).not.toContain('secret words');
+      }
+
+      for (const entryId of [later.entry_id, session.entry_id]) {
+        const row = await storedRow(entryId);
+        expect(row.removed_at).toBeInstanceOf(Date);
+        expect(row.removed_by).toBe(ATHLETE_ACCOUNT);
+        const audit = await auditRows(entryId);
+        expect(audit.map((a) => a.event_type)).toEqual(['create', 'update']);
+        expect(audit[1].actor_account_id).toBe(ATHLETE_ACCOUNT);
+        expect(audit[1].details).toMatchObject({ athlete_id: ATHLETE, action: 'removed' });
+        expect(JSON.stringify(audit[1].details)).not.toContain('secret words');
+      }
+      expect((await storedRow(later.entry_id)).cue_text).toBe('secret words');
+    });
+
+    test('nobody else can remove: another athlete gets not-found; guardian, coach, admin and platform owner are refused', async () => {
+      const cue = await mental.setSelfTalkCue(athlete, { cueText: 'stay long', cueKind: 'instructional' });
+
+      await expect(mental.removeMentalSkillsEntry(secondAthlete, cue.entry_id)).rejects.toThrow(/not found/);
+      for (const writer of [parent, coach, admin, otherOrgAdmin, platformOwner, board]) {
+        await expect(mental.removeMentalSkillsEntry(writer, cue.entry_id)).rejects.toThrow(/Only the athlete/);
+      }
+      // The same athlete id in the other gym is not this athlete.
+      const sameIdOtherGym = actor('acct-mental-athlete-other', 'athlete', OTHER_ORG, OTHER_ATHLETE);
+      await expect(mental.removeMentalSkillsEntry(sameIdOtherGym, cue.entry_id)).rejects.toThrow();
+
+      expect((await storedRow(cue.entry_id)).removed_at).toBeNull();
+      expect((await auditRows(cue.entry_id)).map((a) => a.event_type)).toEqual(['create']);
+      expect((await mental.readMentalSkills(coach, ATHLETE)).current_cue?.entry_id).toBe(cue.entry_id);
+    });
+
+    test('removing twice, an unknown id or a malformed id changes nothing and writes no audit', async () => {
+      const session = await mental.logImagerySession(athlete, { minutes: 3 });
+      await mental.removeMentalSkillsEntry(athlete, session.entry_id);
+      const firstRemovedAt = (await storedRow(session.entry_id)).removed_at;
+
+      await expect(mental.removeMentalSkillsEntry(athlete, session.entry_id)).rejects.toThrow(/not found/);
+      await expect(mental.removeMentalSkillsEntry(athlete, '22222222-2222-4222-8222-222222222222')).rejects.toThrow(/not found/);
+      for (const bad of ['not-a-uuid', '', null, 42]) {
+        await expect(mental.removeMentalSkillsEntry(athlete, bad)).rejects.toThrow(/entry_id/);
+      }
+      expect((await storedRow(session.entry_id)).removed_at).toEqual(firstRemovedAt);
+      expect((await auditRows(session.entry_id)).map((a) => a.event_type)).toEqual(['create', 'update']);
+    });
+
+    test('removed entries still count toward the daily limit', async () => {
+      const now = '2026-05-01T15:00:00Z';
+      const ids: string[] = [];
+      for (let i = 0; i < mental.DAILY_ENTRY_LIMIT; i += 1) {
+        ids.push((await mental.logImagerySession(secondAthlete, { minutes: 1, now })).entry_id);
+      }
+      for (const id of ids) await mental.removeMentalSkillsEntry(secondAthlete, id);
+      await expect(mental.logImagerySession(secondAthlete, { minutes: 1, now })).rejects.toThrow(/a day/);
+    });
+
+    test('the table refuses a half-removed row, and the remove readiness gate refuses a missing pair check', async () => {
+      const cue = await mental.setSelfTalkCue(athlete, { cueText: 'breathe', cueKind: 'motivational' });
+      await expect(main.query(
+        `update pilot.athlete_mental_skill_entries set removed_at = now() where organization_id = $1 and entry_id = $2::uuid`,
+        [ORG, cue.entry_id],
+      )).rejects.toThrow(/removed_pair_check/);
+      await expect(main.query(
+        `update pilot.athlete_mental_skill_entries set removed_by = 'x' where organization_id = $1 and entry_id = $2::uuid`,
+        [ORG, cue.entry_id],
+      )).rejects.toThrow(/removed_pair_check/);
+
+      const probe = await freshDatabase('ppbf_test_mental_skills_remove_probe', [ORG]);
+      try {
+        await applyMigrationTransaction(probe, migrationSql);
+        const withoutPair = removeMigrationSql.replace(
+          /\nalter table pilot\.athlete_mental_skill_entries\n {2}add constraint pilot_athlete_mental_skill_entries_removed_pair_check\n[^;]*;/,
+          '',
+        );
+        expect(withoutPair).not.toBe(removeMigrationSql);
+        await expect(applyRemoveMigration(probe, withoutPair)).rejects.toThrow('ATHLETE_MENTAL_SKILLS_REMOVE_NOT_READY');
+        const column = await probe.query(
+          `select 1 from information_schema.columns
+           where table_schema = 'pilot' and table_name = 'athlete_mental_skill_entries' and column_name = 'removed_at'`,
+        );
+        expect(column.rows).toHaveLength(0);
+      } finally {
+        await probe.end();
+      }
+    });
   });
 });
