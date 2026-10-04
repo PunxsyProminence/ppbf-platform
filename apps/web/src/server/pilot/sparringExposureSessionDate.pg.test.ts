@@ -86,6 +86,7 @@ let baseSchemaSql: string;
 let activityLogSql: string;
 let sparringSql: string;
 let sessionDateSql: string;
+let contactStageSql: string;
 let stopRuleSchemaSql: string;
 let applyActivityLog: ApplyFn;
 let applySparring: ApplyFn;
@@ -164,6 +165,10 @@ async function freshDatabase(name: string, options: { sessionDate?: boolean } = 
 
   if (options.sessionDate !== false) {
     await applySessionDate(client, sessionDateSql);
+    // The module reads contact_stage on every row; production applies the
+    // contact-stage migration after this one. Its own suite is
+    // sparringExposureContactStage.pg.test.ts.
+    await client.query(contactStageSql);
   }
   activeClient = client;
   return client;
@@ -223,6 +228,7 @@ beforeAll(async () => {
   activityLogSql = await read('pilot_slice_postgres_activity_log_migration.sql');
   sparringSql = await read('pilot_slice_postgres_sparring_exposure_and_load_migration.sql');
   sessionDateSql = await read('pilot_slice_postgres_sparring_exposure_session_date_migration.sql');
+  contactStageSql = await read('pilot_slice_postgres_sparring_exposure_contact_stage_migration.sql');
   // pilot.universal_stop_rules, built the way drillLibraryV3.pg.test.ts builds
   // it: the content-import migration and what it refuses to run without, in
   // the workflow's `all` order.

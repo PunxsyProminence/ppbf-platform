@@ -201,8 +201,13 @@ beforeAll(async () => {
     + await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8');
   activityLogMigrationSql = await fs.readFile(path.join(INFRA_DIR, ACTIVITY_LOG_MIGRATION_FILE), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  // The contact-stage migration rides along: the module reads contact_stage
+  // on every row, and production applies it after session-date.
   sessionDateMigrationSql = await fs.readFile(
     path.join(INFRA_DIR, 'pilot_slice_postgres_sparring_exposure_session_date_migration.sql'),
+    'utf8',
+  ) + '\n' + await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_sparring_exposure_contact_stage_migration.sql'),
     'utf8',
   );
   const sessionDateRunner = await nativeDynamicImport(
