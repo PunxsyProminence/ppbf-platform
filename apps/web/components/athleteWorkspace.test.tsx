@@ -2961,15 +2961,18 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(body.rpe_method).toBe('UNKNOWN');
   });
 
-  test('check-out sends no duration and feeds no observation', async () => {
+  test('check-out sends unanswered minutes as null and feeds no observation', async () => {
     await openSession();
 
     fireEvent.click(effortButton(7));
     const body = await checkOut();
 
     expect(Object.keys(body).sort()).toEqual([
-      'athlete_id', 'completed_flag', 'created_at', 'date', 'notes', 'rpe', 'rpe_method', 'session_id', 'updated_at',
+      'athlete_id', 'completed_flag', 'created_at', 'date', 'duration_minutes', 'notes', 'rpe', 'rpe_method',
+      'session_id', 'updated_at',
     ]);
+    // Empty box is "not given" -- never a default, never the check-in-to-now gap.
+    expect(body.duration_minutes).toBeNull();
     expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
   });
 
@@ -3006,6 +3009,115 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     const group = await screen.findByRole('group', { name: EFFORT_Q });
     expect(within(group).queryAllByRole('button', { pressed: true })).toEqual([]);
     expect(within(group).getByText(/Not answered — you can skip this/)).toBeTruthy();
+  });
+});
+
+// Minutes trained, asked at check-out beside the effort question and stored as
+// pilot.sessions.duration_minutes. Optional, empty until typed, whole minutes
+// 1-300, and a typed answer that is not valid holds check-out rather than being
+// dropped. Session load (effort x minutes) is shown back only when both
+// answers are the athlete's own, and is labelled unvalidated.
+describe("post-session minutes are the athlete's answer at check-out, or nothing", () => {
+  const MINUTES_Q = 'How many minutes did you train?';
+
+  function checkOutBodies(): Array<Record<string, unknown>> {
+    return postedTo('/api/pilot/sessions/update')
+      .map((call) => call.body)
+      .filter((body) => body.completed_flag === true);
+  }
+
+  async function openSession() {
+    storedSessions = [openSessionRow({ rpe: null })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'Check Out' });
+  }
+
+  function minutesBox(): HTMLInputElement {
+    return screen.getByLabelText(MINUTES_Q) as HTMLInputElement;
+  }
+
+  test('the box starts empty on an open session and is not shown otherwise', async () => {
+    await renderWorkspace();
+    await screen.findByText(/You are not checked in right now/);
+    expect(screen.queryByLabelText(MINUTES_Q)).toBeNull();
+    cleanup();
+
+    await openSession();
+    expect(minutesBox().value).toBe('');
+  });
+
+  test('typed minutes are sent at check-out, and load is shown with both answers', async () => {
+    await openSession();
+
+    fireEvent.click(screen.getByRole('button', { name: 'How hard was the session you just finished? 7' }));
+    fireEvent.change(minutesBox(), { target: { value: ' 45 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    expect(checkOutBodies()[0].duration_minutes).toBe(45);
+    expect(checkOutBodies()[0].rpe).toBe(7);
+    expect(await screen.findByText(/Session load: 7 × 45 = 315 \(effort × minutes; not validated for boxing\)/)).toBeTruthy();
+  });
+
+  test('minutes without an effort answer are stored, and no load is shown', async () => {
+    await openSession();
+
+    fireEvent.change(minutesBox(), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    expect(checkOutBodies()[0].duration_minutes).toBe(60);
+    expect(checkOutBodies()[0].rpe).toBeNull();
+    expect(await screen.findByText(/So are your 60 minutes/)).toBeTruthy();
+    expect(screen.queryByText(/Session load:/)).toBeNull();
+  });
+
+  test.each(['0', '301', '4.5', '-5', 'an hour', '1e2'])(
+    'an invalid entry (%p) holds check-out and says why',
+    async (typed) => {
+      await openSession();
+
+      fireEvent.change(minutesBox(), { target: { value: typed } });
+
+      expect(screen.getByRole('alert').textContent).toMatch(/whole number from 1 to 300/);
+      const button = screen.getByRole('button', { name: 'Check Out' }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      expect(checkOutBodies()).toHaveLength(0);
+
+      // Clearing the box is "not given", and check-out goes through again.
+      fireEvent.change(minutesBox(), { target: { value: '' } });
+      expect(screen.queryByRole('alert')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+      await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+      expect(checkOutBodies()[0].duration_minutes).toBeNull();
+    },
+  );
+
+  test.each([['1', 1], ['300', 300]])('the bounds are accepted (%p)', async (typed, expected) => {
+    await openSession();
+    fireEvent.change(minutesBox(), { target: { value: typed } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].duration_minutes).toBe(expected);
+  });
+
+  test('the next session starts with an empty box after a check-out with minutes', async () => {
+    persistSessionUpdates = true;
+    await openSession();
+
+    fireEvent.change(minutesBox(), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    // Check-in writes no minutes: the session has not happened yet.
+    expect('duration_minutes' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
+
+    openTab('Dashboard');
+    expect((await screen.findByLabelText(MINUTES_Q) as HTMLInputElement).value).toBe('');
   });
 });
 

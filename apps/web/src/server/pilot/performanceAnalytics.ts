@@ -40,6 +40,15 @@ export interface AthletePerformanceRow {
   sessions_total: number;
   sessions_completed: number;
   avg_rpe: number | null;
+  // Session load = session RPE x minutes trained (Foster 2001), averaged over
+  // the sessions in the window that carry BOTH an athlete post-session RPE and
+  // the athlete's minutes. Computed here, never stored, and NOT validated for
+  // boxing (pilot_slice_postgres_sparring_exposure_and_load_migration.sql), so
+  // the page labels it as such. No flag, score or threshold reads it here.
+  avg_session_load: number | null;
+  // How many sessions that average is over, so "no load yet" and "load from
+  // one session" are visibly different.
+  session_load_count: number;
   training_days: number;
   // Distinct training days in the older half vs the newer half of the window,
   // for the deterministic consistency rule in progressionSuggestions.ts.
@@ -65,6 +74,8 @@ interface SessionsAgg {
   sessions_total: number;
   sessions_completed: number;
   avg_rpe: number | null;
+  avg_session_load: number | null;
+  session_load_count: number;
 }
 
 interface ReadinessAgg {
@@ -154,7 +165,20 @@ export async function getPerformanceRollup(
               -- avg() over no qualifying rows is null, which is the honest
               -- answer. It must never become 0: "nobody has rated a session"
               -- and "every session was rated nothing" are different facts.
-              (avg(rpe) filter (where rpe_method = '${SESSION_RPE_SELF_REPORT}'))::float8 as avg_rpe
+              (avg(rpe) filter (where rpe_method = '${SESSION_RPE_SELF_REPORT}'))::float8 as avg_rpe,
+              -- SESSION LOAD, the same provenance rule plus minutes. Only a
+              -- real post-session RPE is multiplied: an UNKNOWN row's number
+              -- may be a pre-session readiness answer, and readiness x minutes
+              -- is not load. A session with no minutes is left out rather
+              -- than counted as zero load. Null when nothing qualifies.
+              (avg(rpe * duration_minutes) filter (
+                where rpe_method = '${SESSION_RPE_SELF_REPORT}'
+                  and rpe is not null and duration_minutes is not null
+              ))::float8 as avg_session_load,
+              (count(*) filter (
+                where rpe_method = '${SESSION_RPE_SELF_REPORT}'
+                  and rpe is not null and duration_minutes is not null
+              ))::int as session_load_count
        from pilot.sessions
        where organization_id = $1 and athlete_id = any($2::text[]) and date >= $3::date
        group by athlete_id`,
@@ -227,6 +251,8 @@ export async function getPerformanceRollup(
     sessions_total: bySessions.get(athleteId)?.sessions_total ?? 0,
     sessions_completed: bySessions.get(athleteId)?.sessions_completed ?? 0,
     avg_rpe: bySessions.get(athleteId)?.avg_rpe ?? null,
+    avg_session_load: bySessions.get(athleteId)?.avg_session_load ?? null,
+    session_load_count: bySessions.get(athleteId)?.session_load_count ?? 0,
     training_days: byTraining.get(athleteId)?.training_days ?? 0,
     training_days_early: byTraining.get(athleteId)?.training_days_early ?? 0,
     training_days_late: byTraining.get(athleteId)?.training_days_late ?? 0,

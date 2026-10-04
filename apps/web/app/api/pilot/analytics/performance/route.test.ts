@@ -65,6 +65,8 @@ const ROLLUP_ROW = {
   sessions_total: 4,
   sessions_completed: 3,
   avg_rpe: 6.5,
+  avg_session_load: 390,
+  session_load_count: 4,
   training_days: 8,
   readiness_count: 6,
   avg_readiness: 7.1,
