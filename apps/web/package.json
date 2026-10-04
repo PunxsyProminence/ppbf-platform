@@ -374,6 +374,7 @@
     "test:migrations:drill-library-v3": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillLibraryV3.pg.test.ts --testTimeout=180000",
     "test:migrations:activity-log": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/activityLog.pg.test.ts --testTimeout=180000",
     "test:migrations:assessment-protocols": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assessmentProtocols.pg.test.ts --testTimeout=180000",
+    "test:migrations:assessment-results": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assessmentResults.pg.test.ts --testTimeout=180000",
     "test:migrations:clearance-register": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/clearanceRegister.pg.test.ts --testTimeout=180000",
     "test:migrations:sparring-exposure": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sparringExposure.pg.test.ts --testTimeout=180000",
     "test:migrations:safety-flags": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/safetyFlags.pg.test.ts --testTimeout=180000",
