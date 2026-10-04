@@ -164,6 +164,215 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-030 -- PR #1206, #1207 and #1208 (started in the Fable session): reviewed and merged from the overwatch thread, after the current release
+
+**Provenance: PRIMARY.** Jason's answer to one question of an AskUserQuestion in
+the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, tool use
+`toolu_01FgNwywn13ePmYzeFB3qiq8`; asked 2026-10-04T19:49:09.900Z, answered
+2026-10-04T19:50:08.269Z), asked right after his message "ask questions here"
+(2026-10-04T19:49:00.470Z). Read by script from that transcript (records pass,
+2026-10-04). New; edits no earlier entry. #1206 is itself the open PR that records
+OD-2026-10-04-025.
+
+Asked: "Fable-session PRs #1206 (records OD-025), #1207 (callerless-routes
+measurement doc), #1208 (intake blocks a step above a drill's contact level)"
+(the transcript shows a replacement character where a dash was) "all green. What do
+I do with them?" Plain: "Fable started these before it ran out; finish them here?"
+Jason chose *"Review + merge here (Recommended)"*, option text "I scope-check each
+like any lane PR and merge after this release; any stalled Fable chips get
+re-opened here." **Ruling: overwatch reviews and merges #1206, #1207 and #1208
+here, after the current release; stalled Fable chips are re-opened here.** The
+other options were "Pause them" ("Leave all three open, untouched.") and "Close
+them" ("Close unmerged.").
+
+---
+
+## OD-2026-10-04-029 -- Body mass: the athlete or their coach may correct a mistyped weight; the original stays on record (extends OD-2026-10-04-016)
+
+**Provenance: PRIMARY (answered in the overwatch thread, relayed to the lane).**
+Jason's answer to one question of the AskUserQuestion in the overwatch thread
+(`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, tool use
+`toolu_01FgNwywn13ePmYzeFB3qiq8`; asked 2026-10-04T19:49:09.900Z, answered
+2026-10-04T19:50:08.269Z), right after his message "ask questions here"
+(2026-10-04T19:49:00.470Z). The body mass lane, "Body mass: athlete corrects a
+mistyped weight"
+(`~/.claude/projects/C--Dev/800aac7a-8a1e-45a4-a42c-5dd6f4e9a101.jsonl`), had no
+question answered by Jason in its own transcript: its only inputs are the overwatch
+brief, overwatch's go message and, at 2026-10-04T19:50:13.201Z, overwatch's relay of
+this answer ("Jason answered in the overwatch thread: "Athlete or their coach"."
+followed by overwatch's own description). Read by script from both transcripts
+(records pass, 2026-10-04). Extends OD-2026-10-04-016 (the fast-change flag), which
+assumed an entered weight could be wrong but ruled nothing on who corrects it;
+edits no earlier entry. Build: PR #1217 (open when recorded).
+
+Asked: "Body mass correction: who may correct a mistyped weight?" Plain: "if a kid
+types 150 instead of 105, who can fix it?" Options: "Athlete, own, last 7 days
+(Recommended)" ("Only the athlete fixes their own entries from the past week;
+original kept on record, not shown in the flag."), "Athlete or their coach"
+("Either can correct; original kept on record."), "Coach only" ("Athlete cannot
+change it; coach corrects."). Jason chose *"Athlete or their coach"* (not the
+recommended option). **Ruling: either the athlete or their coach may correct a
+mistyped weight; the original stays on record.** The option text says the original
+is also not shown in the flag; Jason did not rule on that part separately.
+
+**Lane and overwatch technical calls, not Jason's** (from the lane's report of
+2026-10-04T20:19:54.761Z): the lane lets corrections reach every weigh-in from the
+last 8 days, not 7, for a code reason (the flag looks back 7 days plus 24 hours, so
+an 8-day-old entry can still raise it); overwatch accepted that. The lane built "the
+athlete, for their own entries, or their assigned or covering coach" as the people
+who may correct, and organization admins can read a weight but not correct it.
+Jason has not ruled on the 8 days or on organization admins.
+
+---
+
+## OD-2026-10-04-028 -- Mental skills: an athlete's removed entry is hidden from everyone with no marker, and removing the current cue brings back the previous one (extends OD-2026-10-04-023)
+
+**Provenance: PRIMARY (two answers).** (1) Jason typed "go with your
+recommendations on both questions" in the mental skills remove lane, "Mental skills:
+athlete removes own entry (soft remove)"
+(`~/.claude/projects/C--Dev/a1b4ac3c-fc17-4149-a8ff-4120123246da.jsonl`; reply
+2026-10-04T20:07:34.571Z, a typed reply, not an AskUserQuestion), to the lane's two
+questions asked in its message of 2026-10-04T17:45:10.347Z. No other Jason message
+sits between them. (2) Jason answered the first question again in the overwatch
+thread (`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, tool
+use `toolu_01FgNwywn13ePmYzeFB3qiq8`; asked 2026-10-04T19:49:09.900Z, answered
+2026-10-04T19:50:08.269Z), right after his message "ask questions here". Read by
+script from both transcripts (records pass, 2026-10-04). Extends OD-2026-10-04-023,
+which ruled athletes may remove their own entries (self-only, soft-remove, audited,
+no edit); edits no earlier entry. Build: PR #1214 (open when recorded).
+
+**Who sees a removed entry.** The lane asked: "Should a guardian see that an entry
+was removed? Your earlier decision OD-2026-10-04-011 says the guardian reads the
+log. This PR follows OD-2026-10-04-023 as briefed: hidden from everyone." Options:
+"(a) Hidden from everyone, as built (Recommended)." and "(b) The guardian also sees
+a "removed" marker." Plain: "when your athlete takes back a cue or session, does
+the parent just stop seeing it, or see that it was removed? Option (a) is how it
+works now; (b) needs a small follow-up change." Overwatch asked the same question
+as "Mental skills remove (#1214): when an athlete removes an entry, does the parent
+see that something was removed?" (plain: "if a kid deletes a self-talk cue, does
+the parent find out?"), with options "No, hidden everywhere (Recommended)" ("As
+built under OD-2026-10-04-023.") and "Yes, parent sees 'removed'" ("Parent's log
+shows 'entry removed' with the date; small follow-up."). Jason's "go with your
+recommendations" selects (a), and he chose *"No, hidden everywhere (Recommended)"*
+when overwatch asked. **Ruling: a removed entry is hidden from everyone, the
+guardian included, with no "removed" marker; the gym keeps the row and the audit
+record.**
+
+**Removing the current cue.** The lane asked: "Should removing the current cue
+bring back the previous one?" Options: "(a) Yes, the previous cue becomes current
+again (Recommended). This is how it works now, and the confirm text tells the
+athlete." and "(b) No cue shows until they set a new one." Plain: "if your athlete
+deletes their newest cue, they'd normally see their older one again. With (b)
+they'd see "No cue chosen yet" instead." Jason's "go with your recommendations"
+selects (a). **Ruling: removing the current cue makes the previous cue current
+again.** The pairing of "your recommendations" with these options is read from the
+lane's own wording, which labels (a) "(Recommended)" in both questions.
+
+---
+
+## OD-2026-10-04-027 -- Adult pathway: a date-of-birth correction flags and freezes the placement; the coach screen wording, helper labels and the under-18 line are approved (extends OD-2026-10-04-010, -018 and -019)
+
+**Provenance: PRIMARY.** Jason's answers to four AskUserQuestions in the adult
+pathway lane, "Adult pathway stages (Foundation -> Elite)"
+(`~/.claude/projects/C--Dev/d32d7163-448d-4f65-a425-7b2496e44dcc.jsonl`). Read by
+script from that transcript (records pass, 2026-10-04). Extends OD-2026-10-04-010
+(minors only with a coach flag; no date of birth counts as a minor),
+OD-2026-10-04-018 (switching the allowance off ends the placement) and
+OD-2026-10-04-019 (write roles); edits no earlier entry. The transcript stores each
+dash and ellipsis character in these questions as a replacement character; they
+are shown below as "-" and "...". The lane title's arrow is shown as "->", as in
+earlier entries. Four items:
+
+**(a) Date-of-birth correction.** Tool use `toolu_01FfH2QSAvhWDVgPoKQJjWuJ`; asked
+2026-10-04T18:01:07.734Z, answered 2026-10-04T19:16:52.705Z. Asked: "Date-of-birth
+correction: if an athlete is placed on the adult pathway as an adult, and staff
+later correct their date of birth so they are under 18 (with no allowance on), what
+should happen to their placement? A) Show them as 'placed but not eligible' on the
+coach screen; nothing new can be set or ticked until a coach switches the allowance
+on; the placement is not ended automatically (Recommended - no hidden side effect
+inside the date-of-birth edit). B) End the placement automatically at the moment
+the date of birth is corrected, stamped with who made the correction." Plain: "if
+someone's birthday was wrong and they turn out to be a kid, should the coach screen
+just flag it and freeze them until a coach decides, or should the app take them off
+the ladder right away?" Jason chose *"A) Flag and freeze (Recommended)"*, option
+text "Coach screen shows 'placed but not eligible'; no new stage or ticks until the
+allowance is on. No change to the date-of-birth edit." **Ruling: a date-of-birth
+correction that makes a placed athlete under 18 (allowance off) does not end the
+placement; the coach screen shows "placed but not eligible" and nothing new can be
+set or ticked until a coach switches the allowance on.** The other option was "B)
+End automatically".
+
+**(b) Coach screen wording.** Tool use `toolu_01K9VTiTNjcj2ECWrzCYWHaY`; asked
+2026-10-04T19:34:06.003Z, answered 2026-10-04T19:40:46.714Z. Asked: "Coach screen
+wording for the adult pathway panel (per athlete): approve this text? (1) Flag when
+placed but not eligible: "Placed, but not eligible: this athlete is under 18 (or
+has no date of birth on file) and the adult-pathway allowance is off. Nothing new
+can be set or ticked until a coach switches it on." (2) Allowance heading: "Allowed
+on the adult pathway (under 18 or no date of birth)"; reason box: "Why is this
+athlete on the adult pathway? Required, kept on record."; buttons "Switch on" /
+"Switch off". (3) Before switching off: "Switching off ends this athlete's current
+stage. Their history and ticked goals are kept." (4) Stage control: "Set stage";
+each goal shows "Confirmed by <coach> on <date>" with "Untick"." Jason chose
+*"Approve (Recommended)"*, option text "Use the wording above." **Ruling: the four
+pieces of coach-screen wording above are approved as written.** The other option
+was "Edit wording".
+
+**(c) Helper labels.** Tool use `toolu_0163qmMd61rKwm1gT3eesFo3`; asked
+2026-10-04T19:49:54.412Z, answered 2026-10-04T20:03:02.156Z. Asked: "Supporting
+screen labels (not policy) on the adult pathway page: approve? Section headings
+"Athletes" and "The stages"; open/close button "Pathway" / "Hide pathway"; goal
+button "Tick"; status lines "Loading your roster...", "Your roster could not be
+loaded. Reload to try again.", "No athletes you can open.", "Reading...", "This
+athlete's pathway could not be read just now." with "Check again", and "That was
+not saved. Try again.". Also: a minor with no allowance and no stage simply sees the
+stage and tick controls greyed out under the allowance heading - no extra sentence
+(Recommended), or add one?" Jason chose *"Approve + add a line"*, option text "Same
+labels, plus a sentence for an un-switched-on minor (type it in Other, or I'll draft
+one)." He typed nothing in Other, and the lane drafted the line in (d). **Ruling:
+the helper labels above are approved, and a sentence is added for a minor with the
+allowance off and no stage.** The other options were "Approve, no extra line (Recommended)"
+and "Edit labels".
+
+**(d) The added under-18 line.** Tool use `toolu_01XLdD23kita4cMrkDFwhGKq`; asked
+2026-10-04T20:03:08.166Z, answered 2026-10-04T20:04:40.990Z. Asked: "Draft line shown
+to coaches for a minor (or no date of birth) with the allowance off and no stage
+yet: "This athlete is under 18 (or has no date of birth on file). Switch the
+allowance on, with a reason, before setting a stage or ticking goals." Approve?"
+Jason chose *"Approve (Recommended)"*, option text "Use the line as drafted."
+**Ruling: the line "This athlete is under 18 (or has no date of birth on file).
+Switch the allowance on, with a reason, before setting a stage or ticking goals." is
+approved as written.** The other option was "Edit wording".
+
+---
+
+## OD-2026-10-04-026 -- Mental skills: the three "who can see this" lines are approved as written (extends OD-2026-10-04-023)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the mental skills
+lane, "Mental skills track (goals, imagery, self-talk)"
+(`~/.claude/projects/C--Dev/41ac7937-10a2-407c-ac96-6adbfc0e4eab.jsonl`, tool use
+`toolu_01KMP56cyrnrwhr8N6hG6sFp`; asked 2026-10-04T17:04:42.369Z, answered
+2026-10-04T19:16:05.147Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-023 (the athlete-facing imagery and self-talk
+texts, approved in the same lane) and OD-2026-10-04-011 (guardians read the log);
+edits no earlier entry. Build: the guardian and coach pages, PR #1215 (open when
+recorded).
+
+Asked: "Q-B4 (official): Approve these "who can see this" lines for the
+mental-skills screens (shown once the guardian and coach views exist, in PR B2)?
+Athlete page: "Your coach and your guardian can see what you save here." Guardian
+page: "You see what your child saved, in their words. Their coach sees it too.
+Nothing here can be changed from this page." Coach page: "What the athlete saved, in
+their words. Their guardian sees the same. Read-only."" Plain: "one honest sentence
+on each screen telling the kid, the parent and the coach who else can read the
+kid's cue and imagery log." Jason chose *"Approve all three (Recommended)"*, option
+text "Official: ship the three lines verbatim in B2. Plain: everyone is told who
+else can see it, using the words above." **Ruling: the three lines above are
+approved verbatim, one on each of the athlete, guardian and coach mental-skills
+pages.** The other options were "Athlete line only" and "I'll rewrite them".
+
+---
+
 ## OD-2026-10-04-023 -- Mental skills track: the athlete-facing imagery steps and the self-talk explainer are approved as written, and athletes may remove their own entries (extends OD-2026-10-04-011)
 
 **Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (three questions)
