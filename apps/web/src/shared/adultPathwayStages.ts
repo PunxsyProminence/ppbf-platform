@@ -3,9 +3,10 @@
  *
  * Owner decision (Jason, 2026-10-03, asked in the adult-pathway lane): stage
  * names Foundation / Intermediate / Advanced / Elite "Use as-is"; goals and
- * caveat wording "Approve"; stage is "Coach-set". Source material: the
- * elite-boxing research synthesis of 2026-10-04 (adult scope; youth out of
- * scope until a separate youth pass).
+ * caveat wording "Approve", each goal "ticked only by a coach"; stage is
+ * "Coach-set". Source material: the elite-boxing research synthesis
+ * (overwatch lane-inbox file dated 2026-10-04; adult scope; youth out of scope
+ * until a separate youth pass).
  *
  * THREE RULES THIS FILE OBEYS
  *

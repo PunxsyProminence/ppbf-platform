@@ -19,11 +19,36 @@ describe('adult pathway stages', () => {
     );
   });
 
-  it('gives every stage a range, never a single figure', () => {
-    for (const stage of ADULT_PATHWAY_STAGES) {
-      expect(stage.typicalRange).toMatch(/^About /);
-      expect(stage.typicalRange).toMatch(/\d+ to \d+/);
-    }
+  // Pinned as literals: the ranges come from the synthesis ([AI-H]) and the
+  // goals are owner-approved wording, so a drift in either is a regression.
+  it('gives every stage its range in words, never a single figure', () => {
+    expect(ADULT_PATHWAY_STAGES.map((s) => s.typicalRange)).toEqual([
+      'About the first 12 to 18 months',
+      'About 1.5 to 3 or more years',
+      'About 3 to 6 or more years',
+      'About 6 to 10 or more years, and not guaranteed',
+    ]);
+  });
+
+  it('holds the owner-approved goals word for word', () => {
+    expect(ADULT_PATHWAY_STAGES.map((s) => s.goals.map((g) => g.text))).toEqual([
+      [
+        'Stance and guard',
+        'Footwork',
+        'Straight punches',
+        'Basic defence (block, parry, slip, roll)',
+        'Aerobic base',
+        'Controlled touch sparring after defence is solid',
+      ],
+      [
+        'Hooks, uppercuts, combinations',
+        'Distance and timing',
+        'Strength then power blocks',
+        'Hard sparring kept to about once a week',
+      ],
+      ['Own style', 'Film study', 'Planned strength and conditioning'],
+      ['Competing at elite level — not guaranteed for anyone'],
+    ]);
   });
 
   it('says Elite is not guaranteed, in the range and in its goal', () => {
