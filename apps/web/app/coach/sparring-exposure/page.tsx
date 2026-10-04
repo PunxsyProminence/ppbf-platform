@@ -2,8 +2,11 @@
 
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
+import Link from 'next/link';
+
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/src/lib/apiBase';
+import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 
 /*
@@ -23,6 +26,16 @@ import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
  * The athlete picker is GET /api/pilot/coach/athletes, the same access set
  * the sparring route enforces, so the picker never offers a child the route
  * would refuse.
+ *
+ * THE COACH-SET CAP (map item 15). Each segment may carry its contact-ladder
+ * stage (optional; left out = not recorded). The athlete's cap -- a number
+ * a COACH set on /coach/sparring-caps, never the app's -- is shown in its own
+ * section, beside the raw count of gym days with hard or open sparring in
+ * the last 7 (sessions = gym days). After a save, the route's warnings are
+ * shown under "Saved.": the entry is already saved, nothing is blocked, and
+ * the coach decides (OD-2026-10-04-004). A cap that could not be read is
+ * said as such -- never as "no cap". The "Recent sparring" section stays
+ * counts only.
  */
 
 const SPARRING_TYPES = [
@@ -40,6 +53,9 @@ const PRESENTATIONS = [
   ['normal', 'Normal'], ['slowed', 'Slowed'], ['unsteady', 'Unsteady'], ['withdrawn', 'Withdrawn'], ['other_concern', 'Other concern'],
 ] as const;
 const WINDOWS = [7, 28, 90] as const;
+/** The contact ladder, lowest first; page.test.tsx pins it to the server's list. */
+export const CONTACT_STAGES = ['none', 'light_technical', 'conditioned', 'controlled_sparring', 'open_sparring'] as const;
+const STAGE_PAIRS = CONTACT_STAGES.map((stage) => [stage, humanizeContactLevel(stage)] as const);
 
 const label = (pairs: ReadonlyArray<readonly [string, string]>, value: string | null) =>
   pairs.find(([key]) => key === value)?.[1] ?? value ?? '—';
@@ -51,6 +67,7 @@ interface Entry {
   sparring_day: string;
   segment_number: number;
   sparring_type: string;
+  contact_stage?: string | null;
   time_under_impact_sec: number;
   round_equivalent: string | null;
   headgear_worn: boolean | null;
@@ -67,13 +84,51 @@ interface Counts {
   total_time_under_impact_sec: number;
   segments_by_type: Record<string, number>;
 }
-interface Recent { entries: Entry[]; entries_truncated: boolean; counts: Counts; stop_rules: StopRule[] }
+interface Cap {
+  highest_allowed_stage: string | null;
+  max_hard_open_sessions_per_7_days: number | null;
+  set_by_name?: string;
+}
+interface CapWarning { kind: string; message: string }
+interface CapCheck {
+  cap_state: 'set' | 'none' | 'unknown';
+  cap: Cap | null;
+  hard_open_days_in_7: number | null;
+  through_day: string;
+  warnings?: CapWarning[];
+}
+interface Recent {
+  entries: Entry[];
+  entries_truncated: boolean;
+  counts: Counts;
+  stop_rules: StopRule[];
+  cap_check?: CapCheck;
+}
+
+function isCapCheck(value: unknown): value is CapCheck {
+  if (!value || typeof value !== 'object') return false;
+  const check = value as Record<string, unknown>;
+  if (!['set', 'none', 'unknown'].includes(check.cap_state as string)) return false;
+  if (check.cap_state === 'set' && (!check.cap || typeof check.cap !== 'object')) return false;
+  if (typeof check.through_day !== 'string') return false;
+  return check.hard_open_days_in_7 === null || typeof check.hard_open_days_in_7 === 'number';
+}
+
+/** A save's check must carry its warnings as a list of messages; anything else is "not checked". */
+function isSaveCheck(value: unknown): value is CapCheck & { warnings: CapWarning[] } {
+  if (!isCapCheck(value) || !Array.isArray(value.warnings)) return false;
+  return value.warnings.every((w) => w && typeof w.kind === 'string' && typeof w.message === 'string');
+}
+
+/** Only these two mean the segment went OVER the cap; the rest mean it could not be fully checked. */
+const OVER_KINDS: ReadonlySet<string> = new Set(['stage_above_cap', 'hard_open_days_over_cap']);
 
 const minSec = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 const EMPTY_FORM = {
   sessionDate: '',
   sparringType: '',
+  contactStage: '',
   minutes: '',
   seconds: '',
   rounds: '',
@@ -100,6 +155,8 @@ export default function CoachSparringExposurePage() {
   const [form, setForm] = useState({ ...EMPTY_FORM, sessionDate: gymDayIso() ?? '' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  /** The cap check the route returned with the last save: warnings, or why none could be given. */
+  const [savedCheck, setSavedCheck] = useState<CapCheck | 'unreadable' | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -165,6 +222,7 @@ export default function CoachSparringExposurePage() {
       coach_observed_head_contact: form.headContact,
       athlete_presentation: form.presentation,
     };
+    if (form.contactStage) body.contact_stage = form.contactStage;
     if (form.rounds) body.round_equivalent = Number(form.rounds);
     if (form.headgear) body.headgear_worn = form.headgear === 'yes';
     if (form.gloveOz) body.glove_oz = Number(form.gloveOz);
@@ -176,6 +234,7 @@ export default function CoachSparringExposurePage() {
     }
 
     setSaving(true);
+    setSavedCheck(null);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/sparring-exposure`, {
         method: 'POST',
@@ -189,9 +248,15 @@ export default function CoachSparringExposurePage() {
         return;
       }
       setMessage({ kind: 'ok', text: 'Saved.' });
-      // Keep the day and the gear for the next round; clear what was observed.
+      const saved = (await response.json().catch(() => null)) as { cap_check?: unknown } | null;
+      setSavedCheck(isSaveCheck(saved?.cap_check) ? saved.cap_check : 'unreadable');
+      // Keep the day, the stage and the gear for the next round; clear what was observed.
       setForm((current) => ({
-        ...EMPTY_FORM, sessionDate: current.sessionDate, headgear: current.headgear, gloveOz: current.gloveOz,
+        ...EMPTY_FORM,
+        sessionDate: current.sessionDate,
+        contactStage: current.contactStage,
+        headgear: current.headgear,
+        gloveOz: current.gloveOz,
       }));
       // Re-read through the effect, not here: its cleanup aborts any read
       // still in flight, so an older response cannot replace the fresh one.
@@ -255,6 +320,7 @@ export default function CoachSparringExposurePage() {
                 setRecentState(event.target.value ? 'loading' : 'idle');
                 setAthleteId(event.target.value);
                 setMessage(null);
+                setSavedCheck(null);
                 // What was observed belongs to the athlete it was observed on;
                 // keep only the day and the gear.
                 setForm((current) => ({
@@ -276,6 +342,41 @@ export default function CoachSparringExposurePage() {
           {rosterState === 'loaded' && athletes.length === 0 && <p>No athletes are available to you.</p>}
         </section>
 
+        {athleteId && recentState === 'loaded' && recent && (
+          <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-cap">
+            <h2 className="t-eyebrow">Coach-set cap</h2>
+            {!isCapCheck(recent.cap_check) || recent.cap_check.cap_state === 'unknown' ? (
+              <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
+            ) : recent.cap_check.cap_state === 'none' || !recent.cap_check.cap ? (
+              <p>No cap set for this athlete.</p>
+            ) : (
+              <>
+                {recent.cap_check.cap.highest_allowed_stage !== null && (
+                  <p>Highest stage: {humanizeContactLevel(recent.cap_check.cap.highest_allowed_stage)}</p>
+                )}
+                {recent.cap_check.cap.max_hard_open_sessions_per_7_days !== null && (
+                  <p>
+                    At most {recent.cap_check.cap.max_hard_open_sessions_per_7_days} hard or open sparring sessions in
+                    any 7 days (sessions = gym days).
+                  </p>
+                )}
+              </>
+            )}
+            {isCapCheck(recent.cap_check) && (
+              <p data-testid="spar-hard-open-days">
+                {recent.cap_check.hard_open_days_in_7 === null
+                  ? 'Gym days with hard or open sparring in the last 7 could not be counted just now.'
+                  : `Gym days with hard or open sparring in the 7 ending ${
+                    formatGymDay(recent.cap_check.through_day) ?? recent.cap_check.through_day}: ${
+                    recent.cap_check.hard_open_days_in_7}.`}
+              </p>
+            )}
+            <p className="text-[color:var(--bone-300)]">
+              A cap never blocks a segment; you decide. <Link href="/coach/sparring-caps" className="underline">Sparring Caps</Link>
+            </p>
+          </section>
+        )}
+
         {athleteId && (
           <form onSubmit={submit} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
             {/* Disabled while saving: the reset after a save would otherwise
@@ -288,6 +389,14 @@ export default function CoachSparringExposurePage() {
                 onChange={(event) => set({ sessionDate: event.target.value })} className="input" />
             </div>
             {choice('sparType', 'Type of sparring', form.sparringType, SPARRING_TYPES, (v) => set({ sparringType: v }))}
+            <div className="field">
+              <label htmlFor="sparStage" className="t-label">Contact stage (optional)</label>
+              <select id="sparStage" value={form.contactStage} onChange={(event) => set({ contactStage: event.target.value })}
+                className="select">
+                <option value="">Not recorded</option>
+                {STAGE_PAIRS.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+              </select>
+            </div>
             <fieldset className="field">
               <legend className="t-label">Time in live exchanges (head contact possible) — not round length</legend>
               <div className="flex gap-[var(--s3)]">
@@ -350,6 +459,36 @@ export default function CoachSparringExposurePage() {
                 {message.text}
               </p>
             )}
+            {message?.kind === 'ok' && savedCheck === 'unreadable' && (
+              <p>The cap check did not come back, so this segment was not checked against a cap.</p>
+            )}
+            {/* Titled by what the warnings ARE: "over" only for an actual
+                overage; a stage not recorded, a cap that could not be read or a
+                count that failed is "not checked", never "over". */}
+            {message?.kind === 'ok' && savedCheck !== null && savedCheck !== 'unreadable'
+              && (savedCheck.warnings ?? []).some((w) => OVER_KINDS.has(w.kind)) && (
+              <div className="alert alert--warning" role="alert" data-testid="spar-cap-warnings">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Over the coach-set cap</p>
+                  {(savedCheck.warnings ?? []).filter((w) => OVER_KINDS.has(w.kind)).map((warning) => (
+                    <p key={warning.kind} className="alert-msg">{warning.message}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {message?.kind === 'ok' && savedCheck !== null && savedCheck !== 'unreadable'
+              && (savedCheck.warnings ?? []).some((w) => !OVER_KINDS.has(w.kind)) && (
+              <div className="alert alert--warning" data-testid="spar-cap-unchecked">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Not fully checked against the cap</p>
+                  {(savedCheck.warnings ?? []).filter((w) => !OVER_KINDS.has(w.kind)).map((warning) => (
+                    <p key={warning.kind} className="alert-msg">{warning.message}</p>
+                  ))}
+                </div>
+              </div>
+            )}
             </fieldset>
           </form>
         )}
@@ -385,7 +524,9 @@ export default function CoachSparringExposurePage() {
                     <li key={entry.exposure_id} className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
                       <p className="font-semibold">
                         {formatGymDay(entry.sparring_day) ?? entry.sparring_day} · segment {entry.segment_number} ·{' '}
-                        {label(SPARRING_TYPES, entry.sparring_type)} · {minSec(entry.time_under_impact_sec)}
+                        {label(SPARRING_TYPES, entry.sparring_type)}
+                        {entry.contact_stage ? ` · ${humanizeContactLevel(entry.contact_stage)}` : ''}
+                        {' · '}{minSec(entry.time_under_impact_sec)}
                         {entry.round_equivalent ? ` · ${Number(entry.round_equivalent)} rounds` : ''}
                       </p>
                       <p>
