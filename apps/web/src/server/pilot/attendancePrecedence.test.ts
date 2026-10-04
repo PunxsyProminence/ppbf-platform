@@ -99,9 +99,11 @@ const LEGACY_READERS = new Set<string>([
   'src/server/pilot/blockReview.ts',
   // Left join to the ONE activity a sparring segment is linked to, for that
   // activity's occurred_on (the day sparred when the segment has no
-  // session_date of its own). Not a participation read: no count, no rate,
-  // never crossed with another attendance source; attendance_reconciled has
-  // no per-activity row to answer it.
+  // session_date of its own). Not a participation read: the one count here
+  // (countHardOrOpenSparringDays) counts days with hard or open SPARRING
+  // segments for one athlete, not attendance or a rate, and is never crossed
+  // with another attendance source; attendance_reconciled has no
+  // per-activity row to answer it.
   'src/server/pilot/sparringExposure.ts',
 ]);
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ContactStage } from './athleteContactCaps';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 
@@ -46,6 +47,8 @@ export interface SparringExposureRow {
   athlete_id: string;
   segment_number: number;
   sparring_type: SparringType;
+  /** Contact-ladder stage of this segment; null = not recorded (map item 15). */
+  contact_stage: ContactStage | null;
   time_under_impact_sec: number;
   round_equivalent: string | null;
   partner_athlete_id: string | null;
@@ -83,7 +86,7 @@ export interface SessionLoadRow {
 }
 
 const EXPOSURE_FIELDS =
-  'organization_id, exposure_id, activity_id, session_date::text as session_date, athlete_id, segment_number, sparring_type, '
+  'organization_id, exposure_id, activity_id, session_date::text as session_date, athlete_id, segment_number, sparring_type, contact_stage, '
   + 'time_under_impact_sec, round_equivalent, partner_athlete_id, headgear_worn, glove_oz, '
   + 'coach_observed_intensity, coach_observed_head_contact, athlete_presentation, coach_note, '
   + 'supervising_coach_account_id, stopped_early, stop_rule_id, stop_reason, device_type, '
@@ -107,6 +110,8 @@ export interface RecordSparringExposureInput {
    */
   segmentNumber?: number;
   sparringType: SparringType;
+  /** Omitted or null = not recorded. Never guessed from sparringType. */
+  contactStage?: ContactStage | null;
   timeUnderImpactSec: number;
   roundEquivalent?: number | null;
   partnerAthleteId?: string | null;
@@ -168,7 +173,7 @@ async function insertSparringExposure(input: RecordSparringExposureInput): Promi
           time_under_impact_sec, round_equivalent, partner_athlete_id, headgear_worn, glove_oz,
           coach_observed_intensity, coach_observed_head_contact, athlete_presentation, coach_note,
           supervising_coach_account_id, stopped_early, stop_rule_id, stop_reason, device_type,
-          device_event_count, device_note, session_date)
+          device_event_count, device_note, session_date, contact_stage)
        values ($1,$2,$3,$4,
                coalesce($5::integer, (
                  select coalesce(max(prior.segment_number), 0) + 1
@@ -177,7 +182,7 @@ async function insertSparringExposure(input: RecordSparringExposureInput): Promi
                    and prior.athlete_id = $4
                    and (($3::text is not null and prior.activity_id = $3)
                      or ($3::text is null and prior.activity_id is null and prior.session_date = $23::date)))),
-               $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::date)
+               $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::date,$24)
        returning ${EXPOSURE_FIELDS}`,
       [
         input.organizationId,
@@ -203,6 +208,7 @@ async function insertSparringExposure(input: RecordSparringExposureInput): Promi
         input.deviceEventCount ?? null,
         input.deviceNote ?? null,
         input.sessionDate ?? null,
+        input.contactStage ?? null,
       ],
     );
     if (!row) {
@@ -333,6 +339,38 @@ export async function getSparringExposureCounts(
     total_time_under_impact_sec: totalTimeUnderImpactSec,
     segments_by_type: segmentsByType,
   };
+}
+
+/**
+ * How many gym DAYS, in the 7 gym days ending on `endDay` (inclusive), this
+ * athlete has at least one hard or open sparring segment: sparring_type
+ * 'hard' OR contact_stage 'open_sparring'. Sessions = gym days (overwatch,
+ * 2026-10-04): several hard rounds on one day are one session.
+ *
+ * A raw count for comparing against a COACH-SET cap
+ * (athleteContactCaps.ts). It is not a score and carries no limit of its own.
+ * Days are the day sparred (session_date, else the linked activity's
+ * occurred_on); deleted athletes count nothing.
+ */
+export async function countHardOrOpenSparringDays(
+  organizationId: string,
+  athleteId: string,
+  /** Gym day, YYYY-MM-DD. */
+  endDay: string,
+): Promise<number> {
+  const row = await queryOne<{ days: number }>(
+    `select count(distinct coalesce(e.session_date, linked.occurred_on))::int as days
+     from pilot.sparring_exposure e
+     left join pilot.activity_log linked
+       on linked.organization_id = e.organization_id and linked.activity_id = e.activity_id
+     where e.organization_id = $1
+       and e.athlete_id = $2
+       and (e.sparring_type = 'hard' or e.contact_stage = 'open_sparring')
+       and coalesce(e.session_date, linked.occurred_on) between ($3::date - 6) and $3::date
+       and ${athleteNotDeletedSql('e')}`,
+    [organizationId, athleteId, endDay],
+  );
+  return row?.days ?? 0;
 }
 
 export interface RecordSessionLoadInput {

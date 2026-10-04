@@ -43,6 +43,8 @@ export const VOCABULARIES = {
       { table: 'workout_template_items', constraint: 'pilot_wti_contact_level_check' },
       // A coach's per-athlete cap names a rung of this same ladder.
       { table: 'athlete_contact_caps', constraint: 'pilot_athlete_contact_caps_stage_check' },
+      // The stage a sparring segment was done at, compared against that cap.
+      { table: 'sparring_exposure', constraint: 'pilot_sparring_exposure_contact_stage_check' },
     ],
   ),
   // competence_cohorts :123-124. Narrower than contact_level on purpose: a

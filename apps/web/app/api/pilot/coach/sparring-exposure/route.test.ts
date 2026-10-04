@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { readCapForEntry } from '@/src/server/pilot/athleteContactCaps';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
+  countHardOrOpenSparringDays,
   getSparringExposureCounts,
   listActiveUniversalStopRules,
   listSparringExposure,
@@ -38,13 +40,24 @@ jest.mock('@/src/server/pilot/db', () => ({
 }));
 
 jest.mock('@/src/server/pilot/sparringExposure', () => ({
+  countHardOrOpenSparringDays: jest.fn(),
   recordSparringExposure: jest.fn(),
   listSparringExposure: jest.fn(),
   getSparringExposureCounts: jest.fn(),
   listActiveUniversalStopRules: jest.fn(),
 }));
 
+// The cap read is mocked (proven against real Postgres in
+// sparringExposureContactStage.pg.test.ts and athleteContactCaps.pg.test.ts);
+// the warning functions run as shipped.
+jest.mock('@/src/server/pilot/athleteContactCaps', () => {
+  const actual = jest.requireActual('@/src/server/pilot/athleteContactCaps');
+  return { ...actual, readCapForEntry: jest.fn() };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockReadCap = readCapForEntry as jest.Mock;
+const mockCountDays = countHardOrOpenSparringDays as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockRecord = recordSparringExposure as jest.Mock;
 const mockList = listSparringExposure as jest.Mock;
@@ -156,6 +169,8 @@ beforeEach(() => {
     { universal_rule_id: 'ust_bleeding', ordinal: 1, condition_text: 'Bleeding', rule_kind: 'safety' },
   ]);
   mockRecord.mockImplementation(async (input: Record<string, unknown>) => ({ exposure_id: 'new', ...input }));
+  mockReadCap.mockResolvedValue({ state: 'none', cap: null });
+  mockCountDays.mockResolvedValue(0);
 });
 
 afterEach(() => {
@@ -174,7 +189,7 @@ describe('GET /api/pilot/coach/sparring-exposure', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(Object.keys(body).sort()).toEqual([
-      'counts', 'entries', 'entries_truncated', 'since_day', 'stop_rules', 'window_days',
+      'cap_check', 'counts', 'entries', 'entries_truncated', 'since_day', 'stop_rules', 'window_days',
     ]);
     expect(body.window_days).toBe(28);
     // 28 gym days ending on the GYM day (not the UTC day, already tomorrow).
@@ -199,6 +214,8 @@ describe('GET /api/pilot/coach/sparring-exposure', () => {
     expect(response.status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
     expect(mockCounts).not.toHaveBeenCalled();
+    expect(mockReadCap).not.toHaveBeenCalled();
+    expect(mockCountDays).not.toHaveBeenCalled();
   });
 
   test.each(['athlete', 'parent', 'platform_owner', 'board', 'volunteer'] as const)('role %s is refused', async (role) => {
@@ -256,6 +273,7 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
       athleteId: 'ath-kid',
       sessionDate: GYM_DAY,
       sparringType: 'technical',
+      contactStage: null,
       timeUnderImpactSec: 75,
       roundEquivalent: 2,
       partnerAthleteId: null,
@@ -443,4 +461,135 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     mockRecord.mockRejectedValue(new Error('SPARRING_EXPOSURE_SEGMENT_DUPLICATE'));
     expect((await POST(postRequest(VALID_BODY))).status).toBe(409);
   });
+});
+
+describe('cap check (map item 15): warn only, after the save', () => {
+  const CAP = {
+    cap_id: 'cap-1',
+    athlete_id: 'ath-kid',
+    highest_allowed_stage: 'controlled_sparring',
+    max_hard_open_sessions_per_7_days: 1,
+    note: '',
+    set_by_account_id: 'coach-record',
+    set_by_role: 'coach',
+    set_at: '2026-10-01T12:00:00.000Z',
+  };
+  const OPEN_ENTRY = { ...VALID_BODY, sparring_type: 'hard', contact_stage: 'open_sparring' };
+
+  function savedAs(row: Record<string, unknown>) {
+    mockRecord.mockResolvedValueOnce({ exposure_id: 'new', session_date: GYM_DAY, ...row });
+  }
+
+  test('GET reports the cap and the raw gym-day count through today, for the session\'s actor', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockResolvedValue({ state: 'set', cap: CAP });
+    mockCountDays.mockResolvedValue(2);
+    const body = await (await GET(getRequest('athlete_id=ath-kid'))).json();
+    expect(body.cap_check).toEqual({ cap_state: 'set', cap: CAP, hard_open_days_in_7: 2, through_day: GYM_DAY });
+    expect(mockReadCap).toHaveBeenCalledWith(
+      { accountId: 'coach-record', role: 'coach', organizationId: ORG, athleteId: null },
+      'ath-kid',
+    );
+    expect(mockCountDays).toHaveBeenCalledWith(ORG, 'ath-kid', GYM_DAY);
+  });
+
+  test('the stage is stored as sent; an entry above the cap SAVES and warns on both limits', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockResolvedValue({ state: 'set', cap: CAP });
+    mockCountDays.mockResolvedValue(2);
+    savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+    const response = await POST(postRequest(OPEN_ENTRY));
+    expect(response.status).toBe(201);
+    expect(mockRecord.mock.calls[0][0].contactStage).toBe('open_sparring');
+    const { cap_check: check } = await response.json();
+    expect(check.cap_state).toBe('set');
+    expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['stage_above_cap', 'hard_open_days_over_cap']);
+    expect(check.warnings[1].message).toContain('sessions = gym days');
+    expect(check.warnings[1].message).toContain('the coach-set most is 1');
+  });
+
+  test('within the cap: saved, no warnings', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockResolvedValue({ state: 'set', cap: CAP });
+    mockCountDays.mockResolvedValue(1);
+    savedAs({ contact_stage: 'controlled_sparring', sparring_type: 'hard' });
+    const response = await POST(postRequest({ ...OPEN_ENTRY, contact_stage: 'controlled_sparring' }));
+    expect(response.status).toBe(201);
+    expect((await response.json()).cap_check.warnings).toEqual([]);
+  });
+
+  test('the count is taken through the entry\'s own day, not today', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    savedAs({ contact_stage: null, sparring_type: 'technical', session_date: '2026-09-30' });
+    await POST(postRequest({ ...VALID_BODY, session_date: '2026-09-30' }));
+    expect(mockCountDays).toHaveBeenCalledWith(ORG, 'ath-kid', '2026-09-30');
+  });
+
+  test('an unreadable cap is "unknown", never "no cap": the entry saves and says it was not checked', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockResolvedValue({ state: 'unknown', cap: null });
+    savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+    const response = await POST(postRequest(OPEN_ENTRY));
+    expect(response.status).toBe(201);
+    const { cap_check: check } = await response.json();
+    expect(check.cap_state).toBe('unknown');
+    expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['cap_unknown']);
+  });
+
+  test('even a cap read that throws cannot turn a saved entry into an error', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockRejectedValue(new Error('connection terminated'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+      const response = await POST(postRequest(OPEN_ENTRY));
+      expect(response.status).toBe(201);
+      expect(mockRecord).toHaveBeenCalledTimes(1);
+      const { cap_check: check } = await response.json();
+      expect(check.cap_state).toBe('unknown');
+      expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['cap_unknown']);
+
+      // And GET still returns the entries.
+      const get = await GET(getRequest('athlete_id=ath-kid'));
+      expect(get.status).toBe(200);
+      expect((await get.json()).cap_check.cap_state).toBe('unknown');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test('no cap set: no warnings, and the state says so', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+    const { cap_check: check } = await (await POST(postRequest(OPEN_ENTRY))).json();
+    expect(check.cap_state).toBe('none');
+    expect(check.warnings).toEqual([]);
+  });
+
+  test('a count that fails is null, never 0; the stage is still checked, the day limit says it was not', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockResolvedValue({ state: 'set', cap: CAP });
+    mockCountDays.mockRejectedValue(new Error('connection terminated'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+      const response = await POST(postRequest(OPEN_ENTRY));
+      expect(response.status).toBe(201);
+      const { cap_check: check } = await response.json();
+      expect(check.hard_open_days_in_7).toBeNull();
+      expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['stage_above_cap', 'days_not_counted']);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test.each([['an invented stage', 'hard_sparring'], ['a stage sent as a number', 3]])(
+    '%s is a 400 and nothing is written',
+    async (_label, stage) => {
+      mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+      const response = await POST(postRequest({ ...VALID_BODY, contact_stage: stage }));
+      expect(response.status).toBe(400);
+      expect(mockRecord).not.toHaveBeenCalled();
+    },
+  );
 });
