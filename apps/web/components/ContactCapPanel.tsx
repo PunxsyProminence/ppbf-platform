@@ -178,8 +178,10 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
           );
           return;
         }
-        // The read that follows fills the form from the cap now in force.
-        await read();
+        // The read that follows fills the form from the cap now in force --
+        // only if the coach has not closed the panel meanwhile: read() opens
+        // the panel, and a save must never reopen what the coach closed.
+        if (isOpen.current) await read();
       } catch {
         setRefusal('The cap was not saved — the connection failed. Nothing changed.');
       } finally {

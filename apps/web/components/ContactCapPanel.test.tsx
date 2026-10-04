@@ -180,6 +180,25 @@ test('closing while a read is in flight stays closed when the reply lands', asyn
   expect(screen.queryByText('Highest stage: Controlled sparring')).toBeNull();
 });
 
+test('closing while a save is in flight stays closed when the save lands', async () => {
+  let release: (r: Response) => void = () => {};
+  serve(
+    () => respond({ ok: true, cap: null, history: [] }),
+    () => new Promise<Response>((resolve) => { release = resolve; }),
+  );
+  openPanel();
+  await screen.findByText(/No cap set/);
+  fireEvent.change(stageField(), { target: { value: 'none' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save cap' }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide sparring cap' }));
+  await act(async () => {
+    release(respond({ ok: true, cap: CAP, written: CAP }));
+  });
+  expect(screen.getByRole('button', { name: 'Sparring cap' }).getAttribute('aria-expanded')).toBe('false');
+  expect(gets).toHaveLength(1);
+});
+
 test('saving sends exactly what the coach chose to the cap route, then shows the cap read back', async () => {
   let saved = false;
   serve(
