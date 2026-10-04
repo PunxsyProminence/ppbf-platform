@@ -287,8 +287,7 @@ export default function CoachDevelopmentBlocksPage() {
      template only fills the form below; the coach edits it and the ordinary
      save stores what is in the boxes. Hidden for minors and for athletes with
      no date of birth unless the coach ticks the opt-in, which is not saved and
-     resets when the athlete changes -- it is keyed to the athlete it was
-     ticked for. */
+     is dropped by selectAthlete whenever the athlete changes. */
   const [templates, setTemplates] = useState<BlockTemplate[]>([]);
   const [templatesState, setTemplatesState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
   const [templateAthleteIsAdult, setTemplateAthleteIsAdult] = useState(false);
@@ -298,6 +297,9 @@ export default function CoachDevelopmentBlocksPage() {
 
   useEffect(() => {
     setTemplateId('');
+    // Nothing from the previous read stays pickable while this one is in flight.
+    setTemplates([]);
+    setTemplateAthleteIsAdult(false);
     if (!athleteId) {
       setTemplates([]);
       setTemplatesState('idle');
@@ -961,6 +963,14 @@ export default function CoachDevelopmentBlocksPage() {
     setEditingId(null);
     setMessage('');
     setErrorMessage('');
+    /* The template opt-in is for one athlete, once: switching away drops it,
+       so coming back does not quietly restore it. Template text already in
+       the form goes too -- it was offered for the previous athlete, and a
+       minor's form must not arrive pre-filled with an adult template. */
+    setMinorOptInFor('');
+    if (templateId) {
+      setForm(EMPTY_FORM);
+    }
     void loadBlocks(nextId);
   }
 
@@ -1156,7 +1166,7 @@ export default function CoachDevelopmentBlocksPage() {
             <h2 className="t-eyebrow">New block{athleteName ? ` for ${athleteName}` : ''}</h2>
 
             <div className="space-y-[var(--s3)]">
-              {templatesState === 'loaded' && !templateAthleteIsAdult && (
+              {((templatesState === 'loaded' && !templateAthleteIsAdult) || minorOptIn) && (
                 <label className="flex items-center gap-[var(--s2)] t-body text-[color:var(--bone-300)]">
                   <input
                     type="checkbox"
@@ -1174,7 +1184,7 @@ export default function CoachDevelopmentBlocksPage() {
                 </p>
               )}
 
-              {templates.length > 0 && (
+              {templatesState === 'loaded' && templates.length > 0 && (
                 <div className="field">
                   <label htmlFor="blockTemplate" className="t-label">Start from a template (optional)</label>
                   <select

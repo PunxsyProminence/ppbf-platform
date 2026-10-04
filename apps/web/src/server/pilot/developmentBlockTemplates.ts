@@ -61,7 +61,7 @@ const MODELS_EQUIVALENT: EvidenceNote = {
   tag: 'SR/MA',
   text:
     'Periodization models are roughly equivalent: linear vs undulating differ by about nothing (SMD ~ -0.02), '
-    + 'block periodization studied by Painter et al. Pick the plan you can run consistently. Tactical '
+    + 'block periodization studied by Painter et al. Tactical '
     + 'periodization has no empirical studies.',
 };
 

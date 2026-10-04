@@ -2087,3 +2087,63 @@ describe('starting a block from a template (owner decision 2026-10-04)', () => {
     expect((screen.getByLabelText(/Show block templates for this athlete/) as HTMLInputElement).checked).toBe(false);
   });
 });
+
+describe('template state does not leak between athletes', () => {
+  test('the opt-in is dropped on A -> B -> A', async () => {
+    const fetchMock = await renderPage({ blocks: [], templatesAdult: false });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText(/Show block templates for this athlete/));
+    });
+    await pickAthlete('ath-2');
+    fetchMock.mockClear();
+    await pickAthlete('ath-1');
+
+    expect((screen.getByLabelText(/Show block templates for this athlete/) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('minor_opt_in=1'))).toBe(false);
+  });
+
+  test('template text applied for one athlete is cleared when the athlete changes', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('typed text with no template is kept across an athlete change, as before', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Mine' } });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
+  });
+
+  test('templates from the previous read are not pickable while the next read is in flight', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    expect(screen.getByLabelText('Start from a template (optional)')).toBeTruthy();
+
+    let release: (value: Response) => void = () => undefined;
+    const original = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('development-block-templates')) {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return (original as jest.Mock)(input, init);
+    }) as unknown as typeof fetch;
+    await pickAthlete('ath-2');
+
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    await act(async () => {
+      release({ ok: true, status: 200, json: async () => ({ athlete_is_adult: false, templates: [] }) } as Response);
+    });
+  });
+});
