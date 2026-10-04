@@ -392,7 +392,10 @@ describe('adultPathway.ts against real rows', () => {
     await other.connect();
     try {
       await other.query('begin');
-      await other.query('select 1 from pilot.athletes where athlete_id = $1 for update', [ADULT_ID]);
+      // FOR NO KEY UPDATE conflicts with the module's FOR UPDATE but NOT with
+      // the FOR KEY SHARE a foreign-key check takes, so this blocks only
+      // because the module locks the athlete row itself.
+      await other.query('select 1 from pilot.athletes where athlete_id = $1 for no key update', [ADULT_ID]);
 
       let settled = false;
       const pending = placeAthleteOnStage({ actor: COACH, athleteId: ADULT_ID, stageKey: 'foundation' })
