@@ -211,11 +211,20 @@ export async function listAthleteFamilyDrills(
 }
 
 /**
- * The athlete's live assignments with no reference drill behind them --
- * hand-authored gym drills, and assignments written before drills had
- * identity. Those cannot be placed in any family, and the page says so rather
- * than letting the path look complete. Athlete-wide, so asked once per read,
- * not once per family.
+ * The athlete's live assignments that carry no skill code at all, so no
+ * family can ever claim them:
+ *   - no reference drill behind them (hand-authored gym drills, and
+ *     assignments written before drills had identity), or
+ *   - a reference drill with a blank skill_id and no secondary skill row
+ *     (the shipped seed has such rows, e.g. warm-ups).
+ * The page says so rather than letting the path look complete.
+ *
+ * A drill WITH a code whose family is undecided (UNMAPPED_SKILL_CODES) is not
+ * counted here: it belongs under a family that already reads "not mapped
+ * yet", and counting it twice would tell the athlete two different stories
+ * about one drill.
+ *
+ * Athlete-wide, so asked once per read, not once per family.
  */
 export async function countUnlinkedAssignments(organizationId: string, athleteId: string): Promise<number> {
   const row = await queryOne<{ unlinked: string }>(
@@ -223,10 +232,23 @@ export async function countUnlinkedAssignments(organizationId: string, athleteId
      from pilot.drill_assignments a
      left join pilot.drills d
        on d.organization_id = a.organization_id and d.drill_id = a.drill_id
+     left join pilot.drill_library l
+       on l.organization_id = d.organization_id and l.drill_id = d.reference_drill_id
      where a.organization_id = $1
        and a.athlete_id = $2
        and a.status <> 'cancelled'
-       and d.reference_drill_id is null`,
+       and (
+         l.drill_id is null
+         or (
+           nullif(btrim(l.skill_id), '') is null
+           and not exists (
+             select 1
+             from pilot.drill_secondary_skills s
+             where s.organization_id = l.organization_id
+               and s.drill_id = l.drill_id
+           )
+         )
+       )`,
     [organizationId, athleteId],
   );
 

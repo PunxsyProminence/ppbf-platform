@@ -207,6 +207,22 @@ async function seededDatabase(): Promise<Client> {
   await insertOperational(client, ORG_A, 'op-jab-guard', 'Jab Then Guard', 'ref-jab-guard');
   // Hand-authored by the gym: no reference behind it.
   await insertOperational(client, ORG_A, 'op-gym', 'Gym Bag Rounds', null);
+  // Promoted reference drills with no primary skill code (the seed ships
+  // these, e.g. warm-ups): one with no secondary row either -- no family can
+  // ever claim it, so it is unlinked -- and one carrying a secondary code,
+  // which is linked.
+  await insertReference(client, ORG_A, 'ref-warmup', null);
+  await insertOperational(client, ORG_A, 'op-warmup', 'Warm-Up', 'ref-warmup');
+  await insertReference(client, ORG_A, 'ref-warmup-guard', null);
+  await client.query(
+    `insert into pilot.drill_secondary_skills (organization_id, drill_id, skill_id) values ($1, 'ref-warmup-guard', 'SK-GUARD-02')`,
+    [ORG_A],
+  );
+  await insertOperational(client, ORG_A, 'op-warmup-guard', 'Warm-Up Guard', 'ref-warmup-guard');
+  // A promoted drill whose code has no family decided yet: neither listed
+  // under SKILL-01 nor counted as unlinked (its family reads "not mapped yet").
+  await insertReference(client, ORG_A, 'ref-footwork', 'SK-FW-01');
+  await insertOperational(client, ORG_A, 'op-footwork', 'Footwork Box', 'ref-footwork');
 
   const a = { organizationId: ORG_A, athleteId: ATHLETE, coach: COACH_A };
   await insertAssignment(client, { ...a, assignmentId: 'asg-guard', drillId: 'op-guard', status: 'in_progress', assignedAt: '2026-10-01T00:00:00Z' });
@@ -215,6 +231,9 @@ async function seededDatabase(): Promise<Client> {
   await insertAssignment(client, { ...a, assignmentId: 'asg-guard-cancelled', drillId: 'op-guard', status: 'cancelled', assignedAt: '2026-10-03T00:00:00Z' });
   await insertAssignment(client, { ...a, assignmentId: 'asg-gym', drillId: 'op-gym', assignedAt: '2026-10-01T00:00:00Z' });
   await insertAssignment(client, { ...a, assignmentId: 'asg-legacy', drillId: null, assignedAt: '2026-09-01T00:00:00Z' });
+  await insertAssignment(client, { ...a, assignmentId: 'asg-warmup', drillId: 'op-warmup', assignedAt: '2026-09-15T00:00:00Z' });
+  await insertAssignment(client, { ...a, assignmentId: 'asg-warmup-guard', drillId: 'op-warmup-guard', assignedAt: '2026-09-10T00:00:00Z' });
+  await insertAssignment(client, { ...a, assignmentId: 'asg-footwork', drillId: 'op-footwork', assignedAt: '2026-09-12T00:00:00Z' });
   await insertAssignment(client, { ...a, assignmentId: 'asg-gym-cancelled', drillId: 'op-gym', status: 'cancelled', assignedAt: '2026-10-01T00:00:00Z' });
   // Another athlete in the same gym, on a SKILL-01 drill.
   await insertAssignment(client, { ...a, athleteId: OTHER_ATHLETE, assignmentId: 'asg-other-athlete', drillId: 'op-guard', assignedAt: '2026-10-01T00:00:00Z' });
@@ -310,6 +329,7 @@ describe('listAthleteFamilyDrills (real database)', () => {
     expect(items.map((i) => [i.assignment_id, i.drill_display_name, i.status])).toEqual([
       ['asg-jab-guard', 'Jab Then Guard', 'completed'],
       ['asg-guard', 'Guard Reset', 'in_progress'],
+      ['asg-warmup-guard', 'Warm-Up Guard', 'assigned'],
     ]);
   });
 
@@ -318,6 +338,8 @@ describe('listAthleteFamilyDrills (real database)', () => {
     const ids = items.map((i) => i.assignment_id);
 
     expect(ids).not.toContain('asg-jab');
+    expect(ids).not.toContain('asg-warmup');
+    expect(ids).not.toContain('asg-footwork');
     expect(ids).not.toContain('asg-guard-cancelled');
     expect(ids).not.toContain('asg-other-athlete');
     expect(ids).not.toContain('asg-org-b');
@@ -331,9 +353,11 @@ describe('listAthleteFamilyDrills (real database)', () => {
     expect(await countUnlinkedAssignments(ORG_B, ATHLETE)).toBe(0);
   });
 
-  test('hand-authored and legacy live work is counted as unlinked; cancelled work is not', async () => {
-    // asg-gym and asg-legacy; asg-gym-cancelled and the other athlete's work are left out.
-    expect(await countUnlinkedAssignments(ORG_A, ATHLETE)).toBe(2);
+  test('live work with no skill code at all is counted as unlinked; cancelled or coded work is not', async () => {
+    // asg-gym, asg-legacy and asg-warmup (reference with no code at all).
+    // Left out: asg-gym-cancelled, the other athlete's work, asg-warmup-guard
+    // (secondary code), asg-footwork and asg-jab (codes whose family is undecided).
+    expect(await countUnlinkedAssignments(ORG_A, ATHLETE)).toBe(3);
     expect(await countUnlinkedAssignments(ORG_A, OTHER_ATHLETE)).toBe(1);
   });
 
