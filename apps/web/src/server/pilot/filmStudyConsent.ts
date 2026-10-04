@@ -12,7 +12,7 @@ import { assertConsentCoversVideo } from './videoPlaybackConsent';
  *   1. assertConsentCoversVideo (videoPlaybackConsent.ts, the playback gate):
  *      a withdrawn, photo-only or unreadable consent refuses. Before this,
  *      the video's OWN athlete went through assertGuardianMediaConsent alone,
- *      which tests status === 'signed' and never reads covers_video, so a
+ *      which only asks whether every guardian signed and never reads covers_video, so a
  *      photo-only guardian did not stop analysis of their child's video.
  *   2. assertGuardianMediaConsent: Film Study's existing, stricter rule that
  *      every linked guardian has signed. Missing consent refuses here, unlike
