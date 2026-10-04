@@ -224,6 +224,15 @@ const EMPTY_REVIEW_FORM = {
   next_adjustment: '',
 };
 
+/** A block template from GET /api/pilot/coach/development-block-templates. */
+interface BlockTemplate {
+  id: string;
+  name: string;
+  title: string;
+  emphasis: string;
+  evidence: { tag: 'SR/MA' | 'PS' | 'AI-H'; text: string }[];
+}
+
 const EMPTY_FORM = {
   title: '',
   training_emphasis: '',
@@ -273,6 +282,60 @@ export default function CoachDevelopmentBlocksPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  /* Optional block templates (owner decision 2026-10-04, map item 22). A
+     template only fills the form below; the coach edits it and the ordinary
+     save stores what is in the boxes. Hidden for minors and for athletes with
+     no date of birth unless the coach ticks the opt-in, which is not saved and
+     resets when the athlete changes -- it is keyed to the athlete it was
+     ticked for. */
+  const [templates, setTemplates] = useState<BlockTemplate[]>([]);
+  const [templatesState, setTemplatesState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
+  const [templateAthleteIsAdult, setTemplateAthleteIsAdult] = useState(false);
+  const [minorOptInFor, setMinorOptInFor] = useState('');
+  const [templateId, setTemplateId] = useState('');
+  const minorOptIn = athleteId !== '' && minorOptInFor === athleteId;
+
+  useEffect(() => {
+    setTemplateId('');
+    if (!athleteId) {
+      setTemplates([]);
+      setTemplatesState('idle');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setTemplatesState('loading');
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ athlete_id: athleteId });
+        if (minorOptIn) params.set('minor_opt_in', '1');
+        const response = await fetch(`${apiBase()}/api/pilot/coach/development-block-templates?${params}`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('templates');
+        const payload = (await response.json()) as { athlete_is_adult?: boolean; templates?: BlockTemplate[] };
+        setTemplates(payload.templates ?? []);
+        setTemplateAthleteIsAdult(payload.athlete_is_adult === true);
+        setTemplatesState('loaded');
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return;
+        setTemplates([]);
+        setTemplatesState('unavailable');
+      }
+    })();
+    return () => controller.abort();
+  }, [athleteId, minorOptIn]);
+
+  function applyTemplate(id: string) {
+    setTemplateId(id);
+    const template = templates.find((item) => item.id === id);
+    if (!template) return;
+    setForm((current) => ({ ...current, title: template.title, training_emphasis: template.emphasis }));
+  }
+
+  const chosenTemplate = templates.find((item) => item.id === templateId);
 
   /* The events a coach may aim a block at. Organization fixtures, so this is
      loaded once rather than per athlete. Three states for the usual reason:
@@ -933,6 +996,7 @@ export default function CoachDevelopmentBlocksPage() {
         return;
       }
       setForm(EMPTY_FORM);
+      setTemplateId('');
       setMessage('Block saved.');
       // Read it back from the server rather than pushing the local copy into
       // the list: what is on screen should be what was stored.
@@ -1090,6 +1154,63 @@ export default function CoachDevelopmentBlocksPage() {
         {athleteId && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
             <h2 className="t-eyebrow">New block{athleteName ? ` for ${athleteName}` : ''}</h2>
+
+            <div className="space-y-[var(--s3)]">
+              {templatesState === 'loaded' && !templateAthleteIsAdult && (
+                <label className="flex items-center gap-[var(--s2)] t-body text-[color:var(--bone-300)]">
+                  <input
+                    type="checkbox"
+                    checked={minorOptIn}
+                    onChange={(event) => setMinorOptInFor(event.target.checked ? athleteId : '')}
+                  />
+                  Show block templates for this athlete (under 18 or no date of birth on file). Template numbers are
+                  adult starting points; set this athlete&apos;s limits yourself.
+                </label>
+              )}
+
+              {templatesState === 'unavailable' && (
+                <p className="t-body text-[color:var(--bone-300)]">
+                  Block templates could not be loaded. You can still write the block yourself.
+                </p>
+              )}
+
+              {templates.length > 0 && (
+                <div className="field">
+                  <label htmlFor="blockTemplate" className="t-label">Start from a template (optional)</label>
+                  <select
+                    id="blockTemplate"
+                    value={templateId}
+                    onChange={(event) => applyTemplate(event.target.value)}
+                    className="select"
+                  >
+                    <option value="">No template, write my own</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                  <p className="t-body text-[color:var(--bone-300)]">
+                    Fills the title and emphasis below. Edit them before saving; only what is in the boxes is saved.
+                  </p>
+                </div>
+              )}
+
+              {chosenTemplate && (
+                <div className="rounded-[var(--r-md)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
+                  <p className="t-label m-0">Evidence notes: {chosenTemplate.name}</p>
+                  <ul className="m-0 space-y-[var(--s2)] pl-[var(--s4)]">
+                    {chosenTemplate.evidence.map((note) => (
+                      <li key={note.text} className="t-body text-[color:var(--bone-300)]">
+                        <span className="t-data text-[color:var(--brass-300)]">[{note.tag}]</span> {note.text}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="t-body m-0 text-[color:var(--bone-300)]">
+                    [SR/MA] systematic review or meta-analysis. [PS] primary study. [AI-H] AI rule of thumb, not from a
+                    cited study. Sets, reps, %1RM and weeks in the template are all [AI-H].
+                  </p>
+                </div>
+              )}
+            </div>
 
             <form onSubmit={submitBlock} className="space-y-[var(--s4)]">
               <div className="field">

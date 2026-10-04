@@ -226,7 +226,7 @@ describe('the development-block entries: routes reach these rows only through th
    * precisely why it needs refusing here rather than assuming.
    */
   const API_ROOT = path.resolve(HERE, '../../..', 'app/api/pilot');
-  const GATED_MODULES = ['athleteDevelopmentBlocks', 'athleteDevelopmentBlockObjectives'];
+  const GATED_MODULES = ['athleteDevelopmentBlocks', 'athleteDevelopmentBlockObjectives', 'developmentBlockTemplates'];
 
   function developmentBlockRoutes(dir: string): string[] {
     const found: string[] = [];
