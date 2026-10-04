@@ -45,7 +45,7 @@ day: #1130 duplicated an item another session was building, and #1125 and
   check to run, not as a plan.
 - **Where a decided plan already exists** (an audit section with a build
   list, an `OWNER_DECISIONS.md` entry), it is the brief. No restatement.
-- **Chips from the Fable session** (OD-2026-10-04-023): the Fable session
+- **Chips from the Fable session** (OD-2026-10-04-025): the Fable session
   may itself start lane sessions on its own account for new Build List rows,
   because that account has the budget. Each chip takes one row, checks
   `main` and the open PRs first, opens one draft PR as its claim, and does

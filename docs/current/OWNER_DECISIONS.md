@@ -300,7 +300,7 @@ production before he has.**
 
 ---
 
-## OD-2026-10-04-023 -- New lane sessions ("chips") are started from the Fable session on the Fable account, so lanes run on its budget; overwatch still merges
+## OD-2026-10-04-025 -- New lane sessions ("chips") are started from the Fable session on the Fable account, so lanes run on its budget; overwatch still merges
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-04 in the Fable session
 (`claude.ai/code/session_01PkrS65eqZon2LYsVt8tJAd`), at about 17:05Z, after
