@@ -85,6 +85,10 @@ let migrationSql: string;
 let baseSchemaSql: string;
 let applyActivityLogMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
+// The module now writes session_date (sparring-exposure-session-date
+// migration), so tests that call it apply that migration on top.
+let sessionDateMigrationSql: string;
+let applySessionDateMigration: (client: Client, sql: string) => Promise<void>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -190,9 +194,21 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  // The readers filter out deleted athletes (pilot.athletes.deleted_at, added
+  // by the data-retention migration, which production has had since before
+  // this table existed).
+  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8')
+    + await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8');
   activityLogMigrationSql = await fs.readFile(path.join(INFRA_DIR, ACTIVITY_LOG_MIGRATION_FILE), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  sessionDateMigrationSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_sparring_exposure_session_date_migration.sql'),
+    'utf8',
+  );
+  const sessionDateRunner = await nativeDynamicImport(
+    pathToFileURL(path.resolve(__dirname, '../../../scripts/pilot-apply-sparring-exposure-session-date-migration.mjs')).href,
+  );
+  applySessionDateMigration = sessionDateRunner.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
 
   const activityLogRunnerModule = await nativeDynamicImport(pathToFileURL(ACTIVITY_LOG_RUNNER_PATH).href);
   applyActivityLogMigrationTransaction = activityLogRunnerModule.applyMigrationTransaction as (
@@ -262,6 +278,7 @@ describe('pilot_sparring_exposure_stop', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_stop_reason_required');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       await expect(
@@ -288,6 +305,7 @@ describe('pilot_sparring_exposure_stop', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_stop_reason_given');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       const row = await recordSparringExposure({
@@ -317,6 +335,7 @@ describe('pilot_sparring_exposure_segment_uq', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_segment_dup');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       await recordSparringExposure({
@@ -356,6 +375,7 @@ describe('getSparringExposureCounts', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_counts');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       await recordSparringExposure({
@@ -400,6 +420,7 @@ describe('pilot_session_load_rated_by_uq', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_session_load_both_raters');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       const athleteRating = await recordSessionLoad({
@@ -437,6 +458,7 @@ describe('pilot_session_load_rated_by_uq', () => {
     const client = await freshDatabase('ppbf_test_sparringexp_session_load_dup_rater');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySessionDateMigration(client, sessionDateMigrationSql);
       await insertActivity(client, 'activity-1');
 
       await recordSessionLoad({
