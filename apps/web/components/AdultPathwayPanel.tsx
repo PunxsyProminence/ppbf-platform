@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import { ADULT_PATHWAY_STAGES } from '@/src/shared/adultPathwayStages';
@@ -64,9 +64,13 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
   const [confirmingOff, setConfirmingOff] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Synchronous guard: two clicks before React re-renders must not send twice.
+  const inFlight = useRef(false);
 
-  const read = useCallback(async () => {
-    setReading({ state: 'loading' });
+  // `quiet` re-reads after a save without dropping back to "Reading…", so the
+  // panel (and the control the coach just pressed) stays on screen.
+  const read = useCallback(async (quiet = false) => {
+    if (!quiet) setReading({ state: 'loading' });
     try {
       const res = await fetch(`${apiBase()}${ENDPOINT}?athlete_id=${encodeURIComponent(athleteId)}`, {
         method: 'GET',
@@ -77,12 +81,14 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
       setReading({ state: 'loaded', data });
       setStage(data.current?.stage_key ?? '');
     } catch {
-      setReading({ state: 'unavailable' });
+      if (!quiet) setReading({ state: 'unavailable' });
     }
   }, [athleteId]);
 
   const send = useCallback(
     async (body: Record<string, unknown>) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
       setBusy(true);
       setError('');
       try {
@@ -95,14 +101,17 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
         if (!res.ok) {
           const payload = (await res.json().catch(() => null)) as { error?: string } | null;
           setError(payload?.error ?? 'That was not saved. Try again.');
-          return;
+        } else {
+          setConfirmingOff(false);
+          setReason('');
         }
-        setConfirmingOff(false);
-        setReason('');
-        await read();
+        // Re-read either way: a refusal often means someone else changed
+        // this athlete (e.g. switched the allowance off) since the last read.
+        await read(true);
       } catch {
         setError('That was not saved. Try again.');
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
@@ -119,7 +128,16 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
         className="btn btn--ghost"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        onClick={() => (open ? setReading({ state: 'closed' }) : void read())}
+        onClick={() => {
+          if (open) {
+            setReading({ state: 'closed' });
+            setError('');
+            setConfirmingOff(false);
+            setReason('');
+          } else {
+            void read();
+          }
+        }}
       >
         {open ? 'Hide pathway' : 'Pathway'}
       </button>

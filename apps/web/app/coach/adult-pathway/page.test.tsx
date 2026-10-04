@@ -35,28 +35,42 @@ const ROSTER = [
   { athlete_id: 'ath-2', full_name: 'Not Mine' },
 ];
 
-function mockFetch(opts: { rosterOk?: boolean; allowed?: string[] } = {}) {
+const batches: string[][] = [];
+
+function mockFetch(opts: { rosterOk?: boolean; allowedOk?: boolean; roster?: typeof ROSTER } = {}) {
+  batches.length = 0;
+  const roster = opts.roster ?? ROSTER;
   global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/api/pilot/athletes/list')) {
-      return { ok: opts.rosterOk ?? true, json: async () => ({ items: ROSTER }) } as Response;
+      return { ok: opts.rosterOk ?? true, json: async () => ({ items: roster }) } as Response;
     }
-    const body = JSON.parse(String(init?.body ?? '{}'));
-    expect(body).toEqual({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-2'] });
-    return { ok: true, json: async () => ({ athlete_ids: opts.allowed ?? ['ath-1'] }) } as Response;
+    const body = JSON.parse(String(init?.body ?? '{}')) as { action: string; athlete_ids: string[] };
+    expect(body.action).toBe('accessible_athletes');
+    batches.push(body.athlete_ids);
+    // The server opens ath-1 and every 'mine-' athlete.
+    const allowed = body.athlete_ids.filter((id) => id === 'ath-1' || id.startsWith('mine-'));
+    return { ok: opts.allowedOk ?? true, json: async () => ({ athlete_ids: allowed }) } as Response;
   }) as unknown as typeof fetch;
 }
 
 beforeEach(() => mockFetch());
 
+/** Renders and waits for the roster fetch to settle, so no state update lands after the test. */
+async function renderSettled() {
+  const result = render(<CoachAdultPathwayPage />);
+  await screen.findByText('Ana Adult');
+  return result;
+}
+
 describe('/coach/adult-pathway', () => {
-  it('shows the adults-only scope and the rough-estimate caveat', () => {
-    render(<CoachAdultPathwayPage />);
+  it('shows the adults-only scope and the rough-estimate caveat', async () => {
+    await renderSettled();
     expect(screen.getByText(ADULT_PATHWAY_SCOPE)).toBeInTheDocument();
     expect(screen.getByText(ADULT_PATHWAY_CAVEAT)).toBeInTheDocument();
   });
 
-  it('shows every stage in order with its range and every checkpoint', () => {
-    const { container } = render(<CoachAdultPathwayPage />);
+  it('shows every stage in order with its range and every checkpoint', async () => {
+    const { container } = await renderSettled();
     const ladder = container.querySelector('[data-pathway-ladder]') as HTMLElement;
     const headings = within(ladder).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(ADULT_PATHWAY_STAGES.map((s) => s.name));
@@ -70,14 +84,14 @@ describe('/coach/adult-pathway', () => {
     });
   });
 
-  it('is gated to coaches and admins only', () => {
+  it('is gated to coaches and admins only', async () => {
     gateRoles.length = 0;
-    render(<CoachAdultPathwayPage />);
+    await renderSettled();
     expect(gateRoles).toEqual([['coach', 'admin']]);
   });
 
-  it('labels goals as coach-confirmed checkpoints, not automatic steps', () => {
-    render(<CoachAdultPathwayPage />);
+  it('labels goals as coach-confirmed checkpoints, not automatic steps', async () => {
+    await renderSettled();
     expect(screen.getAllByText('Checkpoints a coach confirms')).toHaveLength(ADULT_PATHWAY_STAGES.length);
   });
 
@@ -90,10 +104,19 @@ describe('/coach/adult-pathway', () => {
     expect(container.querySelector('[data-panel-for="ath-2"]')).toBeNull();
   });
 
-  it('says a roster that failed to load failed, never "no athletes"', async () => {
-    mockFetch({ rosterOk: false });
+  it.each([{ rosterOk: false }, { allowedOk: false }])('says a roster that failed to load failed, never "no athletes" (%o)', async (opts) => {
+    mockFetch(opts);
     render(<CoachAdultPathwayPage />);
     expect(await screen.findByText('Your roster could not be loaded. Reload to try again.')).toBeInTheDocument();
     expect(screen.queryByText('No athletes you can open.')).toBeNull();
+  });
+
+  it('asks about a large gym in batches the route accepts', async () => {
+    const big = Array.from({ length: 2300 }, (_, i) => ({ athlete_id: `mine-${i}`, full_name: `Athlete ${i}` }));
+    mockFetch({ roster: big });
+    const { container } = render(<CoachAdultPathwayPage />);
+    await waitFor(() => expect(container.querySelector('[data-pathway-roster]')).not.toBeNull());
+    expect(batches.map((b) => b.length)).toEqual([1000, 1000, 300]);
+    expect(container.querySelectorAll('[data-panel-for]')).toHaveLength(2300);
   });
 });

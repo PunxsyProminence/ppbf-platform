@@ -5,7 +5,14 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import AdultPathwayPanel, { NOT_ELIGIBLE_FLAG, SWITCH_OFF_WARNING } from './AdultPathwayPanel';
+import AdultPathwayPanel from './AdultPathwayPanel';
+
+// Jason's approved wording (2026-10-04), written out here rather than
+// imported, so an edit to the panel's text fails this file.
+const NOT_ELIGIBLE_FLAG =
+  'Placed, but not eligible: this athlete is under 18 (or has no date of birth on file) and the adult-pathway '
+  + 'allowance is off. Nothing new can be set or ticked until a coach switches it on.';
+const SWITCH_OFF_WARNING = "Switching off ends this athlete's current stage. Their history and ticked goals are kept.";
 
 // The panel sends what the coach chose and shows what the server answers.
 // The rules themselves are the server's (adultPathway.ts); here: the approved
@@ -29,14 +36,20 @@ const MINOR_ALLOWED: Reading = {
 const MINOR_NONE: Reading = { ...ADULT, eligibility: { eligible: false, basis: 'no_date_of_birth' }, current: null, checkpoints: [] };
 
 const posts: Record<string, unknown>[] = [];
+const gets: string[] = [];
+let holdPost: Promise<void> | null = null;
 
 function serve(reading: Reading, postResponse: { ok: boolean; body?: unknown } = { ok: true }) {
   posts.length = 0;
-  global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+  gets.length = 0;
+  holdPost = null;
+  global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       posts.push(JSON.parse(String(init.body)));
+      if (holdPost) await holdPost;
       return { ok: postResponse.ok, json: async () => postResponse.body ?? { ok: true } } as Response;
     }
+    gets.push(url);
     return { ok: true, json: async () => reading } as Response;
   }) as unknown as typeof fetch;
 }
@@ -54,6 +67,12 @@ describe('AdultPathwayPanel', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it('reads this athlete, by id', async () => {
+    serve(ADULT);
+    await openPanel();
+    expect(gets).toEqual(['/api/pilot/coach/adult-pathway?athlete_id=ath-1']);
+  });
+
   it('shows an adult with no allowance section, the current stage and a ticked goal', async () => {
     serve(ADULT);
     await openPanel();
@@ -68,6 +87,9 @@ describe('AdultPathwayPanel', () => {
     await openPanel();
     expect(screen.getByText(NOT_ELIGIBLE_FLAG)).toBeInTheDocument();
     expect(screen.getByLabelText('Set stage')).toBeDisabled();
+    // Even with a different stage chosen, "Set stage" stays disabled.
+    fireEvent.change(screen.getByLabelText('Set stage'), { target: { value: 'advanced' } });
+    expect(screen.getByRole('button', { name: 'Set stage' })).toBeDisabled();
     for (const tick of screen.getAllByRole('button', { name: /^Tick: / })) expect(tick).toBeDisabled();
     // Undoing a tick is still allowed.
     expect(screen.getByRole('button', { name: 'Untick' })).not.toBeDisabled();
@@ -109,10 +131,39 @@ describe('AdultPathwayPanel', () => {
     ));
   });
 
-  it("shows the server's refusal", async () => {
+  it('disables the controls while a save is in flight, and sends once', async () => {
+    serve(ADULT);
+    await openPanel();
+    let release = () => {};
+    holdPost = new Promise<void>((resolve) => { release = resolve; });
+    const tick = screen.getByRole('button', { name: 'Tick: Aerobic base' });
+    fireEvent.click(tick);
+    fireEvent.click(tick);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Tick: Aerobic base' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Untick' })).toBeDisabled();
+    expect(posts).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Untick' })).not.toBeDisabled());
+  });
+
+  it('forgets an old error and an open switch-off prompt when closed', async () => {
+    serve(MINOR_ALLOWED, { ok: false, body: { error: 'Refused.' } });
+    await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Tick: Aerobic base' }));
+    await screen.findByText('Refused.');
+    fireEvent.click(screen.getByRole('button', { name: 'Switch off' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide pathway' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pathway' }));
+    await screen.findByText('Set stage', { selector: 'label' });
+    expect(screen.queryByText('Refused.')).toBeNull();
+    expect(screen.queryByText(SWITCH_OFF_WARNING)).toBeNull();
+  });
+
+  it("shows the server's refusal, and re-reads", async () => {
     serve(ADULT, { ok: false, body: { error: 'This athlete is under 18.', code: 'PATHWAY_ALLOWANCE_REQUIRED' } });
     await openPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Tick: Aerobic base' }));
     expect(await screen.findByText('This athlete is under 18.')).toBeInTheDocument();
+    await waitFor(() => expect(gets).toHaveLength(2));
   });
 });

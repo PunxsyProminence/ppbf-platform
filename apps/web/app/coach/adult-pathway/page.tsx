@@ -24,6 +24,9 @@ import {
 
 interface RosterAthlete { athlete_id: string; full_name?: string }
 
+/** The route's per-call cap (MAX_ROSTER_IDS in its route.ts). */
+const ROSTER_BATCH = 1000;
+
 function useRoster(): { roster: RosterAthlete[] | null; failed: boolean } {
   const [roster, setRoster] = useState<RosterAthlete[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -34,15 +37,23 @@ function useRoster(): { roster: RosterAthlete[] | null; failed: boolean } {
         const payload = res.ok ? ((await res.json()) as { items?: unknown } | null) : null;
         if (!payload || !Array.isArray(payload.items)) throw new Error('roster');
         const all = payload.items as RosterAthlete[];
-        const allowedRes = await fetch(`${apiBase()}/api/pilot/coach/adult-pathway`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'accessible_athletes', athlete_ids: all.map((a) => a.athlete_id) }),
-        });
-        const allowed = allowedRes.ok ? ((await allowedRes.json()) as { athlete_ids?: unknown } | null) : null;
-        if (!allowed || !Array.isArray(allowed.athlete_ids)) throw new Error('roster');
-        const ids = new Set(allowed.athlete_ids as string[]);
+        // The route takes at most ROSTER_BATCH ids per call; a large gym is
+        // asked in batches rather than failing as "could not be loaded".
+        const ids = new Set<string>();
+        for (let i = 0; i < all.length; i += ROSTER_BATCH) {
+          const allowedRes = await fetch(`${apiBase()}/api/pilot/coach/adult-pathway`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'accessible_athletes',
+              athlete_ids: all.slice(i, i + ROSTER_BATCH).map((a) => a.athlete_id),
+            }),
+          });
+          const allowed = allowedRes.ok ? ((await allowedRes.json()) as { athlete_ids?: unknown } | null) : null;
+          if (!allowed || !Array.isArray(allowed.athlete_ids)) throw new Error('roster');
+          for (const id of allowed.athlete_ids as string[]) ids.add(id);
+        }
         setRoster(all.filter((a) => ids.has(a.athlete_id)));
       } catch {
         // A roster that could not be read is never shown as "no athletes".
