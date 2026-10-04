@@ -208,6 +208,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
   },
+  'sessions.duration_minutes': {
+    tier: 'athlete_record',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
+    note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
+  },
   'sessions.notes': {
     tier: 'organization',
     enforcedBy: [

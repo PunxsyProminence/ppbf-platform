@@ -468,23 +468,16 @@ const KIOSK_TAB_INACTIVE =
 const PANEL = 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]';
 const PANEL_RAISED = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
 
-// Fast-Track observation feed: best-effort only. The athlete's check-out
-// (POST /api/pilot/sessions/update) already fully succeeds or fails on its
-// own -- these calls only enrich SHADOW's formula engine with a Session Load
-// (RPE x duration) input, so a failure here must never block or roll back the
-// primary write.
-//
-// THIS RUNS AT CHECK-OUT, NOT CHECK-IN, and that is the whole point. Session
-// Load multiplies session RPE by duration; both inputs only exist once the
-// session is over. It used to run at check-in with the pre-session readiness
-// slider as `session_rpe` and the pre-session duration box as `duration`, so
-// SHADOW was multiplying two numbers that had not measured anything yet.
-//
-// Both values are passed as null when the athlete did not give them, and
-// NOTHING is submitted in that case. There is no default and no prefill here
-// on purpose: a prefilled control that nobody touches is indistinguishable
-// from an answer, which is exactly how the planned 60 minutes became an
-// observed duration.
+// SHADOW Session Load feed: none from this screen. It used to run at
+// check-in with the pre-session readiness slider as `session_rpe` and a
+// pre-session duration box as `duration`, so SHADOW multiplied two numbers
+// that had not measured anything yet. Check-out now collects both real inputs
+// -- the effort answer and the minutes trained -- and stores them on the
+// session (pilot.sessions.rpe / duration_minutes); session load is computed
+// from those by the reads that show it. Wiring them into SHADOW's formula
+// engine is separate work. No default and no prefill on either input: a
+// prefilled control that nobody touches is indistinguishable from an answer,
+// which is exactly how a planned 60 minutes once became an observed duration.
 
 // The vocabularies this tab reads. A rabbit hole is stored against one stable
 // key, and the read takes one anchor at a time, so the tab asks for the terms
@@ -911,6 +904,9 @@ export default function AthleteWorkspace() {
     ? postSessionMinutesDraft.draft
     : '';
   const parsedMinutes = parsePostSessionMinutes(minutesDraft);
+  // "0" or "04" may be "045" mid-typing: check-out stays held, but the error
+  // is not announced until the entry cannot become a valid answer.
+  const showMinutesError = parsedMinutes.kind === 'invalid' && !/^0+$/.test(minutesDraft.trim());
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -1880,10 +1876,9 @@ export default function AthleteWorkspace() {
     /* No Session Load feed here. It used to sit at the end of check-IN and pass
        the readiness slider as `session_rpe` and the PLANNED duration as
        `duration`, so SHADOW multiplied two numbers that had measured nothing
-       yet. Check-out can now carry a real post-session RPE, but Session Load
-       is RPE x OBSERVED duration and nothing collects a duration, so it still
-       sends nothing: check-out records only what the athlete actually
-       supplied, on the session itself. */
+       yet. Check-out now carries both real inputs -- the post-session RPE
+       and the minutes trained -- but records them only on the session itself;
+       nothing is sent to SHADOW from here. */
   };
 
   const handleSavePainReport = async () => {
@@ -2626,12 +2621,12 @@ export default function AthleteWorkspace() {
                         autoComplete="off"
                         value={minutesDraft}
                         disabled={isCheckingOut}
-                        aria-invalid={parsedMinutes.kind === 'invalid'}
-                        aria-describedby={parsedMinutes.kind === 'invalid' ? 'athlete-post-session-minutes-error' : undefined}
+                        aria-invalid={showMinutesError}
+                        aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
                         onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
                         className="input input--kiosk w-[8rem]"
                       />
-                      {parsedMinutes.kind === 'invalid' ? (
+                      {showMinutesError ? (
                         <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
                           Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
                         </p>

@@ -49,6 +49,7 @@ jest.mock('./db', () => ({
 import type { PilotSession } from './contracts';
 import { getSessionById, upsertSession } from './entities';
 import { getPerformanceRollup } from './performanceAnalytics';
+import { validateSessionPayload } from './validation';
 
 jest.setTimeout(180_000);
 
@@ -250,6 +251,32 @@ describe('session duration migration', () => {
     }
   });
 
+  // The migration skips a constraint whose NAME already exists, so the
+  // runner's readiness check is what catches one with the wrong bounds.
+  test('the runner refuses a same-named constraint with the wrong bounds', async () => {
+    const client = await freshDatabase('duration_wrong_bounds');
+    try {
+      await client.query(`alter table pilot.sessions add column duration_minutes integer null`);
+      await client.query(
+        `alter table pilot.sessions add constraint pilot_sessions_duration_minutes_range
+           check (duration_minutes is null or duration_minutes between 10 and 3000)`,
+      );
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('SESSION_DURATION_NOT_READY');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses a column that carries a default', async () => {
+    const client = await freshDatabase('duration_default');
+    try {
+      await client.query(`alter table pilot.sessions add column duration_minutes integer null default 60`);
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('SESSION_DURATION_NOT_READY');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('applies over existing rows, backfills nothing, and re-applies as a no-op', async () => {
     const client = await freshDatabase('duration_apply');
     try {
@@ -343,6 +370,16 @@ describe("upsertSession stores the athlete's minutes", () => {
         { mode: 'update', expectedAthleteId: ATHLETE_ID },
       );
       expect(await readMinutes('sess-1')).toBe(60);
+
+      // The same through the validator, as the routes run it: a JSON body
+      // with no duration_minutes key (a note publication) keeps the minutes.
+      const noteBody = JSON.parse(JSON.stringify(session({ rpe: 7, rpe_method: SELF_REPORT, notes: 'shared' })));
+      expect('duration_minutes' in noteBody).toBe(false);
+      await upsertSession(ORG_ID, validateSessionPayload(noteBody), { mode: 'update', expectedAthleteId: ATHLETE_ID });
+      expect(await readMinutes('sess-1')).toBe(60);
+      const checkOutBody = JSON.parse(JSON.stringify(session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: 90 })));
+      await upsertSession(ORG_ID, validateSessionPayload(checkOutBody), { mode: 'update', expectedAthleteId: ATHLETE_ID });
+      expect(await readMinutes('sess-1')).toBe(90);
 
       // Create with minutes stores them too.
       await upsertSession(ORG_ID, session({ session_id: 'sess-2', duration_minutes: 30 }), { mode: 'create' });

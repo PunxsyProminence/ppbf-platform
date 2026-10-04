@@ -3072,7 +3072,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     expect(screen.queryByText(/Session load:/)).toBeNull();
   });
 
-  test.each(['0', '301', '4.5', '-5', 'an hour', '1e2'])(
+  test.each(['301', '4.5', '-5', 'an hour', '1e2', '0 5'])(
     'an invalid entry (%p) holds check-out and says why',
     async (typed) => {
       await openSession();
@@ -3094,6 +3094,50 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     },
   );
 
+  test('zero is held without an alert, because it may be the start of "045"', async () => {
+    await openSession();
+
+    fireEvent.change(minutesBox(), { target: { value: '0' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Check Out' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(minutesBox(), { target: { value: '045' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].duration_minutes).toBe(45);
+  });
+
+  test('a refused check-out keeps the typed minutes, and the retry sends them', async () => {
+    sessionUpdateFails = true;
+    await openSession();
+
+    fireEvent.change(minutesBox(), { target: { value: '45' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    expect(await screen.findByText(/still checked in/i)).toBeTruthy();
+    expect(minutesBox().value).toBe('45');
+
+    sessionUpdateFails = false;
+    const before = checkOutBodies().length;
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(before + 1));
+    expect(checkOutBodies()[before].duration_minutes).toBe(45);
+  });
+
+  // The server keeps stored minutes only when a write OMITS the key, so a note
+  // publication must never carry it -- not even as null.
+  test('a note publication never carries minutes, even with minutes typed', async () => {
+    await openSession();
+
+    fireEvent.change(minutesBox(), { target: { value: '45' } });
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    const [noteWrite] = postedTo('/api/pilot/sessions/update');
+    expect(noteWrite.body.completed_flag).toBe(false);
+    expect('duration_minutes' in noteWrite.body).toBe(false);
+  });
+
   test.each([['1', 1], ['300', 300]])('the bounds are accepted (%p)', async (typed, expected) => {
     await openSession();
     fireEvent.change(minutesBox(), { target: { value: typed } });
@@ -3103,6 +3147,9 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     expect(checkOutBodies()[0].duration_minutes).toBe(expected);
   });
 
+  // Cleared by the successful check-out; this pins that the box is empty for
+  // the next session, not how (the keying is pinned by the refused-check-out
+  // case above, which keeps the draft for the same session).
   test('the next session starts with an empty box after a check-out with minutes', async () => {
     persistSessionUpdates = true;
     await openSession();

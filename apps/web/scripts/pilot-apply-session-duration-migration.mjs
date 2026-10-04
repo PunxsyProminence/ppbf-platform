@@ -79,8 +79,8 @@ const READINESS_QUERY = `
       where conname = 'pilot_sessions_duration_minutes_range'
         and conrelid = to_regclass('pilot.sessions')
         and contype = 'c'
-        and pg_get_constraintdef(oid) like '%>= 1%'
-        and pg_get_constraintdef(oid) like '%<= 300%'
+        and pg_get_constraintdef(oid) like '%(duration_minutes >= 1)%'
+        and pg_get_constraintdef(oid) like '%(duration_minutes <= 300)%'
     ) as duration_range_ready
 `;
 
