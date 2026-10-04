@@ -118,6 +118,13 @@ describe('pathwayEligibility (OD-2026-10-04-010)', () => {
     expect(pathwayEligibility('2008-10-04', false, NOW).eligible).toBe(true);
     expect(pathwayEligibility('2008-10-05', false, NOW).eligible).toBe(false);
   });
+
+  it('uses the gym-local day, not the UTC day, near midnight', () => {
+    // 02:00 UTC on 5 October is still the evening of 4 October in the gym.
+    const lateEvening = new Date('2026-10-05T02:00:00Z');
+    expect(pathwayEligibility('2008-10-05', false, lateEvening).eligible).toBe(false);
+    expect(pathwayEligibility('2008-10-04', false, lateEvening).eligible).toBe(true);
+  });
 });
 
 describe('who may be placed', () => {

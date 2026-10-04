@@ -9,7 +9,7 @@ import {
 import { type ActorIdentity, accessibleAthleteIds, assertActorCanAccessAthlete } from './access';
 import { ageOnGymDay, gymToday } from './competenceCohorts';
 import { query, queryOne, withTransaction } from './db';
-import { ForbiddenError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, ValidationError } from './errors';
 import { ADULT_AGE_YEARS } from './wallDisplay';
 
 /**
@@ -43,9 +43,20 @@ import { ADULT_AGE_YEARS } from './wallDisplay';
  * platform_owner get nothing: whether a family sees the pathway is not
  * decided, and an allowance reason is free text about a child.
  *
- * AGE. Read from pilot.athletes.dob on the gym-local day, inside the write
- * transaction with the athlete row locked, so a placement and an allowance
- * withdrawal for the same athlete cannot interleave.
+ * AGE. Read from pilot.athletes.dob (as to_char YYYY-MM-DD, never dob::text,
+ * whose shape follows the session DateStyle) on the gym-local day, inside the
+ * write transaction with the athlete row locked, so a placement and an
+ * allowance withdrawal for the same athlete cannot interleave.
+ *
+ * TIMES. Every stamp and every insert time is clock_timestamp(), not now():
+ * now() is when the transaction BEGAN, so a write that waited on the athlete
+ * lock would stamp a time earlier than the row it ends.
+ *
+ * A PLACED ATHLETE WHO STOPS BEING ELIGIBLE (dob corrected to a minor, no
+ * allowance) keeps the placement, flagged and frozen: the read returns both
+ * `current` and `eligibility`, and every new placement or tick is refused
+ * until a coach switches the allowance on (Jason, 2026-10-04, "A) Flag and
+ * freeze").
  */
 
 export const PATHWAY_WRITE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
@@ -187,7 +198,7 @@ type Tx = { query: (text: string, values?: unknown[]) => Promise<{ rows: Record<
 /** Locks the live athlete row and returns its dob as text (null when unset). */
 async function lockAthlete(tx: Tx, organizationId: string, athleteId: string): Promise<{ dob: string | null }> {
   const result = await tx.query(
-    `select dob::text as dob from pilot.athletes
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
       where organization_id = $1 and athlete_id = $2 and deleted_at is null
       for update`,
     [organizationId, athleteId],
@@ -214,7 +225,7 @@ async function assertEligible(tx: Tx, organizationId: string, athleteId: string,
   const allowance = await liveAllowance(tx, organizationId, athleteId);
   const eligibility = pathwayEligibility(dob, allowance !== null, now);
   if (!eligibility.eligible) {
-    throw new ForbiddenError(
+    throw new ConflictError(
       eligibility.basis === 'no_date_of_birth'
         ? 'This athlete has no date of birth on file, so counts as a minor. A coach must switch on the adult-pathway allowance, with a reason, first.'
         : 'This athlete is under 18. A coach must switch on the adult-pathway allowance, with a reason, first.',
@@ -241,7 +252,7 @@ export async function getAthletePathway(
   await assertPathwayAccess(actor, athleteId);
   const org = actor.organizationId;
   const athlete = await queryOne<{ dob: string | null }>(
-    `select dob::text as dob from pilot.athletes
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
       where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [org, athleteId],
   );
@@ -253,8 +264,15 @@ export async function getAthletePathway(
   const history = await query<PathwayPlacementRow>(
     `select ${PLACEMENT_FIELDS} from pilot.athlete_pathway_stages
       where organization_id = $1 and athlete_id = $2
-      order by set_at desc
+      order by set_at desc, placement_id
       limit ${HISTORY_LIMIT}`,
+    [org, athleteId],
+  );
+  // Its own query, held by the one-current index -- never inferred from the
+  // order of a capped history list.
+  const current = await queryOne<PathwayPlacementRow>(
+    `select ${PLACEMENT_FIELDS} from pilot.athlete_pathway_stages
+      where organization_id = $1 and athlete_id = $2 and superseded_at is null`,
     [org, athleteId],
   );
   const checkpoints = await query<PathwayCheckpointRow>(
@@ -266,7 +284,7 @@ export async function getAthletePathway(
   return {
     eligibility: pathwayEligibility(athlete?.dob ?? null, allowance !== null, now),
     allowance,
-    current: history.find((row) => row.superseded_at === null) ?? null,
+    current,
     history,
     checkpoints,
   };
@@ -310,7 +328,7 @@ export async function placeAthleteOnStage(input: {
     if (current) {
       await tx.query(
         `update pilot.athlete_pathway_stages
-            set superseded_at = now(), end_reason = 'replaced', superseded_by_placement_id = $3,
+            set superseded_at = clock_timestamp(), end_reason = 'replaced', superseded_by_placement_id = $3,
                 ended_by_account_id = $4, ended_by_role = $5
           where organization_id = $1 and placement_id = $2`,
         [org, current.placement_id, placementId, input.actor.accountId, role],
@@ -318,8 +336,8 @@ export async function placeAthleteOnStage(input: {
     }
     const inserted = await tx.query(
       `insert into pilot.athlete_pathway_stages
-         (organization_id, placement_id, athlete_id, stage_key, coach_note, set_by_account_id, set_by_role)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, placement_id, athlete_id, stage_key, coach_note, set_by_account_id, set_by_role, set_at)
+       values ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
        returning ${PLACEMENT_FIELDS}`,
       [org, placementId, input.athleteId, input.stageKey, note, input.actor.accountId, role],
     );
@@ -353,8 +371,8 @@ export async function confirmPathwayCheckpoint(input: {
     }
     const inserted = await tx.query(
       `insert into pilot.athlete_pathway_checkpoints
-         (organization_id, confirmation_id, athlete_id, stage_key, goal_key, confirmed_by_account_id, confirmed_by_role)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, confirmation_id, athlete_id, stage_key, goal_key, confirmed_by_account_id, confirmed_by_role, confirmed_at)
+       values ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
        returning ${CHECKPOINT_FIELDS}`,
       [org, randomUUID(), input.athleteId, input.stageKey, input.goalKey, input.actor.accountId, role],
     );
@@ -371,7 +389,7 @@ export async function withdrawPathwayCheckpoint(input: {
   const role = await assertPathwayAccess(input.actor, input.athleteId);
   const row = await queryOne<{ confirmation_id: string }>(
     `update pilot.athlete_pathway_checkpoints
-        set withdrawn_at = now(), withdrawn_by_account_id = $4, withdrawn_by_role = $5
+        set withdrawn_at = clock_timestamp(), withdrawn_by_account_id = $4, withdrawn_by_role = $5
       where organization_id = $1 and athlete_id = $2 and goal_key = $3 and withdrawn_at is null
       returning confirmation_id`,
     [input.actor.organizationId, input.athleteId, input.goalKey, input.actor.accountId, role],
@@ -396,8 +414,8 @@ export async function grantMinorAllowance(input: {
     }
     const inserted = await tx.query(
       `insert into pilot.athlete_pathway_minor_allowances
-         (organization_id, allowance_id, athlete_id, reason, granted_by_account_id, granted_by_role)
-       values ($1, $2, $3, $4, $5, $6)
+         (organization_id, allowance_id, athlete_id, reason, granted_by_account_id, granted_by_role, granted_at)
+       values ($1, $2, $3, $4, $5, $6, clock_timestamp())
        returning ${ALLOWANCE_FIELDS}`,
       [org, randomUUID(), input.athleteId, reason, input.actor.accountId, role],
     );
@@ -426,7 +444,7 @@ export async function withdrawMinorAllowance(input: {
 
     const withdrawn = await tx.query(
       `update pilot.athlete_pathway_minor_allowances
-          set withdrawn_at = now(), withdrawn_by_account_id = $3, withdrawn_by_role = $4
+          set withdrawn_at = clock_timestamp(), withdrawn_by_account_id = $3, withdrawn_by_role = $4
         where organization_id = $1 and allowance_id = $2
         returning ${ALLOWANCE_FIELDS}`,
       [org, live.allowance_id, input.actor.accountId, role],
@@ -436,7 +454,7 @@ export async function withdrawMinorAllowance(input: {
     if (!pathwayEligibility(dob, false, input.now ?? new Date()).eligible) {
       const ended = await tx.query(
         `update pilot.athlete_pathway_stages
-            set superseded_at = now(), end_reason = 'allowance_withdrawn',
+            set superseded_at = clock_timestamp(), end_reason = 'allowance_withdrawn',
                 ended_by_account_id = $3, ended_by_role = $4
           where organization_id = $1 and athlete_id = $2 and superseded_at is null
           returning placement_id`,

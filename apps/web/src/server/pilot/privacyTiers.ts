@@ -506,6 +506,7 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
+  'pilot.athlete_pathway_stages',
 ];
 
 /**

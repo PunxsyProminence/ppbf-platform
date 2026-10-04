@@ -151,6 +151,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.athlete_injuries',
       // Why a coach let a minor onto the adult pathway (map item 17).
       'pilot.athlete_pathway_minor_allowances',
+      // A coach's free-text note beside a stage placement (map item 17).
+      'pilot.athlete_pathway_stages',
       'pilot.coach_observations',
       'pilot.compliance_violations',
       'pilot.documents',
