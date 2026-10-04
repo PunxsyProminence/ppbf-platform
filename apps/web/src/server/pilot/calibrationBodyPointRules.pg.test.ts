@@ -16,6 +16,8 @@
 //   * every vocabulary in the SQL is exactly the ontology.ts array
 //   * the same rules hold for 0.3, which needs its 25 points (solar_plexus
 //     included) at each moment while 0.2 still needs exactly its 24
+//   * and for 0.4, which needs its 23 (no ankles); a re-run on a database
+//     holding the 0.3 rules reaches 0.4
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -65,6 +67,14 @@ const VIDEO_ID = 'vs-rules-ready';
 const V01 = 'boxing-ontology-0.1';
 const V02 = 'boxing-ontology-0.2';
 const V03 = 'boxing-ontology-0.3';
+const V04 = 'boxing-ontology-0.4';
+
+/** The rules as they stood before boxing-ontology-0.4: no 0.4 in any version
+ * list and no 0.4 count. Stands in for a database the migration reached
+ * before 0.4 existed. */
+function asBefore04(sql: string): string {
+  return sql.replaceAll(`, '${V04}'`, '').replace(`\n    when '${V04}' then 23`, '');
+}
 
 const CLIP_START_MS = 60_000;
 const CLIP_END_MS = 72_000;
@@ -477,8 +487,9 @@ describe('the runner', () => {
     try {
       const sql = await readMigration(RULES_SQL);
       // The rules as they stood before 0.3: every 0.3 literal turned into 0.2.
-      const before = sql.replaceAll(`'${V03}'`, `'${V02}'`);
+      const before = asBefore04(sql).replaceAll(`'${V03}'`, `'${V02}'`);
       expect(before).not.toContain(V03);
+      expect(before).not.toContain(V04);
       await client.query(before);
       const runner = await loadRunner();
       await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
@@ -496,6 +507,54 @@ describe('the runner', () => {
           [`pilot.${fn}()`],
         );
         expect(result.rows[0].def).toContain(`'${V03}'`);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a re-run on a database holding the 0.3 rules reaches 0.4; readiness tells the two apart', async () => {
+    const client = await prerequisiteDatabase('ppbf_test_calib_body_rules_before_04');
+    try {
+      const sql = await readMigration(RULES_SQL);
+      const before = asBefore04(sql);
+      expect(before).toContain(V03);
+      expect(before).not.toContain(V04);
+      await client.query(before);
+      const runner = await loadRunner();
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINT_RULES_NOT_READY',
+      );
+
+      await runner.applyMigrationTransaction(client, sql);
+      for (const fn of [
+        'calibration_event_stance_labels_guard',
+        'calibration_annotation_events_body_point_rules',
+        'calibration_annotation_sets_body_point_rules',
+      ]) {
+        const result = await client.query<{ def: string }>(
+          'select pg_get_functiondef($1::regprocedure) as def',
+          [`pilot.${fn}()`],
+        );
+        expect(result.rows[0].def).toContain(`'${V04}'`);
+      }
+
+      // Any one function alone left at 0.3 is still not ready.
+      for (const [fn, endMarker] of [
+        ['calibration_event_stance_labels_guard', '$pilot_calibration_event_stance_labels_guard$;'],
+        ['calibration_annotation_events_body_point_rules', '$pilot_calibration_events_body_point_rules$;'],
+        ['calibration_annotation_sets_body_point_rules', '$pilot_calibration_sets_body_point_rules$;'],
+      ]) {
+        const start = sql.indexOf(`create or replace function pilot.${fn}()`);
+        expect(start).toBeGreaterThan(-1);
+        const end = sql.indexOf(endMarker, sql.indexOf('begin', start)) + endMarker.length;
+        const one = asBefore04(sql.slice(start, end));
+        expect(one).not.toContain(V04);
+        await client.query(one);
+        await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+          'CALIBRATION_BODY_POINT_RULES_NOT_READY',
+        );
+        await runner.applyMigrationTransaction(client, sql);
       }
     } finally {
       await client.end();
@@ -761,7 +820,7 @@ describe('a set holding an event cannot change vocabulary', () => {
   });
 });
 
-describe('a 0.2 or 0.3 set cannot be submitted incomplete', () => {
+describe('a 0.2, 0.3 or 0.4 set cannot be submitted incomplete', () => {
   test('a complete set submits: a landed punch and a defence', async () => {
     const set = await newSet();
     await completeEvent(set, await insertEvent(set));
@@ -851,6 +910,41 @@ describe('a 0.2 or 0.3 set cannot be submitted incomplete', () => {
       detail = error.detail;
     });
     expect(detail).toBe(`${eventId}: start points, 24 of 25`);
+  });
+
+  test.each([
+    ['a landed punch', {}, {}],
+    ['a defence', DEFENSE, { middleKind: 'furthest_point', middleMs: EV_CONTACT }],
+  ] as Array<[string, Record<string, unknown>, CompleteOptions]>)(
+    'a complete 0.4 set submits: %s with 23 points at each moment, no ankle among them',
+    async (_label, fields, options) => {
+      const set = await newSet(V04);
+      await completeEvent(set, await insertEvent(set, fields), options);
+      const held = await db.query<{ point_code: string; n: string }>(
+        `select point_code, count(*)::text as n from pilot.calibration_body_points
+          where organization_id = $1 and annotation_set_id = $2 group by point_code`,
+        [ORG_ID, set.setId],
+      );
+      expect(held.rows).toHaveLength(23);
+      expect(held.rows.map((row) => row.point_code)).not.toEqual(expect.arrayContaining(['left_ankle']));
+      expect(held.rows.map((row) => row.point_code)).not.toEqual(expect.arrayContaining(['right_ankle']));
+      expect(held.rows.every((row) => row.n === '3')).toBe(true);
+      await submit(set);
+      expect(await statusOf(set)).toBe('submitted');
+    },
+  );
+
+  test('a 0.4 set one point short at the start is refused as 22 of 23', async () => {
+    const set = await newSet(V04);
+    const eventId = await insertEvent(set);
+    await completeEvent(set, eventId, { pointsAtStart: 22 });
+    let detail: string | undefined;
+    await submit(set).catch((error: { message: string; detail?: string }) => {
+      expect(error.message).toBe('CALIBRATION_BODY_POINTS_INCOMPLETE');
+      detail = error.detail;
+    });
+    expect(detail).toBe(`${eventId}: start points, 22 of 23`);
+    expect(await statusOf(set)).toBe('in_progress');
   });
 
   test('every missing item is listed', async () => {

@@ -1,6 +1,6 @@
 -- Calibration body-point rules -- the per-event stance-type label, the
--- body-point versions' rules on the event row (boxing-ontology-0.2 and 0.3,
--- BODY_POINT_ONTOLOGY_VERSIONS in ontology.ts), and the completeness check at
+-- body-point versions' rules on the event row (boxing-ontology-0.2, 0.3 and
+-- 0.4, BODY_POINT_ONTOLOGY_VERSIONS in ontology.ts), and the completeness check at
 -- submission (TEACH-BIOMECH-01-c).
 --
 -- STACKED ON the calibration body points migration. It needs
@@ -11,19 +11,20 @@
 --     punch or defence (OD-2026-10-02-014), on the person whose action the
 --     event is. One per event; no subject column: the other boxer is marked
 --     on their own event (Jason 2026-10-03, "It should be on the individuals
---     action", then "1 and 3"; OD-2026-10-03-006). Only a 0.2 or 0.3 set may hold one; a submitted
+--     action", then "1 and 3"; OD-2026-10-03-006). Only a 0.2, 0.3 or 0.4 set may hold one; a submitted
 --     set's are frozen; deleting the event, set, clip, footage or
 --     organization still removes them.
---   * On a 0.2 or 0.3 event row: no 0.1 `stance` (lead side at each moment replaces
+--   * On a 0.2, 0.3 or 0.4 event row: no 0.1 `stance` (lead side at each moment replaces
 --     it), no `peak_ms` (OD-2026-10-02-008 3A), and a punch carries a contact
 --     time exactly when its result made contact (CONTACT_RESULTS_WITH_CONTACT
 --     in ontology.ts; OD-2026-10-02-011 3a; -016 D2 A).
 --   * A set holding any event cannot change vocabulary, so neither a 0.1
 --     event nor a stance label can end up under the other version's rules.
---   * A 0.2 or 0.3 set cannot be submitted incomplete: every event needs its
+--   * A 0.2, 0.3 or 0.4 set cannot be submitted incomplete: every event needs its
 --     stance type, all three moments, a lead side and guard at each, and all
---     of its version's points at each -- 24 under 0.2, 25 under 0.3
---     (OD-2026-10-02-011 3a, 3b; -014; Jason 2026-10-03). The refusal names
+--     of its version's points at each -- 24 under 0.2, 25 under 0.3, 23
+--     under 0.4 (OD-2026-10-02-011 3a, 3b; -014; Jason 2026-10-03;
+--     OD-2026-10-04-021). The refusal names
 --     what is missing.
 --
 -- 0.1 sets are untouched: every rule here returns early for them.
@@ -127,7 +128,7 @@ begin
   end if;
 
   if parent_version is null
-     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
+     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4')
   then
     raise exception 'CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION'
       using errcode = 'check_violation';
@@ -151,7 +152,7 @@ create trigger pilot_calibration_event_stance_labels_guard
   for each row
   execute function pilot.calibration_event_stance_labels_guard();
 
--- Events: the 0.2 and 0.3 rules on the row itself, and the actor a stance label was
+-- Events: the 0.2, 0.3 and 0.4 rules on the row itself, and the actor a stance label was
 -- given for. A new function; the events freeze and the body-moment guard are
 -- not edited.
 --
@@ -199,7 +200,7 @@ begin
      for share;
 
   if parent_version is null
-     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
+     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4')
   then
     return new;
   end if;
@@ -227,7 +228,7 @@ begin
 end;
 $pilot_calibration_events_body_point_rules$;
 
--- Rows written before this migration are judged once, here: a 0.2 or 0.3 event that
+-- Rows written before this migration are judged once, here: a 0.2, 0.3 or 0.4 event that
 -- already breaks the rules refuses the migration instead of being frozen in.
 do $$
 begin
@@ -237,7 +238,7 @@ begin
       join pilot.calibration_annotation_sets s
         on s.organization_id = e.organization_id
        and s.annotation_set_id = e.annotation_set_id
-     where s.ontology_version in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
+     where s.ontology_version in ('boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4')
        and (e.stance is not null
          or e.peak_ms is not null
          or (e.event_class = 'punch'
@@ -256,7 +257,7 @@ create trigger pilot_calibration_events_body_point_rules
   for each row
   execute function pilot.calibration_annotation_events_body_point_rules();
 
--- Sets: no vocabulary change while the set holds an event, and no 0.2 or 0.3
+-- Sets: no vocabulary change while the set holds an event, and no 0.2, 0.3 or 0.4
 -- submission while anything is missing.
 --
 -- LOCKS AT SUBMISSION. Writers of events, stance labels, moments and points
@@ -287,7 +288,7 @@ begin
 
   if old.status is distinct from 'in_progress'
      or new.status is distinct from 'submitted'
-     or new.ontology_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
+     or new.ontology_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4')
   then
     return new;
   end if;
@@ -298,6 +299,7 @@ begin
   expected_points := case new.ontology_version
     when 'boxing-ontology-0.2' then 24
     when 'boxing-ontology-0.3' then 25
+    when 'boxing-ontology-0.4' then 23
   end;
 
   perform 1 from pilot.calibration_event_stance_labels
