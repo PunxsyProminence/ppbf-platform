@@ -18,6 +18,8 @@ interface PerformanceItem {
   sessions_total: number;
   sessions_completed: number;
   avg_rpe: number | null;
+  avg_session_load: number | null;
+  session_load_count: number;
   training_days: number;
   readiness_count: number;
   avg_readiness: number | null;
@@ -281,6 +283,17 @@ export default function PerformanceAnalyticsPage() {
                   <dl className="mt-[var(--s4)] flex flex-wrap gap-x-[var(--s6)] gap-y-[var(--s3)]">
                     <Figure label="Sessions">{item.sessions_completed}/{item.sessions_total}</Figure>
                     <Figure label="Avg RPE">{formatNumber(item.avg_rpe)}</Figure>
+                    {/* RPE x minutes, computed by the read and never stored.
+                        Not validated for boxing, so the label says so; no
+                        flag or threshold is drawn from it here. */}
+                    <Figure label="Avg session load (RPE × min, unvalidated)">
+                      {formatNumber(item.avg_session_load, 0)}
+                      {item.session_load_count > 0 ? (
+                        <span className="ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          ({item.session_load_count} {item.session_load_count === 1 ? 'session' : 'sessions'})
+                        </span>
+                      ) : null}
+                    </Figure>
                     <Figure label="Training days">{item.training_days}</Figure>
                     <Figure label="Readiness">
                       {formatNumber(item.avg_readiness)}

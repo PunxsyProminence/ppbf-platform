@@ -471,3 +471,37 @@ export async function listLinkCandidates(organizationId: string, athleteId: stri
   ]);
   return { holds, plans, clearances, painReports };
 }
+
+/**
+ * What the athlete and their linked guardians read (owner decision
+ * 2026-10-04: a read-only view of their own records). ENUMERATED, and selected
+ * column by column: the staff note, who recorded or edited it, and the ids of
+ * linked staff records are never read out of the database for this audience,
+ * so no later change to a route can forward them by accident. The expected
+ * return is the linked plan's date when there is one, as staff see it.
+ */
+export interface FamilyInjury {
+  injury_id: string;
+  injury_date: string;
+  body_area: InjuryBodyArea;
+  injury_type: InjuryType;
+  context: InjuryContext;
+  reported_by: InjuryReportedBy;
+  expected_return_date: string | null;
+  returned_on: string | null;
+}
+
+/** The family projection, newest first; entered-in-error rows and deleted athletes left out. Caller authorizes. */
+export async function listFamilyInjuries(organizationId: string, athleteId: string): Promise<FamilyInjury[]> {
+  return query<FamilyInjury>(
+    `select i.injury_id::text, i.injury_date::text, i.body_area, i.injury_type, i.context, i.reported_by,
+            (case when i.linked_rtt_plan_id is not null then p.earliest_return_date
+                  else i.expected_return_date end)::text as expected_return_date,
+            i.returned_on::text
+       from ${FROM}
+      where i.organization_id = $1 and i.athlete_id = $2 and i.entered_in_error = false
+        and ${athleteNotDeletedSql('i')}
+      order by i.injury_date desc, i.created_at desc`,
+    [organizationId, athleteId],
+  );
+}

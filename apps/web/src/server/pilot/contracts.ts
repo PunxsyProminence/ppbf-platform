@@ -79,6 +79,13 @@ export interface PilotSession {
   // Read this field only alongside rpe_method.
   rpe: number | null;
   rpe_method: SessionRpeMethod;
+  // Minutes the athlete says they trained, answered at check-out (1..300).
+  // NULL when not given, and on every session written before the
+  // session-duration migration. Optional on a write: an absent key leaves the
+  // stored value unchanged, so writers that predate it cannot erase it.
+  // Session load (rpe x duration_minutes) is never stored -- see
+  // pilot_slice_postgres_session_duration_migration.sql.
+  duration_minutes?: number | null;
   notes: string;
   completed_flag: boolean;
   created_at: string;
@@ -188,6 +195,13 @@ export const SESSION_FIELDS = [
   'completed_flag',
   'created_at',
   'updated_at',
+] as const;
+
+// Accepted on a session write but not demanded: every writer older than the
+// session-duration migration omits it, and an absent key leaves the stored
+// value alone (see upsertSession).
+export const SESSION_OPTIONAL_FIELDS = [
+  'duration_minutes',
 ] as const;
 
 export const COACH_REVIEW_FIELDS = [

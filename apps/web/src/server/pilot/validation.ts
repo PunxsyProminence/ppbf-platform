@@ -5,6 +5,7 @@ import {
   GOAL_FIELDS,
   GOAL_OPTIONAL_FIELDS,
   SESSION_FIELDS,
+  SESSION_OPTIONAL_FIELDS,
   SESSION_RPE_METHODS,
   type PilotAthlete,
   type PilotCoachReview,
@@ -112,6 +113,29 @@ function requireSessionRpe(value: unknown, field: string): number | null {
   return value;
 }
 
+// Minutes the athlete says they trained, answered at check-out. The same
+// 1..300 whole-minute bounds as pilot_sessions_duration_minutes_range, stated
+// here so a caller gets a 400 naming the field instead of a constraint
+// violation. null is a real answer ("not given"); an absent key is handled by
+// the caller, because absent and null mean different things on an update.
+export const SESSION_DURATION_MINUTES_MIN = 1;
+export const SESSION_DURATION_MINUTES_MAX = 300;
+
+function requireSessionDurationMinutes(value: unknown, field: string): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new TypeError(`Request body field ${field} must be a whole number of minutes or null`);
+  }
+  if (value < SESSION_DURATION_MINUTES_MIN || value > SESSION_DURATION_MINUTES_MAX) {
+    throw new Error(
+      `Request body field ${field} must be from ${SESSION_DURATION_MINUTES_MIN} to ${SESSION_DURATION_MINUTES_MAX}`,
+    );
+  }
+  return value;
+}
+
 // Checked against the vocabulary here rather than left to the database, and
 // required rather than defaulted, mirroring the migration that drops the
 // column default: a writer must state where the number came from instead of
@@ -182,9 +206,27 @@ export function validateGoalPayload(payload: unknown): PilotGoal {
   };
 }
 
+/**
+ * duration_minutes means "the minutes the ATHLETE says they trained", and the
+ * column has no method column to say otherwise: the coach rollup multiplies it
+ * into session load as the athlete's own report. Both session routes also
+ * admit coaches and organization admins, so a staff write carrying the key
+ * would be stored and later read as the athlete's answer. Refused for every
+ * role but athlete. A staff write that OMITS the key is unaffected and keeps
+ * the stored minutes (see upsertSession). A second writer needs a
+ * duration_method column in its own migration, as rpe_method did.
+ */
+export function assertDurationWrittenByAthlete(role: string, session: PilotSession): void {
+  if (session.duration_minutes !== undefined && role !== 'athlete') {
+    throw new Error(
+      'Forbidden: duration_minutes is recorded only by the athlete at check-out',
+    );
+  }
+}
+
 export function validateSessionPayload(payload: unknown): PilotSession {
   const record = asRecord(payload);
-  assertOnlyAllowedKeys(record, SESSION_FIELDS);
+  assertOnlyAllowedKeys(record, SESSION_FIELDS, SESSION_OPTIONAL_FIELDS);
 
   const rpe = requireSessionRpe(record.rpe, 'rpe');
   const rpeMethod = requireSessionRpeMethod(record.rpe_method, 'rpe_method');
@@ -201,7 +243,7 @@ export function validateSessionPayload(payload: unknown): PilotSession {
     );
   }
 
-  return {
+  const session: PilotSession = {
     session_id: requireString(record.session_id, 'session_id'),
     athlete_id: requireString(record.athlete_id, 'athlete_id'),
     date: requireString(record.date, 'date'),
@@ -212,6 +254,14 @@ export function validateSessionPayload(payload: unknown): PilotSession {
     created_at: requireString(record.created_at, 'created_at'),
     updated_at: requireString(record.updated_at, 'updated_at'),
   };
+  // Optional, and ABSENT is kept distinct from null. Every writer older than
+  // this field -- a note publication, a cached client mid-deploy, the CSV
+  // seeder -- omits it, and upsertSession leaves the stored minutes alone for
+  // those. Only a caller that sends the key (check-out) sets or clears it.
+  if (Object.prototype.hasOwnProperty.call(record, 'duration_minutes')) {
+    session.duration_minutes = requireSessionDurationMinutes(record.duration_minutes, 'duration_minutes');
+  }
+  return session;
 }
 
 export function validateCoachReviewPayload(payload: unknown): PilotCoachReview {

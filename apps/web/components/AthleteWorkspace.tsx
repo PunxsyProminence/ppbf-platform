@@ -13,6 +13,7 @@ import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
+import MyInjuries from './MyInjuries';
 import TrainingHoldBanner from './TrainingHoldBanner';
 import {
   AthleteSummaryPanel,
@@ -336,6 +337,34 @@ const POST_SESSION_EFFORT_QUESTION = 'How hard was the session you just finished
 const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 }, (_, value) => value);
 
 /**
+ * The post-session minutes question, answered at check-out beside the effort
+ * question and stored as pilot.sessions.duration_minutes. Optional, starts
+ * empty, and only ever the athlete's own number: nothing is prefilled from the
+ * check-in time, because check-out is when the button was pressed, not when
+ * training ended. Bounds match validateSessionPayload and the column CHECK.
+ */
+const POST_SESSION_MINUTES_QUESTION = 'How many minutes did you train?';
+const POST_SESSION_MINUTES_MIN = 1;
+const POST_SESSION_MINUTES_MAX = 300;
+
+/**
+ * The minutes box as check-out reads it: empty is "not answered" (null), a
+ * whole number in range is the answer, anything else is invalid and check-out
+ * waits for it to be fixed or cleared -- it never drops a typed answer
+ * silently or guesses what was meant.
+ */
+export function parsePostSessionMinutes(
+  draft: string,
+): { status: 'empty' } | { status: 'valid'; minutes: number } | { status: 'invalid' } {
+  const trimmed = draft.trim();
+  if (trimmed === '') return { status: 'empty' };
+  if (!/^\d+$/.test(trimmed)) return { status: 'invalid' };
+  const minutes = Number(trimmed);
+  if (minutes < POST_SESSION_MINUTES_MIN || minutes > POST_SESSION_MINUTES_MAX) return { status: 'invalid' };
+  return { status: 'valid', minutes };
+}
+
+/**
  * A-FIN-07. Pain severity, 1 to 10 -- and deliberately NOT 0 to 10 like the
  * effort scale above it.
  *
@@ -440,23 +469,16 @@ const KIOSK_TAB_INACTIVE =
 const PANEL = 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]';
 const PANEL_RAISED = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
 
-// Fast-Track observation feed: best-effort only. The athlete's check-out
-// (POST /api/pilot/sessions/update) already fully succeeds or fails on its
-// own -- these calls only enrich SHADOW's formula engine with a Session Load
-// (RPE x duration) input, so a failure here must never block or roll back the
-// primary write.
-//
-// THIS RUNS AT CHECK-OUT, NOT CHECK-IN, and that is the whole point. Session
-// Load multiplies session RPE by duration; both inputs only exist once the
-// session is over. It used to run at check-in with the pre-session readiness
-// slider as `session_rpe` and the pre-session duration box as `duration`, so
-// SHADOW was multiplying two numbers that had not measured anything yet.
-//
-// Both values are passed as null when the athlete did not give them, and
-// NOTHING is submitted in that case. There is no default and no prefill here
-// on purpose: a prefilled control that nobody touches is indistinguishable
-// from an answer, which is exactly how the planned 60 minutes became an
-// observed duration.
+// SHADOW Session Load feed: none from this screen. It used to run at
+// check-in with the pre-session readiness slider as `session_rpe` and a
+// pre-session duration box as `duration`, so SHADOW multiplied two numbers
+// that had not measured anything yet. Check-out now collects both real inputs
+// -- the effort answer and the minutes trained -- and stores them on the
+// session (pilot.sessions.rpe / duration_minutes); session load is computed
+// from those by the reads that show it. Wiring them into SHADOW's formula
+// engine is separate work. No default and no prefill on either input: a
+// prefilled control that nobody touches is indistinguishable from an answer,
+// which is exactly how a planned 60 minutes once became an observed duration.
 
 // The vocabularies this tab reads. A rabbit hole is stored against one stable
 // key, and the read takes one anchor at a time, so the tab asks for the terms
@@ -751,9 +773,12 @@ export default function AthleteWorkspace() {
      structural, not a reset someone has to remember. It starts null, which is
      "not answered", and stays null unless the athlete picks a number.
 
-     Observed duration is still not collected by anything, so there is still
-     no Session Load to send. */
+     Minutes trained are now asked beside it (postSessionMinutesDraft) and
+     stored on the session; nothing is sent to SHADOW from here. */
   const [postSessionEffort, setPostSessionEffort] = useState<{ sessionId: string; value: number } | null>(null);
+  // The minutes box, keyed to the session like the effort answer above so a
+  // draft can never drift onto a later session.
+  const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -875,6 +900,14 @@ export default function AthleteWorkspace() {
     && postSessionEffort.sessionId === activeSessionRecord.sessionId
     ? postSessionEffort.value
     : null;
+  const minutesDraft = postSessionMinutesDraft !== null && activeSessionRecord !== null
+    && postSessionMinutesDraft.sessionId === activeSessionRecord.sessionId
+    ? postSessionMinutesDraft.draft
+    : '';
+  const parsedMinutes = parsePostSessionMinutes(minutesDraft);
+  // "0" or "04" may be "045" mid-typing: check-out stays held, but the error
+  // is not announced until the entry cannot become a valid answer.
+  const showMinutesError = parsedMinutes.status === 'invalid' && !/^0+$/.test(minutesDraft.trim());
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -1740,6 +1773,12 @@ export default function AthleteWorkspace() {
        stored is what the athlete shared, and check-out preserves it. */
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
+    // An invalid minutes entry holds check-out (the button is disabled too);
+    // a typed answer is never thrown away in favour of "not recorded".
+    if (parsedMinutes.status === 'invalid') {
+      return;
+    }
+    const durationMinutes = parsedMinutes.status === 'valid' ? parsedMinutes.minutes : null;
 
     checkingOutRef.current = true;
     setIsCheckingOut(true);
@@ -1772,6 +1811,9 @@ export default function AthleteWorkspace() {
           // readiness slider, and promoting it here is the old defect.
           rpe,
           rpe_method: rpe === null ? ('UNKNOWN' as const) : ('athlete_post_session_self_report' as const),
+          // The athlete's own minutes, or null for "not given" -- sent
+          // explicitly so check-out is the one write that sets it.
+          duration_minutes: durationMinutes,
           // The last PUBLISHED value, replayed unchanged: check-out never
           // reads the box, so checking out neither publishes a draft nor
           // erases what was shared. Read AFTER the wait above, so a
@@ -1796,13 +1838,20 @@ export default function AthleteWorkspace() {
       // Cleared only now, after the server took it -- a refused check-out
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
+      setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
+      const minutesLine = durationMinutes === null ? '' : ` So are your ${durationMinutes} minutes.`;
+      // Session load is shown only when both of the athlete's own answers are
+      // there, and labelled for what it is: arithmetic, not a verdict.
+      const loadLine = rpe === null || durationMinutes === null
+        ? ''
+        : ` Session load: ${rpe} × ${durationMinutes} = ${rpe * durationMinutes} (effort × minutes; not validated for boxing).`;
       // Says what is true of the SHARED note, not of the box. Telling an
       // athlete their coach can read something they only drafted would be the
       // same lie in the other direction.
       setBackendSyncMessage((isSystemCheckInNote(storedNote)
         ? "Logged. That one is on your card."
-        : "Logged. What you shared is on the session for your coach to read.") + effortLine);
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + loadLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -1828,10 +1877,9 @@ export default function AthleteWorkspace() {
     /* No Session Load feed here. It used to sit at the end of check-IN and pass
        the readiness slider as `session_rpe` and the PLANNED duration as
        `duration`, so SHADOW multiplied two numbers that had measured nothing
-       yet. Check-out can now carry a real post-session RPE, but Session Load
-       is RPE x OBSERVED duration and nothing collects a duration, so it still
-       sends nothing: check-out records only what the athlete actually
-       supplied, on the session itself. */
+       yet. Check-out now carries both real inputs -- the post-session RPE
+       and the minutes trained -- but records them only on the session itself;
+       nothing is sent to SHADOW from here. */
   };
 
   const handleSavePainReport = async () => {
@@ -2557,10 +2605,38 @@ export default function AthleteWorkspace() {
                         </button>
                       )}
                     </fieldset>
+                    {/* POST-SESSION MINUTES. Optional and empty until typed,
+                        like the effort question; only Check Out writes it. A
+                        number box, not a slider or a prefill, because a
+                        control that already holds a value records an answer
+                        nobody gave. */}
+                    <div className="space-y-[var(--s2)]">
+                      <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
+                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                        Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
+                      </p>
+                      <input
+                        id="athlete-post-session-minutes"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={minutesDraft}
+                        disabled={isCheckingOut}
+                        aria-invalid={showMinutesError}
+                        aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
+                        onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
+                        className="input input--kiosk w-[8rem]"
+                      />
+                      {showMinutesError ? (
+                        <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
+                          Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
+                        </p>
+                      ) : null}
+                    </div>
                     <button
                       type="button"
                       onClick={() => void handleCheckOut()}
-                      disabled={isCheckingOut}
+                      disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
                       {isCheckingOut ? 'Checking out...' : 'Check Out'}
@@ -3110,6 +3186,7 @@ export default function AthleteWorkspace() {
               }}
             />
           )}
+          {activeTab === 'bio-checkin' && <MyInjuries />}
 
 
           {/* DRILL LIBRARY */}
