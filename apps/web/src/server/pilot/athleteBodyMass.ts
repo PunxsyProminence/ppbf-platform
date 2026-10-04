@@ -138,13 +138,19 @@ function weighIn(
   const raw = row.numeric_value == null ? null : Number(row.numeric_value);
   if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
   if (row.unit !== 'kilograms' && row.unit !== 'pounds') return null;
+  // The sparring form and the observations route accept any finite weight. A
+  // slip there (700 for 70.0) would otherwise raise a +900% flag, so a
+  // weigh-in outside what the check-in itself accepts is left out of the
+  // comparison rather than shown.
+  const kilograms = row.unit === 'pounds' ? toKilograms(raw, 'lb') : raw;
+  if (kilograms < BODY_MASS_KG_MIN || kilograms > BODY_MASS_KG_MAX) return null;
   return {
     observationId: row.observation_id,
     organizationId,
     athleteId,
     contextId: row.observation_id,
     kind: 'body_weight',
-    value: row.unit === 'pounds' ? toKilograms(raw, 'lb') : raw,
+    value: kilograms,
     unit: 'kilograms',
     observedAt: new Date(row.observed_at).toISOString(),
     source: { type: 'manual', quality: 'moderate', referenceId: row.observation_id },
@@ -225,14 +231,17 @@ export async function summarizeBodyMass(
   });
   if (result.value == null) return { ...empty, latest };
 
+  // The 5% test uses the unrounded ratio; only the shown percent is rounded,
+  // so 5.04% is flagged even though it reads "5.0%".
+  const ratio = result.value / prior.value!;
   const change = {
-    percent: Math.round((result.value / prior.value!) * 1000) / 10,
+    percent: Math.round(ratio * 1000) / 10,
     kilograms: Math.round(result.value * 100) / 100,
     prior_kilograms: prior.value!,
     prior_observed_at: prior.observedAt,
     days: Math.round((Date.parse(current.observedAt) - Date.parse(prior.observedAt)) / DAY_MS),
   };
-  const flagged = Math.abs(change.percent) > BODY_MASS_FLAG_PERCENT;
+  const flagged = Math.abs(ratio) * 100 > BODY_MASS_FLAG_PERCENT;
   return {
     ...empty,
     latest,
@@ -249,23 +258,35 @@ export async function summarizeBodyMass(
  * (for staff: same organization). For an adult that is enough. For a youth --
  * or an athlete whose date of birth is not recorded -- the viewer must also
  * pass assertActorCanAccessAthlete, which admits only the assigned or covering
- * coach, a linked parent, the organization admin and the athlete. Any failure,
- * including a database error, answers no.
+ * coach, a linked parent, the organization admin and the athlete. A refusal by
+ * that gate answers no; a database error reading the athlete row ends the
+ * request with an error. Neither returns a weight.
  */
-export async function bodyMassVisibleTo(
-  viewer: ActorIdentity,
+/** Is this athlete a youth (or without a recorded date of birth)? Null when
+ *  the athlete is not a live row in the organization. */
+export async function athleteIsYouth(
   organizationId: string,
   athleteId: string,
   now: Date = new Date(),
-): Promise<boolean> {
+): Promise<boolean | null> {
   const row = await queryOne<{ dob: string | null }>(
     `select to_char(dob, 'YYYY-MM-DD') as dob
      from pilot.athletes
      where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [organizationId, athleteId],
   );
-  if (!row) return false;
-  if (!isMinor(row.dob, now)) return true;
+  return row ? isMinor(row.dob, now) : null;
+}
+
+export async function bodyMassVisibleTo(
+  viewer: ActorIdentity,
+  organizationId: string,
+  athleteId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const youth = await athleteIsYouth(organizationId, athleteId, now);
+  if (youth === null) return false;
+  if (!youth) return true;
   try {
     await assertActorCanAccessAthlete(viewer, athleteId);
     return true;

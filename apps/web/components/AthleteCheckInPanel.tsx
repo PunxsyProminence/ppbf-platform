@@ -159,6 +159,10 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   const [sleepHours, setSleepHours] = useState('');
   const [bodyMass, setBodyMass] = useState('');
   const [bodyMassUnit, setBodyMassUnit] = useState<'lb' | 'kg'>('lb');
+  // What happened to the weight just entered, shown once the check-in view
+  // replaces the form. The server answers body_mass_saved; a weight it did not
+  // store is said so rather than looking accepted.
+  const [bodyMassNotice, setBodyMassNotice] = useState('');
   const [note, setNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -216,6 +220,11 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
       }
 
       const payload = await response.json();
+      if ('body_mass' in body) {
+        setBodyMassNotice(payload.body_mass_saved === true
+          ? `Body mass saved: ${body.body_mass} ${body.body_mass_unit}.`
+          : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
+      }
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {
       setSaveError('Check-in was not saved. Try again, and tell a coach you are here.');
@@ -261,6 +270,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             You checked in on {today.checked_in_on}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
+          {bodyMassNotice !== '' && (
+            <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
+          )}
         </div>
 
         {recent.length > 1 && (

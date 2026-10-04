@@ -2062,8 +2062,8 @@ export default function CoachWorkspace() {
 
     /* Body mass comes from its own route (coach/athlete-body-mass), which has
        a narrower gate for a youth than the check-in has. Fetched beside the
-       check-in and never allowed to fail it: any refusal or error is simply
-       no weight shown. */
+       check-in and never allowed to fail or delay it: any refusal or error is
+       simply no weight shown. */
     const bodyMassRead = fetch(
       `${apiBase()}/api/pilot/coach/athlete-body-mass?athlete_id=${encodeURIComponent(athleteId)}`,
       { method: 'GET', credentials: 'include', signal: controller.signal },
@@ -2103,11 +2103,16 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('wellness check-in response unreadable');
       }
+      setWellnessRead({ status: 'loaded', athleteId, today: parsed, bodyMass: null });
+      // The weight joins the panel when it arrives; a slow weight read never
+      // holds the check-in on "loading".
       const bodyMass = await bodyMassRead;
-      if (superseded()) {
+      if (superseded() || bodyMass === null) {
         return;
       }
-      setWellnessRead({ status: 'loaded', athleteId, today: parsed, bodyMass });
+      setWellnessRead((current) => (current?.status === 'loaded' && current.athleteId === athleteId
+        ? { ...current, bodyMass }
+        : current));
     } catch (error) {
       if (superseded()) {
         return;

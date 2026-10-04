@@ -91,6 +91,26 @@ export async function POST(request: NextRequest) {
     });
     if (!result) return hiddenNotFound();
 
+    if (result.created) {
+      await writePilotAuditEvent({
+        event_type: 'create',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'athlete_check_in',
+        entity_id: result.row.check_in_id,
+        details: {
+          athlete_id: athleteId,
+          checked_in_on: result.row.checked_in_on,
+          body_mass_sent: typeof body.body_mass === 'number',
+        },
+      });
+    }
+
+    // The audit event is written BEFORE the weight: a failed weight write
+    // must not leave a stored check-in with no audit record (a retry answers
+    // created:false and would never write it).
+    //
     // One weigh-in per check-in, keyed by the check-in. A repeat submission
     // the same day may add the weight if the first attempt did not store one
     // (a failed write is retried, not lost); it can never replace a stored
@@ -113,21 +133,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (result.created) {
-      await writePilotAuditEvent({
-        event_type: 'create',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'athlete_check_in',
-        entity_id: result.row.check_in_id,
-        details: {
-          athlete_id: athleteId,
-          checked_in_on: result.row.checked_in_on,
-          body_mass_recorded: bodyMassSaved,
-        },
-      });
-    }
     return NextResponse.json({
       item: result.row,
       already_checked_in: !result.created,

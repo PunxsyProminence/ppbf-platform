@@ -188,7 +188,7 @@ describe('optional body mass (elite-boxing item 5)', () => {
       accountId: 'acct-1',
     });
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
-      details: expect.objectContaining({ body_mass_recorded: true }),
+      details: expect.objectContaining({ body_mass_sent: true }),
     }));
   });
 
@@ -226,12 +226,22 @@ describe('optional body mass (elite-boxing item 5)', () => {
     expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: false });
   });
 
-  test('any other storage failure is an error, not a silent loss', async () => {
+  test('any other storage failure is an error, not a silent loss -- and the check-in is still audited', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
     mockCheckIn.mockResolvedValue({ row, created: true });
     mockRecordBodyMass.mockRejectedValueOnce(new Error('database down'));
 
     const response = await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }));
     expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_id: 'ci-1' }));
+  });
+
+  test('a retry after that failure stores the missing weight on the existing check-in', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCheckIn.mockResolvedValue({ row, created: false });
+
+    const payload = await (await POST(postRequest({ body_mass: 70, body_mass_unit: 'kg' }))).json();
+    expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: true });
+    expect(mockRecordBodyMass).toHaveBeenCalledWith(expect.objectContaining({ checkInId: 'ci-1', kilograms: 70 }));
   });
 });

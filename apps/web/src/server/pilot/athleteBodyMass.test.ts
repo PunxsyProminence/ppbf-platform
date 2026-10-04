@@ -153,3 +153,19 @@ describe('summarizeBodyMass', () => {
     expect(summary.flagged).toBe(true);
   });
 });
+
+describe('review fixes', () => {
+  test('the 5% test uses the unrounded change: 5.04% is flagged though it reads 5.0%', async () => {
+    mockQuery.mockResolvedValue([row('p', 100, 8 * DAY), row('l', 94.96, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.change).toMatchObject({ percent: -5 });
+    expect(summary.flagged).toBe(true);
+  });
+
+  test('a weigh-in outside 20-250 kg (a typing slip on the sparring form) is left out', async () => {
+    mockQuery.mockResolvedValue([row('p', 70, 8 * DAY), row('typo', 700, DAY)]);
+    const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
+    expect(summary.latest).toMatchObject({ kilograms: 70 });
+    expect(summary.flagged).toBe(false);
+  });
+});

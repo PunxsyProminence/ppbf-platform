@@ -14,7 +14,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -921,7 +921,7 @@ export default function ParentHub() {
                 <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]" data-testid="parent-body-mass">
                   <p className="t-label">Body mass</p>
                   <p className="t-body mt-[var(--s2)]">
-                    {shownBodyMass.pounds} lb, logged {new Date(shownBodyMass.observedAt).toLocaleDateString()}.
+                    {shownBodyMass.pounds} lb, logged {formatGymDateNumeric(shownBodyMass.observedAt)}.
                   </p>
                   {shownBodyMass.flagText && (
                     <p className="t-body mt-[var(--s2)] font-semibold" role="status">{shownBodyMass.flagText}</p>

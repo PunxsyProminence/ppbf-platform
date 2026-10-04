@@ -14,8 +14,12 @@ function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 400, json: async () => body } as unknown as Response;
 }
 
-function installFetch(): jest.Mock {
-  const fetchMock = jest.fn(async () => jsonResponse({ item: { check_in_id: 'ci-1' }, already_checked_in: false }));
+function installFetch(saved = true): jest.Mock {
+  const fetchMock = jest.fn(async () => jsonResponse({
+    item: { check_in_id: 'ci-1' },
+    already_checked_in: false,
+    body_mass_saved: saved,
+  }));
   global.fetch = fetchMock as unknown as typeof fetch;
   return fetchMock;
 }
@@ -65,4 +69,28 @@ test('kilograms can be chosen', async () => {
   await submit();
 
   expect(sentBody(fetchMock)).toMatchObject({ body_mass: 69, body_mass_unit: 'kg' });
+});
+
+function savedRecord() {
+  return {
+    check_in_id: 'ci-1', athlete_id: 'ath-1', organization_id: 'org-1', checked_in_on: '2026-10-04',
+    energy: null, soreness: null, focus: null, sleep_hours: null, hydration: null, motivation: null,
+    mental_clarity: null, stress: null, nutrition_compliance: null, note: '', created_at: '2026-10-04T17:00:00.000Z',
+  };
+}
+
+test.each([
+  [true, 'Body mass saved: 152.4 lb.'],
+  [false, 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.'],
+])('after saving (stored: %s) the athlete is told what happened to the weight', async (saved, sentence) => {
+  installFetch(saved);
+  const { rerender } = render(
+    <AthleteCheckInPanel today={null} recent={[]} loading={false} loadError={null} onSaved={() => undefined} />,
+  );
+  fireEvent.change(screen.getByLabelText('Body mass (optional)'), { target: { value: '152.4' } });
+  await submit();
+  rerender(
+    <AthleteCheckInPanel today={savedRecord() as never} recent={[]} loading={false} loadError={null} onSaved={() => undefined} />,
+  );
+  expect(screen.getByRole('status').textContent).toBe(sentence);
 });

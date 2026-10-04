@@ -34,12 +34,15 @@ const athletes = [
   { organization_id: 'org-1', athlete_id: 'ath-child', dob: '2012-03-01', deleted_at: null as string | null },
   { organization_id: 'org-1', athlete_id: 'ath-other', dob: '2012-03-01', deleted_at: null as string | null },
   { organization_id: 'org-1', athlete_id: 'ath-deleted', dob: '2012-03-01', deleted_at: '2026-09-01T00:00:00Z' },
+  // Linked when they were 16; 19 now.
+  { organization_id: 'org-1', athlete_id: 'ath-grown', dob: '2007-03-01', deleted_at: null as string | null },
 ];
 // parent account -> parent_id, and parent_id -> linked athletes.
 const parents = [{ organization_id: 'org-1', account_id: 'acct-parent', parent_id: 'par-1' }];
 const links = [
   { organization_id: 'org-1', parent_id: 'par-1', athlete_id: 'ath-child' },
   { organization_id: 'org-1', parent_id: 'par-1', athlete_id: 'ath-deleted' },
+  { organization_id: 'org-1', parent_id: 'par-1', athlete_id: 'ath-grown' },
 ];
 let statements: string[];
 
@@ -109,6 +112,13 @@ test('a linked parent reads their child\'s weight and flag', async () => {
   const { status, payload } = await readAs({}, 'ath-child');
   expect(status).toBe(200);
   expect(payload.body_mass).toMatchObject({ latest: { kilograms: 56.4 }, flagged: true });
+});
+
+test('a guardian link that outlived the child turning 18 shows nothing: adults have no parent surface', async () => {
+  const { status, payload } = await readAs({}, 'ath-grown');
+  expect(status).toBe(200);
+  expect(payload).toEqual({ body_mass: null });
+  expect(weightReads()).toEqual([]);
 });
 
 test('a parent not linked to the athlete is refused and nothing is read', async () => {
