@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { QueryResultRow } from 'pg';
+
 import { query, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
@@ -116,7 +118,7 @@ export async function assertVideoHasNoLiveClipTags(
   videoSessionId: string,
   executor?: QueryExecutor,
 ): Promise<void> {
-  const run = async <T>(sql: string, params: unknown[]): Promise<T[]> =>
+  const run = async <T extends QueryResultRow>(sql: string, params: unknown[]): Promise<T[]> =>
     executor ? (await executor.query<T>(sql, params)).rows : query<T>(sql, params);
 
   // Checked by name rather than by catching 42P01: inside the publish
