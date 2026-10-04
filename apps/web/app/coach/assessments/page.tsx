@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -100,11 +100,16 @@ export default function CoachAssessmentsPage() {
     return () => controller.abort();
   }, []);
 
-  const loadAthlete = useCallback(async (id: string) => {
+  // The athlete whose data is on screen. A response for anyone else (a slow
+  // load for an athlete the coach has since switched away from) is dropped,
+  // so one athlete's history can never render under another's name.
+  const currentAthlete = useRef('');
+
+  const loadAthlete = useCallback(async (id: string): Promise<boolean> => {
     if (!id) {
       setData(null);
       setDataState('idle');
-      return;
+      return true;
     }
     setDataState('loading');
     try {
@@ -113,22 +118,36 @@ export default function CoachAssessmentsPage() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('assessments');
-      setData((await response.json()) as AssessmentPayload);
+      const payload = (await response.json()) as AssessmentPayload;
+      if (currentAthlete.current !== id) return false;
+      setData(payload);
       setDataState('loaded');
+      return true;
     } catch {
+      if (currentAthlete.current !== id) return false;
       setData(null);
       setDataState('unavailable');
+      return false;
     }
   }, []);
 
   function selectAthlete(id: string) {
+    currentAthlete.current = id;
     setAthleteId(id);
+    setData(null);
+    // Every draft belongs to the athlete it was typed for.
+    setJumpValue('');
+    setJumpDate('');
+    setJumpNote('');
     setRatings({});
+    setRatingDate('');
+    setRatingNote('');
     setMessage(null);
     void loadAthlete(id);
   }
 
-  async function post(body: Record<string, unknown>): Promise<boolean> {
+  /** Returns null when not saved, otherwise whether the history reload worked. */
+  async function post(body: Record<string, unknown>): Promise<{ reloaded: boolean } | null> {
     setSaving(true);
     setMessage(null);
     try {
@@ -141,13 +160,12 @@ export default function CoachAssessmentsPage() {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
         setMessage({ tone: 'error', text: payload.error ?? 'Not saved. Try again.' });
-        return false;
+        return null;
       }
-      await loadAthlete(athleteId);
-      return true;
+      return { reloaded: await loadAthlete(athleteId) };
     } catch {
       setMessage({ tone: 'error', text: 'Not saved: the server could not be reached.' });
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -170,7 +188,7 @@ export default function CoachAssessmentsPage() {
     if (ok) {
       setJumpValue('');
       setJumpNote('');
-      setMessage({ tone: 'ok', text: 'Jump saved.' });
+      setMessage({ tone: 'ok', text: ok.reloaded ? 'Jump saved.' : 'Jump saved. The history could not be reloaded; refresh to see it.' });
     }
   }
 
@@ -190,7 +208,8 @@ export default function CoachAssessmentsPage() {
     if (ok) {
       setRatings({});
       setRatingNote('');
-      setMessage({ tone: 'ok', text: `${entries.length} rating${entries.length === 1 ? '' : 's'} saved.` });
+      const saved = `${entries.length} rating${entries.length === 1 ? '' : 's'} saved.`;
+      setMessage({ tone: 'ok', text: ok.reloaded ? saved : `${saved} The history could not be reloaded; refresh to see it.` });
     }
   }
 
@@ -246,7 +265,7 @@ export default function CoachAssessmentsPage() {
           {dataState === 'loading' && <p className="t-body">Loading…</p>}
           {dataState === 'unavailable' && (
             <p role="alert" className="t-body text-[color:var(--restricted-ink)]">
-              This athlete&apos;s tests could not be loaded. Nothing was changed.
+              This athlete&apos;s tests could not be loaded.
             </p>
           )}
           {message && (

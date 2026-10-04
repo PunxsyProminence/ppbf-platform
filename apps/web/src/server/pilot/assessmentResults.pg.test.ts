@@ -324,6 +324,18 @@ describe('assessment results against real Postgres', () => {
     await expect(recordJumpResult(WRITER_A, {
       athleteId: ATHLETE_A, protocolId: 'ppbf-jump-cmj-height', valueCm: 4100, today: TODAY,
     })).rejects.toThrow(/centimetres/);
+    // Date.parse would roll these over; they must be a 400, not a database 500.
+    for (const bad of ['2026-02-31', '2026-04-31', '0000-01-01']) {
+      await expect(recordJumpResult(WRITER_A, {
+        athleteId: ATHLETE_A, protocolId: 'ppbf-jump-cmj-height', valueCm: 40, administeredOn: bad, today: TODAY,
+      })).rejects.toThrow(/must be a date/);
+    }
+    // Rounded before the bounds, so a value that rounds to 0 or 500 is refused.
+    for (const bad of [0.04, 499.96]) {
+      await expect(recordJumpResult(WRITER_A, {
+        athleteId: ATHLETE_A, protocolId: 'ppbf-jump-cmj-height', valueCm: bad, today: TODAY,
+      })).rejects.toThrow(/centimetres/);
+    }
   });
 
   test('history is the one athlete\'s own record, newest first', async () => {

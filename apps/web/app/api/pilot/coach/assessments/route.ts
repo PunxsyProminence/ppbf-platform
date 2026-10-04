@@ -54,7 +54,8 @@ export async function GET(request: NextRequest) {
     const athleteId = requireAthleteId(request.nextUrl.searchParams.get('athlete_id'));
     await assertActorCanAccessAthlete(principal, athleteId);
 
-    await ensurePpbfAssessmentProtocols(principal.organizationId);
+    // Read-only: no ensure here. Before the first write the gym has no
+    // protocol rows, and the history is simply empty.
     const history = await listAthleteAssessmentHistory(principal.organizationId, athleteId);
     return NextResponse.json(
       { ok: true, ...catalog(), history },

@@ -77,6 +77,7 @@ describe('GET /api/pilot/coach/assessments', () => {
     const body = await response.json();
     expect(accessMock).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), 'ath-1');
     expect(historyMock).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(ensureMock).not.toHaveBeenCalled();
     expect(body.jump_protocols.map((p: { protocol_id: string }) => p.protocol_id)).toEqual([
       'ppbf-jump-cmj-height',
       'ppbf-jump-broad-distance',

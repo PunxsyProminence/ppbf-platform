@@ -45,21 +45,30 @@ const PAYLOAD = {
 
 let postResponse: { status: number; body: unknown } = { status: 201, body: { ok: true } };
 let fetchMock: jest.Mock;
+let holdAna: Promise<void> | null = null;
 
 beforeEach(() => {
+  holdAna = null;
   postResponse = { status: 201, body: { ok: true } };
   fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const respond = (status: number, body: unknown) =>
       ({ ok: status < 400, status, json: async () => body }) as Response;
     if (url.endsWith('/api/pilot/coach/athletes')) {
-      return respond(200, { items: [{ athlete_id: 'ath-1', full_name: 'Ana Boxer' }] });
+      return respond(200, { items: [
+        { athlete_id: 'ath-1', full_name: 'Ana Boxer' },
+        { athlete_id: 'ath-2', full_name: 'Ben Boxer' },
+      ] });
     }
     if (url.includes('/api/pilot/coach/assessments') && init?.method === 'POST') {
       return respond(postResponse.status, postResponse.body);
     }
     if (url.includes('/api/pilot/coach/assessments?athlete_id=ath-1')) {
+      if (holdAna) await holdAna;
       return respond(200, PAYLOAD);
+    }
+    if (url.includes('/api/pilot/coach/assessments?athlete_id=ath-2')) {
+      return respond(200, { ...PAYLOAD, history: [] });
     }
     return respond(404, {});
   });
@@ -116,4 +125,34 @@ test('a refused save is shown as not saved', async () => {
   const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
   expect(JSON.parse(post![1].body)).toMatchObject({ kind: 'jump', protocol_id: 'ppbf-jump-cmj-height', value_cm: 40 });
   expect(screen.getByRole('alert').textContent).toBe('The test date cannot be in the future.');
+});
+
+test('a draft typed for one athlete is cleared when the coach switches athlete', async () => {
+  await chooseAthlete();
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Best of 3 (cm)'), { target: { value: '62' } });
+    fireEvent.change(screen.getByLabelText('Jab System'), { target: { value: '5' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+  });
+  expect((screen.getByLabelText('Best of 3 (cm)') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Jab System') as HTMLSelectElement).value).toBe('');
+});
+
+test('a slow load for the previous athlete never renders under the new one', async () => {
+  let release!: () => void;
+  holdAna = new Promise<void>((resolve) => { release = resolve; });
+  render(<CoachAssessmentsPage />);
+  await act(async () => {});
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+  });
+  await act(async () => { release(); });
+  const history = screen.getByRole('heading', { name: 'History for Ben Boxer' }).closest('section')!;
+  expect(history.textContent).toContain('Nothing recorded yet.');
+  expect(document.body.textContent).not.toContain('41.5 cm');
 });

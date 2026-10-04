@@ -27,7 +27,8 @@ import { SKILL_FAMILY_IDS, SKILL_FAMILY_NAMES, type SkillFamilyId } from './skil
 // organization, so a soft-deleted athlete is neither written to nor read.
 //
 // PROTOCOL ROWS ARE CREATED BY ensurePpbfAssessmentProtocols, called by the
-// route before any read or write: idempotent, scoped to the caller's own
+// route before a write (GET stays read-only; with no rows yet it simply
+// returns an empty history): idempotent, scoped to the caller's own
 // organization, and never a migration seed. Every measurement-property field
 // is left at the migration's explicit unvalidated default -- this module does
 // not claim a reliability, a minimal detectable change or a retest interval
@@ -137,7 +138,7 @@ export async function ensurePpbfAssessmentProtocols(organizationId: string): Pro
 
   const present = await queryOne<{ n: number }>(
     `select count(*)::int as n from pilot.assessment_protocols
-     where organization_id = $1 and protocol_version = $2 and protocol_id = any($3::text[])`,
+     where organization_id = $1 and protocol_version = $2 and protocol_id = any($3::text[]) and active`,
     [organizationId, PROTOCOL_VERSION, ids],
   );
   if ((present?.n ?? 0) !== ids.length) {
@@ -161,7 +162,10 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseAdministeredOn(value: unknown, today: string): string {
   if (value === undefined || value === null || value === '') return today;
-  if (typeof value !== 'string' || !ISO_DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  // Round-trip, because Date.parse rolls 2026-02-31 over to March 3 rather
+  // than refusing it, and Postgres would then reject it as a 500.
+  const parsed = typeof value === 'string' && ISO_DATE.test(value) ? new Date(`${value}T00:00:00Z`) : null;
+  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value || value < '2000-01-01') {
     throw new ValidationError('The test date must be a date (YYYY-MM-DD).', 'ASSESSMENT_DATE_INVALID');
   }
   if (value > today) {
@@ -202,7 +206,7 @@ export async function recordJumpResult(writer: AssessmentWriter, input: RecordJu
   if (typeof input.protocolId !== 'string' || !(JUMP_PROTOCOL_IDS as readonly string[]).includes(input.protocolId)) {
     throw new ValidationError('Choose the countermovement jump or the broad jump.', 'JUMP_PROTOCOL_INVALID');
   }
-  const value = typeof input.valueCm === 'number' ? input.valueCm : Number.NaN;
+  const value = typeof input.valueCm === 'number' ? Math.round(input.valueCm * 10) / 10 : Number.NaN;
   // A plausibility bound only, not a norm: it refuses a typo (a value in mm,
   // or a missing decimal point), nothing a real jump could produce.
   if (!Number.isFinite(value) || value <= 0 || value >= 500) {
@@ -217,13 +221,15 @@ export async function recordJumpResult(writer: AssessmentWriter, input: RecordJu
     `insert into pilot.assessments
        (organization_id, assessment_id, athlete_id, assessor_account_id, assessment_type, result,
         protocol_id, protocol_version, administration_kind, administered_on, assessor_role, conditions_note)
-     values ($1, gen_random_uuid(), $2, $3, 'physical_test', $4::jsonb, $5, $6, 'ad_hoc', $7, $8, $9)
+     select $1, gen_random_uuid(), $2, $3, 'physical_test', $4::jsonb, $5, $6, 'ad_hoc', $7::date, $8, $9
+     from pilot.athletes
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null
      returning ${HISTORY_FIELDS}`,
     [
       writer.organizationId,
       input.athleteId,
       writer.accountId,
-      JSON.stringify({ value: Math.round(value * 10) / 10, unit: 'cm', best_of: 3 }),
+      JSON.stringify({ value, unit: 'cm', best_of: 3 }),
       input.protocolId,
       PROTOCOL_VERSION,
       administeredOn,
@@ -231,7 +237,9 @@ export async function recordJumpResult(writer: AssessmentWriter, input: RecordJu
       note,
     ],
   );
-  if (!row) throw new Error('Unable to record jump result.');
+  // The live-athlete check above and the insert's own predicate agree; no row
+  // here means the athlete was deleted between the two.
+  if (!row) throw new Error('Forbidden: athlete does not belong to organization');
   return toEntry(row);
 }
 
@@ -287,6 +295,8 @@ export async function recordSkillRatings(
             jsonb_build_object('level', r.level, 'scale', $4::text, 'skill_family_id', r.family_id),
             r.protocol_id, $5, 'ad_hoc', $6, $7, $8
      from unnest($9::text[], $10::text[], $11::int[]) as r(protocol_id, family_id, level)
+     join pilot.athletes ath
+       on ath.organization_id = $1 and ath.athlete_id = $2 and ath.deleted_at is null
      returning ${HISTORY_FIELDS}`,
     [
       writer.organizationId,
@@ -302,6 +312,7 @@ export async function recordSkillRatings(
       levels,
     ],
   );
+  if (rows.length !== families.length) throw new Error('Forbidden: athlete does not belong to organization');
   return rows.map(toEntry);
 }
 
