@@ -538,6 +538,24 @@ describe('the runner', () => {
         );
         expect(result.rows[0].def).toContain(`'${V04}'`);
       }
+
+      // Any one function alone left at 0.3 is still not ready.
+      for (const [fn, endMarker] of [
+        ['calibration_event_stance_labels_guard', '$pilot_calibration_event_stance_labels_guard$;'],
+        ['calibration_annotation_events_body_point_rules', '$pilot_calibration_events_body_point_rules$;'],
+        ['calibration_annotation_sets_body_point_rules', '$pilot_calibration_sets_body_point_rules$;'],
+      ]) {
+        const start = sql.indexOf(`create or replace function pilot.${fn}()`);
+        expect(start).toBeGreaterThan(-1);
+        const end = sql.indexOf(endMarker, sql.indexOf('begin', start)) + endMarker.length;
+        const one = asBefore04(sql.slice(start, end));
+        expect(one).not.toContain(V04);
+        await client.query(one);
+        await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+          'CALIBRATION_BODY_POINT_RULES_NOT_READY',
+        );
+        await runner.applyMigrationTransaction(client, sql);
+      }
     } finally {
       await client.end();
     }
