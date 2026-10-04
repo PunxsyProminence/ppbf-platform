@@ -315,7 +315,8 @@ export async function listTaggedClips(input: {
   competitionId?: string;
   limit: number;
 }): Promise<TaggedClipRow[]> {
-  const params: unknown[] = [input.organizationId, input.limit];
+  const batch = Math.max(input.limit, LIST_BATCH_ROWS);
+  const params: unknown[] = [input.organizationId, batch];
   let filters = '';
   if (input.athleteIds !== null) {
     params.push(input.athleteIds);
@@ -355,23 +356,26 @@ export async function listTaggedClips(input: {
       limit $2 offset $${offsetParam}`;
 
   /*
-   * Hidden clips are dropped after the page is read, so a page is refilled
-   * from further back until it is full -- otherwise one blocked athlete in
-   * the newest clips would empty the list and put older clips out of reach.
-   * Bounded, so a large run of hidden clips costs at most MAX_PAGES reads.
+   * Hidden clips are dropped after rows are read, so reading continues from
+   * further back until the page is full -- otherwise blocked clips among the
+   * newest would empty the list and put older clips out of reach (the route
+   * has no cursor). Reads go in batches of at least LIST_BATCH_ROWS whatever
+   * the page size, so a small page cannot shrink the reach; the scan stops at
+   * MAX_SCANNED_ROWS tag rows.
    */
   const kept: TaggedClipRow[] = [];
-  for (let page = 0; page < MAX_LIST_PAGES && kept.length < input.limit; page += 1) {
-    params[offsetParam - 1] = page * input.limit;
-    const rows = await query<TaggedClipRow>(sql, params);
+  for (let offset = 0; offset < MAX_SCANNED_ROWS && kept.length < input.limit; offset += batch) {
+    params[offsetParam - 1] = offset;
+    const rows = await query<TaggedClipRow>(sql, [...params]);
     const blocked = await blockedClipVideoIds(input.organizationId, rows.map((row) => row.video_session_id));
     kept.push(...rows.filter((row) => !blocked.has(row.video_session_id)));
-    if (rows.length < input.limit) break;
+    if (rows.length < batch) break;
   }
   return kept.slice(0, input.limit);
 }
 
-const MAX_LIST_PAGES = 5;
+const LIST_BATCH_ROWS = 100;
+const MAX_SCANNED_ROWS = 5000;
 
 /*
  * Owner, Jason 2026-10-04: "A) Hide". A clip whose playback a consent block

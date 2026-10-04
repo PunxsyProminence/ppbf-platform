@@ -228,38 +228,57 @@ describe('listTaggedClips hides clips that playback would refuse', () => {
   });
 
   test('a page emptied by hidden clips is refilled from further back', async () => {
-    // limit 2: the first page is two blocked clips, the second holds a clear one.
+    // Reads go in batches of 100 whatever the page size: a full batch of
+    // blocked clips, then a short batch holding a clear one.
+    const blockedBatch = Array.from({ length: 100 }, (_, i) => clip(`vid-b${i}`, 'ath-1'));
     mockQuery
-      .mockResolvedValueOnce([clip('vid-1', 'ath-1'), clip('vid-2', 'ath-1')])
-      .mockResolvedValueOnce([
-        { video_session_id: 'vid-1', athlete_id: 'ath-blocked' },
-        { video_session_id: 'vid-2', athlete_id: 'ath-blocked' },
-      ])
-      .mockResolvedValueOnce([clip('vid-3', 'ath-1')])
-      .mockResolvedValueOnce([{ video_session_id: 'vid-3', athlete_id: 'ath-1' }]);
+      .mockResolvedValueOnce(blockedBatch)
+      .mockResolvedValueOnce(blockedBatch.map((row) => ({ video_session_id: row.video_session_id, athlete_id: 'ath-blocked' })))
+      .mockResolvedValueOnce([clip('vid-clear', 'ath-1')])
+      .mockResolvedValueOnce([{ video_session_id: 'vid-clear', athlete_id: 'ath-1' }]);
     mockConsent.mockImplementation(async (_org, athleteId) => {
       if (athleteId === 'ath-blocked') throw new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN');
     });
 
-    const rows = await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 2 });
+    const rows = await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 1 });
 
-    expect(rows.map((row) => row.video_session_id)).toEqual(['vid-3']);
-    // Second page read from offset 2.
-    const pageParams = mockQuery.mock.calls[2][1] as unknown[];
-    expect(pageParams[pageParams.length - 1]).toBe(2);
+    expect(rows.map((row) => row.video_session_id)).toEqual(['vid-clear']);
+    const first = mockQuery.mock.calls[0][1] as unknown[];
+    const second = mockQuery.mock.calls[2][1] as unknown[];
+    expect(first[1]).toBe(100);
+    expect(first[first.length - 1]).toBe(0);
+    expect(second[second.length - 1]).toBe(100);
   });
 
-  test('refilling is bounded', async () => {
+  test('the clip past five pages of a small limit is still reached', async () => {
+    // Codex review on #1190: limit=1 with the five newest rows blocked and the
+    // sixth clear must return the sixth.
+    const rows6 = [1, 2, 3, 4, 5].map((i) => clip(`vid-b${i}`, 'ath-1')).concat([clip('vid-6', 'ath-1')]);
+    mockQuery
+      .mockResolvedValueOnce(rows6)
+      .mockResolvedValueOnce(rows6.map((row) => ({
+        video_session_id: row.video_session_id,
+        athlete_id: row.video_session_id === 'vid-6' ? 'ath-1' : 'ath-blocked',
+      })));
+    mockConsent.mockImplementation(async (_org, athleteId) => {
+      if (athleteId === 'ath-blocked') throw new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN');
+    });
+    const rows = await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 1 });
+    expect(rows.map((row) => row.video_session_id)).toEqual(['vid-6']);
+  });
+
+  test('scanning is bounded at 5000 rows', async () => {
+    const full = Array.from({ length: 100 }, (_, i) => clip(`vid-x${i}`, 'ath-1'));
     mockQuery.mockImplementation(async (sql: string) => (
       String(sql).includes('union')
-        ? [{ video_session_id: 'vid-x', athlete_id: 'ath-blocked' }]
-        : [clip('vid-x', 'ath-1')]
+        ? full.map((row) => ({ video_session_id: row.video_session_id, athlete_id: 'ath-blocked' }))
+        : full
     ) as never);
     mockConsent.mockRejectedValue(new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN'));
 
     expect(await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 1 })).toEqual([]);
-    // Five pages, each one list read plus one subject read.
-    expect(mockQuery).toHaveBeenCalledTimes(10);
+    // 50 batches of 100, each one list read plus one subject read.
+    expect(mockQuery).toHaveBeenCalledTimes(100);
   });
 
   test('an empty list reads no consent', async () => {
