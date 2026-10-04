@@ -626,6 +626,57 @@ describe('magic link after a move to another gym', () => {
     expect(link.rows[0].consumed_at).toBeNull();
   });
 
+  test('a move in flight while the link is redeemed: redemption waits for it, then refuses the link', async () => {
+    await seedAccount({
+      accountId: 'srm-parent-race',
+      homeRole: 'parent',
+      authProvider: 'magic_link',
+      loginEmail: 'parent.race@srm.test',
+    });
+    const linkToken = 'srm-link-race';
+    await client.query(
+      `insert into pilot.magic_link_tokens (token_hash, account_id, organization_id, sent_to_email, expires_at)
+       values ($1, $2, $3, $4, now() + interval '15 minutes')`,
+      [hashToken(linkToken), 'srm-parent-race', HOME_ORG, 'parent.race@srm.test'],
+    );
+
+    // A second connection makes the move, in upsertOrganizationMembership's
+    // order: the account row FOR UPDATE first, then the membership, then the
+    // account. It is held open across the redemption.
+    const mover = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await mover.connect();
+    try {
+      await mover.query('BEGIN');
+      await mover.query(`select 1 from pilot.accounts where account_id = 'srm-parent-race' for update`);
+      await mover.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ('srm-parent-race', $1, 'coach', true)`,
+        [OTHER_ORG],
+      );
+      await mover.query(
+        `update pilot.accounts set role = 'coach', organization_id = $1 where account_id = 'srm-parent-race'`,
+        [OTHER_ORG],
+      );
+
+      let settled = false;
+      const redemption = redeemMagicLink(linkToken).finally(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      // Waiting on the move's lock. Without the account lock it read the
+      // pre-move row here and minted a session in the old gym.
+      expect(settled).toBe(false);
+
+      await mover.query('COMMIT');
+      expect(await redemption).toEqual({ ok: false, reason: 'ACCOUNT_INACTIVE' });
+      const sessions = await client.query(`select 1 from pilot.session_tokens where account_id = 'srm-parent-race'`);
+      expect(sessions.rowCount).toBe(0);
+    } finally {
+      await mover.query('ROLLBACK').catch(() => undefined);
+      await mover.end();
+    }
+  });
+
   test('control: the same sequence without the move signs the parent in as parent', async () => {
     await seedAccount({
       accountId: 'srm-parent-stays',

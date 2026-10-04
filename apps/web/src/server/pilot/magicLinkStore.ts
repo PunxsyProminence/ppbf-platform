@@ -131,10 +131,17 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id
         where t.token_hash = $1
-          for update of t`,
+          for update of t
+          for no key update of a`,
       [tokenHash],
     );
 
+    // The account row is locked too. A move to another gym
+    // (upsertOrganizationMembership) takes it FOR UPDATE, so a move in flight
+    // makes this wait and then read the moved row -- and is refused below --
+    // while a move arriving later waits for this session to exist and then
+    // revokes it. Locking only the token let a move commit between this read
+    // and the session insert, and the old gym's session outlived it.
     const row = found.rows[0];
     if (!row) return { ok: false, reason: 'TOKEN_UNKNOWN' as ConsumeFailure };
 
