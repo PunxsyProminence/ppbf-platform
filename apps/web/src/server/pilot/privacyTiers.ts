@@ -161,7 +161,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'coverage grant. Every coach-reachable read of this column is scoped -- athletes/list through '
       + 'getAthletesForCoach, athletes/get + athletes/update + intake/domain-get through '
       + 'assertActorCanAccessAthlete. profile/roster selects dob to feed the portrait age gate and never '
-      + 'returns it. Organization admins still read it org-wide, which is exactly what keeps this '
+      + 'returns it. coach/development-block-templates reads it through developmentBlockTemplates.ts after '
+      + 'assertActorCanAccessAthlete and returns only an adult/not-adult boolean. Organization admins still read it org-wide, which is exactly what keeps this '
       + 'athlete_record rather than minor_circle. Redaction fails safe: a null dob is treated as a minor '
       + 'wherever age gates anything (wallDisplay.ts#isMinor).',
   },
