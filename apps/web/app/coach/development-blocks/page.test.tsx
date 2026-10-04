@@ -85,7 +85,18 @@ function objectiveRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const TEMPLATES = [
+  {
+    id: 'power',
+    name: 'Power',
+    title: 'Power block',
+    emphasis: 'Turn strength into speed. [AI-H] AI rule of thumb. - 3-6 sets of 1-5 reps at about 30-60% 1RM.',
+    evidence: [{ tag: 'PS', text: 'A boxing strike contraction can happen in under 300 ms.' }],
+  },
+];
+
 interface Stubs {
+  templatesAdult?: boolean;
   rosterOk?: boolean;
   roster?: typeof ROSTER;
   blocksOk?: boolean;
@@ -197,6 +208,20 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         ok: stubs.rosterOk ?? true,
         status: stubs.rosterOk === false ? 503 : 200,
         json: async () => ({ ok: true, items: stubs.roster ?? ROSTER }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/development-block-templates')) {
+      const optIn = url.includes('minor_opt_in=1');
+      const adult = stubs.templatesAdult ?? true;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          athlete_is_adult: adult,
+          templates: adult || optIn ? TEMPLATES : [],
+          withheld_reason: adult || optIn ? null : 'minor_or_no_date_of_birth',
+        }),
       } as Response;
     }
     /* Matched BEFORE the blocks branch. The two paths are distinct --
@@ -1993,5 +2018,147 @@ describe('nothing about a block is read until a coach asks for it', () => {
     await openReview();
 
     expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes('block-review'))).toBe(true);
+  });
+});
+
+describe('starting a block from a template (owner decision 2026-10-04)', () => {
+  test('an adult gets the picker; choosing fills title and emphasis and shows the evidence', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Power block');
+    expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toContain('[AI-H]');
+    expect(screen.getByText(/under 300 ms/)).toBeTruthy();
+    expect(screen.queryByLabelText(/Show block templates for this athlete/)).toBeNull();
+  });
+
+  test('what is saved is what the coach left in the boxes, with nothing about the template', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+    fireEvent.change(screen.getByLabelText('Training emphasis'), { target: { value: 'My own edit.' } });
+    fireEvent.change(screen.getByLabelText('Starts on'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Ends on'), { target: { value: '2026-10-13' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save block' }));
+    });
+
+    expect(writes[0].body).toEqual({
+      athlete_id: 'ath-1',
+      title: 'Power block',
+      training_emphasis: 'My own edit.',
+      starts_on: '2026-09-01',
+      ends_on: '2026-10-13',
+      status: 'draft',
+    });
+  });
+
+  test('a minor gets no picker until the coach ticks the opt-in, and it is asked for, not stored', async () => {
+    const fetchMock = await renderPage({ blocks: [], templatesAdult: false });
+    await pickAthlete('ath-1');
+
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText(/Show block templates for this athlete/));
+    });
+
+    expect(screen.getByLabelText('Start from a template (optional)')).toBeTruthy();
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('development-block-templates') && url.includes('minor_opt_in=1'))).toBe(true);
+    expect(writes).toHaveLength(0);
+  });
+
+  test('the opt-in does not carry over to another athlete', async () => {
+    await renderPage({ blocks: [], templatesAdult: false });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText(/Show block templates for this athlete/));
+    });
+    await pickAthlete('ath-2');
+
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    expect((screen.getByLabelText(/Show block templates for this athlete/) as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe('template state does not leak between athletes', () => {
+  test('the opt-in is dropped on A -> B -> A', async () => {
+    const fetchMock = await renderPage({ blocks: [], templatesAdult: false });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText(/Show block templates for this athlete/));
+    });
+    await pickAthlete('ath-2');
+    fetchMock.mockClear();
+    await pickAthlete('ath-1');
+
+    expect((screen.getByLabelText(/Show block templates for this athlete/) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('minor_opt_in=1'))).toBe(false);
+  });
+
+  test('template text applied for one athlete is cleared when the athlete changes', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('template text is cleared on an athlete change even after "No template" was chosen', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: '' } });
+    });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('typed text with no template is kept across an athlete change, as before', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Mine' } });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
+  });
+
+  test('templates from the previous read are not pickable while the next read is in flight', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    expect(screen.getByLabelText('Start from a template (optional)')).toBeTruthy();
+
+    let release: (value: Response) => void = () => undefined;
+    const original = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('development-block-templates')) {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return (original as jest.Mock)(input, init);
+    }) as unknown as typeof fetch;
+    await pickAthlete('ath-2');
+
+    expect(screen.queryByLabelText('Start from a template (optional)')).toBeNull();
+    await act(async () => {
+      release({ ok: true, status: 200, json: async () => ({ athlete_is_adult: false, templates: [] }) } as Response);
+    });
   });
 });

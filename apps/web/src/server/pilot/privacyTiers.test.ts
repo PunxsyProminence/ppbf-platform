@@ -226,7 +226,7 @@ describe('the development-block entries: routes reach these rows only through th
    * precisely why it needs refusing here rather than assuming.
    */
   const API_ROOT = path.resolve(HERE, '../../..', 'app/api/pilot');
-  const GATED_MODULES = ['athleteDevelopmentBlocks', 'athleteDevelopmentBlockObjectives'];
+  const GATED_MODULES = ['athleteDevelopmentBlocks', 'athleteDevelopmentBlockObjectives', 'developmentBlockTemplates'];
 
   function developmentBlockRoutes(dir: string): string[] {
     const found: string[] = [];
@@ -302,6 +302,29 @@ describe('athlete_injuries.staff_note stays with staff', () => {
       '../../../app/api/pilot/athlete/injuries/route.ts#GET',
       '../../../app/api/pilot/coach/injuries/route.ts#assertStanding',
     ]);
+  });
+});
+
+describe('check-in body mass is recorded at the tier the code enforces', () => {
+  const entry = FIELD_TIERS['shadow_formula_observations.body_weight'];
+
+  it('is tiered at the adult rule, organization -- the widest gate that runs', () => {
+    expect(entry.tier).toBe('organization');
+  });
+
+  it('names the youth narrowing, both reads and the relationship gate it reuses', () => {
+    expect(entry.enforcedBy).toEqual([
+      'athleteBodyMass.ts#bodyMassVisibleTo',
+      'athleteBodyMass.ts#athleteIsYouth',
+      '../../../app/api/pilot/coach/athlete-body-mass/route.ts#GET',
+      '../../../app/api/pilot/parent/body-mass/route.ts#GET',
+      'access.ts#assertActorCanAccessAthlete',
+    ]);
+  });
+
+  it('says in its note that a youth is narrowed and parents read youth only', () => {
+    expect(entry.note).toMatch(/YOUTH/);
+    expect(entry.note).toMatch(/Parents read it for a youth only/);
   });
 });
 

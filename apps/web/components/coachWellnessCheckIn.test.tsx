@@ -163,6 +163,8 @@ interface WorkspaceOptions {
   /** Which athletes the attendance read reports as covered today. Default:
    *  both, which is what the rest of these cases assume. */
   readonly covered?: readonly string[];
+  /** GET /api/pilot/coach/athlete-body-mass. Default: no weigh-in. */
+  readonly bodyMass?: AthleteRoute;
 }
 
 /** The session-note route for the cases that are not about it: a gym day with
@@ -181,6 +183,10 @@ function installFetch(
     if (url.includes('/api/pilot/coach/athlete-check-in')) {
       const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
       return athleteCheckIn(athleteId, init);
+    }
+    if (url.includes('/api/pilot/coach/athlete-body-mass')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return (options.bodyMass ?? (() => jsonResponse({ body_mass: null })))(athleteId, init);
     }
     if (url.includes('/api/pilot/coach/athlete-session-note')) {
       const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
@@ -1144,5 +1150,69 @@ describe('a withdrawn note can be cleared from an already-open coach screen', ()
     );
 
     expect(screen.queryByRole('button', { name: 'Refresh session note' })).toBeNull();
+  });
+});
+
+describe('body mass rides beside the check-in from its own route (elite-boxing item 5)', () => {
+  const FLAG = 'Weight down 6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete.';
+  const summary = (flagText: string | null) => ({
+    body_mass: {
+      latest: { kilograms: 56.4, pounds: 124.3, observed_at: '2026-09-21T17:00:00.000Z' },
+      change: null,
+      flagged: flagText !== null,
+      flag_text: flagText,
+      threshold_percent: 5,
+      window_days: 7,
+    },
+  });
+
+  it("shows the latest weight and the server's flag sentence as written", async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse(summary(FLAG)),
+    });
+    await pickAthlete('Jordan P.');
+
+    const block = await within(panel()).findByTestId('coach-body-mass');
+    expect(block.textContent).toContain('Body mass: 124.3 lb');
+    expect(within(block).getByRole('status').textContent).toBe(FLAG);
+  });
+
+  it('no flag sentence, no flag line', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse(summary(null)),
+    });
+    await pickAthlete('Jordan P.');
+
+    const block = await within(panel()).findByTestId('coach-body-mass');
+    expect(within(block).queryByRole('status')).toBeNull();
+  });
+
+  it("null (no weigh-in, or not this coach's to see) shows nothing, and the check-in is unaffected", async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    await within(panel()).findByText(/Today's report for Jordan P\./);
+    expect(within(panel()).queryByTestId('coach-body-mass')).toBeNull();
+  });
+
+  it('a failed weight read never fails the check-in, and says it failed rather than looking like no weight', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse({}, { ok: false, status: 500 }),
+    });
+    await pickAthlete('Jordan P.');
+
+    await within(panel()).findByText(/Today's report for Jordan P\./);
+    expect(within(panel()).queryByTestId('coach-body-mass')).toBeNull();
+    expect((await within(panel()).findByTestId('coach-body-mass-unavailable')).textContent)
+      .toMatch(/could not be loaded/);
+  });
+
+  it('an unreadable weight body is a failed read too', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse({ body_mass: { latest: 'nonsense' } }),
+    });
+    await pickAthlete('Jordan P.');
+
+    await within(panel()).findByTestId('coach-body-mass-unavailable');
   });
 });

@@ -916,6 +916,7 @@ export default function CoachProgressionIntelligencePage() {
                       <option value="skill">Skill</option>
                       <option value="mental">Mental</option>
                       <option value="tactical">Tactical</option>
+                      <option value="recovery">Recovery</option>
                     </select>
                   </div>
                   <div className="field">

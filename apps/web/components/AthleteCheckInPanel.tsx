@@ -157,6 +157,12 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   // the keys present here are sent -- this object IS rule 1 above.
   const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>({});
   const [sleepHours, setSleepHours] = useState('');
+  const [bodyMass, setBodyMass] = useState('');
+  const [bodyMassUnit, setBodyMassUnit] = useState<'lb' | 'kg'>('lb');
+  // What happened to the weight just entered, shown once the check-in view
+  // replaces the form. The server answers body_mass_saved; a weight it did not
+  // store is said so rather than looking accepted.
+  const [bodyMassNotice, setBodyMassNotice] = useState('');
   const [note, setNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -178,6 +184,16 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           return;
         }
         body.sleep_hours = parsed;
+      }
+      const trimmedBodyMass = bodyMass.trim();
+      if (trimmedBodyMass !== '') {
+        const parsed = Number(trimmedBodyMass);
+        if (!Number.isFinite(parsed)) {
+          setSaveError('Body mass must be a number, or left blank.');
+          return;
+        }
+        body.body_mass = parsed;
+        body.body_mass_unit = bodyMassUnit;
       }
       const trimmedNote = note.trim();
       if (trimmedNote !== '') body.note = trimmedNote;
@@ -204,6 +220,13 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
       }
 
       const payload = await response.json();
+      if ('body_mass' in body) {
+        setBodyMassNotice(payload.body_mass_saved === true
+          ? `Body mass saved: ${body.body_mass} ${body.body_mass_unit}.`
+          : payload.body_mass_failed === true
+            ? 'You are checked in, but your body mass could not be saved. Tell a coach your weight.'
+            : 'Your body mass was not saved -- one is already stored for today. Tell a coach if it is wrong.');
+      }
       onSaved(payload.item as AthleteCheckInRecord);
     } catch {
       setSaveError('Check-in was not saved. Try again, and tell a coach you are here.');
@@ -249,6 +272,9 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             You checked in on {today.checked_in_on}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
+          {bodyMassNotice !== '' && (
+            <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
+          )}
         </div>
 
         {recent.length > 1 && (
@@ -307,6 +333,37 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
             onChange={(event) => setSleepHours(event.target.value)}
             className="input input--kiosk"
           />
+        </div>
+
+        <div className="space-y-[var(--s2)]">
+          <label className="t-label block" htmlFor="check-in-body-mass">
+            Body mass (optional)
+          </label>
+          {/* Stored as the same body_weight record the sparring form writes,
+              so both feed the seven-day weight change. Blank means not
+              answered. */}
+          <div className="flex gap-[var(--s2)]">
+            <input
+              id="check-in-body-mass"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={bodyMass}
+              placeholder="Leave blank to skip"
+              onChange={(event) => setBodyMass(event.target.value)}
+              className="input input--kiosk"
+            />
+            <select
+              aria-label="Body mass unit"
+              value={bodyMassUnit}
+              onChange={(event) => setBodyMassUnit(event.target.value === 'kg' ? 'kg' : 'lb')}
+              className="input input--kiosk"
+              style={{ width: 'auto' }}
+            >
+              <option value="lb">lb</option>
+              <option value="kg">kg</option>
+            </select>
+          </div>
         </div>
 
         <button

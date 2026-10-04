@@ -1,8 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import {
+  bodyMassInputError,
+  recordCheckInBodyMass,
+  toKilograms,
+  type BodyMassUnit,
+} from '@/src/server/pilot/athleteBodyMass';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ValidationError } from '@/src/server/pilot/errors';
+import { FormulaRepositoryError } from '@/src/server/pilot/formulas/repository';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   WELLNESS_COLUMNS,
@@ -62,6 +69,11 @@ export async function POST(request: NextRequest) {
     }
     const sleepProblem = sleepHoursError(body.sleep_hours);
     if (sleepProblem) throw new ValidationError(sleepProblem);
+    // Optional body mass (elite-boxing item 5). Validated before the check-in
+    // is written, so a refused weight refuses the whole check-in with its
+    // reason instead of leaving a check-in whose weight silently went missing.
+    const bodyMassProblem = bodyMassInputError(body.body_mass, body.body_mass_unit);
+    if (bodyMassProblem) throw new ValidationError(bodyMassProblem);
 
     const result = await checkIn({
       organizationId: principal.organizationId,
@@ -87,10 +99,59 @@ export async function POST(request: NextRequest) {
         organization_id: principal.organizationId,
         entity_type: 'athlete_check_in',
         entity_id: result.row.check_in_id,
-        details: { athlete_id: athleteId, checked_in_on: result.row.checked_in_on },
+        details: {
+          athlete_id: athleteId,
+          checked_in_on: result.row.checked_in_on,
+          body_mass_sent: typeof body.body_mass === 'number',
+        },
       });
     }
-    return NextResponse.json({ item: result.row, already_checked_in: !result.created });
+
+    // The audit event is written BEFORE the weight: a failed weight write
+    // must not leave a stored check-in with no audit record (a retry answers
+    // created:false and would never write it).
+    //
+    // One weigh-in per check-in, keyed by the check-in. A repeat submission
+    // the same day may add the weight if the first attempt did not store one
+    // (a failed write is retried, not lost); it can never replace a stored
+    // weight -- that is an idempotency conflict, answered body_mass_saved
+    // false with the stored value unchanged.
+    //
+    // ANY OTHER FAILURE IS A PARTIAL SUCCESS, NOT A 500. The check-in and its
+    // audit are already committed; a 500 would tell the athlete the check-in
+    // failed, and after a reload the form is gone, so they could never say
+    // the weight was lost. body_mass_failed lets the screen say exactly that.
+    let bodyMassSaved = false;
+    let bodyMassFailed = false;
+    if (typeof body.body_mass === 'number') {
+      try {
+        await recordCheckInBodyMass({
+          organizationId: principal.organizationId,
+          athleteId,
+          checkInId: result.row.check_in_id,
+          kilograms: toKilograms(body.body_mass, body.body_mass_unit as BodyMassUnit),
+          observedAt: new Date(result.row.created_at).toISOString(),
+          accountId: principal.accountId,
+        });
+        bodyMassSaved = true;
+      } catch (error) {
+        if (!(error instanceof FormulaRepositoryError && error.code === 'IDEMPOTENCY_CONFLICT')) {
+          bodyMassFailed = true;
+          console.error({
+            event: 'check-in-body-mass-write-failed',
+            check_in_id: result.row.check_in_id,
+            errorClass: error instanceof Error ? error.name : typeof error,
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({
+      item: result.row,
+      already_checked_in: !result.created,
+      body_mass_saved: bodyMassSaved,
+      body_mass_failed: bodyMassFailed,
+    });
   } catch (error) {
     return jsonError(error);
   }

@@ -44,7 +44,8 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
 { "energy": 1-5, "soreness": 1-5, "focus": 1-5,
   "hydration": 1-5, "motivation": 1-5, "mental_clarity": 1-5,
   "stress": 1-5, "nutrition_compliance": 1-5,
-  "sleep_hours": 0-24, "note": "string" }
+  "sleep_hours": 0-24, "note": "string",
+  "body_mass": number, "body_mass_unit": "lb" | "kg" }
 ```
 - The eight wellness values must be whole numbers 1–5 when present; anything else
   is a `400` with the reason. **Omitted means omitted** — the UI must not default a
@@ -56,6 +57,32 @@ Body (ALL fields optional — a bare `{}` is a valid check-in):
   One check-in per day is enforced by the database; a repeat POST returns the
   existing row with `already_checked_in: true` — render as friendly acknowledgment
   ("Already checked in today"), not an error.
+- `body_mass` (elite-boxing item 5, Jason 2026-10-04) is optional and needs
+  `body_mass_unit`; 20–250 kg (or the same range in lb), else `400` before
+  anything is written. It is **not a check-in column**: it is stored as the
+  athlete's `body_weight` formula observation, in kilograms, keyed to the
+  check-in (`check-in:<check_in_id>:body_weight`) -- the same record the
+  sparring form writes, feeding MVP-12 (Seven-Day Weight Change). One weigh-in
+  per check-in: a repeat POST may add a missing one but never replaces a stored
+  one. The response carries `body_mass_saved: boolean`.
+
+### Who reads body mass, and the flag
+- Staff: `GET /api/pilot/coach/athlete-body-mass?athlete_id=` -- a sibling of
+  the check-in read, because its gate is narrower. Adult: any coach or
+  organization admin in the gym. Youth, or no date of birth on file: only the
+  assigned or covering coach and the organization admin
+  (`assertActorCanAccessAthlete`). Anyone else gets `body_mass: null`, the same
+  as "no weigh-in".
+- Parent: `GET /api/pilot/parent/body-mass?athlete_id=` -- linked children only.
+- The flag (Jason 2026-10-04: ">5% in 7 days"; "B: any >5% within 7 days"):
+  raised when, by more than 5% of the earlier weight, up or down, either the
+  latest weigh-in differs from the one closest to 7 days earlier (±24 h, MVP-12:
+  `change`), or any two weigh-ins in the 7 days up to the latest differ
+  (`largest_change_in_window`). `flag_text` names the larger, e.g. "Weight down
+  6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete." The
+  parent route answers only for a youth (an adult has no parent surface).
+  Weigh-ins outside 20–250 kg are left out. Nothing acts on
+  the flag.
 
 ## What each number means
 

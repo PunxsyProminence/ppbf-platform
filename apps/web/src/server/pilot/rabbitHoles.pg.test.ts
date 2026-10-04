@@ -130,6 +130,7 @@ let migrationSql: string;
 let baseSchemaSql: string;
 let boardRoleSql: string;
 let progressionSql: string;
+let gapRecoverySql: string;
 let videoSessionsSql: string;
 let complianceSql: string;
 let complianceSeedsSql: string;
@@ -209,6 +210,8 @@ async function freshDatabase(name: string): Promise<Client> {
 async function freshVocabularyDatabase(name: string): Promise<Client> {
   const client = await freshDatabase(name);
   await client.query(progressionSql);
+  // Production carries the widened gap_type CHECK, so the fixture does too.
+  await client.query(gapRecoverySql);
   // compliance_violations references pilot.video_sessions, which is
   // migration-owned rather than part of the base schema.
   await client.query(videoSessionsSql);
@@ -337,6 +340,7 @@ beforeAll(async () => {
     + await readInfra('pilot_slice_postgres_data_retention_deletion_migration.sql');
   boardRoleSql = await readInfra('pilot_slice_postgres_board_role_migration.sql');
   progressionSql = await readInfra('pilot_slice_postgres_progression_migration.sql');
+  gapRecoverySql = await readInfra('pilot_slice_postgres_progression_gap_recovery_migration.sql');
   videoSessionsSql = await readInfra('pilot_slice_postgres_video_sessions_migration.sql');
   complianceSql = await readInfra('pilot_slice_postgres_compliance_migration.sql');
   complianceSeedsSql = await readInfra('pilot_slice_postgres_compliance_rule_seeds_migration.sql');
@@ -602,7 +606,8 @@ describe('rabbit holes migration against real Postgres', () => {
         (row: { rule_id: string }) => row.rule_id.split(`_${ORG_A}_`)[1],
       );
 
-      expect(gapTypes).toHaveLength(6);
+      expect(gapTypes).toHaveLength(7);
+      expect(gapTypes).toContain('recovery');
       expect(severities).toHaveLength(4);
       expect(FORMULA_IDS).toHaveLength(39);
       expect(boardSeats).toHaveLength(8);

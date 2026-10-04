@@ -65,6 +65,7 @@ export const ANCHOR_KEY_OPTIONS: Record<AuthorableAnchorType, readonly AnchorKey
     { key: 'skill', label: 'Skill' },
     { key: 'mental', label: 'Mental' },
     { key: 'tactical', label: 'Tactical' },
+    { key: 'recovery', label: 'Recovery' },
   ],
   severity: [
     { key: 'critical', label: 'Critical' },
