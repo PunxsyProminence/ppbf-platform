@@ -28,7 +28,10 @@ export const ADULT_PATHWAY_CAVEAT =
   'These time ranges are rough estimates, not research-backed. Everyone moves at their own pace; '
   + 'a coach decides when a stage is reached.';
 
-export const ADULT_PATHWAY_SCOPE = 'For adult members only. Youth athletes are not placed on this pathway.';
+// States the SOURCE's scope only (the synthesis covers healthy adults). Any
+// policy for youth athletes is an owner decision not yet made, so this line
+// makes no claim about them.
+export const ADULT_PATHWAY_SCOPE = 'These stages were written for adults.';
 
 export const ADULT_PATHWAY_STAGE_KEYS = ['foundation', 'intermediate', 'advanced', 'elite'] as const;
 export type AdultPathwayStageKey = (typeof ADULT_PATHWAY_STAGE_KEYS)[number];
