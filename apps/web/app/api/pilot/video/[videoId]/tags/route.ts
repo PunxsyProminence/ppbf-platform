@@ -20,7 +20,7 @@ import {
   type ClipEventKind,
 } from '@/src/server/pilot/videoClipTags';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
-import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
+import { assertVideoIsFilmStudyMedia, VideoDestinationError } from '@/src/server/pilot/videoDestination';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
@@ -46,8 +46,11 @@ async function staffCanSeeVideo(
   // found here, as it does on playback.
   try {
     await assertVideoIsFilmStudyMedia(organizationId, videoSessionId);
-  } catch {
-    return false;
+  } catch (error) {
+    // Only the destination refusal reads as not found; a database fault
+    // is a server error, not a missing video.
+    if (error instanceof VideoDestinationError) return false;
+    throw error;
   }
   const tagged = await listLiveTagSubjects(organizationId, videoSessionId);
   // A deleted athlete's footage reads as not found, as on playback.

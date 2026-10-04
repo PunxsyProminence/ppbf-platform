@@ -332,6 +332,13 @@ describe('review follow-ups', () => {
     expect(mockGetTag).toHaveBeenCalledWith('org-1', 'vct-1');
   });
 
+  test('a destination lookup fault is a server error, not a missing video', async () => {
+    mockFilmStudy.mockRejectedValueOnce(new Error('connection reset'));
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(mockListForVideo).not.toHaveBeenCalled();
+  });
+
   test('Teach Shadow footage reads as not found', async () => {
     mockVideo.mockResolvedValueOnce(video(null));
     mockFilmStudy.mockRejectedValueOnce(new VideoDestinationError());
