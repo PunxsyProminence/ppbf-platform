@@ -26,10 +26,13 @@ import {
   BODY_POINTS,
   BODY_POINTS_0_2,
   BODY_POINTS_0_3,
+  BODY_POINTS_0_4,
+  BODY_POINT_EDGES_0_4,
   BODY_POINTS_BY_VERSION,
   BOXING_ONTOLOGY_VERSION_0_1,
   BOXING_ONTOLOGY_VERSION_0_2,
   BOXING_ONTOLOGY_VERSION_0_3,
+  BOXING_ONTOLOGY_VERSION_0_4,
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   CONTACT_RESULTS,
@@ -79,6 +82,8 @@ const ALL_VOCABULARIES: Array<[string, readonly string[]]> = [
   ['CLIP_SAMPLING_REASONS', CLIP_SAMPLING_REASONS],
   ['BODY_POINTS', BODY_POINTS],
   ['BODY_POINTS_0_2', BODY_POINTS_0_2],
+  ['BODY_POINTS_0_3', BODY_POINTS_0_3],
+  ['BODY_POINTS_0_4', BODY_POINTS_0_4],
   ['BODY_POINT_STATES', BODY_POINT_STATES],
   ['MOMENT_SLOTS', MOMENT_SLOTS],
   ['MOMENT_KINDS', MOMENT_KINDS],
@@ -94,6 +99,7 @@ describe('boxing-ontology-0.1 is closed and well formed', () => {
     expect(BOXING_ONTOLOGY_VERSION_0_1).toBe('boxing-ontology-0.1');
     expect(BOXING_ONTOLOGY_VERSION_0_2).toBe('boxing-ontology-0.2');
     expect(BOXING_ONTOLOGY_VERSION_0_3).toBe('boxing-ontology-0.3');
+    expect(BOXING_ONTOLOGY_VERSION_0_4).toBe('boxing-ontology-0.4');
   });
 
   test.each(ALL_VOCABULARIES)('%s has no duplicate members', (_name, vocabulary) => {
@@ -340,11 +346,12 @@ describe('which version answers which question', () => {
   // relationships the call sites rely on, so a later edit to one constant
   // cannot quietly strand a study.
 
-  test('the build knows 0.1, 0.2 and 0.3, in that order', () => {
+  test('the build knows 0.1, 0.2, 0.3 and 0.4, in that order', () => {
     expect([...SUPPORTED_BOXING_ONTOLOGY_VERSIONS]).toEqual([
       'boxing-ontology-0.1',
       'boxing-ontology-0.2',
       'boxing-ontology-0.3',
+      'boxing-ontology-0.4',
     ]);
   });
 
@@ -362,7 +369,11 @@ describe('which version answers which question', () => {
   test('0.1 never carries body points', () => {
     // OD-2026-10-02-008 4A: old studies finish on old labels; never mixed.
     expect(BODY_POINT_ONTOLOGY_VERSIONS).not.toContain(BOXING_ONTOLOGY_VERSION_0_1);
-    expect([...BODY_POINT_ONTOLOGY_VERSIONS]).toEqual([BOXING_ONTOLOGY_VERSION_0_2, BOXING_ONTOLOGY_VERSION_0_3]);
+    expect([...BODY_POINT_ONTOLOGY_VERSIONS]).toEqual([
+      BOXING_ONTOLOGY_VERSION_0_2,
+      BOXING_ONTOLOGY_VERSION_0_3,
+      BOXING_ONTOLOGY_VERSION_0_4,
+    ]);
   });
 
   test('until 0.2 can be labelled, only 0.1 is labelled and created', () => {
@@ -399,12 +410,84 @@ describe('boxing-ontology-0.2 body points', () => {
     expect(BODY_POINTS_0_2 as readonly string[]).not.toContain('solar_plexus');
   });
 
+  test("0.4 is 0.3's 25 in the same order less both ankles: 23, solar_plexus last", () => {
+    // OD-2026-10-04-021, Jason 2026-10-04: "Drop ankles in app".
+    expect([...BODY_POINTS_0_4]).toEqual(
+      BODY_POINTS_0_3.filter((point) => point !== 'left_ankle' && point !== 'right_ankle'),
+    );
+    expect(BODY_POINTS_0_4).toHaveLength(23);
+    expect(BODY_POINTS_0_4[BODY_POINTS_0_4.length - 1]).toBe('solar_plexus');
+    expect(BODY_POINTS_0_4 as readonly string[]).not.toContain('left_ankle');
+    expect(BODY_POINTS_0_4 as readonly string[]).not.toContain('right_ankle');
+  });
+
+  test('0.2 and 0.3 still hold both ankles: earlier versions are not edited', () => {
+    for (const list of [BODY_POINTS_0_2, BODY_POINTS_0_3] as const) {
+      expect(list[10]).toBe('left_ankle');
+      expect(list[20]).toBe('right_ankle');
+    }
+    expect(BODY_POINTS as readonly string[]).toContain('left_ankle');
+    expect(BODY_POINTS as readonly string[]).toContain('right_ankle');
+  });
+
   test('every body-point version has its own list, and the vocabulary is every point any version knows', () => {
     expect(Object.keys(BODY_POINTS_BY_VERSION)).toEqual([...BODY_POINT_ONTOLOGY_VERSIONS]);
     expect(BODY_POINTS_BY_VERSION[BOXING_ONTOLOGY_VERSION_0_2]).toBe(BODY_POINTS_0_2);
     expect(BODY_POINTS_BY_VERSION[BOXING_ONTOLOGY_VERSION_0_3]).toBe(BODY_POINTS_0_3);
+    expect(BODY_POINTS_BY_VERSION[BOXING_ONTOLOGY_VERSION_0_4]).toBe(BODY_POINTS_0_4);
     const known = new Set(Object.values(BODY_POINTS_BY_VERSION).flat());
     expect([...BODY_POINTS].sort()).toEqual([...known].sort());
+  });
+
+  test("0.4's skeleton: the leg runs knee to heel and the foot is a triangle", () => {
+    // Overwatch ruling 2026-10-04 on OD-2026-10-04-021, option (a).
+    const key = ([a, b]: readonly [string, string]) => [a, b].sort().join('|');
+    const perSide = (side: string) => [
+      [`${side}_shoulder`, `${side}_elbow`],
+      [`${side}_elbow`, `${side}_wrist`],
+      [`${side}_wrist`, `${side}_glove`],
+      [`${side}_hip`, `${side}_knee`],
+      [`${side}_knee`, `${side}_heel`],
+      [`${side}_heel`, `${side}_big_toe`],
+      [`${side}_heel`, `${side}_small_toe`],
+      [`${side}_big_toe`, `${side}_small_toe`],
+    ] as const;
+    const expected = [
+      ['nose', 'chin'],
+      ['chin', 'neck'],
+      ['neck', 'solar_plexus'],
+      ['solar_plexus', 'mid_hip'],
+      ['neck', 'left_shoulder'],
+      ['neck', 'right_shoulder'],
+      ['mid_hip', 'left_hip'],
+      ['mid_hip', 'right_hip'],
+      ...perSide('left'),
+      ...perSide('right'),
+    ] as const;
+    expect(BODY_POINT_EDGES_0_4.map(key).sort()).toEqual(expected.map(key).sort());
+    expect(new Set(BODY_POINT_EDGES_0_4.map(key)).size).toBe(BODY_POINT_EDGES_0_4.length);
+  });
+
+  test("0.4's skeleton joins only 0.4's points, never an ankle, and reaches every one", () => {
+    const points = new Set<string>(BODY_POINTS_0_4);
+    const neighbours = new Map<string, string[]>([...points].map((point) => [point, []]));
+    for (const [a, b] of BODY_POINT_EDGES_0_4) {
+      expect(points.has(a) && points.has(b)).toBe(true);
+      expect(a).not.toBe(b);
+      neighbours.get(a)!.push(b);
+      neighbours.get(b)!.push(a);
+    }
+    const reached = new Set<string>(['neck']);
+    const queue = ['neck'];
+    while (queue.length) {
+      for (const next of neighbours.get(queue.shift()!)!) {
+        if (!reached.has(next)) {
+          reached.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    expect([...reached].sort()).toEqual([...points].sort());
   });
 
   test('no hand points beyond the glove, and nothing named lead or rear', () => {

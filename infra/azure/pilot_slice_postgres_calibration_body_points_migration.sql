@@ -1,8 +1,9 @@
 -- Calibration body points (pilot.calibration_body_moments,
 -- pilot.calibration_body_points) -- where a coach marked each body point (24
--- under boxing-ontology-0.2, 25 under 0.3) at the three moments of a punch or
--- a defence (OD-2026-10-02-008 section 2; OD-2026-10-02-011 sections 2, 3a,
--- 3b; solar_plexus in 0.3, Jason 2026-10-03).
+-- under boxing-ontology-0.2, 25 under 0.3, 23 under 0.4) at the three moments
+-- of a punch or a defence (OD-2026-10-02-008 section 2; OD-2026-10-02-011
+-- sections 2, 3a, 3b; solar_plexus in 0.3, Jason 2026-10-03; no ankles in
+-- 0.4, OD-2026-10-04-021).
 --
 -- STACKED ON the calibration annotations migration. It needs
 -- pilot.calibration_annotation_sets and pilot.calibration_annotation_events.
@@ -17,7 +18,8 @@
 --   * A 0.1 set cannot hold a moment, and so cannot hold a point. Old studies
 --     finish on old labels; never mixed (OD-2026-10-02-008 4A).
 --   * A set holds only its own version's points: a 0.2 set refuses
---     solar_plexus, which only 0.3 has.
+--     solar_plexus, which 0.2 does not have, and a 0.4 set refuses
+--     left_ankle and right_ankle, which 0.4 dropped.
 --   * A moment sits exactly on its event's start, end or contact time, or for
 --     a middle moment with no contact, inside the event. The event's bounds are
 --     carried and foreign-keyed back, the containment pattern of the
@@ -322,7 +324,7 @@ begin
   end if;
 
   if parent_version is null
-     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
+     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4')
   then
     raise exception 'CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION'
       using errcode = 'check_violation';
@@ -420,6 +422,8 @@ begin
         and new.point_code not in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe'))
      or (parent_version = 'boxing-ontology-0.3'
         and new.point_code not in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe', 'solar_plexus'))
+     or (parent_version = 'boxing-ontology-0.4'
+        and new.point_code not in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_heel', 'right_big_toe', 'right_small_toe', 'solar_plexus'))
   then
     raise exception 'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION'
       using errcode = 'check_violation';
@@ -474,7 +478,8 @@ create trigger pilot_calibration_events_body_moment_guard
 -- Sets: a set holding body points cannot change vocabulary. The sets freeze
 -- already holds this after submission; this holds it while in progress, when
 -- relabelling a 0.2 set as 0.1 would leave a 0.1 set holding body points, and
--- relabelling a 0.3 set as 0.2 a 0.2 set holding solar_plexus.
+-- relabelling a 0.3 set as 0.2 a 0.2 set holding solar_plexus, or as 0.4 a
+-- 0.4 set holding ankles.
 create or replace function pilot.calibration_annotation_sets_body_moment_guard()
 returns trigger
 language plpgsql
