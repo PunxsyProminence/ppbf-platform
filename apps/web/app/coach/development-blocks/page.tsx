@@ -297,9 +297,6 @@ export default function CoachDevelopmentBlocksPage() {
 
   useEffect(() => {
     setTemplateId('');
-    // Nothing from the previous read stays pickable while this one is in flight.
-    setTemplates([]);
-    setTemplateAthleteIsAdult(false);
     if (!athleteId) {
       setTemplates([]);
       setTemplatesState('idle');
@@ -1184,6 +1181,9 @@ export default function CoachDevelopmentBlocksPage() {
                 </p>
               )}
 
+              {/* 'loaded' is the stale-read guard: the effect moves to 'loading' before
+                  the next read, so the previous athlete's templates are never pickable
+                  while it is in flight (page.test.tsx proves this). */}
               {templatesState === 'loaded' && templates.length > 0 && (
                 <div className="field">
                   <label htmlFor="blockTemplate" className="t-label">Start from a template (optional)</label>
