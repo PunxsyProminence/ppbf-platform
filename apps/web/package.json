@@ -130,6 +130,7 @@
     "test:pdf-text": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryPdfText.pdf.test.ts --testTimeout=120000",
     "test:migrations": "node scripts/run-migration-suites.mjs",
     "test:migrations:athlete-intelligence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteIntelligence.pg.test.ts --testTimeout=180000",
+    "test:migrations:athlete-drill-exposure": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDrillExposure.pg.test.ts --testTimeout=180000",
     "test:migrations:magic-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/magicLinkRedemption.pg.test.ts --testTimeout=180000",
     "test:migrations:attendance-trend": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendanceReporting.pg.test.ts --testTimeout=180000",
     "test:migrations:waiver-compliance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverCompliance.pg.test.ts --testTimeout=180000",

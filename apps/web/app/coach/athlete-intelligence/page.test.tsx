@@ -90,6 +90,24 @@ function installFetch(payload: unknown, init?: { ok?: boolean }) {
     if (url.includes('/api/pilot/coach/athlete-intelligence')) {
       return { ok: init?.ok ?? true, status: init?.ok === false ? 500 : 200, json: async () => payload };
     }
+    if (url.includes('/api/pilot/coach/athlete-drill-exposure')) {
+      // A valid empty read: the panel has its own suite, and an error here would add a second
+      // alert to a page whose own failure cases are asserted by role.
+      const empty = { key: 'total', label: 'All', sessions: 0, reps: 0, sessionsWithReps: 0,
+        plannedMinutes: 0, sessionsWithPlannedMinutes: 0 };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          athleteId: 'ath-1',
+          window: { from: '2026-09-06', to: '2026-10-03' },
+          drillSessions: { total: empty, byContactLevel: [], bySkillFamily: [],
+            pendingVerification: 0, disputedExcluded: 0 },
+          rounds: { total: 0, attempts: 0, byContext: [], disputedExcluded: 0 },
+          groupSessionsCounted: false,
+        }),
+      };
+    }
     throw new Error(`Unexpected fetch: ${url}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -109,6 +127,17 @@ async function renderAndPick(payload: unknown, init?: { ok?: boolean }) {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+describe('drill exposure', () => {
+  it('reads the exposure route for the chosen athlete, independently of the formula read', async () => {
+    const fetchMock = await renderAndPick(model(), { ok: false });
+
+    const called = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(called.some((u) => u.includes('/api/pilot/coach/athlete-drill-exposure?athlete_id=ath-1')))
+      .toBe(true);
+    expect(screen.getByRole('heading', { name: 'Drill exposure' })).toBeTruthy();
+  });
 });
 
 describe('it reads the route that nothing was reading', () => {
