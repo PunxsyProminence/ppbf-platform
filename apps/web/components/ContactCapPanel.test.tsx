@@ -138,10 +138,15 @@ test('an impossible count is refused before anything is sent', async () => {
   expect(posts).toHaveLength(0);
 });
 
-test('clear sends both limits empty', async () => {
+test('clear sends both limits empty, whatever is half-typed in the form', async () => {
   serve(() => respond({ ok: true, cap: CAP, history: [CAP] }));
   openPanel();
-  fireEvent.click(await screen.findByRole('button', { name: 'Clear cap' }));
+  const clear = await screen.findByRole('button', { name: 'Clear cap' });
+  // Half-typed values in the form must not ride along on a clear.
+  fireEvent.change(screen.getByLabelText('Highest contact stage allowed'), { target: { value: 'open_sparring' } });
+  fireEvent.change(screen.getByLabelText(/Most hard or open sparring sessions/), { target: { value: '3' } });
+  fireEvent.change(screen.getByLabelText(/Note for staff/), { target: { value: 'half typed' } });
+  fireEvent.click(clear);
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0]).toEqual({
     athlete_id: 'ath-1',
