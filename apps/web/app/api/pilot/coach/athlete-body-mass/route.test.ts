@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
 
 import * as routeModule from './route';
-import { GET } from './route';
+import { GET, POST } from './route';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
+import { FormulaRepositoryError, saveFormulaObservation } from '@/src/server/pilot/formulas/repository';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -33,9 +35,21 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+// The correction's write. The fake keeps the store's own rule (one successor
+// per entry, formulas/repository.ts saveFormulaObservation; its tests cover the
+// real SQL) and adds the new entry to `weighIns`, so the read after it goes
+// through the same summary as any other read.
+jest.mock('@/src/server/pilot/formulas/repository', () => {
+  const actual = jest.requireActual('@/src/server/pilot/formulas/repository');
+  return { ...actual, saveFormulaObservation: jest.fn() };
+});
+jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockSave = saveFormulaObservation as jest.Mock;
+const mockAudit = writePilotAuditEvent as jest.Mock;
 
 const NOW = new Date('2026-10-04T18:00:00Z');
 const DAY = 24 * 60 * 60 * 1_000;
@@ -62,6 +76,7 @@ interface FakeWeighIn {
   numeric_value: number;
   unit: string;
   observed_at: string;
+  supersedes?: string;
 }
 
 let athletes: FakeAthlete[];
@@ -124,6 +139,18 @@ beforeEach(() => {
     }
     const values = params as string[];
 
+    if (text.includes('from pilot.shadow_formula_observations')) {
+      // correctBodyMass's lookup of the entry it would replace.
+      if (!text.includes('organization_id = $1') || !text.includes('athlete_id = $2')
+        || !text.includes("observation_kind = 'body_weight'")) {
+        throw new Error(`entry lookup without its scope: ${text}`);
+      }
+      const [organizationId, athleteId, observationId] = values;
+      const hit = weighIns.find((row) => row.organization_id === organizationId
+        && row.athlete_id === athleteId && row.observation_id === observationId);
+      return hit ? { context_id: `ctx-${hit.observation_id}`, observed_at: hit.observed_at } : null;
+    }
+
     if (text.includes('from pilot.coach_coverage')) {
       const [organizationId, athleteId, coachId] = values;
       const windowed = text.includes('expires_at > now()');
@@ -178,12 +205,39 @@ beforeEach(() => {
       throw new Error(`weight read not limited to body_weight: ${text}`);
     }
     const [organizationId, athleteId, from, to] = params as string[];
+    // Honoured only when the SQL says it: an entry something supersedes is
+    // left out.
+    const currentOnly = text.includes('successor.supersedes_observation_id = o.observation_id');
     return weighIns
       .filter((row) => row.organization_id === organizationId
         && row.athlete_id === athleteId
+        && (!currentOnly || !weighIns.some((other) => other.organization_id === row.organization_id
+          && other.supersedes === row.observation_id))
         && row.observed_at > from
         && row.observed_at <= to)
       .sort((a, b) => a.observed_at.localeCompare(b.observed_at));
+  });
+});
+
+beforeEach(() => {
+  mockSave.mockImplementation(async (input: {
+    organizationId: string; athleteId: string; value: number; unit: string;
+    observedAt: string; supersedesObservationId: string;
+  }) => {
+    if (weighIns.some((row) => row.supersedes === input.supersedesObservationId)) {
+      throw new FormulaRepositoryError('SUPERSEDED_OBSERVATION', 'Observation already has a different immutable successor.');
+    }
+    const saved = {
+      organization_id: input.organizationId,
+      athlete_id: input.athleteId,
+      observation_id: `fix-of-${input.supersedesObservationId}`,
+      numeric_value: input.value,
+      unit: input.unit,
+      observed_at: input.observedAt,
+      supersedes: input.supersedesObservationId,
+    };
+    weighIns.push(saved);
+    return { observationId: saved.observation_id };
   });
 });
 
@@ -242,14 +296,14 @@ describe('a youth\'s weight reaches only their own coach, a covering coach and t
     const { status, payload } = await readAs({ accountId });
 
     expect(status).toBe(200);
-    expect(payload).toEqual({ body_mass: null });
+    expect(payload).toEqual({ body_mass: null, can_correct: false });
     expect(JSON.stringify(payload)).not.toMatch(/56\.4|124\.3|flag/);
     expect(weightReads()).toEqual([]);
   });
 
   test('a missing date of birth is treated as a youth', async () => {
     const unrelated = await readAs({ accountId: 'coach-unrelated' }, 'ath-no-dob');
-    expect(unrelated.payload).toEqual({ body_mass: null });
+    expect(unrelated.payload).toEqual({ body_mass: null, can_correct: false });
 
     const ownCoach = await readAs({ accountId: 'coach-record' }, 'ath-no-dob');
     expect(ownCoach.payload.body_mass).toMatchObject({ latest: { kilograms: 47 }, flagged: true });
@@ -309,13 +363,174 @@ describe('refusals', () => {
   });
 });
 
-describe('read only', () => {
-  test('GET is the only handler, and every statement is a select', async () => {
+describe('GET is read only', () => {
+  test('GET and the correction POST are the only handlers, and every GET statement is a select', async () => {
     const handlers = Object.keys(routeModule).filter((name) => /^(GET|POST|PUT|PATCH|DELETE)$/.test(name));
-    expect(handlers).toEqual(['GET']);
+    expect(handlers).toEqual(['GET', 'POST']);
 
     await readAs({ accountId: 'coach-record' });
     expect(statements.length).toBeGreaterThan(0);
     for (const sql of statements) expect(sql).toMatch(/^select\b/i);
+  });
+});
+
+// CORRECTING A WEIGHT (Jason 2026-10-04, "Athlete or their coach"). The coach
+// side: only the athlete's assigned or covering coach may correct. The old
+// entry stays; the flag is computed from the corrected value.
+
+async function correctAs(
+  caller: Partial<PilotPrincipal>,
+  fields: Record<string, unknown> = {},
+) {
+  mockRequirePrincipal.mockResolvedValue(principal(caller));
+  const response = await POST(new NextRequest('http://localhost/api/pilot/coach/athlete-body-mass', {
+    method: 'POST',
+    body: JSON.stringify({
+      athlete_id: 'ath-youth',
+      observation_id: 'ath-youth-latest',
+      body_mass: 131,
+      body_mass_unit: 'lb',
+      ...fields,
+    }),
+  }));
+  const payload = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, payload };
+}
+
+describe('correcting a weight: the athlete\'s own coach', () => {
+  test.each([
+    ['coach of record', 'coach-record'],
+    ['coach with a live coverage grant', 'coach-covering'],
+  ])('%s corrects it; the flag uses the corrected value and the original stays', async (_label, accountId) => {
+    // 56.4 kg read as a 6% drop; the athlete really weighed 131 lb (59.42 kg).
+    const before = await readAs({ accountId });
+    expect(before.payload).toMatchObject({ body_mass: { flagged: true }, can_correct: true });
+
+    const { status, payload } = await correctAs({ accountId });
+
+    expect(status).toBe(200);
+    expect(payload.corrected).toEqual({
+      observation_id: 'fix-of-ath-youth-latest',
+      supersedes_observation_id: 'ath-youth-latest',
+    });
+    expect(payload.body_mass).toMatchObject({
+      latest: { observation_id: 'fix-of-ath-youth-latest', kilograms: 59.42 },
+      flagged: false,
+      flag_text: null,
+    });
+    // Superseded, not deleted, and the correction keeps the original's time.
+    const original = weighIns.find((row) => row.observation_id === 'ath-youth-latest');
+    const fix = weighIns.find((row) => row.observation_id === 'fix-of-ath-youth-latest');
+    expect(original).toMatchObject({ numeric_value: 56.4 });
+    expect(fix).toMatchObject({ supersedes: 'ath-youth-latest', observed_at: original!.observed_at });
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'body_weight',
+      unit: 'kilograms',
+      supersedesObservationId: 'ath-youth-latest',
+      createdByAccountId: accountId,
+      idempotencyKey: 'body-mass-correction:ath-youth-latest',
+    }));
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'update',
+      entity_type: 'athlete_body_mass',
+      details: { athlete_id: 'ath-youth', supersedes_observation_id: 'ath-youth-latest' },
+    }));
+    // No weight in the audit row.
+    expect(JSON.stringify(mockAudit.mock.calls)).not.toMatch(/56\.4|59\.42|131/);
+  });
+
+  test('a later read shows the corrected value, never the superseded one', async () => {
+    await correctAs({ accountId: 'coach-record' });
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 59.42 }, flagged: false });
+    expect(JSON.stringify(payload)).not.toMatch(/56\.4/);
+  });
+
+  test('a correction that is itself a big change still raises the flag', async () => {
+    // 60 kg -> 120 lb (54.43 kg) is -9.3%: the flag reads the corrected value, whatever it is.
+    const { payload } = await correctAs({ accountId: 'coach-record' }, { body_mass: 120 });
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 54.43 }, flagged: true });
+  });
+});
+
+describe('correcting a weight: everyone else is refused and nothing is written', () => {
+  test.each([
+    ['coach in the gym with no assignment', { accountId: 'coach-unrelated' }, 'ath-youth'],
+    ['coach with no assignment, adult athlete', { accountId: 'coach-unrelated' }, 'ath-adult'],
+    ['coach whose coverage has lapsed', { accountId: 'coach-lapsed' }, 'ath-youth'],
+    ['organization admin', { accountId: 'acct-admin', role: 'organization_admin' as const }, 'ath-youth'],
+    ['legacy admin role', { accountId: 'acct-admin', role: 'admin' as const }, 'ath-youth'],
+    ['parent', { accountId: 'acct-parent', role: 'parent' as const }, 'ath-youth'],
+    ['platform owner', { accountId: 'acct-owner', role: 'platform_owner' as const }, 'ath-youth'],
+    ['the athlete (their path is the athlete route)', { accountId: 'acct-ath', role: 'athlete' as const, athleteId: 'ath-youth' }, 'ath-youth'],
+    ['another athlete', { accountId: 'acct-other', role: 'athlete' as const, athleteId: 'ath-adult' }, 'ath-youth'],
+    ['own coach, from another gym\'s session', { accountId: 'coach-record', organizationId: 'org-2' }, 'ath-youth'],
+  ])('%s', async (_label, caller, athleteId) => {
+    const { status } = await correctAs(caller, { athlete_id: athleteId, observation_id: `${athleteId}-latest` });
+    expect(status).toBe(403);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+    expect(weighIns.some((row) => row.supersedes)).toBe(false);
+  });
+
+  test('the GET does not offer "Correct" to a coach who may only read', async () => {
+    const { payload } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+    expect(payload).toMatchObject({ body_mass: { latest: { kilograms: 75.2 } }, can_correct: false });
+  });
+});
+
+describe('correcting a weight: which entries', () => {
+  test('an entry older than 7 days is refused (409) and nothing is written', async () => {
+    const { status, payload } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-prior' });
+    expect(status).toBe(409);
+    expect(payload.code).toBe('BODY_MASS_CORRECTION_WINDOW');
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  test('an entry exactly 7 days old can still be corrected', async () => {
+    weighIns.push({
+      organization_id: 'org-1', athlete_id: 'ath-youth', observation_id: 'ath-youth-edge',
+      numeric_value: 58, unit: 'kilograms', observed_at: new Date(NOW.getTime() - 7 * DAY).toISOString(),
+    });
+    const { status } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-youth-edge' });
+    expect(status).toBe(200);
+  });
+
+  test('a latest entry outside the window is not offered for correction', async () => {
+    weighIns = weighIns.filter((row) => row.observation_id !== 'ath-youth-latest');
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    expect(payload).toMatchObject({ body_mass: { latest: { kilograms: 60 } }, can_correct: false });
+  });
+
+  test('an entry already corrected is refused (409); the correction can be corrected instead', async () => {
+    expect((await correctAs({ accountId: 'coach-record' })).status).toBe(200);
+    const again = await correctAs({ accountId: 'coach-record' }, { body_mass: 132 });
+    expect(again.status).toBe(409);
+    expect(again.payload.code).toBe('BODY_MASS_ALREADY_CORRECTED');
+
+    const chained = await correctAs({ accountId: 'coach-record' }, {
+      observation_id: 'fix-of-ath-youth-latest',
+      body_mass: 132,
+    });
+    expect(chained.status).toBe(200);
+    expect(chained.payload.body_mass).toMatchObject({ latest: { kilograms: 59.87 } });
+  });
+
+  test('another athlete\'s entry, under this athlete\'s id, is not found and nothing is written', async () => {
+    const { status } = await correctAs({ accountId: 'coach-record' }, { observation_id: 'ath-adult-latest' });
+    expect(status).toBe(404);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['no athlete', { athlete_id: undefined }],
+    ['no entry', { observation_id: undefined }],
+    ['no weight', { body_mass: undefined }],
+    ['a weight out of range', { body_mass: 900 }],
+    ['an unknown unit', { body_mass_unit: 'stone' }],
+  ])('%s is a 400 and nothing is written', async (_label, fields) => {
+    const { status } = await correctAs({ accountId: 'coach-record' }, fields);
+    expect(status).toBe(400);
+    expect(mockSave).not.toHaveBeenCalled();
   });
 });

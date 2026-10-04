@@ -96,3 +96,45 @@ test.each([
   );
   expect(screen.getByRole('status').textContent).toBe(sentence);
 });
+
+describe('correcting a mistyped weight after check-in (Jason 2026-10-04, "Athlete or their coach")', () => {
+  const latest = (observationId: string, pounds: number, correctable = true) => ({
+    observation_id: observationId, kilograms: 0, pounds, observed_at: '2026-10-04T17:00:00.000Z', correctable,
+  });
+
+  test('shows the athlete their latest weight and sends the correction for that entry', async () => {
+    const fetchMock = jest.fn(async (_input: unknown, init?: RequestInit) => (init?.method === 'POST'
+      ? jsonResponse({ corrected: {}, body_mass: latest('obs-fixed', 152.4) })
+      : jsonResponse({ body_mass: latest('obs-typo', 15.2) })));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      render(<AthleteCheckInPanel today={savedRecord() as never} recent={[]} loading={false} loadError={null} onSaved={() => undefined} />);
+    });
+
+    const block = await screen.findByTestId('own-body-mass');
+    expect(block.textContent).toContain('Your latest body mass: 15.2 lb');
+    fireEvent.click(screen.getByRole('button', { name: 'Correct this weight' }));
+    fireEvent.change(screen.getByLabelText('Correct weight'), { target: { value: '152.4' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+    });
+
+    const post = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    expect(String(post?.[0])).toContain('/api/pilot/athlete/check-in/body-mass');
+    expect(JSON.parse(String((post?.[1] as RequestInit).body))).toEqual({
+      observation_id: 'obs-typo', body_mass: 152.4, body_mass_unit: 'lb',
+    });
+    expect(screen.getByTestId('own-body-mass').textContent).toContain('Your latest body mass: 152.4 lb');
+    expect(screen.getByTestId('own-body-mass').textContent).toContain('The earlier entry stays on record.');
+  });
+
+  test('outside the correction window there is no "Correct"', async () => {
+    global.fetch = jest.fn(async () => jsonResponse({ body_mass: latest('obs-old', 150, false) })) as unknown as typeof fetch;
+    await act(async () => {
+      render(<AthleteCheckInPanel today={savedRecord() as never} recent={[]} loading={false} loadError={null} onSaved={() => undefined} />);
+    });
+
+    await screen.findByTestId('own-body-mass');
+    expect(screen.queryByRole('button', { name: 'Correct this weight' })).toBeNull();
+  });
+});

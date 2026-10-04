@@ -55,6 +55,7 @@ import {
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
+import { BodyMassCorrectForm, postBodyMassCorrection } from './AthleteCheckInPanel';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -595,18 +596,22 @@ type WellnessCheckInRead =
    admin -- and the screen does not try to tell those apart. The flag sentence
    is the server's, shown as written. */
 interface CoachBodyMass {
+  readonly observationId: string | null;
   readonly pounds: number;
   readonly observedAt: string;
   readonly flagText: string | null;
+  /* The route's can_correct: this coach is the athlete's own and the entry is
+     inside the correction window. */
+  readonly canCorrect: boolean;
 }
 
 const BODY_MASS_READ_FAILED =
   'Body mass could not be loaded, so a weight-change flag may not be shown. Try again in a minute.';
 
-function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
+function parseCoachBodyMass(value: unknown, canCorrect: unknown): CoachBodyMass | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as { latest?: unknown; flag_text?: unknown };
-  const latest = record.latest as { pounds?: unknown; observed_at?: unknown } | null | undefined;
+  const latest = record.latest as { observation_id?: unknown; pounds?: unknown; observed_at?: unknown } | null | undefined;
   if (
     !latest
     || typeof latest.pounds !== 'number'
@@ -615,10 +620,13 @@ function parseCoachBodyMass(value: unknown): CoachBodyMass | null {
   ) {
     return null;
   }
+  const observationId = typeof latest.observation_id === 'string' ? latest.observation_id : null;
   return {
+    observationId,
     pounds: latest.pounds,
     observedAt: latest.observed_at,
     flagText: typeof record.flag_text === 'string' ? record.flag_text : null,
+    canCorrect: canCorrect === true && observationId !== null,
   };
 }
 
@@ -2077,9 +2085,9 @@ export default function CoachWorkspace() {
         // which is NOT "no weight" -- a flag may be sitting unread.
         if (response.status === 403) return null;
         if (!response.ok) return 'unavailable';
-        const payload = (await response.json()) as { body_mass?: unknown };
+        const payload = (await response.json()) as { body_mass?: unknown; can_correct?: unknown };
         if (payload.body_mass === null) return null;
-        return parseCoachBodyMass(payload.body_mass) ?? 'unavailable';
+        return parseCoachBodyMass(payload.body_mass, payload.can_correct) ?? 'unavailable';
       })
       .catch((): 'unavailable' | null => (controller.signal.aborted ? null : 'unavailable'));
 
@@ -3624,6 +3632,30 @@ export default function CoachWorkspace() {
                         <p className="t-body font-semibold text-[color:var(--status-warning)]" role="status">
                           {wellnessShown.bodyMass.flagText}
                         </p>
+                      )}
+                      {wellnessShown.bodyMass.canCorrect && (
+                        <BodyMassCorrectForm
+                          onSubmit={async (value, unit) => {
+                            const athleteId = wellnessShown.athleteId;
+                            const observationId = (wellnessShown.bodyMass as CoachBodyMass).observationId ?? '';
+                            const result = await postBodyMassCorrection(
+                              '/api/pilot/coach/athlete-body-mass',
+                              { athlete_id: athleteId, observation_id: observationId },
+                              value,
+                              unit,
+                            );
+                            // The corrected summary replaces the shown one, flag included.
+                            const next = result.payload
+                              ? parseCoachBodyMass(result.payload.body_mass, result.payload.can_correct)
+                              : null;
+                            if (next) {
+                              setWellnessRead((current) => (current?.status === 'loaded' && current.athleteId === athleteId
+                                ? { ...current, bodyMass: next }
+                                : current));
+                            }
+                            return result.message;
+                          }}
+                        />
                       )}
                     </div>
                   )}

@@ -1216,3 +1216,80 @@ describe('body mass rides beside the check-in from its own route (elite-boxing i
     await within(panel()).findByTestId('coach-body-mass-unavailable');
   });
 });
+
+describe('the athlete\'s own coach can correct a mistyped weight (Jason 2026-10-04, "Athlete or their coach")', () => {
+  const FLAG = 'Weight down 6.0% in 7 days (132.3 lb → 124.3 lb). Check in with the athlete.';
+  const read = (canCorrect: boolean) => ({
+    body_mass: {
+      latest: { observation_id: 'obs-typo', kilograms: 56.4, pounds: 124.3, observed_at: '2026-09-21T17:00:00.000Z' },
+      flagged: true,
+      flag_text: FLAG,
+    },
+    can_correct: canCorrect,
+  });
+
+  it('no "Correct" for a coach the route does not allow', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: () => jsonResponse(read(false)),
+    });
+    await pickAthlete('Jordan P.');
+
+    const block = await within(panel()).findByTestId('coach-body-mass');
+    expect(within(block).queryByRole('button', { name: 'Correct this weight' })).toBeNull();
+  });
+
+  it('sends the correction for that entry, then shows the corrected weight and the recomputed flag', async () => {
+    const posts: unknown[] = [];
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: (_athleteId, init) => {
+        if (init?.method === 'POST') {
+          posts.push(JSON.parse(String(init.body)));
+          return jsonResponse({
+            corrected: { observation_id: 'obs-fixed', supersedes_observation_id: 'obs-typo' },
+            body_mass: {
+              latest: { observation_id: 'obs-fixed', kilograms: 59.42, pounds: 131, observed_at: '2026-09-21T17:00:00.000Z' },
+              flagged: false,
+              flag_text: null,
+            },
+            can_correct: true,
+          });
+        }
+        return jsonResponse(read(true));
+      },
+    });
+    await pickAthlete('Jordan P.');
+
+    const block = await within(panel()).findByTestId('coach-body-mass');
+    fireEvent.click(within(block).getByRole('button', { name: 'Correct this weight' }));
+    fireEvent.change(within(block).getByLabelText('Correct weight'), { target: { value: '131' } });
+    await act(async () => {
+      fireEvent.click(within(block).getByRole('button', { name: 'Save correction' }));
+    });
+
+    expect(posts).toEqual([{ athlete_id: 'ath_1', observation_id: 'obs-typo', body_mass: 131, body_mass_unit: 'lb' }]);
+    const after = await within(panel()).findByTestId('coach-body-mass');
+    expect(after.textContent).toContain('Body mass: 131 lb');
+    expect(after.textContent).not.toContain(FLAG);
+    expect(after.textContent).toContain('Corrected to 131 lb. The earlier entry stays on record.');
+  });
+
+  it('a refusal shows the server\'s reason and leaves the shown weight alone', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }), NO_SESSION_TODAY_ROUTE, {
+      bodyMass: (_athleteId, init) => (init?.method === 'POST'
+        ? jsonResponse({ error: 'Only the athlete or their own coach can correct a body mass entry.' }, { ok: false, status: 403 })
+        : jsonResponse(read(true))),
+    });
+    await pickAthlete('Jordan P.');
+
+    const block = await within(panel()).findByTestId('coach-body-mass');
+    fireEvent.click(within(block).getByRole('button', { name: 'Correct this weight' }));
+    fireEvent.change(within(block).getByLabelText('Correct weight'), { target: { value: '131' } });
+    await act(async () => {
+      fireEvent.click(within(block).getByRole('button', { name: 'Save correction' }));
+    });
+
+    const after = await within(panel()).findByTestId('coach-body-mass');
+    expect(after.textContent).toContain('Body mass: 124.3 lb');
+    expect(after.textContent).toContain('Only the athlete or their own coach can correct a body mass entry.');
+  });
+});
