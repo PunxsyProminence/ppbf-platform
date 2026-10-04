@@ -74,6 +74,9 @@ export function referenceSetsFromBaseline(
           // the active column). Only an explicit false is withdrawn: a blank
           // or missing cell is the column's default (active), never a refusal.
           active: (row.values.active ?? '').trim().toLowerCase() !== 'false',
+          // Required on a drill row (specs/drills.ts); the column's database
+          // default is 'none' (drill_library_v3 :107), so a blank reads as that.
+          contactLevel: row.values.contact_level || 'none',
         },
       ]),
     ),
