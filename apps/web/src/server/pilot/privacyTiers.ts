@@ -438,6 +438,15 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'was added. That is why enforcedBy is a list -- an auditor reading only the first name '
       + 'would have checked the gate that was already right and missed the one that was not.',
   },
+  'athlete_mental_skill_entries.cue_text': {
+    tier: 'athlete_record',
+    enforcedBy: ['athleteMentalSkills.ts#readMentalSkills', 'access.ts#assertActorCanAccessAthlete'],
+    note:
+      'A self-talk phrase the athlete typed in their own words, minors included (owner answers '
+      + '2026-10-04). Every read goes through readMentalSkills, which calls assertActorCanAccessAthlete '
+      + 'before selecting: self, linked guardian, coach of record or covering coach, org admin. '
+      + 'Writes are self-only. The text is kept out of audit details.',
+  },
 };
 
 /**
