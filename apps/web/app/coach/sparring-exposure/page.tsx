@@ -110,8 +110,18 @@ function isCapCheck(value: unknown): value is CapCheck {
   const check = value as Record<string, unknown>;
   if (!['set', 'none', 'unknown'].includes(check.cap_state as string)) return false;
   if (check.cap_state === 'set' && (!check.cap || typeof check.cap !== 'object')) return false;
+  if (typeof check.through_day !== 'string') return false;
   return check.hard_open_days_in_7 === null || typeof check.hard_open_days_in_7 === 'number';
 }
+
+/** A save's check must carry its warnings as a list of messages; anything else is "not checked". */
+function isSaveCheck(value: unknown): value is CapCheck & { warnings: CapWarning[] } {
+  if (!isCapCheck(value) || !Array.isArray(value.warnings)) return false;
+  return value.warnings.every((w) => w && typeof w.kind === 'string' && typeof w.message === 'string');
+}
+
+/** Only these two mean the segment went OVER the cap; the rest mean it could not be fully checked. */
+const OVER_KINDS: ReadonlySet<string> = new Set(['stage_above_cap', 'hard_open_days_over_cap']);
 
 const minSec = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
@@ -239,7 +249,7 @@ export default function CoachSparringExposurePage() {
       }
       setMessage({ kind: 'ok', text: 'Saved.' });
       const saved = (await response.json().catch(() => null)) as { cap_check?: unknown } | null;
-      setSavedCheck(isCapCheck(saved?.cap_check) ? saved.cap_check : 'unreadable');
+      setSavedCheck(isSaveCheck(saved?.cap_check) ? saved.cap_check : 'unreadable');
       // Keep the day, the stage and the gear for the next round; clear what was observed.
       setForm((current) => ({
         ...EMPTY_FORM,
@@ -452,13 +462,28 @@ export default function CoachSparringExposurePage() {
             {message?.kind === 'ok' && savedCheck === 'unreadable' && (
               <p>The cap check did not come back, so this segment was not checked against a cap.</p>
             )}
+            {/* Titled by what the warnings ARE: "over" only for an actual
+                overage; a stage not recorded, a cap that could not be read or a
+                count that failed is "not checked", never "over". */}
             {message?.kind === 'ok' && savedCheck !== null && savedCheck !== 'unreadable'
-              && (savedCheck.warnings ?? []).length > 0 && (
+              && (savedCheck.warnings ?? []).some((w) => OVER_KINDS.has(w.kind)) && (
               <div className="alert alert--warning" role="alert" data-testid="spar-cap-warnings">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
                   <p className="alert-title">Over the coach-set cap</p>
-                  {(savedCheck.warnings ?? []).map((warning) => (
+                  {(savedCheck.warnings ?? []).filter((w) => OVER_KINDS.has(w.kind)).map((warning) => (
+                    <p key={warning.kind} className="alert-msg">{warning.message}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {message?.kind === 'ok' && savedCheck !== null && savedCheck !== 'unreadable'
+              && (savedCheck.warnings ?? []).some((w) => !OVER_KINDS.has(w.kind)) && (
+              <div className="alert alert--warning" data-testid="spar-cap-unchecked">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Not fully checked against the cap</p>
+                  {(savedCheck.warnings ?? []).filter((w) => !OVER_KINDS.has(w.kind)).map((warning) => (
                     <p key={warning.kind} className="alert-msg">{warning.message}</p>
                   ))}
                 </div>

@@ -453,3 +453,79 @@ describe('contact stage and the coach-set cap (map item 15)', () => {
     expect(text).not.toMatch(/%|score|risk|recommended|clear|limit|safe to/i);
   });
 });
+
+describe('cap warnings say what they are (review finding)', () => {
+  async function saveWith(warnings: Array<{ kind: string; message: string }>) {
+    await renderAndPick({
+      postCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1, through_day: '2026-10-03', warnings },
+    });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByRole('status').textContent).toBe('Saved.');
+  }
+
+  test.each([
+    ['stage_not_recorded', 'No contact stage was recorded, so this entry cannot be checked against the cap.'],
+    ['cap_unknown', "This athlete's cap could not be read just now, so this entry was not checked against it."],
+    ['days_not_counted', 'Hard or open sparring days could not be counted just now.'],
+  ])('%s is "not fully checked", never "over the cap"', async (kind, message) => {
+    await saveWith([{ kind, message }]);
+    expect(screen.queryByTestId('spar-cap-warnings')).toBeNull();
+    expect(screen.queryByText('Over the coach-set cap')).toBeNull();
+    const shown = screen.getByTestId('spar-cap-unchecked').textContent ?? '';
+    expect(shown).toContain('Not fully checked against the cap');
+    expect(shown).toContain(message);
+  });
+
+  test('an overage and an unchecked limit together each get their own, true title', async () => {
+    await saveWith([
+      { kind: 'stage_above_cap', message: 'Above the stage cap.' },
+      { kind: 'days_not_counted', message: 'Days not counted.' },
+    ]);
+    expect(screen.getByTestId('spar-cap-warnings').textContent).toContain('Above the stage cap.');
+    expect(screen.getByTestId('spar-cap-warnings').textContent).not.toContain('Days not counted.');
+    expect(screen.getByTestId('spar-cap-unchecked').textContent).toContain('Days not counted.');
+  });
+
+  test.each([
+    ['warnings missing', { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1, through_day: '2026-10-03' }],
+    ['warnings not a list', { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1, through_day: '2026-10-03', warnings: 'x' }],
+    ['a warning without a message', { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1, through_day: '2026-10-03', warnings: [{ kind: 'stage_above_cap' }] }],
+  ])('a save reply with %s says the segment was not checked -- never silence', async (_label, postCheck) => {
+    await renderAndPick({ postCheck });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByText(/was not checked against a cap/)).toBeTruthy();
+  });
+
+  test('a cap_check without its day is "could not be read"', async () => {
+    await renderAndPick({ capCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1 } });
+    expect(screen.getByTestId('spar-cap').textContent).toContain('could not be read just now');
+  });
+
+  test("switching athlete clears the last athlete's warnings and shows only the new athlete's cap", async () => {
+    await saveWith([{ kind: 'stage_above_cap', message: 'Rosa over.' }]);
+    expect(screen.getByTestId('spar-cap-warnings')).toBeTruthy();
+
+    installFetch({
+      capCheck: {
+        cap_state: 'set',
+        cap: { highest_allowed_stage: 'none', max_hard_open_sessions_per_7_days: null },
+        hard_open_days_in_7: 0,
+        through_day: '2026-10-03',
+      },
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect(screen.queryByTestId('spar-cap-warnings')).toBeNull();
+    expect(screen.queryByText('Rosa over.')).toBeNull();
+    const section = screen.getByTestId('spar-cap').textContent ?? '';
+    expect(section).toContain('Highest stage: No contact');
+    expect(section).not.toContain('Controlled sparring');
+  });
+});

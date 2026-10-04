@@ -504,7 +504,7 @@ export const BUILDING: readonly Door[] = [
     hint: "One athlete's jump result and your 1-5 skill ratings, with their own history. Nothing ranked." },
   { href: '/coach/sparring-exposure', label: 'Sparring Record', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'sparring exposure head contact time under impact rounds stop rule after sparring presentation',
-    hint: 'What you saw in a sparring segment, for one athlete. Counts only: no score, no limit.' },
+    hint: 'What you saw in a sparring segment, for one athlete. Counts only, no score; shows the coach-set cap and warns when a segment goes over it.' },
   { href: '/coach/development', label: 'Your Development', room: 'floor',
     roles: ['coach', 'admin', 'staff', 'volunteer'],
     keywords: 'coach development goal own growth course clinic workshop training record education topic mentorship professional learning',
