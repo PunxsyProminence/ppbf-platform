@@ -5,6 +5,7 @@ import {
   validateCoachReviewPayload,
   validateGoalPayload,
   validateSessionPayload,
+  assertDurationWrittenByAthlete,
 } from './validation';
 
 function athletePayload(overrides: Record<string, unknown> = {}) {
@@ -443,4 +444,23 @@ describe('session duration_minutes is optional, whole and bounded', () => {
       expect((await response.json()).error).toContain('duration_minutes');
     },
   );
+});
+
+describe('only an athlete may write duration_minutes', () => {
+  const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'])('%s carrying the key is refused as Forbidden', (role) => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, duration_minutes: 45 }));
+    expect(() => assertDurationWrittenByAthlete(role, session)).toThrow(/^Forbidden: duration_minutes/);
+    const cleared = validateSessionPayload(sessionPayload({ ...rated, duration_minutes: null }));
+    expect(() => assertDurationWrittenByAthlete(role, cleared)).toThrow(/^Forbidden/);
+  });
+
+  test('a staff write without the key, and an athlete write with it, pass', () => {
+    expect(() => assertDurationWrittenByAthlete('coach', validateSessionPayload(sessionPayload(rated)))).not.toThrow();
+    expect(() => assertDurationWrittenByAthlete(
+      'athlete',
+      validateSessionPayload(sessionPayload({ ...rated, duration_minutes: 45 })),
+    )).not.toThrow();
+  });
 });

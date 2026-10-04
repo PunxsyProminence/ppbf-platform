@@ -206,6 +206,24 @@ export function validateGoalPayload(payload: unknown): PilotGoal {
   };
 }
 
+/**
+ * duration_minutes means "the minutes the ATHLETE says they trained", and the
+ * column has no method column to say otherwise: the coach rollup multiplies it
+ * into session load as the athlete's own report. Both session routes also
+ * admit coaches and organization admins, so a staff write carrying the key
+ * would be stored and later read as the athlete's answer. Refused for every
+ * role but athlete. A staff write that OMITS the key is unaffected and keeps
+ * the stored minutes (see upsertSession). A second writer needs a
+ * duration_method column in its own migration, as rpe_method did.
+ */
+export function assertDurationWrittenByAthlete(role: string, session: PilotSession): void {
+  if (session.duration_minutes !== undefined && role !== 'athlete') {
+    throw new Error(
+      'Forbidden: duration_minutes is recorded only by the athlete at check-out',
+    );
+  }
+}
+
 export function validateSessionPayload(payload: unknown): PilotSession {
   const record = asRecord(payload);
   assertOnlyAllowedKeys(record, SESSION_FIELDS, SESSION_OPTIONAL_FIELDS);
