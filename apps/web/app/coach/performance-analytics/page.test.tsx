@@ -25,6 +25,8 @@ const ITEM = {
   sessions_total: 4,
   sessions_completed: 3,
   avg_rpe: 6.5,
+  avg_session_load: 390,
+  session_load_count: 4,
   training_days: 8,
   readiness_count: 6,
   avg_readiness: 7.1,
@@ -227,4 +229,25 @@ describe('a rollup nobody could read never reads as "nobody needs you"', () => {
     expect(await screen.findByText('No athletes on your roster')).toBeTruthy();
     expect(screen.queryByText('The rollup could not be read')).toBeNull();
   });
+});
+
+// Session load sits beside Avg RPE, computed by the read (RPE x minutes) and
+// labelled unvalidated; its session count says how many sessions it covers,
+// and no session with both answers is a dash, never 0.
+test('session load shows beside Avg RPE, labelled unvalidated, with its session count', async () => {
+  global.fetch = mockFetch(() => okWith([ITEM]));
+  render(<PerformanceAnalyticsPage />);
+
+  const label = await screen.findByText('Avg session load (RPE × min, unvalidated)');
+  const figure = label.parentElement as HTMLElement;
+  expect(figure.textContent).toContain('390');
+  expect(figure.textContent).toContain('(4 sessions)');
+});
+
+test('no session with both answers reads as a dash, not zero load', async () => {
+  global.fetch = mockFetch(() => okWith([{ ...ITEM, avg_session_load: null, session_load_count: 0 }]));
+  render(<PerformanceAnalyticsPage />);
+
+  const label = await screen.findByText('Avg session load (RPE × min, unvalidated)');
+  expect((label.parentElement as HTMLElement).textContent).toBe('Avg session load (RPE × min, unvalidated)—');
 });

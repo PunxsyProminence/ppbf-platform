@@ -5,6 +5,7 @@ import {
   validateCoachReviewPayload,
   validateGoalPayload,
   validateSessionPayload,
+  assertDurationWrittenByAthlete,
 } from './validation';
 
 function athletePayload(overrides: Record<string, unknown> = {}) {
@@ -404,5 +405,62 @@ describe('rpe and rpe_method have to agree', () => {
   test('a reading whose provenance is unknown is accepted, because that is what the old rows are', () => {
     expect(validateSessionPayload(sessionPayload({ rpe: 7, rpe_method: 'UNKNOWN' })))
       .toMatchObject({ rpe: 7, rpe_method: 'UNKNOWN' });
+  });
+});
+
+// pilot.sessions.duration_minutes (pilot_slice_postgres_session_duration_migration.sql):
+// the athlete's own minutes, asked at check-out. Optional, whole minutes
+// 1..300 -- the same bounds as the column CHECK, so a caller gets a 400 naming
+// the field instead of a constraint violation. Absent and null are different:
+// absent leaves the stored value alone on an update, null clears it.
+describe('session duration_minutes is optional, whole and bounded', () => {
+  const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
+
+  test('an absent key stays absent, so an older writer cannot erase stored minutes', () => {
+    const session = validateSessionPayload(sessionPayload(rated));
+    expect('duration_minutes' in session).toBe(false);
+  });
+
+  test('an explicit null is kept as null', () => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, duration_minutes: null })).duration_minutes).toBeNull();
+  });
+
+  test.each([1, 45, 300])('%p minutes is accepted as given', (minutes) => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, duration_minutes: minutes })).duration_minutes).toBe(minutes);
+  });
+
+  test.each([0, 301, -1, 4.5, Number.NaN, Number.POSITIVE_INFINITY, '45', true])(
+    '%p is refused with a 400 that names the field',
+    async (minutes) => {
+      let refusal: unknown;
+      try {
+        validateSessionPayload(sessionPayload({ ...rated, duration_minutes: minutes }));
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(Error);
+      const response = jsonError(refusal);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain('duration_minutes');
+    },
+  );
+});
+
+describe('only an athlete may write duration_minutes', () => {
+  const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'])('%s carrying the key is refused as Forbidden', (role) => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, duration_minutes: 45 }));
+    expect(() => assertDurationWrittenByAthlete(role, session)).toThrow(/^Forbidden: duration_minutes/);
+    const cleared = validateSessionPayload(sessionPayload({ ...rated, duration_minutes: null }));
+    expect(() => assertDurationWrittenByAthlete(role, cleared)).toThrow(/^Forbidden/);
+  });
+
+  test('a staff write without the key, and an athlete write with it, pass', () => {
+    expect(() => assertDurationWrittenByAthlete('coach', validateSessionPayload(sessionPayload(rated)))).not.toThrow();
+    expect(() => assertDurationWrittenByAthlete(
+      'athlete',
+      validateSessionPayload(sessionPayload({ ...rated, duration_minutes: 45 })),
+    )).not.toThrow();
   });
 });

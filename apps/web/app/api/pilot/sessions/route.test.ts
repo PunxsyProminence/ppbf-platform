@@ -124,3 +124,40 @@ describe('POST /api/pilot/sessions', () => {
     expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+// duration_minutes is read as the athlete's own report, and nothing records
+// who wrote it, so only an athlete may send it. Staff writes that omit it
+// still go through.
+describe('POST /api/pilot/sessions duration_minutes provenance', () => {
+  test.each(['coach', 'organization_admin', 'admin'])('a %s sending duration_minutes is refused before the write', async (role) => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal(), role, athleteId: null });
+    mockGetSessionById.mockResolvedValueOnce(null);
+
+    const response = await POST(request(payload({ duration_minutes: 45 })));
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toContain('duration_minutes');
+    expect(mockUpsertSession).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('a coach write that omits duration_minutes still goes through', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal(), role: 'coach', athleteId: null });
+    mockGetSessionById.mockResolvedValueOnce(null);
+
+    const response = await POST(request(payload()));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertSession).toHaveBeenCalledTimes(1);
+    expect('duration_minutes' in mockUpsertSession.mock.calls[0][1]).toBe(false);
+  });
+
+  test('an athlete sending duration_minutes is written', async () => {
+    mockGetSessionById.mockResolvedValueOnce(null);
+
+    const response = await POST(request(payload({ duration_minutes: 45 })));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertSession.mock.calls[0][1].duration_minutes).toBe(45);
+  });
+});
