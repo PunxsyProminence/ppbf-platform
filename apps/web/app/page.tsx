@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import PhotoSlot from "@/components/PhotoSlot";
-import PublicInterestForm, { programInterestLabels } from "@/components/PublicInterestForm";
+import PublicInterestForm from "@/components/PublicInterestForm";
+import { programInterestLabels } from "@/components/publicInterestOptions";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
 
 /* The registry facts, stated once. The visible page and the JSON-LD both read

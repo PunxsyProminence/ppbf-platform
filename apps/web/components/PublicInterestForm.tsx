@@ -3,6 +3,17 @@
 import Link from 'next/link';
 import { useState, type SyntheticEvent } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import {
+  contactMethodLabels,
+  contactMethodOptions,
+  programInterestLabels,
+  programInterestOptions,
+  visitorTypeLabels,
+  visitorTypeOptions,
+  type ContactMethod,
+  type ProgramInterest,
+  type VisitorType,
+} from './publicInterestOptions';
 
 /* The interest form on the front page (moved from /public, which now forwards
    to /). Posts to /api/pilot/public-interest -- the one unauthenticated write
@@ -13,64 +24,6 @@ import { apiBase } from '@/lib/apiBase';
    No consent checkbox (Jason, 2026-10-03: "it should be assumed that we would
    contact them if they are requesting info"). Sending the form is the request
    to be contacted, and the route records it that way. */
-
-// The option lists are wire values, not copy: each is submitted as-is and
-// re-checked server-side against VISITOR_TYPES / PROGRAM_INTERESTS /
-// CONTACT_METHODS in src/server/pilot/publicInterest.ts. Only the labels a
-// visitor reads are plain English. The Records are complete so a value added
-// to a list fails typecheck until it has a label.
-const visitorTypeOptions = [
-  'Athlete / Participant',
-  'Parent / Guardian',
-  'Volunteer',
-  'Coach',
-  'Donor / Sponsor',
-  'Board / Community Partner',
-  'General Visitor',
-] as const;
-type VisitorType = (typeof visitorTypeOptions)[number];
-
-const visitorTypeLabels: Record<VisitorType, string> = {
-  'Athlete / Participant': 'I want to train here',
-  'Parent / Guardian': 'I am a parent or guardian',
-  Volunteer: 'I want to volunteer',
-  Coach: 'I want to coach',
-  'Donor / Sponsor': 'I want to donate or sponsor',
-  'Board / Community Partner': 'I am here about a partnership',
-  'General Visitor': 'I am just looking around',
-};
-
-export const programInterestOptions = [
-  'Boxing / Fitness',
-  'Youth Development',
-  'Adaptive Training',
-  'Competition Track',
-  'Parent Support',
-  'Volunteer Support',
-  'Sponsorship / Partnership',
-  'General Information',
-] as const;
-type ProgramInterest = (typeof programInterestOptions)[number];
-
-export const programInterestLabels: Record<ProgramInterest, string> = {
-  'Boxing / Fitness': 'Boxing or fitness training (fitness only is fine)',
-  'Youth Development': 'Youth boxing and mentorship (under 18)',
-  'Adaptive Training': 'Adaptive training (injury, disability, long time off)',
-  'Competition Track': 'Competing as an amateur boxer',
-  'Parent Support': 'Questions from a parent or guardian',
-  'Volunteer Support': 'Volunteering',
-  'Sponsorship / Partnership': 'Sponsorship or partnership',
-  'General Information': 'Something else -- I just have a question',
-};
-
-const contactMethodOptions = ['Email', 'Phone', 'Either'] as const;
-type ContactMethod = (typeof contactMethodOptions)[number];
-
-const contactMethodLabels: Record<ContactMethod, string> = {
-  Email: 'Email me',
-  Phone: 'Call or text me',
-  Either: 'Either is fine',
-};
 
 const fallbackAddress = '220 N Jefferson St, Punxsutawney, PA 15767';
 

@@ -144,3 +144,15 @@ test('the page does not link to /public, which forwards here', () => {
   const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
   expect(hrefs.filter((h) => h === '/public' || h.startsWith('/public#'))).toEqual([]);
 });
+
+test('the server page reads form labels from a plain module, never from the client form', () => {
+  /* A server component that indexes into an export of a 'use client' module
+     gets a client-reference proxy and fails at render; jsdom cannot see that,
+     so the boundary is pinned here instead (review finding on this PR). */
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs'); const path = require('path');
+  const page = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+  const options = fs.readFileSync(path.join(__dirname, '../components/publicInterestOptions.ts'), 'utf8');
+  expect(page).not.toMatch(/import\s+\w*\s*,?\s*\{[^}]*\}\s*from\s*["']@\/components\/PublicInterestForm["']/);
+  expect(options).not.toMatch(/^\s*['"]use client['"]/);
+});
