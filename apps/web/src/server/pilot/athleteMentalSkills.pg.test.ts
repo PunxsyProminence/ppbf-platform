@@ -321,6 +321,32 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
     expect(entry.logged_on).toBe('2026-10-04');
   });
 
+  test('concurrent writes cannot pass the daily limit', async () => {
+    const now = '2026-07-01T15:00:00Z';
+    const results = await Promise.allSettled(
+      Array.from({ length: mental.DAILY_ENTRY_LIMIT + 5 }, () => mental.logImagerySession(secondAthlete, { minutes: 2, now })),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(mental.DAILY_ENTRY_LIMIT);
+    const stored = await main.query(
+      `select count(*)::int as n from pilot.athlete_mental_skill_entries
+       where organization_id = $1 and athlete_id = $2 and logged_on = '2026-07-01'`,
+      [ORG, SECOND_ATHLETE],
+    );
+    expect(stored.rows[0].n).toBe(mental.DAILY_ENTRY_LIMIT);
+  });
+
+  test('every entry has exactly one audit record, which never carries the cue text', async () => {
+    const cue = await mental.setSelfTalkCue(secondAthlete, { cueText: 'private words', cueKind: 'motivational' });
+    const audit = await main.query(
+      `select details::text as details from pilot.audit_events
+       where entity_type = 'athlete_mental_skill_entry' and entity_id = $1`,
+      [cue.entry_id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0].details).toContain(SECOND_ATHLETE);
+    expect(audit.rows[0].details).not.toContain('private words');
+  });
+
   test('a day holds at most DAILY_ENTRY_LIMIT entries per athlete', async () => {
     const now = '2026-06-01T15:00:00Z';
     for (let i = 0; i < mental.DAILY_ENTRY_LIMIT; i += 1) {

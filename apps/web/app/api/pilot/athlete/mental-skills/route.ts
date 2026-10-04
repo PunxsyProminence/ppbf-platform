@@ -6,7 +6,6 @@ import {
   readMentalSkills,
   setSelfTalkCue,
 } from '@/src/server/pilot/athleteMentalSkills';
-import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -57,30 +56,13 @@ export async function POST(request: NextRequest) {
 
     const parsed: unknown = await request.json().catch(() => ({}));
     const body = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+    // The module writes the entry and its audit record in one transaction.
     if (body.kind === 'self_talk_cue') {
       const cue = await setSelfTalkCue(principal, { cueText: body.cue_text, cueKind: body.cue_kind });
-      await writePilotAuditEvent({
-        event_type: 'create',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'athlete_mental_skill_entry',
-        entity_id: cue.entry_id,
-        details: { athlete_id: principal.athleteId, kind: 'self_talk_cue', logged_on: cue.logged_on },
-      });
       return NextResponse.json({ current_cue: cue }, { status: 201 });
     }
     if (body.kind === 'imagery_session') {
       const entry = await logImagerySession(principal, { minutes: body.minutes, contentKey: body.content_key });
-      await writePilotAuditEvent({
-        event_type: 'create',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'athlete_mental_skill_entry',
-        entity_id: entry.entry_id,
-        details: { athlete_id: principal.athleteId, kind: 'imagery_session', logged_on: entry.logged_on },
-      });
       return NextResponse.json({ imagery_session: entry }, { status: 201 });
     }
     throw new ValidationError('kind must be self_talk_cue or imagery_session.');

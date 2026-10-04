@@ -73,7 +73,7 @@ test('a parent cannot write', async () => {
   expect(mockCue).not.toHaveBeenCalled();
 });
 
-test('POST self_talk_cue passes the body through and audits without the cue text', async () => {
+test('POST self_talk_cue passes the body through; the route writes no audit of its own (the module does, in its transaction)', async () => {
   mockPrincipal.mockResolvedValue(principal());
   mockCue.mockResolvedValue({ entry_id: 'e-1', cue_text: 'hands home', cue_kind: 'instructional', logged_on: '2026-10-04' });
   const response = await POST(post({ kind: 'self_talk_cue', cue_text: 'hands home', cue_kind: 'instructional', athlete_id: 'ath-x' }));
@@ -82,8 +82,7 @@ test('POST self_talk_cue passes the body through and audits without the cue text
     cueText: 'hands home',
     cueKind: 'instructional',
   });
-  expect(mockAudit).toHaveBeenCalledTimes(1);
-  expect(JSON.stringify(mockAudit.mock.calls[0][0])).not.toContain('hands home');
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 test('POST imagery_session passes minutes and content_key through', async () => {
@@ -91,7 +90,7 @@ test('POST imagery_session passes minutes and content_key through', async () => 
   mockImagery.mockResolvedValue({ entry_id: 'e-2', minutes: 6, content_key: null, logged_on: '2026-10-04' });
   expect((await POST(post({ kind: 'imagery_session', minutes: 6 }))).status).toBe(201);
   expect(mockImagery).toHaveBeenCalledWith(expect.anything(), { minutes: 6, contentKey: undefined });
-  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_id: 'e-2' }));
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 test('an unknown kind is refused and nothing is written', async () => {

@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import { gymDayIso, type GymTimeInput } from '../../lib/gymTime';
 
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
-import { query, queryOne } from './db';
+import { writePilotAuditEvent } from './audit';
+import { query, queryOne, withTransaction } from './db';
 import { ForbiddenError, ValidationError } from './errors';
 
 // Athlete mental skills (map item 21): the athlete's own self-talk cue and a
@@ -108,19 +111,57 @@ export function imageryError(minutes: unknown, contentKey: unknown): string | nu
   return null;
 }
 
-async function assertUnderDailyLimit(organizationId: string, athleteId: string, day: string): Promise<void> {
-  const row = await queryOne<{ n: number }>(
-    `select count(*)::int as n
-     from pilot.athlete_mental_skill_entries
-     where organization_id = $1 and athlete_id = $2 and logged_on = $3::date`,
-    [organizationId, athleteId, day],
-  );
-  if ((row?.n ?? 0) >= DAILY_ENTRY_LIMIT) {
-    throw new ValidationError(
-      `No more than ${DAILY_ENTRY_LIMIT} mental skills entries a day.`,
-      'MENTAL_SKILLS_DAILY_LIMIT',
+/**
+ * The write path, for both kinds, as ONE transaction: a per-athlete-per-day
+ * advisory lock, the daily count, the insert, and the audit record. Without
+ * the lock, concurrent requests near the limit each count below it and all
+ * insert; without the shared transaction, a failed audit write after a
+ * committed insert returns 500 and a retry stores the entry twice. The audit
+ * details carry the athlete, kind and day, never the athlete's words.
+ */
+async function insertEntry<T extends QueryResultRow>(
+  actor: ActorIdentity,
+  athleteId: string,
+  day: string,
+  kind: 'self_talk_cue' | 'imagery_session',
+  insert: (client: PoolClient, entryId: string) => Promise<T | undefined>,
+): Promise<T> {
+  return withTransaction(async (client) => {
+    await client.query(
+      `select pg_advisory_xact_lock(hashtext('ppbf.mental-skills:' || $1::text || ':' || $2::text || ':' || $3::text))`,
+      [actor.organizationId, athleteId, day],
     );
-  }
+    const counted = await client.query<{ n: number }>(
+      `select count(*)::int as n
+       from pilot.athlete_mental_skill_entries
+       where organization_id = $1 and athlete_id = $2 and logged_on = $3::date`,
+      [actor.organizationId, athleteId, day],
+    );
+    if ((counted.rows[0]?.n ?? 0) >= DAILY_ENTRY_LIMIT) {
+      throw new ValidationError(
+        `No more than ${DAILY_ENTRY_LIMIT} mental skills entries a day.`,
+        'MENTAL_SKILLS_DAILY_LIMIT',
+      );
+    }
+
+    const entryId = randomUUID();
+    const row = await insert(client, entryId);
+    if (!row) throw new Error('MENTAL_SKILLS_INSERT_RETURNED_NOTHING');
+
+    await writePilotAuditEvent(
+      {
+        event_type: 'create',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'athlete_mental_skill_entry',
+        entity_id: entryId,
+        details: { athlete_id: athleteId, kind, logged_on: day },
+      },
+      client,
+    );
+    return row;
+  });
 }
 
 export async function setSelfTalkCue(
@@ -131,24 +172,16 @@ export async function setSelfTalkCue(
   const problem = cueError(input.cueText, input.cueKind);
   if (problem) throw new ValidationError(problem);
   const day = requireGymDay(input.now);
-  await assertUnderDailyLimit(actor.organizationId, athleteId, day);
 
-  const row = await queryOne<SelfTalkCue>(
-    `insert into pilot.athlete_mental_skill_entries
-       (organization_id, entry_id, athlete_id, kind, cue_text, cue_kind, logged_on)
-     values ($1, $2, $3, 'self_talk_cue', $4, $5, $6::date)
-     returning entry_id::text as entry_id, cue_text, cue_kind, logged_on::text as logged_on`,
-    [
-      actor.organizationId,
-      randomUUID(),
-      athleteId,
-      (input.cueText as string).trim(),
-      input.cueKind,
-      day,
-    ],
-  );
-  if (!row) throw new Error('MENTAL_SKILLS_INSERT_RETURNED_NOTHING');
-  return row;
+  return insertEntry(actor, athleteId, day, 'self_talk_cue', async (client, entryId) => (
+    await client.query<SelfTalkCue>(
+      `insert into pilot.athlete_mental_skill_entries
+         (organization_id, entry_id, athlete_id, kind, cue_text, cue_kind, logged_on)
+       values ($1, $2, $3, 'self_talk_cue', $4, $5, $6::date)
+       returning entry_id::text as entry_id, cue_text, cue_kind, logged_on::text as logged_on`,
+      [actor.organizationId, entryId, athleteId, (input.cueText as string).trim(), input.cueKind, day],
+    )
+  ).rows[0]);
 }
 
 export async function logImagerySession(
@@ -159,24 +192,23 @@ export async function logImagerySession(
   const problem = imageryError(input.minutes, input.contentKey);
   if (problem) throw new ValidationError(problem);
   const day = requireGymDay(input.now);
-  await assertUnderDailyLimit(actor.organizationId, athleteId, day);
 
-  const row = await queryOne<ImagerySessionEntry>(
-    `insert into pilot.athlete_mental_skill_entries
-       (organization_id, entry_id, athlete_id, kind, minutes, content_key, logged_on)
-     values ($1, $2, $3, 'imagery_session', $4, $5, $6::date)
-     returning entry_id::text as entry_id, minutes, content_key, logged_on::text as logged_on`,
-    [
-      actor.organizationId,
-      randomUUID(),
-      athleteId,
-      input.minutes,
-      (input.contentKey as string | null | undefined) ?? null,
-      day,
-    ],
-  );
-  if (!row) throw new Error('MENTAL_SKILLS_INSERT_RETURNED_NOTHING');
-  return row;
+  return insertEntry(actor, athleteId, day, 'imagery_session', async (client, entryId) => (
+    await client.query<ImagerySessionEntry>(
+      `insert into pilot.athlete_mental_skill_entries
+         (organization_id, entry_id, athlete_id, kind, minutes, content_key, logged_on)
+       values ($1, $2, $3, 'imagery_session', $4, $5, $6::date)
+       returning entry_id::text as entry_id, minutes, content_key, logged_on::text as logged_on`,
+      [
+        actor.organizationId,
+        entryId,
+        athleteId,
+        input.minutes,
+        (input.contentKey as string | null | undefined) ?? null,
+        day,
+      ],
+    )
+  ).rows[0]);
 }
 
 /** One athlete's current cue and recent imagery sessions, for anyone the

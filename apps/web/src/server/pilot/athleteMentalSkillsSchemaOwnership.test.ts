@@ -42,9 +42,22 @@ describe('athlete mental skills schema ownership', () => {
       const body = code.slice(code.indexOf(`function ${fn}`));
       const self = body.indexOf('await requireSelfAthlete(actor)');
       expect(self).toBeGreaterThan(-1);
-      expect(self).toBeLessThan(body.search(/\bqueryOne</));
-      expect(body.indexOf('await assertUnderDailyLimit(')).toBeGreaterThan(self);
+      expect(self).toBeLessThan(body.indexOf('insertEntry('));
     }
+  });
+
+  test('the limit, the insert and the audit record share one locked transaction', () => {
+    const code = stripComments(moduleSource);
+    const body = code.slice(code.indexOf('async function insertEntry'), code.indexOf('export async function setSelfTalkCue'));
+    const tx = body.indexOf('withTransaction(');
+    const lock = body.indexOf('pg_advisory_xact_lock(');
+    const count = body.indexOf('count(*)');
+    const insert = body.indexOf('insert(client, entryId)');
+    const audit = body.indexOf('writePilotAuditEvent(');
+    expect(tx).toBeGreaterThan(-1);
+    expect([tx, lock, count, insert, audit].every((at, i, all) => at > -1 && (i === 0 || at > all[i - 1]))).toBe(true);
+    expect(body.slice(audit)).toMatch(/\},\s*client,\s*\)/);
+    expect(body).not.toMatch(/cue_text\s*:/);
   });
 
   test('the migration owns the table, its guards and its index, with no transaction boundary', () => {
