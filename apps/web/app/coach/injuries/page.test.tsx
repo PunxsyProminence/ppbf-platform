@@ -44,7 +44,8 @@ const WRIST = {
   linked_rtt_plan_id: null, plan_earliest_return_date: null,
 };
 const CANDIDATES = {
-  holds: [{ hold_id: 'hold-1', scope: 'contact_only', status: 'active', placed_at: '2026-09-01 10:00:00+00' }],
+  // 01:30 UTC on 9/2 is the evening of 9/1 at the gym (America/New_York).
+  holds: [{ hold_id: 'hold-1', scope: 'contact_only', status: 'active', placed_at: '2026-09-02 01:30:00+00' }],
   plans: [{ plan_id: 'plan-1', triggering_event: 'confirmed_concussion', event_date: '2026-09-01', earliest_return_date: '2026-09-22', status: 'active' }],
   clearances: [],
   painReports: [],
@@ -170,4 +171,90 @@ test('an athlete with no injuries says so', async () => {
   injuriesReply = [];
   const list = await openAthlete();
   expect(within(list).getByText('No injuries recorded for this athlete.')).toBeTruthy();
+});
+
+test("a reply for an athlete no longer selected is dropped, so one child's injuries never show under another's name", async () => {
+  let releaseA: () => void = () => {};
+  const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+  global.fetch = jest.fn(async (url: string) => {
+    const u = String(url);
+    if (u.includes('/api/pilot/athletes/list')) {
+      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'A' }, { athlete_id: 'ath-2', full_name: 'B' }] }) };
+    }
+    if (u.includes('athlete_id=ath-1')) {
+      await gateA;
+      return { ok: true, json: async () => ({ ok: true, injuries: [PLAN_INJURY], candidates: CANDIDATES }) };
+    }
+    if (u.includes('athlete_id=ath-2')) {
+      return { ok: true, json: async () => ({ ok: true, injuries: [], candidates: CANDIDATES }) };
+    }
+    throw new Error(`unexpected fetch ${u}`);
+  }) as unknown as typeof fetch;
+
+  render(<CoachInjuriesPage />);
+  const select = await screen.findByLabelText('Athlete');
+  await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-1' } }); });
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-2' } }); });
+  const list = await screen.findByRole('region', { name: 'Injuries' });
+  await act(async () => { releaseA(); await gateA; });
+  expect(within(list).getByText('No injuries recorded for this athlete.')).toBeTruthy();
+  expect(within(list).queryByText('A clinician stated it')).toBeNull();
+});
+
+test('the athlete cannot be switched while a save is in flight', async () => {
+  let releasePost: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { releasePost = resolve; });
+  const original = (global.fetch as jest.Mock).getMockImplementation()!;
+  await openAthlete();
+  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { await gate; return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
+    return original(url, init);
+  });
+  fireEvent.change(screen.getByLabelText('Date of injury'), { target: { value: '2026-10-01' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Record injury' }));
+  await waitFor(() => expect((screen.getByLabelText('Athlete') as HTMLSelectElement).disabled).toBe(true));
+  await act(async () => { releasePost(); await gate; });
+  await waitFor(() => expect((screen.getByLabelText('Athlete') as HTMLSelectElement).disabled).toBe(false));
+});
+
+test('a linked record older than the offered choices still shows as linked, and stays linked on save', async () => {
+  injuriesReply = [{ ...WRIST, linked_hold_id: 'hold-old', linked_pain_report_id: 'pain-old' }];
+  const list = await openAthlete();
+  fireEvent.click(within(list).getByRole('button', { name: 'Edit' }));
+  const hold = screen.getByLabelText('Training hold') as HTMLSelectElement;
+  expect(hold.value).toBe('hold-old');
+  expect(hold.selectedOptions[0].textContent).toBe('Linked record (older)');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+  expect(posts[0]).toMatchObject({ linked_hold_id: 'hold-old', linked_pain_report_id: 'pain-old' });
+});
+
+test('a failed save is shown as an alert, not in the same voice as a success', async () => {
+  postReply = { status: 403, body: { error: 'Forbidden: coach is not assigned to athlete' } };
+  await openAthlete();
+  fireEvent.change(screen.getByLabelText('Date of injury'), { target: { value: '2026-10-01' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Record injury' })); });
+  expect(within(await screen.findByRole('alert')).getByText('Forbidden: coach is not assigned to athlete')).toBeTruthy();
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('a load that fails is an alert, never "No injuries recorded"', async () => {
+  const original = (global.fetch as jest.Mock).getMockImplementation()!;
+  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('athlete_id=')) return { ok: true, json: async () => { throw new Error('not json'); } };
+    return original(url, init);
+  });
+  render(<CoachInjuriesPage />);
+  const select = await screen.findByLabelText('Athlete');
+  await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-1' } }); });
+  expect(within(await screen.findByRole('alert')).getByText('Injuries could not be loaded.')).toBeTruthy();
+  expect(screen.queryByText('No injuries recorded for this athlete.')).toBeNull();
+  expect(screen.queryByText('Loading injuries...')).toBeNull();
+});
+
+test("a hold's time stamp is shown as the gym's day, not UTC's", async () => {
+  await openAthlete();
+  const hold = within(screen.getByLabelText('Training hold')).getByRole('option', { name: /Contact only/ });
+  expect(hold.textContent).toBe('Contact only 9/1/2026 (active)');
 });

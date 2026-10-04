@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import WorkAxis from '@/components/WorkAxis';
 
 // The coach's injury record (map item 11). A separate page, linked from the
 // sports-medicine board, because that board's surface rule (owner decision
@@ -74,8 +75,20 @@ function words(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A date-only value (YYYY-MM-DD), shown as that calendar day. */
 function day(value: string | null): string {
   return value ? formatGymDateNumeric(`${value.slice(0, 10)}T12:00:00Z`) ?? value : '';
+}
+
+/** A Postgres timestamptz text ('2026-09-01 01:30:00+00'), shown as the gym's local day, not UTC's. */
+function stamp(value: string): string {
+  const iso = value.trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  return formatGymDateNumeric(iso) ?? value.slice(0, 10);
+}
+
+/** The current link stays visible even when it is older than the newest twenty offered. */
+function keepCurrent(current: string, ids: string[]) {
+  return current && !ids.includes(current) ? <option value={current}>Linked record (older)</option> : null;
 }
 
 /** Whole days between two YYYY-MM-DD dates -- arithmetic on what was entered, nothing inferred. */
@@ -106,8 +119,12 @@ export default function CoachInjuriesPage() {
   const [candidates, setCandidates] = useState<Candidates>(NO_CANDIDATES);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [editing, setEditing] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The athlete on screen now. A reply that arrives for an athlete no longer
+  // selected is dropped, so one child's injuries never show under another's name.
+  const current = useRef('');
+  const fail = (text: string) => setMessage({ text, error: true });
 
   useEffect(() => {
     void (async () => {
@@ -117,7 +134,7 @@ export default function CoachInjuriesPage() {
         if (!payload || !Array.isArray(payload.items)) throw new Error('roster');
         setRoster(payload.items as RosterAthlete[]);
       } catch {
-        setMessage('Your roster could not be loaded. Reload to try again.');
+        fail('Your roster could not be loaded. Reload to try again.');
       }
     })();
   }, []);
@@ -126,19 +143,27 @@ export default function CoachInjuriesPage() {
     setInjuries(null);
     setCandidates(NO_CANDIDATES);
     if (!id) return;
-    const res = await fetch(`${apiBase()}/api/pilot/coach/injuries?athlete_id=${encodeURIComponent(id)}`, {
-      method: 'GET', credentials: 'include',
-    }).catch(() => null);
-    if (!res || !res.ok) {
-      setMessage(res ? await errorOf(res, 'Injuries could not be loaded.') : 'Injuries could not be loaded.');
-      return;
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/coach/injuries?athlete_id=${encodeURIComponent(id)}`, {
+        method: 'GET', credentials: 'include',
+      });
+      if (!res.ok) {
+        const text = await errorOf(res, 'Injuries could not be loaded.');
+        if (current.current === id) fail(text);
+        return;
+      }
+      const payload = (await res.json()) as { injuries?: unknown; candidates?: Candidates };
+      if (current.current !== id) return;
+      if (!Array.isArray(payload.injuries)) throw new Error('shape');
+      setInjuries(payload.injuries as Injury[]);
+      setCandidates(payload.candidates ?? NO_CANDIDATES);
+    } catch {
+      if (current.current === id) fail('Injuries could not be loaded.');
     }
-    const payload = (await res.json()) as { injuries?: Injury[]; candidates?: Candidates };
-    setInjuries(Array.isArray(payload.injuries) ? payload.injuries : []);
-    setCandidates(payload.candidates ?? NO_CANDIDATES);
   }, []);
 
   const choose = (id: string) => {
+    current.current = id;
     setAthleteId(id);
     setForm(EMPTY_FORM);
     setEditing(null);
@@ -155,15 +180,15 @@ export default function CoachInjuriesPage() {
         headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
       if (!res.ok) {
-        setMessage(await errorOf(res, 'That was not saved.'));
+        fail(await errorOf(res, 'That was not saved.'));
         return;
       }
-      setMessage(done);
+      setMessage({ text: done, error: false });
       setForm(EMPTY_FORM);
       setEditing(null);
-      await load(athleteId);
+      await load(current.current);
     } catch {
-      setMessage('That was not saved: the connection failed.');
+      fail('That was not saved: the connection failed.');
     } finally {
       setBusy(false);
     }
@@ -202,11 +227,20 @@ export default function CoachInjuriesPage() {
           </p>
         </div>
 
-        {message && <p className="t-body mb-[var(--s4)]" role="status">{message}</p>}
+        {message?.error && (
+          <div className="alert alert--warning mb-[var(--s4)]" role="alert">
+            <span className="alert-icon" aria-hidden="true">▲</span>
+            <div className="alert-body">
+              <p className="alert-title">Not done</p>
+              <p className="alert-msg">{message.text}</p>
+            </div>
+          </div>
+        )}
+        {message && !message.error && <p className="t-body mb-[var(--s4)]" role="status">{message.text}</p>}
 
         <div className="field mb-[var(--s4)]">
           <label className="t-label" htmlFor="injury-athlete">Athlete</label>
-          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster}>
+          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || busy}>
             <option value="">{roster ? 'Choose an athlete' : 'Loading roster...'}</option>
             {(roster ?? []).map((a) => (
               <option key={a.athlete_id} value={a.athlete_id}>{a.full_name || a.athlete_id}</option>
@@ -293,22 +327,26 @@ export default function CoachInjuriesPage() {
                 <select className="select" {...field('linked_rtt_plan_id')}
                   onChange={(e) => setForm((f) => ({ ...f, linked_rtt_plan_id: e.target.value, expected_return_date: e.target.value ? '' : f.expected_return_date }))}>
                   <option value="">None</option>
+                  {keepCurrent(form.linked_rtt_plan_id, candidates.plans.map((p) => p.plan_id))}
                   {candidates.plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{words(p.triggering_event)} {day(p.event_date)} ({p.status})</option>)}
                 </select></div>
               <div className="field"><label className="t-label" htmlFor="injury-linked_hold_id">Training hold</label>
                 <select className="select" {...field('linked_hold_id')}>
                   <option value="">None</option>
-                  {candidates.holds.map((h) => <option key={h.hold_id} value={h.hold_id}>{words(h.scope)} {day(h.placed_at)} ({h.status})</option>)}
+                  {keepCurrent(form.linked_hold_id, candidates.holds.map((h) => h.hold_id))}
+                  {candidates.holds.map((h) => <option key={h.hold_id} value={h.hold_id}>{words(h.scope)} {stamp(h.placed_at)} ({h.status})</option>)}
                 </select></div>
               <div className="field"><label className="t-label" htmlFor="injury-linked_clearance_status_id">Clearance record</label>
                 <select className="select" {...field('linked_clearance_status_id')}>
                   <option value="">None</option>
-                  {candidates.clearances.map((c) => <option key={c.status_id} value={c.status_id}>{words(c.status)} {day(c.effective_at)}</option>)}
+                  {keepCurrent(form.linked_clearance_status_id, candidates.clearances.map((c) => c.status_id))}
+                  {candidates.clearances.map((c) => <option key={c.status_id} value={c.status_id}>{words(c.status)} {stamp(c.effective_at)}</option>)}
                 </select></div>
               <div className="field"><label className="t-label" htmlFor="injury-linked_pain_report_id">Athlete&apos;s pain report</label>
                 <select className="select" {...field('linked_pain_report_id')}>
                   <option value="">None</option>
-                  {candidates.painReports.map((n) => <option key={n.near_miss_id} value={n.near_miss_id}>{words(n.severity)} {day(n.created_at)}</option>)}
+                  {keepCurrent(form.linked_pain_report_id, candidates.painReports.map((n) => n.near_miss_id))}
+                  {candidates.painReports.map((n) => <option key={n.near_miss_id} value={n.near_miss_id}>{words(n.severity)} {stamp(n.created_at)}</option>)}
                 </select></div>
             </div>
             <div className="mt-[var(--s4)] flex gap-[var(--s2)]">
@@ -325,6 +363,7 @@ export default function CoachInjuriesPage() {
         <div className="mt-[var(--s5)]">
           <Link href="/coach/sports-medicine" className="btn btn--ghost">Clearance Board</Link>
         </div>
+        <WorkAxis />
       </div>
     </RoleStandaloneView>
   );
