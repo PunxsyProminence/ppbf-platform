@@ -7,6 +7,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   addClipTag,
+  blockedClipVideoIds,
   getLiveClipTag,
   listLiveClipTagsForVideo,
   listLiveTagSubjects,
@@ -36,6 +37,7 @@ jest.mock('@/src/server/pilot/videoDestination', () => ({
 // videoClipTags.pg.test.ts against a real schema.
 jest.mock('@/src/server/pilot/videoClipTags', () => ({
   addClipTag: jest.fn(),
+  blockedClipVideoIds: jest.fn(),
   getLiveClipTag: jest.fn(),
   listLiveClipTagsForVideo: jest.fn(),
   listLiveTagSubjects: jest.fn(),
@@ -53,6 +55,7 @@ const mockListForVideo = jest.mocked(listLiveClipTagsForVideo);
 const mockSubjects = jest.mocked(listLiveTagSubjects);
 const mockRemove = jest.mocked(removeClipTag);
 const mockConsent = jest.mocked(assertConsentCoversVideo);
+const mockBlocked = jest.mocked(blockedClipVideoIds);
 const mockFilmStudy = jest.mocked(assertVideoIsFilmStudyMedia);
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -117,6 +120,7 @@ beforeEach(() => {
   mockAdd.mockResolvedValue(tagRow());
   mockConsent.mockResolvedValue(undefined);
   mockFilmStudy.mockResolvedValue(undefined);
+  mockBlocked.mockResolvedValue(new Set());
 });
 
 describe('who may tag', () => {
@@ -328,6 +332,13 @@ describe('review follow-ups', () => {
     expect(mockGetTag).toHaveBeenCalledWith('org-1', 'vct-1');
   });
 
+  test('a destination lookup fault is a server error, not a missing video', async () => {
+    mockFilmStudy.mockRejectedValueOnce(new Error('connection reset'));
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(mockListForVideo).not.toHaveBeenCalled();
+  });
+
   test('Teach Shadow footage reads as not found', async () => {
     mockVideo.mockResolvedValueOnce(video(null));
     mockFilmStudy.mockRejectedValueOnce(new VideoDestinationError());
@@ -376,6 +387,41 @@ describe('review follow-ups', () => {
     const res = await del();
     expect(res.status).toBe(404);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// Owner, Jason 2026-10-04: "A) Hide".
+describe('tags on a clip a consent block stops', () => {
+  test.each(['coach', 'organization_admin'] as const)('no note is shown, but the tags stay listed (%s)', async (role) => {
+    mockPrincipal.mockResolvedValueOnce(principal({ role }));
+    mockListForVideo.mockResolvedValueOnce([tagRow({ note: 'names the child' }), tagRow({ tag_id: 'vct-2', athlete_id: 'ath-2', note: 'also' })]);
+    mockBlocked.mockResolvedValueOnce(new Set(['vid-1']));
+
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.consent_blocked).toBe(true);
+    expect(body.items.map((item: { tag_id: string }) => item.tag_id)).toEqual(['vct-1', 'vct-2']);
+    expect(body.items.every((item: { note: string }) => item.note === '')).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('names the child');
+    expect(mockBlocked).toHaveBeenCalledWith('org-1', ['vid-1']);
+  });
+
+  test('a clip with clear consent shows its notes', async () => {
+    mockListForVideo.mockResolvedValueOnce([tagRow({ note: 'jab late' })]);
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+    const body = await res.json();
+    expect(body.consent_blocked).toBe(false);
+    expect(body.items[0].note).toBe('jab late');
+  });
+
+  test('a consent read fault fails the read rather than showing notes', async () => {
+    mockListForVideo.mockResolvedValueOnce([tagRow({ note: 'names the child' })]);
+    mockBlocked.mockRejectedValueOnce(new Error('connection reset'));
+    const res = await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(await res.text()).not.toContain('names the child');
   });
 });
 
