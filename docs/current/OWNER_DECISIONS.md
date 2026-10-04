@@ -164,6 +164,38 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-001 -- Injury records: athletes and linked guardians read their own, staff notes hidden; the coach injury log is its own page, the Sports Medicine board's 2026-08-15 rule stays
+
+**Provenance: PRIMARY.** Jason's answers to an AskUserQuestion in the injury
+record lane (`~/.claude/projects/C--Dev/9863d78a-dd0d-44c7-a482-ca1eaaf334d6.jsonl`,
+tool use `toolu_01Cu6GHiqETzbH5woYPWVhJC`; asked 2026-10-04T03:02:53Z,
+answered 03:12:19Z). Read by overwatch in that transcript. New; edits no
+earlier entry.
+
+**Visibility.** Asked: "should athletes and their linked guardians get a
+read-only view of their OWN injury records (date, body area, type, return
+date — no staff notes)?" Jason chose *"Yes, read-only own (Recommended)"*,
+whose option text was "Athlete + linked guardians see their own records' basic
+fields; staff notes hidden." **Ruling: an athlete and that athlete's linked
+guardians may read the athlete's own injury records, read-only, basic fields
+only; staff notes are never sent to them.** The other options offered were
+"No, staff only" and "Guardians only".
+
+**Placement.** Asked: "Put the injury log on a separate coach page linked from
+that board, keeping the rule?" (the Sports Medicine board's 2026-08-15 rule
+that it shows clearance and holds only, never diagnoses or clinical detail).
+Jason chose *"Separate page (Recommended)"*, option text "New /coach/injuries
+page, linked from Sports Medicine; your 2026-08-15 rule stays untouched."
+**Ruling: injuries live on their own coach page, /coach/injuries; the Sports
+Medicine board gains only a link and its 2026-08-15 rule is unchanged.**
+
+Built in #1175 (storage), #1180 (coach route), #1181 (coach page) and #1183
+(athlete and guardian read view). The work came from Jason's elite-boxing
+direction in the overwatch thread, 2026-10-04: *"If we need to add
+capabilities we will"*.
+
+---
+
 ## OD-2026-10-03-018 -- Lanes put their questions to Jason in their own lane
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
