@@ -235,3 +235,40 @@ test('the approved imagery steps are on screen, in order', async () => {
   expect(first).toBeGreaterThan(-1);
   expect(items[first + 4]).toBe('Throw it once for real at working pace. Nothing else.');
 });
+
+describe('remove (OD-2026-10-04-023)', () => {
+  test('each own entry has a Remove button; confirming sends only the entry id, never an athlete', async () => {
+    const fetchMock = await renderPage();
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    expect(screen.getByRole('button', { name: 'Remove this cue' })).toBeTruthy();
+    const sessionButtons = screen.getAllByRole('button', { name: /^Remove the \d+ min session from / });
+    expect(sessionButtons).toHaveLength(2);
+
+    await act(async () => {
+      fireEvent.click(sessionButtons[1]);
+    });
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0][1].body))).toEqual({ action: 'remove', entry_id: 'e-2' });
+    expect(String(posts[0][0])).not.toMatch(/athlete_id/);
+    expect(screen.getByRole('status').textContent).toBe('Entry removed.');
+  });
+
+  test('cancelling the confirm sends nothing', async () => {
+    const fetchMock = await renderPage();
+    jest.spyOn(window, 'confirm').mockReturnValue(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove this cue' }));
+    });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+  });
+
+  test('a refused remove says so and does not claim it was removed', async () => {
+    await renderPage({ postStatus: 404, postError: 'That entry was not found.' });
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove this cue' }));
+    });
+    expect(screen.getByRole('status').textContent).not.toMatch(/removed/i);
+  });
+});

@@ -329,6 +329,7 @@
     "pilot:apply-calibration-events-freeze-old-parent": "node scripts/pilot-apply-calibration-events-freeze-old-parent-migration.mjs",
     "pilot:apply-org-quotes": "node scripts/pilot-apply-org-quotes-migration.mjs",
     "pilot:apply-athlete-mental-skills": "node scripts/pilot-apply-athlete-mental-skills-migration.mjs",
+    "pilot:apply-athlete-mental-skills-remove": "node scripts/pilot-apply-athlete-mental-skills-remove-migration.mjs",
     "pilot:apply-athlete-injuries": "node scripts/pilot-apply-athlete-injuries-migration.mjs",
     "pilot:apply-athlete-contact-caps": "node scripts/pilot-apply-athlete-contact-caps-migration.mjs",
     "pilot:apply-video-clip-tags": "node scripts/pilot-apply-video-clip-tags-migration.mjs",

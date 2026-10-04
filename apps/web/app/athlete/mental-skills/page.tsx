@@ -27,6 +27,10 @@ import {
  * SELF ONLY. Neither request names an athlete: both routes take the subject
  * from the session and ignore any athlete_id, and this page never sends one.
  * Education, not prescription: no target, no total, no score.
+ *
+ * REMOVE (OD-2026-10-04-023). The athlete can remove their own cue or session.
+ * It is hidden from them, their guardian and their coach; the gym keeps the
+ * row and an audit record. There is no edit: they enter a new one instead.
  */
 
 const CUE_MAX = 60;
@@ -156,6 +160,11 @@ export default function AthleteMentalSkillsPage() {
     }
   }
 
+  async function removeEntry(entryId: string) {
+    if (!window.confirm('Remove this entry? It will no longer show to you, your guardian or your coach.')) return;
+    await post({ action: 'remove', entry_id: entryId }, 'Entry removed.');
+  }
+
   async function logSession() {
     const value = Number(minutes);
     if (!Number.isInteger(value) || value < 1 || value > MINUTES_MAX) {
@@ -187,7 +196,15 @@ export default function AthleteMentalSkillsPage() {
         </header>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-          <MentalSkillsView state={state} data={data} goals={goals} goalsState={goalsState} subjectLabel="your" />
+          <MentalSkillsView
+            state={state}
+            data={data}
+            goals={goals}
+            goalsState={goalsState}
+            subjectLabel="your"
+            onRemove={(entryId) => void removeEntry(entryId)}
+            removing={saving}
+          />
         </section>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]" aria-labelledby="cue-form-heading">
