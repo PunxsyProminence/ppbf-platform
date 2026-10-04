@@ -4,7 +4,7 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { validateSessionPayload } from '@/src/server/pilot/validation';
+import { assertDurationWrittenByAthlete, validateSessionPayload } from '@/src/server/pilot/validation';
 
 export const runtime = 'nodejs';
 
@@ -14,6 +14,8 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const payload = validateSessionPayload(await request.json());
+    // Minutes are the athlete's own report; staff writes may not carry them.
+    assertDurationWrittenByAthlete(principal.role, payload);
     const current = await getSessionById(principal.organizationId, payload.session_id);
     if (!current) {
       throw new Error('Missing session record');

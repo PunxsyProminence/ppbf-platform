@@ -208,6 +208,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'athlete_record',
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
   },
+  'sessions.duration_minutes': {
+    tier: 'athlete_record',
+    enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
+    note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
+  },
   'sessions.notes': {
     tier: 'organization',
     enforcedBy: [
@@ -379,10 +384,43 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: 'Written FOR the athlete: age-appropriate, non-punitive, required at placement.',
   },
+  'athlete_injuries.staff_note': {
+    tier: 'organization',
+    enforcedBy: [
+      'athleteInjuries.ts#listFamilyInjuries',
+      '../../../app/api/pilot/athlete/injuries/route.ts#GET',
+      '../../../app/api/pilot/coach/injuries/route.ts#assertStanding',
+    ],
+    note:
+      'What a person reported or a clinician stated, in staff words. Coaches and organization admins read it '
+      + 'through /api/pilot/coach/injuries; the athlete and their guardians read their own injuries through the '
+      + 'family projection, which never selects this column (owner decision 2026-10-04).',
+  },
   'training_holds.reason_category': {
     tier: 'organization',
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
     note: "A 'medical' category is a health signal; it stays off the athlete-safe projection with the rest.",
+  },
+  'athlete_contact_caps.highest_allowed_stage': {
+    tier: 'organization',
+    enforcedBy: ['athleteContactCaps.ts#assertCapAccess'],
+    note:
+      'A coach-set sparring limit for one child (map item 15). Staff only: an active coach or admin '
+      + 'membership here AND assertActorCanAccessAthlete for that athlete, run with the membership '
+      + 'role; athletes, guardians, board and platform_owner are refused. Whether the athlete or family '
+      + 'should see their own cap is not decided, so nothing shows it to them.',
+  },
+  'athlete_contact_caps.max_hard_open_sessions_per_7_days': {
+    tier: 'organization',
+    enforcedBy: ['athleteContactCaps.ts#assertCapAccess'],
+    note: 'The second coach-set sparring limit on the same row; same staff-only gate as the stage.',
+  },
+  'athlete_contact_caps.note': {
+    tier: 'organization',
+    enforcedBy: ['athleteContactCaps.ts#assertCapAccess'],
+    note:
+      'Free text a coach typed beside a child\'s sparring limit; it may carry the reason, which can be '
+      + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
   'scheduler_attendance.note': {
     tier: 'organization',
@@ -421,6 +459,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.documents',
   'pilot.compliance_violations',
   'pilot.training_holds',
+  'pilot.athlete_injuries',
+  'pilot.athlete_contact_caps',
 ];
 
 /**

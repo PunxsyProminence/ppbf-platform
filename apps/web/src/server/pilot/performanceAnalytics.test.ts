@@ -214,8 +214,13 @@ describe('Avg RPE averages only real post-session self-reports', () => {
     const sql = sessionsSql();
     expect(sql).toContain('count(*)::int as sessions_total');
     expect(sql).toContain('(count(*) filter (where completed_flag))::int as sessions_completed');
-    // The only provenance predicate Postgres will run belongs to the average.
-    expect(sessionsSqlExecutable().match(/rpe_method/g) ?? []).toHaveLength(1);
+    // The provenance predicates Postgres will run belong to the RPE average
+    // and the session-load figures, never to the counts or the row filter:
+    // nothing before the first average and nothing after FROM mentions it.
+    const executable = sessionsSqlExecutable();
+    expect(executable.split('(avg(rpe) filter')[0]).not.toContain('rpe_method');
+    expect(executable.split('from pilot.sessions')[1]).not.toContain('rpe_method');
+    expect(executable.match(/rpe_method/g) ?? []).toHaveLength(3);
   });
 
   test('UNKNOWN is never the accepted provenance', async () => {

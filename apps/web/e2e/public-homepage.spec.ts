@@ -318,6 +318,40 @@ test.describe('Public homepage', () => {
     }
   });
 
+  /* One front page (Jason, 2026-10-03: "home page and public is the same
+     page"). Updated deliberately: /public used to be its own portal and is now
+     a permanent forward, and its interest form lives on / without a consent
+     checkbox -- sending it is the request to be contacted. */
+  test('/public forwards permanently to the front page', async ({ page, request }) => {
+    const direct = await request.get('/public', { maxRedirects: 0 });
+    expect(direct.status()).toBe(308);
+    expect(direct.headers()['location']).toMatch(/\/$/);
+
+    await page.goto('/public');
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('heading', { name: /Boxing is the engagement platform/i })).toBeVisible();
+  });
+
+  test('the interest form on / sends with no consent checkbox', async ({ page }) => {
+    let sent: Record<string, unknown> | null = null;
+    await page.route('**/api/pilot/public-interest', async (route) => {
+      sent = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await page.goto('/#interest-intake');
+    const form = page.locator('#interest-intake form');
+    await expect(form.locator('input[type="checkbox"]')).toHaveCount(0);
+    await form.getByLabel('Your name', { exact: true }).fill('Pat Example');
+    await form.getByLabel('Email', { exact: true }).fill('pat@example.com');
+    await form.getByRole('button', { name: 'Send this to a coach' }).click();
+
+    await expect(form.getByRole('status')).toContainText('Got it');
+    expect(sent).toMatchObject({ full_name: 'Pat Example', email: 'pat@example.com' });
+    expect(sent).not.toHaveProperty('consent_to_contact');
+    await expect(form.getByText('We use what you send only to answer you.', { exact: false })).toBeVisible();
+  });
+
   test('protected routes still require authentication', async ({ page }) => {
     await page.goto('/operations');
 

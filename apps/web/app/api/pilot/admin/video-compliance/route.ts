@@ -15,6 +15,7 @@ import {
   retractPublication,
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
 
     const items = await Promise.all(
       publications.map(async (publication) => {
-        const [uploader, athlete, videoSession, latestCheck] = await Promise.all([
+        const [uploader, athlete, videoSession, latestCheck, clipTags] = await Promise.all([
           getSubjectIdentity(principal.organizationId, publication.submitted_by_account_id),
           getAthleteById(principal.organizationId, publication.athlete_id),
           getVideoSessionById(principal.organizationId, publication.video_session_id),
@@ -108,7 +109,13 @@ export async function GET(request: NextRequest) {
           publication.compliance_check_status !== 'pending'
             ? getLatestPublicationCheck(principal.organizationId, publication.publication_id)
             : null,
+          listLiveTagSubjects(principal.organizationId, publication.video_session_id),
         ]);
+        // A tagged sparring or bout clip shows athletes this publication does
+        // not name, and their consent is not what this queue checks. Tagged
+        // clips are staff film study only and cannot be published (owner,
+        // 2026-10-03), so the console mints no playback link for one.
+        const taggedClip = clipTags.length > 0;
 
         return {
           publication_id: publication.publication_id,
@@ -127,9 +134,10 @@ export async function GET(request: NextRequest) {
           // Only a 'ready' video session has bytes worth streaming -- see
           // GET /api/pilot/video/[videoId], whose SAS-url pattern this
           // reuses directly rather than round-tripping through that route.
-          stream_url: videoSession && videoSession.status === 'ready'
+          stream_url: videoSession && videoSession.status === 'ready' && !taggedClip
             ? getPilotVideoSasUrl(videoSession.blob_path, 60)
             : null,
+          tagged_clip: taggedClip,
         };
       }),
     );

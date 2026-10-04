@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import RefusalStamp from '@/components/RefusalStamp';
+import MyInjuries from '@/components/MyInjuries';
 
 type TrainingHoldScope = 'all_training' | 'contact_only' | 'conditioning_only';
 
@@ -172,6 +173,10 @@ export default function GuardianSafetyPage() {
               themselves, nothing more.
             </p>
             <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Then your child&rsquo;s injury record: each injury the gym recorded, where and what kind, who
+              reported it and when they are expected back -- the same record your child sees, without staff notes.
+            </p>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
               Below that, the status of the four waivers the gym tracks: general, medical release, photo
               &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
               your child has signed it; the Photo &amp; Video Consent page below is where you sign or
@@ -250,6 +255,8 @@ export default function GuardianSafetyPage() {
                       </div>
                     </div>
                   ) : null}
+
+                  <MyInjuries athleteId={item.athlete_id} />
 
                   <div className="mt-[var(--s4)]">
                     <p className="t-label">Waivers</p>

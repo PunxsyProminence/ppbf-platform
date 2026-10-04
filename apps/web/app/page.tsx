@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import PhotoSlot from "@/components/PhotoSlot";
+import PublicInterestForm from "@/components/PublicInterestForm";
+import { programInterestLabels } from "@/components/publicInterestOptions";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
 
 /* The registry facts, stated once. The visible page and the JSON-LD both read
@@ -74,7 +76,7 @@ const structuredData = {
   },
 };
 
-const programs = [
+const approach = [
   {
     title: "Safety-Focused Youth Development",
     description:
@@ -99,6 +101,123 @@ const programs = [
     title: "Coaching & Mentorship",
     description:
       "Coaches mentor athletes on academic responsibility, leadership, decision-making, and community involvement.",
+  },
+];
+
+/* What we run -- moved from /public (which now forwards here). The "How to
+   start" lines name the option a visitor will actually see in the form's
+   "What you are interested in" list, so they read from the same labels. */
+const programCards = [
+  {
+    title: "Fitness Only -- Nobody Hits You",
+    whatItIs:
+      "Bags, rope, footwork, conditioning. Boxing training without the boxing. No contact, no sparring, not now and not later.",
+    whoFor:
+      "Adults who want a hard workout and have zero interest in getting punched. This is a full program, not a beginner phase you graduate out of.",
+    nextStep: `Pick "${programInterestLabels["Boxing / Fitness"]}" in the form below and write "fitness only" in the message.`,
+  },
+  {
+    title: "Adult Recreational Boxing",
+    whatItIs:
+      "Actual boxing -- stance, footwork, combinations, pad work -- taught at a pace that fits someone with a job and a bad back. Sparring is available if you ever want it and is never required.",
+    whoFor: "Adults who want to learn to box, whether or not they ever step in a ring.",
+    nextStep: `Pick "${programInterestLabels["Boxing / Fitness"]}" below and tell us you are an adult starting out.`,
+  },
+  {
+    title: "Youth Boxing and Mentorship",
+    whatItIs:
+      "Kids and teens train with coaches who also ask about school, attitude, and how they treat people. Everyone starts non-contact: footwork, technique, conditioning, supervised the whole time.",
+    whoFor:
+      "Young people who need somewhere to put their energy and adults who will stay in their corner. Kids train free.",
+    nextStep: `Pick "${programInterestLabels["Youth Development"]}" below. Parents, put your kid's age in the message.`,
+  },
+  {
+    title: "Competitive Boxing",
+    whatItIs:
+      "For athletes who decide on their own that they want to compete. A coach confirms readiness before any of it. Nobody gets pushed toward a ring to fill a card.",
+    whoFor: "Athletes who choose it. Competing is optional here and always has been.",
+    nextStep: `Pick "${programInterestLabels["Competition Track"]}" below.`,
+  },
+  {
+    title: "Adaptive Training",
+    whatItIs:
+      "The same work, adjusted -- around an injury, a disability, a health condition, or a body coming back from a long time off.",
+    whoFor: "Anyone who has been told they cannot, or has been quietly counted out somewhere else.",
+    nextStep: `Pick "${programInterestLabels["Adaptive Training"]}" below and tell us as much or as little as you want.`,
+  },
+  {
+    title: "For Parents and Guardians",
+    whatItIs:
+      "Straight answers about supervision, contact rules, what a session looks like, and how to reach a coach directly. You are welcome to stay and watch any session.",
+    whoFor:
+      "Parents deciding whether to bring their kid through the door, and parents whose kid already trains here.",
+    nextStep: `Pick "${programInterestLabels["Parent Support"]}" below and ask whatever you actually want to ask.`,
+  },
+  {
+    title: "Volunteering",
+    whatItIs:
+      "Events, transportation, equipment, timekeeping, the unglamorous work that keeps a gym open. No boxing background needed.",
+    whoFor: "People with a few hours and a willingness to be useful.",
+    nextStep: `Pick "${programInterestLabels["Volunteer Support"]}" below and tell us when you are free.`,
+  },
+  {
+    title: "Sponsors and Partners",
+    whatItIs:
+      "Businesses, schools, and community organizations who help keep training free for kids. We will tell you exactly what your support pays for.",
+    whoFor: "Organizations or individuals who want to back this with money, space, or gear.",
+    nextStep: `Pick "${programInterestLabels["Sponsorship / Partnership"]}" below.`,
+  },
+];
+
+/* Moved from /public. The cost answer carries Jason's figure (adults $20 a
+   month, 2026-10-03), replacing the old "Adults, ask us". */
+const faqItems = [
+  {
+    question: "Do I have to fight anybody?",
+    answer:
+      "No. A lot of people here never get hit, on purpose or by accident, and that is a normal way to train here for as long as you want. Sparring and competing are separate choices you make later, only if you want them, and a coach signs off on readiness before either one.",
+  },
+  {
+    question: "Is my kid going to get hurt?",
+    answer:
+      "Every kid starts non-contact -- footwork, technique, conditioning -- supervised the whole time. Contact comes later, only when a coach confirms a kid is ready for it, with the right gear and a coach running it. You are welcome to stay and watch any session, start to finish, and you should.",
+  },
+  {
+    question: "What does it cost?",
+    answer:
+      "Youth train free. Whether a child can train here is not decided by what their family can pay. Adults pay $20 a month.",
+  },
+  {
+    question: "When are you open?",
+    answer: "Send the form below or email us and we will give you the current training times.",
+  },
+  {
+    question: "Do I need to be in shape first?",
+    answer: "No, and nobody here started that way either. Come as you are. You will be sore and you will be welcome.",
+  },
+  {
+    question: "I have never boxed. Is that a problem?",
+    answer:
+      "No. Most people who walk in have never thrown a punch. First-timers and experienced fighters use the same door and the same form.",
+  },
+  {
+    question: "Is this just for kids, or can adults train too?",
+    answer:
+      "Both. Youth development is why this place exists, and adults train here as well -- fitness only, recreational boxing, or competition if that is what they want.",
+  },
+  {
+    question: "Who is actually coaching my kid?",
+    answer:
+      "Jason Neale is head coach. PPBF is a veteran-led, IRS-recognized 501(c)(3) nonprofit. Ask to meet whoever would be working with your kid before you commit to anything.",
+  },
+  {
+    question: "I want to help. What is useful?",
+    answer: `Time or money, and both count. Volunteers work events, drive, keep time, and fix things. Sponsors and partners cover the cost of keeping training free for kids. Pick "${programInterestLabels["Volunteer Support"]}" or "${programInterestLabels["Sponsorship / Partnership"]}" in the form and say what you have to offer.`,
+  },
+  {
+    question: "Does sending the form create an account?",
+    answer:
+      "No. It only tells us you are interested so a person can get back to you. It does not create an account or enroll you in anything.",
   },
 ];
 
@@ -128,7 +247,7 @@ export default function HomePage() {
               Youth development is the objective.
             </h1>
             <p className="t-body mt-[var(--s4)] sm:mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'clamp(var(--t-sm), 4vw, var(--t-md))' }}>
-              Punxsy Prominence Boxing &amp; Fitness is an IRS-recognized 501(c)(3) nonprofit serving youth in
+              Punxsy Prominence Boxing &amp; Fitness is a veteran-led, IRS-recognized 501(c)(3) nonprofit serving youth in
               Punxsutawney and surrounding rural western Pennsylvania communities.
             </p>
             {/* Programs first, sign-in second, and the order is the argument.
@@ -279,32 +398,59 @@ export default function HomePage() {
             Programs
           </h2>
           <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Every athlete progresses at their own pace. Sparring and competition are optional next steps for athletes
-            who are ready and choose that path &mdash; not a requirement of participation.
+            Not everybody in this building is training to fight. Most are not. Every athlete progresses at their own
+            pace, and sparring and competition are optional next steps for athletes who are ready and choose that path
+            &mdash; not a requirement of participation.
           </p>
           {/* Paper cards on canvas: the programme list is the printed handout
-              on the counter, so it is paper rather than another frame. Five
-              riveted frames on one page would make the hardware the message,
-              which is exactly what Law 1 forbids. */}
+              on the counter, so it is paper rather than another frame. */}
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-2">
-            {programs.map((program, index) => (
+            {programCards.map((program) => (
               <article
                 key={program.title}
-                className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_0.34)] p-[var(--s5)] transition-all hover:border-[color:rgb(var(--brass-400-rgb)_/_0.5)] hover:shadow-md"
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_0.34)] p-[var(--s5)]"
+              >
+                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                  {program.title}
+                </h3>
+                <p className="t-body mt-[var(--s3)]">{program.whatItIs}</p>
+                <p className="t-body mt-[var(--s2)]"><strong>Who it is for:</strong> {program.whoFor}</p>
+                <p className="t-body mt-[var(--s2)]"><strong>How to start:</strong> {program.nextStep}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* How we train: the five principles from #1170, under every program above. */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          id="how-we-train"
+          aria-labelledby="how-we-train-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="how-we-train-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            How We Train
+          </h2>
+          <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-2">
+            {approach.map((item, index) => (
+              <article
+                key={item.title}
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_0.34)] p-[var(--s5)]"
               >
                 <div className="flex items-start gap-[var(--s3)]">
-                  {/* brass-800, the canvas rung: --brass-500 is a leather ink
-                      and measured 2.48:1 on the paper card. Same swap the sheet
-                      already makes for .t-eyebrow on canvas, for the same
-                      reason -- brass has to go dark to hold against cream. */}
+                  {/* brass-800, the canvas rung: --brass-500 measured 2.48:1 on
+                      the paper card. */}
                   <div className="text-[color:var(--brass-800)] text-lg font-bold leading-none mt-0.5 flex-shrink-0">
                     {String(index + 1).padStart(2, '0')}
                   </div>
                   <div className="flex-1">
                     <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-                      {program.title}
+                      {item.title}
                     </h3>
-                    <p className="t-body mt-[var(--s3)]">{program.description}</p>
+                    <p className="t-body mt-[var(--s3)]">{item.description}</p>
                   </div>
                 </div>
               </article>
@@ -312,27 +458,54 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Questions Section */}
+        {/* Get in touch: the interest form moved from /public. */}
         <div className="flex justify-center">
           <div className="rope w-[var(--s8)]" />
         </div>
 
         <section
-          aria-labelledby="questions-heading"
+          id="interest-intake"
+          aria-labelledby="interest-heading"
           className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
         >
           <div className="rounded-[var(--r-lg)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.4)] p-[var(--s6)] mat-paper">
-            <h2 id="questions-heading" className="t-command text-center" style={{ fontSize: 'var(--t-xl)' }}>
-              Questions?
+            <h2 id="interest-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+              Get in Touch
             </h2>
-            <p className="t-body text-center mt-[var(--s4)] max-w-[68ch] mx-auto" style={{ fontSize: 'var(--t-md)' }}>
-              We&apos;re here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
+            <p className="t-body mt-[var(--s4)] max-w-[68ch]" style={{ fontSize: 'var(--t-md)' }}>
+              This is not an application and it does not sign you or your kid up for anything. Tell us what you are
+              looking for and a person here will get back to you. Your name and an email are all we need. You can also
+              email <a href={`mailto:${org.email}`}>{org.email}</a> or come by {physicalAddress}.
             </p>
-            <div className="flex justify-center mt-[var(--s6)]">
-              <a href="mailto:admin@punxsyprominence.org" className="btn">
-                Get in Touch
-              </a>
-            </div>
+            <PublicInterestForm />
+          </div>
+        </section>
+
+        {/* FAQ, moved from /public. Native disclosure: no client state. */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          id="public-faq"
+          aria-labelledby="faq-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="faq-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Questions People Ask
+          </h2>
+          <div className="mt-[var(--s5)] grid gap-[var(--s2)]">
+            {faqItems.map((item) => (
+              <details
+                key={item.question}
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgb(var(--brass-800-rgb)_/_0.34)]"
+              >
+                <summary className="flex min-h-[44px] cursor-pointer items-center px-[var(--s4)] py-[var(--s2)] t-body font-semibold">
+                  {item.question}
+                </summary>
+                <p className="t-body px-[var(--s4)] pb-[var(--s3)]">{item.answer}</p>
+              </details>
+            ))}
           </div>
         </section>
 
@@ -487,6 +660,9 @@ export default function HomePage() {
             <p className="t-body">{domainStatement}</p>
             <p className="t-data">
               <a href={`mailto:${org.email}`}>{org.email}</a>
+            </p>
+            <p className="t-body">
+              <Link href="/privacy">Privacy</Link>
             </p>
             <Link href="/login" className="btn btn--ghost mt-[var(--s2)]">
               Log In

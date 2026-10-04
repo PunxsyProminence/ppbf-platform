@@ -209,7 +209,11 @@ export async function upsertSession(
            rpe_method = $6,
            notes = $7,
            completed_flag = $8,
-           updated_at = $9
+           updated_at = $9,
+           -- $11 says whether the caller sent duration_minutes at all. A
+           -- writer that omits it (note publication, older client) keeps the
+           -- stored minutes; only check-out sets or clears them.
+           duration_minutes = case when $11::boolean then $12::integer else duration_minutes end
        where organization_id = $1 and session_id = $2 and athlete_id = $10
        returning session_id`,
       [
@@ -223,6 +227,8 @@ export async function upsertSession(
         payload.completed_flag,
         payload.updated_at,
         guard.expectedAthleteId,
+        payload.duration_minutes !== undefined,
+        payload.duration_minutes ?? null,
       ],
     );
     if (updated.length === 0) {
@@ -232,8 +238,8 @@ export async function upsertSession(
   }
 
   const inserted = await query<{ session_id: string }>(
-    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at, duration_minutes)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      on conflict (organization_id, session_id) do nothing
      returning session_id`,
     [
@@ -247,6 +253,7 @@ export async function upsertSession(
       payload.completed_flag,
       payload.created_at,
       payload.updated_at,
+      payload.duration_minutes ?? null,
     ],
   );
   if (inserted.length === 0) {

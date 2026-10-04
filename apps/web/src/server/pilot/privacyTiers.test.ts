@@ -143,9 +143,12 @@ describe('the promoted denylists are pinned exactly', () => {
   // pinned exactly, the same way MINOR_CIRCLE is -- shrinking a denylist is
   // an edit somebody has to make in two places, on purpose, with a diff
   // that says so.
-  it('the forbidden tables are exactly the twelve clinical/safety/conduct tables', () => {
+  it('the forbidden tables are exactly the fourteen clinical/safety/conduct tables', () => {
     expect([...PUBLIC_SURFACE_FORBIDDEN_TABLES].sort()).toEqual([
       'pilot.assessments',
+      // A coach's sparring limits for one child (map item 15).
+      'pilot.athlete_contact_caps',
+      'pilot.athlete_injuries',
       'pilot.coach_observations',
       'pilot.compliance_violations',
       'pilot.documents',
@@ -286,6 +289,22 @@ describe('the development-block entries: routes reach these rows only through th
    column about children is worse than no registry, so the correction is
    pinned rather than trusted. ('every enforcedBy names real code' above
    already proves the four paths below resolve to real files.) */
+describe('athlete_injuries.staff_note stays with staff', () => {
+  const entry = FIELD_TIERS['athlete_injuries.staff_note'];
+
+  it('is a staff tier, not one the athlete or guardian is in', () => {
+    expect(entry.tier).toBe('organization');
+  });
+
+  it('names the family projection that never selects it, and both routes', () => {
+    expect(entry.enforcedBy).toEqual([
+      'athleteInjuries.ts#listFamilyInjuries',
+      '../../../app/api/pilot/athlete/injuries/route.ts#GET',
+      '../../../app/api/pilot/coach/injuries/route.ts#assertStanding',
+    ]);
+  });
+});
+
 describe('sessions.notes is recorded as what it actually is', () => {
   const entry = FIELD_TIERS['sessions.notes'];
 

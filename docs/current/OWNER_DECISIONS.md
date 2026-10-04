@@ -164,6 +164,242 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-007 -- Jump test and coach skill ratings: 1-5 rating wording draft approved; jump test choice not settled
+
+**Provenance: PRIMARY (typed reply, not an AskUserQuestion).** Jason's reply in
+the jump test lane (`~/.claude/projects/C--Dev/f3dd76eb-6f71-49ab-8543-9d9537c3520e.jsonl`,
+user message uuid `ff343985-bf7c-4c7b-a7e3-82c048334a27`, 2026-10-04T03:19:12Z).
+It answers the lane's assistant message of 2026-10-04T02:59:57Z, which posed two
+numbered questions with lettered options. New; edits no earlier entry.
+
+The reply, verbatim: *"Q1 can it be both or either Q2 A"*.
+
+**Q2, rating wording.** The lane asked: "What should each 1-5 skill rating say?"
+with option "A. Use this draft and edit it if you want (recommended)" (the
+draft: 1 Learning, 2 Developing, 3 Solid, 4 Applies, 5 Sharp, each with the
+one-line description in that message) and option "B. You give me your own
+wording". Jason answered "A". **Ruling: the 1-5 skill rating draft in that
+message is the starting wording (Jason did not supply edits in the reply).**
+
+**Q1, jump test.** The lane asked: "Which jump test should the app record?" with
+options A (countermovement jump height in cm, best of 3), B (standing broad jump
+distance in cm, best of 3) and C (something else). Jason's words "can it be both
+or either" are a question about whether more than one test may be offered, not a
+choice of A, B or C. **No ruling is recorded for Q1.** Recorded only so no
+session reads "both" or "either" as decided.
+
+---
+
+## OD-2026-10-04-006 -- Body mass at check-in: everyone may log it, youth entries limited; flag a change of more than 5% in 7 days; the organization admin keeps access
+
+**Provenance: PRIMARY.** Jason's answers to two AskUserQuestions in the body
+mass lane (`~/.claude/projects/C--Dev/d5d94cf1-c5b0-4b8a-9150-9c395d0126a7.jsonl`).
+First: tool use `toolu_017vDyJwmgGXyzwf6tVGyPjh`, asked 2026-10-04T02:58:47Z,
+answered 03:20:23Z. Second: tool use `toolu_015q5JApQJ2TTawHfyh2n3x7`, asked
+03:23:07Z, answered 03:28:20Z. Read by script from that transcript (records pass, 2026-10-04). New; edits
+no earlier entry.
+
+**Population.** Asked: "Body mass at check-in - which population may enter it?
+(A) adults only; (B) everyone, with youth entries visible only to the athlete's
+coach and parents; (C) skip this item." Jason chose *"B everyone, youth limited
+(Recommended)"*, option text "All athletes can log; youth weight visible only to
+their coach + parents." **Ruling: all athletes may log body mass at check-in;
+a youth athlete's body mass is limited to their coach and parents (see the
+organization admin ruling below).** The other options were "A adults only" and
+"C skip".
+
+**Fast-change flag.** Asked: "Fast-change flag rule shown to coaches - window and
+threshold?" Jason chose *">5% in 7 days (Recommended)"*, option text "Flag when
+weight changes more than 5% within 7 days." **Ruling: the coach sees a flag when
+body mass changes by more than 5% within 7 days; the flag is a prompt to talk to
+the athlete, not a diagnosis.** The other options were ">3% in 7 days" and ">2%
+in 7 days".
+
+**Organization admin.** Asked: "For a youth athlete's body mass and fast-change
+flag, the existing athlete-record gate (assertActorCanAccessAthlete) admits: the
+athlete, their assigned/covering coach, linked parents, AND the organization
+admin (ppbf@). Keep the organization admin in?" Jason chose *"Yes, keep org
+admin (Recommended)"*, option text "Youth weight: athlete, assigned/covering
+coach, linked parents, org admin." **Ruling: a youth athlete's body mass and
+fast-change flag are readable by the athlete, the assigned or covering coach,
+linked parents and the organization admin, via the existing gate unchanged.**
+The other option was "No, coach + parents only".
+
+---
+
+## OD-2026-10-04-005 -- Technique order on the athlete pathway: the 00_MASTER_SKILL_REGISTRY.xlsx Skill_Index prerequisites are the source, and the registry order wins
+
+**Provenance: PRIMARY.** Jason's answers to an AskUserQuestion in the technique
+order lane (`~/.claude/projects/C--Dev/02f100a2-4872-4eda-be5c-861a42b54a1e.jsonl`,
+tool use `toolu_01TeR4XjvwoTctQzfcc3SxKR`; asked 2026-10-04T03:04:52Z,
+answered 03:11:05Z). Read by script from that transcript (records pass, 2026-10-04). New; edits no
+earlier entry.
+
+**Prerequisite source.** Asked: "Is the Skill_Index sheet in SharePoint Club
+Ops .../LEGACY_PRO_BOXING_REFERENCE_ONLY/00_MASTER_SKILL_REGISTRY.xlsx the
+prerequisite source your decision D1-A (2026-09-11) promoted?" with its listed
+prerequisite values (Jab needs Stance; Rear-hand needs Stance+Jab; Hook needs
+Stance; Uppercut needs Stance+Rear-hand+Hook; Defense-to-Counter needs Stance;
+Footwork needs Stance+Jab; Perception needs Stance+Jab; Feints need
+Jab+Perception; Body needs Stance through Uppercut). Jason chose *"Yes, use it
+(Recommended)"*, option text "Those prerequisites go into the app as the
+official family order data." **Ruling: the Skill_Index prerequisites in
+00_MASTER_SKILL_REGISTRY.xlsx, as listed in that question, are the source for
+the technique family order.** The other options were "No, different source" and
+"Use it, with edits".
+
+**Footwork versus the coach-consensus order.** Asked: "The coach-consensus order
+puts Footwork 2nd, before straight punches. The registry makes Footwork/Ringcraft
+(SKILL-07) require Jab (SKILL-02). Which order should the athlete page follow?"
+Jason chose *"A: Registry wins (Recommended)"*, option text "Order comes from
+the prerequisites. Coach-consensus only breaks ties between families on the same
+level. Combos/distance/style aren't families, so they aren't shown." **Ruling:
+the athlete page follows the registry prerequisites; Footwork comes after Jab;
+coach-consensus order only breaks ties between families on the same level.**
+The other options were "B: Coach-consensus wins" and "C: Show both".
+
+---
+
+## OD-2026-10-04-004 -- Sparring over a coach-set cap: warn only, record the entry, the coach decides
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the sparring
+caps lane (`~/.claude/projects/C--Dev/42a7f511-6af8-4339-828d-fed4471df7fe.jsonl`,
+tool use `toolu_014w9EE5pWkcd36VufJPRznn`; asked 2026-10-04T03:01:10Z,
+answered 03:14:32Z). Read by script from that transcript (records pass, 2026-10-04). New; edits no
+earlier entry.
+
+Asked: "When a sparring entry goes over an athlete's coach-set cap (a contact
+stage above their highest allowed stage, or more hard/open sessions this week
+than their max), should the app: (A) Warn only (Recommended) ... (B) Block ...
+(C) Block for minors, warn for adults?" Jason chose *"Warn only
+(Recommended)"*, option text "Entry saves with a visible warning and the cap
+shown. The record stays true to what happened on the floor; coach decides.
+Matches 'coach decides, no auto-block'." **Ruling: a sparring entry over an
+athlete's cap is saved with a visible warning and the cap shown; it is never
+blocked, for minors or adults.** The other options were "Block until cap
+raised" and "Block minors, warn adults".
+
+Built in #1178 (coach-set caps) and #1182 (ladder stage and cap check).
+
+---
+
+## OD-2026-10-04-003 -- Tagged sparring/bout clips: staff only, any consent block blocks the whole clip, a coach may review if any athlete is theirs, a coach may untag unless consent blocks
+
+**Provenance: PRIMARY.** Jason's answers to two AskUserQuestions in the video
+tagging lane (`~/.claude/projects/C--Dev/adc36815-821b-4839-a202-abd4f0051cea.jsonl`).
+First: tool use `toolu_019HMoxXXKaszndBkWMAofV1`, asked 2026-10-04T03:02:08Z,
+answered 03:14:16Z. Second: tool use `toolu_01EogGTUiYL1d9WHh1bdc5hE`, asked
+04:56:32Z, answered 04:57:59Z. Read by script from that transcript (records pass, 2026-10-04). New; edits
+no earlier entry.
+
+**Who may view.** Asked: "Which roles may view a sparring/bout clip tagged to
+an athlete?" Jason chose *"Staff only (Recommended)"*, option text "Plain: only
+coaches and the gym admin can watch tagged clips. Athletes and parents don't
+see them in the app yet. Safest start; we can open it later." **Ruling: only
+coaches and the organization admin may watch tagged clips; athletes and parents
+may not yet.** The other options were "Staff + tagged athlete/parents" and
+"Staff + athletes, not parents".
+
+**Multi-athlete consent.** Asked: "When a clip shows several athletes, does a
+withdrawn or photo-only media consent for ANY one of them block playback of the
+whole clip?" Jason chose *"Any block blocks all (Recommended)"*, option text
+"Plain: if one kid's parent said no to video, nobody can play that clip,
+including coaches, until it's fixed or that kid is untagged." **Ruling: one
+athlete's withdrawn or photo-only media consent blocks playback of the whole
+clip for everyone.** The other option was "Block only that athlete's view".
+
+**Coach scope.** Asked: "May a coach review a tagged clip if ANY athlete in it
+is on their roster/coverage, or only if ALL are?" Jason chose *"Any of theirs
+(Recommended)"*, option text "Plain: a coach can watch a sparring clip of their
+kid even if the partner belongs to another coach." **Ruling: a coach may review
+a tagged clip if any athlete in it is theirs, subject to the consent rule
+above.** The other option was "All must be theirs".
+
+**Tag removal.** Asked: "A coach can remove an athlete's tag from a clip. If
+that athlete's parent has withdrawn video consent, removing the tag lifts the
+block even though the child is still in the footage. Who may remove a clip
+tag?" Jason chose *"Coach, unless consent blocks"* (not marked Recommended; the
+recommended option was "Admin only"), option text "Plain: a coach can fix their
+own tagging mistakes, but can't remove a tag from a kid whose parent has
+withdrawn or limited video consent. That case needs the admin." **Ruling: a
+coach may remove a tag, except from an athlete whose parent has withdrawn or
+limited video consent; that case needs the admin.** The other options were
+"Admin only (Recommended)" and "Any coach of that athlete".
+
+Built in #1176 (schema and consent gates) and #1184 (tag, untag and clip-list
+routes).
+
+---
+
+## OD-2026-10-04-002 -- Adult pathway stages: coach-set, named Foundation / Intermediate / Advanced / Elite, checkpoint goals and caveat wording approved
+
+**Provenance: PRIMARY.** Jason's answers to an AskUserQuestion in the adult
+pathway lane (`~/.claude/projects/C--Dev/d32d7163-448d-4f65-a425-7b2496e44dcc.jsonl`,
+tool use `toolu_01RJoAZySuHLDMN81f4ue51p`; asked 2026-10-04T03:02:45Z,
+answered 03:13:13Z). Read by script from that transcript (records pass, 2026-10-04). New; edits no
+earlier entry.
+
+**Stage source.** Asked: "should an adult athlete's pathway stage be
+COACH-SET (stored, with history and who set it), DERIVED (computed from
+training hours/competence), or DISPLAY-ONLY (stages shown as reference,
+nothing stored per athlete)?" Jason chose *"Coach-set (Recommended)"*, option
+text "Coach picks the stage; app keeps history; goals ticked off by a coach.
+Needs a database change (separate PR, extra review). Matches 'never automatic
+promotion'." **Ruling: an adult athlete's pathway stage is set by a coach and
+stored with history; it is never derived or promoted automatically.** The
+other options offered were "Display-only" and "Derived".
+
+**Stage names.** Asked: "use the synthesis names Foundation / Intermediate /
+Advanced / Elite?" Jason chose *"Use as-is (Recommended)"*, option text
+"Foundation, Intermediate, Advanced, Elite." **Ruling: the four stages are
+named Foundation, Intermediate, Advanced and Elite.** The other option was
+"I'll give other names".
+
+**Goals and caveat wording.** Asked: "approve these checkpoint goals (each
+ticked only by a coach)?" followed by the full goal text for the four stages
+and the caveat line "These time ranges are rough estimates, not
+research-backed. Everyone moves at their own pace; a coach decides when a stage
+is reached." Jason chose *"Approve (Recommended)"*, option text "Use the
+wording above." **Ruling: the checkpoint goals and the caveat line, as worded
+in that question in the transcript, are the approved text; each goal is ticked
+only by a coach.** The other option was "Edit wording".
+
+Built as far as the reference page in #1173 (PR-A).
+
+---
+
+## OD-2026-10-04-001 -- Injury records: athletes and linked guardians read their own, staff notes hidden; the coach injury log is its own page, the Sports Medicine board's 2026-08-15 rule stays
+
+**Provenance: PRIMARY.** Jason's answers to an AskUserQuestion in the injury
+record lane (`~/.claude/projects/C--Dev/9863d78a-dd0d-44c7-a482-ca1eaaf334d6.jsonl`,
+tool use `toolu_01Cu6GHiqETzbH5woYPWVhJC`; asked 2026-10-04T03:02:53Z,
+answered 03:12:19Z). Read by overwatch in that transcript. New; edits no
+earlier entry.
+
+**Visibility.** Asked: "should athletes and their linked guardians get a
+read-only view of their OWN injury records (date, body area, type, return
+date — no staff notes)?" Jason chose *"Yes, read-only own (Recommended)"*,
+whose option text was "Athlete + linked guardians see their own records' basic
+fields; staff notes hidden." **Ruling: an athlete and that athlete's linked
+guardians may read the athlete's own injury records, read-only, basic fields
+only; staff notes are never sent to them.** The other options offered were
+"No, staff only" and "Guardians only".
+
+**Placement.** Asked: "Put the injury log on a separate coach page linked from
+that board, keeping the rule?" (the Sports Medicine board's 2026-08-15 rule
+that it shows clearance and holds only, never diagnoses or clinical detail).
+Jason chose *"Separate page (Recommended)"*, option text "New /coach/injuries
+page, linked from Sports Medicine; your 2026-08-15 rule stays untouched."
+**Ruling: injuries live on their own coach page, /coach/injuries; the Sports
+Medicine board gains only a link and its 2026-08-15 rule is unchanged.**
+
+Built in #1175 (storage), #1180 (coach route), #1181 (coach page) and #1183
+(athlete and guardian read view). The work came from Jason's elite-boxing
+direction in the overwatch thread, 2026-10-04: *"If we need to add
+capabilities we will"*.
+
+---
+
 ## OD-2026-10-03-018 -- Lanes put their questions to Jason in their own lane
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
