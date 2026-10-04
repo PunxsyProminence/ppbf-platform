@@ -46,9 +46,11 @@ const PAYLOAD = {
 let postResponse: { status: number; body: unknown } = { status: 201, body: { ok: true } };
 let fetchMock: jest.Mock;
 let holdAna: Promise<void> | null = null;
+let holdPost: Promise<void> | null = null;
 
 beforeEach(() => {
   holdAna = null;
+  holdPost = null;
   postResponse = { status: 201, body: { ok: true } };
   fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -61,6 +63,7 @@ beforeEach(() => {
       ] });
     }
     if (url.includes('/api/pilot/coach/assessments') && init?.method === 'POST') {
+      if (holdPost) await holdPost;
       return respond(postResponse.status, postResponse.body);
     }
     if (url.includes('/api/pilot/coach/assessments?athlete_id=ath-1')) {
@@ -155,4 +158,39 @@ test('a slow load for the previous athlete never renders under the new one', asy
   const history = screen.getByRole('heading', { name: 'History for Ben Boxer' }).closest('section')!;
   expect(history.textContent).toContain('Nothing recorded yet.');
   expect(document.body.textContent).not.toContain('41.5 cm');
+});
+
+test('a save that finishes after switching athlete leaves the new athlete untouched', async () => {
+  let release!: () => void;
+  holdPost = new Promise<void>((resolve) => { release = resolve; });
+  await chooseAthlete();
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Best of 3 (cm)'), { target: { value: '40' } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save jump' }));
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+  });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Best of 3 (cm)'), { target: { value: '55' } });
+  });
+  await act(async () => { release(); });
+  expect((screen.getByLabelText('Best of 3 (cm)') as HTMLInputElement).value).toBe('55');
+  expect(screen.queryByRole('status')).toBeNull();
+  const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(JSON.parse(post![1].body).athlete_id).toBe('ath-1');
+});
+
+test('a truncated history says so', async () => {
+  const original = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('assessments?athlete_id=ath-1')) {
+      return { ok: true, status: 200, json: async () => ({ ...PAYLOAD, history_truncated: true }) } as Response;
+    }
+    return original(input, init);
+  });
+  await chooseAthlete();
+  expect(document.body.textContent).toContain('Older entries exist and are not shown here.');
 });

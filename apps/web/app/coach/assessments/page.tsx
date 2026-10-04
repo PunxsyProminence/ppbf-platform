@@ -57,6 +57,7 @@ interface AssessmentPayload {
   skill_families: SkillFamily[];
   rating_levels: RatingLevel[];
   history: HistoryEntry[];
+  history_truncated?: boolean;
 }
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'unavailable';
@@ -147,7 +148,11 @@ export default function CoachAssessmentsPage() {
   }
 
   /** Returns null when not saved, otherwise whether the history reload worked. */
+  // A save that finishes after the coach has switched athlete must not touch
+  // the new athlete's drafts or message: its result belongs to the old one.
   async function post(body: Record<string, unknown>): Promise<{ reloaded: boolean } | null> {
+    const forAthlete = athleteId;
+    const stillCurrent = () => currentAthlete.current === forAthlete;
     setSaving(true);
     setMessage(null);
     try {
@@ -155,16 +160,18 @@ export default function CoachAssessmentsPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ athlete_id: athleteId, ...body }),
+        body: JSON.stringify({ athlete_id: forAthlete, ...body }),
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setMessage({ tone: 'error', text: payload.error ?? 'Not saved. Try again.' });
+        if (stillCurrent()) setMessage({ tone: 'error', text: payload.error ?? 'Not saved. Try again.' });
         return null;
       }
-      return { reloaded: await loadAthlete(athleteId) };
+      if (!stillCurrent()) return null;
+      const reloaded = await loadAthlete(forAthlete);
+      return stillCurrent() ? { reloaded } : null;
     } catch {
-      setMessage({ tone: 'error', text: 'Not saved: the server could not be reached.' });
+      if (stillCurrent()) setMessage({ tone: 'error', text: 'Not saved: the server could not be reached.' });
       return null;
     } finally {
       setSaving(false);
@@ -402,6 +409,11 @@ export default function CoachAssessmentsPage() {
 
             <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
               <h2 className="t-eyebrow">History{athleteName ? ` for ${athleteName}` : ''}</h2>
+              {data.history_truncated && (
+                <p className="t-body text-[color:var(--bone-300)]">
+                  Showing the newest {data.history.length} entries. Older entries exist and are not shown here.
+                </p>
+              )}
               {data.history.length === 0 ? (
                 <p className="t-body text-[color:var(--bone-300)]">Nothing recorded yet.</p>
               ) : (

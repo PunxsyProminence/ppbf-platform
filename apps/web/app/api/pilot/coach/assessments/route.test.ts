@@ -67,7 +67,7 @@ beforeEach(() => {
   principalMock.mockResolvedValue(principal('coach'));
   accessMock.mockResolvedValue(undefined);
   ensureMock.mockResolvedValue(undefined);
-  historyMock.mockResolvedValue([]);
+  historyMock.mockResolvedValue({ entries: [], truncated: false });
 });
 
 describe('GET /api/pilot/coach/assessments', () => {
@@ -83,6 +83,7 @@ describe('GET /api/pilot/coach/assessments', () => {
       'ppbf-jump-broad-distance',
     ]);
     expect(body.skill_families).toHaveLength(12);
+    expect(body.history_truncated).toBe(false);
     expect(body.rating_levels.map((l: { label: string }) => l.label)).toEqual([
       'Learning', 'Developing', 'Solid', 'Applies', 'Sharp',
     ]);

@@ -362,8 +362,12 @@ function toEntry(row: AssessmentHistoryRow): AssessmentHistoryEntry {
   };
 }
 
+export const HISTORY_LIMIT = 500;
+
 /**
- * ONE athlete's own jump and skill-rating history, newest first. Only the
+ * ONE athlete's own jump and skill-rating history, newest first, at most
+ * HISTORY_LIMIT entries; `truncated` says older entries exist, so a screen
+ * never presents a cut list as the whole record. Only the
  * PPBF protocols above; nothing aggregated. Returns [] for a deleted or
  * foreign athlete rather than disclosing anything (the route has already
  * answered the access question with a 403).
@@ -371,7 +375,7 @@ function toEntry(row: AssessmentHistoryRow): AssessmentHistoryEntry {
 export async function listAthleteAssessmentHistory(
   organizationId: string,
   athleteId: string,
-): Promise<AssessmentHistoryEntry[]> {
+): Promise<{ entries: AssessmentHistoryEntry[]; truncated: boolean }> {
   const rows = await query<AssessmentHistoryRow>(
     `select a.assessment_id, a.protocol_id, a.assessment_type, a.result,
             a.administered_on::text as administered_on, a.assessor_role, a.conditions_note, a.created_at
@@ -384,8 +388,8 @@ export async function listAthleteAssessmentHistory(
        and a.administered_on is not null
        and a.protocol_id = any($3::text[])
      order by a.administered_on desc, a.created_at desc
-     limit 500`,
-    [organizationId, athleteId, PPBF_PROTOCOL_IDS],
+     limit $4`,
+    [organizationId, athleteId, PPBF_PROTOCOL_IDS, HISTORY_LIMIT + 1],
   );
-  return rows.map(toEntry);
+  return { entries: rows.slice(0, HISTORY_LIMIT).map(toEntry), truncated: rows.length > HISTORY_LIMIT };
 }

@@ -342,13 +342,14 @@ describe('assessment results against real Postgres', () => {
     await recordJumpResult(WRITER_A, { athleteId: ATHLETE_A2, protocolId: 'ppbf-jump-cmj-height', valueCm: 30, today: TODAY });
     await recordJumpResult(WRITER_B, { athleteId: ATHLETE_B, protocolId: 'ppbf-jump-cmj-height', valueCm: 50, today: TODAY });
 
-    const history = await listAthleteAssessmentHistory(ORG_A, ATHLETE_A);
+    const { entries: history, truncated } = await listAthleteAssessmentHistory(ORG_A, ATHLETE_A);
+    expect(truncated).toBe(false);
     expect(history).toHaveLength(4);
     expect(history.map((h) => h.administered_on)).toEqual([TODAY, '2026-10-02', '2026-10-02', '2026-10-01']);
     expect(history.some((h) => h.value === 30 || h.value === 50)).toBe(false);
 
     // Same athlete id asked of the wrong organization returns nothing.
-    expect(await listAthleteAssessmentHistory(ORG_B, ATHLETE_A)).toEqual([]);
+    expect(await listAthleteAssessmentHistory(ORG_B, ATHLETE_A)).toEqual({ entries: [], truncated: false });
   });
 
   test('a soft-deleted athlete is neither written to nor read', async () => {
@@ -358,7 +359,7 @@ describe('assessment results against real Postgres', () => {
       [ORG_A, ATHLETE_DELETED],
     );
 
-    expect(await listAthleteAssessmentHistory(ORG_A, ATHLETE_DELETED)).toEqual([]);
+    expect(await listAthleteAssessmentHistory(ORG_A, ATHLETE_DELETED)).toEqual({ entries: [], truncated: false });
     await expect(recordJumpResult(WRITER_A, {
       athleteId: ATHLETE_DELETED, protocolId: 'ppbf-jump-cmj-height', valueCm: 34, today: TODAY,
     })).rejects.toThrow(/^Forbidden/);

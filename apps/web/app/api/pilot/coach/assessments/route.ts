@@ -56,9 +56,9 @@ export async function GET(request: NextRequest) {
 
     // Read-only: no ensure here. Before the first write the gym has no
     // protocol rows, and the history is simply empty.
-    const history = await listAthleteAssessmentHistory(principal.organizationId, athleteId);
+    const { entries, truncated } = await listAthleteAssessmentHistory(principal.organizationId, athleteId);
     return NextResponse.json(
-      { ok: true, ...catalog(), history },
+      { ok: true, ...catalog(), history: entries, history_truncated: truncated },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {
