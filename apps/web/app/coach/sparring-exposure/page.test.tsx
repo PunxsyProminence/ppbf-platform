@@ -154,13 +154,14 @@ describe('coach sparring record screen', () => {
   test('switching athlete never leaves the previous athlete\'s entries on screen', async () => {
     await renderAndPick();
     expect(screen.getByText('Kept hands up.')).toBeTruthy();
-    // The next read fails: what remains must be the failure, not Rosa's record.
-    installFetch({ recentOk: false });
+    // Marcus's read is still in flight: until it lands, the screen must show
+    // loading, not Rosa's record under Marcus's name.
+    global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
     });
     expect(screen.queryByText('Kept hands up.')).toBeNull();
-    expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+    expect(screen.getByText('Loading...')).toBeTruthy();
   });
 
   test('an empty successful read says none in this window', async () => {
