@@ -252,8 +252,12 @@ export interface ReferenceSets {
   skillCodes: ReadonlySet<string>;
   disciplines: ReadonlySet<string>;
   levelOrdinals: ReadonlySet<number>;
-  /** active: false when the drill's current version is withdrawn; a step may not link it (withdrawn_drill). */
-  drills: ReadonlyMap<string, { discipline: string; name: string; skillId: string; active: boolean }>;
+  /**
+   * active: false when the drill's current version is withdrawn; a step may not link it (withdrawn_drill).
+   * contactLevel: the drill's own contact_level ("the most contact the drill involves", specs/drills.ts);
+   * a step may not link it at a higher level (step_contact_above_drill).
+   */
+  drills: ReadonlyMap<string, { discipline: string; name: string; skillId: string; active: boolean; contactLevel: string }>;
   templates: ReadonlySet<string>;
   scripts: ReadonlySet<string>;
   blocks: ReadonlySet<string>;

@@ -32,8 +32,8 @@ const references: ReferenceSets = {
   disciplines: new Set(['boxing', 'conditioning']),
   levelOrdinals: new Set([1, 2, 3, 4, 5, 6]),
   drills: new Map([
-    [EXISTING_DRILL, { discipline: 'boxing', name: 'Touch to Reposition', skillId: 'SK-FW-04', active: true }],
-    [WITHDRAWN_DRILL, { discipline: 'boxing', name: 'Retired Pivot', skillId: 'SK-FW-04', active: false }],
+    [EXISTING_DRILL, { discipline: 'boxing', name: 'Touch to Reposition', skillId: 'SK-FW-04', active: true, contactLevel: 'light_technical' }],
+    [WITHDRAWN_DRILL, { discipline: 'boxing', name: 'Retired Pivot', skillId: 'SK-FW-04', active: false, contactLevel: 'none' }],
   ]),
   templates: new Set([EXISTING_TEMPLATE]),
   scripts: new Set(),
