@@ -1,7 +1,13 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import TutorialCard from '@/components/TutorialCard';
 import { guideSections, masterTutorialCards, plannedCapabilityGuides } from '@/components/helpContent';
 import OperationsLink from '@/components/OperationsLink';
+
+// Internal tester material: reachable, but kept out of search results.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default function HelpCenterPage() {
   return (

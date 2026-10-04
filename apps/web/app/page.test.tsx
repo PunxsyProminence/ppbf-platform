@@ -104,3 +104,43 @@ test('the share-card alt text claims youth are free, not every family', () => {
   expect(alt).toContain('free for youth');
   expect(alt).not.toMatch(/free for all/i);
 });
+
+/* One front page (Jason, 2026-10-03): /public's form, programs and FAQ live
+   here now, and nothing on them may contradict the facts above. */
+test('the interest form is on the front page, with no consent checkbox', () => {
+  const { container } = renderPage();
+  const form = container.querySelector('#interest-intake form');
+  expect(form).not.toBeNull();
+  expect(form?.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(form?.querySelector('input[type="email"]')).not.toBeNull();
+});
+
+test('programs and FAQ moved over, and the program intro no longer miscounts them', () => {
+  const { container, text } = renderPage();
+  expect(container.querySelectorAll('#programs article').length).toBe(8);
+  expect(text).not.toMatch(/four different reasons/i);
+  expect(container.querySelectorAll('#public-faq details').length).toBeGreaterThan(0);
+});
+
+test('the FAQ cost answer carries the adult figure, not "ask us"', () => {
+  const { container } = renderPage();
+  const faq = (container.querySelector('#public-faq')?.textContent ?? '').replace(/\s+/g, ' ');
+  expect(faq).toContain('Adults pay $20 a month.');
+  expect(faq).toContain('Youth train free.');
+  expect(faq).not.toMatch(/adults, ask us/i);
+});
+
+test('no claim on the page contradicts the registry facts', () => {
+  const { text } = renderPage();
+  expect(text).not.toMatch(/free for all/i);
+  expect(text).not.toMatch(/ask us --/i);
+  expect(text).toContain('veteran-led');
+  // Internal surfaces stay off the public page.
+  expect(text).not.toMatch(/tester guide/i);
+});
+
+test('the page does not link to /public, which forwards here', () => {
+  const { container } = renderPage();
+  const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
+  expect(hrefs.filter((h) => h === '/public' || h.startsWith('/public#'))).toEqual([]);
+});
