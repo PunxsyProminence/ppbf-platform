@@ -321,16 +321,44 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
     expect(entry.logged_on).toBe('2026-10-04');
   });
 
-  test('concurrent writes cannot pass the daily limit', async () => {
+  test('a write waits for another in-flight write on the same athlete and day, so the limit holds', async () => {
+    // Deterministic race: 19 committed rows, then a second connection takes the
+    // same lock the module takes and inserts the 20th WITHOUT committing. With
+    // the lock, the module waits, then counts 20 and refuses. Without it, the
+    // module counts 19, inserts, and the day ends with 21.
+    const day = '2026-07-01';
     const now = '2026-07-01T15:00:00Z';
-    const results = await Promise.allSettled(
-      Array.from({ length: mental.DAILY_ENTRY_LIMIT + 5 }, () => mental.logImagerySession(secondAthlete, { minutes: 2, now })),
-    );
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(mental.DAILY_ENTRY_LIMIT);
+    for (let i = 0; i < mental.DAILY_ENTRY_LIMIT - 1; i += 1) {
+      await mental.logImagerySession(secondAthlete, { minutes: 2, now });
+    }
+    const other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+    try {
+      await other.query('begin');
+      await other.query(
+        `select pg_advisory_xact_lock(hashtext('ppbf.mental-skills:' || $1::text || ':' || $2::text || ':' || $3::text))`,
+        [ORG, SECOND_ATHLETE, day],
+      );
+      await other.query(
+        `insert into pilot.athlete_mental_skill_entries
+           (organization_id, entry_id, athlete_id, kind, minutes, logged_on)
+         values ($1, '11111111-1111-4111-8111-111111111111', $2, 'imagery_session', 2, $3::date)`,
+        [ORG, SECOND_ATHLETE, day],
+      );
+      const racing = mental.logImagerySession(secondAthlete, { minutes: 2, now }).then(
+        () => 'inserted',
+        (error: Error) => error.message,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await other.query('commit');
+      expect(await racing).toMatch(/a day/);
+    } finally {
+      await other.end();
+    }
     const stored = await main.query(
       `select count(*)::int as n from pilot.athlete_mental_skill_entries
-       where organization_id = $1 and athlete_id = $2 and logged_on = '2026-07-01'`,
-      [ORG, SECOND_ATHLETE],
+       where organization_id = $1 and athlete_id = $2 and logged_on = $3::date`,
+      [ORG, SECOND_ATHLETE, day],
     );
     expect(stored.rows[0].n).toBe(mental.DAILY_ENTRY_LIMIT);
   });
