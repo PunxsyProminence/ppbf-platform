@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type SyntheticEvent } from 'react';
+import { useId, useState, type SyntheticEvent } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import {
   contactMethodLabels,
@@ -28,6 +28,9 @@ import {
 const fallbackAddress = '220 N Jefferson St, Punxsutawney, PA 15767';
 
 export default function PublicInterestForm() {
+  // htmlFor/id rather than a wrapping <label>: a label wrapped around a
+  // <select> folds every option's text into the select's accessible name.
+  const id = useId();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -103,51 +106,52 @@ export default function PublicInterestForm() {
         className="absolute h-0 w-0 opacity-0"
         style={{ position: 'absolute', left: '-9999px' }}
       />
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">Your name</span>
-        <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="input" autoComplete="name" required />
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">Email</span>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="email" required />
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">Phone (only if you want a call)</span>
-        <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" autoComplete="tel" />
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">Who you are</span>
-        <select value={visitorType} onChange={(e) => setVisitorType(e.target.value as VisitorType)} className="input">
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-name`} className="t-label">Your name</label>
+        <input id={`${id}-name`} value={fullName} onChange={(e) => setFullName(e.target.value)} className="input" autoComplete="name" required />
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-email`} className="t-label">Email</label>
+        <input id={`${id}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="email" required />
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-phone`} className="t-label">Phone (only if you want a call)</label>
+        <input id={`${id}-phone`} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input" autoComplete="tel" />
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-visitor`} className="t-label">Who you are</label>
+        <select id={`${id}-visitor`} value={visitorType} onChange={(e) => setVisitorType(e.target.value as VisitorType)} className="input">
           {visitorTypeOptions.map((option) => (
             <option key={option} value={option}>{visitorTypeLabels[option]}</option>
           ))}
         </select>
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">What you are interested in</span>
-        <select value={programInterest} onChange={(e) => setProgramInterest(e.target.value as ProgramInterest)} className="input">
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-interest`} className="t-label">What you are interested in</label>
+        <select id={`${id}-interest`} value={programInterest} onChange={(e) => setProgramInterest(e.target.value as ProgramInterest)} className="input">
           {programInterestOptions.map((option) => (
             <option key={option} value={option}>{programInterestLabels[option]}</option>
           ))}
         </select>
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">How to reach you</span>
-        <select value={preferredContactMethod} onChange={(e) => setPreferredContactMethod(e.target.value as ContactMethod)} className="input">
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-contact`} className="t-label">How to reach you</label>
+        <select id={`${id}-contact`} value={preferredContactMethod} onChange={(e) => setPreferredContactMethod(e.target.value as ContactMethod)} className="input">
           {contactMethodOptions.map((option) => (
             <option key={option} value={option}>{contactMethodLabels[option]}</option>
           ))}
         </select>
-      </label>
-      <label className="grid gap-[var(--s1)]">
-        <span className="t-label">Message</span>
+      </div>
+      <div className="grid gap-[var(--s1)]">
+        <label htmlFor={`${id}-message`} className="t-label">Message</label>
         <textarea
+          id={`${id}-message`}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Anything you want us to know -- your kid's age, what you are looking for, or what you are worried about."
           className="input min-h-[110px]"
         />
-      </label>
+      </div>
 
       <button type="submit" disabled={submitting} className="btn disabled:cursor-not-allowed disabled:opacity-60">
         {submitting ? 'Sending...' : 'Send this to a coach'}

@@ -342,8 +342,8 @@ test.describe('Public homepage', () => {
     await page.goto('/#interest-intake');
     const form = page.locator('#interest-intake form');
     await expect(form.locator('input[type="checkbox"]')).toHaveCount(0);
-    await form.getByLabel('Your name').fill('Pat Example');
-    await form.getByLabel('Email').fill('pat@example.com');
+    await form.getByLabel('Your name', { exact: true }).fill('Pat Example');
+    await form.getByLabel('Email', { exact: true }).fill('pat@example.com');
     await form.getByRole('button', { name: 'Send this to a coach' }).click();
 
     await expect(form.getByRole('status')).toContainText('Got it');

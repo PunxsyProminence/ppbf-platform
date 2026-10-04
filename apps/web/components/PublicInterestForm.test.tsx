@@ -44,3 +44,9 @@ test("says who the form is for and what the information is used for, in Jason's 
   expect(screen.getByText(/We use what you send only to answer you\. We do not sell or share it\./)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Privacy' }).getAttribute('href')).toBe('/privacy');
 });
+
+test('each control is named by its own label only, not by option text', () => {
+  render(<PublicInterestForm />);
+  expect(screen.getByRole('combobox', { name: 'How to reach you' })).toBeTruthy();
+  expect(screen.getAllByLabelText(/Email/)).toHaveLength(1);
+});
