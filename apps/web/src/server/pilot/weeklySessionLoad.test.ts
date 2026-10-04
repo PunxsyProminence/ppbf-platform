@@ -58,17 +58,18 @@ describe('getWeeklySessionLoads SQL', () => {
     expect(text).toContain('sum(rpe * duration_minutes)');
   });
 
-  test('scoped to one organization and the given athletes, over 5 weekly buckets ending today', async () => {
+  test('scoped to one organization and the given athletes, over 5 weekly buckets ending the gym day', async () => {
     mockQuery.mockResolvedValue([]);
-    await getWeeklySessionLoads(ORG, ['ath-1', 'ath-2']);
+    const asOf = new Date('2026-10-05T02:30:00Z');
+    await getWeeklySessionLoads(ORG, ['ath-1', 'ath-2'], asOf);
     const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
     const text = sql.replace(/\s+/g, ' ');
 
     expect(text).toContain('from pilot.sessions');
     expect(text).toContain('organization_id = $1 and athlete_id = any($2::text[])');
-    expect(text).toContain('date <= current_date');
-    expect(text).toContain('date > current_date - ($3::int * 7)');
-    expect(params).toEqual([ORG, ['ath-1', 'ath-2'], LOAD_JUMP_PRIOR_WEEKS + 1]);
+    expect(text).toContain("date <= ($4::timestamptz at time zone 'America/New_York')::date");
+    expect(text).not.toContain('current_date');
+    expect(params).toEqual([ORG, ['ath-1', 'ath-2'], LOAD_JUMP_PRIOR_WEEKS + 1, asOf.toISOString()]);
   });
 });
 

@@ -1,3 +1,4 @@
+import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import type { SessionRpeMethod } from './contracts';
 import { query } from './db';
 import { calculateAcuteChronicWorkloadRatio } from './formulas/engine';
@@ -57,27 +58,38 @@ export interface LoadJumpReading {
   prior_weeks_with_load: number;
 }
 
+/**
+ * "Today" is the GYM's day, not the database's. pilot.sessions.date is the
+ * gym's calendar date, and Postgres' current_date follows the server's zone
+ * (UTC on Azure), which after 8pm in Punxsutawney is already tomorrow: the
+ * 7-day window would slip a day every evening. Built from GYM_TIME_ZONE as
+ * blockReview.ts and sessionNotes.ts do. `asOf` exists so a test can pin the
+ * instant; callers leave it as now.
+ */
+const GYM_TODAY_SQL = `($4::timestamptz at time zone '${GYM_TIME_ZONE}')::date`;
+
 export async function getWeeklySessionLoads(
   organizationId: string,
   athleteIds: readonly string[],
+  asOf: Date = new Date(),
 ): Promise<WeeklyLoadRow[]> {
   if (athleteIds.length === 0) return [];
-  // (current_date - date) is a whole number of days; div 7 buckets it.
+  // (gym today - date) is a whole number of days; div 7 buckets it.
   // The date window covers exactly weeks 0..LOAD_JUMP_PRIOR_WEEKS, and
   // future-dated rows are left out rather than counted as "this week".
   return query<WeeklyLoadRow>(
     `select athlete_id,
-            ((current_date - date) / 7)::int as week_index,
+            ((${GYM_TODAY_SQL} - date) / 7)::int as week_index,
             sum(rpe * duration_minutes)::float8 as week_load,
             count(*)::int as session_count
      from pilot.sessions
      where organization_id = $1 and athlete_id = any($2::text[])
        and rpe_method = '${SESSION_RPE_SELF_REPORT}'
        and rpe is not null and duration_minutes is not null
-       and date <= current_date
-       and date > current_date - ($3::int * 7)
-     group by athlete_id, ((current_date - date) / 7)`,
-    [organizationId, [...athleteIds], LOAD_JUMP_PRIOR_WEEKS + 1],
+       and date <= ${GYM_TODAY_SQL}
+       and date > ${GYM_TODAY_SQL} - ($3::int * 7)
+     group by athlete_id, ((${GYM_TODAY_SQL} - date) / 7)`,
+    [organizationId, [...athleteIds], LOAD_JUMP_PRIOR_WEEKS + 1, asOf.toISOString()],
   );
 }
 
