@@ -293,6 +293,11 @@ export default function CoachDevelopmentBlocksPage() {
   const [templateAthleteIsAdult, setTemplateAthleteIsAdult] = useState(false);
   const [minorOptInFor, setMinorOptInFor] = useState('');
   const [templateId, setTemplateId] = useState('');
+  /* Whether template text has been put in the form since the last save or
+     athlete change. Separate from templateId on purpose: choosing "No
+     template" after a template clears the picker but leaves its text in the
+     boxes, and that text must still be dropped on an athlete change. */
+  const [formHasTemplateText, setFormHasTemplateText] = useState(false);
   const minorOptIn = athleteId !== '' && minorOptInFor === athleteId;
 
   /* Called by selectAthlete and by the opt-in box, never from an effect. The
@@ -336,6 +341,7 @@ export default function CoachDevelopmentBlocksPage() {
     setTemplateId(id);
     const template = templates.find((item) => item.id === id);
     if (!template) return;
+    setFormHasTemplateText(true);
     setForm((current) => ({ ...current, title: template.title, training_emphasis: template.emphasis }));
   }
 
@@ -970,8 +976,9 @@ export default function CoachDevelopmentBlocksPage() {
        the form goes too -- it was offered for the previous athlete, and a
        minor's form must not arrive pre-filled with an adult template. */
     setMinorOptInFor('');
-    if (templateId) {
+    if (formHasTemplateText) {
       setForm(EMPTY_FORM);
+      setFormHasTemplateText(false);
     }
     void loadTemplates(nextId, false);
     void loadBlocks(nextId);
@@ -1010,6 +1017,7 @@ export default function CoachDevelopmentBlocksPage() {
       }
       setForm(EMPTY_FORM);
       setTemplateId('');
+      setFormHasTemplateText(false);
       setMessage('Block saved.');
       // Read it back from the server rather than pushing the local copy into
       // the list: what is on screen should be what was stored.

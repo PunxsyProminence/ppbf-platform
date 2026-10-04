@@ -2117,6 +2117,21 @@ describe('template state does not leak between athletes', () => {
     expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toBe('');
   });
 
+  test('template text is cleared on an athlete change even after "No template" was chosen', async () => {
+    await renderPage({ blocks: [] });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: 'power' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Start from a template (optional)'), { target: { value: '' } });
+    });
+    await pickAthlete('ath-2');
+
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Training emphasis') as HTMLTextAreaElement).value).toBe('');
+  });
+
   test('typed text with no template is kept across an athlete change, as before', async () => {
     await renderPage({ blocks: [] });
     await pickAthlete('ath-1');
