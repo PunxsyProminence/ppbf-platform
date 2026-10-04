@@ -132,7 +132,17 @@ export default function CoachInjuriesPage() {
         const res = await fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' });
         const payload = res.ok ? ((await res.json()) as { items?: unknown } | null) : null;
         if (!payload || !Array.isArray(payload.items)) throw new Error('roster');
-        setRoster(payload.items as RosterAthlete[]);
+        const all = payload.items as RosterAthlete[];
+        // The roster is the whole gym; offer only the athletes the injury route
+        // will open for this person (a coach's own and covered athletes).
+        const allowedRes = await fetch(`${apiBase()}/api/pilot/coach/injuries`, {
+          method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'accessible_athletes', athlete_ids: all.map((a) => a.athlete_id) }),
+        });
+        const allowed = allowedRes.ok ? ((await allowedRes.json()) as { athlete_ids?: unknown } | null) : null;
+        if (!allowed || !Array.isArray(allowed.athlete_ids)) throw new Error('roster');
+        const ids = new Set(allowed.athlete_ids as string[]);
+        setRoster(all.filter((a) => ids.has(a.athlete_id)));
       } catch {
         fail('Your roster could not be loaded. Reload to try again.');
       }
@@ -241,7 +251,7 @@ export default function CoachInjuriesPage() {
         <div className="field mb-[var(--s4)]">
           <label className="t-label" htmlFor="injury-athlete">Athlete</label>
           <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || busy}>
-            <option value="">{roster ? 'Choose an athlete' : 'Loading roster...'}</option>
+            <option value="">{!roster ? 'Loading roster...' : roster.length ? 'Choose an athlete' : 'No athletes you coach or cover'}</option>
             {(roster ?? []).map((a) => (
               <option key={a.athlete_id} value={a.athlete_id}>{a.full_name || a.athlete_id}</option>
             ))}

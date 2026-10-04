@@ -54,18 +54,27 @@ const CANDIDATES = {
 let posts: Array<Record<string, unknown>>;
 let postReply: { status: number; body: unknown };
 let injuriesReply: unknown[];
+let accessibleReply: string[];
 
 beforeEach(() => {
   posts = [];
   postReply = { status: 200, body: { ok: true } };
   injuriesReply = [PLAN_INJURY, WRIST];
+  accessibleReply = ['ath-1'];
   global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.includes('/api/pilot/athletes/list')) {
-      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan Doe' }] }) };
+      return {
+        ok: true,
+        json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'Jordan Doe' }, { athlete_id: 'ath-x', full_name: 'Not Mine' }] }),
+      };
     }
     if (u.includes('/api/pilot/coach/injuries') && init?.method === 'POST') {
-      posts.push(JSON.parse(String(init.body)));
+      const sent = JSON.parse(String(init.body));
+      if (sent.action === 'accessible_athletes') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, athlete_ids: accessibleReply.filter((id) => sent.athlete_ids.includes(id)) }) };
+      }
+      posts.push(sent);
       return { ok: postReply.status < 300, status: postReply.status, json: async () => postReply.body };
     }
     if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
@@ -176,10 +185,13 @@ test('an athlete with no injuries says so', async () => {
 test("a reply for an athlete no longer selected is dropped, so one child's injuries never show under another's name", async () => {
   let releaseA: () => void = () => {};
   const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
-  global.fetch = jest.fn(async (url: string) => {
+  global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.includes('/api/pilot/athletes/list')) {
       return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'A' }, { athlete_id: 'ath-2', full_name: 'B' }] }) };
+    }
+    if (init?.method === 'POST') {
+      return { ok: true, status: 200, json: async () => ({ ok: true, athlete_ids: ['ath-1', 'ath-2'] }) };
     }
     if (u.includes('athlete_id=ath-1')) {
       await gateA;
@@ -257,4 +269,19 @@ test("a hold's time stamp is shown as the gym's day, not UTC's", async () => {
   await openAthlete();
   const hold = within(screen.getByLabelText('Training hold')).getByRole('option', { name: /Contact only/ });
   expect(hold.textContent).toBe('Contact only 9/1/2026 (active)');
+});
+
+test('the picker offers only athletes the injury route will open for this coach', async () => {
+  render(<CoachInjuriesPage />);
+  const select = await screen.findByLabelText('Athlete');
+  await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
+  expect(options('Athlete')).toEqual(['', 'ath-1']);
+});
+
+test('a coach who coaches or covers nobody is told so, and the roster ids were sent to be checked', async () => {
+  accessibleReply = [];
+  render(<CoachInjuriesPage />);
+  expect(await screen.findByRole('option', { name: 'No athletes you coach or cover' })).toBeTruthy();
+  const check = (global.fetch as jest.Mock).mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(JSON.parse(String(check?.[1].body))).toEqual({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-x'] });
 });
