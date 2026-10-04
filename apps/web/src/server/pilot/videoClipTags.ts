@@ -5,6 +5,7 @@ import type { QueryResultRow } from 'pg';
 import { query, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
+import { assertConsentCoversVideo } from './videoPlaybackConsent';
 
 /*
  * VIDEO CLIP TAGS: a sparring or bout video tagged to the athletes in it and
@@ -328,7 +329,7 @@ export async function listTaggedClips(input: {
     params.push(input.competitionId);
     filters += ` and t.competition_id = $${params.length}`;
   }
-  return query<TaggedClipRow>(
+  const rows = await query<TaggedClipRow>(
     `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.note, t.tagged_by_account_id, t.created_at,
             v.title, v.status, v.created_at as recorded_at
        from pilot.video_clip_tags t
@@ -339,9 +340,62 @@ export async function listTaggedClips(input: {
       where t.organization_id = $1 and t.removed_at is null
         and v.capture_take_id is null and a.deleted_at is null
         and ${athleteNotDeletedSql('v')}
+        and not exists (
+          select 1 from pilot.video_clip_tags other
+            join pilot.athletes other_athlete
+              on other_athlete.organization_id = other.organization_id
+             and other_athlete.athlete_id = other.athlete_id
+           where other.organization_id = t.organization_id
+             and other.video_session_id = t.video_session_id
+             and other.removed_at is null
+             and other_athlete.deleted_at is not null)
         ${filters}
       order by v.created_at desc, t.created_at
       limit $2`,
     params,
   );
+  return dropClipsBlockedByConsent(input.organizationId, rows);
+}
+
+/*
+ * Owner, Jason 2026-10-04: "A) Hide". A clip whose playback a consent block
+ * stops is left out of staff lists too, so its title and note cannot name
+ * the child whose guardian refused. The test is the playback gate's own
+ * (assertConsentCoversVideo) over every athlete the clip shows -- its own
+ * athlete and every live tag, including tags outside the caller's scope.
+ * It comes back by itself once consent is restored or that athlete is
+ * untagged. A consent read that fails for another reason fails the list.
+ */
+async function dropClipsBlockedByConsent(
+  organizationId: string,
+  rows: TaggedClipRow[],
+): Promise<TaggedClipRow[]> {
+  const videoIds = Array.from(new Set(rows.map((row) => row.video_session_id)));
+  if (videoIds.length === 0) return rows;
+
+  const subjects = await query<{ video_session_id: string; athlete_id: string }>(
+    `select t.video_session_id, t.athlete_id
+       from pilot.video_clip_tags t
+      where t.organization_id = $1 and t.video_session_id = any($2::text[]) and t.removed_at is null
+     union
+     select v.video_session_id, v.athlete_id
+       from pilot.video_sessions v
+      where v.organization_id = $1 and v.video_session_id = any($2::text[]) and v.athlete_id is not null`,
+    [organizationId, videoIds],
+  );
+
+  const blocked = new Map<string, boolean>();
+  for (const athleteId of new Set(subjects.map((subject) => subject.athlete_id))) {
+    try {
+      await assertConsentCoversVideo(organizationId, athleteId);
+      blocked.set(athleteId, false);
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      blocked.set(athleteId, true);
+    }
+  }
+  const blockedVideos = new Set(
+    subjects.filter((subject) => blocked.get(subject.athlete_id)).map((subject) => subject.video_session_id),
+  );
+  return rows.filter((row) => !blockedVideos.has(row.video_session_id));
 }
