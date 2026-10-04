@@ -464,3 +464,54 @@ describe('readLibraryPdf', () => {
     expect(await readLibraryPdf('', pdfFile(), { fetchImpl: impl })).toMatchObject({ ok: false });
   });
 });
+
+// RINT-05b. The platform owner's entries go to the platform shelf: the document
+// AND every chunk carry shelf 'platform' (the chunk route resolves the shelf
+// too, and a platform owner's gym-shelf write is refused, D3). A gym entry
+// carries no shelf field at all, so gym curators' requests are unchanged.
+describe('submitLibraryTextIntake on a shelf', () => {
+  it('sends shelf platform on the document and on every chunk', async () => {
+    const { calls, impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    const result = await submitLibraryTextIntake('', { ...INPUT, shelf: 'platform' }, { fetchImpl: impl });
+    expect(result.ok).toBe(true);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every((call) => call.body.shelf === 'platform')).toBe(true);
+  });
+
+  it('sends no shelf field for the gym shelf, named or not', async () => {
+    for (const input of [INPUT, { ...INPUT, shelf: 'gym' as const }]) {
+      const { calls, impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+      await submitLibraryTextIntake('', input, { fetchImpl: impl });
+      expect(calls.some((call) => 'shelf' in call.body)).toBe(false);
+    }
+  });
+
+  it('a resumed platform entry finishes on the platform shelf, whatever the form says now', async () => {
+    const first = recordingFetch((_call, index) => (index === 0 ? created : index === 2 ? { status: 500 } : { status: 201 }));
+    const failed = await submitLibraryTextIntake('', { ...INPUT, shelf: 'platform' }, { fetchImpl: first.impl });
+    if (failed.ok || !failed.resume) throw new Error('expected a resumable failure');
+    expect(failed.resume.shelf).toBe('platform');
+
+    const second = recordingFetch(() => ({ status: 201 }));
+    const finished = await submitLibraryTextIntake('', INPUT, { resume: failed.resume, fetchImpl: second.impl });
+    expect(finished.ok).toBe(true);
+    expect(second.calls.every((call) => call.body.shelf === 'platform')).toBe(true);
+  });
+
+  it('a gym resume token carries no shelf', async () => {
+    const { impl } = recordingFetch((_call, index) => (index === 0 ? created : { status: 500 }));
+    const failed = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+    if (failed.ok || !failed.resume) throw new Error('expected a resumable failure');
+    expect(failed.resume).not.toHaveProperty('shelf');
+  });
+
+  it('names the shelf a 404 came from', async () => {
+    const platform = recordingFetch(() => ({ status: 404 }));
+    const onPlatform = await submitLibraryTextIntake('', { ...INPUT, shelf: 'platform' }, { fetchImpl: platform.impl });
+    expect(onPlatform.ok ? '' : onPlatform.message).toMatch(/The source was not found on the platform shelf\./);
+
+    const gym = recordingFetch(() => ({ status: 404 }));
+    const onGym = await submitLibraryTextIntake('', INPUT, { fetchImpl: gym.impl });
+    expect(onGym.ok ? '' : onGym.message).toMatch(/The source was not found in this gym's Library\./);
+  });
+});

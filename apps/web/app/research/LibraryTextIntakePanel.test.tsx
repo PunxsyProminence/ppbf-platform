@@ -10,7 +10,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import LibraryTextIntakePanel, { PDF_WORDS } from './LibraryTextIntakePanel';
+import LibraryTextIntakePanel, { PDF_WORDS, SHELF_WORDS } from './LibraryTextIntakePanel';
 import { splitIntakeText } from '@/src/client/libraryTextIntake';
 
 const SOURCES = [
@@ -319,5 +319,41 @@ describe('LibraryTextIntakePanel: reading a PDF (RINT-02)', () => {
   it('shows no PDF reader when the gym has no registered source', () => {
     render(<LibraryTextIntakePanel sources={[]} />);
     expect(screen.queryByLabelText(PDF_WORDS.fileLabel)).toBeNull();
+  });
+});
+
+// RINT-05b. The page passes shelf 'platform' only for the platform owner.
+describe('LibraryTextIntakePanel on the platform shelf', () => {
+  it('says it is the platform shelf and names that shelf on the document and every chunk', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={SOURCES} shelf="platform" />);
+    expect(screen.getByText(SHELF_WORDS.platformNotice)).toBeTruthy();
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls.length).toBe(1 + splitIntakeText(TEXT).length);
+    expect(calls.every((call) => call.body.shelf === 'platform')).toBe(true);
+  });
+
+  it('a gym curator sees no platform notice and sends no shelf', async () => {
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    expect(screen.queryByText(SHELF_WORDS.platformNotice)).toBeNull();
+    fillForm();
+    await click('Save to Library as pending');
+
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.some((call) => 'shelf' in call.body)).toBe(false);
+  });
+
+  it('an empty platform shelf says so, not "this gym"', () => {
+    render(<LibraryTextIntakePanel sources={[]} shelf="platform" />);
+    expect(screen.getByText(SHELF_WORDS.platformEmpty)).toBeTruthy();
+    expect(screen.queryByText(/for this gym yet/)).toBeNull();
+  });
+
+  it('says when the shelf holds more sources than the picker lists', () => {
+    render(<LibraryTextIntakePanel sources={SOURCES} shelf="platform" truncated />);
+    expect(screen.getByText(/Only the newest 2 are listed/)).toBeTruthy();
   });
 });
