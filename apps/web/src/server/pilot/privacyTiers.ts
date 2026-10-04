@@ -488,6 +488,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.training_holds',
   'pilot.athlete_injuries',
   'pilot.athlete_contact_caps',
+  // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
+  'pilot.sparring_exposure',
 ];
 
 /**
@@ -523,4 +525,6 @@ export const PUBLIC_RANKING_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.attendance',
   'pilot.scheduler_attendance',
   'pilot.athlete_milestones',
+  // A per-athlete practice log: a count of entries per child ranks them.
+  'pilot.athlete_mental_skill_entries',
 ];

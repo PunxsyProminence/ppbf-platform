@@ -42,6 +42,10 @@ const FORBIDDEN_TABLES = [
   'pilot.waivers',
   'pilot.documents',
   'pilot.intake_documents',
+  'pilot.athlete_injuries',
+  'pilot.training_holds',
+  'pilot.athlete_contact_caps',
+  'pilot.sparring_exposure',
 ];
 
 /**
