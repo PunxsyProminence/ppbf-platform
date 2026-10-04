@@ -246,6 +246,15 @@ describe('athlete pathway migration', () => {
       // Rolled back: nothing half-applied is left behind.
       const t = await client.query(`select to_regclass('pilot.athlete_pathway_stages') as t`);
       expect(t.rows[0].t).toBeNull();
+
+      // A same-named index of the WRONG shape (inverted predicate) is not
+      // ready either: IF NOT EXISTS would skip it, so the name proves nothing.
+      const wrongShape = migrationSql.replace(
+        /on pilot\.athlete_pathway_minor_allowances\(organization_id, athlete_id\)\s+where withdrawn_at is null;/,
+        'on pilot.athlete_pathway_minor_allowances(organization_id, athlete_id) where withdrawn_at is not null;',
+      );
+      expect(wrongShape).not.toBe(migrationSql);
+      await expect(applyMigrationTransaction(client, wrongShape)).rejects.toThrow('ATHLETE_PATHWAY_NOT_READY');
     } finally {
       await client.end();
     }
@@ -261,7 +270,8 @@ describe('athlete pathway migration', () => {
       const second = randomUUID();
       await client.query('begin');
       await client.query(
-        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2,
+           end_reason = 'replaced', ended_by_account_id = 'acct-pathway-coach', ended_by_role = 'coach'
          where organization_id = $1 and placement_id = $3`,
         [ORG_ID, second, first],
       );
@@ -271,7 +281,8 @@ describe('athlete pathway migration', () => {
       // A superseded row naming a placement that never arrives is refused at commit.
       await client.query('begin');
       await client.query(
-        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2,
+           end_reason = 'replaced', ended_by_account_id = 'acct-pathway-coach', ended_by_role = 'coach'
          where organization_id = $1 and placement_id = $3`,
         [ORG_ID, randomUUID(), second],
       );
@@ -282,7 +293,8 @@ describe('athlete pathway migration', () => {
       const other = await place(client, 'foundation', OTHER_ATHLETE_ID);
       await client.query('begin');
       await client.query(
-        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2,
+           end_reason = 'replaced', ended_by_account_id = 'acct-pathway-coach', ended_by_role = 'coach'
          where organization_id = $1 and placement_id = $3`,
         [ORG_ID, other, second],
       );
@@ -290,7 +302,13 @@ describe('athlete pathway migration', () => {
 
       // Not self-superseded; stamp all or none; not before it was set.
       await expect(client.query(
-        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = placement_id
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = placement_id,
+           end_reason = 'replaced', ended_by_account_id = 'acct-pathway-coach', ended_by_role = 'coach'
+         where organization_id = $1 and placement_id = $2`,
+        [ORG_ID, second],
+      )).rejects.toMatchObject({ code: '23514' });
+      await expect(client.query(
+        `update pilot.athlete_pathway_stages set superseded_at = now()
          where organization_id = $1 and placement_id = $2`,
         [ORG_ID, second],
       )).rejects.toMatchObject({ code: '23514' });
@@ -308,6 +326,33 @@ describe('athlete pathway migration', () => {
       await expect(place(client, 'youth', OTHER_ATHLETE_ID)).rejects.toMatchObject({ code: '23514' });
       await expect(place(client, 'advanced', OTHER_ATHLETE_ID, 'athlete')).rejects.toMatchObject({ code: '23514' });
       await expect(place(client, 'advanced', ATHLETE_ID, 'coach', randomUUID(), '  ')).rejects.toMatchObject({ code: '23514' });
+    });
+  });
+
+  test('an allowance withdrawal ends a placement with no replacement, and says who', async () => {
+    await withMigratedDb('pathway_stage_end', async (client) => {
+      const placed = await place(client, 'foundation');
+      const endedBy = (reason: string, replacement: string | null, account = COACH_ID) => client.query(
+        `update pilot.athlete_pathway_stages
+         set superseded_at = now(), end_reason = $3, ended_by_account_id = $4, ended_by_role = 'coach',
+             superseded_by_placement_id = $5
+         where organization_id = $1 and placement_id = $2`,
+        [ORG_ID, placed, reason, account, replacement],
+      );
+      // 'replaced' must name its replacement; a withdrawal must not.
+      await expect(endedBy('replaced', null)).rejects.toMatchObject({ code: '23514' });
+      await expect(endedBy('allowance_withdrawn', placed)).rejects.toMatchObject({ code: '23514' });
+      await expect(endedBy('expired', null)).rejects.toMatchObject({ code: '23514' });
+      await expect(endedBy('allowance_withdrawn', null, ' ')).rejects.toMatchObject({ code: '23514' });
+
+      await endedBy('allowance_withdrawn', null);
+      const row = await client.query(
+        `select end_reason, ended_by_account_id from pilot.athlete_pathway_stages where placement_id = $1`,
+        [placed],
+      );
+      expect(row.rows[0]).toEqual({ end_reason: 'allowance_withdrawn', ended_by_account_id: COACH_ID });
+      // No current placement remains, so a new one may be made later.
+      await place(client, 'foundation');
     });
   });
 

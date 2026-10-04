@@ -15,8 +15,11 @@
 -- or thresholds. A stage is a coach's placement; a checkpoint is a coach's
 -- confirmation. Nothing advances anyone.
 --
--- APPEND-ONLY HISTORY. A placement is never overwritten: a new placement
--- stamps the old one superseded. A confirmation or an allowance is never
+-- APPEND-ONLY HISTORY. A placement is never overwritten: it stops being
+-- current by a stamp (superseded_at, end_reason, ended_by_*), either because a
+-- new placement replaced it, or because the minor allowance it depended on was
+-- withdrawn -- owner decision (Jason, 2026-10-04): "A) Ends automatically",
+-- stamped with who withdrew the allowance and when. A confirmation or an allowance is never
 -- deleted: undoing one stamps it withdrawn, with who and when. Partial unique
 -- indexes hold "at most one live row" for each.
 --
@@ -49,7 +52,15 @@ create table if not exists pilot.athlete_pathway_stages (
     constraint pilot_athlete_pathway_stages_role_check
       check (set_by_role in ('coach', 'organization_admin', 'admin')),
   set_at              timestamptz not null default now(),
+  -- When this placement stopped being current, why, and who did it.
   superseded_at       timestamptz null,
+  end_reason          text null
+    constraint pilot_athlete_pathway_stages_end_reason_check
+      check (end_reason is null or end_reason in ('replaced', 'allowance_withdrawn')),
+  ended_by_account_id text null,
+  ended_by_role       text null
+    constraint pilot_athlete_pathway_stages_ended_role_check
+      check (ended_by_role is null or ended_by_role in ('coach', 'organization_admin', 'admin')),
   superseded_by_placement_id uuid null,
   constraint pilot_athlete_pathway_stages_pkey primary key (organization_id, placement_id),
   constraint pilot_athlete_pathway_stages_athlete_fk foreign key (organization_id, athlete_id)
@@ -66,11 +77,19 @@ create table if not exists pilot.athlete_pathway_stages (
     deferrable initially deferred,
   constraint pilot_athlete_pathway_stages_not_self_superseded check (
     superseded_by_placement_id is null or superseded_by_placement_id <> placement_id),
-  constraint pilot_athlete_pathway_stages_superseded_pair check (
-    (superseded_at is null) = (superseded_by_placement_id is null)),
+  -- The end stamp is all or none.
+  constraint pilot_athlete_pathway_stages_end_all_or_none check (
+    (superseded_at is null) = (end_reason is null)
+    and (superseded_at is null) = (ended_by_account_id is null)
+    and (superseded_at is null) = (ended_by_role is null)),
+  -- A replacement is named exactly when the reason is 'replaced'.
+  constraint pilot_athlete_pathway_stages_replacement_named check (
+    coalesce(end_reason = 'replaced', false) = (superseded_by_placement_id is not null)),
   constraint pilot_athlete_pathway_stages_superseded_after_set check (
     superseded_at is null or superseded_at >= set_at),
-  constraint pilot_athlete_pathway_stages_account_check check (length(btrim(set_by_account_id)) > 0)
+  constraint pilot_athlete_pathway_stages_account_check check (
+    length(btrim(set_by_account_id)) > 0
+    and (ended_by_account_id is null or length(btrim(ended_by_account_id)) > 0))
 );
 
 -- One current placement per athlete; the rest are history.

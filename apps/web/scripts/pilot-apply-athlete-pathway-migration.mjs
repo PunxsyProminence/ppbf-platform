@@ -67,13 +67,19 @@ const READINESS_QUERY = `
       to_regclass('pilot.athlete_pathway_minor_allowances')
     )
   ),
-  -- Each "one live row" index, looked up on ITS table, must be unique and
-  -- partial; a same-named plain index somewhere else does not count.
+  -- Each "one live row" index, looked up on ITS table, must be unique, valid,
+  -- on exactly the expected key columns, with exactly the expected predicate.
+  -- CREATE INDEX IF NOT EXISTS skips a same-named index of any shape, so the
+  -- name alone proves nothing.
   i as (
-    select ic.relname as indexname, x.indrelid
+    select ic.relname as indexname, x.indrelid,
+           pg_get_expr(x.indpred, x.indrelid) as pred,
+           (select array_agg(a.attname::text order by k.ord)
+              from unnest(x.indkey::int2[]) with ordinality as k(attnum, ord)
+              join pg_attribute a on a.attrelid = x.indrelid and a.attnum = k.attnum) as cols
     from pg_index x
     join pg_class ic on ic.oid = x.indexrelid
-    where x.indisunique and x.indpred is not null
+    where x.indisunique and x.indisvalid
   )
   select
     to_regclass('pilot.athlete_pathway_stages') is not null as stages_ready,
@@ -102,19 +108,26 @@ const READINESS_QUERY = `
     exists (
       select 1 from i where indexname = 'idx_athlete_pathway_stages_current'
         and indrelid = to_regclass('pilot.athlete_pathway_stages')
+        and cols = array['organization_id', 'athlete_id'] and pred = '(superseded_at IS NULL)'
     ) as one_current_stage_ready,
     exists (
       select 1 from i where indexname = 'idx_athlete_pathway_checkpoints_live'
         and indrelid = to_regclass('pilot.athlete_pathway_checkpoints')
+        and cols = array['organization_id', 'athlete_id', 'goal_key'] and pred = '(withdrawn_at IS NULL)'
     ) as one_live_checkpoint_ready,
     exists (
       select 1 from i where indexname = 'idx_athlete_pathway_minor_allowances_live'
         and indrelid = to_regclass('pilot.athlete_pathway_minor_allowances')
+        and cols = array['organization_id', 'athlete_id'] and pred = '(withdrawn_at IS NULL)'
     ) as one_live_allowance_ready,
     exists (
       select 1 from c where conname = 'pilot_athlete_pathway_stages_superseded_by_fk'
         and conrelid = to_regclass('pilot.athlete_pathway_stages')
-    ) as superseded_chain_ready
+    ) as superseded_chain_ready,
+    exists (
+      select 1 from c where conname = 'pilot_athlete_pathway_stages_replacement_named'
+        and conrelid = to_regclass('pilot.athlete_pathway_stages')
+    ) as end_reason_ready
 `;
 
 function assertReadiness(row) {
