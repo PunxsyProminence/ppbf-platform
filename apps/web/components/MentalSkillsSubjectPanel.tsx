@@ -98,7 +98,19 @@ export default function MentalSkillsSubjectPanel({
     );
   }
 
-  const activeName = people.find((person) => person.athlete_id === activeId)?.full_name;
+  // Two athletes can share a name (siblings do); an id tail tells them apart.
+  const nameCounts = new Map<string, number>();
+  for (const person of people) {
+    if (person.full_name) nameCounts.set(person.full_name, (nameCounts.get(person.full_name) ?? 0) + 1);
+  }
+  const labelFor = (person: Person) => {
+    if (!person.full_name) return person.athlete_id;
+    return (nameCounts.get(person.full_name) ?? 0) > 1
+      ? `${person.full_name} (${person.athlete_id.slice(-4)})`
+      : person.full_name;
+  };
+  const activePerson = people.find((person) => person.athlete_id === activeId);
+  const activeName = activePerson ? labelFor(activePerson) : undefined;
 
   return (
     <div className="space-y-[var(--s5)]">
@@ -115,7 +127,7 @@ export default function MentalSkillsSubjectPanel({
             <option value="">{rosterState === 'loading' ? 'Loading...' : 'Choose'}</option>
             {people.map((person) => (
               <option key={person.athlete_id} value={person.athlete_id}>
-                {person.full_name ?? person.athlete_id}
+                {labelFor(person)}
               </option>
             ))}
           </select>

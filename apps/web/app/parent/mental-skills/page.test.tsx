@@ -16,16 +16,20 @@ import type { ReactNode } from 'react';
 
 import ParentMentalSkillsPage from './page';
 
+const mockShellProps: Array<{ allowedRoles?: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles?: string[] }) => {
+    mockShellProps.push({ allowedRoles });
+    return <div>{children}</div>;
+  },
 }));
 jest.mock('next/link', () => ({
   __esModule: true,
   default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => <a href={href}>{children}</a>,
 }));
 
-const KIDS = [
+let KIDS = [
   { athlete_id: 'ath-a', full_name: 'Avery' },
   { athlete_id: 'ath-b', full_name: 'Blake' },
 ];
@@ -88,8 +92,9 @@ async function choose(id: string) {
 
 afterEach(() => jest.restoreAllMocks());
 
-test('shows the approved guardian line', async () => {
+test('only the parent role is admitted, and the approved guardian line shows', async () => {
   await renderPage();
+  expect(mockShellProps.at(-1)?.allowedRoles).toEqual(['parent']);
   expect(screen.getByText(
     'You see what your child saved, in their words. Their coach sees it too. Nothing here can be changed from this page.',
   )).toBeTruthy();
@@ -131,6 +136,18 @@ test('read only: no write is ever sent and there is no form', async () => {
   }
   expect(screen.queryByRole('button')).toBeNull();
   expect(screen.queryByRole('textbox')).toBeNull();
+});
+
+test('two children with the same name are told apart', async () => {
+  const saved = KIDS;
+  KIDS = [{ athlete_id: 'ath-twin-1111', full_name: 'Sam' }, { athlete_id: 'ath-twin-2222', full_name: 'Sam' }];
+  try {
+    await renderPage();
+    const labels = Array.from((screen.getByLabelText('Which child') as HTMLSelectElement).options).map((o) => o.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['Sam (1111)', 'Sam (2222)']));
+  } finally {
+    KIDS = saved;
+  }
 });
 
 test('a failed roster is not shown as "no children"', async () => {

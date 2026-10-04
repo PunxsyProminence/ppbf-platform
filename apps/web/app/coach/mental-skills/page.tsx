@@ -60,7 +60,7 @@ export default function CoachMentalSkillsPage() {
         <MentalSkillsSubjectPanel
           loaders={LOADERS}
           pickerLabel="Which athlete"
-          noneText="No athletes are assigned to you or covered by you right now."
+          noneText="No athletes to show right now."
           rosterErrorText="Your athletes could not be loaded. Reload and try again."
         />
       </div>

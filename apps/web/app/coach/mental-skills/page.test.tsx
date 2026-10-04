@@ -14,9 +14,13 @@ import type { ReactNode } from 'react';
 
 import CoachMentalSkillsPage from './page';
 
+const mockShellProps: Array<{ allowedRoles?: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles?: string[] }) => {
+    mockShellProps.push({ allowedRoles });
+    return <div>{children}</div>;
+  },
 }));
 
 function installFetch(): jest.Mock {
@@ -56,6 +60,8 @@ test('reads the chosen athlete through the staff routes, goals from active block
   await act(async () => {
     render(<CoachMentalSkillsPage />);
   });
+  // 'admin' is how the shell admits organization_admin (buildingMap.ts role collapse).
+  expect(mockShellProps.at(-1)?.allowedRoles).toEqual(['coach', 'admin']);
   expect(screen.getByText('What the athlete saved, in their words. Their guardian sees the same. Read-only.')).toBeTruthy();
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
