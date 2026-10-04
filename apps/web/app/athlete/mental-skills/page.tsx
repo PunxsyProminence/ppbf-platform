@@ -16,6 +16,7 @@ import {
   IMAGERY_SOURCE,
   IMAGERY_STEPS,
   SELF_TALK_EXPLAINER,
+  VISIBILITY_LINES,
   type SelfTalkCueKind,
 } from '@/src/lib/mentalSkills/content';
 
@@ -179,7 +180,7 @@ export default function AthleteMentalSkillsPage() {
           <p className="t-eyebrow">Athlete Development</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Mental Skills</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            Your self-talk cue and your imagery sessions.
+            Your self-talk cue and your imagery sessions. {VISIBILITY_LINES.athlete}
           </p>
           <Link href="/athlete/dashboard" className="btn btn--ghost mt-[var(--s4)]">
             Back to your workspace
