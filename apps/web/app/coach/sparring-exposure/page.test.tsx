@@ -390,7 +390,9 @@ describe('contact stage and the coach-set cap (map item 15)', () => {
   test.each([
     ['an unknown cap', { cap_state: 'unknown', cap: null, hard_open_days_in_7: 0, through_day: '2026-10-03' }],
     ['a reply without cap_check', 'omit'],
-    ['a malformed cap_check', { cap_state: 'set', cap: null }],
+    // Malformed in ONE way only (a "set" cap with no cap), so only that guard can catch it.
+    ['a "set" cap_check with no cap', { cap_state: 'set', cap: null, hard_open_days_in_7: 0, through_day: '2026-10-03' }],
+    ['a cap_check with a non-numeric count', { cap_state: 'none', cap: null, hard_open_days_in_7: 'two', through_day: '2026-10-03' }],
   ])('%s is "could not be read" -- never "no cap"', async (_label, capCheck) => {
     await renderAndPick({ capCheck });
     const section = screen.getByTestId('spar-cap').textContent ?? '';
