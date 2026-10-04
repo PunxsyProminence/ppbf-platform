@@ -181,6 +181,8 @@ function localAccountRow(accountId: string, role: string) {
     has_master_shadow_access: false,
     organization_status: 'active',
     holds_board_seat: false,
+    // resolvePrincipal reads the home role beside the membership role; no drift here.
+    home_role: role,
   };
 }
 

@@ -164,6 +164,226 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-019 -- Adult pathway write roles: coaches and organization admins may place stages, tick goals and switch the minor allowance (extends OD-2026-10-04-002 to organization admins)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the adult
+pathway lane, "Adult pathway stages (Foundation -> Elite)"
+(`~/.claude/projects/C--Dev/d32d7163-448d-4f65-a425-7b2496e44dcc.jsonl`, tool use
+`toolu_012i9XzNZ243M7LzHNDpj1UB`; asked 2026-10-04T15:59:54.120Z, answered
+2026-10-04T16:00:08.351Z, 14 seconds later). Read by script from that transcript
+(records pass, 2026-10-04). Extends OD-2026-10-04-002, whose "Goals and caveat
+wording" ruling says each goal is "ticked only by a coach": this answer extends
+that to organization admins for the adult pathway. Edits no earlier entry.
+
+Asked: "Pathway write roles: who may place an athlete on a stage, tick a goal,
+and switch the minor allowance on/off? A) Coaches AND organization admins (the
+ppbf@ gym-admin account), same as development blocks (Recommended). B) Coaches
+only -- the organization admin account cannot do it. C) Coaches for stages and
+goals, but only an organization admin may switch the minor allowance on/off."
+The question's plain-English part quotes the recorded rule "ticked only by a
+coach". Jason chose *"A) Coaches + org admin (Recommended)"*, option text
+"Matches development blocks. ppbf@ can set stages, tick goals and switch the kid
+allowance." **Ruling: coaches and organization admins may place an athlete on a
+stage, tick a goal, and switch the minor allowance on and off.** The other
+options were "B) Coaches only" and "C) Admin signs off minors".
+
+---
+
+## OD-2026-10-04-018 -- Adult pathway: switching a minor's allowance off ends their placement automatically, with who and when recorded (extends OD-2026-10-04-010)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the adult
+pathway lane, "Adult pathway stages (Foundation -> Elite)"
+(`~/.claude/projects/C--Dev/d32d7163-448d-4f65-a425-7b2496e44dcc.jsonl`, tool use
+`toolu_01RoJp8GBqkAYdeQDnyGMdEj`; asked 2026-10-04T14:55:17.079Z, answered
+2026-10-04T15:58:32.947Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-010 (minors only with a coach flag); edits no
+earlier entry.
+
+Asked: "Allowance withdrawal effect: when a coach switches OFF a minor's
+adult-pathway allowance, what happens to that minor's current stage placement?
+A) It ends automatically, stamped with who withdrew the allowance and when;
+history is kept (Recommended). B) It stays, but the app blocks any new placement
+or goal tick until the allowance is back on. C) The coach must choose, at the
+moment of switching off, whether to end it." Jason chose *"A) Ends automatically
+(Recommended)"*, option text "Turning the switch off takes the kid off the
+ladder; who and when are recorded; past stages and ticks stay in history."
+**Ruling: when a coach switches off a minor's adult-pathway allowance, the
+minor's current stage placement ends automatically, stamped with who withdrew
+it and when; past stages and goal ticks stay in history.** The other options
+were "B) Frozen in place" and "C) Coach chooses each time".
+
+---
+
+## OD-2026-10-04-017 -- Sparring cap editor: its own coach page, not the Sports Medicine board (supersedes the placement part of OD-2026-10-04-013)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the sparring
+caps lane, "Sparring stages + coach-set caps (after sparring screen)"
+(`~/.claude/projects/C--Dev/42a7f511-6af8-4339-828d-fed4471df7fe.jsonl`, tool use
+`toolu_01AKkpr78oF7crnJCQfbw4Vf`; asked 2026-10-04T14:59:41.301Z, answered
+2026-10-04T15:57:43.906Z). Read by script from that transcript (records pass,
+2026-10-04). Supersedes the placement part of OD-2026-10-04-013 (the cap panel
+stays on the clearance board); the note-label part of OD-2026-10-04-013 stands.
+Edits no earlier entry.
+
+**What the earlier ask said.** The OD-2026-10-04-013 question described the
+2026-08-15 rule of the clearance board only as one that "bars clinical notes".
+This question corrects that: "the recorded 2026-08-15 rule for the Sports
+Medicine board is "clearance + holds only", not just "no clinical notes" as I put
+it when I asked about the note." So the earlier choice (keep the note, labelled,
+on the board) was made on the narrower statement of the rule.
+
+Asked: "Where should the Sparring cap editor live? (A, Recommended) Its own coach
+page, /coach/sparring-caps, linked from Sports Medicine like /coach/injuries; the
+board's rule stays untouched, and the labelled note (your OD-013 choice) goes with
+the editor. (B) Keep it on the Sports Medicine board: you widen the 2026-08-15
+rule to "clearance, holds and sparring caps"." Jason chose *"Own page
+(Recommended)"*, option text "/coach/sparring-caps with a link from Sports
+Medicine and a building-map door; the 2026-08-15 rule stays as written. About 150
+more lines in this PR." **Ruling: the sparring cap editor lives on its own coach
+page, /coach/sparring-caps, linked from Sports Medicine; the 2026-08-15 rule
+("clearance + holds only") stays as written; the labelled staff note moves with
+the editor.** The other option was "Keep on the board".
+
+---
+
+## OD-2026-10-04-016 -- Body mass fast-change flag: the flag sentence has no disclaimer, and it also fires on any two weigh-ins within 7 days that differ by more than 5% (extends OD-2026-10-04-006)
+
+**Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (two questions) in
+the body mass lane, "Body mass at check-in + fast-change flag"
+(`~/.claude/projects/C--Dev/d5d94cf1-c5b0-4b8a-9150-9c395d0126a7.jsonl`, tool use
+`toolu_012hjyFLASW3kZbC4hE1jG79`; asked 2026-10-04T15:00:21.879Z, answered
+2026-10-04T15:57:14.660Z). Read by script from that transcript (records pass,
+2026-10-04). Extends OD-2026-10-04-006 (flag a change of more than 5% in 7 days);
+edits no earlier entry. An earlier version of the flag-text question (tool use
+`toolu_015NFuKEtbCmSdqJmqEhuGHY`, asked 2026-10-04T03:29:18.527Z) has no recorded
+answer: the transcript shows "the session ended before this call's result was
+recorded". This entry rests on the re-ask.
+
+**Flag sentence.** Asked: "Exact flag sentence coaches and youth parents will
+see: "Weight down 6.0% in 7 days (132.3 lb -> 124.3 lb). Check in with the
+athlete." Recommended: this sentence as-is, without an added "A prompt, not a
+diagnosis" line (your rules say no added disclaimers)." Jason chose *"As-is, no
+disclaimer (Recommended)"*, option text ""Weight down X% in 7 days (A lb -> B lb).
+Check in with the athlete."" **Ruling: the flag reads "Weight down X% in 7 days (A
+lb -> B lb). Check in with the athlete." with no "A prompt, not a diagnosis"
+line.** The other option was "Add the disclaimer".
+
+**Comparison window.** Asked: "Flag comparison window. Built: latest weigh-in vs
+the one closest to 7 days earlier (+-24 h) -- the existing MVP-12 formula. Gap a
+reviewer found: a cut between irregular check-ins (Mon 70 kg -> Fri 66 kg, -5.7%
+in 4 days) does not flag if there is no weigh-in 6-8 days back. Option B adds:
+also flag when any two weigh-ins within the last 7 days differ by more than 5%."
+Jason chose *"B: any >5% within 7 days (Recommended)"*, option text "Also flag the
+biggest change between any two weigh-ins inside the last 7 days." **Ruling: the
+flag also fires when the biggest change between any two weigh-ins inside the last
+7 days is more than 5%, in addition to the comparison with the weigh-in about 7
+days earlier.** The other option was "A: keep 7-day-back only".
+
+---
+
+## OD-2026-10-04-015 -- Load-up plus wellness-down coach prompt (Rule 7): energy or soreness is the "down" signal, "Consider whether a lighter week fits" wording, new "recovery" gap type, database change first
+
+**Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (three questions)
+and a typed reply in the change trigger lane, "Change trigger: load up + wellness
+down (after load flag)"
+(`~/.claude/projects/C--Dev/3a16e68d-4d27-471c-aad5-646cb81c88c6.jsonl`, tool use
+`toolu_019SCjZAfEwqepUZ2iitytWE`; asked 2026-10-04T15:47:03.502Z, answered
+2026-10-04T15:56:43.785Z; typed reply user message uuid
+`c8de746c-6a2a-40d2-9980-6b5724fb541b`, 2026-10-04T15:59:08.552Z). Read by
+script from that transcript (records pass, 2026-10-04). Builds on
+OD-2026-10-04-012 (the 2.0x load-jump prompt, Rule 6); edits no earlier entry.
+
+**Down signal.** Asked: "Rule 7 'load_up_wellness_down' fires when Rule 6
+load_jumped holds (last 7 days >= 2.0x usual week). Which 'down' signal must hold
+in the same window?" Jason chose *"Energy or soreness (Recommended)"*, option text
+"athlete check-in energy fell, or soreness rose, by >=1 point: last-7-day avg vs
+prior-28-day avg, >=2 check-ins in each, items never blended; Rule 1 readiness
+drop also counts." **Ruling: the second condition is a fall in check-in energy or
+a rise in soreness of at least 1 point (last-7-day average against the prior
+28-day average, at least 2 check-ins in each, items never blended); a readiness
+drop (Rule 1) also counts.** The other options were "Any wellness item worse" and
+"Readiness only (reuse Rule 1)".
+
+**Wording.** Asked: "suggested_description text for Rule 7 (evidence shown,
+labelled unvalidated)." Jason chose *"Consider a lighter week (Recommended)"*,
+option text "'Load up, wellness down: 640 this week vs a usual 300 (2.1x); energy
+4.0 -> 2.5. Session RPE x minutes, unvalidated. Consider whether a lighter week
+fits.'" **Ruling: the card shows the numbers, is labelled unvalidated, and ends
+"Consider whether a lighter week fits."** The other options were "Worth a look"
+and "Consider a deload".
+
+**Gap type.** Asked: "gap_type when the coach confirms. 'endurance' (existing
+bucket, shared with Rules 1 and 6; Rule 7 replaces their card for that athlete)
+or a new 'recovery' value (check-constraint migration, separate high-risk
+lane)." Jason chose *"New 'recovery' type"*, option text "add 'recovery' to the
+progression_gaps check constraint first (migration lane, Opus), then this rule.
+Plain: cleaner label, but waits on a database change." The other option was
+"endurance (Recommended)".
+
+**Order of work.** The lane then put it as a decision (assistant message uuid
+`ab6cd6ee-a347-4953-8f4f-a9f07d4d636e`, 2026-10-04T15:57:02.598Z): "A. Database
+change first (recommended, and what you picked). ... B. Ship now under
+"endurance", switch later." Jason replied, verbatim: *"A"* (2026-10-04T15:59:08Z).
+**Ruling: the "recovery" category is added by a database change first, and the
+Rule 7 card is built on it afterwards; it does not ship under "endurance".**
+
+---
+
+## OD-2026-10-04-014 -- Strength and conditioning block templates: coach-chosen templates lift the "no suggested plan" ruling; %1RM ranges shown labelled [AI-H]; hidden for minors unless the coach ticks an unsaved box
+
+**Provenance: PRIMARY (typed replies and a typed confirmation, not an
+AskUserQuestion).** Jason's replies in the S&C templates lane, "S&C block
+templates (strength -> power) for coaches"
+(`~/.claude/projects/C--Dev/12116a5d-a4bd-45b4-84c6-555246c02af5.jsonl`). The lane
+asked Q1-Q3 in its message uuid `d1f8fc7f-6553-4b8b-bdf6-43be9507fe56`
+(2026-10-04T03:00:47.526Z). Jason's replies, verbatim: *"Q2 b Q3 b explaoQ1"*
+(user message uuid `67b2fc2e-f154-4e52-9216-d2c7bfd79a0c`,
+2026-10-04T03:17:30.195Z), then *"A"* (uuid
+`4cb42fb1-a9b8-43c9-82e2-617036750cf6`, 2026-10-04T03:29:01.829Z), then, to the
+lane's confirmation question of 2026-10-04T14:34:33.514Z (uuid
+`6b382210-ae42-4325-95fc-5074d849ae7f`: "Confirm: Q1 = A and Q4 = A? ... Yes /
+change."), *"Confirm"* (uuid `86b96f72-ea75-48bf-9178-b35115088632`,
+2026-10-04T16:02:22.442Z). Read by script from that transcript (records pass,
+2026-10-04). New; edits no earlier entry. Built in #1198 (open at the time of
+this record).
+
+**Q1, templates and the earlier development-block ruling.** The lane asked: "Does
+adding block templates lift your earlier ruling on development blocks?" with "A
+(Recommended): Lift it for coach-chosen templates only. The app never picks one,
+never infers one from dates, and stores only the coach's edited text." and "B:
+Keep the ruling and drop this item." Jason's "explaoQ1" asked for Q1 to be
+explained; the lane explained it and re-offered A (Recommended) and B. The later
+"A" came after that explanation and after the lane's new Q4, and Jason's
+"Confirm" answered the lane's "Q1 = A and Q4 = A". **Ruling: Q1 = A: the earlier
+ruling is lifted for templates a coach chooses; the app never picks one or infers
+one from dates, and stores only the coach's edited text.**
+
+**Q2, load numbers.** The lane asked whether to keep the refusal on load numbers:
+"A (Recommended): Keep it. The coach writes in any weights." and "B: Lift it, and
+the templates show %1RM ranges labelled [AI-H]." Jason: "Q2 b". **Ruling: Q2 = B:
+the templates show %1RM ranges labelled [AI-H] (an unsourced AI rule of
+thumb).**
+
+**Q3, minors.** The lane asked: "A (Recommended): Hide templates for minors
+entirely, for now." or "B: Hide them by default, with a per-athlete opt-in a
+coach can turn on." Jason: "Q3 b". **Ruling: Q3 = B: templates are hidden for
+minors (and for an athlete with no date of birth on file) by default, with a
+per-athlete opt-in a coach can turn on.**
+
+**Q4, where the opt-in lives.** The lane asked (uuid
+`17f6c163-10ea-481a-935a-c4c2bf81d45d`, 2026-10-04T03:17:42.749Z): "A
+(Recommended): A checkbox on the page ("Show templates for this athlete") that
+the coach ticks each time and that isn't saved. No database change." or "B: A
+saved per-athlete setting. That needs a database migration on minors' data".
+**Ruling: Q4 = A: an unsaved checkbox the coach ticks each time; no database
+change.**
+
+**Final pairing.** Q1 = A, Q2 = B, Q3 = B, Q4 = A, confirmed by "Confirm". The
+transcript does not show whether the single "A" of 03:29:01Z was meant for Q1, Q4
+or both; the confirmation question named both and Jason confirmed it.
+
+---
+
 ## OD-2026-10-04-013 -- Sparring cap staff note: it stays on the clearance board, labelled as holding no medical details
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the sparring

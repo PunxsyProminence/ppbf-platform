@@ -7,7 +7,7 @@ import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
-import { pinLoginPermitted, usesPin } from './credentialPolicy';
+import { pinLoginPermitted, requiredCredentialFor, usesPin } from './credentialPolicy';
 import {
   accountDeletedSql,
   deletedLoginConflict,
@@ -92,9 +92,48 @@ export interface PilotPrincipal {
   pinAuthPermitted?: boolean;
 }
 
+/**
+ * Whether a session signed in under the account's home role may act with
+ * `sessionRole`, the membership's. The credential a sign-in demanded was the
+ * home role's (every sign-in path asks credentialPolicy about pilot.accounts.role),
+ * so the membership role may not need a stronger one: a parent's magic link
+ * must not become an organization_admin session, which needs Microsoft. A
+ * Microsoft sign-in is enough for a magic-link role; nothing else crosses. A
+ * membership naming platform_owner is honoured only for the platform owner's
+ * own account row.
+ */
+export function sessionCredentialFits(input: {
+  homeRole: PilotRole;
+  sessionRole: PilotRole;
+  isPlatformOwner: boolean;
+}): boolean {
+  if (input.sessionRole === 'platform_owner' && !input.isPlatformOwner) return false;
+  if (input.sessionRole === input.homeRole) return true;
+  const proven = requiredCredentialFor({ role: input.homeRole });
+  const needed = requiredCredentialFor({ role: input.sessionRole });
+  return proven === needed || (proven === 'microsoft' && needed === 'magic_link');
+}
+
+/**
+ * The role on the account's ACTIVE membership in its home organization, as a
+ * scalar subselect over pilot.accounts `alias`. Every sign-in mints its session
+ * in the home organization, and resolvePrincipal reads the session's role from
+ * that membership, so the principal a sign-in returns reads it too. Null when
+ * there is no active membership; such a session resolves to nobody anyway.
+ */
+export function homeMembershipRoleSql(alias: string): string {
+  return `(select om.role
+     from pilot.organization_memberships om
+     where om.account_id = ${alias}.account_id
+       and om.organization_id = ${alias}.organization_id
+       and om.active_flag = true)`;
+}
+
 interface AccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
+  /** homeMembershipRoleSql: the role the session acts with. */
+  membership_role?: PilotRole | null;
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
@@ -111,6 +150,8 @@ interface AccountRow extends AccountDeletionFlag {
 interface FederatedAccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
+  /** homeMembershipRoleSql: the role the session acts with. */
+  membership_role?: PilotRole | null;
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
@@ -183,6 +224,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status,
+       ${homeMembershipRoleSql('a')} as membership_role,
        -- A scalar subselect, not a join: a person may hold more than one seat,
        -- so joining pilot.board_seats would multiply this account row and
        -- change what queryOne returns. exists answers the only question the
@@ -277,6 +319,17 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
+  // The session acts with the membership role (resolvePrincipal); the PIN
+  // must be a credential that role admits too.
+  if (data.membership_role && !sessionCredentialFits({
+    homeRole: data.role,
+    sessionRole: data.membership_role,
+    isPlatformOwner: data.is_platform_owner,
+  })) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'membership_role_credential_mismatch' });
+    return null;
+  }
+
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
   const expiresAt = computeSessionExpiry();
@@ -290,7 +343,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     token,
     principal: {
       accountId: data.account_id,
-      role: data.role,
+      role: data.membership_role ?? data.role,
       organizationId,
       athleteId: data.athlete_id,
       sessionToken: token,
@@ -318,7 +371,8 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
        a.active_flag,
        ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
-       o.status as organization_status
+       o.status as organization_status,
+       ${homeMembershipRoleSql('a')} as membership_role
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where lower(a.login_email) = $1
@@ -353,6 +407,20 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     throw new Error('Forbidden: platform owner identity mismatch');
   }
 
+  // The session acts with the membership role (resolvePrincipal), so that
+  // role must be one this Microsoft sign-in admits, and a platform_owner
+  // membership is asked the same identity question as the account row.
+  if (data.membership_role && !sessionCredentialFits({
+    homeRole: data.role,
+    sessionRole: data.membership_role,
+    isPlatformOwner: data.is_platform_owner,
+  })) {
+    throw new Error('Forbidden: membership role does not fit this sign-in');
+  }
+  if (data.membership_role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
+    throw new Error('Forbidden: platform owner identity mismatch');
+  }
+
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
   const expiresAt = computeSessionExpiry();
@@ -366,7 +434,7 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     token,
     principal: {
       accountId: data.account_id,
-      role: data.role,
+      role: data.membership_role ?? data.role,
       organizationId,
       athleteId: data.athlete_id,
       sessionToken: token,
@@ -388,7 +456,11 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
 
   const row = await queryOne<{
     account_id: string;
+    /** The role on the ACTIVE membership in the session's organization. */
     role: PilotRole;
+    /** pilot.accounts.role: the account's home role, never the session's. */
+    home_role: PilotRole;
+    home_organization_id: string | null;
     organization_id: string | null;
     is_platform_owner: boolean;
     athlete_id: string | null;
@@ -402,7 +474,15 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   }>(
     `select
        a.account_id,
-       a.role,
+       -- THE ROLE COMES FROM THE MEMBERSHIP, the row joined below for the
+       -- session's own organization. pilot.accounts.role is the account's
+       -- HOME role: read here before, it made an account that is
+       -- organization_admin at home organization_admin in a session scoped to
+       -- a gym where it is a coach (sessionRoleFromMembership.pg.test.ts). The
+       -- membership is what that gym granted, so it can never reach further.
+       om.role,
+       a.role as home_role,
+       a.organization_id as home_organization_id,
        coalesce(st.organization_id, a.organization_id) as organization_id,
        a.is_platform_owner,
        a.athlete_id,
@@ -451,11 +531,14 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // production on 2026-08-07 inert rather than exploitable: every one was
   // ppbf_local with a non-athlete role, so no session they held could survive
   // this branch.
+  // Both roles are asked: the session's, and the home role the PIN was
+  // issued under. Either one not admitted to a PIN fails the session closed.
+  const pinPolicyContext = { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: row.holds_board_seat };
   if (
     row.auth_provider === 'ppbf_local'
-    && !pinLoginPermitted(
-      { role: row.role },
-      { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: row.holds_board_seat },
+    && (
+      !pinLoginPermitted({ role: row.role }, pinPolicyContext)
+      || !pinLoginPermitted({ role: row.home_role }, pinPolicyContext)
     )
   ) {
     await query(
@@ -474,6 +557,34 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   }
   if (!row.is_platform_owner && row.organization_status && row.organization_status !== 'active') {
     return null;
+  }
+
+  // The session was signed in under the home role's credential; the
+  // membership role may not need a stronger one (sessionCredentialFits).
+  if (!sessionCredentialFits({
+    homeRole: row.home_role,
+    sessionRole: row.role,
+    isPlatformOwner: row.is_platform_owner,
+  })) {
+    console.warn('pilot-auth session refused: membership role does not fit its sign-in', {
+      accountId: row.account_id,
+      organizationId,
+      homeRole: row.home_role,
+      membershipRole: row.role,
+    });
+    return null;
+  }
+
+  // In the home organization the two rows should agree: every app writer sets
+  // both. When they do not, the membership still decides (it is that gym's
+  // grant); the disagreement is logged so it can be found and repaired.
+  if (organizationId === row.home_organization_id && row.role !== row.home_role) {
+    console.warn('pilot-auth session role differs from home role', {
+      accountId: row.account_id,
+      organizationId,
+      homeRole: row.home_role,
+      membershipRole: row.role,
+    });
   }
 
   return {
@@ -1227,9 +1338,9 @@ export async function upsertOrganizationMembership(accountId: string, organizati
       throw new Error('Missing account_id');
     }
 
-    // pilot.accounts.role/organization_id are read live on every request
-    // (resolvePrincipal doesn't scope role to the session's own
-    // organization), so ANY membership mutation here can change what an
+    // pilot.accounts.role/organization_id and the membership rows are read
+    // live on every request (resolvePrincipal), so ANY membership mutation
+    // here can change what an
     // existing session resolves to -- a brand-new membership in another
     // organization, a role change, a reactivation, or a deactivation all
     // rewrite those columns. Fail closed and always revoke rather than try
