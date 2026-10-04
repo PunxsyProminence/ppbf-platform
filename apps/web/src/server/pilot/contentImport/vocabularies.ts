@@ -41,6 +41,8 @@ export const VOCABULARIES = {
     [
       { table: 'drill_library', constraint: 'pilot_drill_library_contact_check' },
       { table: 'workout_template_items', constraint: 'pilot_wti_contact_level_check' },
+      // A coach's per-athlete cap names a rung of this same ladder.
+      { table: 'athlete_contact_caps', constraint: 'pilot_athlete_contact_caps_stage_check' },
     ],
   ),
   // competence_cohorts :123-124. Narrower than contact_level on purpose: a
