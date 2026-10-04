@@ -15,8 +15,9 @@
 //     footage, clip, set or event still removes them
 //   * every vocabulary CHECK carries exactly the ontology.ts array
 //   * a set holds only its own version's points: a 0.2 set refuses
-//     solar_plexus, a 0.3 set takes it; a re-run on a database holding the
-//     0.2-only state reaches 0.3
+//     solar_plexus, a 0.3 set takes it; a 0.4 set refuses both ankles; a
+//     re-run on a database holding the 0.2-only state reaches 0.3, and one
+//     holding the 0.3 state reaches 0.4
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -118,7 +119,18 @@ async function loadRunner(): Promise<{ applyMigrationTransaction: ApplyFn; run: 
  * every 0.3 literal turned into 0.2, which leaves valid SQL that admits 0.2
  * only. Stands in for a database the migration reached before 0.3 existed. */
 function asBefore03(sql: string): string {
-  return sql.replaceAll(", 'solar_plexus'", '').replaceAll("'boxing-ontology-0.3'", "'boxing-ontology-0.2'");
+  return asBefore04(sql)
+    .replaceAll(", 'solar_plexus'", '')
+    .replaceAll("'boxing-ontology-0.3'", "'boxing-ontology-0.2'");
+}
+
+/** The migration as it stood before boxing-ontology-0.4: no 0.4 clause in the
+ * points guard and no 0.4 in the moments gate. Stands in for a database the
+ * migration reached before 0.4 existed. */
+function asBefore04(sql: string): string {
+  return sql
+    .replace(/\n\s+or \(parent_version = 'boxing-ontology-0\.4'\n\s+and new\.point_code not in \([^)]*\)\)/, '')
+    .replaceAll(", 'boxing-ontology-0.4'", '');
 }
 
 /** A database with every prerequisite applied and the body-points migration NOT applied. */
@@ -420,7 +432,7 @@ describe('the runner', () => {
     const client = await prerequisiteDatabase('ppbf_test_calib_body_before_03');
     try {
       const sql = await readMigration(BODY_POINTS_SQL);
-      expect(asBefore03(sql)).not.toMatch(/, 'solar_plexus'|ontology-0\.3/);
+      expect(asBefore03(sql)).not.toMatch(/, 'solar_plexus'|ontology-0\.[34]/);
       await client.query(asBefore03(sql));
       const runner = await loadRunner();
       await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
@@ -460,6 +472,48 @@ describe('the runner', () => {
         'CALIBRATION_BODY_POINTS_NOT_READY',
       );
       await runner.applyMigrationTransaction(client, sql);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a re-run on a database holding the 0.3 state reaches 0.4; readiness tells the two apart', async () => {
+    const client = await prerequisiteDatabase('ppbf_test_calib_body_before_04');
+    try {
+      const sql = await readMigration(BODY_POINTS_SQL);
+      expect(asBefore04(sql)).toContain("'boxing-ontology-0.3'");
+      expect(asBefore04(sql)).not.toMatch(/ontology-0\.4/);
+      await client.query(asBefore04(sql));
+      const runner = await loadRunner();
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+
+      await runner.applyMigrationTransaction(client, sql);
+      for (const fn of ['calibration_body_moments_guard', 'calibration_body_points_guard']) {
+        const result = await client.query<{ def: string }>(
+          'select pg_get_functiondef($1::regprocedure) as def',
+          [`pilot.${fn}()`],
+        );
+        expect(result.rows[0].def).toContain(`'${ontology.BOXING_ONTOLOGY_VERSION_0_4}'`);
+      }
+
+      // Either guard alone left at 0.3 is still not ready.
+      for (const [fn, endMarker] of [
+        ['calibration_body_moments_guard', '$pilot_calibration_body_moments_guard$;'],
+        ['calibration_body_points_guard', '$pilot_calibration_body_points_guard$;'],
+      ]) {
+        const start = sql.indexOf(`create or replace function pilot.${fn}()`);
+        expect(start).toBeGreaterThan(-1);
+        const end = sql.indexOf(endMarker, sql.indexOf('begin', start)) + endMarker.length;
+        const before = asBefore04(sql.slice(start, end));
+        expect(before).not.toMatch(/ontology-0\.4/);
+        await client.query(before);
+        await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+          'CALIBRATION_BODY_POINTS_NOT_READY',
+        );
+        await runner.applyMigrationTransaction(client, sql);
+      }
     } finally {
       await client.end();
     }
@@ -537,6 +591,7 @@ describe('a complete event', () => {
   test.each([
     ['boxing-ontology-0.2', 24],
     ['boxing-ontology-0.3', 25],
+    ['boxing-ontology-0.4', 23],
   ] as const)('a landed punch under %s holds three moments, %i points on each', async (version, perMoment) => {
     const set = await newSet(version);
     const eventId = await punch(set);
@@ -581,6 +636,41 @@ describe('a set holds only its own version\'s points', () => {
     await insertPoint(current.setId, currentMoment, 'solar_plexus', 'placed', 0.5, 0.4);
     await insertPoint(current.setId, currentMoment, 'mid_hip', 'not_visible', null, null);
     expect(await countFor('calibration_body_points', current.setId)).toBe(2);
+  });
+
+  test('a 0.4 set refuses both ankles; a 0.3 set still takes them', async () => {
+    const dropped = await newSet('boxing-ontology-0.4');
+    const droppedMoment = await insertMoment(dropped, await punch(dropped));
+    for (const ankle of ['left_ankle', 'right_ankle']) {
+      await expect(insertPoint(dropped.setId, droppedMoment, ankle, 'placed', 0.5, 0.9)).rejects.toThrow(
+        'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION',
+      );
+      await expect(insertPoint(dropped.setId, droppedMoment, ankle, 'not_visible', null, null)).rejects.toThrow(
+        'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION',
+      );
+    }
+    expect(await countFor('calibration_body_points', dropped.setId)).toBe(0);
+    await insertPoint(dropped.setId, droppedMoment, 'left_heel', 'placed', 0.4, 0.95);
+    await insertPoint(dropped.setId, droppedMoment, 'solar_plexus', 'placed', 0.5, 0.4);
+    expect(await countFor('calibration_body_points', dropped.setId)).toBe(2);
+
+    const kept = await newSet('boxing-ontology-0.3');
+    const keptMoment = await insertMoment(kept, await punch(kept));
+    await insertPoint(kept.setId, keptMoment, 'left_ankle', 'placed', 0.4, 0.9);
+    await insertPoint(kept.setId, keptMoment, 'right_ankle', 'not_visible', null, null);
+    expect(await countFor('calibration_body_points', kept.setId)).toBe(2);
+  });
+
+  test('a 0.3 set holding moments cannot be relabelled 0.4', async () => {
+    const set = await newSet('boxing-ontology-0.3');
+    await insertMoment(set, await punch(set));
+    await expect(
+      db.query(
+        `update pilot.calibration_annotation_sets set ontology_version = 'boxing-ontology-0.4'
+          where organization_id = $1 and annotation_set_id = $2`,
+        [ORG_ID, set.setId],
+      ),
+    ).rejects.toThrow('CALIBRATION_SET_HAS_BODY_MOMENTS');
   });
 
   test('a 0.3 set holding moments cannot be relabelled 0.2', async () => {

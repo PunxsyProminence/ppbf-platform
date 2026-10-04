@@ -69,12 +69,18 @@ export const BOXING_ONTOLOGY_VERSION_0_2 = 'boxing-ontology-0.2' as const;
  * new point is the bottom tip of the breastbone). 25 points. */
 export const BOXING_ONTOLOGY_VERSION_0_3 = 'boxing-ontology-0.3' as const;
 
+/** 0.3 unchanged, less two body points: left_ankle and right_ankle (Jason
+ * 2026-10-04, "Drop ankles in app"; OD-2026-10-04-021). The leg runs from the
+ * knee straight to the heel. 23 points. */
+export const BOXING_ONTOLOGY_VERSION_0_4 = 'boxing-ontology-0.4' as const;
+
 /** Every version this build knows the meaning of. Knowing a version is not the
  * same as being able to label it -- see ANNOTATABLE_ONTOLOGY_VERSIONS. */
 export const SUPPORTED_BOXING_ONTOLOGY_VERSIONS = [
   BOXING_ONTOLOGY_VERSION_0_1,
   BOXING_ONTOLOGY_VERSION_0_2,
   BOXING_ONTOLOGY_VERSION_0_3,
+  BOXING_ONTOLOGY_VERSION_0_4,
 ] as const;
 export type BoxingOntologyVersion = (typeof SUPPORTED_BOXING_ONTOLOGY_VERSIONS)[number];
 
@@ -96,11 +102,12 @@ export const ANNOTATABLE_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
 export const BODY_POINT_ONTOLOGY_VERSIONS = [
   BOXING_ONTOLOGY_VERSION_0_2,
   BOXING_ONTOLOGY_VERSION_0_3,
+  BOXING_ONTOLOGY_VERSION_0_4,
 ] as const satisfies readonly BoxingOntologyVersion[];
 export type BodyPointOntologyVersion = (typeof BODY_POINT_ONTOLOGY_VERSIONS)[number];
 
 /** What a new study is stamped with by the routes and the bootstrap. Stays 0.1
- * until a body-point version (0.2 or 0.3) can be labelled end to end, so no
+ * until a body-point version (0.2, 0.3 or 0.4) can be labelled end to end, so no
  * study is created that the current screen cannot label. ontology.test.ts
  * holds it inside ANNOTATABLE_ONTOLOGY_VERSIONS. */
 export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_1;
@@ -442,9 +449,37 @@ export const BODY_POINTS_0_2 = [
  * position. */
 export const BODY_POINTS_0_3 = [...BODY_POINTS_0_2, 'solar_plexus'] as const;
 
+/** 0.4's 23: 0.3's 25 in the same order, less left_ankle and right_ankle
+ * (OD-2026-10-04-021). solar_plexus stays last. */
+export const BODY_POINTS_0_4 = [
+  'nose',
+  'chin',
+  'neck',
+  'mid_hip',
+  'left_shoulder',
+  'left_elbow',
+  'left_wrist',
+  'left_glove',
+  'left_hip',
+  'left_knee',
+  'left_heel',
+  'left_big_toe',
+  'left_small_toe',
+  'right_shoulder',
+  'right_elbow',
+  'right_wrist',
+  'right_glove',
+  'right_hip',
+  'right_knee',
+  'right_heel',
+  'right_big_toe',
+  'right_small_toe',
+  'solar_plexus',
+] as const satisfies readonly (typeof BODY_POINTS_0_3)[number][];
+
 /** Every point any version knows: the database's point-code vocabulary. Which
  * of them a set may hold is its version's list, BODY_POINTS_BY_VERSION; a 0.2
- * set refuses solar_plexus. */
+ * set refuses solar_plexus, and a 0.4 set refuses both ankles. */
 export const BODY_POINTS = BODY_POINTS_0_3;
 export type BodyPoint = (typeof BODY_POINTS)[number];
 
@@ -453,7 +488,37 @@ export type BodyPoint = (typeof BODY_POINTS)[number];
 export const BODY_POINTS_BY_VERSION: Readonly<Record<BodyPointOntologyVersion, readonly BodyPoint[]>> = {
   [BOXING_ONTOLOGY_VERSION_0_2]: BODY_POINTS_0_2,
   [BOXING_ONTOLOGY_VERSION_0_3]: BODY_POINTS_0_3,
+  [BOXING_ONTOLOGY_VERSION_0_4]: BODY_POINTS_0_4,
 };
+
+/** 0.4's skeleton: which of its points a drawn line joins, for showing marks
+ * and pose output as a figure. Without ankles the leg runs knee to heel, and
+ * the foot is the triangle heel, big toe, small toe (overwatch ruling
+ * 2026-10-04 on OD-2026-10-04-021). Only 0.4 has one; 0.2 and 0.3 are not
+ * edited. A drawing aid only: nothing is measured or judged from it. */
+export const BODY_POINT_EDGES_0_4: readonly (readonly [
+  (typeof BODY_POINTS_0_4)[number],
+  (typeof BODY_POINTS_0_4)[number],
+])[] = [
+  ['nose', 'chin'],
+  ['chin', 'neck'],
+  ['neck', 'solar_plexus'],
+  ['solar_plexus', 'mid_hip'],
+  ['neck', 'left_shoulder'],
+  ['neck', 'right_shoulder'],
+  ['mid_hip', 'left_hip'],
+  ['mid_hip', 'right_hip'],
+  ...(['left', 'right'] as const).flatMap((side) => [
+    [`${side}_shoulder`, `${side}_elbow`] as const,
+    [`${side}_elbow`, `${side}_wrist`] as const,
+    [`${side}_wrist`, `${side}_glove`] as const,
+    [`${side}_hip`, `${side}_knee`] as const,
+    [`${side}_knee`, `${side}_heel`] as const,
+    [`${side}_heel`, `${side}_big_toe`] as const,
+    [`${side}_heel`, `${side}_small_toe`] as const,
+    [`${side}_big_toe`, `${side}_small_toe`] as const,
+  ]),
+];
 
 /** Where to click, for the points Jason gave a rule for (OD-2026-10-02-008
  * section 2; solar_plexus, Jason 2026-10-03). No other placement rule has

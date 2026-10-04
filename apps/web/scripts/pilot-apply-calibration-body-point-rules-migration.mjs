@@ -23,10 +23,10 @@ function sslConfig() {
 // Asserted BY NAME, never by pg_get_constraintdef text: Postgres deparses a
 // CHECK rather than echoing its source (issue #488). The three triggers hold
 // what the constraints cannot (the stance labels' freeze and version gate,
-// the 0.2 and 0.3 event rules, completeness at submission); a disabled one counts as
-// missing. FUNCTIONS_0_3 catches a database this migration reached before
-// boxing-ontology-0.3 existed: every object is there by name, and each of
-// these still admits 0.2 only.
+// the 0.2, 0.3 and 0.4 event rules, completeness at submission); a disabled one counts as
+// missing. BODY_POINT_FUNCTIONS catches a database this migration reached
+// before boxing-ontology-0.3 or 0.4 existed: every object is there by name,
+// and each of these still lacks the later version.
 const CONSTRAINTS = [
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_org_fk'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_pkey'],
@@ -39,11 +39,12 @@ const TRIGGERS = [
   ['pilot.calibration_annotation_sets', 'pilot_calibration_sets_body_point_rules'],
 ];
 const INDEXES = ['idx_calibration_event_stance_labels_set'];
-const FUNCTIONS_0_3 = [
+const BODY_POINT_FUNCTIONS = [
   'pilot.calibration_event_stance_labels_guard()',
   'pilot.calibration_annotation_events_body_point_rules()',
   'pilot.calibration_annotation_sets_body_point_rules()',
 ];
+const LATER_VERSIONS = ['boxing-ontology-0.3', 'boxing-ontology-0.4'];
 
 const quote = (value) => `'${value}'`;
 const READINESS_QUERY = `select ${[
@@ -55,9 +56,9 @@ const READINESS_QUERY = `select ${[
         and not tgisinternal and tgenabled <> 'D')`),
   ...INDEXES.map((name) => `exists (select 1 from pg_indexes
       where schemaname = 'pilot' and indexname = ${quote(name)})`),
-  ...FUNCTIONS_0_3.map((signature) => `exists (select 1 from pg_proc
+  ...BODY_POINT_FUNCTIONS.flatMap((signature) => LATER_VERSIONS.map((version) => `exists (select 1 from pg_proc
       where oid = to_regprocedure(${quote(signature)})
-        and prosrc like '%''boxing-ontology-0.3''%')`),
+        and prosrc like '%''${version}''%')`)),
 ].map((clause, index) => `${clause} as ready_${index}`).join(', ')}`;
 
 export async function applyMigrationTransaction(client, sql) {
