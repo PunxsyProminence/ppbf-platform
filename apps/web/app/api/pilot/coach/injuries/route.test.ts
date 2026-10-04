@@ -47,7 +47,9 @@ const mockRecord = recordInjury as jest.Mock;
 const mockUpdate = updateInjury as jest.Mock;
 
 const ORG = 'org-1';
-const INJURY = { injury_id: '11111111-1111-4111-8111-111111111111', athlete_id: 'ATH-1', staff_note: 'x' };
+// A different athlete from the one any request body names, so the standing
+// check is proven to use the INJURY's athlete, not one the caller supplies.
+const INJURY = { injury_id: '11111111-1111-4111-8111-111111111111', athlete_id: 'ATH-9', staff_note: 'x' };
 
 function as(role: string, accountId = `acct-${role}`) {
   mockPrincipal.mockResolvedValue({ accountId, role, organizationId: ORG, athleteId: null });
@@ -180,7 +182,8 @@ describe('an assigned coach', () => {
     let res = await POST(postReq({ ...RECORD, action: 'update', injury_id: INJURY.injury_id, returned_on: '2026-09-10' }));
     expect(res.status).toBe(200);
     expect(mockGetById).toHaveBeenCalledWith(ORG, INJURY.injury_id);
-    expect(mockCoachAssigned).toHaveBeenCalledWith('acct-coach-1', 'ATH-1', ORG);
+    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-9', ORG]]);
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: ORG,
@@ -190,8 +193,10 @@ describe('an assigned coach', () => {
       }),
     );
 
-    res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id }));
+    mockCoachAssigned.mockClear();
+    res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id, athlete_id: 'ATH-1' }));
     expect(res.status).toBe(200);
+    expect(mockCoachAssigned.mock.calls).toEqual([['acct-coach-1', 'ATH-9', ORG]]);
     expect(mockMark).toHaveBeenCalledWith({ organizationId: ORG, injuryId: INJURY.injury_id, updatedByAccountId: 'acct-coach-1' });
   });
 
@@ -223,6 +228,25 @@ describe.each(['organization_admin', 'admin'])('%s', (role) => {
     expect(res.status).toBe(200);
     expect(mockBelongs).toHaveBeenCalledWith(ORG, 'ATH-1');
     expect(mockCoachAssigned).not.toHaveBeenCalled();
+  });
+
+  test("edits and marks through the organization check on the injury's own athlete", async () => {
+    as(role);
+    expect((await POST(postReq({ ...RECORD, action: 'update', injury_id: INJURY.injury_id }))).status).toBe(200);
+    expect((await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id }))).status).toBe(200);
+    expect(mockBelongs.mock.calls).toEqual([
+      [ORG, 'ATH-9'],
+      [ORG, 'ATH-9'],
+    ]);
+    expect(mockCoachAssigned).not.toHaveBeenCalled();
+  });
+
+  test("another organization's injury is the same 404 as a missing one", async () => {
+    as(role);
+    mockBelongs.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+    const res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id }));
+    expect(res.status).toBe(404);
+    expect(mockMark).not.toHaveBeenCalled();
   });
 
   test('is refused an athlete outside the organization', async () => {

@@ -19,6 +19,9 @@ import { SHADOW_PHI_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
+// Every response can carry a child's injury and the staff note.
+const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
+
 /**
  * The coach's injury record (map item 11): read, record, edit, and mark
  * entered in error. Staff only.
@@ -47,6 +50,10 @@ function str(body: Record<string, unknown>, key: string): string {
 /**
  * The recorded fields, picked by name from the request body -- never spread,
  * so a body cannot supply organizationId, athleteId or the recorder.
+ *
+ * An update REPLACES the record with these fields: the page sends the full
+ * record it shows, and a field left out is cleared (an absent staff_note
+ * becomes empty, an absent link is unlinked).
  */
 function injuryFields(body: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -101,10 +108,7 @@ export async function GET(request: NextRequest) {
       listInjuriesForAthlete(principal.organizationId, athleteId),
       listLinkCandidates(principal.organizationId, athleteId),
     ]);
-    return NextResponse.json(
-      { ok: true, injuries, candidates },
-      { headers: { 'cache-control': 'private, no-store' } },
-    );
+    return NextResponse.json({ ok: true, injuries, candidates }, NO_STORE);
   } catch (error) {
     return jsonError(error);
   }
@@ -130,7 +134,7 @@ export async function POST(request: NextRequest) {
         recordedByAccountId: principal.accountId,
         recordedByRole: principal.role,
       });
-      return NextResponse.json({ ok: true, injury });
+      return NextResponse.json({ ok: true, injury }, NO_STORE);
     }
 
     if (action === 'update' || action === 'mark_entered_in_error') {
@@ -145,7 +149,7 @@ export async function POST(request: NextRequest) {
           fields: injuryFields(body),
           updatedByAccountId: principal.accountId,
         });
-        return NextResponse.json({ ok: true, injury });
+        return NextResponse.json({ ok: true, injury }, NO_STORE);
       }
 
       await markInjuryEnteredInError({
@@ -153,7 +157,7 @@ export async function POST(request: NextRequest) {
         injuryId,
         updatedByAccountId: principal.accountId,
       });
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true }, NO_STORE);
     }
 
     throw new ValidationError('action must be record, update or mark_entered_in_error.');
