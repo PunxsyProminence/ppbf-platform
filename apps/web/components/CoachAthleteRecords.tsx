@@ -146,3 +146,19 @@ export function CoachBoutHistory({ athleteId, athleteName }: { athleteId: string
     </section>
   );
 }
+
+/** Both views for the athlete the coach selected, outside the wellness panel. */
+export function CoachAthleteHistory({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
+  return (
+    <>
+      <section
+        aria-labelledby="coach-sleep-trend-heading"
+        className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]"
+      >
+        <h3 id="coach-sleep-trend-heading" className="t-eyebrow">Sleep Trend</h3>
+        <CoachSleepTrend athleteId={athleteId} athleteName={athleteName} />
+      </section>
+      <CoachBoutHistory athleteId={athleteId} athleteName={athleteName} />
+    </>
+  );
+}

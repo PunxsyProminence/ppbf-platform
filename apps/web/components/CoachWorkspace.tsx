@@ -54,7 +54,7 @@ import {
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
-import { CoachBoutHistory, CoachSleepTrend } from './CoachAthleteRecords';
+import { CoachAthleteHistory } from './CoachAthleteRecords';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -3592,12 +3592,6 @@ export default function CoachWorkspace() {
                     </div>
                   )}
 
-                  {/* Map item 20: the same athlete's recent sleep hours, once
-                      the check-in read has confirmed this coach may see them. */}
-                  {wellnessShown?.status === 'loaded' && (
-                    <CoachSleepTrend athleteId={wellnessShown.athleteId} athleteName={wellnessAthleteName} />
-                  )}
-
                   {/* SESSION NOTE (A-FIN-08): the text on today's session row,
                       which until this subsection existed no coach screen had
                       ever shown. An athlete answered "Anything your coach
@@ -3703,10 +3697,11 @@ export default function CoachWorkspace() {
                   )}
                 </section>
 
-                {/* Map item 10: the selected athlete's bout history. Only on a
-                    deliberate pick, like the wellness panel above. */}
+                {/* Map items 20 and 10: the selected athlete's sleep trend and
+                    bout history. Only on a deliberate pick, like the wellness
+                    panel above; each route decides access server-side. */}
                 {athleteChosenByCoach && selectedAthleteId && (
-                  <CoachBoutHistory
+                  <CoachAthleteHistory
                     key={selectedAthleteId}
                     athleteId={selectedAthleteId}
                     athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}

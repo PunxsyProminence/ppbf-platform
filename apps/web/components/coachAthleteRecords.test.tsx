@@ -8,7 +8,7 @@
 
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
-import { CoachBoutHistory, CoachSleepTrend, boutOutcomeText, type BoutHistoryItem } from './CoachAthleteRecords';
+import { CoachAthleteHistory, CoachBoutHistory, CoachSleepTrend, boutOutcomeText, type BoutHistoryItem } from './CoachAthleteRecords';
 import SleepTrend, { sleepBarPercent } from './SleepTrend';
 
 const fetchMock = jest.fn();
@@ -123,5 +123,20 @@ describe('CoachBoutHistory', () => {
       .toEqual(['Won', 'Lost', 'Draw', 'No contest']);
     expect(boutOutcomeText({ ...LOSS, result: null, competition_status: 'cancelled' })).toBe('Competition cancelled');
     expect(boutOutcomeText({ ...LOSS, result: null, competition_status: 'completed' })).toBe('No result recorded');
+  });
+});
+
+describe('CoachAthleteHistory', () => {
+  test('draws the sleep trend and bout history as two sections for the one athlete', async () => {
+    fetchMock.mockImplementation((url: string) => respond(200, {
+      items: url.includes('athlete-sleep-trend') ? [{ checked_in_on: '2026-09-22', sleep_hours: 6 }] : [LOSS],
+    }));
+    render(<CoachAthleteHistory athleteId="ath-1" athleteName="Marisol" />);
+
+    expect(await screen.findByText('6 hours')).toBeTruthy();
+    expect(await screen.findByText('Lost')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Sleep Trend' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Bout History: Marisol' })).toBeTruthy();
+    expect(fetchMock.mock.calls.map(([url]) => String(url)).every((url) => url.endsWith('athlete_id=ath-1'))).toBe(true);
   });
 });
