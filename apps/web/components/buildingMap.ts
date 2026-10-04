@@ -310,7 +310,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/parent/development-blocks', label: 'Development Plan', room: 'office', roles: ['parent'],
     keywords: 'development block plan multi week coach plan objectives child training emphasis',
     hint: 'The plan your child\u2019s coach wrote for them, in the coach\u2019s own words. Exactly what your child sees.' },
-  { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
+  { href: '/', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
   { href: '/store', label: 'Equipment Store', room: 'office', roles: OPEN,
