@@ -67,8 +67,13 @@ const READINESS_QUERY = `
       to_regclass('pilot.athlete_pathway_minor_allowances')
     )
   ),
+  -- Each "one live row" index, looked up on ITS table, must be unique and
+  -- partial; a same-named plain index somewhere else does not count.
   i as (
-    select indexname from pg_indexes where schemaname = 'pilot'
+    select ic.relname as indexname, x.indrelid
+    from pg_index x
+    join pg_class ic on ic.oid = x.indexrelid
+    where x.indisunique and x.indpred is not null
   )
   select
     to_regclass('pilot.athlete_pathway_stages') is not null as stages_ready,
@@ -94,9 +99,22 @@ const READINESS_QUERY = `
       select 1 from c where conname = 'pilot_athlete_pathway_minor_allowances_reason_check'
         and conrelid = to_regclass('pilot.athlete_pathway_minor_allowances')
     ) as reason_check_ready,
-    exists (select 1 from i where indexname = 'idx_athlete_pathway_stages_current') as one_current_stage_ready,
-    exists (select 1 from i where indexname = 'idx_athlete_pathway_checkpoints_live') as one_live_checkpoint_ready,
-    exists (select 1 from i where indexname = 'idx_athlete_pathway_minor_allowances_live') as one_live_allowance_ready
+    exists (
+      select 1 from i where indexname = 'idx_athlete_pathway_stages_current'
+        and indrelid = to_regclass('pilot.athlete_pathway_stages')
+    ) as one_current_stage_ready,
+    exists (
+      select 1 from i where indexname = 'idx_athlete_pathway_checkpoints_live'
+        and indrelid = to_regclass('pilot.athlete_pathway_checkpoints')
+    ) as one_live_checkpoint_ready,
+    exists (
+      select 1 from i where indexname = 'idx_athlete_pathway_minor_allowances_live'
+        and indrelid = to_regclass('pilot.athlete_pathway_minor_allowances')
+    ) as one_live_allowance_ready,
+    exists (
+      select 1 from c where conname = 'pilot_athlete_pathway_stages_superseded_by_fk'
+        and conrelid = to_regclass('pilot.athlete_pathway_stages')
+    ) as superseded_chain_ready
 `;
 
 function assertReadiness(row) {

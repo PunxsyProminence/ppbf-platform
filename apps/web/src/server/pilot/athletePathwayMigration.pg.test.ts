@@ -172,14 +172,20 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-function place(client: Client, stageKey: string, athleteId = ATHLETE_ID, role = 'coach') {
-  const id = randomUUID();
+function place(
+  client: Client,
+  stageKey: string,
+  athleteId = ATHLETE_ID,
+  role = 'coach',
+  id: string = randomUUID(),
+  accountId = COACH_ID,
+) {
   return client
     .query(
       `insert into pilot.athlete_pathway_stages
          (organization_id, placement_id, athlete_id, stage_key, set_by_account_id, set_by_role)
        values ($1, $2, $3, $4, $5, $6)`,
-      [ORG_ID, id, athleteId, stageKey, COACH_ID, role],
+      [ORG_ID, id, athleteId, stageKey, accountId, role],
     )
     .then(() => id);
 }
@@ -245,31 +251,63 @@ describe('athlete pathway migration', () => {
     }
   });
 
-  test('one current placement per athlete; superseded history accumulates', async () => {
+  test('one current placement per athlete; superseded history is a real chain', async () => {
     await withMigratedDb('pathway_stages', async (client) => {
       const first = await place(client, 'foundation');
       await expect(place(client, 'intermediate')).rejects.toMatchObject({ code: '23505' });
 
+      // The writer's order: stamp the old row, then insert its replacement, in
+      // one transaction. The chain FK is checked at commit.
       const second = randomUUID();
+      await client.query('begin');
       await client.query(
         `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
          where organization_id = $1 and placement_id = $3`,
         [ORG_ID, second, first],
       );
-      await place(client, 'intermediate');
+      await place(client, 'intermediate', ATHLETE_ID, 'coach', second);
+      await client.query('commit');
 
-      // Another athlete has their own current placement.
-      await place(client, 'foundation', OTHER_ATHLETE_ID);
+      // A superseded row naming a placement that never arrives is refused at commit.
+      await client.query('begin');
+      await client.query(
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
+         where organization_id = $1 and placement_id = $3`,
+        [ORG_ID, randomUUID(), second],
+      );
+      await expect(client.query('commit')).rejects.toMatchObject({ code: '23503' });
 
-      // Superseded stamp is all or none.
+      // Another athlete has their own current placement, and cannot be named
+      // as the replacement of this athlete's.
+      const other = await place(client, 'foundation', OTHER_ATHLETE_ID);
+      await client.query('begin');
+      await client.query(
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = $2
+         where organization_id = $1 and placement_id = $3`,
+        [ORG_ID, other, second],
+      );
+      await expect(client.query('commit')).rejects.toMatchObject({ code: '23503' });
+
+      // Not self-superseded; stamp all or none; not before it was set.
+      await expect(client.query(
+        `update pilot.athlete_pathway_stages set superseded_at = now(), superseded_by_placement_id = placement_id
+         where organization_id = $1 and placement_id = $2`,
+        [ORG_ID, second],
+      )).rejects.toMatchObject({ code: '23514' });
       await expect(client.query(
         `update pilot.athlete_pathway_stages set superseded_at = null
+         where organization_id = $1 and placement_id = $2`,
+        [ORG_ID, first],
+      )).rejects.toMatchObject({ code: '23514' });
+      await expect(client.query(
+        `update pilot.athlete_pathway_stages set superseded_at = set_at - interval '1 day'
          where organization_id = $1 and placement_id = $2`,
         [ORG_ID, first],
       )).rejects.toMatchObject({ code: '23514' });
 
       await expect(place(client, 'youth', OTHER_ATHLETE_ID)).rejects.toMatchObject({ code: '23514' });
       await expect(place(client, 'advanced', OTHER_ATHLETE_ID, 'athlete')).rejects.toMatchObject({ code: '23514' });
+      await expect(place(client, 'advanced', ATHLETE_ID, 'coach', randomUUID(), '  ')).rejects.toMatchObject({ code: '23514' });
     });
   });
 
@@ -337,21 +375,33 @@ describe('athlete pathway migration', () => {
     });
   });
 
+  // Behaviour, not constraint text: Postgres rewrites a row-IN-list CHECK into
+  // an OR chain, so reading pg_get_constraintdef would test its formatting.
   test("the database's stage and goal vocabulary is exactly the app's", async () => {
     await withMigratedDb('pathway_vocab', async (client) => {
-      const defs = await client.query(
-        `select conname, pg_get_constraintdef(oid) as def from pg_constraint
-         where conname in ('pilot_athlete_pathway_checkpoints_goal_check', 'pilot_athlete_pathway_stages_stage_check')`,
-      );
-      const byName = Object.fromEntries(defs.rows.map((r: { conname: string; def: string }) => [r.conname, r.def]));
+      for (const stage of ADULT_PATHWAY_STAGES) {
+        for (const goal of stage.goals) {
+          await confirm(client, stage.key, goal.key);
+        }
+      }
+      const live = await client.query('select count(*)::int as n from pilot.athlete_pathway_checkpoints');
+      expect(live.rows[0].n).toBe(ADULT_PATHWAY_STAGES.flatMap((s) => s.goals).length);
 
-      const dbStages = [...byName.pilot_athlete_pathway_stages_stage_check.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]);
-      expect(dbStages.sort()).toEqual([...ADULT_PATHWAY_STAGE_KEYS].sort());
+      // Every goal under every OTHER stage is refused.
+      for (const stage of ADULT_PATHWAY_STAGES) {
+        for (const other of ADULT_PATHWAY_STAGES.filter((s) => s.key !== stage.key)) {
+          for (const goal of other.goals) {
+            await expect(confirm(client, stage.key, goal.key, OTHER_ATHLETE_ID)).rejects.toMatchObject({ code: '23514' });
+          }
+        }
+      }
 
-      const dbPairs = [...byName.pilot_athlete_pathway_checkpoints_goal_check.matchAll(/\('([a-z_]+)'::text, '([a-z_]+)'::text\)/g)]
-        .map((m) => `${m[1]}/${m[2]}`);
-      const appPairs = ADULT_PATHWAY_STAGES.flatMap((s) => s.goals.map((g) => `${s.key}/${g.key}`));
-      expect(dbPairs.sort()).toEqual(appPairs.sort());
+      for (const key of ADULT_PATHWAY_STAGE_KEYS) {
+        await place(client, key, OTHER_ATHLETE_ID).then((id) => client.query(
+          'delete from pilot.athlete_pathway_stages where placement_id = $1',
+          [id],
+        ));
+      }
     });
   });
 });

@@ -8,7 +8,8 @@
 --   flag rules = "Reason required; unknown = minor".
 -- The stage and goal vocabulary is apps/web/src/shared/adultPathwayStages.ts.
 -- The CHECK lists below restate it so the database refuses a key the app does
--- not know; athletePathwayMigration.pg.test.ts fails if the two drift apart.
+-- not know; athletePathwayMigration.pg.test.ts fails if the app holds a pair
+-- the database refuses, or the database accepts a goal under the wrong stage.
 --
 -- NOTHING HERE COMPUTES A STAGE. No column holds hours, levels, dates-to-reach
 -- or thresholds. A stage is a coach's placement; a checkpoint is a coach's
@@ -53,8 +54,23 @@ create table if not exists pilot.athlete_pathway_stages (
   constraint pilot_athlete_pathway_stages_pkey primary key (organization_id, placement_id),
   constraint pilot_athlete_pathway_stages_athlete_fk foreign key (organization_id, athlete_id)
     references pilot.athletes(organization_id, athlete_id) on delete cascade,
+  -- The history chain is real: a superseded placement names the SAME
+  -- athlete's placement that replaced it. Deferred, because the writer stamps
+  -- the old row before inserting the new one (the partial unique index on the
+  -- current row is not deferrable, so the order is fixed).
+  constraint pilot_athlete_pathway_stages_athlete_placement_key
+    unique (organization_id, athlete_id, placement_id),
+  constraint pilot_athlete_pathway_stages_superseded_by_fk
+    foreign key (organization_id, athlete_id, superseded_by_placement_id)
+    references pilot.athlete_pathway_stages(organization_id, athlete_id, placement_id)
+    deferrable initially deferred,
+  constraint pilot_athlete_pathway_stages_not_self_superseded check (
+    superseded_by_placement_id is null or superseded_by_placement_id <> placement_id),
   constraint pilot_athlete_pathway_stages_superseded_pair check (
-    (superseded_at is null) = (superseded_by_placement_id is null))
+    (superseded_at is null) = (superseded_by_placement_id is null)),
+  constraint pilot_athlete_pathway_stages_superseded_after_set check (
+    superseded_at is null or superseded_at >= set_at),
+  constraint pilot_athlete_pathway_stages_account_check check (length(btrim(set_by_account_id)) > 0)
 );
 
 -- One current placement per athlete; the rest are history.
@@ -102,7 +118,12 @@ create table if not exists pilot.athlete_pathway_checkpoints (
     ('elite', 'elite_competition'))),
   constraint pilot_athlete_pathway_checkpoints_withdrawn_all_or_none check (
     (withdrawn_at is null) = (withdrawn_by_account_id is null)
-    and (withdrawn_at is null) = (withdrawn_by_role is null))
+    and (withdrawn_at is null) = (withdrawn_by_role is null)),
+  constraint pilot_athlete_pathway_checkpoints_withdrawn_after_confirmed check (
+    withdrawn_at is null or withdrawn_at >= confirmed_at),
+  constraint pilot_athlete_pathway_checkpoints_account_check check (
+    length(btrim(confirmed_by_account_id)) > 0
+    and (withdrawn_by_account_id is null or length(btrim(withdrawn_by_account_id)) > 0))
 );
 
 -- One live confirmation per athlete per goal; withdrawn ones are history.
@@ -134,7 +155,12 @@ create table if not exists pilot.athlete_pathway_minor_allowances (
     references pilot.athletes(organization_id, athlete_id) on delete cascade,
   constraint pilot_athlete_pathway_minor_allowances_withdrawn_all_or_none check (
     (withdrawn_at is null) = (withdrawn_by_account_id is null)
-    and (withdrawn_at is null) = (withdrawn_by_role is null))
+    and (withdrawn_at is null) = (withdrawn_by_role is null)),
+  constraint pilot_athlete_pathway_minor_allowances_withdrawn_after_granted check (
+    withdrawn_at is null or withdrawn_at >= granted_at),
+  constraint pilot_athlete_pathway_minor_allowances_account_check check (
+    length(btrim(granted_by_account_id)) > 0
+    and (withdrawn_by_account_id is null or length(btrim(withdrawn_by_account_id)) > 0))
 );
 
 -- At most one live allowance per athlete.
