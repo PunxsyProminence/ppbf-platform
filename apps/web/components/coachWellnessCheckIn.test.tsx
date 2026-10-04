@@ -214,6 +214,9 @@ function installFetch(
       return jsonResponse({ ok: true, barrierReports: [], truncated: false });
     }
     if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: [] });
+    // Map items 20 and 10: the selected athlete's sleep trend and bout history.
+    if (url.includes('/api/pilot/coach/athlete-sleep-trend')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/coach/athlete-competition-history')) return jsonResponse({ items: [] });
 
     throw new Error(`Unexpected fetch: ${url}`);
   });

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { humanizeContactLevel } from '../../lib/drillPresentation';
+
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { VOCABULARIES } from './contentImport/vocabularies';
 import { query, queryOne } from './db';
@@ -208,4 +210,136 @@ export async function setContactCap(input: ContactCapInput & {
   );
   if (!row) throw new Error('Contact cap insert returned no row');
   return row;
+}
+
+/* ---------------------------------------------------------------------------
+ * Comparing one sparring entry with the cap (map item 15, PR B).
+ *
+ * WARN, NEVER BLOCK (Jason, 2026-10-04: "Warn only"). These functions run
+ * AFTER the entry has saved and only describe how it compares with the cap
+ * the coach set. Nothing here refuses, scores or recommends.
+ * ------------------------------------------------------------------------- */
+
+export type CapState = 'set' | 'none' | 'unknown';
+
+export interface CapReading {
+  /** 'none' = no cap set (never a default); 'unknown' = the cap could not be read. */
+  state: CapState;
+  cap: AthleteContactCapRow | null;
+}
+
+/**
+ * The cap for the entry screen. A refusal or an outage reading the cap is
+ * 'unknown' -- never 'none' -- and never fails the caller: the entry it is
+ * shown beside has already saved.
+ */
+export async function readCapForEntry(actor: ActorIdentity, athleteId: string): Promise<CapReading> {
+  try {
+    const cap = await getCurrentContactCap(actor, athleteId);
+    return isCapSet(cap) ? { state: 'set', cap } : { state: 'none', cap: null };
+  } catch (error) {
+    console.error({
+      event: 'contact-cap-read-failed',
+      forbidden: error instanceof ForbiddenError,
+    });
+    return { state: 'unknown', cap: null };
+  }
+}
+
+export type CapWarningKind =
+  | 'stage_above_cap'
+  | 'hard_open_days_over_cap'
+  | 'stage_not_recorded'
+  | 'cap_unknown'
+  | 'days_not_counted';
+
+export interface CapWarning {
+  kind: CapWarningKind;
+  message: string;
+}
+
+export interface EntryForCapCheck {
+  contactStage: ContactStage | null;
+  sparringType: string;
+  /** Gym day sparred, YYYY-MM-DD. */
+  sparringDay: string;
+}
+
+/** Hard or open, the same rule countHardOrOpenSparringDays counts by. */
+export function isHardOrOpen(entry: Pick<EntryForCapCheck, 'contactStage' | 'sparringType'>): boolean {
+  return entry.sparringType === 'hard' || entry.contactStage === 'open_sparring';
+}
+
+const DECIDES = 'Saved. The coach decides.';
+
+/**
+ * How one saved entry compares with a SET cap. Pure.
+ *
+ * `hardOpenDays` is countHardOrOpenSparringDays for the 7 gym days ending on
+ * the entry's day, this entry included. The day limit is only reported for an
+ * entry that is itself hard or open: a technical round on a heavy week does
+ * not go over anything.
+ */
+export function checkEntryAgainstCap(
+  cap: AthleteContactCapRow,
+  entry: EntryForCapCheck,
+  hardOpenDays: number,
+): CapWarning[] {
+  const warnings: CapWarning[] = [];
+  const highest = cap.highest_allowed_stage;
+
+  if (highest !== null) {
+    if (entry.contactStage === null) {
+      warnings.push({
+        kind: 'stage_not_recorded',
+        message: `No contact stage was recorded, so this entry cannot be checked against the cap `
+          + `(highest stage: ${humanizeContactLevel(highest)}). ${DECIDES}`,
+      });
+    } else if (contactStageRank(entry.contactStage) > contactStageRank(highest)) {
+      warnings.push({
+        kind: 'stage_above_cap',
+        message: `Above this athlete's cap: recorded at ${humanizeContactLevel(entry.contactStage)}; `
+          + `the coach-set highest stage is ${humanizeContactLevel(highest)}. ${DECIDES}`,
+      });
+    }
+  }
+
+  const most = cap.max_hard_open_sessions_per_7_days;
+  if (most !== null && isHardOrOpen(entry) && hardOpenDays > most) {
+    warnings.push({
+      kind: 'hard_open_days_over_cap',
+      message: `Over this athlete's cap: ${hardOpenDays} hard or open sparring sessions in the 7 gym days `
+        + `ending ${entry.sparringDay} (sessions = gym days); the coach-set most is ${most}. ${DECIDES}`,
+    });
+  }
+
+  return warnings;
+}
+
+/**
+ * The warnings for one saved entry, whatever could or could not be read, so
+ * an empty list always means "checked and within the cap" or "no cap set" --
+ * never "could not check". `hardOpenDays` null = the count failed.
+ */
+export function entryCapWarnings(
+  reading: CapReading,
+  entry: EntryForCapCheck,
+  hardOpenDays: number | null,
+): CapWarning[] {
+  if (reading.state === 'unknown') {
+    return [{
+      kind: 'cap_unknown',
+      message: `This athlete's cap could not be read just now, so this entry was not checked against it. ${DECIDES}`,
+    }];
+  }
+  if (!reading.cap) return [];
+  const warnings = checkEntryAgainstCap(reading.cap, entry, hardOpenDays ?? 0)
+    .filter((warning) => hardOpenDays !== null || warning.kind !== 'hard_open_days_over_cap');
+  if (hardOpenDays === null && reading.cap.max_hard_open_sessions_per_7_days !== null && isHardOrOpen(entry)) {
+    warnings.push({
+      kind: 'days_not_counted',
+      message: `Hard or open sparring days could not be counted just now, so the 7-day limit was not checked. ${DECIDES}`,
+    });
+  }
+  return warnings;
 }

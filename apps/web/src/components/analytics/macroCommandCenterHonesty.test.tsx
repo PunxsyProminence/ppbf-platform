@@ -37,3 +37,17 @@ describe('the macro command center declares itself a prototype', () => {
     expect(screen.getByText(/never treat a name here as a cleared\s+adult/)).toBeTruthy();
   });
 });
+
+describe('the fabricated deload panel is gone', () => {
+  // The old list read "reduce by 12% for 5-day cycle" -- an invented deload
+  // number on a screen whose ruling refuses one. The real signal is the
+  // coach-confirmed load-jump suggestion, and this pointer must lead there.
+  test('no deload recommendation text renders; the pointer leads to the real flag', () => {
+    render(<MacroCommandCenter />);
+
+    expect(screen.queryByText(/Deload Recommendations/)).toBeNull();
+    expect(screen.queryByText(/reduce by 12%/)).toBeNull();
+    const link = screen.getByRole('link', { name: 'Progression Intelligence' });
+    expect(link.getAttribute('href')).toBe('/coach/progression-intelligence');
+  });
+});

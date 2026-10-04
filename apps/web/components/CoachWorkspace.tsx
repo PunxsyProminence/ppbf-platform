@@ -54,6 +54,8 @@ import {
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
+import { CoachAthleteHistory } from './CoachAthleteRecords';
+
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
 /**
@@ -3694,6 +3696,17 @@ export default function CoachWorkspace() {
                     </section>
                   )}
                 </section>
+
+                {/* Map items 20 and 10: the selected athlete's sleep trend and
+                    bout history. Only on a deliberate pick, like the wellness
+                    panel above; each route decides access server-side. */}
+                {athleteChosenByCoach && selectedAthleteId && (
+                  <CoachAthleteHistory
+                    key={selectedAthleteId}
+                    athleteId={selectedAthleteId}
+                    athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}
+                  />
+                )}
 
                 {/* Open Tasks */}
                 <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
