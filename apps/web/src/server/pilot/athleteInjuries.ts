@@ -231,14 +231,30 @@ async function assertLinksBelongToAthlete(
   client: PoolClient,
   organizationId: string,
   athleteId: string,
-  links: InjuryLinks,
+  fields: InjuryFields,
 ): Promise<void> {
   for (const check of LINK_CHECKS) {
-    const id = links[check.field];
+    const id = fields[check.field];
     if (!id) continue;
     const found = await client.query(check.sql, [organizationId, athleteId, id]);
     if (found.rows.length === 0) {
       throw new ValidationError(`The linked ${check.label} is not one of this athlete's records.`);
+    }
+  }
+  // A linked plan's earliest return date stands in for this injury's expected
+  // return, so it is held to the same rule this row's own date is
+  // (pilot_athlete_injuries_return_after_injury): an older plan that ended
+  // before this injury happened is not this injury's plan.
+  if (fields.linkedRttPlanId) {
+    const early = await client.query(
+      `select 1 from pilot.return_to_training_plans
+        where organization_id = $1 and plan_id = $2 and earliest_return_date < $3::date`,
+      [organizationId, fields.linkedRttPlanId, fields.injuryDate],
+    );
+    if (early.rows.length > 0) {
+      throw new ValidationError(
+        "The linked return-to-training plan's earliest return date is before this injury's date.",
+      );
     }
   }
 }
@@ -306,11 +322,28 @@ export async function updateInjury(input: {
 }): Promise<AthleteInjuryRow> {
   const fields = validateFields(input.fields);
   return withTransaction(async (client) => {
+    // Parent before child, the order the purge's cascade takes them in: lock
+    // the athlete (for share), then the injury row (for update). The reverse
+    // order deadlocks against `delete from pilot.athletes`, which holds the
+    // athlete and then waits on this row. athlete_id never changes on a row,
+    // so reading it unlocked first is safe.
+    const owner = await client.query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athlete_injuries where organization_id = $1 and injury_id = $2::uuid`,
+      [input.organizationId, input.injuryId],
+    );
+    if (owner.rows.length === 0) {
+      throw new NotFoundError('Injury record not found.');
+    }
+    try {
+      await assertLiveAthlete(client, input.organizationId, owner.rows[0].athlete_id);
+    } catch (error) {
+      if (error instanceof NotFoundError) throw new NotFoundError('Injury record not found.');
+      throw error;
+    }
     const existing = await selectInjury(client, input.organizationId, input.injuryId, true);
     if (!existing || existing.entered_in_error) {
       throw new NotFoundError('Injury record not found.');
     }
-    await assertLiveAthlete(client, input.organizationId, existing.athlete_id);
     await assertLinksBelongToAthlete(client, input.organizationId, existing.athlete_id, fields);
     const updated = await client.query(
       `update pilot.athlete_injuries

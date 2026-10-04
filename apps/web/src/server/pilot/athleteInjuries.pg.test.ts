@@ -386,6 +386,25 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     ).rejects.toThrow(/pilot_athlete_injuries_one_return_source/);
   });
 
+  test("a plan whose earliest return is before the injury cannot be linked, on record or on edit", async () => {
+    const oldPlan = await addPlan(ORG_A, ATHLETE, '2026-08-15');
+    const message = "The linked return-to-training plan's earliest return date is before this injury's date.";
+    await expect(record(ORG_A, ATHLETE, { linkedRttPlanId: oldPlan })).rejects.toThrow(message);
+    const row = await record(ORG_A, ATHLETE);
+    await expect(
+      injuries.updateInjury({
+        organizationId: ORG_A,
+        injuryId: row.injury_id,
+        fields: { ...base, linkedRttPlanId: oldPlan },
+        updatedByAccountId: COACH,
+      }),
+    ).rejects.toThrow(message);
+    // The same plan is fine for an injury that happened before it ended.
+    await expect(record(ORG_A, ATHLETE, { linkedRttPlanId: oldPlan, injuryDate: '2026-08-10' })).resolves.toMatchObject({
+      plan_earliest_return_date: '2026-08-15',
+    });
+  });
+
   test('return dates before the injury date and unknown vocabulary are refused', async () => {
     await expect(record(ORG_A, ATHLETE, { returnedOn: '2026-08-31' })).rejects.toThrow(
       'returnedOn cannot be before injuryDate.',
@@ -516,6 +535,30 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
       expect(await settled).toBe('Injury record not found.');
     } finally {
       await marker.end();
+    }
+  });
+
+  test('an edit that meets a purge in progress waits, then is refused cleanly, and the purge completes', async () => {
+    const athleteId = 'ath-purged-mid-edit';
+    await addAthlete(ORG_A, athleteId);
+    const row = await record(ORG_A, athleteId);
+    const purger = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await purger.connect();
+    try {
+      await purger.query('begin');
+      await purger.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG_A, athleteId]);
+      const edit = injuries.updateInjury({
+        organizationId: ORG_A,
+        injuryId: row.injury_id,
+        fields: base,
+        updatedByAccountId: COACH,
+      });
+      const settled = edit.then(() => 'saved', (error: Error) => error.message);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await purger.query('commit');
+      expect(await settled).toBe('Injury record not found.');
+    } finally {
+      await purger.end();
     }
   });
 
