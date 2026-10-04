@@ -31,7 +31,11 @@ const READINESS_QUERY = `
       where conname = 'pilot_sparring_exposure_contact_stage_check'
         and conrelid = to_regclass('pilot.sparring_exposure') and contype = 'c'
         and convalidated
-        and pg_get_constraintdef(oid) like '%open_sparring%'
+        and pg_get_constraintdef(oid) like '%''none''%'
+        and pg_get_constraintdef(oid) like '%''light_technical''%'
+        and pg_get_constraintdef(oid) like '%''conditioned''%'
+        and pg_get_constraintdef(oid) like '%''controlled_sparring''%'
+        and pg_get_constraintdef(oid) like '%''open_sparring''%'
     ) as contact_stage_check_ready
 `;
 

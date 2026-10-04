@@ -10,8 +10,8 @@ import {
   CONTACT_STAGES,
   type CapReading,
   type CapWarning,
-  checkEntryAgainstCap,
   type ContactStage,
+  entryCapWarnings,
   readCapForEntry,
 } from '@/src/server/pilot/athleteContactCaps';
 import { gymToday } from '@/src/server/pilot/competenceCohorts';
@@ -146,7 +146,12 @@ async function capCheck(
   entry?: { contactStage: ContactStage | null; sparringType: string },
 ): Promise<CapCheck> {
   const [reading, days] = await Promise.all([
-    readCapForEntry(actor, athleteId),
+    // readCapForEntry already never throws; this keeps that true here even if
+    // it changes, because a throw now would report a SAVED entry as failed.
+    Promise.resolve().then(() => readCapForEntry(actor, athleteId)).catch((error: unknown): CapReading => {
+      console.error({ event: 'sparring-cap-read-failed', name: error instanceof Error ? error.name : 'unknown' });
+      return { state: 'unknown', cap: null };
+    }),
     Promise.resolve().then(() => countHardOrOpenSparringDays(actor.organizationId, athleteId, throughDay)).catch((error: unknown) => {
       console.error({ event: 'sparring-hard-open-count-failed', name: error instanceof Error ? error.name : 'unknown' });
       return null;
@@ -159,11 +164,7 @@ async function capCheck(
     through_day: throughDay,
   };
   if (entry) {
-    // A count that could not be taken checks the stage only.
-    check.warnings = reading.cap
-      ? checkEntryAgainstCap(reading.cap, { ...entry, sparringDay: throughDay }, days ?? 0)
-          .filter((warning) => days !== null || warning.kind !== 'hard_open_days_over_cap')
-      : [];
+    check.warnings = entryCapWarnings(reading, { ...entry, sparringDay: throughDay }, days);
   }
   return check;
 }

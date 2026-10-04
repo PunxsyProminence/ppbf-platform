@@ -68,6 +68,8 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 ) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-stage';
+const OTHER_ORG_ID = 'org-stage-elsewhere';
+const ATHLETE_ACCOUNT_ID = 'acct-stage-athlete';
 const COACH_ID = 'acct-stage-coach';
 const UNASSIGNED_COACH_ID = 'acct-stage-unassigned';
 const ATHLETE_ID = 'ath-stage-1';
@@ -120,26 +122,30 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
   await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   await client.query(
-    `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
-    [ORG_ID],
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, $1, 'active'), ($2, $2, 'active')`,
+    [ORG_ID, OTHER_ORG_ID],
   );
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
-     values ($1, 'coach', $3, 'microsoft', null), ($2, 'coach', $3, 'microsoft', null)`,
-    [COACH_ID, UNASSIGNED_COACH_ID, ORG_ID],
+     values ($1, 'coach', $3, 'microsoft', null), ($2, 'coach', $3, 'microsoft', null),
+            ($4, 'athlete', $3, 'microsoft', $5)`,
+    [COACH_ID, UNASSIGNED_COACH_ID, ORG_ID, ATHLETE_ACCOUNT_ID, ATHLETE_ID],
   );
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
      values ($1, $3, 'coach', true), ($2, $3, 'coach', true)`,
     [COACH_ID, UNASSIGNED_COACH_ID, ORG_ID],
   );
-  for (const athleteId of [ATHLETE_ID, OTHER_ATHLETE_ID]) {
+  // ATHLETE_ID also exists in the other gym, under the same id, as a
+  // different child -- so org scoping is what keeps their rows apart.
+  for (const [org, athleteId] of [[ORG_ID, ATHLETE_ID], [ORG_ID, OTHER_ATHLETE_ID], [OTHER_ORG_ID, ATHLETE_ID]]) {
     await client.query(
       `insert into pilot.athletes
          (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
           emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, $2, 'Stage Athlete', '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
-      [ORG_ID, athleteId, COACH_ID],
+      [org, athleteId, COACH_ID],
     );
   }
 
@@ -285,6 +291,25 @@ describe('sparring exposure contact-stage migration', () => {
     }
   });
 
+  test('the real runner REFUSES the column without its ladder guard, or with a guard missing a rung', async () => {
+    const client = await freshDatabase('stage_half', { preMigration: true });
+    try {
+      await client.query('alter table pilot.sparring_exposure add column contact_stage text null');
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /SPARRING_EXPOSURE_CONTACT_STAGE_NOT_READY/,
+      );
+      await client.query(
+        `alter table pilot.sparring_exposure add constraint pilot_sparring_exposure_contact_stage_check
+           check (contact_stage is null or contact_stage in ('none', 'light_technical', 'open_sparring'))`,
+      );
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /SPARRING_EXPOSURE_CONTACT_STAGE_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the ladder CHECK admits null and every rung, and refuses anything else', async () => {
     const client = await freshDatabase('stage_check');
     try {
@@ -332,11 +357,46 @@ describe('stage storage, the gym-day count and the cap reading', () => {
       await record('2026-09-27', 'hard', null); // 7th day back, inclusive: counts
       await record('2026-09-26', 'hard', null); // 8th day back: outside
       await record(DAY, 'hard', 'open_sparring', OTHER_ATHLETE_ID); // another athlete: no
+      await record('2026-10-02', 'play', 'open_sparring', OTHER_ATHLETE_ID); // (still another athlete)
+
+      // Same athlete id in ANOTHER gym: not this child.
+      await client.query(
+        `insert into pilot.sparring_exposure
+           (organization_id, exposure_id, athlete_id, segment_number, sparring_type, time_under_impact_sec,
+            coach_observed_intensity, coach_observed_head_contact, supervising_coach_account_id, session_date)
+         values ($1, 'elsewhere-1', $2, 1, 'hard', 60, 'light', 'none', $3, '2026-10-02')`,
+        [OTHER_ORG_ID, ATHLETE_ID, COACH_ID],
+      );
 
       expect(await countHardOrOpenSparringDays(ORG_ID, ATHLETE_ID, DAY)).toBe(3);
+
+      // A LINKED segment (no session_date) counts by its activity's day.
+      await client.query(
+        `insert into pilot.activity_log
+           (organization_id, activity_id, person_account_id, athlete_id, activity_domain, activity_type,
+            occurred_on, duration_minutes, capture_method, recorded_by_role, recorded_by_account_id)
+         values ($1, 'act-1', $2, $3, 'boxing_training', 'sparring_session', '2026-10-02', 60, 'door_terminal', 'coach', $4)`,
+        [ORG_ID, ATHLETE_ACCOUNT_ID, ATHLETE_ID, COACH_ID],
+      );
+      await recordSparringExposure({
+        organizationId: ORG_ID,
+        activityId: 'act-1',
+        athleteId: ATHLETE_ID,
+        sparringType: 'hard',
+        contactStage: null,
+        timeUnderImpactSec: 60,
+        coachObservedIntensity: 'light',
+        coachObservedHeadContact: 'none',
+        supervisingCoachAccountId: COACH_ID,
+      });
+      expect(await countHardOrOpenSparringDays(ORG_ID, ATHLETE_ID, DAY)).toBe(4);
+      // ... and on that day it is one session with an unlinked open segment.
+      await record('2026-10-02', 'play', 'open_sparring');
+      expect(await countHardOrOpenSparringDays(ORG_ID, ATHLETE_ID, DAY)).toBe(4);
       // A window ending earlier leaves out the later days.
       expect(await countHardOrOpenSparringDays(ORG_ID, ATHLETE_ID, '2026-09-30')).toBe(2);
-      expect(await countHardOrOpenSparringDays(ORG_ID, OTHER_ATHLETE_ID, DAY)).toBe(1);
+      expect(await countHardOrOpenSparringDays(OTHER_ORG_ID, ATHLETE_ID, DAY)).toBe(1);
+      expect(await countHardOrOpenSparringDays(ORG_ID, OTHER_ATHLETE_ID, DAY)).toBe(2);
 
       await client.query(
         'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
@@ -367,9 +427,20 @@ describe('stage storage, the gym-day count and the cap reading', () => {
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       try {
         expect(await readCapForEntry(UNASSIGNED_COACH, ATHLETE_ID)).toEqual({ state: 'unknown', cap: null });
+        // Unknown for the right reason: the cap module refused this coach.
+        expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ forbidden: true }));
       } finally {
         errorSpy.mockRestore();
       }
+
+      // A cleared cap is "none", not "set".
+      await client.query(
+        `insert into pilot.athlete_contact_caps
+           (organization_id, cap_id, athlete_id, set_by_account_id, set_by_role)
+         values ($1, gen_random_uuid(), $2, $3, 'coach')`,
+        [ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+      expect(await readCapForEntry(COACH, ATHLETE_ID)).toEqual({ state: 'none', cap: null });
     } finally {
       await client.end();
     }

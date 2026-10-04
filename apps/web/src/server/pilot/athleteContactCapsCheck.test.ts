@@ -1,4 +1,9 @@
-import { type AthleteContactCapRow, checkEntryAgainstCap, isHardOrOpen } from './athleteContactCaps';
+import {
+  type AthleteContactCapRow,
+  checkEntryAgainstCap,
+  entryCapWarnings,
+  isHardOrOpen,
+} from './athleteContactCaps';
 
 // checkEntryAgainstCap is pure: the cap a coach set, one saved entry, and the
 // raw count of hard/open gym days in the 7 ending on the entry's day (entry
@@ -96,5 +101,33 @@ describe('hard or open gym days against the 7-day most', () => {
 
   test('no day limit set: never checked', () => {
     expect(checkEntryAgainstCap(cap({ max_hard_open_sessions_per_7_days: null }), hard, 9)).toEqual([]);
+  });
+});
+
+describe('entryCapWarnings: an empty list never means "could not check"', () => {
+  const hard = { contactStage: 'controlled_sparring' as const, sparringType: 'hard', sparringDay: DAY };
+
+  test('a cap that could not be read says so, whatever the entry', () => {
+    expect(kinds(entryCapWarnings({ state: 'unknown', cap: null }, hard, 0))).toEqual(['cap_unknown']);
+  });
+
+  test('no cap set: nothing to warn about', () => {
+    expect(entryCapWarnings({ state: 'none', cap: null }, hard, 5)).toEqual([]);
+  });
+
+  test('a failed count: the day limit is reported as not checked, never as within it', () => {
+    expect(kinds(entryCapWarnings({ state: 'set', cap: cap() }, hard, null))).toEqual(['days_not_counted']);
+  });
+
+  test('a failed count on an entry that is not hard or open: nothing to check, nothing said', () => {
+    expect(entryCapWarnings(
+      { state: 'set', cap: cap() },
+      { contactStage: 'light_technical', sparringType: 'technical', sparringDay: DAY },
+      null,
+    )).toEqual([]);
+  });
+
+  test('a counted entry is checked as checkEntryAgainstCap checks it', () => {
+    expect(kinds(entryCapWarnings({ state: 'set', cap: cap() }, hard, 3))).toEqual(['hard_open_days_over_cap']);
   });
 });

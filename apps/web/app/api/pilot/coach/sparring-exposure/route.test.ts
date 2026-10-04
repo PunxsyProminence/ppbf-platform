@@ -48,7 +48,8 @@ jest.mock('@/src/server/pilot/sparringExposure', () => ({
 }));
 
 // The cap read is mocked (proven against real Postgres in
-// athleteContactCaps.pg.test.ts); checkEntryAgainstCap runs as shipped.
+// sparringExposureContactStage.pg.test.ts and athleteContactCaps.pg.test.ts);
+// the warning functions run as shipped.
 jest.mock('@/src/server/pilot/athleteContactCaps', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteContactCaps');
   return { ...actual, readCapForEntry: jest.fn() };
@@ -524,7 +525,7 @@ describe('cap check (map item 15): warn only, after the save', () => {
     expect(mockCountDays).toHaveBeenCalledWith(ORG, 'ath-kid', '2026-09-30');
   });
 
-  test('an unreadable cap is "unknown", never "no cap", and the entry still saves', async () => {
+  test('an unreadable cap is "unknown", never "no cap": the entry saves and says it was not checked', async () => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     mockReadCap.mockResolvedValue({ state: 'unknown', cap: null });
     savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
@@ -532,20 +533,54 @@ describe('cap check (map item 15): warn only, after the save', () => {
     expect(response.status).toBe(201);
     const { cap_check: check } = await response.json();
     expect(check.cap_state).toBe('unknown');
+    expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['cap_unknown']);
+  });
+
+  test('even a cap read that throws cannot turn a saved entry into an error', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockReadCap.mockRejectedValue(new Error('connection terminated'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+      const response = await POST(postRequest(OPEN_ENTRY));
+      expect(response.status).toBe(201);
+      expect(mockRecord).toHaveBeenCalledTimes(1);
+      const { cap_check: check } = await response.json();
+      expect(check.cap_state).toBe('unknown');
+      expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['cap_unknown']);
+
+      // And GET still returns the entries.
+      const get = await GET(getRequest('athlete_id=ath-kid'));
+      expect(get.status).toBe(200);
+      expect((await get.json()).cap_check.cap_state).toBe('unknown');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test('no cap set: no warnings, and the state says so', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+    const { cap_check: check } = await (await POST(postRequest(OPEN_ENTRY))).json();
+    expect(check.cap_state).toBe('none');
     expect(check.warnings).toEqual([]);
   });
 
-  test('a count that fails is null, never 0; the stage is still checked and the entry still saves', async () => {
+  test('a count that fails is null, never 0; the stage is still checked, the day limit says it was not', async () => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     mockReadCap.mockResolvedValue({ state: 'set', cap: CAP });
     mockCountDays.mockRejectedValue(new Error('connection terminated'));
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
-    const response = await POST(postRequest(OPEN_ENTRY));
-    expect(response.status).toBe(201);
-    const { cap_check: check } = await response.json();
-    expect(check.hard_open_days_in_7).toBeNull();
-    expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['stage_above_cap']);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      savedAs({ contact_stage: 'open_sparring', sparring_type: 'hard' });
+      const response = await POST(postRequest(OPEN_ENTRY));
+      expect(response.status).toBe(201);
+      const { cap_check: check } = await response.json();
+      expect(check.hard_open_days_in_7).toBeNull();
+      expect(check.warnings.map((w: { kind: string }) => w.kind)).toEqual(['stage_above_cap', 'days_not_counted']);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   test.each([['an invented stage', 'hard_sparring'], ['a stage sent as a number', 3]])(

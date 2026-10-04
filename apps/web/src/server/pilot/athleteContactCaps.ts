@@ -246,7 +246,12 @@ export async function readCapForEntry(actor: ActorIdentity, athleteId: string): 
   }
 }
 
-export type CapWarningKind = 'stage_above_cap' | 'hard_open_days_over_cap' | 'stage_not_recorded';
+export type CapWarningKind =
+  | 'stage_above_cap'
+  | 'hard_open_days_over_cap'
+  | 'stage_not_recorded'
+  | 'cap_unknown'
+  | 'days_not_counted';
 
 export interface CapWarning {
   kind: CapWarningKind;
@@ -288,7 +293,7 @@ export function checkEntryAgainstCap(
       warnings.push({
         kind: 'stage_not_recorded',
         message: `No contact stage was recorded, so this entry cannot be checked against the cap `
-          + `(highest stage: ${humanizeContactLevel(highest)}).`,
+          + `(highest stage: ${humanizeContactLevel(highest)}). ${DECIDES}`,
       });
     } else if (contactStageRank(entry.contactStage) > contactStageRank(highest)) {
       warnings.push({
@@ -308,5 +313,33 @@ export function checkEntryAgainstCap(
     });
   }
 
+  return warnings;
+}
+
+/**
+ * The warnings for one saved entry, whatever could or could not be read, so
+ * an empty list always means "checked and within the cap" or "no cap set" --
+ * never "could not check". `hardOpenDays` null = the count failed.
+ */
+export function entryCapWarnings(
+  reading: CapReading,
+  entry: EntryForCapCheck,
+  hardOpenDays: number | null,
+): CapWarning[] {
+  if (reading.state === 'unknown') {
+    return [{
+      kind: 'cap_unknown',
+      message: `This athlete's cap could not be read just now, so this entry was not checked against it. ${DECIDES}`,
+    }];
+  }
+  if (!reading.cap) return [];
+  const warnings = checkEntryAgainstCap(reading.cap, entry, hardOpenDays ?? 0)
+    .filter((warning) => hardOpenDays !== null || warning.kind !== 'hard_open_days_over_cap');
+  if (hardOpenDays === null && reading.cap.max_hard_open_sessions_per_7_days !== null && isHardOrOpen(entry)) {
+    warnings.push({
+      kind: 'days_not_counted',
+      message: `Hard or open sparring days could not be counted just now, so the 7-day limit was not checked. ${DECIDES}`,
+    });
+  }
   return warnings;
 }
