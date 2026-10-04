@@ -1,4 +1,4 @@
-import type { PilotPrincipal } from './auth';
+import { homeMembershipRoleSql, sessionCredentialFits, type PilotPrincipal } from './auth';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { passwordLoginPermitted } from './credentialPolicy';
@@ -67,6 +67,8 @@ interface AccountRow extends EligibilityRow {
   auth_provider: AuthProvider;
   has_master_shadow_access: boolean;
   must_change_pin: boolean;
+  /** homeMembershipRoleSql: the role the session acts with (auth.ts). */
+  membership_role: PilotRole | null;
 }
 
 /**
@@ -122,7 +124,8 @@ export async function loginWithEmailAndPassword(
        ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        a.must_change_pin,
-       o.status as organization_status
+       o.status as organization_status,
+       ${homeMembershipRoleSql('a')} as membership_role
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where lower(a.login_email) = $1`,
@@ -143,6 +146,18 @@ export async function loginWithEmailAndPassword(
   const reason = ineligibleReason(data);
   if (!data || reason) {
     return rejected(reason ?? 'unknown_or_inactive_account');
+  }
+  // The session acts with the membership role (auth.ts resolvePrincipal), so
+  // a password must be a credential that role admits too.
+  if (data.membership_role && (
+    !passwordLoginPermitted({ role: data.membership_role })
+    || !sessionCredentialFits({
+      homeRole: data.role,
+      sessionRole: data.membership_role,
+      isPlatformOwner: data.is_platform_owner,
+    })
+  )) {
+    return rejected('membership_role_credential_mismatch');
   }
   // No organization means no session, as on every sign-in path (auth.ts). It
   // used to fall back to the deployment's default organization.
@@ -226,7 +241,7 @@ export async function loginWithEmailAndPassword(
     token,
     principal: {
       accountId: data.account_id,
-      role: data.role,
+      role: data.membership_role ?? data.role,
       organizationId,
       athleteId: data.athlete_id,
       sessionToken: token,

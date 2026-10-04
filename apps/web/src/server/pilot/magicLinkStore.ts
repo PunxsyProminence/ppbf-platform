@@ -1,3 +1,4 @@
+import { homeMembershipRoleSql, sessionCredentialFits } from './auth';
 import type { PilotRole } from './contracts';
 import { passwordLoginPermitted } from './credentialPolicy';
 import { query, queryOne, withTransaction } from './db';
@@ -115,23 +116,57 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
   const tokenHash = hashToken(token);
 
   return withTransaction(async (client) => {
-    const found = await client.query<RedeemableTokenRow>(
+    const found = await client.query<RedeemableTokenRow & {
+      account_organization_id: string;
+      membership_role: PilotRole | null;
+      is_platform_owner: boolean;
+    }>(
       `select t.account_id, t.organization_id, t.sent_to_email, t.expires_at,
               t.consumed_at, t.invalidated_at,
               a.role, a.active_flag, a.login_email,
-              ${accountDeletedSql('a')} as account_deleted
+              ${accountDeletedSql('a')} as account_deleted,
+              a.organization_id as account_organization_id,
+              a.is_platform_owner,
+              ${homeMembershipRoleSql('a')} as membership_role
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id
         where t.token_hash = $1
-          for update of t`,
+          for update of t
+          for no key update of a`,
       [tokenHash],
     );
 
+    // The account row is locked too. A move to another gym
+    // (upsertOrganizationMembership) takes it FOR UPDATE, so a move in flight
+    // makes this wait and then read the moved row -- and is refused below --
+    // while a move arriving later waits for this session to exist and then
+    // revokes it. Locking only the token let a move commit between this read
+    // and the session insert, and the old gym's session outlived it.
     const row = found.rows[0];
     if (!row) return { ok: false, reason: 'TOKEN_UNKNOWN' as ConsumeFailure };
 
     const refusal = validateTokenForRedemption(row, new Date());
     if (refusal) return { ok: false, reason: refusal };
+
+    // The account has moved to another gym since this link was issued for
+    // the old one. Moving revokes its sessions but not its unspent links, and
+    // leaves the old gym's membership in place, so a link redeemed now minted
+    // a session in the old gym carrying the role from the new one -- a parent
+    // there signed in as the coach they had become elsewhere
+    // (sessionRoleFromMembership.pg.test.ts). Answered as an inactive
+    // account, the page's existing message, and the link is not used up.
+    if (row.organization_id !== row.account_organization_id) {
+      return { ok: false, reason: 'ACCOUNT_INACTIVE' as ConsumeFailure };
+    }
+    // The session acts with the membership role (auth.ts resolvePrincipal),
+    // so a magic link must be a credential that role admits too.
+    if (row.membership_role && !sessionCredentialFits({
+      homeRole: row.role,
+      sessionRole: row.membership_role,
+      isPlatformOwner: row.is_platform_owner,
+    })) {
+      return { ok: false, reason: 'ACCOUNT_NOT_MAGIC_LINK' as ConsumeFailure };
+    }
 
     await client.query(
       `update pilot.magic_link_tokens set consumed_at = now() where token_hash = $1`,
@@ -155,9 +190,12 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
       principal: {
         accountId: row.account_id,
         organizationId: row.organization_id,
-        role: row.role,
+        // The session's role, as resolvePrincipal will read it on every
+        // request: the membership's, not the account row's (auth.ts).
+        role: row.membership_role ?? row.role,
       },
-      passwordSetup: passwordLoginPermitted({ role: row.role }) ? 'offer' : 'none',
+      passwordSetup: passwordLoginPermitted({ role: row.role })
+        && passwordLoginPermitted({ role: row.membership_role ?? row.role }) ? 'offer' : 'none',
     };
   });
 }
