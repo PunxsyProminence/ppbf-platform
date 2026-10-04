@@ -132,6 +132,22 @@ test('propagates the refusal when the account already exists', async () => {
   await expect(response.json()).resolves.toMatchObject({ error: 'Account already exists' });
 });
 
+test('a deleted login is answered 409 DELETED_LOGIN, not as an existing account', async () => {
+  const { deletedLoginConflict } = jest.requireActual<typeof import('@/src/server/pilot/deletedAccountSignIn')>(
+    '@/src/server/pilot/deletedAccountSignIn',
+  );
+  mockCreateAthleteAccount.mockRejectedValueOnce(deletedLoginConflict('athlete-account'));
+
+  const response = await post({
+    account_id: 'athlete-account',
+    role: 'athlete',
+    athlete_id: 'ath-1',
+  });
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({ code: 'DELETED_LOGIN' });
+});
+
 test('rejects outdated privileged local-PIN role creation paths', async () => {
   const response = await post({
     account_id: 'coach-account',

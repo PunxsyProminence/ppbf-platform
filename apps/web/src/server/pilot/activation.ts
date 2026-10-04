@@ -104,7 +104,7 @@ export async function provisionAthleteActivation(params: {
       );
       if (reset.rows.length === 0) {
         await refuseIfLoginDeleted(client, params.accountId, params.organizationId);
-        throw new Error('Account not found or cannot be reset');
+        throw new Error('Not found: no athlete account in this organization can be reset with that account_id');
       }
       await client.query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [params.accountId]);
     }
