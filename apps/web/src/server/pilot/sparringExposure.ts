@@ -26,8 +26,9 @@ import { athleteNotDeletedSql } from './deletedAthletes';
 // coach floor entry writes unlinked rows. Nothing here creates an
 // activity_log row, so nothing here touches attendance or tenure.
 //
-// DELETED ATHLETES ARE NEVER READ. Every reader filters on the athlete row's
-// own deleted_at (deletedAthletes.ts, deletion scope B).
+// DELETED ATHLETES ARE NEVER READ. Every reader here filters on the athlete
+// row's own deleted_at (deletedAthletes.ts, deletion scope B), and a deleted
+// sparring partner reads back as null.
 
 export type SparringType = 'hard' | 'play' | 'technical' | 'game' | 'conditioned';
 export type CoachObservedIntensity = 'light' | 'moderate' | 'firm' | 'unclear';
@@ -223,27 +224,54 @@ async function insertSparringExposure(input: RecordSparringExposureInput): Promi
   }
 }
 
+export interface SparringExposureListRow extends SparringExposureRow {
+  /** The gym day sparred: session_date, else the linked activity's occurred_on. */
+  sparring_day: string;
+}
+
+// Read shape. Two differences from the stored row:
+//   * sparring_day -- window filters and ordering use the day the sparring
+//     happened, never created_at, so an entry typed up days later still
+//     belongs to the day sparred.
+//   * a partner who has since been deleted is returned as null: deletion
+//     scope B reaches every row that names the athlete, not only rows they own.
+const LIST_FIELDS = EXPOSURE_FIELDS.replace(
+  'partner_athlete_id,',
+  'case when partner_deleted then null else partner_athlete_id end as partner_athlete_id,',
+) + ', sparring_day::text as sparring_day';
+
 export async function listSparringExposure(
   organizationId: string,
-  filter: { athleteId?: string; activityId?: string; since?: string; until?: string; limit?: number } = {},
-): Promise<SparringExposureRow[]> {
-  return query<SparringExposureRow>(
-    `select ${EXPOSURE_FIELDS}
-     from pilot.sparring_exposure
-     where organization_id = $1
-       and ($2::text is null or athlete_id = $2)
-       and ($3::text is null or activity_id = $3)
-       and ($4::timestamptz is null or created_at >= $4)
-       and ($5::timestamptz is null or created_at <= $5)
-       and ${athleteNotDeletedSql('pilot.sparring_exposure')}
-     order by created_at desc, segment_number asc
+  filter: { athleteId?: string; activityId?: string; sinceDay?: string; untilDay?: string; limit?: number } = {},
+): Promise<SparringExposureListRow[]> {
+  return query<SparringExposureListRow>(
+    `select ${LIST_FIELDS}
+     from (
+       select e.*,
+              coalesce(e.session_date, linked.occurred_on) as sparring_day,
+              exists (
+                select 1 from pilot.athletes partner
+                 where partner.organization_id = e.organization_id
+                   and partner.athlete_id = e.partner_athlete_id
+                   and partner.deleted_at is not null) as partner_deleted
+       from pilot.sparring_exposure e
+       left join pilot.activity_log linked
+         on linked.organization_id = e.organization_id and linked.activity_id = e.activity_id
+       where e.organization_id = $1
+         and ($2::text is null or e.athlete_id = $2)
+         and ($3::text is null or e.activity_id = $3)
+         and ${athleteNotDeletedSql('e')}
+     ) exposure
+     where ($4::date is null or sparring_day >= $4::date)
+       and ($5::date is null or sparring_day <= $5::date)
+     order by sparring_day desc, created_at desc, segment_number desc
      ${filter.limit ? 'limit $6' : ''}`,
     [
       organizationId,
       filter.athleteId ?? null,
       filter.activityId ?? null,
-      filter.since ?? null,
-      filter.until ?? null,
+      filter.sinceDay ?? null,
+      filter.untilDay ?? null,
       ...(filter.limit ? [filter.limit] : []),
     ],
   );
@@ -288,9 +316,10 @@ export interface SparringExposureCounts {
 export async function getSparringExposureCounts(
   organizationId: string,
   athleteId: string,
-  since?: string,
+  /** Gym day (YYYY-MM-DD), inclusive; compared against the day sparred. */
+  sinceDay?: string,
 ): Promise<SparringExposureCounts> {
-  const segments = await listSparringExposure(organizationId, { athleteId, since });
+  const segments = await listSparringExposure(organizationId, { athleteId, sinceDay });
   const segmentsByType: Record<SparringType, number> = {
     hard: 0, play: 0, technical: 0, game: 0, conditioned: 0,
   };
@@ -375,6 +404,7 @@ export async function listSessionLoad(
        and ($2::text is null or athlete_id = $2)
        and ($3::text is null or activity_id = $3)
        and ($4::text is null or rated_by = $4)
+       and ${athleteNotDeletedSql('pilot.session_load')}
      order by rated_at desc`,
     [organizationId, filter.athleteId ?? null, filter.activityId ?? null, filter.ratedBy ?? null],
   );

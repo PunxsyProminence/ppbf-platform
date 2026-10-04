@@ -173,11 +173,15 @@ describe('GET /api/pilot/coach/sparring-exposure', () => {
     const response = await GET(getRequest('athlete_id=ath-kid'));
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(['counts', 'entries', 'stop_rules', 'window_days']);
+    expect(Object.keys(body).sort()).toEqual([
+      'counts', 'entries', 'entries_truncated', 'since_day', 'stop_rules', 'window_days',
+    ]);
     expect(body.window_days).toBe(28);
-    const since = new Date(EVENING_AT_THE_GYM.getTime() - 28 * 86_400_000).toISOString();
-    expect(mockList).toHaveBeenCalledWith(ORG, { athleteId: 'ath-kid', since, limit: 100 });
-    expect(mockCounts).toHaveBeenCalledWith(ORG, 'ath-kid', since);
+    // 28 gym days ending on the GYM day (not the UTC day, already tomorrow).
+    expect(body.since_day).toBe('2026-09-06');
+    expect(body.entries_truncated).toBe(false);
+    expect(mockList).toHaveBeenCalledWith(ORG, { athleteId: 'ath-kid', sinceDay: '2026-09-06', limit: 101 });
+    expect(mockCounts).toHaveBeenCalledWith(ORG, 'ath-kid', '2026-09-06');
     expect(mockStopRules).toHaveBeenCalledWith(ORG);
   });
 
@@ -217,9 +221,25 @@ describe('GET /api/pilot/coach/sparring-exposure', () => {
   test('days narrows the window for both entries and counts', async () => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     const response = await GET(getRequest('athlete_id=ath-kid&days=7'));
-    expect((await response.json()).window_days).toBe(7);
-    const since = new Date(EVENING_AT_THE_GYM.getTime() - 7 * 86_400_000).toISOString();
-    expect(mockCounts).toHaveBeenCalledWith(ORG, 'ath-kid', since);
+    const body = await response.json();
+    expect(body.window_days).toBe(7);
+    expect(body.since_day).toBe('2026-09-27');
+    expect(mockCounts).toHaveBeenCalledWith(ORG, 'ath-kid', '2026-09-27');
+  });
+
+  test('days=1 is the gym day alone', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    const body = await (await GET(getRequest('athlete_id=ath-kid&days=1'))).json();
+    expect(body.since_day).toBe(GYM_DAY);
+  });
+
+  test('entries stop at 100 and say so; counts are not cut', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockList.mockResolvedValue(Array.from({ length: 101 }, (_, i) => ({ exposure_id: `e${i}` })));
+    const body = await (await GET(getRequest('athlete_id=ath-kid'))).json();
+    expect(body.entries).toHaveLength(100);
+    expect(body.entries_truncated).toBe(true);
+    expect(body.counts.total_segments).toBe(1);
   });
 });
 
@@ -310,6 +330,8 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     ['time_under_impact_sec', '60'],
     ['round_equivalent', 0],
     ['round_equivalent', 100],
+    ['round_equivalent', 0.004],
+    ['round_equivalent', 1.555],
     ['glove_oz', 7],
     ['glove_oz', 21],
     ['headgear_worn', 'true'],
@@ -318,6 +340,7 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     ['session_date', '2026-10-04'],
     ['session_date', '2026-02-30'],
     ['session_date', '10/01/2026'],
+    ['session_date', '2025-10-02'],
   ])('%s = %p is a 400', async (field, value) => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     const response = await POST(postRequest({ ...VALID_BODY, [field]: value }));
@@ -325,10 +348,23 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  test('a past gym day is accepted as given', async () => {
+  test.each(['2026-09-30', '2025-10-03'])('a past gym day within a year (%s) is accepted as given', async (day) => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
-    expect((await POST(postRequest({ ...VALID_BODY, session_date: '2026-09-30' }))).status).toBe(201);
-    expect(mockRecord.mock.calls[0][0].sessionDate).toBe('2026-09-30');
+    expect((await POST(postRequest({ ...VALID_BODY, session_date: day }))).status).toBe(201);
+    expect(mockRecord.mock.calls[0][0].sessionDate).toBe(day);
+  });
+
+  test('round_equivalent in hundredths is accepted', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    expect((await POST(postRequest({ ...VALID_BODY, round_equivalent: 0.01 }))).status).toBe(201);
+    expect((await POST(postRequest({ ...VALID_BODY, round_equivalent: 2.5 }))).status).toBe(201);
+  });
+
+  test('an unrelated coach naming a partner is refused on the athlete, before the partner is looked at', async () => {
+    mockRequirePrincipal.mockResolvedValue(UNRELATED_COACH);
+    const response = await POST(postRequest({ ...VALID_BODY, partner_athlete_id: 'ath-away' }));
+    expect(response.status).toBe(403);
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
   test('an early stop needs a reason', async () => {

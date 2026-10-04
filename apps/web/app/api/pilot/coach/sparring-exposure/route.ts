@@ -109,6 +109,13 @@ function isRealDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+/** A gym day N days before another, both YYYY-MM-DD (calendar arithmetic, no time zone). */
+function daysBefore(day: string, days: number): string {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() - days);
+  return at.toISOString().slice(0, 10);
+}
+
 function parseSessionDate(value: unknown): string {
   const today = gymToday();
   if (value === undefined || value === null) return today;
@@ -117,6 +124,11 @@ function parseSessionDate(value: unknown): string {
   }
   // YYYY-MM-DD compares correctly as text.
   if (value > today) throw new ValidationError('Unsupported session_date: cannot be after today');
+  // Catching up a paper sheet is fine; a year-old date is a typo, and the
+  // read window cannot reach further back than this anyway.
+  if (value < daysBefore(today, MAX_WINDOW_DAYS)) {
+    throw new ValidationError(`Unsupported session_date: at most ${MAX_WINDOW_DAYS} days ago`);
+  }
   return value;
 }
 
@@ -138,8 +150,14 @@ function parseEntry(body: Record<string, unknown>): ParsedEntry {
   let roundEquivalent: number | null = null;
   if (body.round_equivalent !== undefined && body.round_equivalent !== null) {
     const rounds = body.round_equivalent;
-    if (typeof rounds !== 'number' || !Number.isFinite(rounds) || rounds <= 0 || rounds > 99.99) {
-      throw new ValidationError('Unsupported round_equivalent: a number above 0 and at most 99.99');
+    // The column is numeric(4,2): anything finer than hundredths would be
+    // silently rounded, and 0.004 would be stored as the 0 this refuses.
+    const hundredths = typeof rounds === 'number' ? Math.round(rounds * 100) : NaN;
+    if (
+      typeof rounds !== 'number' || !Number.isFinite(rounds)
+      || Math.abs(rounds * 100 - hundredths) > 1e-9 || hundredths < 1 || hundredths > 9999
+    ) {
+      throw new ValidationError('Unsupported round_equivalent: 0.01 to 99.99, in hundredths at most');
     }
     roundEquivalent = rounds;
   }
@@ -207,15 +225,25 @@ export async function GET(request: NextRequest) {
       }
       windowDays = days;
     }
-    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+    // Gym days, inclusive: days=1 is today, days=28 is today and the 27 before.
+    // Compared against the day sparred, not when the entry was typed.
+    const sinceDay = daysBefore(gymToday(), windowDays - 1);
 
-    const [entries, counts, stopRules] = await Promise.all([
-      listSparringExposure(principal.organizationId, { athleteId, since, limit: ENTRY_LIMIT }),
-      getSparringExposureCounts(principal.organizationId, athleteId, since),
+    const [rows, counts, stopRules] = await Promise.all([
+      listSparringExposure(principal.organizationId, { athleteId, sinceDay, limit: ENTRY_LIMIT + 1 }),
+      getSparringExposureCounts(principal.organizationId, athleteId, sinceDay),
       listActiveUniversalStopRules(principal.organizationId),
     ]);
 
-    return NextResponse.json({ window_days: windowDays, entries, counts, stop_rules: stopRules });
+    // counts covers the whole window; entries stops at ENTRY_LIMIT and says so.
+    return NextResponse.json({
+      window_days: windowDays,
+      since_day: sinceDay,
+      entries: rows.slice(0, ENTRY_LIMIT),
+      entries_truncated: rows.length > ENTRY_LIMIT,
+      counts,
+      stop_rules: stopRules,
+    });
   } catch (error) {
     return jsonError(error);
   }

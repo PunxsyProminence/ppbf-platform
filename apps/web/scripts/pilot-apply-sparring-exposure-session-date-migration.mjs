@@ -38,6 +38,7 @@ const READINESS_QUERY = `
       where conname = 'pilot_sparring_exposure_session_date_or_activity'
         and conrelid = to_regclass('pilot.sparring_exposure') and contype = 'c'
         and convalidated
+        and pg_get_constraintdef(oid) = 'CHECK (((activity_id IS NOT NULL) OR (session_date IS NOT NULL)))'
     ) as session_date_or_activity_ready,
     exists (
       select 1 from pg_index i
@@ -46,6 +47,7 @@ const READINESS_QUERY = `
         and i.indrelid = to_regclass('pilot.sparring_exposure')
         and i.indisunique and i.indisvalid
         and pg_get_expr(i.indpred, i.indrelid) = '(activity_id IS NULL)'
+        and pg_get_indexdef(i.indexrelid) like '%(organization_id, athlete_id, session_date, segment_number) WHERE%'
     ) as session_segment_unique_ready,
     exists (
       select 1 from pg_constraint

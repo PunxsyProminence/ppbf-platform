@@ -341,6 +341,42 @@ describe('runner and migration guards', () => {
     }
   });
 
+  test('readiness refuses an index of the right name on the wrong columns', async () => {
+    const client = await freshDatabase('ppbf_test_sparsess_wrong_index', { sessionDate: false });
+    try {
+      await client.query(
+        `create unique index pilot_sparring_exposure_session_segment_uq
+           on pilot.sparring_exposure(organization_id, athlete_id, segment_number) where activity_id is null`,
+      );
+      await expect(applySessionDate(client, sessionDateSql)).rejects.toThrow('SPARRING_EXPOSURE_SESSION_DATE_NOT_READY');
+    } finally {
+      await closeClient(client);
+    }
+  });
+
+  test('unlinked rows with no date already present: a re-run refuses by name and alters nothing', async () => {
+    const client = await freshDatabase('ppbf_test_sparsess_nodate');
+    try {
+      await client.query(
+        'alter table pilot.sparring_exposure drop constraint pilot_sparring_exposure_session_date_or_activity',
+      );
+      await client.query(
+        `insert into pilot.sparring_exposure
+           (organization_id, exposure_id, athlete_id, segment_number, sparring_type, time_under_impact_sec,
+            coach_observed_intensity, coach_observed_head_contact, supervising_coach_account_id)
+         values ($1,'nodate-1',$2,1,'play',20,'light','none',$3)`,
+        [ORG_A, ATHLETE_NO_ACCOUNT, COACH_A],
+      );
+      await expect(applySessionDate(client, sessionDateSql)).rejects.toThrow(
+        'SPARRING_EXPOSURE_UNLINKED_ROWS_WITHOUT_DATE_EXIST',
+      );
+      const rows = await client.query(`select exposure_id, session_date from pilot.sparring_exposure`);
+      expect(rows.rows).toEqual([{ exposure_id: 'nodate-1', session_date: null }]);
+    } finally {
+      await closeClient(client);
+    }
+  });
+
   test('unlinked duplicates already present: a re-run refuses by name and alters nothing', async () => {
     const client = await freshDatabase('ppbf_test_sparsess_dupes');
     try {
@@ -471,14 +507,18 @@ describe('unlinked entries (no activity_log row)', () => {
 
       // Computes 1 (the rival is uncommitted), then blocks on the unique index.
       const pending = recordSparringExposure(entry());
-      for (let i = 0; i < 100; i += 1) {
+      let sawLockWait = false;
+      for (let i = 0; i < 200 && !sawLockWait; i += 1) {
         const waiting = await rival.query(
           `select count(*)::int as n from pg_stat_activity
            where datname = current_database() and wait_event_type = 'Lock'`,
         );
-        if (waiting.rows[0].n > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        sawLockWait = waiting.rows[0].n > 0;
+        if (!sawLockWait) await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      // Without the wait the insert could simply read 1 as taken and never
+      // exercise the retry; the test would then pass for the wrong reason.
+      expect(sawLockWait).toBe(true);
       await rival.query('commit');
 
       const saved = await pending;
@@ -511,6 +551,46 @@ describe('readers', () => {
       expect(await listSparringExposure(ORG_A, { athleteId: ATHLETE_DELETED })).toEqual([]);
       expect((await listSparringExposure(ORG_A)).map((row) => row.athlete_id)).toEqual([ATHLETE_NO_ACCOUNT]);
       expect((await getSparringExposureCounts(ORG_A, ATHLETE_DELETED)).total_segments).toBe(0);
+    } finally {
+      await closeClient(client);
+    }
+  });
+
+  test('a deleted sparring partner reads back as null on the other athlete\'s rows', async () => {
+    const client = await freshDatabase('ppbf_test_sparsess_deleted_partner');
+    try {
+      await recordSparringExposure(entry({ partnerAthleteId: ATHLETE_DELETED }));
+      await recordSparringExposure(entry({ partnerAthleteId: ATHLETE_LINKED }));
+      await client.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`,
+        [ORG_A, ATHLETE_DELETED],
+      );
+      const rows = await listSparringExposure(ORG_A, { athleteId: ATHLETE_NO_ACCOUNT });
+      expect(rows.map((row) => row.partner_athlete_id).sort()).toEqual([ATHLETE_LINKED, null].sort());
+    } finally {
+      await closeClient(client);
+    }
+  });
+
+  test('the window is the day sparred (session_date, else the linked activity day), not when it was typed', async () => {
+    const client = await freshDatabase('ppbf_test_sparsess_window');
+    try {
+      // Typed in today, sparred on the 2026-09-20 sheet: outside a window from 10-01.
+      await recordSparringExposure(entry({ athleteId: ATHLETE_LINKED, sessionDate: '2026-09-20', timeUnderImpactSec: 11 }));
+      await recordSparringExposure(entry({ athleteId: ATHLETE_LINKED, sessionDate: '2026-10-02', timeUnderImpactSec: 22 }));
+      // Linked, no session_date: its activity occurred_on is 2026-10-01.
+      await recordSparringExposure(entry({
+        athleteId: ATHLETE_LINKED, activityId: 'activity-1', sessionDate: null, timeUnderImpactSec: 33,
+      }));
+
+      const rows = await listSparringExposure(ORG_A, { athleteId: ATHLETE_LINKED, sinceDay: '2026-10-01' });
+      expect(rows.map((row) => [row.sparring_day, row.time_under_impact_sec])).toEqual([
+        ['2026-10-02', 22],
+        ['2026-10-01', 33],
+      ]);
+      expect((await getSparringExposureCounts(ORG_A, ATHLETE_LINKED, '2026-10-01')).total_time_under_impact_sec).toBe(55);
+      const all = await listSparringExposure(ORG_A, { athleteId: ATHLETE_LINKED, untilDay: '2026-09-30' });
+      expect(all.map((row) => row.sparring_day)).toEqual(['2026-09-20']);
     } finally {
       await closeClient(client);
     }

@@ -10,7 +10,7 @@
 -- effect (attendancePrecedence.ts ranks activity_log first), which recording a
 -- sparring round must not do.
 --
--- WHAT CHANGES (overwatch GO A, 2026-10-04):
+-- WHAT CHANGES (overwatch GO A for the sparring-exposure lane):
 --   * activity_id becomes nullable. The foreign key to pilot.activity_log is
 --     KEPT and still holds whenever activity_id is set (MATCH SIMPLE: a null
 --     member skips the check, a non-null one is checked as before).
@@ -28,8 +28,9 @@
 -- NO DATA IS REWRITTEN. No existing row is updated: before this migration
 -- activity_id was NOT NULL, so every existing row already satisfies the new
 -- check, and none falls under the partial index's predicate. If an earlier run
--- of this file was partly undone by hand and unlinked duplicates now exist,
--- the guard below refuses with a named error rather than altering any row.
+-- of this file was partly undone by hand and unlinked rows now lack a date or
+-- repeat a segment, the guards below refuse with a named error rather than
+-- altering any row.
 --
 -- STILL REFUSED, MATCHING THE ORIGINAL MIGRATION'S HEADER: no damage score, no
 -- cumulative risk index, no recommended limit, no clearance.
@@ -53,6 +54,9 @@ alter table pilot.sparring_exposure add column if not exists session_date date n
 
 do $$
 begin
+  if exists (select 1 from pilot.sparring_exposure where activity_id is null and session_date is null) then
+    raise exception 'SPARRING_EXPOSURE_UNLINKED_ROWS_WITHOUT_DATE_EXIST: rows with neither activity_id nor session_date; resolve them by hand -- this migration does not alter data';
+  end if;
   if not exists (select 1 from pg_constraint where conname = 'pilot_sparring_exposure_session_date_or_activity'
                  and conrelid = 'pilot.sparring_exposure'::regclass) then
     alter table pilot.sparring_exposure add constraint pilot_sparring_exposure_session_date_or_activity
