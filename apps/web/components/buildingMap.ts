@@ -516,7 +516,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/athlete/mental-skills', label: 'Mental Skills', room: 'floor',
     roles: ['athlete'],
     keywords: 'mental skills self-talk cue imagery visualisation visualization rehearsal mindset focus',
-    hint: 'Your self-talk cue and short imagery sessions. Your coach and guardian can see them.' },
+    hint: 'Your self-talk cue and short imagery sessions.' },
   { href: '/coach/behavior-standards', label: 'Standards', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'behavior standards conduct recognition expectations concern safeguarding discipline',
     hint: 'What the gym expects \u2014 recognition when met, safeguarding when not.' },

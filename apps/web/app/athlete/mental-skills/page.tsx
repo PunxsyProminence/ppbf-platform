@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import MentalSkillsView, {
@@ -46,6 +46,7 @@ async function fetchEntries(signal?: AbortSignal): Promise<MentalSkillsData> {
 }
 
 interface FamilyBlock {
+  status?: string;
   objectives?: Array<{ objective_id: string; domain: string; objective: string; status: string }>;
 }
 
@@ -59,16 +60,18 @@ export default function AthleteMentalSkillsPage() {
   const [minutes, setMinutes] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  // A ref, not state: two taps inside one render must not both get through.
+  const inFlight = useRef(false);
 
-  async function refreshEntries(signal?: AbortSignal) {
+  /** After a save. A failed reload keeps what is on screen rather than
+   * replacing it with "could not be read" right after "saved". */
+  async function refreshEntries(): Promise<boolean> {
     try {
-      const fresh = await fetchEntries(signal);
-      setData(fresh);
+      setData(await fetchEntries());
       setState('loaded');
-    } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') return;
-      setData(null);
-      setState('unavailable');
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -95,9 +98,12 @@ export default function AthleteMentalSkillsPage() {
         if (!response.ok) throw new Error('blocks');
         const payload = (await response.json()) as { blocks?: FamilyBlock[] };
         if (!Array.isArray(payload.blocks)) throw new Error('shape');
+        // Current goals only: active objectives in active blocks. Drafts,
+        // finished and cancelled goals stay on the development plan page,
+        // where their status is shown.
         setGoals(
-          payload.blocks.flatMap((block) => (block.objectives ?? [])
-            .filter((o) => o.domain === 'mental' && o.status !== 'cancelled')
+          payload.blocks.filter((block) => block.status === 'active').flatMap((block) => (block.objectives ?? [])
+            .filter((o) => o.domain === 'mental' && o.status === 'active')
             .map((o) => ({ objective_id: o.objective_id, objective: o.objective }))),
         );
         setGoalsState('loaded');
@@ -111,6 +117,8 @@ export default function AthleteMentalSkillsPage() {
   }, []);
 
   async function post(body: Record<string, unknown>, done: string): Promise<boolean> {
+    if (inFlight.current) return false;
+    inFlight.current = true;
     setSaving(true);
     setMessage('');
     try {
@@ -126,13 +134,13 @@ export default function AthleteMentalSkillsPage() {
         setMessage(response.status === 400 && payload.error ? payload.error : 'That did not save. Try again.');
         return false;
       }
-      setMessage(done);
-      await refreshEntries();
+      setMessage((await refreshEntries()) ? done : `${done} The list could not refresh; reload the page to see it.`);
       return true;
     } catch {
       setMessage('That did not save. Try again.');
       return false;
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   }
@@ -171,7 +179,7 @@ export default function AthleteMentalSkillsPage() {
           <p className="t-eyebrow">Athlete Development</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Mental Skills</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            Your self-talk cue and your imagery sessions. Your coach and your guardian can see what you save here.
+            Your self-talk cue and your imagery sessions.
           </p>
           <Link href="/athlete/dashboard" className="btn btn--ghost mt-[var(--s4)]">
             Back to your workspace
@@ -190,7 +198,7 @@ export default function AthleteMentalSkillsPage() {
             id="cue-text"
             value={cueText}
             maxLength={CUE_MAX}
-            onChange={(event) => setCueText(event.target.value)}
+            onChange={(event) => { setCueText(event.target.value); setMessage(''); }}
             className="input input--kiosk"
           />
           <fieldset className="space-y-[var(--s2)]">
@@ -215,7 +223,7 @@ export default function AthleteMentalSkillsPage() {
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]" aria-labelledby="imagery-heading">
           <h2 id="imagery-heading" className="t-eyebrow">Imagery session</h2>
-          <p className="t-label m-0">From the drill {IMAGERY_SOURCE.drillName} ({IMAGERY_SOURCE.skillId})</p>
+          <p className="t-label m-0">From the drill {IMAGERY_SOURCE.drillName}</p>
           <ol className="list-decimal pl-[var(--s5)] space-y-[var(--s2)]">
             {IMAGERY_STEPS.map((step) => (
               <li key={step} className="t-body">{step}</li>
@@ -231,7 +239,7 @@ export default function AthleteMentalSkillsPage() {
             max={MINUTES_MAX}
             step={1}
             value={minutes}
-            onChange={(event) => setMinutes(event.target.value)}
+            onChange={(event) => { setMinutes(event.target.value); setMessage(''); }}
             className="input input--kiosk"
           />
           <button type="button" onClick={() => void logSession()} disabled={saving} className="btn btn--kiosk disabled:opacity-50">
@@ -239,7 +247,8 @@ export default function AthleteMentalSkillsPage() {
           </button>
         </section>
 
-        {message && <p className="t-body" role="status">{message}</p>}
+        {/* Always mounted: a live region inserted already filled is often not announced. */}
+        <p className="t-body" role="status">{message}</p>
       </div>
     </RoleStandaloneView>
   );

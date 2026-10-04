@@ -28,6 +28,8 @@ jest.mock('next/link', () => ({
 
 interface Stubs {
   entriesOk?: boolean;
+  refetchOk?: boolean;
+  postDelay?: Promise<void>;
   blocksOk?: boolean;
   postStatus?: number;
   postError?: string;
@@ -41,25 +43,43 @@ const entries = {
   ],
 };
 
-const blocks = [{
-  block_id: 'b-1',
-  objectives: [
-    { objective_id: 'o-1', domain: 'mental', objective: 'Breathe out on every exit from the pocket.', status: 'active' },
-    { objective_id: 'o-2', domain: 'technical', objective: 'Jab off the back foot.', status: 'active' },
-    { objective_id: 'o-3', domain: 'mental', objective: 'Dropped mental goal.', status: 'cancelled' },
-  ],
-}];
+const afterSave = {
+  current_cue: { entry_id: 'e-cue-2', cue_text: 'keep working', cue_kind: 'motivational', logged_on: '2026-10-04' },
+  imagery_sessions: [{ entry_id: 'e-3', minutes: 6, content_key: 'imagery-rehearsal', logged_on: '2026-10-04' }, ...entries.imagery_sessions],
+};
+
+const blocks = [
+  {
+    block_id: 'b-1',
+    status: 'active',
+    objectives: [
+      { objective_id: 'o-1', domain: 'mental', objective: 'Breathe out on every exit from the pocket.', status: 'active' },
+      { objective_id: 'o-2', domain: 'technical', objective: 'Jab off the back foot.', status: 'active' },
+      { objective_id: 'o-3', domain: 'mental', objective: 'Dropped mental goal.', status: 'cancelled' },
+      { objective_id: 'o-4', domain: 'mental', objective: 'Draft mental goal.', status: 'draft' },
+      { objective_id: 'o-5', domain: 'mental', objective: 'Finished mental goal.', status: 'completed' },
+    ],
+  },
+  {
+    block_id: 'b-2',
+    status: 'cancelled',
+    objectives: [{ objective_id: 'o-6', domain: 'mental', objective: 'Goal in a cancelled block.', status: 'active' }],
+  },
+];
 
 function installFetch(stubs: Stubs = {}): jest.Mock {
+  let saved = false;
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/pilot/athlete/mental-skills') && init?.method === 'POST') {
+      if (stubs.postDelay) await stubs.postDelay;
       const status = stubs.postStatus ?? 201;
+      if (status < 300) saved = true;
       return { ok: status < 300, status, json: async () => (status < 300 ? {} : { error: stubs.postError }) } as Response;
     }
     if (url.includes('/api/pilot/athlete/mental-skills')) {
-      const ok = stubs.entriesOk ?? true;
-      return { ok, status: ok ? 200 : 503, json: async () => entries } as Response;
+      const ok = saved ? (stubs.refetchOk ?? true) : (stubs.entriesOk ?? true);
+      return { ok, status: ok ? 200 : 503, json: async () => (saved ? afterSave : entries) } as Response;
     }
     if (url.includes('/api/pilot/athlete/development-blocks')) {
       const ok = stubs.blocksOk ?? true;
@@ -94,7 +114,7 @@ test('self only: no request names an athlete, before or after a write', async ()
   }
 });
 
-test('shows the current cue with both kind names, each session as logged, and only active mental goals', async () => {
+test('shows the current cue with both kind names, each session as logged, and only active goals in active blocks', async () => {
   await renderPage();
   expect(screen.getByText('hands home')).toBeTruthy();
   expect(screen.getByText(/Technique \(instructional\) · set/)).toBeTruthy();
@@ -102,13 +122,15 @@ test('shows the current cue with both kind names, each session as logged, and on
   expect(screen.getByText(/4 min/)).toBeTruthy();
   expect(screen.getByText('Breathe out on every exit from the pocket.')).toBeTruthy();
   expect(screen.queryByText('Jab off the back foot.')).toBeNull();
-  expect(screen.queryByText('Dropped mental goal.')).toBeNull();
+  for (const hidden of ['Dropped mental goal.', 'Draft mental goal.', 'Finished mental goal.', 'Goal in a cancelled block.']) {
+    expect(screen.queryByText(hidden)).toBeNull();
+  }
 });
 
 test('nothing is computed: no total, streak or target', async () => {
   await renderPage();
   const text = document.body.textContent ?? '';
-  expect(text).not.toMatch(/11 min|total|streak|per week|a week|target|score/i);
+  expect(text).not.toMatch(/11 min|total|streak|per week|a week|target|score|\d+\s*sessions/i);
 });
 
 test('a failed read is not shown as nothing logged', async () => {
@@ -130,6 +152,35 @@ test('saving a cue sends the text and kind, then reloads', async () => {
     kind: 'self_talk_cue', cue_text: 'keep working', cue_kind: 'motivational',
   });
   expect(screen.getByRole('status').textContent).toBe('Cue saved.');
+  // The list was reloaded: the new cue is on screen.
+  expect(screen.getByText('keep working', { selector: 'p' })).toBeTruthy();
+});
+
+test('a failed reload after a save keeps the list on screen and says so', async () => {
+  await renderPage({ refetchOk: false });
+  fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '5' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Log session' }));
+  });
+  expect(screen.getByRole('status').textContent).toMatch(/^Session logged\. The list could not refresh/);
+  expect(screen.getByText('hands home')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('a double tap sends one write', async () => {
+  let release: () => void = () => {};
+  const postDelay = new Promise<void>((resolve) => { release = resolve; });
+  const fetchMock = await renderPage({ postDelay });
+  fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '5' } });
+  const button = screen.getByRole('button', { name: 'Log session' });
+  await act(async () => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  await act(async () => {
+    release();
+  });
+  expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toHaveLength(1);
 });
 
 test('a cue without a kind is not sent', async () => {

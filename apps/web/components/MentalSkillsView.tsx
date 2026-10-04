@@ -72,7 +72,8 @@ export default function MentalSkillsView({
               <>
                 <p className="t-command m-0">{data.current_cue.cue_text}</p>
                 <p className="t-label m-0">
-                  {CUE_KIND_LABELS[data.current_cue.cue_kind]} · set {formatGymDayShort(data.current_cue.logged_on)}
+                  {CUE_KIND_LABELS[data.current_cue.cue_kind] ?? data.current_cue.cue_kind}
+                  {formatGymDayShort(data.current_cue.logged_on) ? ` · set ${formatGymDayShort(data.current_cue.logged_on)}` : ''}
                 </p>
               </>
             ) : (
@@ -88,7 +89,7 @@ export default function MentalSkillsView({
               <ul className="space-y-[var(--s1)]">
                 {data.imagery_sessions.map((session) => (
                   <li key={session.entry_id} className="t-data">
-                    {formatGymDayShort(session.logged_on)}: {session.minutes} min
+                    {formatGymDayShort(session.logged_on) ?? session.logged_on}: {session.minutes} min
                   </li>
                 ))}
               </ul>
