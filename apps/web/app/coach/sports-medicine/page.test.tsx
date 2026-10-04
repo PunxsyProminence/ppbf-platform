@@ -115,15 +115,15 @@ test('a cleared athlete shows the badge and date, and no clinical detail leaks',
   expect(screen.queryByText(/physician-note-123/)).toBeNull();
 });
 
-test('each athlete row carries a closed Sparring cap control, and the board reads no caps on load', async () => {
+test('sparring caps are linked from the board, never shown on it (2026-08-15 rule: clearance and holds only)', async () => {
   const fetchMock = mockFetch();
   global.fetch = fetchMock;
 
   render(<SportsMedicinePage />);
 
   await screen.findByText('Jordan Doe');
-  const control = screen.getByRole('button', { name: 'Sparring cap' });
-  expect(control.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('/coach/sparring-caps');
+  expect(screen.queryByRole('button', { name: 'Sparring cap' })).toBeNull();
   const urls = (fetchMock as unknown as jest.Mock).mock.calls.map(([input]) => String(input));
   expect(urls.some((url) => url.includes('athlete-contact-caps'))).toBe(false);
 });

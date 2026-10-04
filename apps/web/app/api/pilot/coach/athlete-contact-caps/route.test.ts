@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
-import { listContactCapHistory, setContactCap } from '@/src/server/pilot/athleteContactCaps';
+import {
+  contactCapAccessibleAthleteIds,
+  listContactCapHistory,
+  setContactCap,
+} from '@/src/server/pilot/athleteContactCaps';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 /*
@@ -26,6 +30,7 @@ jest.mock('@/src/server/pilot/athleteContactCaps', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteContactCaps');
   return {
     ...actual,
+    contactCapAccessibleAthleteIds: jest.fn(),
     listContactCapHistory: jest.fn(),
     setContactCap: jest.fn(),
   };
@@ -34,6 +39,7 @@ jest.mock('@/src/server/pilot/athleteContactCaps', () => {
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockHistory = listContactCapHistory as jest.Mock;
 const mockSet = setContactCap as jest.Mock;
+const mockAccessible = contactCapAccessibleAthleteIds as jest.Mock;
 
 const COACH = {
   accountId: 'acct-coach',
@@ -183,5 +189,38 @@ describe('POST', () => {
     });
     expect(response.status).toBe(400);
     expect(mockSet).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST action accessible_athletes (the cap page roster)', () => {
+  it('returns the ids the module admits, for the session actor, and writes nothing', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockAccessible.mockResolvedValue(new Set(['ath-1']));
+    const response = await post({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-2'] });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, athlete_ids: ['ath-1'] });
+    expect(mockAccessible).toHaveBeenCalledWith(
+      { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null },
+      ['ath-1', 'ath-2'],
+    );
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an unknown action', { action: 'delete' }],
+    ['ids that are not a list', { action: 'accessible_athletes', athlete_ids: 'ath-1' }],
+    ['ids that are not text', { action: 'accessible_athletes', athlete_ids: [1] }],
+    ['more than 1000 ids', { action: 'accessible_athletes', athlete_ids: Array.from({ length: 1001 }, (_, i) => `a${i}`) }],
+  ])('refuses %s with a 400', async (_label, body) => {
+    mockPrincipal.mockResolvedValue(COACH);
+    expect((await post(body)).status).toBe(400);
+    expect(mockAccessible).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('roles that can never hold a cap are refused before the module runs', async () => {
+    mockPrincipal.mockResolvedValue({ ...COACH, role: 'parent' });
+    expect((await post({ action: 'accessible_athletes', athlete_ids: ['ath-1'] })).status).toBe(403);
+    expect(mockAccessible).not.toHaveBeenCalled();
   });
 });

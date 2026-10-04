@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { humanizeContactLevel } from '../../lib/drillPresentation';
 
-import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
+import { type ActorIdentity, accessibleAthleteIds, assertActorCanAccessAthlete } from './access';
 import { VOCABULARIES } from './contentImport/vocabularies';
 import { query, queryOne } from './db';
 import { ForbiddenError, ValidationError } from './errors';
@@ -145,6 +145,21 @@ async function assertCapAccess(
     }
   }
   throw new ForbiddenError('This account may not read or set contact caps for this athlete.', 'CONTACT_CAP_NOT_PERMITTED');
+}
+
+/**
+ * Of these athletes, the ones this actor may read and set caps for: the same
+ * rule as assertCapAccess (an active staff membership here, then the athlete
+ * chokepoint run with that membership role), batched for a roster. Empty for
+ * anyone with no such membership.
+ */
+export async function contactCapAccessibleAthleteIds(
+  actor: ActorIdentity,
+  athleteIds: readonly string[],
+): Promise<Set<string>> {
+  const role = await capRoleInOrganization(actor);
+  if (!role) return new Set();
+  return accessibleAthleteIds({ ...actor, role }, athleteIds);
 }
 
 /** The cap in force: the newest row, which may be a cleared one. Null when none was ever set. */

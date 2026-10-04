@@ -7,7 +7,7 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // A coach's sparring caps for one athlete (map item 15): the highest contact
 // stage they may spar at, and the most hard or open sparring sessions in any
-// 7 days. Rendered closed inside each athlete row of the clearance board; it
+// 7 days. Rendered closed inside each athlete row of /coach/sparring-caps; it
 // reads nothing until a coach opens it.
 //
 // COACH-SET, NEVER APP-MADE. With no cap set the form is empty and the app
@@ -16,9 +16,10 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // because saving replaces the whole cap: an empty field would otherwise erase
 // the limit the coach did not mean to touch.
 //
-// THE NOTE (Jason, 2026-10-04: "Keep note, labelled"). A cap is a limit, not
-// a clinical note, so it sits within the 2026-08-15 rule for this board. The
-// optional staff note stays, shown here, labelled to keep medical detail out.
+// WHERE (Jason, 2026-10-04: "Own page"). Not on the sports-medicine board,
+// whose 2026-08-15 rule is clearance and holds only; its own page, linked
+// from the board. THE NOTE (OD-2026-10-04-013: "Keep note, labelled") stays
+// with the caps, labelled to keep medical detail out.
 //
 // WARN, NEVER BLOCK (Jason, 2026-10-04: "Warn only"). Nothing here stops
 // sparring. The sparring screen does not check caps yet; the text below says
@@ -292,7 +293,7 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
                   onChange={(event) => setNote(event.target.value)}
                 />
                 <p id={`${panelId}-note-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
-                  Shown on this board. No medical details here — those belong in the clearance record.
+                  Staff only. No medical details here — those belong in the clearance record.
                 </p>
               </div>
               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>

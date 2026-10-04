@@ -7,7 +7,6 @@ import { apiBase } from '@/lib/apiBase';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
-import ContactCapPanel from '@/components/ContactCapPanel';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
 // and active training holds with athlete-safe explanations ONLY.
@@ -1064,9 +1063,6 @@ export default function SportsMedicinePage() {
                         <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{rowRefusal.message}</p>
                       </div>
                     ) : null}
-                    {/* Coach-set sparring limits (map item 15). Closed until
-                        opened, so the board's own reads are unchanged. */}
-                    <ContactCapPanel athleteId={row.athlete_id} athleteName={row.full_name} />
                   </li>
                 );
               })}
@@ -1076,6 +1072,9 @@ export default function SportsMedicinePage() {
           <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/coach/injuries" className="btn btn--ghost">
               Injury Record
+            </Link>
+            <Link href="/coach/sparring-caps" className="btn btn--ghost">
+              Sparring Caps
             </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
