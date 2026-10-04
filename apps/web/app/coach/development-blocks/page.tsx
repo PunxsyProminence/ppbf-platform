@@ -295,37 +295,42 @@ export default function CoachDevelopmentBlocksPage() {
   const [templateId, setTemplateId] = useState('');
   const minorOptIn = athleteId !== '' && minorOptInFor === athleteId;
 
-  useEffect(() => {
+  /* Called by selectAthlete and by the opt-in box, never from an effect. The
+     previous read is aborted first, so an answer for the athlete a coach just
+     left cannot land under the one they moved to. */
+  const templatesAbortRef = useRef<AbortController | null>(null);
+
+  async function loadTemplates(forAthleteId: string, optIn: boolean) {
+    templatesAbortRef.current?.abort();
     setTemplateId('');
-    if (!athleteId) {
+    if (!forAthleteId) {
       setTemplates([]);
       setTemplatesState('idle');
-      return undefined;
+      return;
     }
     const controller = new AbortController();
+    templatesAbortRef.current = controller;
     setTemplatesState('loading');
-    void (async () => {
-      try {
-        const params = new URLSearchParams({ athlete_id: athleteId });
-        if (minorOptIn) params.set('minor_opt_in', '1');
-        const response = await fetch(`${apiBase()}/api/pilot/coach/development-block-templates?${params}`, {
-          method: 'GET',
-          credentials: 'include',
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('templates');
-        const payload = (await response.json()) as { athlete_is_adult?: boolean; templates?: BlockTemplate[] };
-        setTemplates(payload.templates ?? []);
-        setTemplateAthleteIsAdult(payload.athlete_is_adult === true);
-        setTemplatesState('loaded');
-      } catch (error) {
-        if ((error as { name?: string }).name === 'AbortError') return;
-        setTemplates([]);
-        setTemplatesState('unavailable');
-      }
-    })();
-    return () => controller.abort();
-  }, [athleteId, minorOptIn]);
+    try {
+      const params = new URLSearchParams({ athlete_id: forAthleteId });
+      if (optIn) params.set('minor_opt_in', '1');
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development-block-templates?${params}`, {
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('templates');
+      const payload = (await response.json()) as { athlete_is_adult?: boolean; templates?: BlockTemplate[] };
+      if (controller.signal.aborted) return;
+      setTemplates(payload.templates ?? []);
+      setTemplateAthleteIsAdult(payload.athlete_is_adult === true);
+      setTemplatesState('loaded');
+    } catch (error) {
+      if ((error as { name?: string }).name === 'AbortError' || controller.signal.aborted) return;
+      setTemplates([]);
+      setTemplatesState('unavailable');
+    }
+  }
 
   function applyTemplate(id: string) {
     setTemplateId(id);
@@ -968,6 +973,7 @@ export default function CoachDevelopmentBlocksPage() {
     if (templateId) {
       setForm(EMPTY_FORM);
     }
+    void loadTemplates(nextId, false);
     void loadBlocks(nextId);
   }
 
@@ -1168,7 +1174,10 @@ export default function CoachDevelopmentBlocksPage() {
                   <input
                     type="checkbox"
                     checked={minorOptIn}
-                    onChange={(event) => setMinorOptInFor(event.target.checked ? athleteId : '')}
+                    onChange={(event) => {
+                      setMinorOptInFor(event.target.checked ? athleteId : '');
+                      void loadTemplates(athleteId, event.target.checked);
+                    }}
                   />
                   Show block templates for this athlete (under 18 or no date of birth on file). Template numbers are
                   adult starting points; set this athlete&apos;s limits yourself.
