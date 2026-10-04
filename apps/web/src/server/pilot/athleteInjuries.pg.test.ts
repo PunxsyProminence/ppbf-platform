@@ -643,12 +643,14 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
       injuryDate: '2026-09-02', linkedRttPlanId: plan, staffNote: 'Staff only: says it is fine, limps.',
     });
     const own = await record(ORG_A, athleteId, { injuryDate: '2026-08-01', expectedReturnDate: '2026-08-15' });
+    // Same day, recorded later: listed first.
+    const sameDay = await record(ORG_A, athleteId, { injuryDate: '2026-08-01', bodyArea: 'hand' });
     const voided = await record(ORG_A, athleteId, { injuryDate: '2026-07-01' });
     await injuries.markInjuryEnteredInError({ organizationId: ORG_A, injuryId: voided.injury_id, updatedByAccountId: COACH });
     await record(ORG_B, athleteId, { injuryDate: '2026-09-03' });
 
     const rows = await injuries.listFamilyInjuries(ORG_A, athleteId);
-    expect(rows.map((r) => r.injury_id)).toEqual([linked.injury_id, own.injury_id]);
+    expect(rows.map((r) => r.injury_id)).toEqual([linked.injury_id, sameDay.injury_id, own.injury_id]);
     for (const row of rows) {
       expect(Object.keys(row).sort()).toEqual([
         'body_area', 'context', 'expected_return_date', 'injury_date', 'injury_id', 'injury_type', 'reported_by', 'returned_on',
@@ -656,7 +658,7 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     }
     expect(JSON.stringify(rows)).not.toContain('limps');
     expect(rows[0].expected_return_date).toBe('2026-09-25');
-    expect(rows[1].expected_return_date).toBe('2026-08-15');
+    expect(rows[2].expected_return_date).toBe('2026-08-15');
 
     await db.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [
       ORG_A,

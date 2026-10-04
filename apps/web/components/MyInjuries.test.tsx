@@ -52,3 +52,10 @@ test('a refused or failed read says it could not be read, never "no injuries"', 
   expect(await screen.findByText(/could not be read right now/)).toBeTruthy();
   await waitFor(() => expect(screen.queryByText('No injuries on record.')).toBeNull());
 });
+
+test('a 200 without an injuries list is a failed read, not "no injuries"', async () => {
+  mockFetch({ ok: true, body: { ok: true } });
+  render(<MyInjuries />);
+  expect(await screen.findByText(/could not be read right now/)).toBeTruthy();
+  expect(screen.queryByText('No injuries on record.')).toBeNull();
+});
