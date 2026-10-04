@@ -299,6 +299,21 @@ describe('load_jumped', () => {
     expect(deriveSuggestions([], NO_STALLED, open, NONE, NONE, [loadJump()])).toEqual([]);
   });
 
+  test('one endurance suggestion per athlete: readiness falling already speaks for them', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS })],
+      NO_STALLED,
+      NO_OPEN_GAPS,
+      NONE,
+      NONE,
+      [loadJump(), loadJump({ athlete_id: 'ath-2' })],
+    );
+    expect(suggestions.map((s) => [s.athlete_id, s.rule])).toEqual([
+      ['ath-1', 'readiness_falling'],
+      ['ath-2', 'load_jumped'],
+    ]);
+  });
+
   test('the wording is a prompt to look, never a diagnosis, limit or deload order', () => {
     const [suggestion] = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ ratio: 3.4 })]);
     expect(suggestion.suggested_description).toMatch(/Worth a look\.$/);

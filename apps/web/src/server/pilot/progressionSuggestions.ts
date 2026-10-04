@@ -259,10 +259,17 @@ export function deriveSuggestions(
   // acute:chronic ratio as contested, so the wording is a prompt to look --
   // never a diagnosis, a limit, or an instruction to deload. 'endurance' is the
   // nearest honest bucket, shared with Rule 1: an open recovery/conditioning
-  // gap already has the coach looking at this athlete's load.
+  // gap already has the coach looking at this athlete's load. One 'endurance'
+  // suggestion per athlete, as Rule 3 does for 'mental': if Rule 1 already
+  // spoke for this athlete, stay silent, or confirming one would leave the
+  // other on the board to file a second open endurance gap.
+  const athletesWithEnduranceSuggestion = new Set(
+    suggestions.filter((s) => s.gap_type === 'endurance').map((s) => s.athlete_id),
+  );
   for (const reading of loadJumps) {
     if (reading.ratio < LOAD_JUMP_RATIO) continue;
     if (openTypes(reading.athlete_id).has('endurance')) continue;
+    if (athletesWithEnduranceSuggestion.has(reading.athlete_id)) continue;
 
     const acute = Math.round(reading.acute_load);
     const usual = Math.round(reading.usual_weekly_load);
