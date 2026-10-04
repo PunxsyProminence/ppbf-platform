@@ -174,6 +174,10 @@ describe('listTaggedClips hides clips that playback would refuse', () => {
     expect(mockQuery.mock.calls[1][0]).toMatch(/from pilot\.video_clip_tags t/);
     expect(mockQuery.mock.calls[1][0]).toMatch(/from pilot\.video_sessions v/);
     expect(mockQuery.mock.calls[1][1]).toEqual(['org-1', ['vid-1', 'vid-2']]);
+    // Every live tag on those videos, with no narrowing by the caller's athletes.
+    const subjectSql = String(mockQuery.mock.calls[1][0]).replace(/\s+/g, ' ');
+    expect(subjectSql).toContain('where t.organization_id = $1 and t.video_session_id = any($2::text[]) and t.removed_at is null union');
+    expect(subjectSql).not.toMatch(/athlete_id = any/);
   });
 
   test.each(['GUARDIAN_CONSENT_EXCLUDES_VIDEO', 'GUARDIAN_CONSENT_UNREADABLE'])(
