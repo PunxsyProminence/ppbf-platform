@@ -1,4 +1,4 @@
-import type { PilotPrincipal } from './auth';
+import { homeMembershipRoleSql, type PilotPrincipal } from './auth';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { passwordLoginPermitted } from './credentialPolicy';
@@ -67,6 +67,8 @@ interface AccountRow extends EligibilityRow {
   auth_provider: AuthProvider;
   has_master_shadow_access: boolean;
   must_change_pin: boolean;
+  /** homeMembershipRoleSql: the role the session acts with (auth.ts). */
+  membership_role: PilotRole | null;
 }
 
 /**
@@ -122,7 +124,8 @@ export async function loginWithEmailAndPassword(
        ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        a.must_change_pin,
-       o.status as organization_status
+       o.status as organization_status,
+       ${homeMembershipRoleSql('a')} as membership_role
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where lower(a.login_email) = $1`,
@@ -226,7 +229,7 @@ export async function loginWithEmailAndPassword(
     token,
     principal: {
       accountId: data.account_id,
-      role: data.role,
+      role: data.membership_role ?? data.role,
       organizationId,
       athleteId: data.athlete_id,
       sessionToken: token,
