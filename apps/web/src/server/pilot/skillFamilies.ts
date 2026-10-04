@@ -70,6 +70,40 @@ export const SKILL_FAMILY_IDS: readonly SkillFamilyId[] = Object.keys(
 ) as SkillFamilyId[];
 
 /**
+ * Which families come before which -- the Prerequisites column of the
+ * Skill_Index sheet in 00_MASTER_SKILL_REGISTRY.xlsx (SharePoint Club
+ * Operations, .../LEGACY_PRO_BOXING_REFERENCE_ONLY/). Jason confirmed on
+ * 2026-10-03 that this sheet is the prerequisite source D1-A promoted, despite
+ * the folder name.
+ *
+ * TWO SHAPES, because the sheet has two. Ten families name other families and
+ * are stored as ids. SKILL-11 and SKILL-12 do not: their cells read "core
+ * skills seeded" and "registry + film inputs", and both families are layers
+ * across all the others ("all skill families" in Shared_Territory). Turning
+ * either cell into a list of ids would be inventing a prerequisite the
+ * registry does not state, so the text is kept verbatim and the ordering
+ * places those two families outside the sequence rather than guessing a step.
+ */
+export type SkillFamilyPrerequisites =
+  | { kind: 'families'; families: readonly SkillFamilyId[] }
+  | { kind: 'across_all'; registryText: string };
+
+export const SKILL_FAMILY_PREREQUISITES: Readonly<Record<SkillFamilyId, SkillFamilyPrerequisites>> = {
+  'SKILL-01': { kind: 'families', families: [] },
+  'SKILL-02': { kind: 'families', families: ['SKILL-01'] },
+  'SKILL-03': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+  'SKILL-04': { kind: 'families', families: ['SKILL-01'] },
+  'SKILL-05': { kind: 'families', families: ['SKILL-01', 'SKILL-03', 'SKILL-04'] },
+  'SKILL-06': { kind: 'families', families: ['SKILL-01'] },
+  'SKILL-07': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+  'SKILL-08': { kind: 'families', families: ['SKILL-01', 'SKILL-02'] },
+  'SKILL-09': { kind: 'families', families: ['SKILL-02', 'SKILL-08'] },
+  'SKILL-10': { kind: 'families', families: ['SKILL-01', 'SKILL-02', 'SKILL-03', 'SKILL-04', 'SKILL-05'] },
+  'SKILL-11': { kind: 'across_all', registryText: 'core skills seeded' },
+  'SKILL-12': { kind: 'across_all', registryText: 'registry + film inputs' },
+};
+
+/**
  * SKILL-01 Stance / Guard / Reset -- "Base, balance, guard recovery, reset
  * discipline", owning stance, guard and reset.
  *

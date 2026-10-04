@@ -186,6 +186,143 @@ const CompletionGauge = ({ percent }: { percent: number }) => {
   );
 };
 
+/*
+ * THE TECHNICAL PROGRESSION ORDER (map item 16).
+ *
+ * The order is DERIVED on the server from the registry prerequisites (Jason
+ * 2026-10-03: "A: Registry wins"), so this component never states an order of
+ * its own. It has its own read and its own failure line: the path is the same
+ * for every athlete, so the rest of the page loading or not says nothing about
+ * it, and its failure must not blank the drills above.
+ *
+ * "Not mapped yet" is a fact about the APP, never about the athlete. An empty
+ * list would read as "you have done nothing here"; for every family but
+ * SKILL-01 the app simply cannot yet tell which drills belong to it.
+ */
+const PATH_DID_NOT_LOAD =
+  'Your skill path did not load. Nothing is lost — try again in a minute.';
+const NOT_MAPPED_YET =
+  'Not mapped yet — the app cannot tell yet which of your drills belong here.';
+const NONE_ASSIGNED_HERE = 'None of your assigned drills are in this family yet.';
+
+type PathFamily = { familyId: string; name: string; prerequisites: { familyId: string; name: string }[] };
+type PathRecord =
+  | { state: 'mapped'; items: { assignment_id: string; drill_display_name: string; status: string }[] }
+  | { state: 'not_mapped' };
+type SkillPath = {
+  steps: { step: number; families: PathFamily[] }[];
+  acrossAll: { familyId: string; name: string; registryText: string }[];
+  records: Record<string, PathRecord | undefined>;
+  unlinked: number;
+};
+
+function FamilyRecordLine({ record }: { record: PathRecord | undefined }) {
+  if (!record || record.state === 'not_mapped') {
+    return <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NOT_MAPPED_YET}</p>;
+  }
+  if (record.items.length === 0) {
+    return <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NONE_ASSIGNED_HERE}</p>;
+  }
+  return (
+    <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Your drills in this family">
+      {record.items.map((item) => (
+        <li key={item.assignment_id} className="flex items-center justify-between gap-[var(--s3)]">
+          <span className="text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{item.drill_display_name}</span>
+          <StatusBadge status={item.status} type="assignment" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SkillProgressionPath() {
+  const [path, setPath] = useState<SkillPath | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/athlete/skill-progression`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(PATH_DID_NOT_LOAD, { cause: { status: res.status } });
+        const data = (await res.json()) as Partial<SkillPath> | null;
+        // A body without the path's shape is a failed read, not an empty path.
+        if (!data || !Array.isArray(data.steps) || !Array.isArray(data.acrossAll) || !data.records) {
+          throw new Error(PATH_DID_NOT_LOAD);
+        }
+        setPath(data as SkillPath);
+      } catch (err) {
+        // Logged, not displayed -- same rule as every other line on this page.
+        console.error({ event: 'athlete-skill-path-load-failed', error: err });
+        setFailed(true);
+      }
+    })();
+  }, []);
+
+  return (
+    <section aria-labelledby="skill-path-heading" className="mt-[var(--s6)]">
+      <h2 id="skill-path-heading" className="t-command mb-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>
+        Your Skill Path
+      </h2>
+      <p className="mb-[var(--s4)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+        The order the gym builds boxing skills in. Each step needs the steps it lists first.
+      </p>
+      {failed ? (
+        <p role="status" className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--restricted-ink)]">
+          {PATH_DID_NOT_LOAD}
+        </p>
+      ) : !path ? (
+        <p className="working">Loading your skill path...</p>
+      ) : (
+        <>
+          <ol className="space-y-[var(--s4)]">
+            {path.steps.map((step) => (
+              <li key={step.step} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <p className="t-eyebrow">Step {step.step}</p>
+                <div className="mt-[var(--s3)] grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+                  {step.families.map((family) => (
+                    <div key={family.familyId} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                      <h3 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{family.name}</h3>
+                      <p className="mt-[var(--s1)] t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                        {family.prerequisites.length === 0
+                          ? 'Starts here'
+                          : `Needs: ${family.prerequisites.map((p) => p.name).join(', ')}`}
+                      </p>
+                      <FamilyRecordLine record={path.records[family.familyId]} />
+                    </div>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ol>
+          {path.acrossAll.length > 0 && (
+            <div className="mt-[var(--s4)] mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+              <p className="t-eyebrow">Alongside every step</p>
+              <div className="mt-[var(--s3)] grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+                {path.acrossAll.map((family) => (
+                  <div key={family.familyId} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <h3 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{family.name}</h3>
+                    <FamilyRecordLine record={path.records[family.familyId]} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {path.unlinked > 0 && (
+            <p className="mt-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+              {path.unlinked === 1
+                ? '1 of your drills is not linked to a skill family yet, so it is not shown on this path.'
+                : `${path.unlinked} of your drills are not linked to a skill family yet, so they are not shown on this path.`}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function AthleteProgressionIntelligencePage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
@@ -794,6 +931,10 @@ export default function AthleteProgressionIntelligencePage() {
           </div>
           </>
         )}
+
+        <div className={openedAssignment ? 'hidden' : undefined}>
+          <SkillProgressionPath />
+        </div>
       </div>
     </RoleStandaloneView>
   );
