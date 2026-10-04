@@ -164,6 +164,53 @@ describe('coach sparring record screen', () => {
     expect(screen.getByText('Loading...')).toBeTruthy();
   });
 
+  test('switching athlete clears what was observed, keeping only the day and gear', async () => {
+    await renderAndPick();
+    fillRequired();
+    choose('Headgear (optional)', 'yes');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect((screen.getByLabelText('After sparring, the athlete looked') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('Minutes') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Headgear (optional)') as HTMLSelectElement).value).toBe('yes');
+    expect((screen.getByRole('button', { name: 'Save segment' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('time over 30:00 or with seconds over 59 cannot be saved and says why', async () => {
+    await renderAndPick();
+    fillRequired();
+    const save = screen.getByRole('button', { name: 'Save segment' }) as HTMLButtonElement;
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Seconds'), { target: { value: '30' } });
+    expect(save.disabled).toBe(true);
+    expect(screen.getByText('Whole minutes and seconds, from 0:01 up to 30:00.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Seconds'), { target: { value: '0' } });
+    expect(save.disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Seconds'), { target: { value: '75' } });
+    expect(save.disabled).toBe(true);
+  });
+
+  test('the athlete picker is locked while a save is in flight', async () => {
+    await renderAndPick();
+    fillRequired();
+    let release: (value: Response) => void = () => {};
+    const previous = global.fetch;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => (init?.method === 'POST'
+      ? new Promise<Response>((resolve) => { release = resolve; })
+      : (previous as jest.Mock)(input, init))) as unknown as typeof fetch;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Window') as HTMLSelectElement).disabled).toBe(true);
+    await act(async () => {
+      release({ ok: true, status: 201, json: async () => ({ entry: {} }) } as Response);
+    });
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).disabled).toBe(false);
+  });
+
   test('an empty successful read says none in this window', async () => {
     await renderAndPick({ entries: [] });
     expect(screen.getByText('No sparring recorded in this window.')).toBeTruthy();

@@ -152,11 +152,11 @@ export default function CoachSparringExposurePage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (saving || !ready) return;
     setMessage(null);
-    const seconds = Number(form.minutes || 0) * 60 + Number(form.seconds || 0);
     const body: Record<string, unknown> = {
       athlete_id: athleteId,
-      session_date: form.sessionDate || undefined,
+      session_date: form.sessionDate,
       sparring_type: form.sparringType,
       time_under_impact_sec: seconds,
       coach_observed_intensity: form.intensity,
@@ -205,9 +205,14 @@ export default function CoachSparringExposurePage() {
     }
   }
 
-  const ready = Boolean(athleteId && form.sparringType && form.intensity && form.headContact && form.presentation
-    && Number(form.minutes || 0) * 60 + Number(form.seconds || 0) > 0
-    && (!form.stoppedEarly || form.stopReason.trim()));
+  // Whole minutes and seconds, 0:01 to 30:00 -- the route's 1-1800 s.
+  const minutes = Number(form.minutes || 0);
+  const secondsPart = Number(form.seconds || 0);
+  const seconds = minutes * 60 + secondsPart;
+  const timeValid = Number.isInteger(minutes) && Number.isInteger(secondsPart) && minutes >= 0
+    && secondsPart >= 0 && secondsPart <= 59 && seconds >= 1 && seconds <= 1800;
+  const ready = Boolean(athleteId && form.sessionDate && form.sparringType && form.intensity && form.headContact
+    && form.presentation && timeValid && (!form.stoppedEarly || form.stopReason.trim()));
 
   const choice = (id: string, text: string, value: string, pairs: ReadonlyArray<readonly [string, string]>,
     onChange: (value: string) => void) => (
@@ -251,8 +256,15 @@ export default function CoachSparringExposurePage() {
                 setRecentState(event.target.value ? 'loading' : 'idle');
                 setAthleteId(event.target.value);
                 setMessage(null);
+                // What was observed belongs to the athlete it was observed on;
+                // keep only the day and the gear.
+                setForm((current) => ({
+                  ...EMPTY_FORM, sessionDate: current.sessionDate, headgear: current.headgear, gloveOz: current.gloveOz,
+                }));
               }}
-              disabled={rosterState !== 'loaded' || athletes.length === 0}
+              // Locked while a save is in flight, so its result (and the
+              // re-read after it) cannot land under a different athlete.
+              disabled={saving || rosterState !== 'loaded' || athletes.length === 0}
               className="select"
             >
               <option value="">{rosterState === 'loading' ? 'Loading your athletes...' : 'Choose an athlete'}</option>
@@ -270,7 +282,7 @@ export default function CoachSparringExposurePage() {
             <h2 className="t-eyebrow">One segment</h2>
             <div className="field">
               <label htmlFor="sparDay" className="t-label">Day</label>
-              <input id="sparDay" type="date" value={form.sessionDate} max={gymDayIso() ?? undefined}
+              <input id="sparDay" type="date" value={form.sessionDate} max={gymDayIso() ?? undefined} required
                 onChange={(event) => set({ sessionDate: event.target.value })} className="input" />
             </div>
             {choice('sparType', 'Type of sparring', form.sparringType, SPARRING_TYPES, (v) => set({ sparringType: v }))}
@@ -282,6 +294,9 @@ export default function CoachSparringExposurePage() {
                 <input aria-label="Seconds" type="number" min={0} max={59} inputMode="numeric" value={form.seconds}
                   onChange={(event) => set({ seconds: event.target.value })} className="input" placeholder="sec" />
               </div>
+              {(form.minutes || form.seconds) && !timeValid && (
+                <p className="text-[var(--restricted-ink)]">Whole minutes and seconds, from 0:01 up to 30:00.</p>
+              )}
             </fieldset>
             <div className="field">
               <label htmlFor="sparRounds" className="t-label">Rounds (optional)</label>
@@ -309,6 +324,9 @@ export default function CoachSparringExposurePage() {
                 {recent && recent.stop_rules.length > 0 && choice('sparStopRule', 'Stop rule (optional)', form.stopRuleId,
                   recent.stop_rules.map((rule) => [rule.universal_rule_id, rule.condition_text] as const),
                   (v) => set({ stopRuleId: v }))}
+                {recentState === 'unavailable' && (
+                  <p>The gym&apos;s stop rules could not be loaded. Describe what ended it below.</p>
+                )}
                 <div className="field">
                   <label htmlFor="sparStopReason" className="t-label">What ended it</label>
                   <textarea id="sparStopReason" value={form.stopReason} maxLength={500}
@@ -337,7 +355,7 @@ export default function CoachSparringExposurePage() {
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
             <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
               <h2 className="t-eyebrow">Recent sparring</h2>
-              <select aria-label="Window" value={windowDays}
+              <select aria-label="Window" value={windowDays} disabled={saving}
                 onChange={(event) => { setRecentState('loading'); setWindowDays(Number(event.target.value)); }}
                 className="select">
                 {WINDOWS.map((days) => <option key={days} value={days}>Last {days} days</option>)}
