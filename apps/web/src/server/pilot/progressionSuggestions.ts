@@ -12,6 +12,11 @@ import {
   readLoadJumps,
   type LoadJumpReading,
 } from './weeklySessionLoad';
+import {
+  getWellnessWindows,
+  readWellnessDeclines,
+  type WellnessDecline,
+} from './wellnessTrend';
 
 // Deterministic gap suggestions (owner decision 2026-08-15, recorded in
 // docs/current/ACTIVE_WORK.md): simple transparent rules over records the gym
@@ -55,7 +60,8 @@ export type SuggestionRule =
   | 'assignments_stalled'
   | 'transfer_check_failed'
   | 'competition_loss_unresolved'
-  | 'load_jumped';
+  | 'load_jumped'
+  | 'load_up_wellness_down';
 
 export interface GapSuggestion {
   athlete_id: string;
@@ -112,22 +118,30 @@ export function deriveSuggestions(
   transferFailures: readonly TransferFailureRow[] = [],
   competitionLosses: readonly CompetitionLossRow[] = [],
   loadJumps: readonly LoadJumpReading[] = [],
+  wellnessDeclines: readonly WellnessDecline[] = [],
 ): GapSuggestion[] {
   const suggestions: GapSuggestion[] = [];
 
   const openTypes = (athleteId: string) => openGapTypesByAthlete.get(athleteId) ?? new Set<string>();
 
+  // Rule 7 is decided first because it speaks INSTEAD of Rules 1 and 6 for
+  // the same athlete (see deriveLoadUpWellnessDown); it is pushed last so the
+  // board keeps its rule order.
+  const loadUpWellnessDown = deriveLoadUpWellnessDown(rollup, loadJumps, wellnessDeclines, openTypes);
+  const athletesWithRule7 = new Set(loadUpWellnessDown.map((s) => s.athlete_id));
+
   for (const row of rollup) {
     // Rule 1: readiness falling. Both halves of the window must carry enough
     // check-ins to mean anything, and the newer half must sit at least
-    // READINESS_DROP_POINTS below the older one.
+    // READINESS_DROP_POINTS below the older one. Silent where Rule 7 already
+    // shows this drop, or an open recovery gap means the coach has it.
     if (
       row.readiness_early_avg != null
       && row.readiness_late_avg != null
-      && row.readiness_early_count >= READINESS_MIN_CHECKINS_PER_HALF
-      && row.readiness_late_count >= READINESS_MIN_CHECKINS_PER_HALF
-      && row.readiness_early_avg - row.readiness_late_avg >= READINESS_DROP_POINTS
+      && readinessDropped(row)
       && !openTypes(row.athlete_id).has('endurance')
+      && !openTypes(row.athlete_id).has('recovery')
+      && !athletesWithRule7.has(row.athlete_id)
     ) {
       suggestions.push({
         athlete_id: row.athlete_id,
@@ -263,7 +277,9 @@ export function deriveSuggestions(
   // gap already has the coach looking at this athlete's load. One 'endurance'
   // suggestion per athlete, as Rule 3 does for 'mental': if Rule 1 already
   // spoke for this athlete, stay silent, or confirming one would leave the
-  // other on the board to file a second open endurance gap.
+  // other on the board to file a second open endurance gap. (Since Rule 7, a
+  // readiness drop plus a load jump is Rule 7's card and Rule 1 stays silent,
+  // so this guard is a belt behind that, not the path that normally decides.)
   const athletesWithEnduranceSuggestion = new Set(
     suggestions.filter((s) => s.gap_type === 'endurance').map((s) => s.athlete_id),
   );
@@ -271,6 +287,10 @@ export function deriveSuggestions(
     if (reading.ratio < LOAD_JUMP_RATIO) continue;
     if (openTypes(reading.athlete_id).has('endurance')) continue;
     if (athletesWithEnduranceSuggestion.has(reading.athlete_id)) continue;
+    // Rule 7 already carries this same load reading for the athlete, or the
+    // coach confirmed it as an open recovery gap: the jump is on the board.
+    if (athletesWithRule7.has(reading.athlete_id)) continue;
+    if (openTypes(reading.athlete_id).has('recovery')) continue;
 
     const acute = Math.round(reading.acute_load);
     const usual = Math.round(reading.usual_weekly_load);
@@ -292,6 +312,96 @@ export function deriveSuggestions(
     });
   }
 
+  suggestions.push(...loadUpWellnessDown);
+  return suggestions;
+}
+
+/** Rule 1's test, shared with Rule 7 so "readiness fell" means one thing. */
+function readinessDropped(row: AthletePerformanceRow): boolean {
+  return (
+    row.readiness_early_avg != null
+    && row.readiness_late_avg != null
+    && row.readiness_early_count >= READINESS_MIN_CHECKINS_PER_HALF
+    && row.readiness_late_count >= READINESS_MIN_CHECKINS_PER_HALF
+    && row.readiness_early_avg - row.readiness_late_avg >= READINESS_DROP_POINTS
+  );
+}
+
+/**
+ * Rule 7: load up, wellness down (Jason 2026-10-04, OD-2026-10-04-015).
+ *
+ * Fires when Rule 6's load jump holds (the same reading, the same
+ * LOAD_JUMP_RATIO) AND, over the same window, the athlete's check-in energy
+ * fell or soreness rose by a point or more (wellnessTrend.ts), or Rule 1's
+ * readiness drop holds. Every signal that held is shown with its numbers, so
+ * the coach can check each by hand.
+ *
+ * The wording is Jason's: it shows the numbers, says unvalidated, and ends
+ * "Consider whether a lighter week fits." It names an option for the coach to
+ * weigh; it is never an instruction to deload, a limit or a diagnosis, and
+ * nothing happens unless the coach confirms it.
+ *
+ * gap_type 'recovery' (Jason's pick; the bucket #1202 added). It speaks
+ * INSTEAD of Rule 6 for the athlete -- it carries the same load numbers -- and
+ * instead of Rule 1 -- its readiness numbers ride along when that drop holds.
+ * An open recovery gap silences Rules 7, 6 and 1 for that athlete: the coach
+ * has already confirmed this observation and the work is on their board.
+ */
+function deriveLoadUpWellnessDown(
+  rollup: readonly AthletePerformanceRow[],
+  loadJumps: readonly LoadJumpReading[],
+  wellnessDeclines: readonly WellnessDecline[],
+  openTypes: (athleteId: string) => ReadonlySet<string>,
+): GapSuggestion[] {
+  const rollupByAthlete = new Map(rollup.map((row) => [row.athlete_id, row]));
+  const suggestions: GapSuggestion[] = [];
+
+  for (const reading of loadJumps) {
+    if (reading.ratio < LOAD_JUMP_RATIO) continue;
+    if (openTypes(reading.athlete_id).has('recovery')) continue;
+
+    const declines = wellnessDeclines.filter((decline) => decline.athlete_id === reading.athlete_id);
+    const row = rollupByAthlete.get(reading.athlete_id);
+    const readiness =
+      row != null && row.readiness_early_avg != null && row.readiness_late_avg != null && readinessDropped(row)
+        ? { row, early: row.readiness_early_avg, late: row.readiness_late_avg }
+        : null;
+    if (declines.length === 0 && !readiness) continue;
+
+    const acute = Math.round(reading.acute_load);
+    const usual = Math.round(reading.usual_weekly_load);
+    const evidence: Record<string, number | string> = {
+      acute_load: acute,
+      usual_weekly_load: usual,
+      ratio: Number(reading.ratio.toFixed(2)),
+      prior_weeks_with_load: reading.prior_weeks_with_load,
+    };
+    const signals: string[] = [];
+    for (const decline of declines) {
+      signals.push(`${decline.item} ${decline.prior_avg.toFixed(1)} → ${decline.recent_avg.toFixed(1)}`);
+      evidence[`${decline.item}_prior_avg`] = Number(decline.prior_avg.toFixed(2));
+      evidence[`${decline.item}_recent_avg`] = Number(decline.recent_avg.toFixed(2));
+      evidence[`${decline.item}_prior_count`] = decline.prior_count;
+      evidence[`${decline.item}_recent_count`] = decline.recent_count;
+    }
+    if (readiness) {
+      signals.push(`readiness ${readiness.early.toFixed(1)} → ${readiness.late.toFixed(1)}`);
+      evidence.readiness_early_avg = Number(readiness.early.toFixed(2));
+      evidence.readiness_late_avg = Number(readiness.late.toFixed(2));
+      evidence.readiness_early_count = readiness.row.readiness_early_count;
+      evidence.readiness_late_count = readiness.row.readiness_late_count;
+    }
+
+    suggestions.push({
+      athlete_id: reading.athlete_id,
+      rule: 'load_up_wellness_down',
+      gap_type: 'recovery',
+      suggested_description:
+        `Load up, wellness down: ${acute} this week vs a usual ${usual} (${reading.ratio.toFixed(1)}x); `
+        + `${signals.join('; ')}. Session RPE x minutes, unvalidated. Consider whether a lighter week fits.`,
+      evidence,
+    });
+  }
   return suggestions;
 }
 
@@ -402,13 +512,14 @@ export async function getGapSuggestions(
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps, transferFailures, competitionLosses, weeklyLoads] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures, competitionLosses, weeklyLoads, wellnessWindows] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
     getTransferFailures(organizationId, athleteIds),
     getCompetitionLosses(organizationId, athleteIds),
     getWeeklySessionLoads(organizationId, athleteIds),
+    getWellnessWindows(organizationId, athleteIds),
   ]);
   return deriveSuggestions(
     rollup,
@@ -417,6 +528,7 @@ export async function getGapSuggestions(
     transferFailures,
     competitionLosses,
     readLoadJumps(organizationId, weeklyLoads),
+    readWellnessDeclines(wellnessWindows),
   );
 }
 
@@ -496,6 +608,9 @@ export const RULE_JUSTIFICATION_FIELDS: Readonly<Record<SuggestionRule, readonly
   // the rollup's 28-day avg_session_load; slicing that field would show a
   // different number than the rule read. Same reasoning as Rules 4 and 5.
   load_jumped: [],
+  // Rule 7 reads Rule 6's bucketed load plus check-in wellness
+  // (wellnessTrend.ts), neither of which is a rollup field.
+  load_up_wellness_down: [],
 };
 
 /** Extracts the rule name from a gap's stored detected_from, or null when the

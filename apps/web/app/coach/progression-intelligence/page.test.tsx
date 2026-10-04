@@ -436,6 +436,49 @@ describe('deterministic gap suggestions', () => {
     expect(posted.detection_data).toEqual(LOAD.evidence);
   });
 
+  test('load up, wellness down renders under its own label, explains its rule, and confirms as a recovery gap', async () => {
+    const RULE7 = {
+      athlete_id: 'athlete-001',
+      full_name: 'Jordan Doe',
+      rule: 'load_up_wellness_down',
+      gap_type: 'recovery',
+      suggested_description:
+        'Load up, wellness down: 640 this week vs a usual 300 (2.1x); energy 4.0 → 2.5. Session RPE x minutes, unvalidated. Consider whether a lighter week fits.',
+      evidence: {
+        acute_load: 640,
+        usual_weekly_load: 300,
+        ratio: 2.13,
+        prior_weeks_with_load: 4,
+        energy_prior_avg: 4,
+        energy_recent_avg: 2.5,
+        energy_prior_count: 10,
+        energy_recent_count: 3,
+      },
+    };
+    const capture = { gapPosts: [] as unknown[] };
+    global.fetch = mockFetchWithSuggestions([RULE7], capture) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+
+    await screen.findByText('Suggested Gaps');
+    expect(screen.getByText('Load up, wellness down')).toBeTruthy();
+    expect(screen.getByText(/Consider whether a lighter week fits\./)).toBeTruthy();
+    // The rule is stated in plain words on the board itself.
+    expect(screen.getByText(/check-in energy fell or soreness rose by a point or more/)).toBeTruthy();
+    expect(screen.getByText(/a lighter week for you to weigh, not an order/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm as gap' }));
+    });
+    const posted = capture.gapPosts[0] as Record<string, unknown>;
+    expect(posted.gap_type).toBe('recovery');
+    expect(posted.detected_from).toBe('deterministic_rule:load_up_wellness_down');
+    expect(posted.detection_data).toEqual(RULE7.evidence);
+  });
+
   test('dismiss hides the suggestion for this visit without filing anything', async () => {
     const capture = { gapPosts: [] as unknown[] };
     global.fetch = mockFetchWithSuggestions([SUGGESTION], capture) as unknown as typeof fetch;

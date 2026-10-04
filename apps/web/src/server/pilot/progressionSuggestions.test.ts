@@ -18,6 +18,7 @@ import {
 } from './progressionSuggestions';
 import type { AthletePerformanceRow } from './performanceAnalytics';
 import { LOAD_JUMP_RATIO, type LoadJumpReading } from './weeklySessionLoad';
+import type { WellnessDecline } from './wellnessTrend';
 
 function loadJump(overrides: Partial<LoadJumpReading> = {}): LoadJumpReading {
   return {
@@ -299,7 +300,9 @@ describe('load_jumped', () => {
     expect(deriveSuggestions([], NO_STALLED, open, NONE, NONE, [loadJump()])).toEqual([]);
   });
 
-  test('one endurance suggestion per athlete: readiness falling already speaks for them', () => {
+  // Since Rule 7 (OD-2026-10-04-015): a readiness drop alongside a load jump
+  // is "load up, wellness down", one recovery card in place of both.
+  test('readiness falling with a load jump is one Rule 7 card, not Rules 1 and 6 side by side', () => {
     const suggestions = deriveSuggestions(
       [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS })],
       NO_STALLED,
@@ -309,8 +312,8 @@ describe('load_jumped', () => {
       [loadJump(), loadJump({ athlete_id: 'ath-2' })],
     );
     expect(suggestions.map((s) => [s.athlete_id, s.rule])).toEqual([
-      ['ath-1', 'readiness_falling'],
       ['ath-2', 'load_jumped'],
+      ['ath-1', 'load_up_wellness_down'],
     ]);
   });
 
@@ -318,6 +321,104 @@ describe('load_jumped', () => {
     const [suggestion] = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ ratio: 3.4 })]);
     expect(suggestion.suggested_description).toMatch(/Worth a look\.$/);
     expect(suggestion.suggested_description).not.toMatch(/deload|reduce|injur|risk|limit|overtrain|readiness/i);
+  });
+});
+
+describe('load_up_wellness_down', () => {
+  const NONE: never[] = [];
+  const READINESS_DROP = rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS });
+
+  function decline(overrides: Partial<WellnessDecline> = {}): WellnessDecline {
+    return {
+      athlete_id: 'ath-1',
+      item: 'energy',
+      direction: 'higher_is_better',
+      recent_avg: 2.5,
+      prior_avg: 4.0,
+      recent_count: 3,
+      prior_count: 10,
+      ...overrides,
+    };
+  }
+
+  function derive(
+    rollup: AthletePerformanceRow[],
+    jumps: LoadJumpReading[],
+    declines: WellnessDecline[],
+    open: Map<string, Set<string>> = NO_OPEN_GAPS,
+  ) {
+    return deriveSuggestions(rollup, NO_STALLED, open, NONE, NONE, jumps, declines);
+  }
+
+  test('a load jump with energy falling becomes one recovery suggestion, in Jason\'s wording, replacing load_jumped', () => {
+    const suggestions = derive([], [loadJump({ acute_load: 640, usual_weekly_load: 300, ratio: 2.13 })], [decline()]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].rule).toBe('load_up_wellness_down');
+    expect(suggestions[0].gap_type).toBe('recovery');
+    expect(suggestions[0].suggested_description).toBe(
+      'Load up, wellness down: 640 this week vs a usual 300 (2.1x); energy 4.0 → 2.5. '
+        + 'Session RPE x minutes, unvalidated. Consider whether a lighter week fits.',
+    );
+    expect(suggestions[0].evidence).toEqual({
+      acute_load: 640,
+      usual_weekly_load: 300,
+      ratio: 2.13,
+      prior_weeks_with_load: 4,
+      energy_prior_avg: 4,
+      energy_recent_avg: 2.5,
+      energy_prior_count: 10,
+      energy_recent_count: 3,
+    });
+  });
+
+  test('soreness rising counts too, and every signal that held is shown', () => {
+    const [suggestion] = derive(
+      [READINESS_DROP],
+      [loadJump()],
+      [decline(), decline({ item: 'soreness', direction: 'higher_is_worse', prior_avg: 2.0, recent_avg: 3.5 })],
+    );
+    expect(suggestion.suggested_description).toContain('energy 4.0 → 2.5; soreness 2.0 → 3.5; readiness 7.0 → 6.0.');
+    expect(suggestion.evidence).toMatchObject({ soreness_prior_avg: 2, soreness_recent_avg: 3.5, readiness_late_avg: 6 });
+  });
+
+  test('a readiness drop alone is enough, and Rule 1 then stays silent for that athlete', () => {
+    const suggestions = derive([READINESS_DROP], [loadJump()], []);
+    expect(suggestions.map((s) => s.rule)).toEqual(['load_up_wellness_down']);
+    expect(suggestions[0].suggested_description).toContain('readiness 7.0 → 6.0');
+  });
+
+  test('a load jump with no down signal stays Rule 6, unchanged', () => {
+    const suggestions = derive([rollupRow()], [loadJump()], []);
+    expect(suggestions.map((s) => s.rule)).toEqual(['load_jumped']);
+  });
+
+  test('a wellness drop with no load jump says nothing here', () => {
+    expect(derive([], [loadJump({ ratio: LOAD_JUMP_RATIO - 0.01 })], [decline()])).toEqual([]);
+    expect(derive([], [], [decline()])).toEqual([]);
+  });
+
+  test('another athlete\'s decline does not pair with this athlete\'s jump', () => {
+    const suggestions = derive([], [loadJump()], [decline({ athlete_id: 'ath-2' })]);
+    expect(suggestions.map((s) => [s.athlete_id, s.rule])).toEqual([['ath-1', 'load_jumped']]);
+  });
+
+  test('an open recovery gap silences Rules 7, 6 and 1: the coach already confirmed it', () => {
+    const open = new Map([['ath-1', new Set(['recovery'])]]);
+    expect(derive([READINESS_DROP], [loadJump()], [decline()], open)).toEqual([]);
+  });
+
+  test('an open endurance gap does not silence it: a different bucket of work', () => {
+    const open = new Map([['ath-1', new Set(['endurance'])]]);
+    expect(derive([], [loadJump()], [decline()], open).map((s) => s.rule)).toEqual(['load_up_wellness_down']);
+  });
+
+  test('the wording offers a lighter week to weigh; it never orders a deload, sets a limit or diagnoses', () => {
+    const [suggestion] = derive([READINESS_DROP], [loadJump({ ratio: 3.4 })], [decline()]);
+    expect(suggestion.suggested_description).toMatch(/Consider whether a lighter week fits\.$/);
+    expect(suggestion.suggested_description).toContain('unvalidated');
+    expect(suggestion.suggested_description).not.toMatch(
+      /deload|must|should|reduce|cut|rest|injur|risk|limit|overtrain|unsafe|stop/i,
+    );
   });
 });
 
@@ -438,6 +539,7 @@ describe('buildGapJustifications', () => {
         'assignments_stalled',
         'competition_loss_unresolved',
         'load_jumped',
+        'load_up_wellness_down',
         'readiness_falling',
         'training_days_dropping',
         'transfer_check_failed',
