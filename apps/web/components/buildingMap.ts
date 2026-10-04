@@ -656,6 +656,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/sports-medicine', label: 'Sports Medicine', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'medical injury concussion clearance return-to-training physio holds cleared restricted board clinic',
     hint: 'Clearance status and active holds for your roster — what the athlete reads, nothing more.' },
+  { href: '/coach/injuries', label: 'Injury Record', room: 'clinic', roles: ['coach', 'admin'],
+    keywords: 'injury injuries sprain strain fracture cut head time lost return reported clinician',
+    hint: 'Record what an athlete, parent, coach or clinician reported about an injury, and link its hold or return plan.' },
   { href: '/admin/compliance-center', label: 'Compliance Center', room: 'clinic', roles: ['admin'],
     keywords: 'compliance safeguarding policy certification safety' },
 
