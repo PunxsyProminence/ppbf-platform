@@ -10,6 +10,7 @@ import {
 } from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
 
 export const runtime = 'nodejs';
 
@@ -104,8 +105,12 @@ export async function POST(request: NextRequest) {
         title: publication.title,
         description: publication.description,
         tags: publication.tags,
-        verifyBeforeCommit: (client) =>
-          assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id),
+        verifyBeforeCommit: async (client) => {
+          await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+          // Inside the claim: a clip tag added after the draft was made still
+          // stops the publish (tagged clips are staff only, owner 2026-10-03).
+          await assertVideoHasNoLiveClipTags(principal.organizationId, publication.video_session_id, client);
+        },
       });
     } catch (error) {
       // A blocked publish attempt is itself a safeguarding-relevant fact --

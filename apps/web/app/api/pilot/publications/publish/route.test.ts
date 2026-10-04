@@ -314,3 +314,54 @@ describe('POST /api/pilot/publications/publish', () => {
     expect(mockGetPublication).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * Tagged sparring and bout clips are staff film study only (owner,
+ * 2026-10-03). The draft refuses a tagged clip, but a tag can be added after
+ * the draft exists, so the claim transaction re-checks. This drives the REAL
+ * check (videoClipTags.ts) through the claim's own client.
+ */
+describe('a tagged clip cannot be published', () => {
+  function claimClient(tagRows: Array<{ tag_id: string }>) {
+    const statements: string[] = [];
+    return {
+      statements,
+      async query<T>(text: string): Promise<{ rows: T[] }> {
+        statements.push(text);
+        if (text.includes('to_regclass')) return { rows: [{ ready: true }] as T[] };
+        return { rows: tagRows as T[] };
+      },
+    };
+  }
+
+  test('a tag present at claim time refuses the publish', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    const client = claimClient([{ tag_id: 'vct-1' }]);
+    mockPublish.mockImplementationOnce(async (args) => {
+      await args.verifyBeforeCommit(client);
+      return 'lib-1';
+    });
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('TAGGED_CLIP_NOT_PUBLISHABLE');
+    expect(client.statements.some((sql) => sql.includes('pilot.video_clip_tags'))).toBe(true);
+  });
+
+  test('an untagged video still publishes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    const client = claimClient([]);
+    mockPublish.mockImplementationOnce(async (args) => {
+      await args.verifyBeforeCommit(client);
+      return 'lib-1';
+    });
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(200);
+  });
+});
+
