@@ -51,19 +51,28 @@ function resolveSslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the table, its read index and the ladder guard, so an environment
-// that got the table without the stage check cannot pass readiness.
+// Asserts the table, its read index and every guard ON THIS TABLE (looked up
+// by conrelid, not by name alone), so an environment where the table exists
+// without one of its checks or its athlete foreign key cannot pass readiness.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.athlete_contact_caps') is not null as athlete_contact_caps_ready,
     exists (
       select 1 from pg_indexes
-      where schemaname = 'pilot' and indexname = 'idx_athlete_contact_caps_athlete_set_at'
+      where schemaname = 'pilot' and tablename = 'athlete_contact_caps'
+        and indexname = 'idx_athlete_contact_caps_athlete_set_at'
     ) as athlete_set_at_index_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_athlete_contact_caps_stage_check'
-    ) as stage_check_ready
+    (
+      select count(*) = 5 from pg_constraint
+      where conrelid = to_regclass('pilot.athlete_contact_caps')
+        and conname in (
+          'pilot_athlete_contact_caps_stage_check',
+          'pilot_athlete_contact_caps_sessions_check',
+          'pilot_athlete_contact_caps_note_check',
+          'pilot_athlete_contact_caps_role_check',
+          'pilot_athlete_contact_caps_athlete_fk'
+        )
+    ) as guards_ready
 `;
 
 function assertReadiness(row) {

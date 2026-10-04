@@ -7,7 +7,6 @@ import {
   CONTACT_STAGES,
   type AthleteContactCapRow,
   type ContactStage,
-  getCurrentContactCap,
   isCapSet,
   listContactCapHistory,
   setContactCap,
@@ -76,15 +75,16 @@ export async function GET(request: NextRequest) {
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim() ?? '';
     if (!athleteId) throw new ValidationError('Missing athlete_id');
 
-    const actor = actorOf(principal);
-    const current = await getCurrentContactCap(actor, athleteId);
-    const history = await listContactCapHistory(actor, athleteId);
+    // One read: the cap in force IS the newest history row, so the two can
+    // never disagree because a write landed between two queries.
+    const history = await listContactCapHistory(actorOf(principal), athleteId);
     const named = await withNames(principal.organizationId, history);
+    const current = named[0] ?? null;
 
     return NextResponse.json(
       {
         ok: true,
-        cap: isCapSet(current) ? named.find((row) => row.cap_id === current.cap_id) ?? null : null,
+        cap: isCapSet(current) ? current : null,
         history: named,
       },
       { headers: { 'Cache-Control': 'no-store' } },

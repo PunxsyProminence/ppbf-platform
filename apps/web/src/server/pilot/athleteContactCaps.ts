@@ -94,8 +94,10 @@ export function contactCapShapeError(input: ContactCapInput): string | null {
 }
 
 /**
- * The actor's role HERE, read from an active membership row -- not
- * pilot.accounts.role (the home role) and not the session's claim alone.
+ * The actor's role HERE, read from its active membership row in this
+ * organization (one row per account and organization) -- not
+ * pilot.accounts.role, which is the account's HOME role and can differ: an
+ * organization_admin of one gym can hold only a coach membership in another.
  * Null when the account may not touch caps in this organization.
  */
 async function capRoleInOrganization(
@@ -106,18 +108,24 @@ async function capRoleInOrganization(
     `select om.role
        from pilot.organization_memberships om
       where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true
-        and om.role = any($3::text[])
-      order by case om.role when $4 then 0 else 1 end
-      limit 1`,
-    [actor.accountId, actor.organizationId, [...CONTACT_CAP_ROLES], actor.role],
+        and om.role = any($3::text[])`,
+    [actor.accountId, actor.organizationId, [...CONTACT_CAP_ROLES]],
   );
   return membership?.role ?? null;
 }
 
 /**
  * Throws ForbiddenError unless this actor is staff here AND reaches this
- * athlete. One message for every reason, so the response cannot be used to
+ * athlete. One message for every refusal, so the response cannot be used to
  * learn whether an athlete id exists or whose it is.
+ *
+ * The athlete check runs with the MEMBERSHIP role, so a coach membership
+ * here reaches only that coach's athletes (and live coverage) whatever the
+ * account's home role says.
+ *
+ * Only access.ts's own refusals ("Forbidden: ...") become this refusal. Any
+ * other failure -- the database down, a timeout -- is rethrown, so an outage
+ * is never reported to a coach as "you may not see this child's cap".
  */
 async function assertCapAccess(
   actor: ActorIdentity,
@@ -126,10 +134,10 @@ async function assertCapAccess(
   const role = await capRoleInOrganization(actor);
   if (role) {
     try {
-      await assertActorCanAccessAthlete(actor, athleteId);
+      await assertActorCanAccessAthlete({ ...actor, role }, athleteId);
       return role;
-    } catch {
-      // fall through to the single refusal below
+    } catch (error) {
+      if (!(error instanceof Error && error.message.startsWith('Forbidden'))) throw error;
     }
   }
   throw new ForbiddenError('This account may not read or set contact caps for this athlete.', 'CONTACT_CAP_NOT_PERMITTED');

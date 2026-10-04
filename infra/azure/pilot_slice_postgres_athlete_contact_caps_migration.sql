@@ -47,7 +47,9 @@ create table if not exists pilot.athlete_contact_caps (
   set_by_account_id                 text not null,
   set_by_role                       text not null
     constraint pilot_athlete_contact_caps_role_check check (set_by_role in ('coach', 'organization_admin', 'admin')),
-  set_at                            timestamptz not null default now(),
+  -- clock_timestamp(), not now(): now() is the transaction's start, so two
+  -- caps written in one transaction would tie and "newest" would be a coin toss.
+  set_at                            timestamptz not null default clock_timestamp(),
   primary key (organization_id, cap_id),
   constraint pilot_athlete_contact_caps_athlete_fk
     foreign key (organization_id, athlete_id)

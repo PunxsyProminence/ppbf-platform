@@ -43,6 +43,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import * as accessModule from './access';
 import type { ActorIdentity } from './access';
 import {
   getCurrentContactCap,
@@ -82,9 +83,14 @@ const UNASSIGNED_COACH_ID = 'acct-caps-unassigned'; // active coach here, reache
 const ATHLETE_ACCOUNT_ID = 'acct-caps-athlete';
 const PARENT_ACCOUNT_ID = 'acct-caps-parent'; // linked guardian of ATHLETE_ID
 const VOLUNTEER_ACCOUNT_ID = 'acct-caps-volunteer';
+// Home role organization_admin (of the other gym); here, only a COACH
+// membership, coach of record for nobody. Reaches nobody here.
+const HOME_ADMIN_ID = 'acct-caps-home-admin';
 const ATHLETE_ID = 'ath-caps-1';
 const SECOND_ATHLETE_ID = 'ath-caps-2';
 const OTHER_ATHLETE_ID = 'ath-caps-other';
+// Coach of record: the LAPSED coach. Only the membership check refuses them.
+const THIRD_ATHLETE_ID = 'ath-caps-3';
 
 function actorFor(
   accountId: string,
@@ -104,6 +110,8 @@ const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const VOLUNTEER = actorFor(VOLUNTEER_ACCOUNT_ID, 'volunteer');
+// The session carries the HOME role; the gym is this one.
+const HOME_ADMIN_AS_COACH_HERE = actorFor(HOME_ADMIN_ID, 'organization_admin');
 const PLATFORM_OWNER = actorFor('acct-caps-owner', 'platform_owner');
 const BOARD = actorFor('acct-caps-board', 'board');
 
@@ -166,11 +174,12 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
             ($6, 'athlete',            $10, 'microsoft', $12),
             ($7, 'parent',             $10, 'microsoft', null),
             ($8, 'volunteer',          $10, 'microsoft', null),
-            ($9, 'organization_admin', $11, 'microsoft', null)
+            ($9, 'organization_admin', $11, 'microsoft', null),
+            ($13, 'organization_admin', $11, 'microsoft', null)
      on conflict do nothing`,
     [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, UNASSIGNED_COACH_ID,
      ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, VOLUNTEER_ACCOUNT_ID, OTHER_ADMIN_ID,
-     ORG_ID, OTHER_ORG_ID, ATHLETE_ID],
+     ORG_ID, OTHER_ORG_ID, ATHLETE_ID, HOME_ADMIN_ID],
   );
 
   await client.query(
@@ -184,16 +193,19 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
             ($6, $10, 'athlete',            true),
             ($7, $10, 'parent',             true),
             ($8, $10, 'volunteer',          true),
-            ($9, $11, 'organization_admin', true)
+            ($9, $11, 'organization_admin', true),
+            ($12, $11, 'organization_admin', true),
+            ($12, $10, 'coach',              true)
      on conflict do nothing`,
     [ADMIN_ID, COACH_ID, LAPSED_COACH_ID, VISITING_COACH_ID, UNASSIGNED_COACH_ID,
      ATHLETE_ACCOUNT_ID, PARENT_ACCOUNT_ID, VOLUNTEER_ACCOUNT_ID, OTHER_ADMIN_ID,
-     ORG_ID, OTHER_ORG_ID],
+     ORG_ID, OTHER_ORG_ID, HOME_ADMIN_ID],
   );
 
   for (const [org, athleteId, coachId] of [
     [ORG_ID, ATHLETE_ID, COACH_ID],
     [ORG_ID, SECOND_ATHLETE_ID, COACH_ID],
+    [ORG_ID, THIRD_ATHLETE_ID, LAPSED_COACH_ID],
     [OTHER_ORG_ID, OTHER_ATHLETE_ID, VISITING_COACH_ID],
   ] as const) {
     await client.query(
@@ -460,6 +472,64 @@ describe('athleteContactCaps.ts against real rows', () => {
       const { rows } = await client.query('select count(*)::int as n from pilot.athlete_contact_caps');
       expect(rows[0].n).toBe(1);
     } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach of record whose membership here lapsed is refused -- the membership check alone does this', async () => {
+    const client = await migratedDatabase('caps_lapsed_of_record');
+    try {
+      await insertRaw(client, { athlete_id: THIRD_ATHLETE_ID });
+      await expect(getCurrentContactCap(LAPSED_COACH, THIRD_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        setContactCap({ actor: LAPSED_COACH, athleteId: THIRD_ATHLETE_ID, ...LIGHT }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      // The athlete is reachable for the gym's admin, so the refusal above is
+      // the lapsed membership and not a missing athlete.
+      expect(await getCurrentContactCap(ADMIN, THIRD_ATHLETE_ID)).not.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("an admin elsewhere who is only a coach here reaches only a coach's athletes here", async () => {
+    const client = await migratedDatabase('caps_home_role');
+    try {
+      await insertRaw(client);
+      // The session says organization_admin; the membership here says coach,
+      // and this account coaches nobody here. Whole-gym admin reach would
+      // have let this through.
+      await expect(getCurrentContactCap(HOME_ADMIN_AS_COACH_HERE, ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        setContactCap({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...LIGHT }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+
+      // Given coverage of that athlete, it may set -- and is recorded as the
+      // coach it is here, not as the admin its home role says.
+      await client.query(
+        `insert into pilot.coach_coverage
+           (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+         values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '8 hours')`,
+        [ORG_ID, ATHLETE_ID, HOME_ADMIN_ID, ADMIN_ID],
+      );
+      const row = await setContactCap({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...LIGHT });
+      expect(row.set_by_role).toBe('coach');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an outage while checking access is an error, never "not permitted"', async () => {
+    const client = await migratedDatabase('caps_outage');
+    const spy = jest
+      .spyOn(accessModule, 'assertActorCanAccessAthlete')
+      .mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+    try {
+      const attempt = getCurrentContactCap(COACH, ATHLETE_ID);
+      await expect(attempt).rejects.toThrow('connection terminated unexpectedly');
+      await expect(attempt).rejects.not.toBeInstanceOf(ForbiddenError);
+    } finally {
+      spy.mockRestore();
       await client.end();
     }
   });

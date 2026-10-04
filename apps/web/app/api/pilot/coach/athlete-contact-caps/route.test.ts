@@ -1,11 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
-import {
-  getCurrentContactCap,
-  listContactCapHistory,
-  setContactCap,
-} from '@/src/server/pilot/athleteContactCaps';
+import { listContactCapHistory, setContactCap } from '@/src/server/pilot/athleteContactCaps';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 /*
@@ -30,14 +26,12 @@ jest.mock('@/src/server/pilot/athleteContactCaps', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteContactCaps');
   return {
     ...actual,
-    getCurrentContactCap: jest.fn(),
     listContactCapHistory: jest.fn(),
     setContactCap: jest.fn(),
   };
 });
 
 const mockPrincipal = requirePrincipal as jest.Mock;
-const mockCurrent = getCurrentContactCap as jest.Mock;
 const mockHistory = listContactCapHistory as jest.Mock;
 const mockSet = setContactCap as jest.Mock;
 
@@ -81,11 +75,11 @@ afterEach(() => {
 });
 
 describe('roles that can never hold a cap are refused before the module runs', () => {
-  it.each(['athlete', 'parent', 'volunteer', 'platform_owner', 'board'])('%s', async (role) => {
+  it.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner', 'board'])('%s', async (role) => {
     mockPrincipal.mockResolvedValue({ ...COACH, role });
     expect((await get('?athlete_id=ath-1')).status).toBe(403);
     expect((await post({ athlete_id: 'ath-1', highest_allowed_stage: 'none' })).status).toBe(403);
-    expect(mockCurrent).not.toHaveBeenCalled();
+    expect(mockHistory).not.toHaveBeenCalled();
     expect(mockSet).not.toHaveBeenCalled();
   });
 });
@@ -98,25 +92,29 @@ describe('GET', () => {
 
   it('hands the module the session identity, without the session token, and names the setter', async () => {
     mockPrincipal.mockResolvedValue(COACH);
-    mockCurrent.mockResolvedValue(ROW);
     mockHistory.mockResolvedValue([ROW]);
     const response = await get('?athlete_id=ath-1');
     expect(response.status).toBe(200);
     const actor = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null };
-    expect(mockCurrent).toHaveBeenCalledWith(actor, 'ath-1');
+    expect(mockHistory).toHaveBeenCalledTimes(1);
     expect(mockHistory).toHaveBeenCalledWith(actor, 'ath-1');
     const body = await response.json();
     expect(body.cap).toEqual({ ...ROW, set_by_name: 'Coach acct-coach' });
     expect(body.history).toHaveLength(1);
   });
 
+  it('the cap in force is the newest history row, from the same read', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    const newer = { ...ROW, cap_id: 'cap-3', highest_allowed_stage: 'none' };
+    mockHistory.mockResolvedValue([newer, ROW]);
+    expect((await (await get('?athlete_id=ath-1')).json()).cap.cap_id).toBe('cap-3');
+  });
+
   it('a cleared cap, like no row at all, answers cap: null', async () => {
     mockPrincipal.mockResolvedValue(COACH);
-    mockCurrent.mockResolvedValue(CLEARED);
     mockHistory.mockResolvedValue([CLEARED, ROW]);
     expect((await (await get('?athlete_id=ath-1')).json()).cap).toBeNull();
 
-    mockCurrent.mockResolvedValue(null);
     mockHistory.mockResolvedValue([]);
     expect((await (await get('?athlete_id=ath-1')).json()).cap).toBeNull();
   });
@@ -124,7 +122,7 @@ describe('GET', () => {
   it('passes the module\'s refusal through as a 403', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     const { ForbiddenError } = jest.requireActual('@/src/server/pilot/errors');
-    mockCurrent.mockRejectedValue(new ForbiddenError('no', 'CONTACT_CAP_NOT_PERMITTED'));
+    mockHistory.mockRejectedValue(new ForbiddenError('no', 'CONTACT_CAP_NOT_PERMITTED'));
     expect((await get('?athlete_id=ath-1')).status).toBe(403);
   });
 });
