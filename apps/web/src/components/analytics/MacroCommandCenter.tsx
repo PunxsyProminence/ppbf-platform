@@ -130,12 +130,18 @@ export default function MacroCommandCenter() {
             ))}
           </div>
 
-          <p className="mt-3 text-xs text-zinc-500">Deload Recommendations</p>
-          <ul className="mt-1 space-y-1 text-xs text-zinc-400">
-            <li>- Lane 2 sprint-contact volume: reduce by 12% for 5-day cycle.</li>
-            <li>- Recovery lab morning block: add guided mobility extension.</li>
-            <li>- Red-zone athletes: lock contact rotations until clearance review.</li>
-          </ul>
+          {/* The fabricated "Deload Recommendations" list that sat here is gone:
+              the real signal is the coach-confirmed "Training load jumped"
+              suggestion, computed from stored session loads. */}
+          <p className="mt-3 text-xs text-zinc-500">Training Load</p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Real load-jump prompts are on{' '}
+            <a href="/coach/progression-intelligence" className="underline">
+              Progression Intelligence
+            </a>{' '}
+            under Suggested Gaps: computed from athletes&apos; session RPE × minutes, a prompt for a coach to
+            look, never a deload order.
+          </p>
 
           <p className="mt-3 text-xs text-zinc-500">Red Flag Aggregator</p>
           <div className="mt-1 border border-zinc-800 bg-black p-2 text-xs text-[#b91c1c]">

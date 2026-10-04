@@ -188,6 +188,7 @@
     "test:migrations:cohort-definitions-discipline-fk": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cohortDefinitionsDisciplineFk.pg.test.ts --testTimeout=180000",
     "test:migrations:discipline-fk-validation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/disciplineFkValidation.pg.test.ts --testTimeout=180000",
     "test:migrations:session-duration": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionDuration.pg.test.ts --testTimeout=180000",
+    "test:migrations:weekly-session-load": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/weeklySessionLoad.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-check-in-measures": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCheckInMeasures.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-gold": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationGold.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-body-points": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBodyPoints.pg.test.ts --testTimeout=180000",
