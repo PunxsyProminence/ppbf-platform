@@ -63,11 +63,18 @@ export const BOXING_ONTOLOGY_VERSION_0_1 = 'boxing-ontology-0.1' as const;
  * (OD-2026-10-02-008, -011, -014). Defined below under BODY POINTS. */
 export const BOXING_ONTOLOGY_VERSION_0_2 = 'boxing-ontology-0.2' as const;
 
+/** 0.2 unchanged, plus one body point: solar_plexus, the bottom tip of the
+ * breastbone (Jason 2026-10-03, "add 2 more points center of hips and solar
+ * plex", then "ok do it" to: centre of hips is the existing mid_hip, and the
+ * new point is the bottom tip of the breastbone). 25 points. */
+export const BOXING_ONTOLOGY_VERSION_0_3 = 'boxing-ontology-0.3' as const;
+
 /** Every version this build knows the meaning of. Knowing a version is not the
  * same as being able to label it -- see ANNOTATABLE_ONTOLOGY_VERSIONS. */
 export const SUPPORTED_BOXING_ONTOLOGY_VERSIONS = [
   BOXING_ONTOLOGY_VERSION_0_1,
   BOXING_ONTOLOGY_VERSION_0_2,
+  BOXING_ONTOLOGY_VERSION_0_3,
 ] as const;
 export type BoxingOntologyVersion = (typeof SUPPORTED_BOXING_ONTOLOGY_VERSIONS)[number];
 
@@ -86,14 +93,16 @@ export const ANNOTATABLE_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
 /** The versions whose annotation sets may hold body points, lead sides,
  * guards and stance types. A 0.1 set never may (OD-2026-10-02-008 4A: old
  * studies finish on old labels; never mixed). */
-export const BODY_POINT_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
+export const BODY_POINT_ONTOLOGY_VERSIONS = [
   BOXING_ONTOLOGY_VERSION_0_2,
-];
+  BOXING_ONTOLOGY_VERSION_0_3,
+] as const satisfies readonly BoxingOntologyVersion[];
+export type BodyPointOntologyVersion = (typeof BODY_POINT_ONTOLOGY_VERSIONS)[number];
 
 /** What a new study is stamped with by the routes and the bootstrap. Stays 0.1
- * until 0.2 can be labelled end to end, so no study is created that the
- * current screen cannot label. ontology.test.ts holds it inside
- * ANNOTATABLE_ONTOLOGY_VERSIONS. */
+ * until a body-point version (0.2 or 0.3) can be labelled end to end, so no
+ * study is created that the current screen cannot label. ontology.test.ts
+ * holds it inside ANNOTATABLE_ONTOLOGY_VERSIONS. */
 export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_1;
 
 /* ------------------------------------------------------------------ *
@@ -379,7 +388,7 @@ export const ANNOTATION_SET_STATUSES = ['in_progress', 'submitted'] as const;
 export type AnnotationSetStatus = (typeof ANNOTATION_SET_STATUSES)[number];
 
 /* ------------------------------------------------------------------ *
- * BODY POINTS -- boxing-ontology-0.2 only
+ * BODY POINTS -- boxing-ontology-0.2 and later
  *
  * A coach hand-marks where each body point is on the paused picture, at three
  * moments of every punch and every defence (OD-2026-10-02-011 sections 2, 3a).
@@ -392,7 +401,7 @@ export type AnnotationSetStatus = (typeof ANNOTATION_SET_STATUSES)[number];
  * set (BODY_POINT_ONTOLOGY_VERSIONS).
  * ------------------------------------------------------------------ */
 
-/** The 24 body points, in the order a coach marks them. Exactly the list
+/** 0.2's 24 body points, in the order a coach marks them. Exactly the list
  * Jason ratified (OD-2026-10-02-008 section 2): head (nose, chin); trunk
  * (neck, mid-hip); each arm (shoulder, elbow, wrist, glove); each leg (hip,
  * knee, ankle); each foot (heel, big toe, small toe).
@@ -401,7 +410,7 @@ export type AnnotationSetStatus = (typeof ANNOTATION_SET_STATUSES)[number];
  * the lead side at that moment, never clicked (OD-2026-10-02-011 3b). Midline
  * points carry no side. The list can grow, but only as a new ontology version
  * (OD-2026-10-02-008 section 2) -- never by editing this one. */
-export const BODY_POINTS = [
+export const BODY_POINTS_0_2 = [
   'nose',
   'chin',
   'neck',
@@ -427,13 +436,32 @@ export const BODY_POINTS = [
   'right_big_toe',
   'right_small_toe',
 ] as const;
+
+/** 0.3's 25: 0.2's 24 unchanged and in the same order, then solar_plexus, a
+ * midline point with no side. Added at the end so every 0.2 point keeps its
+ * position. */
+export const BODY_POINTS_0_3 = [...BODY_POINTS_0_2, 'solar_plexus'] as const;
+
+/** Every point any version knows: the database's point-code vocabulary. Which
+ * of them a set may hold is its version's list, BODY_POINTS_BY_VERSION; a 0.2
+ * set refuses solar_plexus. */
+export const BODY_POINTS = BODY_POINTS_0_3;
 export type BodyPoint = (typeof BODY_POINTS)[number];
 
+/** The points a set of each body-point version holds at every moment: all of
+ * them, and no others, before it can be submitted. */
+export const BODY_POINTS_BY_VERSION: Readonly<Record<BodyPointOntologyVersion, readonly BodyPoint[]>> = {
+  [BOXING_ONTOLOGY_VERSION_0_2]: BODY_POINTS_0_2,
+  [BOXING_ONTOLOGY_VERSION_0_3]: BODY_POINTS_0_3,
+};
+
 /** Where to click, for the points Jason gave a rule for (OD-2026-10-02-008
- * section 2). No other placement rule has been written, and none is invented
- * here: a point without an entry has no written rule yet. */
+ * section 2; solar_plexus, Jason 2026-10-03). No other placement rule has
+ * been written, and none is invented here: a point without an entry has no
+ * written rule yet. */
 export const BODY_POINT_PLACEMENT_NOTES: Readonly<Partial<Record<BodyPoint, string>>> = {
   chin: 'the tip of the chin',
+  solar_plexus: 'the bottom tip of the breastbone',
   left_glove: 'the centre of the padded knuckle area',
   right_glove: 'the centre of the padded knuckle area',
 };

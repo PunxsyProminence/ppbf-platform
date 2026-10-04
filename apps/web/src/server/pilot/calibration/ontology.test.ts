@@ -24,8 +24,12 @@ import {
   BODY_POINT_PLACEMENT_NOTES,
   BODY_POINT_STATES,
   BODY_POINTS,
+  BODY_POINTS_0_2,
+  BODY_POINTS_0_3,
+  BODY_POINTS_BY_VERSION,
   BOXING_ONTOLOGY_VERSION_0_1,
   BOXING_ONTOLOGY_VERSION_0_2,
+  BOXING_ONTOLOGY_VERSION_0_3,
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   CONTACT_RESULTS,
@@ -74,6 +78,7 @@ const ALL_VOCABULARIES: Array<[string, readonly string[]]> = [
   ['CALIBRATION_PROJECT_STATUSES', CALIBRATION_PROJECT_STATUSES],
   ['CLIP_SAMPLING_REASONS', CLIP_SAMPLING_REASONS],
   ['BODY_POINTS', BODY_POINTS],
+  ['BODY_POINTS_0_2', BODY_POINTS_0_2],
   ['BODY_POINT_STATES', BODY_POINT_STATES],
   ['MOMENT_SLOTS', MOMENT_SLOTS],
   ['MOMENT_KINDS', MOMENT_KINDS],
@@ -88,6 +93,7 @@ describe('boxing-ontology-0.1 is closed and well formed', () => {
     // Stamped onto every row. A drift here silently re-labels collected data.
     expect(BOXING_ONTOLOGY_VERSION_0_1).toBe('boxing-ontology-0.1');
     expect(BOXING_ONTOLOGY_VERSION_0_2).toBe('boxing-ontology-0.2');
+    expect(BOXING_ONTOLOGY_VERSION_0_3).toBe('boxing-ontology-0.3');
   });
 
   test.each(ALL_VOCABULARIES)('%s has no duplicate members', (_name, vocabulary) => {
@@ -334,10 +340,11 @@ describe('which version answers which question', () => {
   // relationships the call sites rely on, so a later edit to one constant
   // cannot quietly strand a study.
 
-  test('the build knows 0.1 and 0.2, in that order', () => {
+  test('the build knows 0.1, 0.2 and 0.3, in that order', () => {
     expect([...SUPPORTED_BOXING_ONTOLOGY_VERSIONS]).toEqual([
       'boxing-ontology-0.1',
       'boxing-ontology-0.2',
+      'boxing-ontology-0.3',
     ]);
   });
 
@@ -355,7 +362,7 @@ describe('which version answers which question', () => {
   test('0.1 never carries body points', () => {
     // OD-2026-10-02-008 4A: old studies finish on old labels; never mixed.
     expect(BODY_POINT_ONTOLOGY_VERSIONS).not.toContain(BOXING_ONTOLOGY_VERSION_0_1);
-    expect([...BODY_POINT_ONTOLOGY_VERSIONS]).toEqual([BOXING_ONTOLOGY_VERSION_0_2]);
+    expect([...BODY_POINT_ONTOLOGY_VERSIONS]).toEqual([BOXING_ONTOLOGY_VERSION_0_2, BOXING_ONTOLOGY_VERSION_0_3]);
   });
 
   test('until 0.2 can be labelled, only 0.1 is labelled and created', () => {
@@ -368,7 +375,7 @@ describe('which version answers which question', () => {
 });
 
 describe('boxing-ontology-0.2 body points', () => {
-  test('the 24 points are exactly the ratified list, in marking order', () => {
+  test("0.2's 24 points are exactly the ratified list, in marking order", () => {
     // OD-2026-10-02-008 section 2: head (nose, chin); trunk (neck, mid-hip);
     // each arm (shoulder, elbow, wrist, glove); each leg (hip, knee, ankle);
     // each foot (heel, big toe, small toe). Named left/right (-011 3b).
@@ -376,12 +383,28 @@ describe('boxing-ontology-0.2 body points', () => {
       'shoulder', 'elbow', 'wrist', 'glove', 'hip', 'knee', 'ankle', 'heel',
       'big_toe', 'small_toe',
     ];
-    expect([...BODY_POINTS]).toEqual([
+    expect([...BODY_POINTS_0_2]).toEqual([
       'nose', 'chin', 'neck', 'mid_hip',
       ...limb.map((part) => `left_${part}`),
       ...limb.map((part) => `right_${part}`),
     ]);
-    expect(BODY_POINTS).toHaveLength(24);
+    expect(BODY_POINTS_0_2).toHaveLength(24);
+  });
+
+  test("0.3 is 0.2's 24 unchanged and in place, then solar_plexus: 25", () => {
+    // Jason 2026-10-03: centre of hips is the existing mid_hip; the one new
+    // point is the bottom tip of the breastbone, a midline point with no side.
+    expect([...BODY_POINTS_0_3]).toEqual([...BODY_POINTS_0_2, 'solar_plexus']);
+    expect(BODY_POINTS_0_3).toHaveLength(25);
+    expect(BODY_POINTS_0_2 as readonly string[]).not.toContain('solar_plexus');
+  });
+
+  test('every body-point version has its own list, and the vocabulary is every point any version knows', () => {
+    expect(Object.keys(BODY_POINTS_BY_VERSION)).toEqual([...BODY_POINT_ONTOLOGY_VERSIONS]);
+    expect(BODY_POINTS_BY_VERSION[BOXING_ONTOLOGY_VERSION_0_2]).toBe(BODY_POINTS_0_2);
+    expect(BODY_POINTS_BY_VERSION[BOXING_ONTOLOGY_VERSION_0_3]).toBe(BODY_POINTS_0_3);
+    const known = new Set(Object.values(BODY_POINTS_BY_VERSION).flat());
+    expect([...BODY_POINTS].sort()).toEqual([...known].sort());
   });
 
   test('no hand points beyond the glove, and nothing named lead or rear', () => {
@@ -393,10 +416,12 @@ describe('boxing-ontology-0.2 body points', () => {
   });
 
   test('placement rules exist only where Jason gave one', () => {
-    // Glove: centre of the padded knuckle area. Chin: tip of the chin. Any
-    // other rule would be invented here.
+    // Glove: centre of the padded knuckle area. Chin: tip of the chin. Solar plexus:
+    // bottom tip of the breastbone (2026-10-03). Any other rule would be
+    // invented here.
     expect(BODY_POINT_PLACEMENT_NOTES).toEqual({
       chin: 'the tip of the chin',
+      solar_plexus: 'the bottom tip of the breastbone',
       left_glove: 'the centre of the padded knuckle area',
       right_glove: 'the centre of the padded knuckle area',
     });

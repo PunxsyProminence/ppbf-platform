@@ -63,10 +63,15 @@ function resolveSslConfig() {
 // its source (issue #488).
 //
 // THE FOUR TRIGGERS ARE ASSERTED because they hold what the constraints
-// cannot: the freeze on a submitted set, the 0.2-only gate, the middle-moment
+// cannot: the freeze on a submitted set, the body-point-version gate, the middle-moment
 // rule, and the event and set facts a moment was checked against. Tables
 // with their constraints and without their triggers look healthy and enforce
 // none of that. A trigger present but disabled counts as missing.
+//
+// 0.3 IS ASSERTED TOO, because a database this migration reached before 0.3
+// existed has every object above by name and still refuses solar_plexus. The
+// clauses read a literal out of the CHECK's text and the two guards' source;
+// a quoted literal survives Postgres's deparse.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.calibration_body_moments') is not null as moments_table_ready,
@@ -146,6 +151,22 @@ const READINESS_QUERY = `
       where conrelid = to_regclass('pilot.calibration_body_points')
         and conname = 'pilot_calibration_body_points_code_vocab'
     ) as point_code_vocab_ready,
+    exists (
+      select 1 from pg_constraint
+      where conrelid = to_regclass('pilot.calibration_body_points')
+        and conname = 'pilot_calibration_body_points_code_vocab'
+        and pg_get_constraintdef(oid) like '%''solar_plexus''%'
+    ) as point_code_vocab_0_3_ready,
+    exists (
+      select 1 from pg_proc
+      where oid = to_regprocedure('pilot.calibration_body_points_guard()')
+        and prosrc like '%''boxing-ontology-0.3''%'
+    ) as points_guard_0_3_ready,
+    exists (
+      select 1 from pg_proc
+      where oid = to_regprocedure('pilot.calibration_body_moments_guard()')
+        and prosrc like '%''boxing-ontology-0.3''%'
+    ) as moments_guard_0_3_ready,
     exists (
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.calibration_body_points')
