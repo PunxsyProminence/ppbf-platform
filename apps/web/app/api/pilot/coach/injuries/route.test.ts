@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import {
+  accessibleAthleteIds,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
 } from '@/src/server/pilot/access';
@@ -17,6 +18,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
+  accessibleAthleteIds: jest.fn(),
   assertAthleteBelongsToOrganization: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
 }));
@@ -39,6 +41,7 @@ jest.mock('@/src/server/pilot/athleteInjuries', () => ({
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
+const mockAccessible = accessibleAthleteIds as jest.Mock;
 const mockGetById = getInjuryById as jest.Mock;
 const mockList = listInjuriesForAthlete as jest.Mock;
 const mockCandidates = listLinkCandidates as jest.Mock;
@@ -79,7 +82,7 @@ const RECORD = {
 };
 
 const moduleCalls = () =>
-  [mockList, mockCandidates, mockRecord, mockUpdate, mockMark, mockGetById].reduce((n, m) => n + m.mock.calls.length, 0);
+  [mockList, mockCandidates, mockRecord, mockUpdate, mockMark, mockGetById, mockAccessible].reduce((n, m) => n + m.mock.calls.length, 0);
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -103,9 +106,9 @@ describe.each(['platform_owner', 'board', 'athlete', 'parent', 'volunteer', 'sta
       expect(moduleCalls()).toBe(0);
     });
 
-    test.each(['record', 'update', 'mark_entered_in_error'])('POST %s', async (action) => {
+    test.each(['accessible_athletes', 'record', 'update', 'mark_entered_in_error'])('POST %s', async (action) => {
       as(role);
-      const res = await POST(postReq({ ...RECORD, action, injury_id: INJURY.injury_id }));
+      const res = await POST(postReq({ ...RECORD, action, injury_id: INJURY.injury_id, athlete_ids: ['ATH-1'] }));
       expect(res.status).toBe(403);
       expect(moduleCalls()).toBe(0);
     });
@@ -212,6 +215,25 @@ describe('an assigned coach', () => {
     const res = await POST(postReq({ action: 'mark_entered_in_error', injury_id: INJURY.injury_id }));
     expect(res.status).toBe(500);
     expect(mockMark).not.toHaveBeenCalled();
+  });
+
+  test('accessible_athletes returns only the ids this principal may open, decided by accessibleAthleteIds', async () => {
+    mockAccessible.mockResolvedValue(new Set(['ATH-1']));
+    const res = await POST(postReq({ action: 'accessible_athletes', athlete_ids: ['ATH-1', 'ATH-2'] }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
+    expect(await res.json()).toEqual({ ok: true, athlete_ids: ['ATH-1'] });
+    expect(mockAccessible).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acct-coach-1', role: 'coach', organizationId: ORG }),
+      ['ATH-1', 'ATH-2'],
+    );
+  });
+
+  test('accessible_athletes refuses a malformed list', async () => {
+    for (const athlete_ids of ['ATH-1', [1], Array.from({ length: 1001 }, (_, i) => `A${i}`)]) {
+      expect((await POST(postReq({ action: 'accessible_athletes', athlete_ids }))).status).toBe(400);
+    }
+    expect(mockAccessible).not.toHaveBeenCalled();
   });
 
   test('missing athlete_id and unknown actions are 400', async () => {

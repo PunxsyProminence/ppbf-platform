@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  accessibleAthleteIds,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
 } from '@/src/server/pilot/access';
@@ -21,6 +22,8 @@ export const runtime = 'nodejs';
 
 // Every response can carry a child's injury and the staff note.
 const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
+
+const MAX_ROSTER_IDS = 1000;
 
 /**
  * The coach's injury record (map item 11): read, record, edit, and mark
@@ -123,6 +126,19 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== 'object') throw new ValidationError('Missing request body.');
     const action = str(body, 'action');
 
+    // Which of the given athletes this principal may open here, so the page
+    // offers only those: the roster a coach reads is the whole gym, and this
+    // route admits only the athletes they coach or cover. A read, sent as a
+    // POST so a long roster never rides in a URL.
+    if (action === 'accessible_athletes') {
+      const ids = body.athlete_ids;
+      if (!Array.isArray(ids) || ids.length > MAX_ROSTER_IDS || !ids.every((id) => typeof id === 'string')) {
+        throw new ValidationError(`athlete_ids must be a list of at most ${MAX_ROSTER_IDS} ids.`);
+      }
+      const accessible = await accessibleAthleteIds(principal, ids as string[]);
+      return NextResponse.json({ ok: true, athlete_ids: [...accessible] }, NO_STORE);
+    }
+
     if (action === 'record') {
       const athleteId = str(body, 'athlete_id');
       if (!athleteId) throw new ValidationError('athlete_id is required.');
@@ -160,7 +176,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true }, NO_STORE);
     }
 
-    throw new ValidationError('action must be record, update or mark_entered_in_error.');
+    throw new ValidationError('action must be accessible_athletes, record, update or mark_entered_in_error.');
   } catch (error) {
     return jsonError(error);
   }

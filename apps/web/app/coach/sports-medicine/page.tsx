@@ -1070,6 +1070,9 @@ export default function SportsMedicinePage() {
           )}
 
           <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/coach/injuries" className="btn btn--ghost">
+              Injury Record
+            </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
             </Link>
