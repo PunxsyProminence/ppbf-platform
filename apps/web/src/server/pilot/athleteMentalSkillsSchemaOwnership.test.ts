@@ -20,7 +20,7 @@ describe('athlete mental skills schema ownership', () => {
   test('the module issues no DDL, deletes nothing, and scopes every statement by organization_id', () => {
     const code = stripComments(moduleSource);
     expect(code).not.toMatch(/create\s+table|create\s+index|alter\s+table|drop\s+table/i);
-    expect(code).not.toMatch(/\bdelete\s+from\b/i);
+    expect(code).not.toMatch(/\bdelete\s+from\b|\btruncate\b/i);
 
     const statements = code.match(/`[^`]*pilot\.athlete_mental_skill_entries[^`]*`/g) ?? [];
     expect(statements).toHaveLength(6);
@@ -36,6 +36,9 @@ describe('athlete mental skills schema ownership', () => {
     // an edit of the words, a second update, an un-remove, one not scoped to
     // the athlete -- fails here.
     const code = stripComments(moduleSource);
+    // Any update keyword at all, however the table is spelled (ONLY, quoted
+    // schema, a search_path), counts; exactly one is allowed.
+    expect(code.match(/\bupdate\s/gi) ?? []).toHaveLength(1);
     const updates = code.match(/\bupdate\s+pilot\.[\s\S]*?`/gi) ?? [];
     expect(updates).toHaveLength(1);
     expect((updates[0] ?? '').replace(/\s+/g, ' ')).toBe(

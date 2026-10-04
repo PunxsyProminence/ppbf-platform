@@ -134,6 +134,13 @@ export default function AthleteMentalSkillsPage() {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (response.status === 404) {
+          // A remove of an entry already gone (another tab, a double send):
+          // say so and show the list as it now is, rather than "try again".
+          setMessage('That entry is already gone.');
+          await refreshEntries();
+          return false;
+        }
         // Only a validation refusal's own words are shown; anything else is generic.
         setMessage(response.status === 400 && payload.error ? payload.error : 'That did not save. Try again.');
         return false;
@@ -161,7 +168,10 @@ export default function AthleteMentalSkillsPage() {
   }
 
   async function removeEntry(entryId: string) {
-    if (!window.confirm('Remove this entry? It will no longer show to you, your guardian or your coach.')) return;
+    if (!window.confirm(
+      'Remove this entry? It will no longer show to you, your guardian or your coach. '
+      + 'If it is your current cue, your previous cue shows again. The gym keeps a record that you removed it.',
+    )) return;
     await post({ action: 'remove', entry_id: entryId }, 'Entry removed.');
   }
 

@@ -263,12 +263,25 @@ describe('remove (OD-2026-10-04-023)', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
   });
 
-  test('a refused remove says so and does not claim it was removed', async () => {
-    await renderPage({ postStatus: 404, postError: 'That entry was not found.' });
+  test('a remove of an entry already gone says so, re-reads the list, and never claims it removed anything', async () => {
+    const fetchMock = await renderPage({ postStatus: 404, postError: 'That entry was not found.' });
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const readsBefore = fetchMock.mock.calls.filter(([u, init]) => String(u).includes('/mental-skills') && !init?.method?.match(/POST/)).length;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove this cue' }));
+    });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toBe('That entry is already gone.');
+    const readsAfter = fetchMock.mock.calls.filter(([u, init]) => String(u).includes('/mental-skills') && !init?.method?.match(/POST/)).length;
+    expect(readsAfter).toBe(readsBefore + 1);
+  });
+
+  test('any other failed remove says it did not go through', async () => {
+    await renderPage({ postStatus: 500 });
     jest.spyOn(window, 'confirm').mockReturnValue(true);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Remove this cue' }));
     });
-    expect(screen.getByRole('status').textContent).not.toMatch(/removed/i);
+    expect(screen.getByRole('status').textContent).toBe('That did not save. Try again.');
   });
 });
