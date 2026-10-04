@@ -17,12 +17,17 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import CoachSparringExposurePage from './page';
+import CoachSparringExposurePage, { CONTACT_STAGES } from './page';
+// The shared ladder (vocabularies.ts imports nothing server-side, so jsdom can load it).
+import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
+
+const NO_CAP = { cap_state: 'none', cap: null, hard_open_days_in_7: 0, through_day: '2026-10-03' };
+const CAP = { highest_allowed_stage: 'controlled_sparring', max_hard_open_sessions_per_7_days: 1, set_by_name: 'Coach J' };
 
 const ROSTER = [
   { athlete_id: 'ath-1', full_name: 'Rosa Delgado' },
@@ -56,6 +61,10 @@ interface Stubs {
   truncated?: boolean;
   postStatus?: number;
   postError?: string;
+  /** cap_check on the GET; 'omit' leaves the key out. */
+  capCheck?: unknown;
+  /** cap_check on the POST reply; 'omit' leaves the key out. */
+  postCheck?: unknown;
 }
 
 let posts: Array<Record<string, unknown>>;
@@ -76,7 +85,9 @@ function installFetch(stubs: Stubs = {}) {
         return {
           ok: status < 300,
           status,
-          json: async () => (status < 300 ? { entry: {} } : { error: stubs.postError }),
+          json: async () => (status < 300
+            ? { entry: {}, ...(stubs.postCheck === 'omit' ? {} : { cap_check: stubs.postCheck ?? NO_CAP }) }
+            : { error: stubs.postError }),
         } as Response;
       }
       gets.push(url);
@@ -94,6 +105,7 @@ function installFetch(stubs: Stubs = {}) {
             segments_by_type: { hard: 1, play: 0, technical: 2, game: 0, conditioned: 0 },
           },
           stop_rules: [{ universal_rule_id: 'ust_bleeding', ordinal: 1, condition_text: 'Bleeding', rule_kind: 'safety' }],
+          ...(stubs.capCheck === 'omit' ? {} : { cap_check: stubs.capCheck ?? NO_CAP }),
         }),
       } as Response;
     }
@@ -336,5 +348,106 @@ describe('coach sparring record screen', () => {
     });
     expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
     expect(screen.queryByText('No athletes are available to you.')).toBeNull();
+  });
+});
+
+describe('contact stage and the coach-set cap (map item 15)', () => {
+  test("the stage choices are the server's ladder, in order", () => {
+    expect([...CONTACT_STAGES]).toEqual([...VOCABULARIES.contact_level.values]);
+  });
+
+  test('the stage is optional: "Not recorded" sends nothing, a chosen stage is sent and kept for the next round', async () => {
+    await renderAndPick();
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect('contact_stage' in posts[0]).toBe(false);
+
+    fillRequired();
+    choose('Contact stage (optional)', 'open_sparring');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(posts[1].contact_stage).toBe('open_sparring');
+    expect((screen.getByLabelText('Contact stage (optional)') as HTMLSelectElement).value).toBe('open_sparring');
+  });
+
+  test('a set cap is shown as the coach set it, with the raw gym-day count', async () => {
+    await renderAndPick({ capCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 2, through_day: '2026-10-03' } });
+    const section = screen.getByTestId('spar-cap').textContent ?? '';
+    expect(section).toContain('Highest stage: Controlled sparring');
+    expect(section).toContain('At most 1 hard or open sparring sessions in any 7 days (sessions = gym days).');
+    expect(screen.getByTestId('spar-hard-open-days').textContent).toMatch(/: 2\.$/);
+    expect(section).toContain('A cap never blocks a segment');
+  });
+
+  test('no cap set is said plainly', async () => {
+    await renderAndPick();
+    expect(screen.getByTestId('spar-cap').textContent).toContain('No cap set for this athlete.');
+  });
+
+  test.each([
+    ['an unknown cap', { cap_state: 'unknown', cap: null, hard_open_days_in_7: 0, through_day: '2026-10-03' }],
+    ['a reply without cap_check', 'omit'],
+    ['a malformed cap_check', { cap_state: 'set', cap: null }],
+  ])('%s is "could not be read" -- never "no cap"', async (_label, capCheck) => {
+    await renderAndPick({ capCheck });
+    const section = screen.getByTestId('spar-cap').textContent ?? '';
+    expect(section).toContain('could not be read just now');
+    expect(section).not.toContain('No cap set');
+  });
+
+  test('a count that could not be taken is said, never shown as 0', async () => {
+    await renderAndPick({ capCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: null, through_day: '2026-10-03' } });
+    expect(screen.getByTestId('spar-hard-open-days').textContent).toContain('could not be counted');
+  });
+
+  test('an entry over the cap is SAVED, and the warnings are shown under it', async () => {
+    const warnings = [
+      { kind: 'stage_above_cap', message: "Above this athlete's cap: recorded at Open sparring. Saved. The coach decides." },
+      { kind: 'hard_open_days_over_cap', message: 'Over this athlete\'s cap: 2 ... (sessions = gym days). Saved. The coach decides.' },
+    ];
+    await renderAndPick({
+      postCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 2, through_day: '2026-10-03', warnings },
+    });
+    fillRequired();
+    choose('Contact stage (optional)', 'open_sparring');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByRole('status').textContent).toBe('Saved.');
+    const shown = screen.getByTestId('spar-cap-warnings').textContent ?? '';
+    expect(shown).toContain('Over the coach-set cap');
+    expect(shown).toContain('recorded at Open sparring');
+    expect(shown).toContain('sessions = gym days');
+  });
+
+  test('within the cap: saved, no warning block', async () => {
+    await renderAndPick({
+      postCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 1, through_day: '2026-10-03', warnings: [] },
+    });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByRole('status').textContent).toBe('Saved.');
+    expect(screen.queryByTestId('spar-cap-warnings')).toBeNull();
+  });
+
+  test('a save reply without a usable cap check says the segment was not checked', async () => {
+    await renderAndPick({ postCheck: 'omit' });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByText(/was not checked against a cap/)).toBeTruthy();
+  });
+
+  test('a recorded stage shows on the entry; the recent section stays counts only', async () => {
+    await renderAndPick({ entries: [entry({ contact_stage: 'open_sparring' })] });
+    expect(screen.getByText(/segment 1 · Technical · Open sparring · 1:15/)).toBeTruthy();
+    const text = screen.getByText('Recent sparring').closest('section')?.textContent ?? '';
+    expect(text).not.toMatch(/%|score|risk|recommended|clear|limit|safe to/i);
   });
 });
