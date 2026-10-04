@@ -7,6 +7,8 @@ import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/us
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
+import ClipTagsPanel from '@/components/ClipTagsPanel';
+import TaggedClipsList from '@/components/TaggedClipsList';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -198,6 +200,9 @@ export default function CoachVideoAnalysisPage() {
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
+  // The one Video Library row whose clip tags are open (staff tagging, OD-2026-10-04-003).
+  const [taggingVideoId, setTaggingVideoId] = useState<string | null>(null);
+  const [clipTagsVersion, setClipTagsVersion] = useState(0);
   const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
   const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
   // Which videos this reviewer has actually opened for review. A SET of ids
@@ -908,12 +913,24 @@ export default function CoachVideoAnalysisPage() {
                             : 'Request Film Study'}
                       </button>
                     ) : null}
+                    <button
+                      onClick={() => setTaggingVideoId(taggingVideoId === v.video_session_id ? null : v.video_session_id)}
+                      aria-expanded={taggingVideoId === v.video_session_id}
+                      className="btn btn--ghost"
+                    >
+                      {taggingVideoId === v.video_session_id ? 'Close tags' : 'Tags'}
+                    </button>
                   </div>
+                  {taggingVideoId === v.video_session_id ? (
+                    <ClipTagsPanel videoId={v.video_session_id} athletes={athletes} onTagsChanged={() => setClipTagsVersion((n) => n + 1)} />
+                  ) : null}
                 </div>
               ))}
             </div>
           )}
         </section>
+
+        <TaggedClipsList athletes={athletes} refreshKey={clipTagsVersion} />
 
         {/* How often this gym's coaches have accepted what the model proposed.
             Sits ABOVE the queue on purpose: a coach about to spend twenty
