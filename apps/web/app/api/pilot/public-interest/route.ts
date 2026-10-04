@@ -24,7 +24,6 @@ interface PublicInterestRequestBody {
   program_interest?: unknown;
   preferred_contact_method?: unknown;
   message?: unknown;
-  consent_to_contact?: unknown;
   // Hidden form field a real visitor never sees or fills in. Any value here
   // means the submission almost certainly came from a bot, not a person.
   website?: unknown;
@@ -43,7 +42,7 @@ function asBoundedString(value: unknown): string | null {
 /**
  * POST /api/pilot/public-interest -- the only unauthenticated write endpoint
  * in this app. It backs the public marketing site's "Public Interest Intake"
- * form (app/public/page.tsx), which previously had no backend at all: every
+ * form (components/PublicInterestForm.tsx, on /), which previously had no backend at all: every
  * real visitor's submission was held in local React state and lost on
  * refresh, while the UI claimed "Interest received... Admin review required."
  *
@@ -98,7 +97,11 @@ export async function POST(request: NextRequest) {
     const programInterest = asBoundedString(body.program_interest);
     const preferredContactMethod = asBoundedString(body.preferred_contact_method);
     const message = body.message == null ? null : asBoundedString(body.message);
-    const consentToContact = body.consent_to_contact === true;
+    // Sending the form IS the request to be contacted (Jason, 2026-10-03: "it
+    // should be assumed that we would contact them if they are requesting
+    // info"), so there is no checkbox and every accepted submission is stored
+    // as consenting. A consent_to_contact field from an older client is ignored.
+    const consentToContact = true;
 
     if (
       fullName === null

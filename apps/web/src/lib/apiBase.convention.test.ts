@@ -79,10 +79,9 @@ test('every client /api fetch goes through apiBase()', () => {
 // failed (#79), and a behavioral audit then found 31 more sites. Every
 // apiBase() fetch must state credentials; deliberately public endpoints are
 // allowlisted here BY FILE with the reason recorded.
-const PUBLIC_FETCH_ALLOWLIST = new Set([
-  // The public-interest form is submitted by signed-out visitors by design.
-  'app/public/page.tsx',
-]);
+// Empty today: the public-interest form (components/PublicInterestForm.tsx)
+// states credentials: 'omit' instead of being allowlisted.
+const PUBLIC_FETCH_ALLOWLIST = new Set<string>([]);
 
 test('every apiBase() fetch states credentials (public endpoints allowlisted)', () => {
   const offenders: string[] = [];
