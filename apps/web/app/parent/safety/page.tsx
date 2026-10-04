@@ -173,6 +173,10 @@ export default function GuardianSafetyPage() {
               themselves, nothing more.
             </p>
             <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Then your child&rsquo;s injury record: each injury the gym recorded, where and what kind, who
+              reported it and when they are expected back -- the same record your child sees, without staff notes.
+            </p>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
               Below that, the status of the four waivers the gym tracks: general, medical release, photo
               &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
               your child has signed it; the Photo &amp; Video Consent page below is where you sign or

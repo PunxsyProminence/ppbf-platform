@@ -287,6 +287,10 @@ test('the header names the four tracked waivers and keeps "what your child can s
   // Jason 2026-09-29 (P3 A): every child reads Missing until the gym records
   // these waiver types, so the page says what Missing means.
   expect(copy).toContain('Missing means the gym has not recorded that waiver yet.');
+  // Owner decision 2026-10-04: guardians read their child's injury record, so the header says so.
+  expect(copy).toContain(
+    'Then your child’s injury record: each injury the gym recorded, where and what kind, who reported it and when they are expected back -- the same record your child sees, without staff notes.',
+  );
   expect(copy).not.toContain('each of their waivers');
   // The claim sentence ends before the waivers are mentioned.
   const claimEnd = copy.indexOf('nothing more.');
