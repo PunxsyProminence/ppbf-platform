@@ -354,13 +354,13 @@ const POST_SESSION_MINUTES_MAX = 300;
  */
 export function parsePostSessionMinutes(
   draft: string,
-): { kind: 'empty' } | { kind: 'valid'; minutes: number } | { kind: 'invalid' } {
+): { status: 'empty' } | { status: 'valid'; minutes: number } | { status: 'invalid' } {
   const trimmed = draft.trim();
-  if (trimmed === '') return { kind: 'empty' };
-  if (!/^\d+$/.test(trimmed)) return { kind: 'invalid' };
+  if (trimmed === '') return { status: 'empty' };
+  if (!/^\d+$/.test(trimmed)) return { status: 'invalid' };
   const minutes = Number(trimmed);
-  if (minutes < POST_SESSION_MINUTES_MIN || minutes > POST_SESSION_MINUTES_MAX) return { kind: 'invalid' };
-  return { kind: 'valid', minutes };
+  if (minutes < POST_SESSION_MINUTES_MIN || minutes > POST_SESSION_MINUTES_MAX) return { status: 'invalid' };
+  return { status: 'valid', minutes };
 }
 
 /**
@@ -906,7 +906,7 @@ export default function AthleteWorkspace() {
   const parsedMinutes = parsePostSessionMinutes(minutesDraft);
   // "0" or "04" may be "045" mid-typing: check-out stays held, but the error
   // is not announced until the entry cannot become a valid answer.
-  const showMinutesError = parsedMinutes.kind === 'invalid' && !/^0+$/.test(minutesDraft.trim());
+  const showMinutesError = parsedMinutes.status === 'invalid' && !/^0+$/.test(minutesDraft.trim());
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -1774,10 +1774,10 @@ export default function AthleteWorkspace() {
     const rpe = answeredEffort;
     // An invalid minutes entry holds check-out (the button is disabled too);
     // a typed answer is never thrown away in favour of "not recorded".
-    if (parsedMinutes.kind === 'invalid') {
+    if (parsedMinutes.status === 'invalid') {
       return;
     }
-    const durationMinutes = parsedMinutes.kind === 'valid' ? parsedMinutes.minutes : null;
+    const durationMinutes = parsedMinutes.status === 'valid' ? parsedMinutes.minutes : null;
 
     checkingOutRef.current = true;
     setIsCheckingOut(true);
@@ -2635,7 +2635,7 @@ export default function AthleteWorkspace() {
                     <button
                       type="button"
                       onClick={() => void handleCheckOut()}
-                      disabled={isCheckingOut || parsedMinutes.kind === 'invalid'}
+                      disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
                       className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
                     >
                       {isCheckingOut ? 'Checking out...' : 'Check Out'}
