@@ -12,6 +12,7 @@ import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   addClipTag,
+  blockedClipVideoIds,
   getLiveClipTag,
   listLiveClipTagsForVideo,
   listLiveTagSubjects,
@@ -74,7 +75,18 @@ export async function GET(
       return hiddenNotFound();
     }
     const items = await listLiveClipTagsForVideo(principal.organizationId, videoId);
-    return NextResponse.json({ items });
+    /*
+     * Owner, Jason 2026-10-04: "A) Hide". On a clip a consent block stops,
+     * no note is shown -- a note may name the child whose guardian refused.
+     * The tags themselves stay listed so an organization admin can find and
+     * remove the one that blocks (a coach cannot: "Coach, unless consent
+     * blocks").
+     */
+    const blocked = (await blockedClipVideoIds(principal.organizationId, [videoId])).has(videoId);
+    return NextResponse.json({
+      consent_blocked: blocked,
+      items: blocked ? items.map((item) => ({ ...item, note: '' })) : items,
+    });
   } catch (error) {
     return jsonError(error);
   }

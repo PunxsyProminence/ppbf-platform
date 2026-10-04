@@ -213,6 +213,55 @@ describe('listTaggedClips hides clips that playback would refuse', () => {
     expect(mockConsent).toHaveBeenCalledTimes(2);
   });
 
+  test("a clip is hidden when the VIDEO'S OWN athlete (untagged) is blocked", async () => {
+    mockQuery
+      .mockResolvedValueOnce([clip('vid-1', 'ath-1')])
+      // ath-owner comes only from the video_sessions half of the union.
+      .mockResolvedValueOnce([
+        { video_session_id: 'vid-1', athlete_id: 'ath-1' },
+        { video_session_id: 'vid-1', athlete_id: 'ath-owner' },
+      ]);
+    mockConsent.mockImplementation(async (_org, athleteId) => {
+      if (athleteId === 'ath-owner') throw new ConflictError('Blocked', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    });
+    expect(await listTaggedClips({ organizationId: 'org-1', athleteIds: ['ath-1'], limit: 50 })).toEqual([]);
+  });
+
+  test('a page emptied by hidden clips is refilled from further back', async () => {
+    // limit 2: the first page is two blocked clips, the second holds a clear one.
+    mockQuery
+      .mockResolvedValueOnce([clip('vid-1', 'ath-1'), clip('vid-2', 'ath-1')])
+      .mockResolvedValueOnce([
+        { video_session_id: 'vid-1', athlete_id: 'ath-blocked' },
+        { video_session_id: 'vid-2', athlete_id: 'ath-blocked' },
+      ])
+      .mockResolvedValueOnce([clip('vid-3', 'ath-1')])
+      .mockResolvedValueOnce([{ video_session_id: 'vid-3', athlete_id: 'ath-1' }]);
+    mockConsent.mockImplementation(async (_org, athleteId) => {
+      if (athleteId === 'ath-blocked') throw new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN');
+    });
+
+    const rows = await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 2 });
+
+    expect(rows.map((row) => row.video_session_id)).toEqual(['vid-3']);
+    // Second page read from offset 2.
+    const pageParams = mockQuery.mock.calls[2][1] as unknown[];
+    expect(pageParams[pageParams.length - 1]).toBe(2);
+  });
+
+  test('refilling is bounded', async () => {
+    mockQuery.mockImplementation(async (sql: string) => (
+      String(sql).includes('union')
+        ? [{ video_session_id: 'vid-x', athlete_id: 'ath-blocked' }]
+        : [clip('vid-x', 'ath-1')]
+    ) as never);
+    mockConsent.mockRejectedValue(new ConflictError('Blocked', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+    expect(await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 1 })).toEqual([]);
+    // Five pages, each one list read plus one subject read.
+    expect(mockQuery).toHaveBeenCalledTimes(10);
+  });
+
   test('an empty list reads no consent', async () => {
     mockQuery.mockResolvedValueOnce([]);
     expect(await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 50 })).toEqual([]);

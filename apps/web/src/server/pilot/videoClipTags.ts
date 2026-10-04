@@ -329,8 +329,9 @@ export async function listTaggedClips(input: {
     params.push(input.competitionId);
     filters += ` and t.competition_id = $${params.length}`;
   }
-  const rows = await query<TaggedClipRow>(
-    `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.note, t.tagged_by_account_id, t.created_at,
+  params.push(0);
+  const offsetParam = params.length;
+  const sql = `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.note, t.tagged_by_account_id, t.created_at,
             v.title, v.status, v.created_at as recorded_at
        from pilot.video_clip_tags t
        join pilot.video_sessions v
@@ -350,28 +351,45 @@ export async function listTaggedClips(input: {
              and other.removed_at is null
              and other_athlete.deleted_at is not null)
         ${filters}
-      order by v.created_at desc, t.created_at
-      limit $2`,
-    params,
-  );
-  return dropClipsBlockedByConsent(input.organizationId, rows);
+      order by v.created_at desc, t.created_at, t.tag_id
+      limit $2 offset $${offsetParam}`;
+
+  /*
+   * Hidden clips are dropped after the page is read, so a page is refilled
+   * from further back until it is full -- otherwise one blocked athlete in
+   * the newest clips would empty the list and put older clips out of reach.
+   * Bounded, so a large run of hidden clips costs at most MAX_PAGES reads.
+   */
+  const kept: TaggedClipRow[] = [];
+  for (let page = 0; page < MAX_LIST_PAGES && kept.length < input.limit; page += 1) {
+    params[offsetParam - 1] = page * input.limit;
+    const rows = await query<TaggedClipRow>(sql, params);
+    const blocked = await blockedClipVideoIds(input.organizationId, rows.map((row) => row.video_session_id));
+    kept.push(...rows.filter((row) => !blocked.has(row.video_session_id)));
+    if (rows.length < input.limit) break;
+  }
+  return kept.slice(0, input.limit);
 }
+
+const MAX_LIST_PAGES = 5;
 
 /*
  * Owner, Jason 2026-10-04: "A) Hide". A clip whose playback a consent block
- * stops is left out of staff lists too, so its title and note cannot name
- * the child whose guardian refused. The test is the playback gate's own
- * (assertConsentCoversVideo) over every athlete the clip shows -- its own
- * athlete and every live tag, including tags outside the caller's scope.
- * It comes back by itself once consent is restored or that athlete is
- * untagged. A consent read that fails for another reason fails the list.
+ * stops is hidden from staff lists too, so its title and note cannot name the
+ * child whose guardian refused. The test is the playback gate's own
+ * (assertConsentCoversVideo) over every athlete each clip shows -- its own
+ * athlete and every live tag, including tags outside the caller's scope. A
+ * clip comes back by itself once consent is restored or that athlete is
+ * untagged. A consent read that fails for another reason fails the caller.
+ *
+ * Returns the ids of the given videos that playback would refuse on consent.
  */
-async function dropClipsBlockedByConsent(
+export async function blockedClipVideoIds(
   organizationId: string,
-  rows: TaggedClipRow[],
-): Promise<TaggedClipRow[]> {
-  const videoIds = Array.from(new Set(rows.map((row) => row.video_session_id)));
-  if (videoIds.length === 0) return rows;
+  videoSessionIds: readonly string[],
+): Promise<Set<string>> {
+  const videoIds = Array.from(new Set(videoSessionIds));
+  if (videoIds.length === 0) return new Set();
 
   const subjects = await query<{ video_session_id: string; athlete_id: string }>(
     `select t.video_session_id, t.athlete_id
@@ -384,18 +402,22 @@ async function dropClipsBlockedByConsent(
     [organizationId, videoIds],
   );
 
-  const blocked = new Map<string, boolean>();
-  for (const athleteId of new Set(subjects.map((subject) => subject.athlete_id))) {
-    try {
-      await assertConsentCoversVideo(organizationId, athleteId);
-      blocked.set(athleteId, false);
-    } catch (error) {
-      if (!(error instanceof ConflictError)) throw error;
-      blocked.set(athleteId, true);
-    }
+  const athletes = Array.from(new Set(subjects.map((subject) => subject.athlete_id)));
+  const blockedAthletes = new Set<string>();
+  // In small parallel batches rather than one round trip after another.
+  for (let i = 0; i < athletes.length; i += CONSENT_BATCH) {
+    await Promise.all(athletes.slice(i, i + CONSENT_BATCH).map(async (athleteId) => {
+      try {
+        await assertConsentCoversVideo(organizationId, athleteId);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) throw error;
+        blockedAthletes.add(athleteId);
+      }
+    }));
   }
-  const blockedVideos = new Set(
-    subjects.filter((subject) => blocked.get(subject.athlete_id)).map((subject) => subject.video_session_id),
+  return new Set(
+    subjects.filter((subject) => blockedAthletes.has(subject.athlete_id)).map((subject) => subject.video_session_id),
   );
-  return rows.filter((row) => !blockedVideos.has(row.video_session_id));
 }
+
+const CONSENT_BATCH = 8;
