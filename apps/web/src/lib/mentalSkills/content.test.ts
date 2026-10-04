@@ -6,6 +6,7 @@ import {
   IMAGERY_SOURCE,
   IMAGERY_STEPS,
   SELF_TALK_EXPLAINER,
+  VISIBILITY_LINES,
 } from './content';
 
 // The owner-approved wording, pinned verbatim (Jason, 2026-10-04, "Approve as
@@ -41,4 +42,12 @@ test('the imagery steps are the approved five, in order, then the log line', () 
 
 test('the imagery content key is one the server accepts', () => {
   expect(IMAGERY_CONTENT_KEYS).toContain(IMAGERY_SOURCE.contentKey);
+});
+
+test('the who-can-see lines are the approved three', () => {
+  expect(VISIBILITY_LINES).toEqual({
+    athlete: 'Your coach and your guardian can see what you save here.',
+    guardian: 'You see what your child saved, in their words. Their coach sees it too. Nothing here can be changed from this page.',
+    coach: 'What the athlete saved, in their words. Their guardian sees the same. Read-only.',
+  });
 });

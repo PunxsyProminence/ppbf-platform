@@ -43,3 +43,10 @@ export const IMAGERY_STEPS: readonly string[] = [
 ];
 
 export const IMAGERY_AFTER = 'Then log how many minutes.';
+
+/** Who else can read this, one line per screen (Jason, 2026-10-04, "Approve all three"). */
+export const VISIBILITY_LINES = {
+  athlete: 'Your coach and your guardian can see what you save here.',
+  guardian: 'You see what your child saved, in their words. Their coach sees it too. Nothing here can be changed from this page.',
+  coach: 'What the athlete saved, in their words. Their guardian sees the same. Read-only.',
+} as const;
