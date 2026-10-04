@@ -17,7 +17,9 @@ import { ADULT_PATHWAY_STAGES } from '@/src/shared/adultPathwayStages';
 // freeze"). Every rule is enforced by the server -- this panel sends what the
 // coach chose and shows what the server answers, including its refusals.
 //
-// Wording approved by Jason 2026-10-04 ("Approve (Recommended)").
+// Wording approved by Jason 2026-10-04 ("Approve (Recommended)"); the helper
+// labels and the switch-on-first line, the same day ("Approve + add a line",
+// then the drafted line "Approve (Recommended)").
 
 interface Placement {
   placement_id: string;
@@ -52,6 +54,9 @@ type Reading =
 export const NOT_ELIGIBLE_FLAG =
   'Placed, but not eligible: this athlete is under 18 (or has no date of birth on file) and the adult-pathway '
   + 'allowance is off. Nothing new can be set or ticked until a coach switches it on.';
+export const SWITCH_ON_FIRST =
+  'This athlete is under 18 (or has no date of birth on file). Switch the allowance on, with a reason, before '
+  + 'setting a stage or ticking goals.';
 export const SWITCH_OFF_WARNING =
   "Switching off ends this athlete's current stage. Their history and ticked goals are kept.";
 
@@ -202,6 +207,10 @@ function PathwayBody(props: {
             <p className="alert-msg">{NOT_ELIGIBLE_FLAG}</p>
           </div>
         </div>
+      ) : null}
+
+      {frozen && !data.current ? (
+        <p className="t-body mt-[var(--s2)]" data-pathway-flag="switch-on-first">{SWITCH_ON_FIRST}</p>
       ) : null}
 
       {needsAllowance ? (

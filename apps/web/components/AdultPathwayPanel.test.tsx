@@ -12,6 +12,9 @@ import AdultPathwayPanel from './AdultPathwayPanel';
 const NOT_ELIGIBLE_FLAG =
   'Placed, but not eligible: this athlete is under 18 (or has no date of birth on file) and the adult-pathway '
   + 'allowance is off. Nothing new can be set or ticked until a coach switches it on.';
+const SWITCH_ON_FIRST =
+  'This athlete is under 18 (or has no date of birth on file). Switch the allowance on, with a reason, before '
+  + 'setting a stage or ticking goals.';
 const SWITCH_OFF_WARNING = "Switching off ends this athlete's current stage. Their history and ticked goals are kept.";
 
 // The panel sends what the coach chose and shows what the server answers.
@@ -86,6 +89,7 @@ describe('AdultPathwayPanel', () => {
     serve(FROZEN);
     await openPanel();
     expect(screen.getByText(NOT_ELIGIBLE_FLAG)).toBeInTheDocument();
+    expect(screen.queryByText(SWITCH_ON_FIRST)).toBeNull();
     expect(screen.getByLabelText('Set stage')).toBeDisabled();
     // Even with a different stage chosen, "Set stage" stays disabled.
     fireEvent.change(screen.getByLabelText('Set stage'), { target: { value: 'advanced' } });
@@ -99,6 +103,9 @@ describe('AdultPathwayPanel', () => {
     serve(MINOR_NONE);
     await openPanel();
     expect(screen.getByText('Allowed on the adult pathway (under 18 or no date of birth)')).toBeInTheDocument();
+    expect(screen.getByText(SWITCH_ON_FIRST)).toBeInTheDocument();
+    expect(screen.queryByText(NOT_ELIGIBLE_FLAG)).toBeNull();
+    expect(screen.getByLabelText('Set stage')).toBeDisabled();
     const on = screen.getByRole('button', { name: 'Switch on' });
     expect(on).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Why is this athlete on the adult pathway? Required, kept on record.'), {
