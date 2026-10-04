@@ -403,6 +403,39 @@ describe('deterministic gap suggestions', () => {
     expect(screen.queryByText('Suggested Gaps')).toBeNull();
   });
 
+  test('a training-load jump renders under its own label, explains its rule, and confirms or dismisses like the rest', async () => {
+    const LOAD = {
+      athlete_id: 'athlete-001',
+      full_name: 'Jordan Doe',
+      rule: 'load_jumped',
+      gap_type: 'endurance',
+      suggested_description:
+        'Training load jumped: 2400 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.',
+      evidence: { acute_load: 2400, usual_weekly_load: 1000, ratio: 2.4, prior_weeks_with_load: 4 },
+    };
+    const capture = { gapPosts: [] as unknown[] };
+    global.fetch = mockFetchWithSuggestions([LOAD], capture) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+
+    await screen.findByText('Suggested Gaps');
+    expect(screen.getByText('Training load jumped')).toBeTruthy();
+    expect(screen.getByText(/2400 over the last 7 days against a usual week of 1000/)).toBeTruthy();
+    // The rule is stated in plain words on the board itself.
+    expect(screen.getByText(/at least twice the athlete.s usual week over the 4 weeks before/)).toBeTruthy();
+    expect(screen.getByText(/a prompt\s+to look, not a limit or a diagnosis/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm as gap' }));
+    });
+    const posted = capture.gapPosts[0] as Record<string, unknown>;
+    expect(posted.detected_from).toBe('deterministic_rule:load_jumped');
+    expect(posted.detection_data).toEqual(LOAD.evidence);
+  });
+
   test('dismiss hides the suggestion for this visit without filing anything', async () => {
     const capture = { gapPosts: [] as unknown[] };
     global.fetch = mockFetchWithSuggestions([SUGGESTION], capture) as unknown as typeof fetch;

@@ -81,6 +81,7 @@ const SUGGESTION_RULE_LABEL: Record<string, string> = {
   training_days_dropping: 'Training days dropping',
   assignments_stalled: 'Assignments stalled',
   transfer_check_failed: 'Not transferring live',
+  load_jumped: 'Training load jumped',
 };
 
 const suggestionKey = (item: GapSuggestionItem) => `${item.athlete_id}:${item.rule}`;
@@ -784,9 +785,11 @@ export default function CoachProgressionIntelligencePage() {
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
             <h2 className="t-command text-[length:var(--t-lg)]">Suggested Gaps</h2>
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
-              Deterministic rules over records the gym already keeps — readiness check-ins, training days, and
-              overdue assignments. Nothing here reaches an athlete unless you confirm it as a gap. Dismissing
-              hides a suggestion for this visit only.
+              Deterministic rules over records the gym already keeps — readiness check-ins, training days,
+              overdue assignments, and session load. Training load jumped means the last 7 days&apos; session load
+              (RPE × minutes) is at least twice the athlete&apos;s usual week over the 4 weeks before; it is a prompt
+              to look, not a limit or a diagnosis. Nothing here reaches an athlete unless you confirm it as a gap.
+              Dismissing hides a suggestion for this visit only.
             </p>
             <ul className="mt-[var(--s4)] space-y-[var(--s3)]">
               {suggestions

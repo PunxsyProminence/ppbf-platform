@@ -5,6 +5,13 @@ import {
   PERFORMANCE_WINDOW_DAYS_DEFAULT,
   type AthletePerformanceRow,
 } from './performanceAnalytics';
+import {
+  getWeeklySessionLoads,
+  LOAD_JUMP_PRIOR_WEEKS,
+  LOAD_JUMP_RATIO,
+  readLoadJumps,
+  type LoadJumpReading,
+} from './weeklySessionLoad';
 
 // Deterministic gap suggestions (owner decision 2026-08-15, recorded in
 // docs/current/ACTIVE_WORK.md): simple transparent rules over records the gym
@@ -46,7 +53,8 @@ export type SuggestionRule =
   | 'training_days_dropping'
   | 'assignments_stalled'
   | 'transfer_check_failed'
-  | 'competition_loss_unresolved';
+  | 'competition_loss_unresolved'
+  | 'load_jumped';
 
 export interface GapSuggestion {
   athlete_id: string;
@@ -102,6 +110,7 @@ export function deriveSuggestions(
   openGapTypesByAthlete: ReadonlyMap<string, ReadonlySet<string>>,
   transferFailures: readonly TransferFailureRow[] = [],
   competitionLosses: readonly CompetitionLossRow[] = [],
+  loadJumps: readonly LoadJumpReading[] = [],
 ): GapSuggestion[] {
   const suggestions: GapSuggestion[] = [];
 
@@ -243,6 +252,38 @@ export function deriveSuggestions(
     });
   }
 
+  // Rule 6: training load jumped (Jason 2026-10-04). This week's session load
+  // (RPE x minutes, last 7 days) at LOAD_JUMP_RATIO times or more the
+  // athlete's usual week; weeklySessionLoad.ts owns the window, the
+  // minimum-history floor and the CORE-13 ratio. The research rates the
+  // acute:chronic ratio as contested, so the wording is a prompt to look --
+  // never a diagnosis, a limit, or an instruction to deload. 'endurance' is the
+  // nearest honest bucket, shared with Rule 1: an open recovery/conditioning
+  // gap already has the coach looking at this athlete's load.
+  for (const reading of loadJumps) {
+    if (reading.ratio < LOAD_JUMP_RATIO) continue;
+    if (openTypes(reading.athlete_id).has('endurance')) continue;
+
+    const acute = Math.round(reading.acute_load);
+    const usual = Math.round(reading.usual_weekly_load);
+    const ratio = reading.ratio.toFixed(1);
+    suggestions.push({
+      athlete_id: reading.athlete_id,
+      rule: 'load_jumped',
+      gap_type: 'endurance',
+      suggested_description:
+        `Training load jumped: ${acute} over the last 7 days against a usual week of ${usual} `
+        + `(${ratio}x, averaged over ${reading.prior_weeks_with_load} of the ${LOAD_JUMP_PRIOR_WEEKS} weeks before; `
+        + `session RPE x minutes, unvalidated). Worth a look.`,
+      evidence: {
+        acute_load: acute,
+        usual_weekly_load: usual,
+        ratio: Number(reading.ratio.toFixed(2)),
+        prior_weeks_with_load: reading.prior_weeks_with_load,
+      },
+    });
+  }
+
   return suggestions;
 }
 
@@ -353,14 +394,22 @@ export async function getGapSuggestions(
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps, transferFailures, competitionLosses] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures, competitionLosses, weeklyLoads] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
     getTransferFailures(organizationId, athleteIds),
     getCompetitionLosses(organizationId, athleteIds),
+    getWeeklySessionLoads(organizationId, athleteIds),
   ]);
-  return deriveSuggestions(rollup, stalled, openGaps, transferFailures, competitionLosses);
+  return deriveSuggestions(
+    rollup,
+    stalled,
+    openGaps,
+    transferFailures,
+    competitionLosses,
+    readLoadJumps(organizationId, weeklyLoads),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +484,10 @@ export const RULE_JUSTIFICATION_FIELDS: Readonly<Record<SuggestionRule, readonly
   assignments_stalled: [],
   transfer_check_failed: [],
   competition_loss_unresolved: [],
+  // Rule 6's evidence is a 5-week bucketed read from weeklySessionLoad.ts, not
+  // the rollup's 28-day avg_session_load; slicing that field would show a
+  // different number than the rule read. Same reasoning as Rules 4 and 5.
+  load_jumped: [],
 };
 
 /** Extracts the rule name from a gap's stored detected_from, or null when the
