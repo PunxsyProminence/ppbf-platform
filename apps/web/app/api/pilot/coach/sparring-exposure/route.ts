@@ -124,9 +124,10 @@ function parseSessionDate(value: unknown): string {
   }
   // YYYY-MM-DD compares correctly as text.
   if (value > today) throw new ValidationError('Unsupported session_date: cannot be after today');
-  // Catching up a paper sheet is fine; a year-old date is a typo, and the
-  // read window cannot reach further back than this anyway.
-  if (value < daysBefore(today, MAX_WINDOW_DAYS)) {
+  // Catching up a paper sheet is fine; a year-old date is a typo. The bound
+  // is the GET window's own (MAX_WINDOW_DAYS gym days, today inclusive), so
+  // anything accepted here can still be read back.
+  if (value < daysBefore(today, MAX_WINDOW_DAYS - 1)) {
     throw new ValidationError(`Unsupported session_date: at most ${MAX_WINDOW_DAYS} days ago`);
   }
   return value;
@@ -270,8 +271,13 @@ export async function POST(request: NextRequest) {
     if (entry.partnerAthleteId) {
       try {
         await assertAthleteBelongsToOrganization(principal.organizationId, entry.partnerAthleteId);
-      } catch {
-        throw new ValidationError('Unsupported partner_athlete_id: not an athlete in this organization');
+      } catch (error) {
+        // Only the helper's own refusal means "not a partner here"; a database
+        // failure stays a 500 through jsonError.
+        if (error instanceof Error && error.message.startsWith('Forbidden')) {
+          throw new ValidationError('Unsupported partner_athlete_id: not an athlete in this organization');
+        }
+        throw error;
       }
     }
 

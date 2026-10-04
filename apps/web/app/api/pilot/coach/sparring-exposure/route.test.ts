@@ -341,6 +341,8 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     ['session_date', '2026-02-30'],
     ['session_date', '10/01/2026'],
     ['session_date', '2025-10-02'],
+    // 365 days back: one day outside GET's longest window (365 gym days, today inclusive).
+    ['session_date', '2025-10-03'],
   ])('%s = %p is a 400', async (field, value) => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     const response = await POST(postRequest({ ...VALID_BODY, [field]: value }));
@@ -348,7 +350,7 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  test.each(['2026-09-30', '2025-10-03'])('a past gym day within a year (%s) is accepted as given', async (day) => {
+  test.each(['2026-09-30', '2025-10-04'])('a past gym day inside the longest read window (%s) is accepted as given', async (day) => {
     mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
     expect((await POST(postRequest({ ...VALID_BODY, session_date: day }))).status).toBe(201);
     expect(mockRecord.mock.calls[0][0].sessionDate).toBe(day);
@@ -410,6 +412,23 @@ describe('POST /api/pilot/coach/sparring-exposure', () => {
     // not access to that athlete's record.
     expect((await POST(postRequest({ ...VALID_BODY, partner_athlete_id: 'ath-partner' }))).status).toBe(201);
     expect(mockRecord.mock.calls[0][0].partnerAthleteId).toBe('ath-partner');
+  });
+
+  test('the oldest accepted day is inside GET\'s longest window', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    const body = await (await GET(getRequest('athlete_id=ath-kid&days=365'))).json();
+    expect(body.since_day).toBe('2025-10-04');
+  });
+
+  test('a database failure during the partner lookup is a 500, not a 400', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
+      if ((params as string[])[0] === 'ath-partner') throw new Error('connection terminated unexpectedly');
+      return fakeQueryOne(sql, params);
+    });
+    const response = await POST(postRequest({ ...VALID_BODY, partner_athlete_id: 'ath-partner' }));
+    expect(response.status).toBe(500);
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
   test('non-object and non-JSON bodies are 400s', async () => {
