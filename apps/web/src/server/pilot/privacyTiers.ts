@@ -396,6 +396,23 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'through /api/pilot/coach/injuries; the athlete and their guardians read their own injuries through the '
       + 'family projection, which never selects this column (owner decision 2026-10-04).',
   },
+  'shadow_formula_observations.body_weight': {
+    tier: 'organization',
+    enforcedBy: [
+      'athleteBodyMass.ts#bodyMassVisibleTo',
+      'athleteBodyMass.ts#athleteIsYouth',
+      '../../../app/api/pilot/coach/athlete-body-mass/route.ts#GET',
+      '../../../app/api/pilot/parent/body-mass/route.ts#GET',
+      'access.ts#assertActorCanAccessAthlete',
+    ],
+    note:
+      'Body mass, from the athlete check-in and the sparring form, and the seven-day fast-change flag built on '
+      + 'it (elite-boxing item 5; Jason 2026-10-04 "B everyone, youth limited", "Yes, keep org admin"). Tiered '
+      + 'at the widest rule the code runs: the weight of an ADULT reaches any coach or organization admin in the '
+      + 'gym. The weight of a YOUTH -- and an athlete with no recorded date of birth -- is narrowed to the athlete_record '
+      + 'relationship by bodyMassVisibleTo: assigned or covering coach, organization admin, linked parent, '
+      + 'self; any other coach gets the same null as "no weigh-in". Parents read it for a youth only.',
+  },
   'training_holds.reason_category': {
     tier: 'organization',
     enforcedBy: ['../../../app/api/pilot/training-holds/route.ts#athleteFacing'],
