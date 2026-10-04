@@ -226,6 +226,20 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
     );
   }
 
+  // Shown whether or not the athlete has checked in today: the history is
+  // already loaded, and it is the athlete's own.
+  const sleepTrend = recent.length > 0 && (
+    <div className={PANEL_RAISED_CLASS}>
+      <SleepTrend
+        heading="Your sleep on recent check-ins"
+        items={recent.slice(0, 14).map((record) => ({
+          checked_in_on: record.checked_in_on,
+          sleep_hours: record.sleep_hours,
+        }))}
+      />
+    </div>
+  );
+
   if (today) {
     return (
       <div className="space-y-6 panel-settle">
@@ -251,17 +265,7 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           </div>
         )}
 
-        {recent.length > 0 && (
-          <div className={PANEL_RAISED_CLASS}>
-            <SleepTrend
-              heading="Your sleep on recent check-ins"
-              items={recent.slice(0, 14).map((record) => ({
-                checked_in_on: record.checked_in_on,
-                sleep_hours: record.sleep_hours,
-              }))}
-            />
-          </div>
-        )}
+        {sleepTrend}
       </div>
     );
   }
@@ -357,6 +361,8 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
           This is not your attendance record — a coach still marks you in.
         </p>
       </div>
+
+      {sleepTrend}
     </div>
   );
 }

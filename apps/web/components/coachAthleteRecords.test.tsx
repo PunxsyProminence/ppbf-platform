@@ -9,6 +9,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import { CoachAthleteHistory, CoachBoutHistory, CoachSleepTrend, boutOutcomeText, type BoutHistoryItem } from './CoachAthleteRecords';
+import AthleteCheckInPanel from './AthleteCheckInPanel';
 import SleepTrend, { sleepBarPercent } from './SleepTrend';
 
 const fetchMock = jest.fn();
@@ -138,5 +139,49 @@ describe('CoachAthleteHistory', () => {
     expect(screen.getByRole('heading', { name: 'Sleep Trend' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Bout History: Marisol' })).toBeTruthy();
     expect(fetchMock.mock.calls.map(([url]) => String(url)).every((url) => url.endsWith('athlete_id=ath-1'))).toBe(true);
+  });
+});
+
+describe('AthleteCheckInPanel sleep trend', () => {
+  const record = (day: string, hours: number | null) => ({
+    organization_id: 'org-1', check_in_id: `ci-${day}`, athlete_id: 'ath-1', checked_in_on: day,
+    energy: null, soreness: null, focus: null, sleep_hours: hours, hydration: null, motivation: null,
+    mental_clarity: null, stress: null, nutrition_compliance: null, note: '', created_at: `${day}T12:00:00Z`,
+  });
+
+  test('shows the athlete their own trend before they have checked in today', () => {
+    render(
+      <AthleteCheckInPanel
+        today={null}
+        recent={[record('2026-09-21', 6.5), record('2026-09-20', null)] as never}
+        loading={false}
+        loadError={null}
+        onSaved={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Check in' })).toBeTruthy();
+    expect(screen.getByText('Your sleep on recent check-ins')).toBeTruthy();
+    expect(screen.getByText('6.5 hours')).toBeTruthy();
+    expect(screen.getByText('not answered')).toBeTruthy();
+  });
+
+  test('and after they have checked in', () => {
+    const today = record('2026-09-22', 8);
+    render(
+      <AthleteCheckInPanel
+        today={today as never}
+        recent={[today, record('2026-09-21', 6.5)] as never}
+        loading={false}
+        loadError={null}
+        onSaved={() => {}}
+      />,
+    );
+    expect(screen.getByText('Your sleep on recent check-ins')).toBeTruthy();
+    expect(screen.getByText('8 hours')).toBeTruthy();
+  });
+
+  test('no history, no trend', () => {
+    render(<AthleteCheckInPanel today={null} recent={[]} loading={false} loadError={null} onSaved={() => {}} />);
+    expect(screen.queryByText('Your sleep on recent check-ins')).toBeNull();
   });
 });
