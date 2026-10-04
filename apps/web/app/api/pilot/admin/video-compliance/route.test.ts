@@ -16,6 +16,7 @@ import {
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getAthleteById: jest.fn(),
@@ -54,6 +55,10 @@ jest.mock('@/src/server/pilot/profileDb', () => ({
   getSubjectIdentity: jest.fn(),
 }));
 
+// No clip tags unless a test says so (videoClipTags.ts).
+jest.mock('@/src/server/pilot/videoClipTags', () => ({
+  listLiveTagSubjects: jest.fn(async () => []),
+}));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionById: jest.fn(),
 }));
@@ -67,6 +72,7 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
+const mockTagSubjects = jest.mocked(listLiveTagSubjects);
 const mockList = jest.mocked(getOrganizationPublications);
 const mockGetForPublish = jest.mocked(getPublicationForPublish);
 const mockDecide = jest.mocked(decidePublicationCompliance);
@@ -163,6 +169,7 @@ describe('GET /api/pilot/admin/video-compliance', () => {
           compliance_check_status: 'pending',
           previous_review_note: null,
           stream_url: 'https://blob.example/sas',
+          tagged_clip: false,
         },
       ],
       drafts: [],
@@ -266,6 +273,24 @@ describe('GET /api/pilot/admin/video-compliance', () => {
     expect(mockGetLatestCheck).toHaveBeenCalledWith('org-a', 'pub-1');
     const payload = (await response.json()) as { items: Array<{ previous_review_note: string | null }> };
     expect(payload.items[0].previous_review_note).toBe('Trim the last 10 seconds.');
+  });
+
+  test('a tagged sparring or bout clip gets no stream_url on the console', async () => {
+    // Its other athletes' consent is not what this queue checks, and tagged
+    // clips are staff film study only (owner, 2026-10-03).
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockImplementation(async (_org, filters) =>
+      (filters as { status?: string } | undefined)?.status === 'pending_review' ? [publication()] as never : [] as never);
+    mockGetAthlete.mockResolvedValueOnce(null);
+    mockGetSubjectIdentity.mockResolvedValueOnce(null);
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-1', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+    mockTagSubjects.mockResolvedValueOnce([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+
+    const response = await GET(request('/api/pilot/admin/video-compliance'));
+
+    const payload = (await response.json()) as { items: Array<{ stream_url: string | null; tagged_clip: boolean }> };
+    expect(payload.items[0]).toMatchObject({ stream_url: null, tagged_clip: true });
+    expect(mockSasUrl).not.toHaveBeenCalled();
   });
 
   test('a video session that is not ready yet has no stream_url', async () => {

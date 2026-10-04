@@ -3,12 +3,20 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
-import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import {
+  assertGuardianMediaConsent,
+  checkGuardianMediaConsent,
+  GuardianConsentMissingError,
+} from '@/src/server/pilot/guardianConsent';
 import { enqueueJob } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 
+jest.mock('@/src/server/pilot/videoClipTags', () => ({
+  listLiveTagSubjects: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/http', () => ({
   ...jest.requireActual('@/src/server/pilot/http'),
   requirePrincipal: jest.fn(),
@@ -22,6 +30,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
   return {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
+    checkGuardianMediaConsent: jest.fn(),
   };
 });
 jest.mock('@/src/server/pilot/videoDestination', () => ({
@@ -46,6 +55,8 @@ const mockEnqueue = jest.mocked(enqueueJob);
 const mockConfigured = jest.mocked(isFilmStudyVisionConfigured);
 const mockVideo = jest.mocked(getVideoSessionById);
 const mockDestination = jest.mocked(assertVideoIsFilmStudyMedia);
+const mockTagSubjects = jest.mocked(listLiveTagSubjects);
+const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
 
 const readyVideo = {
   video_session_id: 'vs-1',
@@ -74,6 +85,7 @@ beforeEach(() => {
   mockConfigured.mockReturnValue(true);
   mockVideo.mockResolvedValue(readyVideo as never);
   mockEnqueue.mockResolvedValue('job-1' as never);
+  mockTagSubjects.mockResolvedValue([]);
 });
 
 describe('POST video-analysis enqueues Film Study', () => {
@@ -235,6 +247,64 @@ describe('POST video-analysis enqueues Film Study', () => {
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 
     expect(response.status).toBe(403);
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * A tagged sparring or bout clip shows its other athletes to the model too
+ * (owner, 2026-10-03: any tagged athlete's consent block blocks the clip).
+ */
+describe('POST video-analysis on a tagged clip', () => {
+  const signed = (coversVideo: boolean) => ({
+    ok: true,
+    guardianIds: ['parent-2'],
+    missingParentIds: [],
+    perGuardian: [{ parentId: 'parent-2', status: 'signed', coversVideo, publicUseAllowed: false, signedAt: null }],
+  });
+  const tagB = [{ athlete_id: 'ATH-2', athlete_deleted: false }];
+
+  test("refuses when the OTHER tagged athlete's consent is missing or withdrawn", async () => {
+    mockTagSubjects.mockResolvedValueOnce(tagB);
+    mockCheckConsent.mockResolvedValueOnce({
+      ok: false, guardianIds: ['parent-2'], missingParentIds: ['parent-2'], perGuardian: [],
+    });
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test("refuses when the OTHER tagged athlete's guardian signed photo-only", async () => {
+    mockTagSubjects.mockResolvedValueOnce(tagB);
+    mockCheckConsent.mockResolvedValueOnce(signed(false));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  test('queues when every tagged athlete has signed video consent', async () => {
+    mockTagSubjects.mockResolvedValueOnce(tagB);
+    mockCheckConsent.mockResolvedValueOnce(signed(true));
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(202);
+    expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-2');
+  });
+
+  test('a deleted tagged athlete hides the clip from analysis', async () => {
+    mockTagSubjects.mockResolvedValueOnce([{ athlete_id: 'ATH-2', athlete_deleted: true }]);
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(404);
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
