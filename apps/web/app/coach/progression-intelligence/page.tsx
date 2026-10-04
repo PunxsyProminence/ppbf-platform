@@ -791,7 +791,7 @@ export default function CoachProgressionIntelligencePage() {
               (RPE × minutes) is at least twice the athlete&apos;s usual week over the 4 weeks before; it is a prompt
               to look, not a limit or a diagnosis. Load up, wellness down is that same jump while, over the same
               weeks, check-in energy fell or soreness rose by a point or more (last 7 days against the 28 before,
-              at least 2 check-ins each) or readiness fell; it offers a lighter week for you to weigh, not an order.
+              at least 2 check-ins each) or readiness fell (its usual two-week halves); it offers a lighter week for you to weigh, not an order.
               Nothing here reaches an athlete unless you confirm it as a gap.
               Dismissing hides a suggestion for this visit only.
             </p>

@@ -407,6 +407,11 @@ describe('load_up_wellness_down', () => {
     expect(derive([READINESS_DROP], [loadJump()], [decline()], open)).toEqual([]);
   });
 
+  test('a recovery gap filed for another reason leaves a plain readiness drop (no load jump) to Rule 1', () => {
+    const open = new Map([['ath-1', new Set(['recovery'])]]);
+    expect(derive([READINESS_DROP], [], [], open).map((s) => s.rule)).toEqual(['readiness_falling']);
+  });
+
   test('an open endurance gap does not silence it: a different bucket of work', () => {
     const open = new Map([['ath-1', new Set(['endurance'])]]);
     expect(derive([], [loadJump()], [decline()], open).map((s) => s.rule)).toEqual(['load_up_wellness_down']);

@@ -129,18 +129,26 @@ export function deriveSuggestions(
   // board keeps its rule order.
   const loadUpWellnessDown = deriveLoadUpWellnessDown(rollup, loadJumps, wellnessDeclines, openTypes);
   const athletesWithRule7 = new Set(loadUpWellnessDown.map((s) => s.athlete_id));
+  // An open recovery gap silences Rule 1 only where Rule 7 would otherwise
+  // speak (a load jump is present): that is the confirmed Rule 7 observation
+  // still on the board. A recovery gap filed for any other reason leaves a
+  // plain readiness drop to Rule 1, as before Rule 7.
+  const athletesLoadJumped = new Set(
+    loadJumps.filter((reading) => reading.ratio >= LOAD_JUMP_RATIO).map((reading) => reading.athlete_id),
+  );
 
   for (const row of rollup) {
     // Rule 1: readiness falling. Both halves of the window must carry enough
     // check-ins to mean anything, and the newer half must sit at least
     // READINESS_DROP_POINTS below the older one. Silent where Rule 7 already
-    // shows this drop, or an open recovery gap means the coach has it.
+    // shows this drop, or a confirmed Rule 7 (open recovery gap with the load
+    // jump still present) means the coach has it.
     if (
       row.readiness_early_avg != null
       && row.readiness_late_avg != null
       && readinessDropped(row)
       && !openTypes(row.athlete_id).has('endurance')
-      && !openTypes(row.athlete_id).has('recovery')
+      && !(openTypes(row.athlete_id).has('recovery') && athletesLoadJumped.has(row.athlete_id))
       && !athletesWithRule7.has(row.athlete_id)
     ) {
       suggestions.push({
@@ -344,8 +352,10 @@ function readinessDropped(row: AthletePerformanceRow): boolean {
  * gap_type 'recovery' (Jason's pick; the bucket #1202 added). It speaks
  * INSTEAD of Rule 6 for the athlete -- it carries the same load numbers -- and
  * instead of Rule 1 -- its readiness numbers ride along when that drop holds.
- * An open recovery gap silences Rules 7, 6 and 1 for that athlete: the coach
- * has already confirmed this observation and the work is on their board.
+ * An open recovery gap silences Rules 7 and 6 for that athlete, and Rule 1
+ * while the load jump holds: the coach has already confirmed this observation
+ * and the work is on their board. An open endurance gap (say, a confirmed
+ * Rule 6) does not silence Rule 7: falling wellness is new information.
  */
 function deriveLoadUpWellnessDown(
   rollup: readonly AthletePerformanceRow[],
