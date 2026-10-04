@@ -506,6 +506,49 @@ gives you a read-only query as a Run-button command; you paste the counts
 back." **Ruling: Jason runs the read-only count; #1197 does not reach
 production before he has.**
 
+
+---
+
+## OD-2026-10-04-025 -- New lane sessions ("chips") are started from the Fable session on the Fable account, so lanes run on its budget; overwatch still merges
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-04 in the Fable session
+(`claude.ai/code/session_01PkrS65eqZon2LYsVt8tJAd`), at about 17:05Z, after
+that session reported what the other account had merged. This entry is new
+and edits no earlier entry. It extends OD-2026-10-03-012 (overwatch assigns
+lanes, the build session writes the code), OD-2026-10-03-014 (work for the
+Fable session arrives as issues labelled `fable`; it opens one PR and does
+not merge) and OD-2026-10-03-016 (chips start through the remote desktop app).
+
+### 1. The instruction
+
+Jason, whole message: *"start other chips for new work in here so that the
+lanes work cheaper"*. "In here" is the Fable session; "chips" are lane
+sessions (OD-2026-10-03-016). **Ruling: the Fable session may start lane
+sessions itself, on the Fable account, for new Build List work.** The
+reason he gave is cost: the Fable account has the budget, the other does not.
+
+### 2. What stays as it was
+
+- Overwatch scope-checks and merges every lane PR; a chip opens one draft
+  PR as its claim and never merges (OD-2026-10-03-014).
+- Overwatch owns `ACTIVE_WORK.md` and this ledger; chips do not edit them.
+- One writer per surface and the collision check before editing
+  (OD-2026-10-03-012, `docs/AI_COLLABORATION.md`). The Fable session checks
+  `main` and the open PRs before it starts a chip, and names the row it took.
+- Issues labelled `fable` remain a way for overwatch to hand the Fable
+  session work; this adds a second source of lanes, it does not replace that.
+
+### 3. What was started under it (REPORTED by the Fable session's write log)
+
+Four chips at 17:07Z on 2026-10-04, one Build List row each, all rows
+checked unbuilt on `main` `490dca79` and untouched by any open PR:
+the callerless routes and tables measurement (OD-2026-10-03-002 section 12);
+the workout-intake contact-level check (PR #1114's follow-up); a coach sets
+an athlete's competence level by hand (section 6); the rights marker on
+Library sources and the excerpt loading rule (sections 2-3). Session ids:
+`session_01NBbtx2GQnHTHbe7tbd55ge`, `session_01HfTrRGQSYGFxLmKoC4nuEs`,
+`session_019BkFuJHTJGDFzDWou6Lnkv`, `session_01J66WnGdqXKxDXgykeWr1Su`.
+
 ---
 
 ## OD-2026-10-04-019 -- Adult pathway write roles: coaches and organization admins may place stages, tick goals and switch the minor allowance (extends OD-2026-10-04-002 to organization admins)
