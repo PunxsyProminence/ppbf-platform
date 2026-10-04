@@ -414,3 +414,60 @@ export async function listInjuriesForAthlete(
     [organizationId, athleteId],
   );
 }
+
+export interface InjuryLinkCandidates {
+  holds: Array<{ hold_id: string; scope: string; status: string; placed_at: string }>;
+  plans: Array<{
+    plan_id: string;
+    triggering_event: string;
+    event_date: string;
+    earliest_return_date: string | null;
+    status: string;
+  }>;
+  clearances: Array<{ status_id: string; status: string; effective_at: string }>;
+  painReports: Array<{ near_miss_id: string; severity: string; created_at: string }>;
+}
+
+const CANDIDATE_LIMIT = 20;
+
+/**
+ * The athlete's existing records an injury may link to, newest first, so the
+ * coach picks a real one instead of typing an id. Ids, kinds and dates only --
+ * no reason text, notes or restriction detail. Empty for a deleted athlete.
+ * Per-athlete authority is the caller's, as everywhere in this module.
+ */
+export async function listLinkCandidates(organizationId: string, athleteId: string): Promise<InjuryLinkCandidates> {
+  const params = [organizationId, athleteId, CANDIDATE_LIMIT];
+  const [holds, plans, clearances, painReports] = await Promise.all([
+    query<InjuryLinkCandidates['holds'][number]>(
+      `select h.hold_id, h.scope, h.status, h.placed_at::text
+         from pilot.training_holds h
+        where h.organization_id = $1 and h.athlete_id = $2 and ${athleteNotDeletedSql('h')}
+        order by h.placed_at desc limit $3`,
+      params,
+    ),
+    query<InjuryLinkCandidates['plans'][number]>(
+      `select p.plan_id, p.triggering_event, p.event_date::text, p.earliest_return_date::text, p.status
+         from pilot.return_to_training_plans p
+        where p.organization_id = $1 and p.athlete_id = $2 and ${athleteNotDeletedSql('p')}
+        order by p.event_date desc, p.entered_at desc limit $3`,
+      params,
+    ),
+    query<InjuryLinkCandidates['clearances'][number]>(
+      `select m.status_id::text, m.status, m.effective_at::text
+         from pilot.shadow_medical_administrative_status m
+        where m.organization_id = $1 and m.athlete_id = $2 and ${athleteNotDeletedSql('m')}
+        order by m.effective_at desc limit $3`,
+      params,
+    ),
+    query<InjuryLinkCandidates['painReports'][number]>(
+      `select n.near_miss_id::text, n.severity, n.created_at::text
+         from pilot.shadow_near_misses n
+        where n.organization_id = $1 and n.athlete_id = $2 and n.metadata->>'trigger' = 'athlete_pain_report'
+          and ${athleteNotDeletedSql('n')}
+        order by n.created_at desc limit $3`,
+      params,
+    ),
+  ]);
+  return { holds, plans, clearances, painReports };
+}
