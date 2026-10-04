@@ -189,11 +189,12 @@ describe('option B: any two weigh-ins within the 7 days up to the latest (Jason 
   });
 
   test('the sentence names the larger of the two changes', async () => {
-    // 7-day-back: 100 -> 93 (-7%). Inside the week: 100 -> 93 as well, and
-    // 98 -> 93 is smaller, so -7% is named.
-    mockQuery.mockResolvedValue([row('p', 100, 8 * DAY), row('m', 98, 4 * DAY), row('l', 93, DAY)]);
+    // 7-day-back: 100 -> 94 (-6.0%), listed first. Inside the week 101 -> 94
+    // (-6.9% in 4 days) is larger, so that one is named.
+    mockQuery.mockResolvedValue([row('p', 100, 8 * DAY), row('m', 101, 5 * DAY), row('l', 94, DAY)]);
     const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
-    expect(summary.flag_text).toMatch(/^Weight down 7\.0% in 7 days/);
+    expect(summary.change).toMatchObject({ percent: -6 });
+    expect(summary.flag_text).toMatch(/^Weight down 6\.9% in 4 days/);
   });
 
   test('two weigh-ins the same day read "within a day"', async () => {
