@@ -125,12 +125,13 @@ test('the staff note is labelled to keep medical detail out (Jason: "Keep note, 
   expect(screen.getByText(/No medical details here/)).toBeTruthy();
 });
 
-test('it does not promise a sparring-screen warning that is not live', async () => {
+test('it says where going over a cap is warned about, and that it never blocks', async () => {
   serve(() => respond({ ok: true, cap: null, history: [] }));
   openPanel();
   await screen.findByText(/No cap set/);
-  expect(screen.getByText(/The sparring screen does not check caps yet/)).toBeTruthy();
-  expect(screen.queryByText(/warns on the sparring screen/)).toBeNull();
+  expect(screen.getByText(/shows a warning on the Sparring Record screen when a segment is saved/)).toBeTruthy();
+  expect(screen.getByText(/It never blocks/)).toBeTruthy();
+  expect(screen.queryByText(/does not check caps yet/)).toBeNull();
 });
 
 test.each([
