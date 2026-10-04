@@ -440,6 +440,21 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s sparring limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'athlete_pathway_minor_allowances.reason': {
+    tier: 'organization',
+    enforcedBy: ['adultPathway.ts#assertPathwayAccess'],
+    note:
+      'Why a coach let a minor (or an athlete with no date of birth) onto the adult pathway '
+      + '(OD-2026-10-04-010: a reason is required). Free text about a child. Staff only: an active '
+      + 'coach, organization_admin or admin membership here AND assertActorCanAccessAthlete for that '
+      + 'athlete, run with the membership role; athletes, guardians, board and platform_owner are refused. '
+      + 'Whether the family sees the pathway is not decided, so nothing shows it to them.',
+  },
+  'athlete_pathway_stages.coach_note': {
+    tier: 'organization',
+    enforcedBy: ['adultPathway.ts#assertPathwayAccess'],
+    note: 'Optional free text a coach typed beside a stage placement; same staff-only gate as the allowance reason.',
+  },
   'scheduler_attendance.note': {
     tier: 'organization',
     enforcedBy: [
@@ -490,6 +505,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_contact_caps',
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
   'pilot.sparring_exposure',
+  'pilot.athlete_pathway_minor_allowances',
+  'pilot.athlete_pathway_stages',
 ];
 
 /**
