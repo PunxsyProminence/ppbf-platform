@@ -205,10 +205,52 @@ describe('coach sparring record screen', () => {
     });
     expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).disabled).toBe(true);
     expect((screen.getByLabelText('Window') as HTMLSelectElement).disabled).toBe(true);
+    // The observation fields too: the reset after the save would discard
+    // anything typed for the next segment while this one was in flight.
+    expect(screen.getByLabelText('Intensity you saw').matches(':disabled')).toBe(true);
+    expect(screen.getByLabelText('Note (optional)').matches(':disabled')).toBe(true);
     await act(async () => {
       release({ ok: true, status: 201, json: async () => ({ entry: {} }) } as Response);
     });
     expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).disabled).toBe(false);
+  });
+
+  test('an older read still in flight cannot overwrite the refresh after a save', async () => {
+    installFetch();
+    const stubbed = global.fetch as jest.Mock;
+    // The first entries read hangs until aborted; everything else is the stub.
+    let firstRead = true;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('sparring-exposure?') && firstRead) {
+        firstRead = false;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+          // Resolves with a stale, empty list later -- unless it was aborted.
+          setTimeout(() => _resolve({
+            ok: true, status: 200,
+            json: async () => ({ entries: [], entries_truncated: false, stop_rules: [],
+              counts: { total_segments: 0, total_time_under_impact_sec: 0, segments_by_type: {} } }),
+          } as Response), 0);
+        });
+      }
+      return stubbed(input, init);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<CoachSparringExposurePage />);
+    });
+    fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    // The post-save read (the stub's list) stands; the stale empty one never lands.
+    expect(screen.getByText('Kept hands up.')).toBeTruthy();
+    expect(screen.queryByText('No sparring recorded in this window.')).toBeNull();
   });
 
   test('an empty successful read says none in this window', async () => {

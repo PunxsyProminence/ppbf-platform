@@ -93,6 +93,8 @@ export default function CoachSparringExposurePage() {
   const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [athleteId, setAthleteId] = useState('');
   const [windowDays, setWindowDays] = useState<number>(28);
+  /** Bumped after a save to re-read the entries through the abortable effect. */
+  const [reloadTick, setReloadTick] = useState(0);
   const [recent, setRecent] = useState<Recent | null>(null);
   const [recentState, setRecentState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
   const [form, setForm] = useState({ ...EMPTY_FORM, sessionDate: gymDayIso() ?? '' });
@@ -146,7 +148,7 @@ export default function CoachSparringExposurePage() {
       }
     })();
     return () => controller.abort();
-  }, [athleteId, windowDays, fetchRecent]);
+  }, [athleteId, windowDays, reloadTick, fetchRecent]);
 
   const set = (patch: Partial<typeof EMPTY_FORM>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -191,13 +193,10 @@ export default function CoachSparringExposurePage() {
       setForm((current) => ({
         ...EMPTY_FORM, sessionDate: current.sessionDate, headgear: current.headgear, gloveOz: current.gloveOz,
       }));
-      try {
-        setRecent(await fetchRecent(athleteId, windowDays));
-        setRecentState('loaded');
-      } catch {
-        setRecent(null);
-        setRecentState('unavailable');
-      }
+      // Re-read through the effect, not here: its cleanup aborts any read
+      // still in flight, so an older response cannot replace the fresh one.
+      setRecentState('loading');
+      setReloadTick((tick) => tick + 1);
     } catch {
       setMessage({ kind: 'error', text: 'Not saved: the server could not be reached. Try again.' });
     } finally {
@@ -278,7 +277,10 @@ export default function CoachSparringExposurePage() {
         </section>
 
         {athleteId && (
-          <form onSubmit={submit} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+          <form onSubmit={submit} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+            {/* Disabled while saving: the reset after a save would otherwise
+                discard anything typed for the next segment in the meantime. */}
+            <fieldset disabled={saving} className="space-y-[var(--s4)] border-0 p-0 m-0">
             <h2 className="t-eyebrow">One segment</h2>
             <div className="field">
               <label htmlFor="sparDay" className="t-label">Day</label>
@@ -348,6 +350,7 @@ export default function CoachSparringExposurePage() {
                 {message.text}
               </p>
             )}
+            </fieldset>
           </form>
         )}
 
