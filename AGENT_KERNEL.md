@@ -26,6 +26,7 @@ Read additional documents only when the task actually touches their domain:
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
 - UI and visual design -> "UI and visual work" below is the rule (OD-2026-10-02-004): nothing in the UI is tied down. `design-system/README.md` lists the checks that still bind; `docs/GOLDEN-ERA-V1-CONTRACT.md` and `docs/ROOM-MAP.md` describe the look and the rooms as built and planned and do not limit a change; `design-system/ppbf.css` is the CSS. Plates are judged against `docs/REAL-GYM-REFERENCE-LOCK.md`
 - audit/provenance/history -> `docs/current/WORK_QUEUE.md` and `docs/archive/`
+- production user/UI audit ("run the PPBF production user/UI audit again") -> `docs/current/PRODUCTION_AUDIT_RUNBOOK.md`; each run's dated record is `docs/PRODUCTION_AUDIT_<date>_USER_UI.md` (history, not authority)
 - writing an evidence claim in a PR body, status report or handoff -> `docs/current/EVIDENCE_APPLICABILITY.md`
 
 Do not preload archived audits, the historical queue, superseded plans, old build plans, or unrelated domain rules.
