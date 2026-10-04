@@ -143,7 +143,7 @@ describe('the promoted denylists are pinned exactly', () => {
   // pinned exactly, the same way MINOR_CIRCLE is -- shrinking a denylist is
   // an edit somebody has to make in two places, on purpose, with a diff
   // that says so.
-  it('the forbidden tables are exactly the fourteen clinical/safety/conduct tables', () => {
+  it('the forbidden tables are exactly the fifteen clinical/safety/conduct tables', () => {
     expect([...PUBLIC_SURFACE_FORBIDDEN_TABLES].sort()).toEqual([
       'pilot.assessments',
       // A coach's sparring limits for one child (map item 15).
@@ -159,6 +159,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.readiness',
       'pilot.shadow_medical',
       'pilot.shadow_near_misses',
+      // Head-contact exposure per child: a safety record.
+      'pilot.sparring_exposure',
       'pilot.training_holds',
     ]);
   });
@@ -197,8 +199,9 @@ describe('the promoted denylists are pinned exactly', () => {
     ]);
   });
 
-  it('the ranking tables are exactly the four, and stay separate from sensitivity tables', () => {
+  it('the ranking tables are exactly the five, and stay separate from sensitivity tables', () => {
     expect([...PUBLIC_RANKING_FORBIDDEN_TABLES].sort()).toEqual([
+      'pilot.athlete_mental_skill_entries',
       'pilot.athlete_milestones',
       'pilot.attendance',
       'pilot.scheduler_attendance',

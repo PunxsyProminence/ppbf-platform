@@ -44,6 +44,17 @@ enforces the other windows below, and nothing sets `deleted_at` at age 18.
 | Medical records (intake form) | Until relationship ends + 3 years | Legal: state athletic commission requirements | Athlete withdraws or turns 18 + 3 years |
 | Training notes (sessions, observations) | Until relationship ends + 2 years | Safeguarding: coach observations may be needed for incidents | Athlete withdraws or turns 18 + 2 years |
 | Waivers and consent forms | Until relationship ends + 3 years | Legal: liability defense window | Athlete withdraws or turns 18 + 3 years |
+| Injury records (`pilot.athlete_injuries`) | Period not yet ruled | -- | Not yet ruled |
+| Training holds (`pilot.training_holds`) | Period not yet ruled | -- | Not yet ruled |
+| Sparring exposure and contact stage (`pilot.sparring_exposure`) | Period not yet ruled | -- | Not yet ruled |
+| Coach-set contact caps (`pilot.athlete_contact_caps`) | Period not yet ruled | -- | Not yet ruled |
+| Mental skills log: self-talk cues, imagery (`pilot.athlete_mental_skill_entries`) | Period not yet ruled | -- | Not yet ruled |
+| Video clip tags (`pilot.video_clip_tags`) | Period not yet ruled | -- | Not yet ruled |
+| Check-in body mass (`pilot.shadow_formula_observations`, kind `body_weight`, since #1199; no table of its own) | Period not yet ruled | -- | Not yet ruled |
+
+The seven rows above name tables added or extended for athlete data that no window has been
+ruled for yet (2026-10-04). They are listed so the gap is visible, not filled; the periods are
+the owner's decision.
 
 ### Guardians/Parents
 
@@ -178,6 +189,18 @@ most of these rows with it.
   "only athlete this guardian is linked to" refusal. The SHADOW library curator queue leaves
   out documents filed against them. Pinned by
   `apps/web/src/server/pilot/deletedAthleteStaffReaders.pg.test.ts`.
+- Records added 2026-10-04, by their own readers: injury records (`athleteInjuries.ts`) and
+  sparring exposure entries (`sparringExposure.ts`) filter through `athleteNotDeletedSql`;
+  check-in body mass (`athleteBodyMass.ts` `bodyMassVisibleTo`) requires a live athlete row.
+  Contact caps (`athleteContactCaps.ts`) and the mental skills log (`athleteMentalSkills.ts`)
+  have no deletion filter of their own; every read goes through `assertActorCanAccessAthlete`
+  or `accessibleAthleteIds` in `access.ts`, which refuse a deleted athlete for every role that
+  reads them (the athlete's own arm calls `assertAthleteBelongsToOrganization`, which requires
+  `deleted_at is null`). Video clip tags: the tagged-clip review list (`videoClipTags.ts`
+  `listTaggedClips`) hides a clip once any tag on it names a deleted athlete; the other tag
+  readers (`listLiveTagSubjects`, `listLiveClipTagsForVideo`) do not filter, by design (the
+  first returns `athlete_deleted` so callers can decide). No test pins these readers to
+  deletion yet.
 
 **Safety screens: hidden once resolved** (owner decision 2026-09-30, OD-2026-09-30-004, "#1027
 Q1", option B). On the organization admin's safety screens a deleted athlete's item stays until
