@@ -662,6 +662,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/injuries', label: 'Injury Record', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'injury injuries sprain strain fracture cut head time lost return reported clinician',
     hint: 'Record what an athlete, parent, coach or clinician reported about an injury, and link its hold or return plan.' },
+  { href: '/coach/sparring-caps', label: 'Sparring Caps', room: 'clinic', roles: ['coach', 'admin'],
+    keywords: 'sparring cap caps limit contact stage open controlled hard sessions week youth',
+    hint: 'Set each athlete\'s highest sparring stage and most hard or open sessions in 7 days. Never blocks; the coach decides.' },
   { href: '/admin/compliance-center', label: 'Compliance Center', room: 'clinic', roles: ['admin'],
     keywords: 'compliance safeguarding policy certification safety' },
 

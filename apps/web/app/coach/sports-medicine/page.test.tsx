@@ -115,6 +115,19 @@ test('a cleared athlete shows the badge and date, and no clinical detail leaks',
   expect(screen.queryByText(/physician-note-123/)).toBeNull();
 });
 
+test('sparring caps are linked from the board, never shown on it (2026-08-15 rule: clearance and holds only)', async () => {
+  const fetchMock = mockFetch();
+  global.fetch = fetchMock;
+
+  render(<SportsMedicinePage />);
+
+  await screen.findByText('Jordan Doe');
+  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('/coach/sparring-caps');
+  expect(screen.queryByRole('button', { name: 'Sparring cap' })).toBeNull();
+  const urls = (fetchMock as unknown as jest.Mock).mock.calls.map(([input]) => String(input));
+  expect(urls.some((url) => url.includes('athlete-contact-caps'))).toBe(false);
+});
+
 test('no clearance record reads as an action state, not as quiet', async () => {
   global.fetch = mockFetch({
     '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null, effectiveStatus: 'no_record' }) }) as Response,

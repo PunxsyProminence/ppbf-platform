@@ -1073,6 +1073,9 @@ export default function SportsMedicinePage() {
             <Link href="/coach/injuries" className="btn btn--ghost">
               Injury Record
             </Link>
+            <Link href="/coach/sparring-caps" className="btn btn--ghost">
+              Sparring Caps
+            </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
             </Link>

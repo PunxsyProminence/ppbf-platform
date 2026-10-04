@@ -6,6 +6,7 @@ import {
   CONTACT_CAP_ROLES,
   CONTACT_STAGES,
   type AthleteContactCapRow,
+  contactCapAccessibleAthleteIds,
   type ContactStage,
   isCapSet,
   listContactCapHistory,
@@ -21,6 +22,9 @@ export const dynamic = 'force-dynamic';
  * A coach's sparring caps for one athlete (map item 15).
  *
  *   GET  ?athlete_id=   the cap in force (null = no cap set) and its history
+ *   POST { action: 'accessible_athletes', athlete_ids }
+ *                       of these ids, the ones this caller may open (the cap
+ *                       page's roster, which is otherwise the whole gym)
  *   POST { athlete_id, highest_allowed_stage, max_hard_open_sessions_per_7_days, note }
  *                       records a new cap; both limits null clears it. Both
  *                       limit keys must be PRESENT (null or "" to leave one
@@ -37,6 +41,8 @@ export const dynamic = 'force-dynamic';
  * chokepoint); requireRole is the cheap first refusal for roles that can
  * never pass it.
  */
+
+const MAX_ROSTER_IDS = 1000;
 
 function actorOf(principal: ActorIdentity): ActorIdentity {
   return {
@@ -103,8 +109,26 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...CONTACT_CAP_ROLES]);
 
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) throw new ValidationError('Missing request body');
+    const parsed: unknown = await request.json().catch(() => null);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new ValidationError('Request body must be a JSON object');
+    }
+    const body = parsed as Record<string, unknown>;
+
+    if ('action' in body) {
+      if (body.action !== 'accessible_athletes') {
+        throw new ValidationError('action must be accessible_athletes, or omitted to set a cap');
+      }
+      const ids = body.athlete_ids;
+      if (!Array.isArray(ids) || ids.length > MAX_ROSTER_IDS || !ids.every((id) => typeof id === 'string')) {
+        throw new ValidationError(`athlete_ids must be a list of at most ${MAX_ROSTER_IDS} ids`);
+      }
+      const accessible = await contactCapAccessibleAthleteIds(actorOf(principal), ids as string[]);
+      return NextResponse.json(
+        { ok: true, athlete_ids: [...accessible] },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
 
     const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
     if (!athleteId) throw new ValidationError('Missing athlete_id');

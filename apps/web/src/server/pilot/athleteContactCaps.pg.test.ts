@@ -46,6 +46,7 @@ jest.mock('./db', () => ({
 import * as accessModule from './access';
 import type { ActorIdentity } from './access';
 import {
+  contactCapAccessibleAthleteIds,
   getCurrentContactCap,
   isCapSet,
   listContactCapHistory,
@@ -568,6 +569,42 @@ describe('athleteContactCaps.ts against real rows', () => {
       await expect(setContactCap({ actor: ADMIN, athleteId: ATHLETE_ID, ...LIGHT })).rejects.toBeInstanceOf(
         ForbiddenError,
       );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the roster filter admits exactly whom the cap gate admits', async () => {
+    const client = await migratedDatabase('caps_roster');
+    try {
+      const all = [ATHLETE_ID, SECOND_ATHLETE_ID, THIRD_ATHLETE_ID, OTHER_ATHLETE_ID];
+      const sorted = async (actor: ActorIdentity) => [...(await contactCapAccessibleAthleteIds(actor, all))].sort();
+      expect(await sorted(COACH)).toEqual([ATHLETE_ID, SECOND_ATHLETE_ID].sort());
+      expect(await sorted(VISITING_COACH)).toEqual([ATHLETE_ID]);
+      expect(await sorted(ADMIN)).toEqual([ATHLETE_ID, SECOND_ATHLETE_ID, THIRD_ATHLETE_ID].sort());
+      // Lapsed membership: nobody, not even the athlete they are coach of record for.
+      expect(await sorted(LAPSED_COACH)).toEqual([]);
+      // Admin elsewhere, coach here, coaching nobody: nobody (not the whole gym).
+      expect(await sorted(HOME_ADMIN_AS_COACH_HERE)).toEqual([]);
+      for (const actor of [UNASSIGNED_COACH, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD]) {
+        expect({ who: actor.accountId, ids: await sorted(actor) }).toEqual({ who: actor.accountId, ids: [] });
+      }
+      // Another gym's admin reaches their own gym's athlete and none of this gym's.
+      expect(await sorted(OTHER_ADMIN)).toEqual([OTHER_ATHLETE_ID]);
+
+      // And the filter IS the gate: for every actor and athlete, "in the set"
+      // equals "the per-athlete read is not refused". A later drift between
+      // the two fails here, whatever the fixed expectations above say.
+      const actors = [ADMIN, OTHER_ADMIN, COACH, LAPSED_COACH, VISITING_COACH, UNASSIGNED_COACH,
+        HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
+      for (const actor of actors) {
+        const admitted = await contactCapAccessibleAthleteIds(actor, all);
+        for (const athleteId of all) {
+          const gateAdmits = await listContactCapHistory(actor, athleteId).then(() => true, () => false);
+          expect({ who: actor.accountId, athleteId, inSet: admitted.has(athleteId) })
+            .toEqual({ who: actor.accountId, athleteId, inSet: gateAdmits });
+        }
+      }
     } finally {
       await client.end();
     }
