@@ -164,6 +164,86 @@ and should not try to.
 
 ---
 
+## OD-2026-10-04-023 -- Mental skills track: the athlete-facing imagery steps and the self-talk explainer are approved as written, and athletes may remove their own entries (extends OD-2026-10-04-011)
+
+**Provenance: PRIMARY.** Jason's answers to one AskUserQuestion (three questions)
+in the mental skills lane, "Mental skills track (goals, imagery, self-talk)"
+(`~/.claude/projects/C--Dev/41ac7937-10a2-407c-ac96-6adbfc0e4eab.jsonl`, tool use
+`toolu_0144qxZWaAVW9df9p8bVwpu6`; asked 2026-10-04T16:41:22.894Z, answered
+2026-10-04T16:48:39.448Z). Read by overwatch's records pass from that transcript.
+Extends OD-2026-10-04-011, which ruled the imagery steps would be "shown to
+Jason for approval first"; edits no earlier entry.
+
+**Imagery text.** Asked: "Q-B1 (official): Approve this athlete-facing imagery
+session text, adapted from the coach-led drill "Imagery Rehearsal" (SK-REV-02;
+marked 'literature-grounded draft, requires floor validation')? Proposed: 1) Pick
+ONE technique and say its name out loud (e.g. "jab"). 2) Stand still, hands up in
+your guard. No footwork, no punches. 3) Close your eyes and picture yourself
+throwing that one technique, clean. 4) Open your eyes and say the name again. 5)
+Throw it once for real at working pace. Nothing else. Then log how many minutes."
+Jason chose *"Approve as written (Recommended)"*, option text "Official: ship these
+five steps verbatim, credited to the Imagery Rehearsal drill. Plain: the steps
+above go on screen exactly like that." **Ruling: the five imagery steps above
+are approved verbatim for the athlete-facing imagery session.** The other options
+were "Approve, coach-led only" and "I'll rewrite it".
+
+**Self-talk explainer.** Asked: "Q-B2 (official): Approve this self-talk
+explainer under the cue box? "Technique (instructional): a short reminder of how
+to do it, like 'hands home'. Effort (motivational): a short push to keep going,
+like 'keep working'. Research reviews find technique cues help most with skill
+work and effort cues with hard, tiring work." (Source: Hatzigeorgiadis et al.
+2011 meta-analysis, already in the evidence registry.)" Jason chose *"Approve as
+written (Recommended)"*, option text "Official: ship the explainer and the
+research line verbatim. Plain: the text above goes on screen as is." **Ruling:
+the explainer text above, including the research sentence, is approved verbatim.**
+The other options were "Approve, drop research line" and "I'll rewrite it".
+
+**Edit and delete.** Asked: "Q-B3 (official, still open from PR A): Should
+athletes be able to correct or remove their own mental-skills entries?" Jason
+chose *"Athlete can remove own (Recommended)"*, option text "Official: add a
+self-only remove action (soft-remove, audited) in a follow-up PR. Plain: kids can
+take back a mistake; the gym keeps a record that it was removed." **Ruling:
+athletes can remove their own mental-skills entries (self-only, soft-remove,
+audited); there is no edit action.** The other options were "No edits, keep as
+logged" and "Athlete can edit own".
+
+---
+
+## OD-2026-10-04-024 -- Body-point ontology 0.4: not annotatable yet, and older marks are kept exactly as made under their own version (extends OD-2026-10-04-021)
+
+**Provenance: PRIMARY.** Jason typed "1A 2A" in the ontology lane, "New body-point
+ontology version without ankles" (`~/.claude/projects/C--Dev/10a9bd26-459d-44ce-be76-c5e442653a40.jsonl`;
+queued 2026-10-04T16:49:08.913Z), answering the lane's two questions asked in its
+message of 2026-10-04T16:43:51.273Z (typed reply, not an AskUserQuestion). Read by
+overwatch's records pass from that transcript. Extends OD-2026-10-04-021 (which
+left "how it becomes annotatable, and what happens to marks already made against
+older versions" to this lane); edits no earlier entry. Build: PR #1203 (open when
+recorded).
+
+Asked: "Q1 (official): Should `boxing-ontology-0.4` become the annotatable
+version? That would move `ANNOTATABLE_ONTOLOGY_VERSIONS` and
+`PROJECT_CREATION_ONTOLOGY_VERSION` from 0.1 to 0.4." Option A: "Not yet
+(recommended). It stays 0.1 until the body-point marking screen is built." Option
+B: "Yes. 0.4 becomes the version new studies use. This needs that marking screen
+and its routes first." Jason answered *"1A"*. **Ruling: 0.4 is not annotatable
+yet; ANNOTATABLE_ONTOLOGY_VERSIONS and PROJECT_CREATION_ONTOLOGY_VERSION stay 0.1
+until the body-point marking screen exists.**
+
+Asked: "Q2 (official): What happens to marks already made under older versions?"
+Option A: "Keep them exactly as made, under their own version (recommended). A set
+can't change version once it has events; that's already enforced." Option B:
+"Convert 0.2/0.3 sets to 0.4 by deleting their ankle points. This is an
+irreversible data change." Option C: "Keep them, but leave them out of training."
+Jason answered *"2A"*. **Ruling: marks made under older versions are kept exactly
+as made under their own version; nothing is converted or deleted.**
+
+**Overwatch's technical call, not Jason's.** The app has no skeleton (edge)
+definitions; the lane proposed adding one for 0.4 only (overwatch makes that
+call): the 0.4 skeleton edges are knee-heel plus the heel / big-toe / small-toe
+triangle. Jason has not ruled on this.
+
+---
+
 ## OD-2026-10-04-020 -- Jump tests: both CMJ height and broad jump, best of 3, a coach records either or both (settles OD-2026-10-04-007's open Q1)
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the overwatch
