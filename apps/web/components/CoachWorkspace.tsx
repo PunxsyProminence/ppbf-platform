@@ -54,6 +54,8 @@ import {
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
+import { CoachBoutHistory, CoachSleepTrend } from './CoachAthleteRecords';
+
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
 /**
@@ -3590,6 +3592,12 @@ export default function CoachWorkspace() {
                     </div>
                   )}
 
+                  {/* Map item 20: the same athlete's recent sleep hours, once
+                      the check-in read has confirmed this coach may see them. */}
+                  {wellnessShown?.status === 'loaded' && (
+                    <CoachSleepTrend athleteId={wellnessShown.athleteId} athleteName={wellnessAthleteName} />
+                  )}
+
                   {/* SESSION NOTE (A-FIN-08): the text on today's session row,
                       which until this subsection existed no coach screen had
                       ever shown. An athlete answered "Anything your coach
@@ -3694,6 +3702,16 @@ export default function CoachWorkspace() {
                     </section>
                   )}
                 </section>
+
+                {/* Map item 10: the selected athlete's bout history. Only on a
+                    deliberate pick, like the wellness panel above. */}
+                {athleteChosenByCoach && selectedAthleteId && (
+                  <CoachBoutHistory
+                    key={selectedAthleteId}
+                    athleteId={selectedAthleteId}
+                    athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}
+                  />
+                )}
 
                 {/* Open Tasks */}
                 <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">

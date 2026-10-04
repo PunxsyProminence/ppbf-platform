@@ -256,6 +256,44 @@ export async function listCompetitionEntries(organizationId: string, competition
   );
 }
 
+/** One athlete's bout history: their entries across every competition. */
+export interface AthleteCompetitionHistoryRow {
+  entry_id: string;
+  competition_id: string;
+  competition_name: string;
+  competition_date: string;
+  competition_status: CompetitionStatus;
+  location: string;
+  sanctioning_body: string;
+  result: CompetitionEntryResult | null;
+  lesson_note: string;
+}
+
+// ONE athlete, never a list of athletes: $2 is required and is the only
+// athlete predicate. Withdrawn entries are not bouts and are left out. A
+// deleted athlete returns nothing (Scope B, same as listCompetitionEntries),
+// even though their entry rows are still stored. Newest competition first.
+// Exported so the pg suite runs this exact statement against the migration.
+export const ATHLETE_COMPETITION_HISTORY_SQL = `select e.entry_id, e.competition_id, c.competition_name,
+       c.competition_date::text as competition_date, c.status as competition_status,
+       c.location, c.sanctioning_body, e.result, e.lesson_note
+     from pilot.external_competition_entries e
+     join pilot.external_competitions c
+       on c.organization_id = e.organization_id and c.competition_id = e.competition_id
+     join pilot.athletes a
+       on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id
+     where e.organization_id = $1 and e.athlete_id = $2
+       and e.status = 'entered'
+       and a.deleted_at is null
+     order by c.competition_date desc, e.created_at desc`;
+
+export async function listAthleteCompetitionHistory(
+  organizationId: string,
+  athleteId: string,
+): Promise<AthleteCompetitionHistoryRow[]> {
+  return query<AthleteCompetitionHistoryRow>(ATHLETE_COMPETITION_HISTORY_SQL, [organizationId, athleteId]);
+}
+
 // ---------------------------------------------------------------------------
 // Board aggregate (capability-network audit, 2026-08-17): the board role has
 // no read access anywhere above -- COMPETITION_READ_ROLES is coach/

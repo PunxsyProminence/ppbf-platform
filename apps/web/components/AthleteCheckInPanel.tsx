@@ -13,6 +13,8 @@ import {
   wellnessAnchor,
 } from '@/src/shared/wellnessScales';
 
+import SleepTrend from './SleepTrend';
+
 // The athlete's own "I'm here, and this is how I am".
 //
 // Extracted from AthleteWorkspace rather than edited in place: the panel this
@@ -246,6 +248,18 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
                 {record.checked_in_on}
               </p>
             ))}
+          </div>
+        )}
+
+        {recent.length > 0 && (
+          <div className={PANEL_RAISED_CLASS}>
+            <SleepTrend
+              heading="Your sleep on recent check-ins"
+              items={recent.slice(0, 14).map((record) => ({
+                checked_in_on: record.checked_in_on,
+                sleep_hours: record.sleep_hours,
+              }))}
+            />
           </div>
         )}
       </div>
