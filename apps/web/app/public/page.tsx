@@ -276,7 +276,7 @@ const faqItems = [
   },
   {
     question: 'Who is actually coaching my kid?',
-    answer: "Jason Neale is head coach. PPBF is a veteran-owned 501(c)(3) nonprofit with a board and real records behind it, not a side project run out of somebody's garage. Ask to meet whoever would be working with your kid before you commit to anything.",
+    answer: "Jason Neale is head coach. PPBF is a veteran-led 501(c)(3) nonprofit with a board and real records behind it, not a side project run out of somebody's garage. Ask to meet whoever would be working with your kid before you commit to anything.",
   },
   {
     question: 'I want to help. What is useful?',
@@ -545,7 +545,7 @@ export default function PublicPortalPage() {
         <section className="mt-6 border-[3px] border-[color:rgb(var(--brass-800-rgb)_/_.28)] mat-paper p-5 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.25em] text-[color:var(--brass-800)]">Who runs this place</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {['VETERAN-OWNED', '501(c)(3) NONPROFIT', 'KIDS TRAIN FREE'].map((item) => (
+            {['VETERAN-LED', '501(c)(3) NONPROFIT', 'KIDS TRAIN FREE'].map((item) => (
               <div key={item} className="border border-[color:rgb(var(--brass-800-rgb)_/_.28)] rounded-[var(--r-md)] mat-paper p-4 text-center">
                 <p className="text-lg font-black tracking-[0.18em] text-[color:var(--hide-950)]">{item}</p>
               </div>
