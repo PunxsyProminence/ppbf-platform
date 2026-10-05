@@ -410,6 +410,65 @@ describe('guardian_links consent locks share one order and cannot deadlock', () 
     }
   });
 
+  /*
+   * The playback lane orders athletes with a plain JavaScript sort (UTF-16
+   * code units). Postgres would order by the column's collation, which under a
+   * locale such as en_US puts 'ath-a' before 'ath-B' -- the opposite of the
+   * JavaScript sort. The helpers say COLLATE "C" so the two agree.
+   */
+  test('the shared order is byte order: mixed case sorts as a JavaScript sort does', async () => {
+    const tx = await connect();
+    try {
+      await tx.query('begin');
+      const athleteIds = ['ath-a', 'ath-B'];
+      const parentIds = ['par-y', 'par-Z'];
+      for (const athleteId of athleteIds) {
+        await tx.query(
+          `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+           values ($1, $2, $2, '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
+          [ORG_ID, athleteId, COACH_ID],
+        );
+      }
+      for (const parentId of parentIds) {
+        await tx.query('insert into pilot.parents (organization_id, parent_id, full_name) values ($1, $2, $2)', [ORG_ID, parentId]);
+        for (const athleteId of athleteIds) {
+          await tx.query(
+            `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+             values ($1, $2, $3, 'guardian')`,
+            [ORG_ID, parentId, athleteId],
+          );
+        }
+      }
+
+      const jsOrder = athleteIds.flatMap((a) => parentIds.map((p) => `${a}/${p}`)).sort();
+      expect(jsOrder).toEqual(['ath-B/par-Z', 'ath-B/par-y', 'ath-a/par-Z', 'ath-a/par-y']);
+
+      const locked = await consent.lockGuardianLinksForAthletes(tx, ORG_ID, athleteIds, 'share');
+      expect(locked.map((row) => `${row.athlete_id}/${row.parent_id}`)).toEqual(jsOrder);
+      expect(await consent.lockGuardianLinksForAthlete(tx, ORG_ID, 'ath-B', 'share')).toEqual(['par-Z', 'par-y']);
+
+      // The ids discriminate: a locale collation, where the server has one,
+      // puts them the other way round. Without this the assertions above
+      // could pass on a server whose default collation is already "C".
+      const locale = await tx.query<{ collname: string }>(
+        `select collname from pg_collation
+          where collname in ('en-US-x-icu', 'und-x-icu', 'en_US.utf8', 'en_US.UTF-8', 'en_US')
+          order by collname limit 1`,
+      );
+      if (locale.rows.length > 0) {
+        const byLocale = await tx.query<{ athlete_id: string }>(
+          `select athlete_id from unnest($1::text[]) as ids(athlete_id)
+            order by athlete_id collate "${locale.rows[0].collname}"`,
+          [athleteIds],
+        );
+        expect(byLocale.rows.map((row) => row.athlete_id)).toEqual(['ath-a', 'ath-B']);
+      }
+      await tx.query('rollback');
+    } finally {
+      await tx.end();
+    }
+  });
+
   test('STRESS: the shipped sweep, readers and a withdrawal, concurrently, never deadlock', async () => {
     // Writers must succeed; readers may refuse once a withdrawal lands (that
     // is the consent gate working), but nothing may end in a deadlock.

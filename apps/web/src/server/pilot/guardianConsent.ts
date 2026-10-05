@@ -69,21 +69,22 @@ export async function lockGuardianLinksForAthlete(
   return result.rows.map((row) => row.parent_id);
 }
 
-/** Several athletes of one organization, in one pass, in the shared order. */
+/** Several athletes of one organization, in one pass, in the shared order; returns the rows in the order locked. */
 export async function lockGuardianLinksForAthletes(
   client: QueryExecutor,
   organizationId: string,
   athleteIds: readonly string[],
   mode: GuardianLinkLockMode,
-): Promise<void> {
-  if (athleteIds.length === 0) return;
-  await client.query(
-    `select 1 from pilot.guardian_links
+): Promise<Array<{ athlete_id: string; parent_id: string }>> {
+  if (athleteIds.length === 0) return [];
+  const result = await client.query<{ athlete_id: string; parent_id: string }>(
+    `select athlete_id, parent_id from pilot.guardian_links
      where organization_id = $1 and athlete_id = any($2::text[])
      order by athlete_id collate "C", parent_id collate "C"
      for ${mode === 'update' ? 'update' : 'share'}`,
     [organizationId, [...athleteIds]],
   );
+  return result.rows;
 }
 
 /*
