@@ -81,7 +81,7 @@ Every role boundary tested held.
 |---|---|
 | Severity | P1 |
 | Classification | FUNCTIONAL BUG / NETWORK/API BUG |
-| Status | OPEN |
+| Status | READY FOR RETEST (fixed by #1221, `bb9a3d64`; live in production with release 9, deploy run 37308544899 on `ac8f3e61`; status updated 2026-10-05) |
 | Affected | organization_admin and coach |
 | Defect | `app/admin/consent/page.tsx:134-138` loads the roster with `POST /api/pilot/athletes/list`. `app/api/pilot/athletes/list/route.ts:10` exports only `GET`. |
 | Observed | Production answers 405 and the page shows "ROSTER UNAVAILABLE — The roster could not be loaded." A GET from the same session returns 200 with the roster. |
@@ -96,7 +96,7 @@ Every role boundary tested held.
 |---|---|
 | Severity | P2 |
 | Classification | NETWORK/API BUG |
-| Status | OPEN |
+| Status | FIX MERGED, awaiting release 10 (#1224, merged as `5e498d01`; READY FOR RETEST once released; status updated 2026-10-05) |
 | Affected | organization_admin and coach (both sweeps) |
 | Observed | `/coach/intelligence` shows FAILED. A direct replay returned `500 {"error":"Internal server error"}`. |
 | Guard | Allows coach, organization_admin and admin (`route.ts:34`). |
@@ -108,11 +108,31 @@ Every role boundary tested held.
 |---|---|
 | Severity | P3 |
 | Classification | MISWIRED CONTROL / DATA-HONESTY BUG |
-| Status | OPEN, needs an owner decision |
+| Status | FIX MERGED, awaiting release 10 (#1229, merged as `ee0feb13`; status updated 2026-10-05; see the correction below) |
 | Affected | platform_owner only; no data exposed |
 | Defect | `board/compliance-monitoring/page.tsx:158` and `board/escalation-monitoring/page.tsx:116` gate on `['board','platform_owner']`, and the building-map `BOARD_GATE` matches. But `board/compliance-summary/route.ts:11` and `board/escalation-summary/route.ts:17` require `['board']`. |
 | Observed | 403, and the page shows "Unavailable — could not be read", so a refusal reads as a failure. `/board/aggregates` fires `volunteer-summary` (403), then redirects. |
 | Root cause | PROVEN as a mismatch. Which side is right is Jason's decision. |
+
+**Correction (2026-10-05).** The Defect row above is left as recorded. Its
+claim that "the building-map `BOARD_GATE` matches" was wrong: on main, before
+the fix, the building-map doors for `/board/compliance-monitoring`,
+`/board/escalation-monitoring` and `/board/aggregates` were already
+`roles: ['board']`, not `BOARD_GATE` (`apps/web/components/buildingMap.ts:579-592`
+at `ee0feb13^`). The real gaps were:
+
+1. the two page gates admitting platform_owner
+   (`compliance-monitoring/page.tsx:158` and `escalation-monitoring/page.tsx:116`,
+   `['board','platform_owner']`);
+2. the fetching hooks on `/board/aggregates` running outside the page's gate, so
+   the summaries were requested (403) before the redirect;
+3. the "Hand-Filed Compliance Register" link on `BoardMemberDashboard`, shown to
+   the platform owner;
+4. the "Compliance Monitoring" entry on the `/operations` dev lab.
+
+Jason chose option A (the platform owner is not served board aggregates;
+OD-2026-10-05-006) and approved the stamp line (OD-2026-10-05-007). Fixed by
+#1229 (`ee0feb13`), not yet released.
 
 ### U-001 — /admin/platform refusal screen for other roles (UX)
 
@@ -216,9 +236,9 @@ with this record and with `docs/PLATFORM_AUDIT_2026-08-28_ROUTE_REACHABILITY.md`
 
 | Finding | Task | Status |
 |---|---|---|
-| F-001 | chip "Fix /admin/consent roster request method (F-001)" | not launched |
-| F-002 | needs log access first (root cause unknown) | none |
-| F-003 | needs Jason's decision on which side is right | none |
+| F-001 | chip "Fix /admin/consent roster request method (F-001)" | not launched (as of run 1). 2026-10-05: fixed by #1221, released in release 9; READY FOR RETEST |
+| F-002 | needs log access first (root cause unknown) | none (as of run 1). 2026-10-05: #1224 merged; FIX MERGED, awaiting release 10 |
+| F-003 | needs Jason's decision on which side is right | none (as of run 1). 2026-10-05: decided (option A), #1229 merged; FIX MERGED, awaiting release 10 |
 
 ## Y. Repair order
 

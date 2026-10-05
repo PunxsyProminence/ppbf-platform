@@ -509,6 +509,7 @@ export const MANIFEST = [
     probes: [
       unauthenticated('PR-238ac', '/api/pilot/session-scripts'),
       unauthenticated('PR-238ac', '/api/pilot/competence-cohorts'),
+      unauthenticated('PR-238ac', '/api/pilot/competence-cohorts', { method: 'POST' }),
       unauthenticated('PR-238ac', '/api/pilot/multidiscipline'),
       pageRenders('PR-238ac', '/coach/session-scripts'),
       pageRenders('PR-238ac', '/coach/cohorts'),

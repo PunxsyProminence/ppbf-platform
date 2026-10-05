@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
-import { query } from '@/src/server/pilot/db';
+import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { POST } from './route';
@@ -145,6 +145,8 @@ describe('POST /api/pilot/shadow/events -- athlete boundary', () => {
 
   test('an athlete principal is bound to their own athleteId', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', accountId: 'acct-a', athleteId: 'ath-self' }));
+    // The athlete's own live row, read before their scope is granted.
+    (queryOne as jest.Mock).mockResolvedValueOnce({ athlete_id: 'ath-self' });
     mockQuery.mockResolvedValueOnce([]);
 
     await POST(postRequest({ entity_type: 'athlete', entity_id: 'ath-someone-else' }));

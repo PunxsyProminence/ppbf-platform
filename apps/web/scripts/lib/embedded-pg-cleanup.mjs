@@ -266,6 +266,85 @@ export async function killOrphanedChildren(postmasterPid) {
   return killed;
 }
 
+/**
+ * The data directory a postmaster was started on, from its command line
+ * (`postgres -D <dir> -p <port>`, the directory quoted when it has spaces),
+ * or null when there is no -D. A forked child (`postgres --forkchild=...` on
+ * Windows, a retitled `postgres: walwriter` elsewhere) never carries one.
+ */
+export function parsePostmasterCommandDataDir(commandLine) {
+  const match = /(?:^|\s)-D\s*(?:"([^"]+)"|(\S+))/.exec(String(commandLine ?? ''));
+  return match ? (match[1] ?? match[2]) : null;
+}
+
+/**
+ * `<pid>|<command line>` per line, as listPostgresCommandLines() asks
+ * PowerShell for it -> Map<pid, command line>.
+ */
+export function parsePostgresCommandLines(text) {
+  const commandLines = new Map();
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const match = /^\s*(\d+)\|(.*)$/.exec(line);
+    if (match) commandLines.set(Number(match[1]), match[2].trim());
+  }
+  return commandLines;
+}
+
+/** `ps -A -o pid=,args=` -> Map<pid, command line> of the postgres processes in it. */
+export function parsePsCommandLines(text) {
+  const commandLines = new Map();
+  for (const line of String(text ?? '').split('\n')) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (!match) continue;
+    const args = match[2].trim();
+    if (isPostgresImage((args.split(/\s+/)[0] ?? '').replace(/:$/, ''))) commandLines.set(Number(match[1]), args);
+  }
+  return commandLines;
+}
+
+/**
+ * Every postgres process's command line, or null when the listing failed.
+ * This is what tells a cluster's own postmaster from a recycled PID that now
+ * belongs to a different cluster: an image name cannot.
+ */
+export async function listPostgresCommandLines() {
+  try {
+    if (IS_WINDOWS) {
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" | ForEach-Object { '{0}|{1}' -f $_.ProcessId, $_.CommandLine }",
+        ],
+        { windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      );
+      return parsePostgresCommandLines(stdout);
+    }
+    const { stdout } = await execFileAsync('ps', ['-A', '-o', 'pid=,args='], { maxBuffer: 16 * 1024 * 1024 });
+    return parsePsCommandLines(stdout);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refines classifyPid's 'postgres' for one data directory:
+ *   'postgres' -- the postmaster started on THIS directory (its -D says so)
+ *   'foreign'  -- a live postgres process of something else: a forked child
+ *                 or another cluster's postmaster that inherited the PID
+ *   'unknown'  -- the command lines could not be read
+ * Every other state passes through unchanged. Only 'postgres' is ever killed.
+ */
+export async function identifyPostmaster(pid, dataDir, state, commandLines) {
+  if (state !== 'postgres') return state;
+  if (!commandLines) return 'unknown';
+  const commandDir = parsePostmasterCommandDataDir(commandLines.get(pid));
+  if (commandDir === null) return 'foreign';
+  return (await canonicalDir(commandDir)) === (await canonicalDir(dataDir)) ? 'postgres' : 'foreign';
+}
+
 export function isNodeImage(name) {
   return /^node(\.exe)?$/i.test(path.basename(String(name ?? '')));
 }
@@ -351,14 +430,17 @@ export async function removeDirWithRetries(dir, { attempts = 60, delayMs = 500 }
 
 /**
  * Tear down one cluster whose helper is gone: stop the postmaster its
- * postmaster.pid names -- only when that PID is still a postgres process and
- * the file claims this very directory, so a recycled PID is never killed --
- * end any forked child that outlived the postmaster, then remove the
- * directory. `postmaster` is a copy of postmaster.pid read earlier, for a
- * caller that watched the directory while it still had one (a suite that
- * removes its own directory races the janitor for the file).
+ * postmaster.pid names -- only when that PID is still a postgres process
+ * whose own command line was started on this very directory, so a recycled
+ * PID is never killed (Windows reuses PIDs fast; a stale directory's PID was
+ * observed naming a live backend of another suite's cluster, and killing it
+ * dropped every connection on that cluster) -- end any forked child that
+ * outlived the postmaster, then remove the directory. `postmaster` is a copy
+ * of postmaster.pid read earlier, for a caller that watched the directory
+ * while it still had one (a suite that removes its own directory races the
+ * janitor for the file).
  */
-export async function cleanupDataDir(dataDir, { processes, postmaster: remembered } = {}) {
+export async function cleanupDataDir(dataDir, { processes, commandLines, postmaster: remembered } = {}) {
   const result = { dataDir, killed: false, orphansKilled: [], removed: false };
   const postmaster = (await readPostmasterPid(dataDir)) ?? remembered ?? null;
   if (postmaster) {
@@ -366,6 +448,14 @@ export async function cleanupDataDir(dataDir, { processes, postmaster: remembere
       postmaster.dataDir === '' ||
       (await canonicalDir(postmaster.dataDir)) === (await canonicalDir(dataDir));
     let state = classifyPid(postmaster.pid, processes ?? (await listProcesses()));
+    if (state === 'postgres') {
+      state = await identifyPostmaster(
+        postmaster.pid,
+        dataDir,
+        state,
+        commandLines === undefined ? await listPostgresCommandLines() : commandLines,
+      );
+    }
     if (claimsThisDir && state === 'postgres') {
       await killProcessTree(postmaster.pid);
       if (await waitForExit(postmaster.pid, 10_000)) state = 'dead';
@@ -388,7 +478,7 @@ export async function cleanupDataDir(dataDir, { processes, postmaster: remembere
  */
 export async function judgeStaleDir(
   dir,
-  { processes, now = Date.now(), staleAfterMs = STALE_AFTER_MS } = {},
+  { processes, commandLines, now = Date.now(), staleAfterMs = STALE_AFTER_MS } = {},
 ) {
   const postmaster = await readPostmasterPid(dir);
   if (!postmaster) {
@@ -400,8 +490,18 @@ export async function judgeStaleDir(
     }
     return now - stat.mtimeMs >= staleAfterMs ? 'remove' : 'keep';
   }
-  const state = classifyPid(postmaster.pid, processes);
-  if (state === 'dead' || state === 'reused') return 'remove';
+  let state = classifyPid(postmaster.pid, processes);
+  if (state === 'postgres') {
+    state = await identifyPostmaster(
+      postmaster.pid,
+      dir,
+      state,
+      commandLines === undefined ? await listPostgresCommandLines() : commandLines,
+    );
+  }
+  // 'foreign': the PID is another cluster's process now, so this directory's
+  // own postmaster is gone. cleanupDataDir removes it without a kill.
+  if (state === 'dead' || state === 'reused' || state === 'foreign') return 'remove';
   if (state === 'unknown') return 'keep';
   // A live postmaster. In use, unless the helper that started it is gone.
   const helperPid = await readHelperPid(dir);
@@ -417,7 +517,7 @@ export async function judgeStaleDir(
  */
 export async function sweepStaleDataDirs(
   tmpDir,
-  { ownDataDir, processes, now = Date.now(), staleAfterMs = STALE_AFTER_MS } = {},
+  { ownDataDir, processes, commandLines, now = Date.now(), staleAfterMs = STALE_AFTER_MS } = {},
 ) {
   const summary = { removed: [], skipped: [], failed: [] };
   let entries;
@@ -433,15 +533,16 @@ export async function sweepStaleDataDirs(
 
   const own = ownDataDir ? await canonicalDir(ownDataDir) : null;
   const known = processes === undefined ? await listProcesses() : processes;
+  const knownCommandLines = commandLines === undefined ? await listPostgresCommandLines() : commandLines;
 
   for (const dir of candidates) {
     if (own !== null && (await canonicalDir(dir)) === own) continue;
-    const verdict = await judgeStaleDir(dir, { processes: known, now, staleAfterMs });
+    const verdict = await judgeStaleDir(dir, { processes: known, commandLines: knownCommandLines, now, staleAfterMs });
     if (verdict !== 'remove') {
       summary.skipped.push(dir);
       continue;
     }
-    const result = await cleanupDataDir(dir, { processes: known });
+    const result = await cleanupDataDir(dir, { processes: known, commandLines: knownCommandLines });
     (result.removed ? summary.removed : summary.failed).push(dir);
   }
   return summary;

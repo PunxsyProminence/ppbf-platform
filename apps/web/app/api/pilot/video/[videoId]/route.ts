@@ -11,7 +11,7 @@ import { queryOne } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 
 export const runtime = 'nodejs';
 
@@ -84,6 +84,10 @@ export async function GET(
      * Checked before the single-athlete branch below, which would otherwise
      * show a sparring clip to the one child it names, partner included.
      */
+    // Every athlete whose guardians must clear the consent gate before a
+    // credential is minted; empty for unattributed team footage.
+    let consentSubjects: string[] = [];
+    let clipShowsSeveral = false;
     const tagged = await listLiveTagSubjects(principal.organizationId, row.video_session_id);
     if (tagged.length > 0) {
       const isAdmin = isOrganizationAdminRole(principal.role);
@@ -115,19 +119,8 @@ export async function GET(
           return hiddenNotFound();
         }
       }
-      try {
-        for (const athleteId of new Set(subjects)) {
-          await assertConsentCoversVideo(principal.organizationId, athleteId);
-        }
-      } catch (error) {
-        if (error instanceof ConflictError) {
-          throw new ConflictError(
-            `This clip shows more than one athlete, and it is blocked for everyone while any of them is. ${error.message}`,
-            error.code,
-          );
-        }
-        throw error;
-      }
+      consentSubjects = subjects;
+      clipShowsSeveral = true;
     } else if (row.athlete_id) {
       try {
         await assertActorCanAccessAthlete(principal, row.athlete_id);
@@ -136,14 +129,32 @@ export async function GET(
       }
       // Consent scope is checked only for attributed footage: an unattributed
       // team-wide clip has no athlete_id, so there is no guardian to ask.
-      await assertConsentCoversVideo(principal.organizationId, row.athlete_id);
+      consentSubjects = [row.athlete_id];
     } else if (!isOrganizationAdminRole(principal.role) && principal.role !== 'coach') {
       // Unattributed (team-wide) video: only coaches and org admins may view
       // it individually. Athletes, parents, volunteers, and staff cannot.
       return hiddenNotFound();
     }
 
-    const sasUrl = getPilotVideoSasUrl(row.blob_path, 60);
+    // The consent check and the mint run in one transaction holding every
+    // subject's guardian links FOR SHARE, so a withdrawal cannot commit
+    // between them (videoPlaybackConsent.ts, mintUnderPlaybackConsent).
+    let sasUrl: string;
+    try {
+      sasUrl = await mintUnderPlaybackConsent(
+        principal.organizationId,
+        consentSubjects,
+        () => getPilotVideoSasUrl(row.blob_path, 60),
+      );
+    } catch (error) {
+      if (clipShowsSeveral && error instanceof ConflictError) {
+        throw new ConflictError(
+          `This clip shows more than one athlete, and it is blocked for everyone while any of them is. ${error.message}`,
+          error.code,
+        );
+      }
+      throw error;
+    }
 
     // A SAS URL is a bearer credential, not a reference: whoever holds the
     // string can fetch a minor's footage for the whole validity window, with no

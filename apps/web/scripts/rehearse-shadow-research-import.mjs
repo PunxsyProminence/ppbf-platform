@@ -80,6 +80,7 @@ async function main() {
     for (const f of [
       'pilot_slice_postgres.sql',
       'pilot_slice_postgres_shadow_evidence_migration.sql',
+      'pilot_slice_postgres_source_rights_migration.sql',
     ]) {
       await client.query(await fs.readFile(path.join(INFRA, f), 'utf8'));
       console.log(`    applied ${f}`);

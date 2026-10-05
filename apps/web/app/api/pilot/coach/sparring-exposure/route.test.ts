@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { readCapForEntry } from '@/src/server/pilot/athleteContactCaps';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { listLinkedClipsForExposures } from '@/src/server/pilot/videoClipTags';
 import {
   countHardOrOpenSparringDays,
   getSparringExposureCounts,
@@ -47,6 +48,10 @@ jest.mock('@/src/server/pilot/sparringExposure', () => ({
   listActiveUniversalStopRules: jest.fn(),
 }));
 
+// The linked-clip read is mocked; its SQL and consent filter are proven in
+// videoClipTagsSparringLink.pg.test.ts.
+jest.mock('@/src/server/pilot/videoClipTags', () => ({ listLinkedClipsForExposures: jest.fn() }));
+
 // The cap read is mocked (proven against real Postgres in
 // sparringExposureContactStage.pg.test.ts and athleteContactCaps.pg.test.ts);
 // the warning functions run as shipped.
@@ -63,6 +68,7 @@ const mockRecord = recordSparringExposure as jest.Mock;
 const mockList = listSparringExposure as jest.Mock;
 const mockCounts = getSparringExposureCounts as jest.Mock;
 const mockStopRules = listActiveUniversalStopRules as jest.Mock;
+const mockLinkedClips = listLinkedClipsForExposures as jest.Mock;
 
 const ORG = 'org-gym';
 const OTHER_ORG = 'org-elsewhere';
@@ -171,6 +177,7 @@ beforeEach(() => {
   mockRecord.mockImplementation(async (input: Record<string, unknown>) => ({ exposure_id: 'new', ...input }));
   mockReadCap.mockResolvedValue({ state: 'none', cap: null });
   mockCountDays.mockResolvedValue(0);
+  mockLinkedClips.mockResolvedValue(new Map());
 });
 
 afterEach(() => {
@@ -592,4 +599,58 @@ describe('cap check (map item 15): warn only, after the save', () => {
       expect(mockRecord).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('GET: clips linked to each entry (Jason 2026-10-05: behind the scenes now)', () => {
+  test.each([
+    ['coach of record', COACH_OF_RECORD],
+    ['organization admin', ORG_ADMIN],
+    ['legacy admin', LEGACY_ADMIN],
+  ])('%s sees each entry\'s linked clips; an entry with none says []', async (_label, who) => {
+    mockRequirePrincipal.mockResolvedValue(who);
+    mockList.mockResolvedValue([{ exposure_id: 'e1' }, { exposure_id: 'e2' }]);
+    mockLinkedClips.mockResolvedValue(new Map([['e1', [{ tag_id: 'vct-1', video_session_id: 'vid-1' }]]]));
+
+    const body = await (await GET(getRequest('athlete_id=ath-kid'))).json();
+
+    expect(mockLinkedClips).toHaveBeenCalledWith(ORG, 'ath-kid', ['e1', 'e2']);
+    expect(body.entries).toEqual([
+      { exposure_id: 'e1', linked_clips: [{ tag_id: 'vct-1', video_session_id: 'vid-1' }] },
+      { exposure_id: 'e2', linked_clips: [] },
+    ]);
+  });
+
+  test('only the entries shown are looked up', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockList.mockResolvedValue(Array.from({ length: 101 }, (_, i) => ({ exposure_id: `e${i}` })));
+    await GET(getRequest('athlete_id=ath-kid'));
+    expect(mockLinkedClips.mock.calls[0][2]).toHaveLength(100);
+    expect(mockLinkedClips.mock.calls[0][2]).not.toContain('e100');
+  });
+
+  test('a failed clip read is null ("could not check"), never [], and the sparring record still loads', async () => {
+    mockRequirePrincipal.mockResolvedValue(COACH_OF_RECORD);
+    mockLinkedClips.mockRejectedValue(new Error('connection reset'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await GET(getRequest('athlete_id=ath-kid'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries).toEqual([{ exposure_id: 'e1', linked_clips: null }]);
+    expect(body.counts.total_segments).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: 'sparring-linked-clips-read-failed' }));
+    errorSpy.mockRestore();
+  });
+
+  test.each([
+    ['a coach with no tie to the athlete', UNRELATED_COACH],
+    ['a lapsed covering coach', LAPSED_COACH],
+    ['another gym\'s admin', OTHER_GYM_ADMIN],
+  ])('%s is refused before any clip is read', async (_label, who) => {
+    mockRequirePrincipal.mockResolvedValue(who);
+    const response = await GET(getRequest('athlete_id=ath-kid'));
+    expect(response.status).toBe(403);
+    expect(mockLinkedClips).not.toHaveBeenCalled();
+  });
 });

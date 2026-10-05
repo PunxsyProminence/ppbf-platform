@@ -113,6 +113,19 @@ export async function loadResearchClaimsIntoPlatformLibrary(client: DbClient): P
      values ('src_reference_fixture', '__platform__', 'Loaded research claims (test)', 'peer_reviewed', 1, 'https://example.org/reference-fixture')
      on conflict do nothing`,
   );
+  // The seed it stands in for is the research program's own synthesis, filed
+  // under a ppbf_owned source; full text loads only under one (source-rights
+  // migration). Guarded: some suites build a schema without that migration.
+  await client.query(
+    `do $fixture_rights$ begin
+       if exists (select 1 from information_schema.columns
+                  where table_schema = 'pilot' and table_name = 'shadow_library_sources'
+                    and column_name = 'rights_status') then
+         update pilot.shadow_library_sources set rights_status = 'ppbf_owned'
+          where source_id = 'src_reference_fixture';
+       end if;
+     end $fixture_rights$`,
+  );
   await client.query(
     `insert into pilot.shadow_library_documents (document_id, source_id, organization_id, document_name, content_sha256)
      values ('doc_reference_fixture', 'src_reference_fixture', '__platform__', 'Loaded research claims (test)', 'reference-fixture')

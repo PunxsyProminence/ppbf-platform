@@ -164,6 +164,133 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-012 -- Coach-set competence level: the "Set a level" screen wording approved as written, and the three technical calls overwatch relayed to the lane
+
+**Provenance: PRIMARY (the wording); the three calls are overwatch's, not Jason's.** Jason's answer to an AskUserQuestion asked in the lane session "Coach sets an athlete's competence level by hand" (`local_934bc50c-e7bb-4fef-bf01-d741ebaf2b81`; transcript `~/.claude/projects/C--Dev/803875ac-553a-4ef7-bd59-6fbce0041866.jsonl`, tool use `toolu_01Ckf68W3b4VpEAkU8RDqzDE`; asked 2026-10-05T13:05:04.533Z, answered 2026-10-05T13:56:44.912Z). Read by script from that transcript (records pass, 2026-10-05). The three calls come from overwatch's message to that lane (overwatch transcript `~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, `send_message` to `local_934bc50c-e7bb-4fef-bf01-d741ebaf2b81`, 2026-10-05T12:39:52.015Z). New; extends OD-2026-10-03-002 section 6 (how an athlete's competence level is recorded).
+
+Asked (official form): "Approve the on-screen wording for the new "Set a level" form on /coach/cohorts? Strings: heading "Set a level"; labels "Area", "Level", "What you saw (optional)"; level placeholder "Choose a level"; button "Save level" / "Saving..."; success "Saved. The rooms below are updated."; no-op "No change: that is already the level."; errors "You can only set levels for athletes you coach or cover." and "That level could not be saved.""
+
+Plain English as asked: "Plain English: these are the exact words a coach will see when setting an athlete's level (footwork, defense, etc.) on the Cohorts page. Approve them, or pick Other and type the lines you want changed."
+
+Options: "Approve as written (Recommended)" (Ship the wording exactly as listed. Plain English: the coach sees these words; nothing else changes.); "Rename "Area" to "Skill"" (Same wording except the domain picker label reads "Skill" instead of "Area". Plain English: coaches pick a 'Skill' (footwork, defense...) rather than an 'Area'.). Jason chose *"Approve as written (Recommended)"*.
+
+**Ruling: every string listed in the question is approved exactly as written** -- heading "Set a level"; labels "Area", "Level", "What you saw (optional)"; level placeholder "Choose a level"; button "Save level" / "Saving..."; success "Saved. The rooms below are updated."; no-op "No change: that is already the level."; errors "You can only set levels for athletes you coach or cover." and "That level could not be saved." The option renaming "Area" to "Skill" was not chosen.
+
+**Overwatch's technical calls, relayed to the lane (not Jason's rulings):** (a) "assessed_on is today only. No back-dating." (b) "No clear action. A coach changes a level, never removes it." (c) "basis is always coach_observation." These are overwatch's scope answers inside OD-2026-10-03-002 section 6; Jason can overrule any of them.
+
+Governs PR #1241.
+
+---
+
+## OD-2026-10-05-011 -- Once the intake case's primary_athlete_id is written, guardians and athletes see their own child's intake cases (option A, keep)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the lane session "Intake: write primary_athlete_id, backfill, use it" (`local_c0edb287-89fb-451b-b838-3e4eef4ebaa6`; transcript `~/.claude/projects/C--Dev/6f7740a1-9b87-497e-a92a-48aa46b8dee3.jsonl`, tool use `toolu_01NnbZE1NenixpFeBVeKa1Qr`; asked 2026-10-05T13:06:04.043Z, answered 2026-10-05T13:57:06.099Z). Read by script from that transcript (records pass, 2026-10-05). New; edits no earlier entry. Follows from OD-2026-10-03-008 (intake promotion).
+
+Asked (official form): "OFFICIAL: Once pilot.intake_cases.primary_athlete_id is written (promotion + backfill), (a) the intake review queue (review-queue and shadow/review-projection routes, which admit role `parent`) lists a guardian's own child's promoted cases: summary 'SHADOW upload: <file name>', status, document count. (b) Case detail (cases/get, which admits athlete and parent) returns that athlete's record (medical, emergency contact, waiver, attendance, readiness, notes, guardians), trimmed per role through the same athlete check as domain-get. Both reads were already authorized; they returned nothing only because the column was NULL. A (recommended): keep both, as built and pinned in tests. B: remove `parent` from the two queue routes and `parent`/`athlete` from cases/get in this PR. C: hold the PR and decide later."
+
+Plain English as asked: "PLAIN: Once this lands, a parent sees their child's uploaded intake paperwork in their list and can open it, including the medical and emergency-contact info on file. Today they see nothing, only because of this bug. A = let parents (and the athlete) see their own child's paperwork. B = staff only. C = wait."
+
+Options: "A: keep (Recommended)" (Parents and athletes see their own child's intake cases and case detail. This is the access the app already grants, now working. Tests pin it.); "B: staff only" (Remove parent from the queue routes, and parent and athlete from case detail, in this PR. Intake becomes coach and admin only.); "C: hold" (The PR waits and nothing merges until you decide.). Jason chose *"A: keep (Recommended)"*.
+
+**Ruling: A. Keep both reads as built.** Once `pilot.intake_cases.primary_athlete_id` is written, the intake review queue lists a guardian's own child's promoted cases, and case detail returns that athlete's record to the athlete and the guardian, trimmed per role through the same athlete check as domain-get. `parent` is not removed from the queue routes and `parent`/`athlete` are not removed from cases/get.
+
+Governs PR #1240.
+
+---
+
+## OD-2026-10-05-010 -- Licensed excerpts: the excerpt's location is any locator (page, section or timestamp), not a page number only (option A)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the lane session "Licensed excerpts: rights marker on sources" (`local_11228462-0fb3-4a6c-b328-aab395699a93`; transcript `~/.claude/projects/C--Dev/ef4be1fc-e0dd-4190-a851-aeda71b93738.jsonl`, tool use `toolu_013caNFLQsVzR6YPPM2etdHg`; asked 2026-10-05T13:26:00.029Z, answered 2026-10-05T13:56:26.005Z). The one tool call carried two questions and Jason answered both together. Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry. This is the second of the two questions; the first is OD-2026-10-05-009.
+
+Asked (official form): "OD-2026-10-02-013 answer 4A says a kept excerpt carries "citation and page". Should the excerpt's location be any locator (page, section or timestamp), or a page number only?"
+
+Plain English as asked: "In plain English: every excerpt the app keeps must say where in the source it came from. The /evidence screen already asks for "a page, section or timestamp", because a video or a web page has no page number. A keeps it that way, so video and web excerpts can be loaded. B accepts page numbers only, so a video clip or a web article could not be excerpted at all, only fully owned or open-licence ones loaded whole."
+
+Options: "A. Any locator (Recommended)" (Page, section or timestamp, stored in excerpt_locator. Video and web sources have no page, so they can still be excerpted. This is what is built.); "B. Page only" (An excerpt must name a page. A one-line change to the database check; video and web sources then cannot be excerpted.). Jason chose *"A. Any locator (Recommended)"*.
+
+**Ruling: A. A kept excerpt's location is any locator -- page, section or timestamp -- stored in `excerpt_locator`.** Video and web sources, which have no page, can still be excerpted. "Citation and page" in OD-2026-10-02-013 answer 4A is satisfied by any locator.
+
+Extends OD-2026-10-03-002 sections 2-3 and OD-2026-10-02-013 answer 4A. Governs PR #1238 (A1) and the A2 work.
+
+---
+
+## OD-2026-10-05-009 -- Licensed excerpts: the private location the operator excerpt-loading workflow reads from is an Azure private blob container (option A)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the lane session "Licensed excerpts: rights marker on sources" (`local_11228462-0fb3-4a6c-b328-aab395699a93`; transcript `~/.claude/projects/C--Dev/ef4be1fc-e0dd-4190-a851-aeda71b93738.jsonl`, tool use `toolu_013caNFLQsVzR6YPPM2etdHg`; asked 2026-10-05T13:26:00.029Z, answered 2026-10-05T13:56:26.005Z). The one tool call carried two questions and Jason answered both together. Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry. This is the first of the two questions; the second is OD-2026-10-05-010.
+
+Asked (official form): "PR B, licensed excerpts (OD-2026-10-03-002 §2): where should the private location that the operator excerpt-loading workflow reads from live?"
+
+Plain English as asked: "In plain English: when a batch of copyrighted excerpts is loaded without typing them into the app screen, the files have to sit somewhere private that the loader can read. A is a locked folder in the Azure account the app already runs on: costs cents a month, nothing new to sign up for, and the loader already has a key to it. B reuses your SharePoint PDF archive, but the app needs a new login to reach SharePoint, which is one more secret to manage. C keeps the files in a second private code repository: easy, but it puts copyrighted text in a code tool where it can get copied around. Whichever you pick, only the chosen excerpts end up in the app; whole PDFs stay in SharePoint."
+
+Options: "A. Azure private blob (Recommended)" (A new private blob container (no public access) in the existing Azure storage account. The GitHub workflow reads it with the identity it already deploys with and loads each file as excerpts through the same database rule the screen uses. Costs cents a month; no new account.); "B. SharePoint archive" (The SharePoint Research Archive, read through Microsoft Graph. Needs a new app registration and a secret with read access to that library.); "C. Private GitHub repo" (A private GitHub repository holding the excerpt files, read by the workflow with a deploy token.). Jason chose *"A. Azure private blob (Recommended)"*.
+
+**Ruling: A. The private location is a new private blob container (no public access) in the existing Azure storage account.** The GitHub workflow reads it with the identity it already deploys with and loads each file as excerpts through the same database rule the screen uses. Only the chosen excerpts end up in the app; whole PDFs stay in SharePoint. SharePoint (B) and a private GitHub repository (C) were not chosen.
+
+Extends OD-2026-10-03-002 sections 2-3 (licensed excerpts loaded by the screen and by a workflow from a private location). Governs PR B of the licensed-excerpts work.
+
+---
+
+## OD-2026-10-05-008 -- The test organization's admin login is re-homed to Punxsy Prominence as a parent, through a reviewed dry-run-first script Jason runs
+
+**Provenance: PRIMARY (typed messages).** Two of Jason's typed messages in the
+overwatch thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`).
+Read by script from that transcript (records pass, 2026-10-05). Exact text,
+including his spelling and capitals:
+
+1. 2026-10-05T12:03:51.931Z: *"i ran it check the terminal and B"*
+2. 2026-10-05T12:11:59.014Z: *"its neekos parent the Danielle was a test"*
+
+New; edits no earlier entry.
+
+Asked: Jason reported that adding a parent account in the live app was refused
+because the login "belongs to another organization". Overwatch's options
+(2026-10-05T12:02:12.410Z, before message 1): "**(A) Use a different email for the
+parent (Recommended)**" and "**(B) Move the login to Punxsy Prominence**, if it's
+a stale or unused login in the other org. That's a production data change, so it
+would go through a lane with your approval." Message 1 chose B. Overwatch's
+read-only check then found that the login is an active organization admin of the
+test organization `danielles`, and put the choice again (2026-10-05T12:11:10.549Z):
+(A) a different email (Recommended), (C) one login holding both roles, or "**(B)
+Move it anyway.** This removes them as admin at `danielles`. Not recommended unless
+that gym is a test you're done with." Message 2 answered that.
+
+**Ruling: B. The `danielles` organization is a test; its organization-admin login
+is re-homed to `punxsy_prominence` as a parent of the athlete Jason named.** It is
+done by a script the re-home lane writes and has reviewed, run first as a dry run
+and then for real, by Jason, not by any AI session; the lane proves it on a local
+test database first and never touches production itself. This ends that login's
+admin access at `danielles`. This entry records no email address.
+
+---
+
+## OD-2026-10-05-007 -- F-003 board-only stamp line approved as written
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the overwatch
+thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, tool
+use `toolu_01NfhYEUo9uaQJYu5zUFFyFJ`; asked 2026-10-05T11:24:10.766Z, answered
+2026-10-05T11:24:55.646Z). Read by script from that transcript (records pass,
+2026-10-05). New; edits no earlier entry. Follows OD-2026-10-05-006 part (b),
+which accepted option A for F-003 (the platform owner is not served the board's
+aggregates).
+
+Asked: "F-003 fix: when a platform owner opens a board-only page, it will show
+the existing "WRONG DOOR — Not available for this role" stamp plus one new line:
+"these figures are served to board members only." Approve that line? (Plain
+English: the message you'd see as Admin@ if you opened a board-only page.)"
+Options: "Approve as written (Recommended)" ("Use "these figures are served to
+board members only." exactly.") and "Approve with my edits" ("Type your version in
+Other / notes."). Jason chose *"Approve as written (Recommended)"*.
+
+**Ruling: the stamp line is "these figures are served to board members only."
+exactly as written.** Shipped in #1229 (`ee0feb13`) as
+`detail="these figures are served to board members only"` in
+`apps/web/app/board/BoardOnlyNotice.tsx:29`; `RefusalStamp` renders it as "Not
+available for this role — these figures are served to board members only."
+(`apps/web/components/RefusalStamp.tsx:76-78`), so the period is supplied by the
+stamp.
+
+---
+
 ## OD-2026-10-05-006 -- Release 9 authorized, and overwatch's standing recommendations at that moment accepted (not the open items)
 
 **Provenance: PRIMARY (typed message).** Jason's typed message in the overwatch
