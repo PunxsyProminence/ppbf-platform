@@ -70,7 +70,16 @@ describe('source-rights ppbf_owned backfill', () => {
     const statement = backfill.slice(0, backfill.indexOf(';'));
     expect(statement).not.toMatch(/metadata/);
     expect(statement).toMatch(/where s\.rights_status = 'unknown'\s+and s\.source_id = any\(seed\.ids\)$/);
-    expect(code).not.toMatch(/copied_from/);
+    expect(code).not.toMatch(/copied_(from|for)/);
+  });
+
+  test('no statement in the file sets rights_status from metadata', () => {
+    // A second backfill (to ppbf_owned or open_licence) keyed on metadata would
+    // reopen the hole; every statement that writes rights_status is checked.
+    const statements = sqlWithoutComments(migrationSql).split(';');
+    const rightsWriters = statements.filter((statement) => /\brights_status\s*=\s*'/i.test(statement) && /\bupdate\b/i.test(statement));
+    expect(rightsWriters).toHaveLength(1);
+    for (const statement of rightsWriters) expect(statement).not.toMatch(/metadata/i);
   });
 
   test('no allowlisted id has the shape the sources route mints', () => {
