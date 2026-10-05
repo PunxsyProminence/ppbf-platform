@@ -382,6 +382,7 @@
     "test:migrations:session-run-state": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionScriptRuns.pg.test.ts --testTimeout=180000",
     "test:migrations:reference-version-readers": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceVersionReaders.pg.test.ts --testTimeout=180000",
     "test:migrations:competence-cohorts-module": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohortsModule.pg.test.ts --testTimeout=180000",
+    "test:migrations:athlete-competence-write": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCompetenceWrite.pg.test.ts --testTimeout=180000",
     "test:migrations:drill-vocabulary-widening": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillVocabularyWidening.pg.test.ts --testTimeout=180000",
     "test:migrations:competence-cohorts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohorts.pg.test.ts --testTimeout=180000",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
