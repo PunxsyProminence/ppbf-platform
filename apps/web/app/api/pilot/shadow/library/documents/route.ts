@@ -7,6 +7,7 @@ import {
   createShadowLibraryDocument,
   type ShadowLibraryIngestState,
 } from '@/src/server/pilot/shadowLibrary';
+import { reservedProvenanceKey, reservedProvenanceMessage } from '@/src/server/pilot/shadowLibraryRights';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
@@ -97,6 +98,12 @@ export async function POST(request: NextRequest) {
       && (typeof body.metadata !== 'object' || body.metadata === null || Array.isArray(body.metadata))
     ) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
+    }
+
+    // Importer-only provenance (shadowLibraryRights.ts), as on the sources route.
+    const reservedKey = reservedProvenanceKey(body.metadata);
+    if (reservedKey) {
+      return NextResponse.json({ ok: false, error: reservedProvenanceMessage(reservedKey) }, { status: 400 });
     }
 
     // A subject_id makes this document athlete-scoped, and chunks inherit the

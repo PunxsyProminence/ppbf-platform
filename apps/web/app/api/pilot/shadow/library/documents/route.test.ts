@@ -186,6 +186,19 @@ describe('POST /api/pilot/shadow/library/documents', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  test.each(['copied_from_source_id', 'copied_from_document_id', 'copied_for_scope'])(
+    'refuses importer-only provenance metadata.%s',
+    async (key) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { [key]: 'doc_x' } }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(`metadata.${key} is set only by the research importer`);
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+
   test('reports a source in another organization as absent, not as forbidden', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockCreate.mockRejectedValueOnce(new Error('Source does not exist in this organization.'));

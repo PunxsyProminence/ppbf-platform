@@ -37,9 +37,17 @@
 --   * The 21 internal_policy sources of the 2026-08-07 seed are PPBF's own
 --     material: 20 auto-extracted PPBF repo documents and the programme source
 --     src_6563c68e39047128, whose 14 documents say "synthesis text authored by
---     the research program; NOT publisher full text". They, and any copy of
---     them (metadata.copied_from_source_id, made by the importer's ppbf_policy
---     scope and pilot-rescope-library-baseline.mjs), become ppbf_owned.
+--     the research program; NOT publisher full text". They, and the one copy
+--     the importer's ppbf_policy scope and pilot-rescope-library-baseline.mjs
+--     make of them (src_ppbfpol_6563c68e39047128, the programme source's
+--     copy), become ppbf_owned. Matched by exact source id ONLY, never by
+--     metadata: metadata is caller-supplied through the sources route, and
+--     this file re-runs on every apply-migrations dispatch, so a curator's
+--     source claiming metadata.copied_from_source_id = <a seed id> would
+--     otherwise be raised to ppbf_owned on the next run. The route mints
+--     source ids itself (source_<uuid>), so none of these ids is reachable
+--     from it. apps/web/scripts/sourceRightsAllowlist.test.ts holds this list
+--     to the importer's own.
 --   * Every other source stays unknown. Nothing on file says any of them is
 --     open-licence, and guessing is not classification; a reviewer changes a
 --     source's marker in the app.
@@ -102,12 +110,13 @@ begin
 end
 $pilot_chunk_text_kind_check$;
 
--- The 21 internal_policy sources of the 2026-08-07 seed, and their copies.
+-- The 21 internal_policy sources of the 2026-08-07 seed, and the importer's
+-- copy of the programme source. Exact ids; no metadata is read (see above).
 update pilot.shadow_library_sources s
    set rights_status = 'ppbf_owned'
-  from (select '{src_b7041e76b524f743,src_1224589a057d11b1,src_ae9e74a246508870,src_ee346c4c03fbbaaf,src_6348f5240f9c2b9e,src_48097b8ac8a29aea,src_cb0941607cf6e855,src_bea776a3493dd897,src_42bf1537a1f93ab2,src_d596d833bbdd0e67,src_9ceadf7c40f908be,src_01289d452b4a6971,src_c4a73634d556a46d,src_10538696f1d5ea88,src_94a20de4f88e7e3c,src_ba8fe9ece0b1f971,src_060860c8d3d424cd,src_ea1a2c9630801ac7,src_0f4cb2616bd6992f,src_a59b4035ad4c9fe6,src_6563c68e39047128}'::text[] as ids) seed
+  from (select '{src_b7041e76b524f743,src_1224589a057d11b1,src_ae9e74a246508870,src_ee346c4c03fbbaaf,src_6348f5240f9c2b9e,src_48097b8ac8a29aea,src_cb0941607cf6e855,src_bea776a3493dd897,src_42bf1537a1f93ab2,src_d596d833bbdd0e67,src_9ceadf7c40f908be,src_01289d452b4a6971,src_c4a73634d556a46d,src_10538696f1d5ea88,src_94a20de4f88e7e3c,src_ba8fe9ece0b1f971,src_060860c8d3d424cd,src_ea1a2c9630801ac7,src_0f4cb2616bd6992f,src_a59b4035ad4c9fe6,src_6563c68e39047128,src_ppbfpol_6563c68e39047128}'::text[] as ids) seed
  where s.rights_status = 'unknown'
-   and (s.source_id = any(seed.ids) or s.metadata->>'copied_from_source_id' = any(seed.ids));
+   and s.source_id = any(seed.ids);
 
 -- A chunk's full text is allowed only under a ppbf_owned or open_licence
 -- document source.
