@@ -486,6 +486,39 @@ describe('scheduler: an admin cannot act on a deleted athlete', () => {
     expect(await counts(DELETED_ATHLETE)).toEqual(before);
   });
 
+  const seededRegistration = async (athleteId: string) =>
+    (
+      await activeClient!.query<{ registration_id: string; parent_reviewed: boolean; parent_reviewer_account_id: string | null }>(
+        `select registration_id, parent_reviewed, parent_reviewer_account_id from pilot.scheduler_registrations
+         where organization_id = $1 and athlete_id = $2 and class_id = $3`,
+        [ORG_ID, athleteId, seededClassId],
+      )
+    ).rows[0];
+
+  test("parent_review_registration: an admin cannot mark a deleted athlete's registration reviewed (not found, row unchanged)", async () => {
+    /* The registration was loaded by id with no deletion mark, so this
+       flipped parent_reviewed on a deleted athlete's row. */
+    const before = await seededRegistration(DELETED_ATHLETE);
+    expect(before.parent_reviewed).toBe(false);
+
+    const response = await schedulerPost(adminPrincipal, {
+      action: 'parent_review_registration',
+      registration_id: before.registration_id,
+    });
+    expect({ status: response.status, error: (await response.json()).error }).toEqual({ status: 404, error: 'Not found' });
+    expect(await seededRegistration(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  test("live control: the admin may mark the live athlete's registration reviewed", async () => {
+    const before = await seededRegistration(LIVE_ATHLETE);
+    await okJson(
+      await schedulerPost(adminPrincipal, { action: 'parent_review_registration', registration_id: before.registration_id }),
+    );
+    expect(await seededRegistration(LIVE_ATHLETE)).toEqual(
+      expect.objectContaining({ parent_reviewed: true, parent_reviewer_account_id: ADMIN_ACCOUNT }),
+    );
+  });
+
   test('live control: the admin may register and request coaching for the live athlete', async () => {
     const classId = await freshClass();
     await okJson(await schedulerPost(adminPrincipal, { action: 'register_class', class_id: classId, athlete_id: LIVE_ATHLETE }));

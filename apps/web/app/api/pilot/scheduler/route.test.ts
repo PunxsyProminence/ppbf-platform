@@ -304,6 +304,9 @@ describe('the athlete arm requires the live athlete row', () => {
 
 describe('the admin arm requires the live athlete row', () => {
   const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+  // A queued rejection the route never consumes must not leak into the next
+  // describe; clearAllMocks leaves queued one-time values in place.
+  afterEach(() => mockLiveRow.mockReset());
   const adminRegister = () => jsonRequest({ action: 'register_class', class_id: 'class-1', athlete_id: 'ath-9' });
 
   test.each(['organization_admin', 'admin'])('%s acting on an athlete is checked against their own gym', async (role) => {
@@ -323,6 +326,7 @@ describe('the admin arm requires the live athlete row', () => {
     const res = await POST(adminRegister());
 
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
     expect(mockRegister).not.toHaveBeenCalled();
   });
 });
