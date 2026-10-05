@@ -979,15 +979,13 @@ export async function removeGuardianLink(params: {
      * row and the sweep waits (and afterwards finds no link, because the
      * unlink was decided before the withdrawal existed).
      *
-     * WHAT IT DOES NOT CLOSE, stated rather than papered over: the withdrawal
-     * INSERT itself takes no lock -- withdrawMediaConsent is a bare autocommit
-     * insert into pilot.waivers and the sweep runs only afterwards, in its own
-     * transaction -- so an insert committing between the read below and the
-     * DELETE is still lost. That window now contains no other round trip of
-     * ours, but it is not zero. Closing it needs the WRITE path to take this
-     * same guardian_links lock before its insert, which changes the
-     * concurrency of the most safety-critical write in this domain and is
-     * proposed on the review thread rather than taken unilaterally here.
+     * THE WRITE SIDE TAKES IT TOO (owner decision D-2): withdrawMediaConsent
+     * locks this same row FOR UPDATE before inserting its waiver, in one
+     * transaction (guardianConsent.ts writeMediaConsentUnderLock). So a
+     * withdrawal either commits before this lock is granted, and the read
+     * below sees it and refuses, or waits until this unlink has committed.
+     * No insert can land between the read and the DELETE. This comment said
+     * otherwise until the write path took the lock.
      */
     await lockGuardianLink(client, organizationId, target.parent_id, athleteId);
 
