@@ -30,6 +30,12 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
   };
 });
 
+// The real coverage gate reads the database; route.coversVideo.test.ts drives
+// it against fake consent rows. Here consent is the mocked helpers above.
+jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
+  assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockPublish = publishToResearchLibrary as jest.Mock;

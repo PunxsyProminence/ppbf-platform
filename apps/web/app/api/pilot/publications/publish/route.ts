@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import {
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
@@ -11,8 +12,16 @@ import {
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 
 export const runtime = 'nodejs';
+
+// assertConsentCoversVideo's refusals: withdrawn, photo-only, unreadable.
+const COVERAGE_REFUSAL_CODES = new Set([
+  'GUARDIAN_CONSENT_WITHDRAWN',
+  'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+  'GUARDIAN_CONSENT_UNREADABLE',
+]);
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
 // reason to tell the coach their (already-committed) publish failed -- same
@@ -96,6 +105,13 @@ export async function POST(request: NextRequest) {
       // that fails fast, then the SAME check re-run inside the claim's own
       // transaction (verifyBeforeCommit), so a withdrawal cannot commit in
       // the gap between the pre-check returning and the claim landing.
+      //
+      // A publication is always video, so "signed" is not enough: the
+      // consent must also cover video (assertConsentCoversVideo, the same
+      // gate playback uses). It runs first so a withdrawn or photo-only
+      // guardian is refused with that reason rather than as missing
+      // paperwork; assertGuardianMediaConsent still refuses absence.
+      await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
       await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
 
       libraryId = await publishToResearchLibrary({
@@ -106,7 +122,14 @@ export async function POST(request: NextRequest) {
         description: publication.description,
         tags: publication.tags,
         verifyBeforeCommit: async (client) => {
+          // Both reads lock this athlete's guardian links FOR SHARE through
+          // guardianConsent.ts's helper, in its order. They are two reads, so
+          // the coverage check goes SECOND: a guardian linked between them
+          // is then read by the check that refuses photo-only and withdrawn,
+          // rather than only by the signed-or-not check that cannot tell
+          // photo-only from video (review finding on this change).
           await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
           // Inside the claim: a clip tag added after the draft was made still
           // stops the publish (tagged clips are staff only, owner 2026-10-03).
           await assertVideoHasNoLiveClipTags(principal.organizationId, publication.video_session_id, client);
@@ -127,6 +150,20 @@ export async function POST(request: NextRequest) {
           details: {
             action: 'publication_publish_blocked_by_consent',
             missing_parent_ids: error.missingParentIds,
+          },
+          shadow_mirror: false,
+        });
+      } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+        await auditPublishEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'video_publication',
+          entity_id: publication.publication_id,
+          details: {
+            action: 'publication_publish_blocked_by_consent',
+            reason: error.code,
           },
           shadow_mirror: false,
         });
