@@ -4,6 +4,7 @@ import type { PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
 import { PilotError } from './errors';
+import { roleEquals } from './roleAlias';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
 import { GuardianConsentMissingError } from './guardianConsent';
@@ -69,8 +70,10 @@ export async function requireMicrosoftOrAttestedLocalPinPrincipal(request: NextR
   throw new Error('Forbidden: Microsoft-authenticated or server-attested local PIN session required');
 }
 
+// Same alias as access.ts's requireRole: 'admin' and organization_admin satisfy
+// each other (roleAlias.ts). This used to be an exact match.
 export function requireRole(principal: PilotPrincipal, allowedRoles: PilotRole[]): void {
-  if (!allowedRoles.includes(principal.role)) {
+  if (!allowedRoles.some((item) => roleEquals(principal.role, item))) {
     throw new Error('Forbidden');
   }
 }

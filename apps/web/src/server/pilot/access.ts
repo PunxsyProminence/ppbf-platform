@@ -3,25 +3,13 @@ import { calendarDayKey } from '@/lib/calendarDay';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
+import { roleEquals } from './roleAlias';
 
 export interface ActorIdentity {
   accountId: string;
   role: PilotRole;
   organizationId: string;
   athleteId: string | null;
-}
-
-function roleEquals(actual: PilotRole, expected: PilotRole): boolean {
-  if (actual === expected) {
-    return true;
-  }
-
-  // Preserve compatibility while migrating legacy 'admin' rows.
-  if ((actual === 'admin' && expected === 'organization_admin') || (actual === 'organization_admin' && expected === 'admin')) {
-    return true;
-  }
-
-  return false;
 }
 
 export function isOrganizationAdminRole(role: PilotRole): boolean {
