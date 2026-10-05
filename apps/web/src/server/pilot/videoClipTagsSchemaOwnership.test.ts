@@ -16,8 +16,16 @@ describe('video clip tags schema ownership', () => {
     expect(code).not.toMatch(/create\s+table|create\s+index|alter\s+table|drop\s+table/i);
     expect(code).not.toMatch(/\bdelete\s+from\b/i);
     // The to_regclass probes read the catalog, not rows.
+    // VISIBLE_CLIP_SQL is a fragment correlated to a tag row (t) whose own
+    // statement is scoped by $1; it is exempted by its exact name only.
     const statements = (code.match(/`[^`]*pilot\.video_clip_tags[^`]*`/g) ?? [])
-      .filter((statement) => !statement.includes('to_regclass'));
+      .filter((statement) => !statement.includes('to_regclass'))
+      .filter((statement) => !code.includes(`const VISIBLE_CLIP_SQL = ${statement};`));
+    expect(code).toMatch(/const VISIBLE_CLIP_SQL = `/);
+    expect(code.match(/\$\{VISIBLE_CLIP_SQL\}/g)?.length).toBe(2);
+    for (const statement of (code.match(/`[^`]*\$\{VISIBLE_CLIP_SQL\}[^`]*`/g) ?? [])) {
+      expect(statement).toMatch(/t\.organization_id\s*=\s*\$1/);
+    }
     expect(statements.length).toBeGreaterThanOrEqual(6);
     for (const statement of statements) {
       expect(statement).toMatch(/organization_id\s*=\s*\$1|insert into pilot\.video_clip_tags\s*\(\s*organization_id|clip_tag\.organization_id/);

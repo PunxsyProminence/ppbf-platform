@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { DELETE, GET, POST } from './route';
+import { DELETE, GET, PATCH, POST } from './route';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -12,6 +12,7 @@ import {
   listLiveClipTagsForVideo,
   listLiveTagSubjects,
   removeClipTag,
+  setClipTagExposure,
 } from '@/src/server/pilot/videoClipTags';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
@@ -42,6 +43,8 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
   listLiveClipTagsForVideo: jest.fn(),
   listLiveTagSubjects: jest.fn(),
   removeClipTag: jest.fn(),
+  setClipTagExposure: jest.fn(),
+  ExposureLinkSparringOnlyError: jest.requireActual('@/src/server/pilot/videoClipTags').ExposureLinkSparringOnlyError,
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
@@ -54,6 +57,7 @@ const mockGetTag = jest.mocked(getLiveClipTag);
 const mockListForVideo = jest.mocked(listLiveClipTagsForVideo);
 const mockSubjects = jest.mocked(listLiveTagSubjects);
 const mockRemove = jest.mocked(removeClipTag);
+const mockSetExposure = jest.mocked(setClipTagExposure);
 const mockConsent = jest.mocked(assertConsentCoversVideo);
 const mockBlocked = jest.mocked(blockedClipVideoIds);
 const mockFilmStudy = jest.mocked(assertVideoIsFilmStudyMedia);
@@ -84,6 +88,7 @@ const tagRow = (overrides: Record<string, unknown> = {}) => ({
   athlete_id: 'ath-1',
   event_kind: 'sparring' as const,
   competition_id: null,
+  exposure_id: null as string | null,
   note: '',
   tagged_by_account_id: 'coach-1',
   created_at: '2026-10-03T00:00:00.000Z',
@@ -141,6 +146,7 @@ describe('who may tag', () => {
       athleteId: 'ath-1',
       eventKind: 'competition',
       competitionId: 'comp-1',
+      exposureId: null,
       note: 'first bout',
       taggedByAccountId: 'coach-1',
     });
@@ -425,3 +431,157 @@ describe('tags on a clip a consent block stops', () => {
   });
 });
 
+
+describe('linking a sparring tag to its sparring entry (Jason 2026-10-05: one entry, optional)', () => {
+  function patch(body: unknown) {
+    return PATCH(
+      new NextRequest('http://localhost/api/pilot/video/vid-1/tags', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+      params,
+    );
+  }
+
+  beforeEach(() => {
+    mockGetTag.mockResolvedValue(tagRow({ exposure_id: 'exp-old' }));
+    mockSetExposure.mockResolvedValue(tagRow({ exposure_id: 'exp-1' }));
+  });
+
+  test('a sparring tag can be created with its entry', async () => {
+    const res = await post({ athlete_id: 'ath-1', event_kind: 'sparring', exposure_id: ' exp-1 ' });
+    expect(res.status).toBe(201);
+    expect(mockAdd).toHaveBeenCalledWith(expect.objectContaining({ eventKind: 'sparring', exposureId: 'exp-1' }));
+  });
+
+  test('a non-text exposure_id on create is refused before anything is read', async () => {
+    const res = await post({ athlete_id: 'ath-1', event_kind: 'sparring', exposure_id: 7 });
+    expect(res.status).toBe(400);
+    expect(mockAdd).not.toHaveBeenCalled();
+  });
+
+  test('a coach links their athlete\'s tag; the audit row keeps the old and new entry', async () => {
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).exposure_id).toBe('exp-1');
+    expect(mockAssertAccess).toHaveBeenCalledWith(expect.anything(), 'ath-1');
+    expect(mockSetExposure).toHaveBeenCalledWith({ organizationId: 'org-1', tagId: 'vct-1', exposureId: 'exp-1' });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'update',
+      entity_id: 'vct-1',
+      details: expect.objectContaining({
+        action: 'video_clip_tag_exposure_linked', exposure_id: 'exp-1', previous_exposure_id: 'exp-old',
+      }),
+    }));
+  });
+
+  test('null clears the link, and says so in the audit row', async () => {
+    mockSetExposure.mockResolvedValueOnce(tagRow({ exposure_id: null }));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: null });
+    expect(res.status).toBe(200);
+    expect(mockSetExposure).toHaveBeenCalledWith({ organizationId: 'org-1', tagId: 'vct-1', exposureId: null });
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ action: 'video_clip_tag_exposure_cleared', previous_exposure_id: 'exp-old' }),
+    }));
+  });
+
+  test.each([
+    ['a missing exposure_id (never read as "clear")', { tag_id: 'vct-1' }],
+    ['an empty exposure_id', { tag_id: 'vct-1', exposure_id: '  ' }],
+    ['a numeric exposure_id', { tag_id: 'vct-1', exposure_id: 4 }],
+    ['a missing tag_id', { exposure_id: 'exp-1' }],
+    ['an unknown field', { tag_id: 'vct-1', exposure_id: 'exp-1', athlete_id: 'ath-2' }],
+    ['a body that is not an object', ['vct-1']],
+  ])('%s is a 400 and writes nothing', async (_label, body) => {
+    const res = await patch(body);
+    expect(res.status).toBe(400);
+    expect(mockSetExposure).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent', 'volunteer', 'platform_owner'] as const)('%s is refused', async (role) => {
+    mockPrincipal.mockResolvedValueOnce(principal({ role }));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(403);
+    expect(mockSetExposure).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot link another coach\'s athlete\'s tag, and learns nothing about it', async () => {
+    mockAssertAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(404);
+    expect(mockSetExposure).not.toHaveBeenCalled();
+  });
+
+  test('a video the coach cannot see is hidden before the tag is read', async () => {
+    mockVideo.mockResolvedValueOnce(video('ath-2'));
+    mockAccessible.mockResolvedValueOnce(new Set());
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(404);
+    expect(mockGetTag).not.toHaveBeenCalled();
+    expect(mockSetExposure).not.toHaveBeenCalled();
+  });
+
+  test('a tag on another video, or no live tag, is hidden', async () => {
+    mockGetTag.mockResolvedValueOnce(tagRow({ video_session_id: 'vid-2' }));
+    expect((await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' })).status).toBe(404);
+    mockGetTag.mockResolvedValueOnce(null);
+    expect((await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' })).status).toBe(404);
+    expect(mockSetExposure).not.toHaveBeenCalled();
+  });
+
+  test('a bout tag cannot be linked to a sparring entry', async () => {
+    mockGetTag.mockResolvedValueOnce(tagRow({ event_kind: 'competition', competition_id: 'comp-1' }));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CLIP_TAG_EXPOSURE_SPARRING_ONLY');
+    expect(mockSetExposure).not.toHaveBeenCalled();
+  });
+
+  test('a tag removed between the read and the write is a 404 with no audit row', async () => {
+    mockSetExposure.mockResolvedValueOnce(null);
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(404);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin links any athlete\'s tag without a coach check', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(200);
+    expect(mockAssertAccess).not.toHaveBeenCalled();
+  });
+
+  test('on a clip a consent block stops, the reply carries no note', async () => {
+    mockSetExposure.mockResolvedValueOnce(tagRow({ exposure_id: 'exp-1', note: 'names the child' }));
+    mockBlocked.mockResolvedValueOnce(new Set(['vid-1']));
+    const res = await patch({ tag_id: 'vct-1', exposure_id: 'exp-1' });
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toContain('names the child');
+  });
+});
+
+describe('which sparring entry a tag links to is that athlete\'s record', () => {
+  test('a coach sees the link on their own athlete\'s tag, not on a partner\'s', async () => {
+    mockListForVideo.mockResolvedValueOnce([
+      tagRow({ tag_id: 'vct-1', athlete_id: 'ath-1', exposure_id: 'exp-1' }),
+      tagRow({ tag_id: 'vct-2', athlete_id: 'ath-2', exposure_id: 'exp-partner' }),
+    ]);
+    mockAccessible.mockResolvedValue(new Set(['ath-1']));
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params)).json();
+
+    expect(body.items.map((item: { tag_id: string; exposure_id: string | null }) => [item.tag_id, item.exposure_id]))
+      .toEqual([['vct-1', 'exp-1'], ['vct-2', null]]);
+    expect(JSON.stringify(body)).not.toContain('exp-partner');
+  });
+
+  test('an organization admin sees every link', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockListForVideo.mockResolvedValueOnce([tagRow({ tag_id: 'vct-2', athlete_id: 'ath-2', exposure_id: 'exp-partner' })]);
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params)).json();
+    expect(body.items[0].exposure_id).toBe('exp-partner');
+  });
+});
