@@ -150,6 +150,21 @@ describe('assertGuardianMediaConsent', () => {
 
     await expect(assertGuardianMediaConsent('org-a', 'ath-1')).rejects.toThrow(/no guardians on file/);
   });
+
+  test('the 409 a route returns carries GUARDIAN_CONSENT_MISSING, so a screen can say which refusal it was', async () => {
+    // Same status and message as before; the code is what is new. The coach
+    // Film Study page maps it to Jason's approved "missing or could not be
+    // read" sentence (AskUserQuestion 2026-10-05, overwatch-relayed).
+    const { jsonError } = jest.requireActual<typeof import('./http')>('./http');
+    for (const error of [
+      new GuardianConsentMissingError('ath-1', ['p1']),
+      new GuardianConsentMissingError('ath-1', []),
+    ]) {
+      const response = jsonError(error);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: error.message, code: 'GUARDIAN_CONSENT_MISSING' });
+    }
+  });
 });
 
 describe('grantMediaConsent / withdrawMediaConsent', () => {

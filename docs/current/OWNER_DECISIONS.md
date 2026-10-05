@@ -164,6 +164,209 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-006 -- Release 9 authorized, and overwatch's standing recommendations at that moment accepted (not the open items)
+
+**Provenance: PRIMARY (typed message).** Jason's typed message in the overwatch
+thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`;
+user message timestamp 2026-10-05T02:12:03.740Z), sent 18 seconds after he answered
+the two Film Study questions (OD-2026-10-05-005, answered 2026-10-05T02:11:45.471Z)
+and 1 second after overwatch's report that all four lanes had the go-ahead
+(2026-10-05T02:12:02.396Z). Read by script from that transcript (records pass,
+2026-10-05). Exact text, including the double space and his spelling:
+*"Authorized 9  and go with recomendas on things"*. New; edits no earlier entry.
+
+Asked: not a reply to one question. It follows overwatch's list of open work
+(2026-10-05T02:04:21.702Z, item 1 "Release 9", item 9 "What to do with the
+quarantined clip titles") and its question "Should I do the records PR and the
+cleanup?" (2026-10-05T02:10:06.792Z). **Ruling, part (a): "Authorized 9" is read as
+release 9 authorized (INFERRED).** In the 02:04 list the number 9 is the quarantined
+clip titles item and release 9 is item 1; in the 02:10 list there is no item 9 and
+release 9 is item 3. The message does not say "release", and it does not say whether
+it also covers the two things overwatch said stood between staging and production
+("your signed-in check of `/coach/adult-pathway` and `/admin/consent` on staging" and
+"running the read-only production script", 02:04:21.702Z); this entry does not rule
+that those were done. Context for part (a): release 9 had been held by
+OD-2026-10-05-001 until #1222 merged; #1222 merged as `ac8f3e61`, and the release 9
+staging deploy ran as run 37249847337 (re-read by gh at write time: #1222 MERGED
+`ac8f3e61`; run 37249847337 deploy-staging success on `ac8f3e61`).
+
+**Ruling, part (b): "go with recomendas on things" accepts the recommendations
+overwatch had on the table at that moment, and only those.** Overwatch's
+recommendations in its preceding messages, quoted from the transcript:
+
+- F-003 (does the platform owner see the board's compliance and escalation
+  summaries): "**(A) No: hide those doors and show "board only" (Recommended).** This
+  matches the server's current rule." (2026-10-04T22:30:34.638Z; option B was "Yes:
+  allow the platform owner to read the board aggregates." Repeated 2026-10-05T02:04:21.702Z
+  as "(A) hide them from the platform owner (Recommended)".)
+- Adult pathway stage visibility for athletes and families: "**Keep it staff-only for
+  now (Recommended)** / **Plan an athlete and family view**" (2026-10-05T01:00:37.738Z).
+- Records PR and worktree cleanup: "Options: **Both (Recommended)** / records only /
+  cleanup only / neither." (2026-10-05T02:10:06.792Z)
+- Next lanes after release 9: "**F-002 + Film Study (Recommended)** / F-002 only /
+  something else from the list." (2026-10-05T02:04:21.702Z)
+
+**Still open (overwatch gave no recommendation, so this message does not decide
+them):** where skills 02-12 sit in the order; what to do with the quarantined clip
+titles; the wording for the load-flag warnings. Also still open, with no
+recommendation to accept: the #1172 sources for the research shelf, the Namecheap
+redirect, the remaining audit sign-ins, and the two Fable-account chips.
+
+---
+
+## OD-2026-10-05-005 -- Film Study refusal wording approved as written; the refusal does not name another athlete
+
+**Provenance: PRIMARY.** Jason's answers to the two questions of an AskUserQuestion
+in the overwatch thread
+(`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, tool use
+`toolu_018yYq8z1hy8su2AkkucSJeg`; asked 2026-10-05T02:11:38.669Z, answered
+2026-10-05T02:11:45.471Z). Read by script from that transcript (records pass,
+2026-10-05). New; edits no earlier entry. Governs the Film Study follow-ups lane's
+PR (coach reason code plus the consent row lock); that PR is not yet open.
+
+Asked (question 1): "Film Study refusal wording (coach screen). Approve these three
+sentences?" Plain: "what a coach reads when Film Study won't run because of a
+parent's consent choice." The three sentences, verbatim from the question text:
+(1) withdrawn: "Film Study refused: a guardian has withdrawn media consent for an
+athlete in this video." (2) photo-only: "Film Study refused: guardian consent for an
+athlete in this video covers photos only, not video." (3) other: "Film Study refused:
+guardian media consent for an athlete in this video is missing or could not be
+read." Options: "Approve as written (Recommended)" ("Use the three sentences
+exactly.") and "Approve with my edits" ("Type your changes in Other / notes.").
+Jason chose *"Approve as written (Recommended)"*.
+
+Asked (question 2): "Should the refusal NAME which athlete's consent blocked it,
+when it's a tagged athlete (not the video's own athlete)?" Plain: "telling the coach
+which other family said no." Options: "Don't name them (Recommended)" ("The coach can
+see the tags; naming exposes another family's consent decision.") and "Name the
+athlete" ("Message says which athlete's consent blocked the run."). Jason chose
+*"Don't name them (Recommended)"*.
+
+**Ruling: the three sentences are approved exactly as written, and the refusal does
+not name which athlete's consent blocked the run.**
+
+---
+
+## OD-2026-10-05-004 -- Clip tags link to one sparring entry, the link is optional, and it is wired behind the scenes now
+
+**Provenance: PRIMARY.** Jason's answers to the three questions of an AskUserQuestion
+in the overwatch thread
+(`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, tool use
+`toolu_01QrZMX3RfFJgermZU95RTp1`; asked 2026-10-05T02:10:47.053Z, answered
+2026-10-05T02:11:16.628Z). Read by script from that transcript (records pass,
+2026-10-05). New; edits no earlier entry. Governs the clip-link lane's PR ("Link
+clip tags to sparring exposure", includes a database migration); that PR is not yet
+open.
+
+Asked: "Clip tags -> sparring record" (the transcript shows an arrow character).
+Q1 cardinality: "may a tagged sparring clip link to ONE sparring entry (round), or to
+SEVERAL?" Plain: "is a clip 'round 2', or can one clip be 'rounds 1-3'?" Options:
+"One entry (Recommended)" ("A clip links to a single sparring entry. Simpler; a
+multi-round clip links to its main round.") and "Several entries" ("... Adds a join
+table."). Q2: "must a coach link a sparring clip to a sparring entry when tagging
+it?" Plain: "can a coach tag the clip now and connect it to the sparring record
+later?" Options: "Optional (Recommended)" ("Tag now, link later. Nothing blocks
+tagging if the entry isn't written yet.") and "Required" ("New sparring tags must
+name their sparring entry."). Q3: "where does the coach see the link in this lane?"
+Plain: "just wire it up behind the scenes now, or also show 'clip available' on the
+Sparring Record screen?" Options: "Behind the scenes now (Recommended)" ("API only
+now; screens come with the coach clip screen item later.") and "Also on Sparring
+Record" ("Show 'clip available' on the sparring screen now, hidden whenever consent
+blocks the clip."). Jason chose *"One entry (Recommended)"*, *"Optional
+(Recommended)"* and *"Behind the scenes now (Recommended)"*.
+
+**Ruling: a sparring clip links to one sparring entry; the link is optional when
+tagging; the link is API-only in this lane, with no "clip available" on the Sparring
+Record screen yet.**
+
+**Overwatch technical calls, not Jason's** (from the records brief; overwatch's design
+for the lane, not rulings): composite foreign key (organization_id, exposure_id,
+athlete_id); a CHECK that applies only for event_kind = 'sparring'; ON DELETE SET NULL
+(exposure_id) with a Postgres 15 guard (production is proven PG15 or later because
+apply-migrations run 37232770353 applied the waiver-parent-fk migration; gh at write
+time shows run 37232770353 apply-migrations success); and a partner's tag links only
+to the partner's own segment. Jason has not ruled on these.
+
+---
+
+## OD-2026-10-05-003 -- Production audit: "you have full control and acess" for browser switching, and the audit's documentation-write authorization
+
+**Provenance: PRIMARY (typed message, plus the pasted prompt it was sent with).**
+(1) Jason's typed message in the overwatch thread
+(`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`; user message
+timestamp 2026-10-04T21:54:20.758Z): *"yes you have full control and acess"*, in
+answer to overwatch's question of 2026-10-04T21:53:59.257Z. (2) Twelve seconds later
+(enqueued 2026-10-04T21:54:32.565Z, delivered 2026-10-04T21:55:05.482Z) the same thread
+received Jason's long pasted prompt, titled *"PPBF PRODUCTION APPLICATION AUDIT"*
+(a queued command in the transcript, a pasted-content block, not an
+AskUserQuestion). Read by script from that transcript (records pass, 2026-10-05).
+New; edits no earlier entry. Its documentation-write part governs PR #1220 (merged).
+
+Asked (overwatch, 2026-10-04T21:53:59.257Z, after Jason's "ok every type of account
+should be logged into a chrom browser tied to this account  via claude extention"):
+"Will you allow browser switching for this session?" Plain: "the browsers are
+connected, but a safety switch stops me from hopping between them. Turn it off once,
+and I can line up each account type with its browser." Options: "Allow it
+(Recommended)" (in an interactive `claude` terminal, allow
+`mcp__claude-in-chrome__select_browser` and `mcp__claude-in-chrome__navigate`) /
+"Don't allow it" (work with the in-app browser and Browser 3 only). Jason answered by
+typing *"yes you have full control and acess"*. He did not pick an option label; the
+reading "allow browser switching" is overwatch's (INFERRED from the question it
+answered).
+
+**Ruling: overwatch may switch between the connected Chrome browsers and navigate in
+them for the production audit.** The pasted audit prompt also authorizes the audit's
+read and audit actions as it describes them; this entry quotes only its title and one
+sentence, and the full prompt is in the transcript. Its repository-write sentence:
+*"You are explicitly authorized to preserve this audit system and its results in the
+PPBF repository."* (the prompt follows it with "This authorization covers only:" and
+a list; the list is not reproduced here). That authorization produced the audit
+runbook `docs/current/PRODUCTION_AUDIT_RUNBOOK.md` (merged as #1220). Neither message
+authorizes production writes, and the audit's test-write question (whether the
+Browser 1 athlete may be used for test writes) was left open and is still open.
+
+---
+
+## OD-2026-10-05-002 -- Archive the retired overwatch session local_1b22c98a
+
+**Provenance: PRIMARY (typed message).** Jason's typed message in the overwatch
+thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`; user
+message timestamp 2026-10-04T21:27:09.060Z): *"yes archive it"*, in answer to
+overwatch's question of 2026-10-04T21:18:36.260Z. Read by script from that transcript
+(records pass, 2026-10-05). New; edits no earlier entry.
+
+Asked: "Archive the old overwatch session ("Overwatch (housekeeping)", local_1b22c98a,
+transcript c2e29ade)?" Plain: "this moves the old thread out of your sidebar. Its
+transcript stays, and it can be restored at any time." Options: "Yes, archive it
+(Recommended)" / "No, keep it open." Overwatch asked because the request to archive
+came from the outgoing session (a cross-session message at 2026-10-04T21:18:28.374Z
+saying "Jason asked that you archive me"), not from Jason in this thread. Jason typed
+*"yes archive it"*. **Ruling: the retired overwatch session local_1b22c98a is
+archived.** Executed 2026-10-04T21:27:13.856Z (it can be restored from the Archived
+list).
+
+---
+
+## OD-2026-10-05-001 -- Release 9 waits until the adult pathway screens (B2b, #1222) merge
+
+**Provenance: PRIMARY (typed message).** Jason's typed message in the overwatch
+thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`; user
+message timestamp 2026-10-04T21:28:01.724Z): *"wait for b2b before releasing"*, in
+answer to overwatch's question of 2026-10-04T21:17:26.118Z. Read by script from that
+transcript (records pass, 2026-10-05). New; edits no earlier entry.
+
+Asked: "Next release: should it go out now, or wait until B2b is merged? I recommend
+waiting for B2b, so the adult pathway goes live in one piece." Plain: "ship what's
+done now, or wait a little and ship the full adult pathway together." Jason typed
+*"wait for b2b before releasing"* (the recommended course). **Ruling: the next
+release (release 9, which needs the `athlete-mental-skills-remove` migration) is held
+until adult pathway step B2b (the screens) has merged.** Executed: B2b merged as PR
+#1222 (`ac8f3e61`, merged 2026-10-05T00:59:30Z per gh at write time), and the release
+9 staging deploy ran as run 37249847337 (deploy-staging, success, on `ac8f3e61`).
+OD-2026-10-05-006 records Jason's later "Authorized 9".
+
+---
+
 ## OD-2026-10-04-030 -- PR #1206, #1207 and #1208 (started in the Fable session): reviewed and merged from the overwatch thread, after the current release
 
 **Provenance: PRIMARY.** Jason's answer to one question of an AskUserQuestion in

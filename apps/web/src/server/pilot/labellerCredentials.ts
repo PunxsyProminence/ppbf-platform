@@ -1,3 +1,6 @@
+import { sessionCredentialFits } from './auth';
+import type { PilotRole } from './contracts';
+import { MAGIC_LINK_ROLES, MICROSOFT_ROLES } from './credentialPolicy';
 import { query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { ConflictError, ForbiddenError, PilotError, ValidationError } from './errors';
@@ -22,10 +25,13 @@ import { hashPin, verifyPin } from './security';
  * possibilities; what stands between a guesser and a match is the attempt
  * limiter, not the hash.
  *
- * Who holds one: a live member of the organization whose account role AND
- * whose membership role in that organization are labelling roles. The
- * membership role matters because a multi-gym account carries one account
- * role (what resolvePrincipal reports) but can be, say, a parent at this gym.
+ * Who holds one: a live member of the organization whose membership role in
+ * that organization is a labelling role. The membership is the role a session
+ * at this gym acts with (resolvePrincipal reads it, #1197). pilot.accounts.role,
+ * the home role, is read only as resolvePrincipal reads it: the credential the
+ * account signs in with must fit the membership role (sessionCredentialFits),
+ * so a coach at home who is an admin here, whose session here resolves to
+ * nobody, is no labelling admin here either.
  * The labelling roles are ANNOTATOR_ROLES (annotatorGate.ts) plus 'admin',
  * which access.ts treats as an alias of 'organization_admin'; a test pins the
  * two lists together so they cannot drift.
@@ -81,16 +87,30 @@ function roleList(roles: readonly string[]): string {
   return roles.map((role) => `'${role}'`).join(', ');
 }
 
+const HOME_ROLES: readonly PilotRole[] = [...MICROSOFT_ROLES, ...MAGIC_LINK_ROLES, 'athlete'];
+
+/**
+ * Membership `om` names one of `roles`, and the home role on account `a` holds
+ * a credential that fits it: the same rule resolvePrincipal applies, expanded
+ * to SQL from sessionCredentialFits so the two cannot drift.
+ */
+function membershipRoleFitsSql(roles: readonly PilotRole[]): string {
+  return `(${roles.map((role) => {
+    const homes = HOME_ROLES.filter((homeRole) =>
+      sessionCredentialFits({ homeRole, sessionRole: role, isPlatformOwner: false }));
+    return `(om.role = '${role}' and a.role in (${roleList(homes)}))`;
+  }).join(' or ')})`;
+}
+
 function eligibleLabellerSql(organizationParam: string): string {
   return `a.active_flag = true
     and not ${accountDeletedSql('a')}
-    and a.role in (${roleList(LABELLER_ACCOUNT_ROLES)})
     and exists (
       select 1 from pilot.organization_memberships om
        where om.account_id = a.account_id
          and om.organization_id = ${organizationParam}
          and om.active_flag = true
-         and om.role in (${roleList(LABELLER_ACCOUNT_ROLES)})
+         and ${membershipRoleFitsSql(LABELLER_ACCOUNT_ROLES)}
     )
     and exists (
       select 1 from pilot.organizations o
@@ -188,11 +208,12 @@ export const LABELLER_CLEAR_ROLES = ['organization_admin', 'admin'] as const;
  * An organization admin clears a member's labelling PIN, which removes it;
  * the member sets a new one themselves. The admin never sees or chooses one.
  *
- * The actor must be a live admin OF THIS ORGANIZATION by membership, not only
- * by account role: an account that is an admin at its home gym and a parent or
- * staff member here reaches this with an admin principal (resolvePrincipal
- * reports the account role) and is refused. Returns whether there was a PIN
- * to clear.
+ * The actor must be a live admin OF THIS ORGANIZATION by membership, the
+ * role its session here acts with: an admin at its home gym who is a parent
+ * or staff member here is refused, and so is a coach at home who is an admin
+ * here (a magic-link credential does not fit an admin session); a board member
+ * at home who is an admin here may clear. Returns whether there was a PIN to
+ * clear.
  */
 export async function clearLabellerCredential(input: {
   organizationId: string;
@@ -206,11 +227,10 @@ export async function clearLabellerCredential(input: {
          on om.account_id = a.account_id
         and om.organization_id = $1
         and om.active_flag = true
-        and om.role in (${roleList(LABELLER_CLEAR_ROLES)})
       where a.account_id = $2
+        and ${membershipRoleFitsSql(LABELLER_CLEAR_ROLES)}
         and a.active_flag = true
-        and not ${accountDeletedSql('a')}
-        and a.role in (${roleList(LABELLER_CLEAR_ROLES)})`,
+        and not ${accountDeletedSql('a')}`,
     [input.organizationId, input.actorAccountId],
   );
   if (!actor) {

@@ -192,7 +192,9 @@ export async function getCoachIntelligence(
        join pilot.athletes a on a.organization_id = s.organization_id and a.athlete_id = s.athlete_id
        where s.organization_id = $1 and s.athlete_id = any($2::text[])
          and s.completed_flag = true
-         and s.date <= now()::date - $3
+         -- $3 is cast: untyped, Postgres reads it as a date, so date - date
+         -- is an integer and 'date <= integer' fails to plan (F-002).
+         and s.date <= now()::date - $3::int
          and not exists (
            select 1 from pilot.coach_reviews cr
            where cr.organization_id = s.organization_id and cr.session_id = s.session_id

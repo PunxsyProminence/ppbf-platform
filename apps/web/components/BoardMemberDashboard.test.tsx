@@ -138,6 +138,16 @@ test('the compliance link matches what that page actually is', () => {
   expect(screen.queryByText(/Compliance Monitoring \(Planned\)/)).toBeNull();
 });
 
+test('the platform owner is not shown the board-only compliance register door (F-003)', () => {
+  // compliance-summary serves ['board'] alone; the platform owner reads seat
+  // pages as an observer and must not be handed a link that ends in a refusal.
+  renderSeat('safety-director', { role: 'platform_owner', seats: [] });
+
+  expect(screen.getByText('Platform owner view. Read-only, and no board seat is held.')).toBeDefined();
+  expect(screen.queryByRole('link', { name: 'Hand-Filed Compliance Register' })).toBeNull();
+  expect(document.querySelector('a[href="/board/compliance-monitoring"]')).toBeNull();
+});
+
 test('an unbuilt module carries the placeholder stamp in the same view as a built one', () => {
   renderSeat('chair', { role: 'board', seats: ['chair'] });
 

@@ -84,16 +84,24 @@ export interface LiveTagSubject {
 export async function listLiveTagSubjects(
   organizationId: string,
   videoSessionId: string,
+  client?: QueryExecutor,
 ): Promise<LiveTagSubject[]> {
-  try {
-    return await query<LiveTagSubject>(
-      `select t.athlete_id, (a.deleted_at is not null) as athlete_deleted
+  const sql = `select t.athlete_id, (a.deleted_at is not null) as athlete_deleted
          from pilot.video_clip_tags t
          join pilot.athletes a
            on a.organization_id = t.organization_id and a.athlete_id = t.athlete_id
-        where t.organization_id = $1 and t.video_session_id = $2 and t.removed_at is null`,
-      [organizationId, videoSessionId],
+        where t.organization_id = $1 and t.video_session_id = $2 and t.removed_at is null`;
+  if (client) {
+    // Inside a transaction a failed statement aborts everything after it, so
+    // the missing-table case is asked first rather than caught.
+    const table = await client.query<{ ready: boolean }>(
+      `select to_regclass('pilot.video_clip_tags') is not null as ready`,
     );
+    if (!table.rows[0]?.ready) return [];
+    return (await client.query<LiveTagSubject>(sql, [organizationId, videoSessionId])).rows;
+  }
+  try {
+    return await query<LiveTagSubject>(sql, [organizationId, videoSessionId]);
   } catch (error) {
     if (isMissingRelation(error)) return [];
     throw error;

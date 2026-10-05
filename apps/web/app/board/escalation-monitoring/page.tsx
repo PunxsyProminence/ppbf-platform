@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
 import { formatMeasuredAt, type BoardCountMetric } from '../BoardSummaryPanel';
 
@@ -53,7 +54,7 @@ function escalationDisplay(
   return { value: String(metric.count), note: 'Open escalations staff have raised on the ladder.' };
 }
 
-export default function BoardEscalationMonitoringPage() {
+function BoardEscalationMonitoringContent() {
   const [summary, setSummary] = useState<EscalationSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -111,9 +112,6 @@ export default function BoardEscalationMonitoringPage() {
   const VALUE = 'stat-val';
 
   return (
-    // platform_owner is admitted to match BoardRoleGate in app/board/layout.tsx
-    // and the sibling compliance register page.
-    <RoleSessionGate allowedRoles={['board', 'platform_owner']}>
       <main className="room room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto max-w-7xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
@@ -181,6 +179,19 @@ export default function BoardEscalationMonitoringPage() {
           </section>
         </div>
       </main>
-    </RoleSessionGate>
+  );
+}
+
+// F-003: board only. The fetching body is a child of the gates, not their
+// sibling, so a platform owner -- or anybody the gate refuses -- fires no
+// request at all. Hooks in the page component itself ran before the gate had
+// decided, and the platform owner's 403s were drawn as "Unavailable".
+export default function BoardEscalationMonitoringPage() {
+  return (
+    <BoardOnlyNotice>
+      <RoleSessionGate allowedRoles={['board']}>
+        <BoardEscalationMonitoringContent />
+      </RoleSessionGate>
+    </BoardOnlyNotice>
   );
 }

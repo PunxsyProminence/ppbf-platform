@@ -231,19 +231,22 @@ export async function assertCanManageBoardSeats(actor: {
  * The table's foreign key only proves the account exists somewhere on the
  * platform, so without this an account from another gym -- or an athlete
  * account -- could be recorded against this board.
+ *
+ * Board membership means an active membership in THIS organization with the
+ * board role: the role a session here acts with (resolvePrincipal, #1197).
+ * pilot.accounts.role is the home role; a board member at home is not one here.
  */
 async function assertEligibleHolder(organizationId: string, accountId: string): Promise<void> {
   const row = await queryOne<{ account_id: string }>(
     `select a.account_id
      from pilot.accounts a
-     left join pilot.organization_memberships om
+     join pilot.organization_memberships om
        on om.account_id = a.account_id
       and om.organization_id = $1
       and om.active_flag = true
+      and om.role = 'board'
      where a.account_id = $2
-       and a.active_flag = true
-       and (a.organization_id = $1 or om.account_id is not null)
-       and (a.role = 'board' or om.role = 'board')`,
+       and a.active_flag = true`,
     [organizationId, accountId],
   );
 

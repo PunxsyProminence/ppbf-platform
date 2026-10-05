@@ -1,5 +1,6 @@
-import { NotFoundError } from './errors';
-import { assertGuardianMediaConsent } from './guardianConsent';
+import { withTransaction } from './db';
+import { NotFoundError, PilotError } from './errors';
+import { assertGuardianMediaConsent, GuardianConsentMissingError, type QueryExecutor } from './guardianConsent';
 import { listLiveTagSubjects } from './videoClipTags';
 import { assertConsentCoversVideo } from './videoPlaybackConsent';
 
@@ -37,14 +38,74 @@ export async function assertFilmStudyConsent(
   organizationId: string,
   videoSessionId: string,
   athleteId: string,
+  client?: QueryExecutor,
 ): Promise<void> {
-  const subjects = await listLiveTagSubjects(organizationId, videoSessionId);
+  // Passed on only when present, so the pooled reads are called exactly as
+  // they were before a client existed.
+  const inTx: [] | [QueryExecutor] = client ? [client] : [];
+  const subjects = await listLiveTagSubjects(organizationId, videoSessionId, ...inTx);
   if (subjects.some((subject) => subject.athlete_deleted)) {
     throw new FilmStudyTaggedAthleteDeletedError();
   }
   const athleteIds = [athleteId, ...subjects.map((subject) => subject.athlete_id)];
   for (const id of new Set(athleteIds)) {
-    await assertConsentCoversVideo(organizationId, id);
-    await assertGuardianMediaConsent(organizationId, id);
+    await assertConsentCoversVideo(organizationId, id, ...inTx);
+    await assertGuardianMediaConsent(organizationId, id, ...inTx);
   }
+}
+
+/*
+ * CHECK AND WRITE AS ONE TRANSACTION. Given a client, the consent read holds
+ * every subject athlete's guardian links FOR SHARE, and withdrawMediaConsent
+ * takes FOR UPDATE on the same row before it records a withdrawal. So a
+ * withdrawal already in flight is waited for and then read as withdrawn (the
+ * write never runs), and one that starts after the check waits until the
+ * write has committed. A proposal never lands after a withdrawal the check
+ * missed.
+ */
+export async function writeUnderFilmStudyConsent<T>(
+  organizationId: string,
+  videoSessionId: string,
+  athleteId: string,
+  write: (client: QueryExecutor) => Promise<T>,
+): Promise<T> {
+  return withTransaction(async (client) => {
+    await assertFilmStudyConsent(organizationId, videoSessionId, athleteId, client);
+    return write(client);
+  });
+}
+
+/*
+ * THE JOB FAILURE CODE FOR A CONSENT REFUSAL, or null for anything else.
+ * Withdrawn and photo-only get their own codes so the coach's page can say
+ * which it was; missing, unreadable and a tag naming a deleted athlete share
+ * the general one. Each is a guardian's decision or a record to fix, never a
+ * blip, so the worker retries none of them.
+ */
+export const FILM_STUDY_CONSENT_FAILURE_CODES = [
+  'SHADOW_FILM_CONSENT_WITHDRAWN',
+  'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO',
+  'SHADOW_FILM_CONSENT_BLOCKED',
+] as const;
+
+export function filmStudyConsentFailureCode(
+  error: unknown,
+): (typeof FILM_STUDY_CONSENT_FAILURE_CODES)[number] | null {
+  if (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_WITHDRAWN') {
+    return 'SHADOW_FILM_CONSENT_WITHDRAWN';
+  }
+  if (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_EXCLUDES_VIDEO') {
+    return 'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO';
+  }
+  // Named, not "any 409 or 404": the locked step also runs the proposal
+  // insert, and an unrelated conflict there must stay retryable rather than
+  // be filed as a guardian's decision.
+  if (
+    error instanceof GuardianConsentMissingError
+    || error instanceof FilmStudyTaggedAthleteDeletedError
+    || (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')
+  ) {
+    return 'SHADOW_FILM_CONSENT_BLOCKED';
+  }
+  return null;
 }
