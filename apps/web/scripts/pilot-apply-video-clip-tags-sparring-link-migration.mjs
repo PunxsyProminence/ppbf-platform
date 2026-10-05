@@ -16,10 +16,12 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Every clause is false on a database this migration has not reached
-// (videoClipTagsSparringLink.pg.test.ts). The foreign key is checked by
-// shape, not name: its columns, its target, and that its delete action nulls
-// exposure_id ALONE -- a whole-key SET NULL would fail on every delete.
+// Every clause is false on a database this migration has not reached, and
+// each is refused on its own (videoClipTagsSparringLink.pg.test.ts). The
+// foreign key is checked by shape, not name: both column lists, its target,
+// MATCH SIMPLE, and that its delete action is SET NULL of exposure_id ALONE --
+// a whole-key SET NULL would fail on every delete. The check is compared in
+// full, so a looser predicate that happens to contain the right words fails.
 const READINESS_QUERY = `
   select
     exists (
@@ -31,27 +33,39 @@ const READINESS_QUERY = `
       select 1 from pg_constraint
       where conname = 'pilot_video_clip_tags_exposure_sparring_check'
         and conrelid = to_regclass('pilot.video_clip_tags') and contype = 'c' and convalidated
-        and pg_get_constraintdef(oid) like '%exposure_id IS NULL%'
-        and pg_get_constraintdef(oid) like '%event_kind = ''sparring''::text%'
-        and pg_get_constraintdef(oid) not like '%competition%'
+        and pg_get_constraintdef(oid) = 'CHECK (((exposure_id IS NULL) OR (event_kind = ''sparring''::text)))'
     ) as sparring_only_ready,
     exists (
       select 1 from pg_constraint c
       where c.conname = 'pilot_video_clip_tags_exposure_fk'
         and c.conrelid = to_regclass('pilot.video_clip_tags') and c.contype = 'f' and c.convalidated
         and c.confrelid = to_regclass('pilot.sparring_exposure')
-        and c.confdeltype = 'n'
+        and c.confdeltype = 'n' and c.confmatchtype = 's'
         and (select array_agg(a.attname::text order by k.ord)
                from unnest(c.conkey) with ordinality k(attnum, ord)
                join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+            = array['organization_id', 'exposure_id', 'athlete_id']
+        and (select array_agg(a.attname::text order by k.ord)
+               from unnest(c.confkey) with ordinality k(attnum, ord)
+               join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k.attnum)
             = array['organization_id', 'exposure_id', 'athlete_id']
         and (select array_agg(a.attname::text)
                from unnest(c.confdelsetcols) k(attnum)
                join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
             = array['exposure_id']
     ) as same_athlete_fk_ready,
-    to_regclass('pilot.idx_sparring_exposure_org_exposure_athlete') is not null as target_index_ready,
-    to_regclass('pilot.idx_video_clip_tags_exposure') is not null as link_index_ready
+    exists (
+      select 1 from pg_index i
+      where i.indexrelid = to_regclass('pilot.idx_sparring_exposure_org_exposure_athlete')
+        and i.indrelid = to_regclass('pilot.sparring_exposure') and i.indisunique and i.indpred is null
+        and pg_get_indexdef(i.indexrelid) like '%(organization_id, exposure_id, athlete_id)'
+    ) as target_index_ready,
+    exists (
+      select 1 from pg_index i
+      where i.indexrelid = to_regclass('pilot.idx_video_clip_tags_exposure')
+        and i.indrelid = to_regclass('pilot.video_clip_tags')
+        and pg_get_indexdef(i.indexrelid) like '%(organization_id, exposure_id) WHERE (exposure_id IS NOT NULL)'
+    ) as link_index_ready
 `;
 
 export async function applyMigrationTransaction(client, sql) {

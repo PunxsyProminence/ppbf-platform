@@ -344,6 +344,67 @@ describe('video clip tags sparring link migration', () => {
     }
   });
 
+  test('the real runner refuses each wrong piece on its own, with everything else right', async () => {
+    const client = await freshDatabase('cliplink_pieces');
+    const refuses = async () => expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+      /VIDEO_CLIP_TAGS_SPARRING_LINK_NOT_READY/,
+    );
+    const fk = (local: string, target: string, onDelete: string) => `
+      alter table pilot.video_clip_tags drop constraint pilot_video_clip_tags_exposure_fk;
+      alter table pilot.video_clip_tags add constraint pilot_video_clip_tags_exposure_fk
+        foreign key (${local}) references pilot.sparring_exposure(${target}) ${onDelete}`;
+    const RIGHT = 'organization_id, exposure_id, athlete_id';
+    try {
+      await applyMigrationTransaction(client, 'select 1');
+
+      // The link column made NOT NULL.
+      await client.query('alter table pilot.video_clip_tags alter column exposure_id set not null');
+      await refuses();
+      await client.query('alter table pilot.video_clip_tags alter column exposure_id drop not null');
+
+      // The link index not partial.
+      await client.query('drop index pilot.idx_video_clip_tags_exposure');
+      await client.query('create index idx_video_clip_tags_exposure on pilot.video_clip_tags(organization_id, exposure_id)');
+      await refuses();
+      await client.query('drop index pilot.idx_video_clip_tags_exposure');
+      await client.query(
+        'create index idx_video_clip_tags_exposure on pilot.video_clip_tags(organization_id, exposure_id) where exposure_id is not null',
+      );
+      await applyMigrationTransaction(client, 'select 1');
+
+      // A predicate with the right words that admits everything.
+      await client.query('alter table pilot.video_clip_tags drop constraint pilot_video_clip_tags_exposure_sparring_check');
+      await client.query(
+        `alter table pilot.video_clip_tags add constraint pilot_video_clip_tags_exposure_sparring_check
+           check (exposure_id is null or event_kind = 'sparring' or exposure_id is not null)`,
+      );
+      await refuses();
+      await client.query('alter table pilot.video_clip_tags drop constraint pilot_video_clip_tags_exposure_sparring_check');
+      await client.query(
+        `alter table pilot.video_clip_tags add constraint pilot_video_clip_tags_exposure_sparring_check
+           check (exposure_id is null or event_kind = 'sparring')`,
+      );
+      await applyMigrationTransaction(client, 'select 1');
+
+      // SET DEFAULT of the right column; then the target columns in another order.
+      await client.query(fk(RIGHT, RIGHT, 'on delete set default (exposure_id)'));
+      await refuses();
+      await client.query(
+        'create unique index idx_cliplink_probe on pilot.sparring_exposure(organization_id, athlete_id, exposure_id)',
+      );
+      await client.query(fk(RIGHT, 'organization_id, athlete_id, exposure_id', 'on delete set null (exposure_id)'));
+      await refuses();
+      await client.query(fk(RIGHT, RIGHT, 'on delete set null (exposure_id)'));
+      await applyMigrationTransaction(client, 'select 1');
+
+      // The target index, renamed away: the key still builds on another index, readiness refuses.
+      await client.query('alter index pilot.idx_sparring_exposure_org_exposure_athlete rename to idx_cliplink_moved');
+      await refuses();
+    } finally {
+      await client.end();
+    }
+  });
+
   describe('on the migrated schema', () => {
     let client: Client;
     beforeAll(async () => {
