@@ -84,11 +84,22 @@ export default function SafetyReviewPage() {
       if (!response.ok) {
         throw new Error(payload.error || 'Unable to load the safety review.');
       }
+      // A 2xx whose body did not parse, or that is missing a list, is a failed
+      // read: defaulting the lists to [] printed "Nothing open right now" over
+      // a review nobody read (#991 class).
+      if (
+        !Array.isArray(payload.openHolds)
+        || !Array.isArray(payload.failingGates)
+        || !Array.isArray(payload.openEscalations)
+        || !Array.isArray(payload.openViolations)
+      ) {
+        throw new Error('The safety review could not be read.');
+      }
       setReview({
-        openHolds: payload.openHolds ?? [],
-        failingGates: payload.failingGates ?? [],
-        openEscalations: payload.openEscalations ?? [],
-        openViolations: payload.openViolations ?? [],
+        openHolds: payload.openHolds,
+        failingGates: payload.failingGates,
+        openEscalations: payload.openEscalations,
+        openViolations: payload.openViolations,
         violationsReadLimit: payload.violationsReadLimit ?? 0,
         // A response that does not say whether it was cut is treated as cut.
         // Fail closed: the expensive mistake here is a false all-clear.
