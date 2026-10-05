@@ -138,6 +138,11 @@ async function freshDatabase(name: string): Promise<Client> {
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+  // checkIn reads pilot.athletes.deleted_at (a deleted athlete takes no new
+  // check-in). The column belongs to the data-retention migration, which drags
+  // in most of the schema; this is its exact column statement
+  // (data_retention_deletion_migration.sql:34), as athleteDrillExposure.pg.test.ts does.
+  await client.query('alter table pilot.athletes add column if not exists deleted_at timestamptz null');
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
