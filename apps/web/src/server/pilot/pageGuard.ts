@@ -47,10 +47,10 @@ import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
  *   renders an error, because "the gym's database is down" must not be
  *   presented to a member as "you are signed out" -- the old shape did exactly
  *   that, and it makes an outage unreportable.
- * - Role matching stays an exact list membership, the same test requireRole
- *   applies. This function changes only WHERE a refusal is sent, never WHO is
- *   admitted; widening authorization is a separate decision from fixing a
- *   redirect target.
+ * - Role matching is list membership through roleEquals, the same test both
+ *   requireRole functions apply: 'admin' (legacy) and organization_admin
+ *   satisfy each other, nothing else is aliased. It was an exact match until
+ *   that alias was made one rule for every gate (roleAlias.ts).
  * - No request path is threaded in: resolvePrincipal reads the session cookie
  *   and nothing else from the request (auth.ts:241), so the URL used to build
  *   the NextRequest is immaterial.
