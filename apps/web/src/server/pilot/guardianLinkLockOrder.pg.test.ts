@@ -17,7 +17,9 @@
  *     the other: Postgres reports 40P01 every time. The reversed run is the
  *     proof that the test can fail; the shared-order run is the result.
  *   - STRESS. The shipped functions -- the sweep, both readers and a consent
- *     withdrawal -- run concurrently, many rounds, and none deadlocks.
+ *     withdrawal -- run concurrently, many rounds, and none deadlocks. Nothing
+ *     forces an interleaving here, so this is a smoke test; the deterministic
+ *     rounds are the proof.
  *
  * Spins up the same disposable, local-only embedded Postgres the other
  * migration suites use. It NEVER connects to production or staging.
@@ -235,7 +237,10 @@ beforeAll(async () => {
      values ($1, $2, 'Lock Order Athlete', '2012-03-04', 'fly', 'active', 'contact', true, $3, now(), now())`,
     [ORG_ID, ATHLETE_ID, COACH_ID],
   );
-  for (const parentId of PARENT_IDS) {
+  // Inserted out of parent_id order, so the rows come back unsorted unless
+  // the helper's ORDER BY sorts them; 'the shared order is parent_id order'
+  // depends on this.
+  for (const parentId of [PARENT_IDS[2], PARENT_IDS[0], PARENT_IDS[1]]) {
     await client.query(
       `insert into pilot.parents (organization_id, parent_id, full_name) values ($1, $2, $2)`,
       [ORG_ID, parentId],
@@ -341,7 +346,12 @@ describe('guardian_links consent locks share one order and cannot deadlock', () 
         await work;
         outcomes.push({ kind, code: null });
       } catch (error) {
-        outcomes.push({ kind, code: (error as { code?: string }).code ?? (error as Error).message });
+        outcomes.push({
+          kind,
+          code: error instanceof consent.GuardianConsentMissingError
+            ? 'consent-missing'
+            : (error as { code?: string }).code ?? (error as Error).message,
+        });
       }
     };
 
@@ -377,5 +387,7 @@ describe('guardian_links consent locks share one order and cannot deadlock', () 
     expect(outcomes).toHaveLength(250);
     expect(outcomes.filter((o) => o.code === DEADLOCK)).toEqual([]);
     expect(outcomes.filter((o) => o.kind === 'writer' && o.code !== null)).toEqual([]);
+    // A reader may refuse once a withdrawal has landed, and for no other reason.
+    expect(outcomes.filter((o) => o.kind === 'reader' && o.code !== null && o.code !== 'consent-missing')).toEqual([]);
   });
 });

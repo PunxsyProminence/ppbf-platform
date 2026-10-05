@@ -30,8 +30,17 @@ export interface QueryExecutor {
  * the sorted order (the lock is taken above the sort), so the order is now
  * stated rather than inherited.
  *
- * The one-row lock takes a single row and waits on nothing else, so it cannot
- * be half of a cycle; it lives here only so there is one place to look.
+ * THE ORDER HOLDS WITHIN ONE STATEMENT. A transaction that takes the set lock
+ * twice for the same athlete gets a fresh snapshot the second time, and a
+ * guardian link committed in between can sit ahead of rows it already holds.
+ * Lock an athlete's set once per transaction where you can. (Film Study still
+ * reads twice per athlete; the window needs a link inserted mid-transaction
+ * while a sweep runs, and the worst case is one transaction aborted with
+ * 40P01, never a consent read that passes.)
+ *
+ * The one-row lock takes a single row. Its callers take no other
+ * guardian_links lock in the same transaction, which is what keeps it out of
+ * a cycle; it lives here so there is one place to look.
  */
 export type GuardianLinkLockMode = 'share' | 'update';
 
