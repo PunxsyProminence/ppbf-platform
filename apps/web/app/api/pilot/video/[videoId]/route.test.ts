@@ -13,13 +13,31 @@ jest.mock('@/src/server/pilot/http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+// withTransaction hands its callback a stand-in client and records the order
+// of BEGIN, the consent reads, the mint and COMMIT in mockTransactionEvents.
+const mockTransactionEvents: string[] = [];
+const MOCK_TX = { query: jest.fn() };
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    mockTransactionEvents.push('begin');
+    try {
+      const result = await fn(MOCK_TX);
+      mockTransactionEvents.push('commit');
+      return result;
+    } catch (error) {
+      mockTransactionEvents.push('rollback');
+      throw error;
+    }
+  }),
 }));
 
 jest.mock('@/src/server/pilot/blob', () => ({
-  getPilotVideoSasUrl: jest.fn(() => 'https://blob.example/sas'),
+  getPilotVideoSasUrl: jest.fn(() => {
+    mockTransactionEvents.push('mint');
+    return 'https://blob.example/sas';
+  }),
 }));
 
 // Only checkGuardianMediaConsent is replaced; the rest of the module (and so
@@ -840,5 +858,70 @@ describe('GET /api/pilot/video/[videoId] tagged clips', () => {
     const res = await call();
 
     expect(res.status).toBe(404);
+  });
+});
+
+/*
+ * CHECK AND MINT IN ONE TRANSACTION (mintUnderPlaybackConsent). The real
+ * lock behaviour is proven on PostgreSQL by playbackConsentRace.pg.test.ts;
+ * these pin the route's wiring: every consent read gets the transaction's
+ * client, and the mint happens after them and before COMMIT.
+ */
+describe('GET /api/pilot/video/[videoId] mints under the consent lock', () => {
+  beforeEach(() => {
+    mockTransactionEvents.length = 0;
+    mockCheckConsent.mockImplementation(async (_org, athleteId, client) => {
+      mockTransactionEvents.push(`consent:${athleteId}:${client === MOCK_TX ? 'tx' : 'pool'}`);
+      return consentResult([guardian(`par-${athleteId}`, 'signed', true)]);
+    });
+  });
+
+  test('a single athlete: the consent read and the mint share one transaction', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockTransactionEvents).toEqual(['begin', 'consent:ath-1:tx', 'mint', 'commit']);
+  });
+
+  test('a tagged clip: every athlete is read on the transaction before the mint', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockTagSubjects.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', athlete_deleted: false },
+      { athlete_id: 'ath-2', athlete_deleted: false },
+    ] as Awaited<ReturnType<typeof listLiveTagSubjects>>);
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockTransactionEvents).toEqual(['begin', 'consent:ath-1:tx', 'consent:ath-2:tx', 'mint', 'commit']);
+  });
+
+  test('a refusal rolls the transaction back and mints nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockImplementation(async (_org, athleteId, client) => {
+      mockTransactionEvents.push(`consent:${athleteId}:${client === MOCK_TX ? 'tx' : 'pool'}`);
+      return consentResult([guardian('par-1', 'withdrawn', false)]);
+    });
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    expect(mockTransactionEvents).toEqual(['begin', 'consent:ath-1:tx', 'rollback']);
+  });
+
+  test('unattributed team footage has no guardian rows to lock and opens no transaction', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: null }));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockTransactionEvents).toEqual(['mint']);
   });
 });
