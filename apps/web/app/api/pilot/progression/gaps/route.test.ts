@@ -133,6 +133,14 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
     expect(items.map((i) => i.gap_description)).toEqual([COACH_TEXT, 'Drops lead hand']);
   });
 
+  test('the read selects detected_from and detection_data, which the wording needs', async () => {
+    await read(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('from pilot.progression_gaps');
+    expect(sql).toMatch(/\bdetected_from\b/);
+    expect(sql).toMatch(/\bdetection_data\b/);
+  });
+
   test.each([
     ['athlete', principal({ role: 'athlete', athleteId: 'ath-1' })],
     ['coach', principal({ role: 'coach', athleteId: null })],

@@ -651,16 +651,20 @@ export interface FamilyGapSource {
  */
 export function familyGapDescription(gap: FamilyGapSource): string {
   if (ruleFromDetectedFrom(gap.detected_from) !== 'load_jumped') return gap.gap_description;
-  const ratio = loadJumpRatioShown(gap.detection_data);
+  const ratio = loadJumpRatioShown(gap.detection_data, gap.gap_description);
   if (ratio === null) return gap.gap_description;
   return `Your training this week was about ${ratio} times your usual week. Your coach is keeping an eye on it.`;
 }
 
-function loadJumpRatioShown(data: Record<string, unknown> | null): string | null {
+function loadJumpRatioShown(data: Record<string, unknown> | null, storedText: string): string | null {
   if (!data) return null;
   const shown = data.ratio_shown;
   if (typeof shown === 'string' && /^\d+\.\d$/.test(shown)) return shown;
-  // Gaps confirmed before ratio_shown existed carry only the 2-decimal ratio.
+  // Gaps confirmed before ratio_shown existed: the coach text itself says
+  // "(2.4x," -- take that, because rounding the stored 2-decimal ratio again
+  // can disagree with it (2.449 -> 2.45 -> 2.5). Then the stored ratio.
+  const fromText = /\((\d+\.\d)x,/.exec(storedText);
+  if (fromText) return fromText[1];
   const ratio = typeof data.ratio === 'number' ? data.ratio : Number.NaN;
   return Number.isFinite(ratio) && ratio > 0 ? ratio.toFixed(1) : null;
 }

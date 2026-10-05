@@ -588,10 +588,18 @@ describe('familyGapDescription', () => {
 
   test('a gap confirmed before ratio_shown existed falls back to its stored ratio, rounded to one decimal', () => {
     expect(familyGapDescription({
-      gap_description: 'Training load jumped: 2100 ... (2.1x, ...). Worth a look.',
+      gap_description: 'Training load jumped (coach text with no ratio in it). Worth a look.',
       detected_from: RULE6,
       detection_data: { acute_load: 2100, usual_weekly_load: 1000, ratio: 2.1, prior_weeks_with_load: 4 },
     })).toBe('Your training this week was about 2.1 times your usual week. Your coach is keeping an eye on it.');
+  });
+
+  test('a gap confirmed before ratio_shown existed takes the ratio its own coach text shows, not a second rounding', () => {
+    expect(familyGapDescription({
+      gap_description: 'Training load jumped: 2449 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.',
+      detected_from: RULE6,
+      detection_data: { acute_load: 2449, usual_weekly_load: 1000, ratio: 2.45, prior_weeks_with_load: 4 },
+    })).toBe('Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.');
   });
 
   test.each([
