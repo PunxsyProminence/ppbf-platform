@@ -307,7 +307,11 @@ async function linkedClips(
   try {
     return await listLinkedClipsForExposures(principal.organizationId, athleteId, exposureIds);
   } catch (error) {
-    console.error({ event: 'sparring-linked-clips-read-failed', name: error instanceof Error ? error.name : 'unknown' });
+    console.error({
+      event: 'sparring-linked-clips-read-failed',
+      name: error instanceof Error ? error.name : 'unknown',
+      code: (error as { code?: unknown })?.code ?? null,
+    });
     return null;
   }
 }

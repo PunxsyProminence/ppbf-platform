@@ -562,3 +562,26 @@ describe('linking a sparring tag to its sparring entry (Jason 2026-10-05: one en
     expect(await res.text()).not.toContain('names the child');
   });
 });
+
+describe('which sparring entry a tag links to is that athlete\'s record', () => {
+  test('a coach sees the link on their own athlete\'s tag, not on a partner\'s', async () => {
+    mockListForVideo.mockResolvedValueOnce([
+      tagRow({ tag_id: 'vct-1', athlete_id: 'ath-1', exposure_id: 'exp-1' }),
+      tagRow({ tag_id: 'vct-2', athlete_id: 'ath-2', exposure_id: 'exp-partner' }),
+    ]);
+    mockAccessible.mockResolvedValue(new Set(['ath-1']));
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params)).json();
+
+    expect(body.items.map((item: { tag_id: string; exposure_id: string | null }) => [item.tag_id, item.exposure_id]))
+      .toEqual([['vct-1', 'exp-1'], ['vct-2', null]]);
+    expect(JSON.stringify(body)).not.toContain('exp-partner');
+  });
+
+  test('an organization admin sees every link', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockListForVideo.mockResolvedValueOnce([tagRow({ tag_id: 'vct-2', athlete_id: 'ath-2', exposure_id: 'exp-partner' })]);
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/video/vid-1/tags'), params)).json();
+    expect(body.items[0].exposure_id).toBe('exp-partner');
+  });
+});

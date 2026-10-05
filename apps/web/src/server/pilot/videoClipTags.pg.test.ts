@@ -38,15 +38,17 @@ const PREREQUISITES = [
   'pilot_slice_postgres_capture_sessions_migration.sql',
   'pilot_slice_postgres_external_competition_migration.sql',
   'pilot_slice_postgres_publications_migration.sql',
+  // Before video-clip-tags, as production applies them; the sparring link
+  // below needs pilot.sparring_exposure.
+  'pilot_slice_postgres_activity_log_migration.sql',
+  'pilot_slice_postgres_sparring_exposure_and_load_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_video_clip_tags_migration.sql';
 // Every tag read selects exposure_id since the sparring link landed, so the
-// migrated database carries it too (proven in videoClipTagsSparringLink.pg.test.ts).
-const FOLLOW_ON = [
-  'pilot_slice_postgres_activity_log_migration.sql',
-  'pilot_slice_postgres_sparring_exposure_and_load_migration.sql',
-  'pilot_slice_postgres_video_clip_tags_sparring_link_migration.sql',
-];
+// migrated database carries it too (proven in videoClipTagsSparringLink.pg.test.ts,
+// on the full production schema). This suite does not touch sparring_exposure
+// itself, so its later alters (session-date, contact-stage) are not applied.
+const FOLLOW_ON = ['pilot_slice_postgres_video_clip_tags_sparring_link_migration.sql'];
 const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-video-clip-tags-migration.mjs');
 
 const ORG = 'org-cliptags-a';

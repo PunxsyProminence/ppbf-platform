@@ -555,8 +555,12 @@ describe('video clip tags sparring link migration', () => {
       const bout = await tags.addClipTag({ ...base, videoSessionId: 'vid-5', eventKind: 'competition', competitionId: COMPETITION });
       expect(await tags.setClipTagExposure({ organizationId: ORG, tagId: bout.tag_id, exposureId: 'exp-a-1' })).toBeNull();
 
+      // Removed while still linked: listLinkedClipsForExposures must leave it out.
+      await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-1' });
       await tags.removeClipTag({ organizationId: ORG, tagId: tag.tag_id, removedByAccountId: COACH });
-      expect(await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-1' })).toBeNull();
+      expect(await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-2' })).toBeNull();
+      const { rows } = await client.query(`select exposure_id from pilot.video_clip_tags where tag_id = $1`, [tag.tag_id]);
+      expect(rows).toEqual([{ exposure_id: 'exp-a-1' }]);
     });
 
     test('listLinkedClipsForExposures returns this athlete\'s live, visible clips and hides blocked ones', async () => {
@@ -571,7 +575,7 @@ describe('video clip tags sparring link migration', () => {
       // vid-6: A linked to exp-a-1, GONE tagged too, then GONE is deleted -- hidden.
       await insertTag(client, 'tag-a-vid6', { videoId: 'vid-6', exposureId: 'exp-a-1' });
       await insertTag(client, 'tag-gone-vid6', { videoId: 'vid-6', athleteId: GONE });
-      // vid-4's tag (linked, then removed) and vid-5's bout tag must not appear either.
+      // vid-4's tag is removed while linked to exp-a-1; it must not appear.
 
       const before = await tags.listLinkedClipsForExposures(ORG, ATHLETE_A, ['exp-a-1', 'exp-a-2', 'exp-partner-1']);
       expect(Object.fromEntries(before)).toEqual({

@@ -88,9 +88,22 @@ export async function GET(
      * blocks").
      */
     const blocked = (await blockedClipVideoIds(principal.organizationId, [videoId])).has(videoId);
+    /*
+     * A partner's tag is listed (decision 3: the clip is shared), but which
+     * sparring entry it links to is that athlete's sparring record, which a
+     * coach who is not theirs cannot read. So a coach sees the link only on
+     * their own athletes' tags.
+     */
+    const own = isOrganizationAdminRole(principal.role)
+      ? null
+      : await accessibleAthleteIds(principal, items.map((item) => item.athlete_id));
     return NextResponse.json({
       consent_blocked: blocked,
-      items: blocked ? items.map((item) => ({ ...item, note: '' })) : items,
+      items: items.map((item) => ({
+        ...item,
+        ...(blocked ? { note: '' } : {}),
+        ...(own && !own.has(item.athlete_id) ? { exposure_id: null } : {}),
+      })),
     });
   } catch (error) {
     return jsonError(error);
