@@ -97,9 +97,13 @@ export function filmStudyConsentFailureCode(
   if (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_EXCLUDES_VIDEO') {
     return 'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO';
   }
+  // Named, not "any 409 or 404": the locked step also runs the proposal
+  // insert, and an unrelated conflict there must stay retryable rather than
+  // be filed as a guardian's decision.
   if (
     error instanceof GuardianConsentMissingError
-    || (error instanceof PilotError && (error.status === 409 || error.status === 404))
+    || error instanceof FilmStudyTaggedAthleteDeletedError
+    || (error instanceof PilotError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')
   ) {
     return 'SHADOW_FILM_CONSENT_BLOCKED';
   }

@@ -1,6 +1,7 @@
 import type { QueryResultRow } from 'pg';
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
@@ -46,12 +47,18 @@ export interface QueryExecutor {
 
 export const MEDIA_CONSENT_WAIVER_TYPE = 'photo_media';
 
-export class GuardianConsentMissingError extends Error {
+/*
+ * A ConflictError so that a route's 409 carries GUARDIAN_CONSENT_MISSING:
+ * jsonError emits a PilotError's code, and the coach's Film Study page needs
+ * it to say which refusal this was. Status and message are what they were.
+ */
+export class GuardianConsentMissingError extends ConflictError {
   constructor(readonly athleteId: string, readonly missingParentIds: string[]) {
     super(
       missingParentIds.length > 0
         ? `Blocked: guardian media consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Every guardian must have a current, signed photo/video consent on file before this can be approved.`
         : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
+      'GUARDIAN_CONSENT_MISSING',
     );
     this.name = 'GuardianConsentMissingError';
   }
@@ -157,7 +164,7 @@ async function checkGuardianConsentOfType(
   const guardianIds = await readRows<{ parent_id: string }>(
     client,
     `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2
-     ${client ? 'order by parent_id for share' : ''}`,
+     ${client ? 'for share' : ''}`,
     [organizationId, athleteId],
   ).then((rows) => rows.map((row) => row.parent_id));
 

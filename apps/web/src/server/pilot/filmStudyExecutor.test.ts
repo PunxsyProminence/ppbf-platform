@@ -380,6 +380,18 @@ describe('film study executor re-checks consent when the job runs', () => {
     expect(await tempDirsCreated()).toEqual([]);
   });
 
+  test('a conflict from the proposal insert is not filed as a consent refusal', async () => {
+    // The insert runs inside the consent-held step, so the classifier must
+    // name consent errors rather than treat any 409 as one.
+    const { ConflictError } = jest.requireActual<typeof import('./errors')>('./errors');
+    mockCreateProposal.mockRejectedValue(new ConflictError('some unrelated conflict', 'SOMETHING_ELSE'));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).not.toMatch(/^SHADOW_FILM_CONSENT_/);
+    expect(mockFail).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), { retryable: false });
+  });
+
   test('a database fault while reading consent is retryable, never read as consent', async () => {
     mockCheckConsent.mockRejectedValue(new Error('connection reset'));
 

@@ -593,6 +593,7 @@ describe('requesting Film Study analysis', () => {
     ['GUARDIAN_CONSENT_WITHDRAWN', WITHDRAWN],
     ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', PHOTO_ONLY],
     ['GUARDIAN_CONSENT_UNREADABLE', OTHER],
+    ['GUARDIAN_CONSENT_MISSING', OTHER],
   ])('a request refused with %s says why, in the approved words', async (code, sentence) => {
     global.fetch = mockFetch({
       videos: () => [video({ status: 'ready' })],
