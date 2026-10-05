@@ -320,7 +320,7 @@ describe('POST /api/pilot/admin/athlete-consent -- the write', () => {
     );
   });
 
-  test('recording a CONSENT never retracts anything -- the sweep belongs to withdrawal alone', async () => {
+  test('recording a VIDEO consent never retracts anything -- the sweep is for withdrawal and photo-only', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
     await POST(jsonRequest(GRANT_BODY));
@@ -494,5 +494,53 @@ describe('POST /api/pilot/admin/athlete-consent -- audit and the withdrawal swee
     expect(response.status).toBe(500);
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ ok: false }));
+  });
+});
+
+/*
+ * Owner ruling (Jason, 2026-10-05, "A: Retract (Recommended)"): a consent
+ * that leaves a guardian photo-only retracts published video, and staff
+ * recording it does exactly what the guardian's own console does.
+ */
+describe('POST /api/pilot/admin/athlete-consent -- photo-only grant', () => {
+  test('a staff-recorded photo-only consent retracts published media, exactly as the guardian console does', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSuppress.mockResolvedValueOnce(['pub-9']);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: false }));
+
+    expect(response.status).toBe(200);
+    expect(mockSuppress).toHaveBeenCalledWith({
+      organizationId: 'org-a',
+      athleteId: 'ath-1',
+      suppressedByAccountId: 'acct-admin',
+      reason: 'guardian_consent_photo_only',
+    });
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({ ok: true, waiver_id: 'wv-1', retracted_publication_ids: ['pub-9'] }),
+    );
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'video_publication',
+        entity_id: 'pub-9',
+        details: expect.objectContaining({ action: 'publication_retracted_on_consent_photo_only', parent_id: 'p1' }),
+      }),
+    );
+  });
+
+  test('a failed photo-only sweep is a 500 and is audited -- the consent committed, the safety action did not', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSuppress.mockRejectedValueOnce(new Error('suppression failed'));
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: false }));
+
+    expect(response.status).toBe(500);
+    expect(mockGrant).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ ok: false, waiver_id: 'wv-1' }));
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ action: 'consent_photo_only_suppression_failed' }),
+      }),
+    );
   });
 });
