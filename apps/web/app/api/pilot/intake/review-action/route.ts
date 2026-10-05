@@ -170,8 +170,8 @@ export async function POST(request: NextRequest) { // NOSONAR
     // Authorize the actor against THIS case before any status mutation. The
     // former gate here -- `if (intakeCase.primary_athlete_id) await
     // assertActorCanAccessAthlete(...)` -- was dead: intake_cases.primary_athlete_id
-    // is NULL on every row (no code path writes it; see resolveIntakeCaseAuthority
-    // in intake.ts), so the athlete check never ran and requireRole admitted every
+    // was NULL on every row (no code path wrote it until 2026-10-05; see
+    // resolveIntakeCaseAuthority in intake.ts), so the athlete check never ran and requireRole admitted every
     // coach in the organization to act on any case. The sibling READ routes
     // (cases/get, document-review, document-link) already gate on
     // assertActorCanAccessIntakeCase, which narrows an owner-less case to
