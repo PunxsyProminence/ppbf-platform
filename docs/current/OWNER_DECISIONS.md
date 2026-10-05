@@ -164,6 +164,70 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-016 -- Admin video-compliance queue: the consent check applies to playback; no playback link for withdrawn or photo-only consent (option B)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Owner decisions" lane session (transcript `~/.claude/projects/C--Dev/1502bc54-c4b6-4d57-8da3-a3d5bdf1a8f4.jsonl`, tool use `toolu_014RsYkmZvgM6Tck2MMz5U4e`; asked 2026-10-05T15:03:25.163Z, answered 2026-10-05T16:13:32.006Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
+
+Asked (official form): "Compliance-queue playback when consent is withdrawn or photo-only. GET /api/pilot/admin/video-compliance (route.ts:136-139, origin/main a505e8e3) creates a 60-minute playback link for each pending_review video with no guardian media-consent check. Normal playback refuses withdrawn and photo-only consent (owner decision 2026-08-28). Approval is already blocked without consent (route.ts:321-322). (B) Apply the same consent check: no playback link, show 'Consent withdrawn' / 'Photos only'; reject and request changes still work (Recommended). (A) Keep playback for compliance review and mark it in the code as deliberate. (C) Show details only (title, athlete, uploader) with no playback and no consent label."
+
+Plain English as asked: "if a parent has pulled video permission, can an admin still watch that kid's pending video in the review queue? The admin can't approve it anyway, only reject it, so watching it isn't needed."
+
+Options: "B: Apply consent check (Recommended)" (No playback; the queue shows 'Consent withdrawn' or 'Photos only'. The admin can still reject or send it back.); "A: Keep playback" (The admin can still watch it for review; the code is marked as a deliberate exception.); "C: Details only" (No playback; the item shows its details with no consent label.); "Not now" (Leave it as is for now.). Jason chose *"B: Apply consent check (Recommended)"*.
+
+**Ruling: B. The admin video-compliance queue applies the same guardian media-consent check as normal playback.** A pending_review video whose consent is withdrawn or photo-only gets no playback link, and the queue shows "Consent withdrawn" or "Photos only". Reject and request changes still work. Keeping playback (A) and details-only with no label (C) were not chosen.
+
+Extends the owner decision of 2026-08-28 (normal playback refuses withdrawn and photo-only consent). Governs GET /api/pilot/admin/video-compliance.
+
+---
+
+## OD-2026-10-05-015 -- Load-flag family wording: athletes and parents read a plainer sentence when a coach confirms "load_jumped" (option A, draft wording approved as written)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Owner decisions" lane session (transcript `~/.claude/projects/C--Dev/1502bc54-c4b6-4d57-8da3-a3d5bdf1a8f4.jsonl`, tool use `toolu_01KjfyVoAN3QrK1G1FcYXM5b`; asked 2026-10-05T14:03:48.809Z, answered 2026-10-05T15:00:23.127Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. The one tool call carried three questions and Jason answered all three together; the other two are OD-2026-10-05-013 (answered "Explain in layman" and re-asked) and OD-2026-10-05-014. New; edits no earlier entry.
+
+Asked (official form): "Load-flag family wording. When a coach confirms the 'load_jumped' suggestion, what should athletes and parents read? Today they see the coach text: 'Training load jumped: 2400 over the last 7 days against a usual week of 1000 (…session RPE x minutes, unvalidated). Worth a look.' (A) Plainer athlete/parent text for this rule (Recommended), draft: 'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.' (B) Keep the coach text as is. (C) Don't show this flag to athletes or parents; staff only."
+
+Plain English as asked: "when a coach agrees a kid's training jumped, the kid and parents currently see the coach's technical sentence. Should they get a simple sentence, the same one, or nothing?"
+
+Options: "A: Plain text (Recommended)" (Separate athlete/parent sentence using the draft wording (edit it via Other if you want).); "B: Keep coach text" (No change; families read the technical sentence.); "C: Staff only" (Athletes and parents don't see confirmed load flags.); "Not now" (Leave this for later.). Jason chose *"A: Plain text (Recommended)"*, with no Other text, so the draft wording stands unedited.
+
+**Ruling: A. Athletes and parents read a separate plain sentence for the confirmed "load_jumped" flag, worded as approved: "Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it."** The 2.4 in the draft is an example ratio; the question does not say how the figure is filled in per athlete. Keeping the coach text (B) and staff-only (C) were not chosen. The coach-facing text is unchanged.
+
+Governs the athlete and parent wording for the "load_jumped" load-flag rule.
+
+---
+
+## OD-2026-10-05-014 -- Quarantined clips in the staff clip list keep a placeholder title, "Awaiting safety check", until released (option A)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Owner decisions" lane session (transcript `~/.claude/projects/C--Dev/1502bc54-c4b6-4d57-8da3-a3d5bdf1a8f4.jsonl`, tool use `toolu_01KjfyVoAN3QrK1G1FcYXM5b`; asked 2026-10-05T14:03:48.809Z, answered 2026-10-05T15:00:23.127Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. The one tool call carried three questions and Jason answered all three together; this is the second. See OD-2026-10-05-013 and -015. New; edits no earlier entry.
+
+Asked (official form): "Quarantined clip titles. In the staff clip list (listTaggedClips), what should a tagged clip that hasn't passed its safety scan (status not yet released) show? (A) Show it, but replace the title with 'Awaiting safety check' until it's released (Recommended). (B) Hide it from the list completely until it's released. (C) Keep it as is: show the title and status."
+
+Plain English as asked: "a video that's still being virus-checked can't play yet, but its name shows in coaches' clip lists, and the name could include a kid's name. Should we hide the name until it clears, hide the whole entry, or leave it?"
+
+Options: "A: Placeholder title (Recommended)" (The clip is still listed, so coaches know it's there, with the title hidden until the scan releases it.); "B: Hide until released" (The clip isn't listed at all until it passes the scan.); "C: Keep as is" (No change: the title and status show.); "Not now" (Leave this for later.). Jason chose *"A: Placeholder title (Recommended)"*.
+
+**Ruling: A. In the staff clip list (listTaggedClips), a tagged clip that has not passed its safety scan is still listed, with its title replaced by "Awaiting safety check" until it is released.** Hiding the entry (B) and keeping the title and status (C) were not chosen.
+
+Governs listTaggedClips.
+
+---
+
+## OD-2026-10-05-013 -- Skill Path skills 02-12: progress comes from a drill-code crosswalk Jason approves once (option A, "Crosswalk")
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Owner decisions" lane session (transcript `~/.claude/projects/C--Dev/1502bc54-c4b6-4d57-8da3-a3d5bdf1a8f4.jsonl`). The question was asked twice. First ask: tool use `toolu_01KjfyVoAN3QrK1G1FcYXM5b` (asked 2026-10-05T14:03:48.809Z, answered 2026-10-05T15:00:23.127Z), the first of three questions in one call; Jason's answer to this item was "Explain in layman", not a choice, and he answered the other two (OD-2026-10-05-014, -015). The lane then re-asked this item alone, in shorter wording, as tool use `toolu_0188kRgBj6SmzjaVFjKhNvrJ` (asked 2026-10-05T15:00:35.329Z, answered 2026-10-05T15:02:04.744Z), and that answer is the ruling. Read by script from that transcript (records pass, 2026-10-05); question and option text below is the re-ask as printed by the script. New; edits no earlier entry.
+
+Asked (official form, the re-ask): "Skills 02-12 position. How should the Skill Path show progress for SKILL-02..SKILL-12? (A) Code crosswalk (Recommended): Claude drafts the drill-code list for each family, you approve it once, and the page fills from assigned drills. (B) Coach-set status per family: migration plus a coach screen to mark each athlete's level by hand. (C) Both."
+
+Plain English as asked: "should the app fill in each kid's jab, hook and other skills from the drills they're already assigned (you OK the list once), should coaches rate each kid by hand, or both?"
+
+Options: "A: Crosswalk (Recommended)" (Automatic from assigned drills after you approve the list once. Shows the drills, not a level. No coach chore.); "B: Coach-set level" (Coaches mark each kid's level per skill on a new screen. Needs a database change.); "C: Both" (Automatic drill list plus a coach-set level. Biggest build.); "Not now" (Leave skills 2-12 as 'Not mapped yet'.). Jason chose *"A: Crosswalk (Recommended)"*.
+
+**Ruling: A. Skill Path progress for SKILL-02..SKILL-12 is filled automatically from assigned drills through a drill-code crosswalk per skill family, drafted by Claude and approved by Jason once.** It shows the drills, not a level. No migration and no new coach task. Coach-set level (B), both (C) and leaving 02-12 "Not mapped yet" were not chosen.
+
+Governs the Skill Path for SKILL-02..SKILL-12. The crosswalk list itself still needs Jason's one-time approval.
+
+---
+
 ## OD-2026-10-05-012 -- Coach-set competence level: the "Set a level" screen wording approved as written, and the three technical calls overwatch relayed to the lane
 
 **Provenance: PRIMARY (the wording); the three calls are overwatch's, not Jason's.** Jason's answer to an AskUserQuestion asked in the lane session "Coach sets an athlete's competence level by hand" (`local_934bc50c-e7bb-4fef-bf01-d741ebaf2b81`; transcript `~/.claude/projects/C--Dev/803875ac-553a-4ef7-bd59-6fbce0041866.jsonl`, tool use `toolu_01Ckf68W3b4VpEAkU8RDqzDE`; asked 2026-10-05T13:05:04.533Z, answered 2026-10-05T13:56:44.912Z). Read by script from that transcript (records pass, 2026-10-05). The three calls come from overwatch's message to that lane (overwatch transcript `~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, `send_message` to `local_934bc50c-e7bb-4fef-bf01-d741ebaf2b81`, 2026-10-05T12:39:52.015Z). New; extends OD-2026-10-03-002 section 6 (how an athlete's competence level is recorded).
