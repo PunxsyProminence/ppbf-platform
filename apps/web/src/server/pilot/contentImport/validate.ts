@@ -574,10 +574,19 @@ function resolveBlankKeys(parsed: ParsedPackage, baseline: ParsedPackage | undef
 // ---------------------------------------------------------------------------
 // References
 
+/** The contact ladder, lowest to highest (the vocabulary's order; athleteContactCaps.ts ranks by it too). */
+const CONTACT_LADDER: readonly string[] = VOCABULARIES.contact_level.values;
+
 interface Targets {
   known(target: ReferenceTarget, value: string): boolean;
   /** A committed drill (not one in this package) whose current version is withdrawn. */
   withdrawnDrill(lineage: string): boolean;
+  /**
+   * The linked drill's own contact_level: the package's drill row when the
+   * package carries the drill, otherwise the committed one. undefined when
+   * unknown or not on the ladder (that has its own finding).
+   */
+  drillContactLevel(lineage: string): string | undefined;
   describe(target: ReferenceTarget): string;
 }
 
@@ -590,6 +599,12 @@ function buildTargets(parsed: ParsedPackage, references: ReferenceSets): Targets
     [...packageKeys('seed_competence_levels.csv', 'ordinal')].filter(isIntegerText).map((value) => Number(integerText(value))),
   );
   const drills = packageKeys('seed_drill_library.csv', 'drill_id');
+  const packageDrillContact = new Map<string, string>();
+  for (const row of parsed.files.find((f) => f.spec.file === 'seed_drill_library.csv')?.rows ?? []) {
+    const id = row.values.drill_id;
+    // A repeated drill_id is duplicate_id; the first row stands here.
+    if (id && !packageDrillContact.has(id)) packageDrillContact.set(id, row.values.contact_level ?? '');
+  }
   const templates = packageKeys('seed_workout_templates.csv', 'template_id');
   const scripts = packageKeys('seed_session_scripts.csv', 'script_id');
   const blocks = packageKeys('seed_session_script_blocks.csv', 'block_id');
@@ -624,6 +639,14 @@ function buildTargets(parsed: ParsedPackage, references: ReferenceSets): Targets
       // from the reference set.
       if (drills.has(lineage) || isNewId(lineage)) return false;
       return references.drills.get(lineage)?.active === false;
+    },
+    drillContactLevel(lineage) {
+      const level = packageDrillContact.has(lineage)
+        ? packageDrillContact.get(lineage)
+        : isNewId(lineage) ? undefined : references.drills.get(lineage)?.contactLevel;
+      // Blank is never a valid drill contact_level offline (it is required on
+      // a drill row, missing_required); a committed one is never blank.
+      return level && CONTACT_LADDER.includes(level) ? level : undefined;
     },
     describe(target) {
       switch (target) {
@@ -670,6 +693,28 @@ function checkReferences(file: ParsedFile, targets: Targets, out: Finding[]): vo
               `drill '${item}' is withdrawn (its current version is inactive), so a step cannot link it. `
               + 'Write the step in words (free_text_drill), or restore the drill first.',
             ));
+          }
+          // A step may not run a linked drill at more contact than the drill
+          // itself involves (its contact_level: "the most contact the drill
+          // involves", specs/drills.ts). The step's blank is 'none', its
+          // column default. An unknown value on either side already has its
+          // own finding and is not compared. PR #1208's design; Build List
+          // row from PR #1114's reviewer.
+          // Only the files whose step carries contact (template items, script
+          // blocks); a transfer claim's drill_id has no contact of its own.
+          if (column.references === 'drill' && column.role === 'reference' && file.spec.columns.some((c) => c.name === 'contact_level')) {
+            const step = row.values.contact_level || 'none';
+            const drill = targets.drillContactLevel(item);
+            if (drill !== undefined && CONTACT_LADDER.includes(step) && CONTACT_LADDER.indexOf(step) > CONTACT_LADDER.indexOf(drill)) {
+              out.push(finding(
+                file,
+                row,
+                'contact_level',
+                'step_contact_above_drill',
+                `contact_level ${step} is above the linked drill's own contact_level (drill '${item}' is ${drill}), so the step cannot link it at that contact. `
+                + `Lower the step to ${drill} or less, link a drill at that contact, or write the step in words (free_text_drill).`,
+              ));
+            }
           }
         }
       }

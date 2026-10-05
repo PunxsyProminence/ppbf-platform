@@ -204,6 +204,7 @@ export type FindingCode =
   | 'duplicate_value'
   | 'orphan_reference'
   | 'withdrawn_drill'
+  | 'step_contact_above_drill'
   | 'minted_id_exists'
   | 'literal_organization'
   | 'literal_account'
