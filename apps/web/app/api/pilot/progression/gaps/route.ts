@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { createProgressionGap, getAthleteGaps } from '@/src/server/pilot/progression';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { familyGapDescription } from '@/src/server/pilot/progressionSuggestions';
 
 export const runtime = 'nodejs';
 
@@ -21,8 +22,17 @@ export async function GET(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, athleteId);
 
     const gaps = await getAthleteGaps(principal.organizationId, athleteId, status || undefined);
+    // Athletes and parents read the family wording (Jason 2026-10-05); staff
+    // read the stored text. Detection fields never leave the server.
+    const familyReader = principal.role === 'athlete' || principal.role === 'parent';
+    const items = gaps.map(({ detected_from, detection_data, ...gap }) => ({
+      ...gap,
+      gap_description: familyReader
+        ? familyGapDescription({ gap_description: gap.gap_description, detected_from, detection_data })
+        : gap.gap_description,
+    }));
 
-    return NextResponse.json({ items: gaps });
+    return NextResponse.json({ items });
   } catch (error) {
     return jsonError(error);
   }
