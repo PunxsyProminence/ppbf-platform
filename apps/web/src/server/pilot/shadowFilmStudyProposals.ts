@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import type { QueryExecutor } from './guardianConsent';
 
 export type FilmStudyProposalReviewState =
   | 'pending_review'
@@ -111,8 +112,13 @@ export async function createFilmStudyProposal(input: {
   observationText: string;
   modelDeployment: string;
   framesAnalyzed: number;
-}): Promise<FilmStudyProposalRow> {
-  const row = await queryOne<FilmStudyProposalRow>(
+}, client?: QueryExecutor): Promise<FilmStudyProposalRow> {
+  // With a client, the insert joins that client's transaction (the worker's
+  // consent-held write, filmStudyConsent.ts).
+  const insertOne = client
+    ? async (text: string, params: unknown[]) => (await client.query<FilmStudyProposalRow>(text, params)).rows[0] ?? null
+    : (text: string, params: unknown[]) => queryOne<FilmStudyProposalRow>(text, params);
+  const row = await insertOne(
     `insert into pilot.shadow_film_study_proposals
        (proposal_id, organization_id, athlete_id, video_session_id, job_id,
         origin, observation_text, evidence_id, model_deployment, frames_analyzed)

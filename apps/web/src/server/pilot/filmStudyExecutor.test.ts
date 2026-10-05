@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 
 import { processNextShadowJob } from './shadowJobProcessor';
 import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type ShadowJob } from './shadowJobQueue';
-import { queryOne } from './db';
+import { queryOne, withTransaction } from './db';
 import { downloadPilotVideoFile } from './blob';
 import { analyzeFramesWithVision, extractFrames } from './shadowFilmStudy';
 import { createFilmStudyProposal } from './shadowFilmStudyProposals';
@@ -30,7 +30,15 @@ jest.mock('./shadowJobQueue', () => ({
   SHADOW_CONTEXT_CONTRACT_VERSION:
     jest.requireActual('./shadowJobQueue').SHADOW_CONTEXT_CONTRACT_VERSION,
 }));
-jest.mock('./db', () => ({ queryOne: jest.fn() }));
+// withTransaction hands its callback a stand-in client: the consent reads
+// and the proposal insert it is passed to are mocked below, so the client is
+// only carried, never queried. The real lock is proven against Postgres in
+// filmStudyConsentRace.pg.test.ts.
+const TX_CLIENT = { query: jest.fn() };
+jest.mock('./db', () => ({
+  queryOne: jest.fn(),
+  withTransaction: jest.fn(),
+}));
 jest.mock('./shadowConversations', () => ({
   appendAssistantMessage: jest.fn(),
   queueHumanReview: jest.fn(),
@@ -57,6 +65,7 @@ const mockClaim = jest.mocked(claimNextJob);
 const mockComplete = jest.mocked(completeJob);
 const mockFail = jest.mocked(failJob);
 const mockQueryOne = jest.mocked(queryOne);
+const mockWithTransaction = jest.mocked(withTransaction);
 const mockDownload = jest.mocked(downloadPilotVideoFile);
 const mockExtract = jest.mocked(extractFrames);
 const mockAnalyze = jest.mocked(analyzeFramesWithVision);
@@ -125,6 +134,7 @@ beforeEach(() => {
   process.env.AZURE_AI_KEY = 'key';
   process.env.AZURE_AI_VISION_DEPLOYMENT_NAME = 'gpt-5-vision-shadow';
 
+  mockWithTransaction.mockImplementation(async (fn) => fn(TX_CLIENT as never));
   mockClaim.mockResolvedValue(filmStudyJob());
   mockAssertConsent.mockResolvedValue(undefined);
   mockCheckConsent.mockImplementation(async () => consent(true));
@@ -187,7 +197,11 @@ describe('film study executor', () => {
       observationText: OBSERVATION,
       modelDeployment: 'gpt-5-vision-shadow',
       framesAnalyzed: 3,
-    }));
+    }), TX_CLIENT);
+    // The last consent read and the insert share that one transaction.
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    expect(mockCheckConsent).toHaveBeenLastCalledWith('org-1', 'ATH-1', TX_CLIENT);
+    expect(mockTagSubjects).toHaveBeenLastCalledWith('org-1', 'vs-1', TX_CLIENT);
 
     const [, output, safety] = mockComplete.mock.calls[0];
     expect(safety).toBe('passed');
@@ -303,33 +317,33 @@ describe('film study executor', () => {
  */
 describe('film study executor re-checks consent when the job runs', () => {
   test.each([
-    ['withdrawn', consent(false, 'withdrawn')],
-    ['photo-only', consent(false)],
-  ])("the video's own athlete: %s consent refuses before any download", async (_label, result) => {
+    ['withdrawn', consent(false, 'withdrawn'), 'SHADOW_FILM_CONSENT_WITHDRAWN'],
+    ['photo-only', consent(false), 'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO'],
+  ])("the video's own athlete: %s consent refuses before any download", async (_label, result, code) => {
     mockCheckConsent.mockImplementation(async (_org, id) => (id === 'ATH-1' ? result : consent(true)));
 
     const run = await processNextShadowJob();
 
-    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(run.error).toBe(code);
     expect(mockCheckConsent).toHaveBeenCalledWith('org-1', 'ATH-1');
     expect(mockDownload).not.toHaveBeenCalled();
     expect(mockAnalyze).not.toHaveBeenCalled();
     expect(mockCreateProposal).not.toHaveBeenCalled();
     expect(mockComplete).not.toHaveBeenCalled();
     // A guardian's decision, not a blip: not retried.
-    expect(mockFail).toHaveBeenCalledWith(expect.anything(), 'SHADOW_FILM_CONSENT_BLOCKED', { retryable: false });
+    expect(mockFail).toHaveBeenCalledWith(expect.anything(), code, { retryable: false });
   });
 
   test.each([
-    ['withdrawn', consent(false, 'withdrawn')],
-    ['photo-only', consent(false)],
-  ])('a tagged athlete: %s consent refuses before any download', async (_label, result) => {
+    ['withdrawn', consent(false, 'withdrawn'), 'SHADOW_FILM_CONSENT_WITHDRAWN'],
+    ['photo-only', consent(false), 'SHADOW_FILM_CONSENT_EXCLUDES_VIDEO'],
+  ])('a tagged athlete: %s consent refuses before any download', async (_label, result, code) => {
     mockTagSubjects.mockResolvedValue([{ athlete_id: 'ATH-2', athlete_deleted: false }]);
     mockCheckConsent.mockImplementation(async (_org, id) => (id === 'ATH-2' ? result : consent(true)));
 
     const run = await processNextShadowJob();
 
-    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(run.error).toBe(code);
     expect(mockTagSubjects).toHaveBeenCalledWith('org-1', 'vs-1');
     expect(mockDownload).not.toHaveBeenCalled();
     expect(mockCreateProposal).not.toHaveBeenCalled();
@@ -359,7 +373,8 @@ describe('film study executor re-checks consent when the job runs', () => {
 
     const run = await processNextShadowJob();
 
-    expect(run.error).toBe('SHADOW_FILM_CONSENT_BLOCKED');
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_WITHDRAWN');
+    expect(mockFail).toHaveBeenCalledWith(expect.anything(), 'SHADOW_FILM_CONSENT_WITHDRAWN', { retryable: false });
     expect(mockAnalyze).toHaveBeenCalled();
     expect(mockCreateProposal).not.toHaveBeenCalled();
     expect(await tempDirsCreated()).toEqual([]);

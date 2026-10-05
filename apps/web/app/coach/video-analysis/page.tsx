@@ -155,6 +155,32 @@ const FILM_STUDY_STILL_PROCESSING_MESSAGE =
   + 'reopen this page to see the result, or check the review queue below once it lands. '
   + 'If this never resolves, background jobs may not be enabled for this environment.';
 
+/*
+ * WHY A FILM STUDY REQUEST WAS REFUSED FOR CONSENT, by its code: the request
+ * route's 409 `code`, or the failed job's `reason` when consent changed after
+ * queueing. Wording approved by Jason (AskUserQuestion 2026-10-05,
+ * overwatch-relayed), including that it does not name the athlete: the coach
+ * can see who is tagged, and naming them would tell the coach about another
+ * family's decision.
+ */
+const FILM_STUDY_CONSENT_WITHDRAWN =
+  'Film Study refused: a guardian has withdrawn media consent for an athlete in this video.';
+const FILM_STUDY_CONSENT_PHOTO_ONLY =
+  'Film Study refused: guardian consent for an athlete in this video covers photos only, not video.';
+const FILM_STUDY_CONSENT_OTHER =
+  'Film Study refused: guardian media consent for an athlete in this video is missing or could not be read.';
+const FILM_STUDY_CONSENT_MESSAGES: Record<string, string> = {
+  GUARDIAN_CONSENT_WITHDRAWN: FILM_STUDY_CONSENT_WITHDRAWN,
+  SHADOW_FILM_CONSENT_WITHDRAWN: FILM_STUDY_CONSENT_WITHDRAWN,
+  GUARDIAN_CONSENT_EXCLUDES_VIDEO: FILM_STUDY_CONSENT_PHOTO_ONLY,
+  SHADOW_FILM_CONSENT_EXCLUDES_VIDEO: FILM_STUDY_CONSENT_PHOTO_ONLY,
+  GUARDIAN_CONSENT_UNREADABLE: FILM_STUDY_CONSENT_OTHER,
+  SHADOW_FILM_CONSENT_BLOCKED: FILM_STUDY_CONSENT_OTHER,
+};
+// Shown exactly as approved, without the "Film Study:" label the other
+// status lines carry -- each already begins with it.
+const FILM_STUDY_CONSENT_SENTENCES = new Set(Object.values(FILM_STUDY_CONSENT_MESSAGES));
+
 // "accept rate", never "accuracy". What this panel reports is how often a
 // coach agreed with the model, which is not the same claim as the model being
 // correct -- a coach can accept a proposal that was wrong, or reject one that
@@ -313,9 +339,12 @@ export default function CoachVideoAnalysisPage() {
           const data = (await res.json().catch(() => ({}))) as {
             status?: FilmStudyJobStatus;
             message?: string;
+            reason?: string;
           };
           const status = data.status ?? 'failed';
-          const message = data.message ?? 'Film Study job status unavailable.';
+          const message =
+            (status === 'failed' && data.reason && FILM_STUDY_CONSENT_MESSAGES[data.reason])
+            || (data.message ?? 'Film Study job status unavailable.');
 
           setFilmStudyJobs((current) => ({ ...current, [videoSessionId]: { status, jobId, message } }));
 
@@ -354,9 +383,12 @@ export default function CoachVideoAnalysisPage() {
         status?: FilmStudyJobStatus;
         jobId?: string;
         message?: string;
+        code?: string;
       };
       const status = data.status ?? 'failed';
-      const message = data.message ?? `Request failed (${res.status}).`;
+      const message =
+        (res.status === 409 && data.code && FILM_STUDY_CONSENT_MESSAGES[data.code])
+        || (data.message ?? `Request failed (${res.status}).`);
 
       setFilmStudyJobs((current) => ({
         ...current,
@@ -882,7 +914,9 @@ export default function CoachVideoAnalysisPage() {
                     ) : null}
                     {filmStudyJobs[v.video_session_id] ? (
                       <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]" data-testid={`film-study-status-${v.video_session_id}`}>
-                        Film Study: {filmStudyJobs[v.video_session_id].message}
+                        {FILM_STUDY_CONSENT_SENTENCES.has(filmStudyJobs[v.video_session_id].message)
+                          ? filmStudyJobs[v.video_session_id].message
+                          : `Film Study: ${filmStudyJobs[v.video_session_id].message}`}
                       </p>
                     ) : null}
                   </div>
