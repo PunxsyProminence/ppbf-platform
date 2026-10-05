@@ -65,6 +65,8 @@ const BASE = [
   'pilot_slice_postgres.sql',
   // pilot.accounts.deleted_at.
   'pilot_slice_postgres_data_retention_deletion_migration.sql',
+  // role = 'board' on accounts and memberships.
+  'pilot_slice_postgres_board_role_migration.sql',
 ];
 
 const ORG_ID = 'org-pp';
@@ -100,7 +102,7 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-type Role = 'coach' | 'organization_admin' | 'admin' | 'athlete' | 'parent' | 'staff' | 'volunteer' | 'platform_owner';
+type Role = 'coach' | 'organization_admin' | 'admin' | 'athlete' | 'parent' | 'staff' | 'volunteer' | 'platform_owner' | 'board';
 
 /** A live account and its membership in `org` (membership role defaults to the account role). */
 async function seedAccount(role: Role, org = ORG_ID, membershipRole: Role = role): Promise<string> {
@@ -321,6 +323,22 @@ describe('setting your own labelling PIN', () => {
     expect(await verify(changed, '2580')).toBe('LABELLER_PIN_REFUSED');
   });
 
+  it('a parent at home who coaches here can set one, list and verify here: the membership here decides', async () => {
+    // The session at this gym acts as a coach (resolvePrincipal reads the
+    // membership, #1197), so the PIN follows the same role, not the home one.
+    const accountId = await seedAccount('parent', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+      [accountId, ORG_ID],
+    );
+    await setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Coach here ${accountId}`, pin: '2580' });
+    expect((await listLabellerPicker(ORG_ID)).map((entry) => entry.account_id)).toContain(accountId);
+    expect(await verify(accountId, '2580')).toBe('ACCEPTED');
+    // ...and nowhere it is not a labeller: at home it is a parent.
+    expect(await codeOf(setOwnLabellerCredential({ organizationId: OTHER_ORG_ID, accountId, displayName: `Parent home ${accountId}`, pin: '2580' })))
+      .toBe('LABELLER_NOT_ELIGIBLE');
+  });
+
   it('a coach of another gym cannot set one here', async () => {
     const accountId = await seedAccount('coach', OTHER_ORG_ID);
     expect(await codeOf(setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: 'X', pin: '2580' })))
@@ -433,6 +451,40 @@ describe('clearing a labelling PIN', () => {
     expect(await clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: legacyAdmin, accountId })).toBe(true);
   });
 
+  it('an admin of THIS gym by membership may clear when its home credential fits, as resolvePrincipal decides', async () => {
+    const accountId = await seedAccount('coach');
+    await setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Admin-cleared ${accountId}`, pin: '2580' });
+
+    // A coach at home signs in with a magic link, which does not fit an admin
+    // session: resolvePrincipal resolves that session here to nobody.
+    const coachHomeAdminHere = await seedAccount('coach', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'organization_admin', true)`,
+      [coachHomeAdminHere, ORG_ID],
+    );
+    expect(await codeOf(clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: coachHomeAdminHere, accountId })))
+      .toBe('LABELLER_CLEAR_NOT_ALLOWED');
+
+    // A board member at home signs in with Microsoft, which does.
+    const boardHomeAdminHere = await seedAccount('board', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'organization_admin', true)`,
+      [boardHomeAdminHere, ORG_ID],
+    );
+    expect(await clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: boardHomeAdminHere, accountId })).toBe(true);
+    expect(await getOwnLabellerCredential(ORG_ID, accountId)).toBeNull();
+  });
+
+  it('a coach at home who is an admin here cannot set one here: the credential does not fit the membership', async () => {
+    const accountId = await seedAccount('coach', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'organization_admin', true)`,
+      [accountId, ORG_ID],
+    );
+    expect(await codeOf(setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Admin here ${accountId}`, pin: '2580' })))
+      .toBe('LABELLER_NOT_ELIGIBLE');
+  });
+
   it('goes with the membership', async () => {
     const accountId = await seedAccount('coach');
     await setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Gone ${accountId}`, pin: '2580' });
@@ -446,7 +498,14 @@ describe('the picker and verification read eligibility live', () => {
     const changes: Array<[string, string]> = [
       ['deactivated', 'update pilot.accounts set active_flag = false where account_id = $1'],
       ['deleted', 'update pilot.accounts set deleted_at = now() where account_id = $1'],
-      ['moved to staff', `update pilot.accounts set role = 'staff' where account_id = $1`],
+      // What staffProvisioning writes: the account role and the membership
+      // role together. The membership is the role a session here acts with
+      // (#1197), so a change to the home role alone is not a move.
+      ['moved to staff', `with moved as (update pilot.accounts set role = 'staff' where account_id = $1 returning account_id)
+        update pilot.organization_memberships set role = 'staff' where account_id in (select account_id from moved)`],
+      // The home role changed to one whose credential no longer fits the
+      // membership: resolvePrincipal refuses the session, so the PIN stops too.
+      ['home credential no longer fits', `update pilot.accounts set role = 'athlete' where account_id = $1`],
       ['taken off the member list', 'update pilot.organization_memberships set active_flag = false where account_id = $1'],
     ];
     for (const [label, sql] of changes) {

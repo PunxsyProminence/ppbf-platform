@@ -43,6 +43,27 @@ import { Client } from 'pg';
 
 import { boardSeatConfigs } from '@/app/board/boardWorkspaceConfig';
 
+// assignBoardSeat runs its own eligibility read through ./db; route it to the
+// embedded database the holder-eligibility tests open. The migration tests
+// above it use their own clients and never reach ./db.
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows[0] ?? null;
+  }),
+  withTransaction: jest.fn(async () => {
+    throw new Error('test bug: withTransaction is not routed in this suite');
+  }),
+}));
+
+import { assignBoardSeat } from './boardSeats';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -556,5 +577,76 @@ describe('board seats migration against real Postgres', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+describe('who may hold a seat: the board membership in THIS organization, not the home role', () => {
+  // resolvePrincipal acts with the membership role in the session's gym
+  // (#1197). A seat is the same question asked of a board: a board role at
+  // the account's home gym, or a home role the membership no longer says, is
+  // not a board membership here.
+  let client: Client;
+
+  beforeAll(async () => {
+    client = await freshDatabase('ppbf_test_board_seat_holders');
+    await applyMigrationTransaction(client, migrationSql);
+    activeClient = client;
+  });
+
+  afterAll(async () => {
+    activeClient = null;
+    await client?.end();
+  });
+
+  async function membership(accountId: string, organizationId: string, role: string): Promise<void> {
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, $3, true)`,
+      [accountId, organizationId, role],
+    );
+  }
+
+  function assign(organizationId: string, accountId: string) {
+    return assignBoardSeat({ organizationId, seat: 'treasurer', accountId, assignedByAccountId: ADMIN_ID });
+  }
+
+  test('a board member of another gym who is a parent here is refused a seat here', async () => {
+    await membership(PRESIDENT_ID, ORG_A, 'board');
+    await membership(PRESIDENT_ID, ORG_B, 'parent');
+
+    await expect(assign(ORG_B, PRESIDENT_ID)).rejects.toThrow(/Unsupported account/);
+    const rows = await client.query('select 1 from pilot.board_seats where organization_id = $1 and account_id = $2', [ORG_B, PRESIDENT_ID]);
+    expect(rows.rows).toHaveLength(0);
+  });
+
+  test('a home role of board whose membership here says otherwise is refused', async () => {
+    // pilot.accounts.role still says board; the gym's membership was changed.
+    await membership(VICE_ID, ORG_A, 'parent');
+
+    await expect(assign(ORG_A, VICE_ID)).rejects.toThrow(/Unsupported account/);
+  });
+
+  test('a home role of board with no membership here at all is refused', async () => {
+    await expect(assign(ORG_A, TREASURER_ID)).rejects.toThrow(/Unsupported account/);
+  });
+
+  test('a board membership here admits the holder whatever the home role', async () => {
+    const parentAtHome = 'acct-seats-parent-home-b';
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'parent', $2, 'microsoft')`,
+      [parentAtHome, ORG_B],
+    );
+    await membership(parentAtHome, ORG_B, 'parent');
+    await membership(parentAtHome, ORG_A, 'board');
+
+    const holder = await assign(ORG_A, parentAtHome);
+    expect(holder.account_id).toBe(parentAtHome);
+  });
+
+  test('an inactive board membership here is refused', async () => {
+    await membership(ORG_B_PRESIDENT_ID, ORG_B, 'board');
+    await client.query('update pilot.organization_memberships set active_flag = false where account_id = $1', [ORG_B_PRESIDENT_ID]);
+
+    await expect(assign(ORG_B, ORG_B_PRESIDENT_ID)).rejects.toThrow(/Unsupported account/);
   });
 });

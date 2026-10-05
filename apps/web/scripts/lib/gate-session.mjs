@@ -74,13 +74,15 @@ export async function mintGateSession({
          a.active_flag,
          (a.deleted_at is not null) as account_deleted,
          o.status as organization_status,
-         exists (
-           select 1
+         -- The role the minted session acts with: resolvePrincipal reads the
+         -- active membership in the session's organization, not a.role (#1197).
+         (
+           select om.role
            from pilot.organization_memberships om
            where om.account_id = a.account_id
              and om.organization_id = a.organization_id
              and om.active_flag = true
-         ) as has_membership
+         ) as membership_role
        from pilot.accounts a
        left join pilot.organizations o on o.organization_id = a.organization_id
        where a.account_id = $1`,
@@ -95,11 +97,8 @@ export async function mintGateSession({
       );
     }
 
-    if (expectedRole && account.role !== expectedRole) {
-      throw new Error(
-        `Gate fixture account "${accountId}" has role "${account.role}", expected "${expectedRole}".`,
-      );
-    }
+    // expectedRole is checked below against the membership role, the one the
+    // session acts with; a.role is the home role and is not compared to it.
 
     // Sign-in refuses an account marked deleted (OD-2026-09-29-003 Q9), and
     // resolvePrincipal resolves any session it holds to nobody -- so a
@@ -122,10 +121,17 @@ export async function mintGateSession({
     // resolvePrincipal joins organization_memberships, so an account without an
     // active membership resolves to null and every call 401s -- with nothing to
     // indicate the membership is what is missing.
-    if (!account.has_membership) {
+    if (!account.membership_role) {
       throw new Error(
         `Gate fixture account "${accountId}" has no active membership in "${account.organization_id}". `
         + `Session resolution requires one, so every request would answer 401.`,
+      );
+    }
+
+    if (expectedRole && account.membership_role !== expectedRole) {
+      throw new Error(
+        `Gate fixture account "${accountId}" has role "${account.membership_role}", expected "${expectedRole}" `
+        + `(its membership in "${account.organization_id}", the role its session acts with).`,
       );
     }
 
@@ -139,9 +145,14 @@ export async function mintGateSession({
     // ppbf_local and not an athlete -- it revokes the row on sight. A session
     // minted for such an account would be destroyed by its own first use, so
     // refuse here where the reason can be stated.
-    if (account.auth_provider === 'ppbf_local' && account.role !== 'athlete') {
+    // Both roles, as resolvePrincipal asks the PIN policy about both.
+    if (
+      account.auth_provider === 'ppbf_local'
+      && (account.role !== 'athlete' || account.membership_role !== 'athlete')
+    ) {
+      const privilegedRole = account.membership_role !== 'athlete' ? account.membership_role : account.role;
       throw new Error(
-        `Gate fixture account "${accountId}" is a local (PIN) account with role "${account.role}". `
+        `Gate fixture account "${accountId}" is a local (PIN) account with role "${privilegedRole}". `
         + `Privileged local sessions are revoked on first use by design, so this account cannot be `
         + `used by the gate. It must be Microsoft-authenticated.`,
       );
@@ -158,7 +169,7 @@ export async function mintGateSession({
       token,
       cookie: `${SESSION_COOKIE_NAME}=${token}`,
       organizationId: account.organization_id,
-      role: account.role,
+      role: account.membership_role,
       async revoke() {
         const revokeClient = await connect(connectionString);
         try {
