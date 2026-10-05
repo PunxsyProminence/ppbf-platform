@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import AdultPathwayPanel from './AdultPathwayPanel';
 
@@ -185,8 +185,11 @@ describe('AdultPathwayPanel', () => {
     render(<AdultPathwayPanel athleteId="ath-1" athleteName="Ana" />);
     fireEvent.click(screen.getByRole('button', { name: 'Pathway' }));
     fireEvent.click(screen.getByRole('button', { name: 'Hide pathway' }));
-    answer({ ok: true, json: async () => ADULT } as Response);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Let the late answer (and its json()) fully land before asserting.
+    await act(async () => {
+      answer({ ok: true, json: async () => ADULT } as Response);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(screen.getByRole('button', { name: 'Pathway' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('Set stage', { selector: 'label' })).toBeNull();
   });
