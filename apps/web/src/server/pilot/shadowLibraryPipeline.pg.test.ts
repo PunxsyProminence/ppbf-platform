@@ -79,6 +79,8 @@ const SCHEMA_FILES = [
   // The shared platform shelf (__platform__), which search reads and coverage
   // now counts (R1, Jason 2026-09-29).
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  // The rights marker and the full-text rule the library writers now carry.
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 let PG_PORT: number;
@@ -277,6 +279,8 @@ describe('SHADOW Library write path (real database)', () => {
       title: 'SHADOW Canonical Authority Model',
       publisher: 'Punxsy Prominence',
       source_type: 'internal_policy',
+      // PPBF's own doctrine, so its full text may be held (source rights).
+      rights_status: 'ppbf_owned',
       authority_tier: 1,
       status: 'active',
       publication_date: '2026-07-15',
@@ -676,9 +680,9 @@ describe('capability coverage (real database)', () => {
       `insert into pilot.shadow_library_sources
          (source_id, organization_id, title, source_type, authority_tier, status,
           approval_state, verification_state,
-          approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+          approved_by_account_id, approved_at, verified_by_account_id, verified_at, rights_status)
        values ('src-platform-nutrition', $1, 'Platform nutrition review', 'peer_reviewed', 1, 'active',
-          'approved', 'verified', $2, now(), $2, now())`,
+          'approved', 'verified', $2, now(), $2, now(), 'open_licence')`,
       [PLATFORM, ACCOUNT_ID],
     );
     await rawQuery(
@@ -724,9 +728,9 @@ describe('capability coverage (real database)', () => {
       `insert into pilot.shadow_library_sources
          (source_id, organization_id, title, source_type, authority_tier, status,
           approval_state, verification_state,
-          approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+          approved_by_account_id, approved_at, verified_by_account_id, verified_at, rights_status)
        values ('src-platform-cited', $1, 'Platform hydration trial', 'peer_reviewed', 1, 'active',
-          'approved', 'verified', $2, now(), $2, now())`,
+          'approved', 'verified', $2, now(), $2, now(), 'open_licence')`,
       [PLATFORM, ACCOUNT_ID],
     );
     // In 'doc-platform-nutrition', which 'src-platform-nutrition' owns.
@@ -896,7 +900,7 @@ describe('the bulk approval script leaves an incomplete manual-text excerpt alon
 
   test('setup: one source and six pending documents in a gym of their own', async () => {
     const source = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
-      title: 'Bulk Sweep Monograph', source_type: 'peer_reviewed', authority_tier: 2, status: 'active',
+      title: 'Bulk Sweep Monograph', source_type: 'peer_reviewed', rights_status: 'open_licence', authority_tier: 2, status: 'active',
     }));
     expect(source.status).toBe(201);
     ids.source = (await source.json()).source.source_id;
@@ -969,7 +973,7 @@ describe('Library relevance: whole words, a relevance bar, confidence and resear
 
   async function approvedChunk(text: string, title: string): Promise<void> {
     const source = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
-      title, source_type: 'peer_reviewed', authority_tier: 1, status: 'active',
+      title, source_type: 'peer_reviewed', rights_status: 'open_licence', authority_tier: 1, status: 'active',
     }));
     expect(source.status).toBe(201);
     const sourceId = (await source.json()).source.source_id as string;

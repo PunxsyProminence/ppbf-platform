@@ -56,6 +56,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  // The rights marker and the full-text rule the library writers now carry.
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 let PG_PORT: number;
@@ -262,6 +264,7 @@ describe('the library server functions run under __platform__ (real database)', 
       documentId: document.document_id,
       ordinal: 0,
       textContent: 'Quokka step-zero passage about platform evidence.',
+      excerptLocator: 'p. 3',
     });
     await library.reviewShadowLibrarySource({
       organizationId: PLATFORM,

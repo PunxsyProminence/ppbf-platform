@@ -35,12 +35,16 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 6;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 7;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
 // withdrawn consent of the video's own athlete now refuse too, and the worker
 // re-checks at run time. A v5 job still queued at deploy is refused as STALE.
+// 7: source rights (A2 of #1238): shadowLibrary.ts gained write-side columns
+// (rights_status, text_kind, excerpt_locator) and a rights update. What goes
+// into authorizedContext is unchanged; bumped because a listed file moved. A v6
+// job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -100,6 +104,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 4, sha256: '96a1b13e85dd86f79546492dfe5cce1e4f47502c72840b1f07ca1acd9a826515' },
   { version: 5, sha256: '2b1b58ad308fa5c48ae6b4b65f86bd244ccc701a1d20fbe5d565151609a03d86' },
   { version: 6, sha256: '7b72dd1cb1e006c967fe36cc06de53bd5d9d10b60bf6858e3d2f6c345cb3668a' },
+  { version: 7, sha256: '89b51b15eaa9c8c93dad39df694b1fe55f312eea897964ba868a733f221fdfb2' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

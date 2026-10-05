@@ -237,6 +237,10 @@ async function registerSource(entry) {
       title: entry.title,
       publisher: entry.publisher,
       source_type: entry.source_type,
+      // PPBF's own doctrine: its full text may be held (source rights,
+      // OD-2026-10-03-002 section 3). Needs the reviewer tier, which this
+      // script's session already is.
+      rights_status: 'ppbf_owned',
       authority_tier: entry.authority_tier ?? 3,
       status: 'active',
       publication_date: entry.publication_date,
