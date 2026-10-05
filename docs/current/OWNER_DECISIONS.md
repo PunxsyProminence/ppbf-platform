@@ -164,6 +164,37 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-017 -- Skill Path skills 02-12: the drafted drill-code crosswalk is approved as drafted (43 codes mapped, 18 left unmapped), and the map must stay extendable as more skills become available (option 1)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Skills 02-12 crosswalk" lane session (transcript `~/.claude/projects/C--Dev/31c7855a-15ac-4a62-9379-ffcbc53db399.jsonl`, tool use `toolu_01MYKQUdWWwaWnpRAyXej5Cp`; asked 2026-10-05T18:25:31.761Z, answered 2026-10-05T18:39:16.075Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. Jason's answer was typed free text, not a button label: "1" is read as the first option, "Approve as drafted (Recommended)", and the rest of his sentence is a second instruction. Extends OD-2026-10-05-013 (which approved the crosswalk approach and left the list itself awaiting his one-time approval); edits no earlier entry.
+
+Asked (official form): "Approve this FAMILY_MEMBER_CODES crosswalk for SKILL-02..12 (one family per drill skill code; source = Skill_Index owned/shared territory in 00_MASTER_SKILL_REGISTRY.xlsx; SKILL-01 unchanged)?" (the family list follows, as printed.)
+
+The family list as put to Jason:
+
+- SKILL-02 Jab: SK-JAB-01/02/03, SK-DIST-01/02/03 — jab owns jab types; its purpose names "range" and no family owns range (DIST = medium confidence).
+- SKILL-03 Rear Hand: SK-CROSS-01, SK-CTR-01 — rear hand owns the straight right and "counters"; Counter the Jab = counter to a straight lead (CTR-01 medium).
+- SKILL-04 Hook: SK-HOOK-01/02 — lead and rear hook.
+- SKILL-05 Uppercut/Inside: SK-UPPER-01, SK-IN-01, SK-IN-02 — registry keeps inside position and inside exits in this family (held for v2) (IN = medium).
+- SKILL-06 Defense-to-Counter: SK-DEF-01..08, SK-CTR-02 — catch/slip/roll/pull/block; Counter From Defence is its core rule.
+- SKILL-07 Footwork/Ringcraft: SK-FW-01..06, SK-ANG-01, SK-OUT-01, SK-COMBO-03, SK-TAC-02 — owns geography, pivots, cutoffs, exits; angle, outside control, combo-then-exit, lead-foot battle (last four medium).
+- SKILL-08 Perception/Reaction: SK-TAC-01, SK-TAC-04 — owns cue ID and live read decisions: read the stance, chaos recognition (medium).
+- SKILL-09 Feints/Traps: SK-FEINT-01, SK-RHY-01 — owns hand/foot/level/rhythm feints; Broken Rhythm = rhythm deception.
+- SKILL-10 Body Attack: SK-BODY-01 — level change to the body.
+- SKILL-11 Skill Under Fatigue: SK-FW-07, SK-BAG-01 — late-round quality; footwork under fatigue, technique under volume.
+- SKILL-12 Film-to-Drill: SK-FILM-01/02, SK-SELF-01, SK-SPAR-04 — owns self-scout and film; self-assessment and sparring debrief are film-category drills (SPAR-04 medium).
+- STAYS UNMAPPED (no family owns them): SK-COMBO-01/02, SK-PAD-01, SK-BAG-02, SK-SHADOW-01, SK-PARTNER-01, SK-DRILL-01, SK-SPAR-01/02/03, SK-SAFE-01/02, SK-RET-01/02, SK-REV-01/02, SK-TAC-03, SK-HAND-01.
+
+Plain English as asked: "This is the list that decides which drills count toward which skill on the athlete's page. When a coach assigns "Slip the Line", the app will show it under Defense-to-Counter automatically. The 18 left out are formats (pads, sparring, shadow), safety, mindset and hand-wrap drills that no skill family owns, so they won't show under any family. Approve as is, or tell me what to move."
+
+Options: "Approve as drafted (Recommended)" (Wire this exact list in, with tests. The 'medium' rows are the ones most likely to move later.); "Approve with my edits" (Type the moves you want (e.g. 'DIST to Footwork') in the notes/Other box; I'll apply them exactly.). Jason answered: *"1 and we ill need to make sure we can add to as moreskills become available"*.
+
+**Ruling: the drafted SKILL-02..12 crosswalk is approved as drafted: 43 drill codes mapped across the eleven families, 18 left unmapped, SKILL-01 unchanged.** The crosswalk must also stay extendable: the map has to take new families and new drill codes as more skills become available, without a rewrite. "Approve with my edits" was not chosen; the "medium" rows stand as drafted.
+
+Extends OD-2026-10-05-013. Governs PR #1255.
+
+---
+
 ## OD-2026-10-05-016 -- Admin video-compliance queue: the consent check applies to playback; no playback link for withdrawn or photo-only consent (option B)
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Owner decisions" lane session (transcript `~/.claude/projects/C--Dev/1502bc54-c4b6-4d57-8da3-a3d5bdf1a8f4.jsonl`, tool use `toolu_014RsYkmZvgM6Tck2MMz5U4e`; asked 2026-10-05T15:03:25.163Z, answered 2026-10-05T16:13:32.006Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
