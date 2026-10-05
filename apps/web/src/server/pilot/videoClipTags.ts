@@ -405,10 +405,18 @@ export interface TaggedClipRow extends ClipTagRow {
   recorded_at: string;
 }
 
+/*
+ * Owner, Jason 2026-10-05: "A: Placeholder title". A tagged clip the scan has
+ * not released (any status but 'ready') stays listed, but its uploader-typed
+ * title is replaced in the query, so the real one never leaves the database.
+ */
+export const UNRELEASED_CLIP_TITLE = 'Awaiting safety check';
+
 /**
  * Tagged clips for review, newest first. athleteIds is the caller's access
  * scope (null = every athlete, for an organization admin); the route builds
- * it. Teach Shadow footage and deleted athletes never appear.
+ * it. Teach Shadow footage and deleted athletes never appear, and an
+ * unreleased clip's title reads UNRELEASED_CLIP_TITLE.
  */
 export async function listTaggedClips(input: {
   organizationId: string;
@@ -432,10 +440,13 @@ export async function listTaggedClips(input: {
     params.push(input.competitionId);
     filters += ` and t.competition_id = $${params.length}`;
   }
+  params.push(UNRELEASED_CLIP_TITLE);
+  const placeholderParam = params.length;
   params.push(0);
   const offsetParam = params.length;
   const sql = `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.exposure_id, t.note, t.tagged_by_account_id, t.created_at,
-            v.title, v.status, v.created_at as recorded_at
+            case when v.status = 'ready' then v.title else $${placeholderParam}::text end as title,
+            v.status, v.created_at as recorded_at
        from pilot.video_clip_tags t
        join pilot.video_sessions v
          on v.organization_id = t.organization_id and v.video_session_id = t.video_session_id

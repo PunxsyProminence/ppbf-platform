@@ -288,6 +288,24 @@ describe('listTaggedClips hides clips that playback would refuse', () => {
     expect(mockConsent).not.toHaveBeenCalled();
   });
 
+  /*
+   * Owner, Jason 2026-10-05: "A: Placeholder title". The real title of a clip
+   * the scan has not released is replaced in the query itself. The rows the
+   * database returns are in videoClipTags.pg.test.ts.
+   */
+  test("an unreleased clip's title is replaced in the query, not after it", async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listTaggedClips({ organizationId: 'org-1', athleteIds: ['ath-1'], competitionId: 'comp-1', limit: 50 });
+    const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    const placeholder = sql.match(/case when v\.status = 'ready' then v\.title else \$(\d+)::text end as title/);
+    expect(placeholder).not.toBeNull();
+    expect(params[Number(placeholder![1]) - 1]).toBe('Awaiting safety check');
+    expect(sql).not.toMatch(/v\.title,/);
+    // The offset stays the last parameter, which the paging loop rewrites.
+    expect(sql.trimEnd().endsWith(`offset $${params.length}`)).toBe(true);
+  });
+
   test('the list query leaves out clips with a deleted athlete in them', async () => {
     mockQuery.mockResolvedValueOnce([]);
     await listTaggedClips({ organizationId: 'org-1', athleteIds: null, limit: 50 });

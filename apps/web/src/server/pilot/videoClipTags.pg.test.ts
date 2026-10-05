@@ -520,6 +520,40 @@ describe('video_clip_tags migration and videoClipTags.ts against the real schema
     expect(after.map((c) => c.video_session_id)).not.toContain('vid-partner-gone');
   });
 
+  /*
+   * Owner, Jason 2026-10-05: "A: Placeholder title". A tagged clip the scan
+   * has not released stays listed with "Awaiting safety check" for a title;
+   * the real title comes back once it is released.
+   */
+  // Infected and archived footage cannot be tagged, but a tagged clip can
+  // become either afterwards, so each clip is tagged first, then moved.
+  test.each(['quarantined', 'uploaded', 'processing', 'infected', 'error', 'archived'])(
+    'a %s clip stays listed with the placeholder in place of its title',
+    async (status) => {
+      const videoId = `vid-unreleased-${status}`;
+      await insertVideo(main, videoId, { athleteId: null, status: 'quarantined' });
+      await tags.addClipTag({ ...base, videoSessionId: videoId, athleteId: ATHLETE_A, eventKind: 'sparring' });
+      await main.query(`update pilot.video_sessions set status = $1 where video_session_id = $2`, [status, videoId]);
+      const all = await tags.listTaggedClips({ organizationId: ORG, athleteIds: [ATHLETE_A], limit: 50 });
+      const row = all.find((c) => c.video_session_id === videoId);
+      expect(row).toBeDefined();
+      expect(row!.title).toBe('Awaiting safety check');
+      expect(row!.status).toBe(status);
+    },
+  );
+
+  test('a released clip shows its own title again', async () => {
+    await insertVideo(main, 'vid-released-later', { athleteId: null, status: 'quarantined' });
+    await tags.addClipTag({ ...base, videoSessionId: 'vid-released-later', athleteId: ATHLETE_A, eventKind: 'sparring' });
+    const before = await tags.listTaggedClips({ organizationId: ORG, athleteIds: null, limit: 50 });
+    expect(before.find((c) => c.video_session_id === 'vid-released-later')!.title).toBe('Awaiting safety check');
+
+    await main.query(`update pilot.video_sessions set status = 'ready' where video_session_id = 'vid-released-later'`);
+    const after = await tags.listTaggedClips({ organizationId: ORG, athleteIds: null, limit: 50 });
+    // insertVideo titles each video with its own id.
+    expect(after.find((c) => c.video_session_id === 'vid-released-later')!.title).toBe('vid-released-later');
+  });
+
   test('teaching footage never appears in a clip list, even if a raw row tags it', async () => {
     await main.query(
       `insert into pilot.video_clip_tags
