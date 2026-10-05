@@ -1,0 +1,276 @@
+name: load-licensed-excerpts
+
+# Loads licensed research excerpts from a private Azure blob container into the
+# SHADOW Library as excerpts (text_kind 'excerpt', with a locator).
+#
+# Owner rulings: OD-2026-10-03-002 section 2 (licensed excerpts are loaded by
+# the platform shelf screen AND by an operator workflow reading a private
+# location); OD-2026-10-05-009 (that location is a new private blob container,
+# no public access, in the existing storage account, read with the identity
+# this repository already deploys with); OD-2026-10-05-010 (an excerpt's
+# location is any locator: page, section or timestamp).
+#
+# HOW IT READS THE CONTAINER. Entra sign-in, never an account key: the OIDC
+# login below is the deploy identity, and `--auth-mode login` makes the blob
+# calls with it. That needs the identity to hold Storage Blob Data Reader on
+# the one container -- an Azure role assignment made by Jason, written in
+# docs/LICENSED_EXCERPTS_LOADER_RUNBOOK.md, not by this workflow. Unlike
+# backup.yml, it never reads the app's storage connection string: that key
+# opens the whole account, and this job only needs to read one container.
+#
+# The account and container are environment variables of the target's GitHub
+# environment (vars.PPBF_EXCERPT_STORAGE_ACCOUNT, vars.PPBF_EXCERPT_CONTAINER),
+# so a staging run cannot read production's container or the reverse. Unset
+# refuses. A container with any public access level refuses before a byte is
+# downloaded.
+#
+# Dry run by default. Apply needs confirm_load = LOAD EXCERPTS and the
+# plan_fingerprint a dry run of the same target printed (the fingerprint
+# includes the database host and name, so a staging plan cannot authorize a
+# production apply); the loader re-plans
+# and refuses before its first write when the fingerprint differs. A production
+# dispatch runs in the production environment, so Jason's approval click in
+# GitHub still holds it. Excerpt text never reaches the log: the plan prints
+# names, hashes, lengths, citations and locators.
+#
+# Dispatch-only for the reason in scripts/lib/postgres-write-target.mjs: the
+# alternative is an operator holding a production connection string on a laptop.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Report what would be loaded, or load it
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_load:
+        description: For apply mode, type LOAD EXCERPTS exactly
+        required: false
+        type: string
+      expected_fingerprint:
+        description: For apply mode, the plan_fingerprint (sha256:...) printed by the dry run you reviewed
+        required: false
+        type: string
+      organization_id:
+        description: Shelf to load into. __platform__ is the platform shelf (platform owner only); a gym id loads that gym's shelf (its organization admin only)
+        required: true
+        default: __platform__
+        type: string
+      actor_account_id:
+        description: Existing account recorded as the loader (exact, case-sensitive account_id)
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: load-licensed-excerpts-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # RESOURCE_GROUP is resolved per target by the step below, never set
+      # here (workflowResourceGroupContract.test.ts).
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      PPBF_EXCERPT_ORG_ID: ${{ inputs.organization_id }}
+      PPBF_EXCERPT_ACTOR_ID: ${{ inputs.actor_account_id }}
+      PPBF_EXCERPT_APPLY: ${{ inputs.mode == 'apply' }}
+      EXCERPT_STORAGE_ACCOUNT: ${{ vars.PPBF_EXCERPT_STORAGE_ACCOUNT }}
+      EXCERPT_CONTAINER: ${{ vars.PPBF_EXCERPT_CONTAINER }}
+    steps:
+      # Free text reaches the shell through the environment, never by
+      # interpolation into a `run:` line.
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_LOAD: ${{ inputs.confirm_load }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" != "$CONFIRM_TARGET" ]; then
+            echo "::error::confirm_target does not match target."
+            exit 1
+          fi
+          if [ -z "${PPBF_EXCERPT_ORG_ID//[[:space:]]/}" ] || [ -z "${PPBF_EXCERPT_ACTOR_ID//[[:space:]]/}" ]; then
+            echo "::error::organization_id and actor_account_id are required."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [ "$CONFIRM_LOAD" != "LOAD EXCERPTS" ]; then
+            echo "::error::apply mode needs confirm_load set to LOAD EXCERPTS exactly."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [[ ! "$EXPECTED_FINGERPRINT" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::apply mode needs expected_fingerprint set to the plan_fingerprint printed by the dry run you reviewed."
+            exit 1
+          fi
+          # Names only: lowercase letters and digits for the account, the blob
+          # container naming rule for the container. Refused unset, never defaulted.
+          if [[ ! "$EXCERPT_STORAGE_ACCOUNT" =~ ^[a-z0-9]{3,24}$ ]]; then
+            echo "::error::vars.PPBF_EXCERPT_STORAGE_ACCOUNT is unset or not a storage account name in the $TARGET environment."
+            exit 1
+          fi
+          if [[ ! "$EXCERPT_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]] || [[ "$EXCERPT_CONTAINER" == *--* ]]; then
+            echo "::error::vars.PPBF_EXCERPT_CONTAINER is unset or not a container name in the $TARGET environment."
+            exit 1
+          fi
+
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # OD-2026-10-05-009 says "no public access". Checked on every run, so a
+      # container whose access level was changed after it was made is refused
+      # rather than read.
+      - name: Refuse A Public Container
+        run: |
+          set -euo pipefail
+          ACCESS="$(az storage container show \
+            --account-name "$EXCERPT_STORAGE_ACCOUNT" \
+            --name "$EXCERPT_CONTAINER" \
+            --auth-mode login \
+            --query properties.publicAccess -o tsv)"
+          if [ -n "$ACCESS" ] && [ "$ACCESS" != "None" ] && [ "$ACCESS" != "off" ]; then
+            echo "::error::container $EXCERPT_CONTAINER has public access '$ACCESS'. Licensed excerpts are read only from a private container."
+            exit 1
+          fi
+          echo "container $EXCERPT_STORAGE_ACCOUNT/$EXCERPT_CONTAINER is private"
+
+      - name: Download Excerpt Files
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/licensed-excerpts"
+          rm -rf "$DIR"
+          mkdir -p "$DIR"
+          az storage blob download-batch \
+            --account-name "$EXCERPT_STORAGE_ACCOUNT" \
+            --source "$EXCERPT_CONTAINER" \
+            --destination "$DIR" \
+            --auth-mode login \
+            --only-show-errors \
+            --output none
+          echo "PPBF_EXCERPT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "downloaded $(find "$DIR" -type f | wc -l) file(s)"
+
+      # One command for both modes. The loader writes only when
+      # PPBF_EXCERPT_APPLY is 'true' AND it is handed the phrase and the
+      # reviewed fingerprint -- it checks both itself, so the dry run cannot
+      # write even if the guard step above is later edited carelessly.
+      - name: Load Licensed Excerpts
+        working-directory: apps/web
+        env:
+          PPBF_EXCERPT_CONFIRM: ${{ inputs.confirm_load }}
+          PPBF_EXCERPT_EXPECT_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        shell: bash
+        run: npm run pilot:load-licensed-excerpts 2>&1 | tee -a /tmp/tool-output.txt
+
+      # The runner is discarded after the job; this removes the licensed text
+      # from it as soon as the load is done, whatever the outcome.
+      - name: Remove Downloaded Excerpts
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/licensed-excerpts"
+
+      - name: Record What Loaded
+        if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          MODE: ${{ inputs.mode }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo '--- tool output (last lines, repeated) ---'
+          [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
+          {
+            echo '### Licensed excerpt load'
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- mode: \`$MODE\`"
+            echo "- container: \`$EXCERPT_STORAGE_ACCOUNT/$EXCERPT_CONTAINER\`"
+            echo "- organization: \`$PPBF_EXCERPT_ORG_ID\`"
+            echo "- actor: \`$PPBF_EXCERPT_ACTOR_ID\`"
+            echo "- expected fingerprint: \`${EXPECTED_FINGERPRINT:-none}\`"
+            echo "- result: \`$JOB_STATUS\`"
+            echo ''
+            echo 'The dry run lists every file, its status (new, resume, complete, conflict,'
+            echo 'invalid), each excerpt locator, length and hash, and a plan fingerprint.'
+            echo 'Loaded documents wait for review on /evidence like any other.'
+          } >> "$GITHUB_STEP_SUMMARY"

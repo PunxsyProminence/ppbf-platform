@@ -151,6 +151,8 @@ const OUTSIDE_THE_LOCK = [
   'approve-library-baseline.yml',
   'cleanup-membership-orphans.yml',
   'import-shadow-research.yml',
+  // Added after that ruling: a ninth writer, with a group of its own (PR B, licensed excerpts).
+  'load-licensed-excerpts.yml',
   'move-policy-shelf.yml',
   'repair-research-baseline.yml',
   'rescope-library-baseline.yml',
