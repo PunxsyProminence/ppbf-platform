@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import { ADULT_PATHWAY_STAGES } from '@/src/shared/adultPathwayStages';
@@ -72,7 +72,13 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
 
   // `quiet` re-reads after a save without dropping back to "Reading…", so the
   // panel (and the control the coach just pressed) stays on screen.
+  // Each read takes a ticket; closing the panel or starting another read
+  // voids older tickets, so a slow answer can never reopen a closed panel
+  // or overwrite a newer reading.
+  const ticket = useRef(0);
+
   const read = useCallback(async (quiet = false) => {
+    const mine = ++ticket.current;
     if (!quiet) setReading({ state: 'loading' });
     try {
       const res = await fetch(`${apiBase()}${ENDPOINT}?athlete_id=${encodeURIComponent(athleteId)}`, {
@@ -81,10 +87,13 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
       });
       if (!res.ok) throw new Error('read');
       const data = (await res.json()) as PathwayReading;
+      if (mine !== ticket.current) return;
       setReading({ state: 'loaded', data });
       setStage(data.current?.stage_key ?? '');
     } catch {
-      if (!quiet) setReading({ state: 'unavailable' });
+      // Quiet or not: never leave controls on screen that no longer match
+      // the server (after a save, a stale "Tick" would invite a repeat).
+      if (mine === ticket.current) setReading({ state: 'unavailable' });
     }
   }, [athleteId]);
 
@@ -130,6 +139,7 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
         aria-controls={open ? panelId : undefined}
         onClick={() => {
           if (open) {
+            ticket.current += 1;
             setReading({ state: 'closed' });
             setError('');
             setConfirmingOff(false);
@@ -226,7 +236,9 @@ function PathwayBody(props: {
               </p>
               {props.confirmingOff ? (
                 <div className="mt-[var(--s2)]">
-                  <p className="t-body">{SWITCH_OFF_WARNING}</p>
+                  {/* Only when there is a stage to end: with none, the
+                      approved warning would state something untrue. */}
+                  {data.current ? <p className="t-body">{SWITCH_OFF_WARNING}</p> : null}
                   <button type="button" className="btn mt-[var(--s2)]" disabled={busy}
                     onClick={() => void send({ action: 'withdraw_allowance' })}>
                     Switch off

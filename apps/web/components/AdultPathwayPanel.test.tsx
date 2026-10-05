@@ -166,6 +166,41 @@ describe('AdultPathwayPanel', () => {
     expect(screen.queryByText(SWITCH_OFF_WARNING)).toBeNull();
   });
 
+  it('a failed refresh after a save shows "could not be read", not stale controls', async () => {
+    serve(ADULT);
+    await openPanel();
+    (global.fetch as jest.Mock).mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true }) } as Response;
+      return { ok: false, json: async () => ({}) } as Response;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tick: Aerobic base' }));
+    expect(await screen.findByText('This athlete’s pathway could not be read just now.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tick: Aerobic base' })).toBeNull();
+  });
+
+  it('a read that finishes after the panel is closed does not reopen it', async () => {
+    serve(ADULT);
+    let answer: (r: Response) => void = () => {};
+    (global.fetch as jest.Mock).mockImplementation(() => new Promise<Response>((resolve) => { answer = resolve; }));
+    render(<AdultPathwayPanel athleteId="ath-1" athleteName="Ana" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pathway' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide pathway' }));
+    answer({ ok: true, json: async () => ADULT } as Response);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('button', { name: 'Pathway' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Set stage', { selector: 'label' })).toBeNull();
+  });
+
+  it('switching off with no stage set asks first but claims no stage will end', async () => {
+    serve({ ...MINOR_ALLOWED, current: null });
+    await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Switch off' }));
+    expect(posts).toHaveLength(0);
+    expect(screen.queryByText(SWITCH_OFF_WARNING)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Switch off' }));
+    await waitFor(() => expect(posts).toEqual([{ athlete_id: 'ath-1', action: 'withdraw_allowance' }]));
+  });
+
   it("shows the server's refusal, and re-reads", async () => {
     serve(ADULT, { ok: false, body: { error: 'This athlete is under 18.', code: 'PATHWAY_ALLOWANCE_REQUIRED' } });
     await openPanel();
