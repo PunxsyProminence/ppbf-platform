@@ -164,6 +164,67 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-008 -- The test organization's admin login is re-homed to Punxsy Prominence as a parent, through a reviewed dry-run-first script Jason runs
+
+**Provenance: PRIMARY (typed messages).** Two of Jason's typed messages in the
+overwatch thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`).
+Read by script from that transcript (records pass, 2026-10-05). Exact text,
+including his spelling and capitals:
+
+1. 2026-10-05T12:03:51.931Z: *"i ran it check the terminal and B"*
+2. 2026-10-05T12:11:59.014Z: *"its neekos parent the Danielle was a test"*
+
+New; edits no earlier entry.
+
+Asked: Jason reported that adding a parent account in the live app was refused
+because the login "belongs to another organization". Overwatch's options
+(2026-10-05T12:02:12.410Z, before message 1): "**(A) Use a different email for the
+parent (Recommended)**" and "**(B) Move the login to Punxsy Prominence**, if it's
+a stale or unused login in the other org. That's a production data change, so it
+would go through a lane with your approval." Message 1 chose B. Overwatch's
+read-only check then found that the login is an active organization admin of the
+test organization `danielles`, and put the choice again (2026-10-05T12:11:10.549Z):
+(A) a different email (Recommended), (C) one login holding both roles, or "**(B)
+Move it anyway.** This removes them as admin at `danielles`. Not recommended unless
+that gym is a test you're done with." Message 2 answered that.
+
+**Ruling: B. The `danielles` organization is a test; its organization-admin login
+is re-homed to `punxsy_prominence` as a parent of the athlete Jason named.** It is
+done by a script the re-home lane writes and has reviewed, run first as a dry run
+and then for real, by Jason, not by any AI session; the lane proves it on a local
+test database first and never touches production itself. This ends that login's
+admin access at `danielles`. This entry records no email address.
+
+---
+
+## OD-2026-10-05-007 -- F-003 board-only stamp line approved as written
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion in the overwatch
+thread (`~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, tool
+use `toolu_01NfhYEUo9uaQJYu5zUFFyFJ`; asked 2026-10-05T11:24:10.766Z, answered
+2026-10-05T11:24:55.646Z). Read by script from that transcript (records pass,
+2026-10-05). New; edits no earlier entry. Follows OD-2026-10-05-006 part (b),
+which accepted option A for F-003 (the platform owner is not served the board's
+aggregates).
+
+Asked: "F-003 fix: when a platform owner opens a board-only page, it will show
+the existing "WRONG DOOR — Not available for this role" stamp plus one new line:
+"these figures are served to board members only." Approve that line? (Plain
+English: the message you'd see as Admin@ if you opened a board-only page.)"
+Options: "Approve as written (Recommended)" ("Use "these figures are served to
+board members only." exactly.") and "Approve with my edits" ("Type your version in
+Other / notes."). Jason chose *"Approve as written (Recommended)"*.
+
+**Ruling: the stamp line is "these figures are served to board members only."
+exactly as written.** Shipped in #1229 (`ee0feb13`) as
+`detail="these figures are served to board members only"` in
+`apps/web/app/board/BoardOnlyNotice.tsx:29`; `RefusalStamp` renders it as "Not
+available for this role — these figures are served to board members only."
+(`apps/web/components/RefusalStamp.tsx:76-78`), so the period is supplied by the
+stamp.
+
+---
+
 ## OD-2026-10-05-006 -- Release 9 authorized, and overwatch's standing recommendations at that moment accepted (not the open items)
 
 **Provenance: PRIMARY (typed message).** Jason's typed message in the overwatch
