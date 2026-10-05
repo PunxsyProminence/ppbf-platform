@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
 import { formatMeasuredAt, type BoardCountMetric } from '../BoardSummaryPanel';
 
@@ -276,7 +277,7 @@ function SectionHeader({ title, blurb, read, measuredAt }: {
   );
 }
 
-export default function BoardAggregatesPage() {
+function BoardAggregatesContent() {
   const volunteers = useBoardAggregate<VolunteerSummary>(
     VOLUNTEER_ENDPOINT,
     'Unable to load the volunteer aggregate.',
@@ -322,15 +323,15 @@ export default function BoardAggregatesPage() {
 
   return (
     /* board ONLY, and deliberately narrower than its own layout: BoardRoleGate
-       admits platform_owner, and every other board sub-page passes
-       ['board', 'platform_owner']. All three routes behind this page gate on
+       admits platform_owner, and so do the hub, the seat pages and
+       /board/dashboard. All three routes behind this page gate on
        ['board'] alone, and volunteer-summary/route.test.ts pins that a
        platform_owner is refused ("this route is board-only, unlike
        board/summary"). Admitting one here would render a page whose every
        figure is a 403 -- a governance surface reporting nothing, for a reason
        the reader cannot see. The gate is the route's; this only stops the
        platform owner walking into a room with no floor. */
-    <RoleSessionGate allowedRoles={['board']}>
+    <>
       {/* No room modifier class here, on purpose, unlike the two sibling
           board pages. Rooms were retired as a VISUAL concept by owner decision
           2026-08-23: a page is no longer required to paint the room its door
@@ -450,6 +451,20 @@ export default function BoardAggregatesPage() {
           </section>
         </div>
       </main>
-    </RoleSessionGate>
+    </>
+  );
+}
+
+// F-003: board only. The fetching body is a child of the gates, not their
+// sibling, so a platform owner -- or anybody the gate refuses -- fires no
+// request at all. Hooks in the page component itself ran before the gate had
+// decided, and the platform owner's 403s were drawn as "Unavailable".
+export default function BoardAggregatesPage() {
+  return (
+    <BoardOnlyNotice>
+      <RoleSessionGate allowedRoles={['board']}>
+        <BoardAggregatesContent />
+      </RoleSessionGate>
+    </BoardOnlyNotice>
   );
 }

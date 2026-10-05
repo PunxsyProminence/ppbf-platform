@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
 import { formatMeasuredAt, type BoardCountMetric } from '../BoardSummaryPanel';
 
@@ -73,7 +74,7 @@ function filterLabel(metric: BoardCountMetric | undefined, isLoading: boolean): 
   return String(metric.count);
 }
 
-export default function BoardComplianceMonitoringPage() {
+function BoardComplianceMonitoringContent() {
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   // The status breakdown and the filter labels must always describe the WHOLE
   // register. Reading them from a filtered response makes every other bucket
@@ -151,11 +152,7 @@ export default function BoardComplianceMonitoringPage() {
   const VALUE = 'stat-val';
 
   return (
-    // platform_owner is admitted to match BoardRoleGate in app/board/layout.tsx
-    // and /api/pilot/board/compliance-rules, which already serves this role.
-    // Listing 'board' alone refused the owner from a register its own API
-    // returns to them.
-    <RoleSessionGate allowedRoles={['board', 'platform_owner']}>
+    <>
       {/* The board room. This screen did paint the clinic once, and the class
           was moved to board when the twelve mis-filed screens were realigned;
           the sentence describing the clinic was left behind, so the page has
@@ -314,6 +311,20 @@ export default function BoardComplianceMonitoringPage() {
           </div>
         </div>
       </main>
-    </RoleSessionGate>
+    </>
+  );
+}
+
+// F-003: board only. The fetching body is a child of the gates, not their
+// sibling, so a platform owner -- or anybody the gate refuses -- fires no
+// request at all. Hooks in the page component itself ran before the gate had
+// decided, and the platform owner's 403s were drawn as "Unavailable".
+export default function BoardComplianceMonitoringPage() {
+  return (
+    <BoardOnlyNotice>
+      <RoleSessionGate allowedRoles={['board']}>
+        <BoardComplianceMonitoringContent />
+      </RoleSessionGate>
+    </BoardOnlyNotice>
   );
 }
