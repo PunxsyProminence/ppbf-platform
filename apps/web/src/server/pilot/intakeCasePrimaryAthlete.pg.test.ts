@@ -66,6 +66,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { deleteAthleteRecord } from './dataDeletion';
 import { withTransaction } from './db';
@@ -529,7 +530,7 @@ describe('ACCESS: the review queue reads the column', () => {
     });
 
     test("opening GONE's case is refused, even for the admin; LIVE's opens", async () => {
-      const admin = { accountId: ADMIN, role: 'organization_admin' as const, organizationId: ORG };
+      const admin: ActorIdentity = { accountId: ADMIN, role: 'organization_admin', organizationId: ORG, athleteId: null };
       await expect(assertActorCanAccessIntakeCase(admin, ORG, C.gone)).rejects.toThrow();
       expect((await assertActorCanAccessIntakeCase(admin, ORG, C.live)).subjectAthleteIds).toEqual([LIVE]);
     });
