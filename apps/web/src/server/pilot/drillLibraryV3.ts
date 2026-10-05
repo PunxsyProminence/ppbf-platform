@@ -282,6 +282,8 @@ const SECONDARY_SKILL_FIELDS = 'organization_id, drill_id, skill_id';
  * memberCodesForFamily throws for a family with no approved crosswalk rather
  * than expanding to an empty set, so an unreconciled family surfaces as a
  * refusal instead of an empty drill list that reads as "no such drills".
+ * All twelve families have a crosswalk since 2026-10-05; the refusal is kept
+ * for a family whose list is ever withdrawn.
  */
 export async function listDrillLibrary(
   organizationId: string,

@@ -9,6 +9,7 @@ import {
   UNMAPPED_SKILL_CODES,
   isSkillFamilyId,
   memberCodesForFamily,
+  type SkillFamilyId,
 } from './skillFamilies';
 
 /*
@@ -203,30 +204,127 @@ describe('SKILL-01 expands to exactly the approved six', () => {
   });
 });
 
+describe('SKILL-02..SKILL-12 expand to the list Jason approved on 2026-10-05', () => {
+  // Written out rather than derived, for the same reason as SKILL-01 above.
+  // Approved as drafted, AskUserQuestion toolu_01MYKQUdWWwaWnpRAyXej5Cp.
+  const APPROVED: Record<Exclude<SkillFamilyId, 'SKILL-01'>, string[]> = {
+    'SKILL-02': ['SK-DIST-01', 'SK-DIST-02', 'SK-DIST-03', 'SK-JAB-01', 'SK-JAB-02', 'SK-JAB-03'],
+    'SKILL-03': ['SK-CROSS-01', 'SK-CTR-01'],
+    'SKILL-04': ['SK-HOOK-01', 'SK-HOOK-02'],
+    'SKILL-05': ['SK-IN-01', 'SK-IN-02', 'SK-UPPER-01'],
+    'SKILL-06': [
+      'SK-CTR-02',
+      'SK-DEF-01',
+      'SK-DEF-02',
+      'SK-DEF-03',
+      'SK-DEF-04',
+      'SK-DEF-05',
+      'SK-DEF-06',
+      'SK-DEF-07',
+      'SK-DEF-08',
+    ],
+    'SKILL-07': [
+      'SK-ANG-01',
+      'SK-COMBO-03',
+      'SK-FW-01',
+      'SK-FW-02',
+      'SK-FW-03',
+      'SK-FW-04',
+      'SK-FW-05',
+      'SK-FW-06',
+      'SK-OUT-01',
+      'SK-TAC-02',
+    ],
+    'SKILL-08': ['SK-TAC-01', 'SK-TAC-04'],
+    'SKILL-09': ['SK-FEINT-01', 'SK-RHY-01'],
+    'SKILL-10': ['SK-BODY-01'],
+    'SKILL-11': ['SK-BAG-01', 'SK-FW-07'],
+    'SKILL-12': ['SK-FILM-01', 'SK-FILM-02', 'SK-SELF-01', 'SK-SPAR-04'],
+  };
+
+  it.each(Object.entries(APPROVED))('%s holds exactly its approved codes', (familyId, codes) => {
+    expect([...memberCodesForFamily(familyId)].sort()).toEqual(codes);
+  });
+
+  it('leaves exactly the eighteen approved codes unmapped', () => {
+    expect([...UNMAPPED_SKILL_CODES].sort()).toEqual([
+      'SK-BAG-02',
+      'SK-COMBO-01',
+      'SK-COMBO-02',
+      'SK-DRILL-01',
+      'SK-HAND-01',
+      'SK-PAD-01',
+      'SK-PARTNER-01',
+      'SK-RET-01',
+      'SK-RET-02',
+      'SK-REV-01',
+      'SK-REV-02',
+      'SK-SAFE-01',
+      'SK-SAFE-02',
+      'SK-SHADOW-01',
+      'SK-SPAR-01',
+      'SK-SPAR-02',
+      'SK-SPAR-03',
+      'SK-TAC-03',
+    ]);
+  });
+
+  it('gives every family at least one drill in the shipped library', () => {
+    // A family whose codes all exist but match no drill would show an empty
+    // shelf, which is the failure memberCodesForFamily refuses to produce.
+    const seeded = new Set(SEEDED_CODES);
+    for (const id of SKILL_FAMILY_IDS) {
+      expect(memberCodesForFamily(id).some((code) => seeded.has(code))).toBe(true);
+    }
+  });
+});
+
+describe('a new skill code is added by one line, and cannot arrive silently', () => {
+  // Jason's condition on the 2026-10-05 approval: "we ill need to make sure we
+  // can add to as moreskills become available". The test above that accounts
+  // for every seeded code is what makes adding safe; these pin that it works
+  // in both directions for a code that does not exist yet.
+  const unaccounted = (seeded: string[], crosswalk: Record<string, readonly string[]>, unmapped: readonly string[]) => {
+    const known = new Set([...Object.values(crosswalk).flat(), ...unmapped]);
+    return seeded.filter((code) => !known.has(code));
+  };
+
+  it('flags a new seed code that nobody has placed', () => {
+    expect(unaccounted([...SEEDED_CODES, 'SK-NEW-01'], { ...FAMILY_MEMBER_CODES } as Record<string, readonly string[]>, UNMAPPED_SKILL_CODES))
+      .toEqual(['SK-NEW-01']);
+  });
+
+  it('accepts it once it is added to a family list, and expands it', () => {
+    const extended = {
+      ...FAMILY_MEMBER_CODES,
+      'SKILL-04': [...(FAMILY_MEMBER_CODES['SKILL-04'] ?? []), 'SK-NEW-01'],
+    };
+    expect(unaccounted([...SEEDED_CODES, 'SK-NEW-01'], extended as Record<string, readonly string[]>, UNMAPPED_SKILL_CODES))
+      .toEqual([]);
+    expect(memberCodesForFamily('SKILL-04', extended)).toContain('SK-NEW-01');
+  });
+});
+
 describe('an unexpandable family refuses instead of returning nothing', () => {
-  it('refuses a family that is real but not yet reconciled', () => {
+  it('reconciles all twelve families today', () => {
+    expect(SKILL_FAMILY_IDS.filter((id) => !FAMILY_MEMBER_CODES[id])).toEqual([]);
+  });
+
+  it('refuses a family that is real but has no crosswalk', () => {
     // THE CASE THAT MATTERS MOST. An empty array here would reach the caller as
     // an empty drill list, which reads as "this family has no drills" and is
-    // false. Every family except SKILL-01 is in this state today.
-    expect(() => memberCodesForFamily('SKILL-07')).toThrow(/no approved code crosswalk yet/);
+    // false. No family is in this state today, so the guard is exercised
+    // against a crosswalk with SKILL-07 withdrawn.
+    const withoutSeven = { ...FAMILY_MEMBER_CODES };
+    delete withoutSeven['SKILL-07'];
+    expect(() => memberCodesForFamily('SKILL-07', withoutSeven)).toThrow(/no approved code crosswalk yet/);
 
     try {
-      memberCodesForFamily('SKILL-07');
+      memberCodesForFamily('SKILL-07', withoutSeven);
       throw new Error('expected memberCodesForFamily to throw');
     } catch (error) {
       expect((error as { code?: string }).code).toBe('SKILL_FAMILY_NOT_RECONCILED');
       expect((error as { status?: number }).status).toBe(400);
-    }
-  });
-
-  it('refuses every family that has no crosswalk, not just the one sampled above', () => {
-    const unreconciled = SKILL_FAMILY_IDS.filter((id) => !FAMILY_MEMBER_CODES[id]);
-
-    // Today that is eleven of twelve. Asserting the count keeps this honest if
-    // a family is crosswalked later without this file being revisited.
-    expect(unreconciled).toHaveLength(11);
-    for (const id of unreconciled) {
-      expect(() => memberCodesForFamily(id)).toThrow(/no approved code crosswalk yet/);
     }
   });
 
