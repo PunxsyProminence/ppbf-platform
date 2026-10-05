@@ -176,16 +176,24 @@ async function attemptPurge(client, athletes, accountIds) {
   if (athletes.length > 0 || accountIds.length > 0) {
     await client.query('savepoint lock_guardian_links');
     try {
+      const guardianRecords = await client.query(
+        'select organization_id, parent_id from pilot.parents where account_id = any($1::text[])',
+        [accountIds],
+      );
       await client.query(
         `select 1 from pilot.guardian_links gl
       where (gl.organization_id, gl.athlete_id) in (
               select * from unnest($1::text[], $2::text[]))
          or (gl.organization_id, gl.parent_id) in (
-              select p.organization_id, p.parent_id from pilot.parents p
-               where p.account_id = any($3::text[]))
+              select * from unnest($3::text[], $4::text[]))
       order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
       for update of gl`,
-        [athletes.map((a) => a.organization_id), athletes.map((a) => a.athlete_id), accountIds],
+        [
+          athletes.map((a) => a.organization_id),
+          athletes.map((a) => a.athlete_id),
+          guardianRecords.rows.map((p) => p.organization_id),
+          guardianRecords.rows.map((p) => p.parent_id),
+        ],
       );
       await client.query('release savepoint lock_guardian_links');
       guardianLinkLock = 'held';

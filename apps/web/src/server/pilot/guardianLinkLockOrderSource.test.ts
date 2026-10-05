@@ -93,7 +93,7 @@ describe('guardian_links row locks', () => {
     const scriptLocks = guardianLinkLocks(fs.readFileSync(PURGE_SCRIPT, 'utf8'));
     expect(scriptLocks).toHaveLength(1);
     const helperPurge = guardianLinkLocks(fs.readFileSync(HELPER_FILE, 'utf8'))
-      .find((l) => l.includes('pilot.parents p'));
+      .find((l) => l.includes('gl.organization_id, gl.parent_id'));
     expect(normalise(scriptLocks[0])).toBe(normalise(helperPurge ?? ''));
   });
 });

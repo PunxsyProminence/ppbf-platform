@@ -16,7 +16,12 @@ import { queryOne, withTransaction } from './db';
 import { downloadPilotVideoFile } from './blob';
 import { analyzeFramesWithVision, extractFrames } from './shadowFilmStudy';
 import { createFilmStudyProposal } from './shadowFilmStudyProposals';
-import { assertGuardianMediaConsent, checkGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
+import {
+  assertGuardianMediaConsent,
+  checkGuardianMediaConsent,
+  GuardianConsentMissingError,
+  lockGuardianLinksForAthletes,
+} from './guardianConsent';
 import { listLiveTagSubjects } from './videoClipTags';
 
 jest.mock('./shadowJobQueue', () => ({
@@ -53,11 +58,13 @@ jest.mock('./shadowFilmStudyProposals', () => ({
   createFilmStudyProposal: jest.fn(),
 }));
 // Consent is re-read when the job runs (filmStudyConsent.ts). Only the two
-// reads are mocked; the playback scope gate that interprets them runs real.
+// reads, and the guardian-link lock taken before them, are mocked; the
+// playback scope gate that interprets them runs real.
 jest.mock('./guardianConsent', () => ({
   ...jest.requireActual('./guardianConsent'),
   assertGuardianMediaConsent: jest.fn(),
   checkGuardianMediaConsent: jest.fn(),
+  lockGuardianLinksForAthletes: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('./videoClipTags', () => ({ listLiveTagSubjects: jest.fn() }));
 
@@ -201,6 +208,7 @@ describe('film study executor', () => {
     // The last consent read and the insert share that one transaction.
     expect(mockWithTransaction).toHaveBeenCalledTimes(1);
     expect(mockCheckConsent).toHaveBeenLastCalledWith('org-1', 'ATH-1', TX_CLIENT);
+    expect(jest.mocked(lockGuardianLinksForAthletes)).toHaveBeenLastCalledWith(TX_CLIENT, 'org-1', expect.arrayContaining(['ATH-1']), 'share');
     expect(mockTagSubjects).toHaveBeenLastCalledWith('org-1', 'vs-1', TX_CLIENT);
 
     const [, output, safety] = mockComplete.mock.calls[0];

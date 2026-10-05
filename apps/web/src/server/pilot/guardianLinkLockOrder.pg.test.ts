@@ -59,7 +59,6 @@ const MIDDLE_PARENT_ID = PARENT_IDS[1];
 // guardian -- the guardian the purge removes. Their links span both athletes,
 // which is what makes the purge a multi-athlete locker.
 const ATHLETE_2_ID = 'ath-lock-order-2';
-const PURGED_ACCOUNT_ID = 'acct-lock-order-purged-guardian';
 const DEADLOCK = '40P01';
 
 let PG_PORT: number;
@@ -191,7 +190,9 @@ const readTwoAthletesAscending: Locker = async (tx) => {
     await consent.lockGuardianLinksForAthlete(tx, ORG_ID, athleteId, 'share');
   }
 };
-const purgeInSharedOrder: Locker = (tx) => consent.lockGuardianLinksForPurge(tx, [], [PURGED_ACCOUNT_ID]);
+const purgeInSharedOrder: Locker = (tx) => consent.lockGuardianLinksForPurge(
+  tx, [], [{ organization_id: ORG_ID, parent_id: MIDDLE_PARENT_ID }],
+);
 // Test-only: the purge taking the guardian's links in the order its loop
 // used to reach them -- the second athlete's cascade before the first's.
 const purgeInLoopOrder: Locker = (tx) => tx.query(
@@ -290,15 +291,6 @@ beforeAll(async () => {
     `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
      values ($1, $2, $3, 'guardian')`,
     [ORG_ID, MIDDLE_PARENT_ID, ATHLETE_2_ID],
-  );
-  await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'parent', $2, 'microsoft')`,
-    [PURGED_ACCOUNT_ID, ORG_ID],
-  );
-  await client.query(
-    'update pilot.parents set account_id = $1 where organization_id = $2 and parent_id = $3',
-    [PURGED_ACCOUNT_ID, ORG_ID, MIDDLE_PARENT_ID],
   );
 
   // Env before import: db.ts builds its pool on first use.

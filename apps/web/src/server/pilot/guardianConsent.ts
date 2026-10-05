@@ -89,8 +89,11 @@ export async function lockGuardianLinksForAthletes(
 
 /*
  * THE RETENTION PURGE'S LOCK, taken before it deletes anything: every link of
- * an athlete it may purge and every link of a guardian record whose account it
- * may purge, in the shared order. The deletes that follow (an athlete or a
+ * an athlete it may purge and every link of a guardian record it may purge, in
+ * the shared order. Guardian records come in as (organization_id, parent_id)
+ * keys the caller resolved from the expired accounts, so this statement
+ * carries no account predicate (guardianAccess.test.ts treats one beside
+ * guardian_links as a viewer-scoped join). The deletes that follow (an athlete or a
  * pilot.parents row, cascading to guardian_links) then touch only rows this
  * transaction already holds, instead of locking them one cascade at a time in
  * whatever order the candidates were listed. Rows locked for a candidate the
@@ -102,22 +105,22 @@ export async function lockGuardianLinksForAthletes(
 export async function lockGuardianLinksForPurge(
   client: QueryExecutor,
   athletes: ReadonlyArray<{ organization_id: string; athlete_id: string }>,
-  parentAccountIds: readonly string[],
+  parents: ReadonlyArray<{ organization_id: string; parent_id: string }>,
 ): Promise<void> {
-  if (athletes.length === 0 && parentAccountIds.length === 0) return;
+  if (athletes.length === 0 && parents.length === 0) return;
   await client.query(
     `select 1 from pilot.guardian_links gl
       where (gl.organization_id, gl.athlete_id) in (
               select * from unnest($1::text[], $2::text[]))
          or (gl.organization_id, gl.parent_id) in (
-              select p.organization_id, p.parent_id from pilot.parents p
-               where p.account_id = any($3::text[]))
+              select * from unnest($3::text[], $4::text[]))
       order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
       for update of gl`,
     [
       athletes.map((athlete) => athlete.organization_id),
       athletes.map((athlete) => athlete.athlete_id),
-      [...parentAccountIds],
+      parents.map((parent) => parent.organization_id),
+      parents.map((parent) => parent.parent_id),
     ],
   );
 }

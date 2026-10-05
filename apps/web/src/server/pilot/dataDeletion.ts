@@ -553,17 +553,17 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
        as it went, in no stated order, and against a consent reader holding
        several athletes' links that is a deadlock. Locks only; the deletes
        below are unchanged. */
-    const expiredParentAccounts = await client.query<{ account_id: string }>(
-      `select account_id from pilot.accounts
-        where deleted_at is not null
-          and deleted_at < (now() - interval '1 year')
-          and role = 'parent'`,
+    // The guardian records the parent purge below deletes: same predicate.
+    const expiredGuardianRecords = await client.query<{ organization_id: string; parent_id: string }>(
+      `select organization_id, parent_id from pilot.parents
+        where account_id in (
+          select account_id from pilot.accounts
+           where deleted_at is not null
+             and deleted_at < (now() - interval '1 year')
+             and role = 'parent'
+        )`,
     );
-    await lockGuardianLinksForPurge(
-      client,
-      expired.rows,
-      expiredParentAccounts.rows.map((row) => row.account_id),
-    );
+    await lockGuardianLinksForPurge(client, expired.rows, expiredGuardianRecords.rows);
 
     // Delete athletes soft-deleted more than 2 years ago: exactly the rows locked above.
     const athleteDelete = expired.rows.length === 0
