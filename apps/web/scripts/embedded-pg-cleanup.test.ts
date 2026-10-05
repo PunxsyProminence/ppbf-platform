@@ -145,6 +145,90 @@ describe('embedded-pg-cleanup: parsers and predicates', () => {
     });
   });
 
+  it('reads the data directory out of a postmaster command line, and none out of a forked child', () => {
+    // As Get-CimInstance reported them for a real embedded cluster on Windows.
+    const commandLines = [
+      String.raw`C:\pg\bin\postgres.exe -D C:\Temp\ppbf-a-pg-test-1 -p 5433`,
+      '"C:/pg/bin/postgres.exe" -D "C:/Program Files/x/ppbf-a-pg-test-1" -p 5433',
+      '/usr/lib/postgresql/bin/postgres -D/tmp/ppbf-a-pg-test-1',
+      '"C:/pg/bin/postgres.exe" --forkchild="backend" 6120',
+      'postgres: walwriter',
+      null,
+    ];
+    const result = evaluateScript(`
+      process.stdout.write(JSON.stringify(${JSON.stringify(commandLines)}.map(m.parsePostmasterCommandDataDir)));
+    `);
+    expect(result).toEqual([
+      String.raw`C:\Temp\ppbf-a-pg-test-1`,
+      'C:/Program Files/x/ppbf-a-pg-test-1',
+      '/tmp/ppbf-a-pg-test-1',
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('parses the postgres command-line listings into pid -> command line maps', () => {
+    const cim = [
+      String.raw`38372|C:\pg\postgres.exe -D C:\T\a -p 1`,
+      '37880|"C:/pg/postgres.exe" --forkchild="io_worker" 5908',
+      '',
+      'junk',
+    ].join('\r\n');
+    const ps = '  10 /usr/bin/postgres -D /tmp/a -p 1\n  11 postgres: walwriter \n  12 /usr/bin/node x.js\n';
+    const result = evaluateScript(`
+      process.stdout.write(JSON.stringify({
+        cim: [...m.parsePostgresCommandLines(${JSON.stringify(cim)})],
+        ps: [...m.parsePsCommandLines(${JSON.stringify(ps)})],
+      }));
+    `);
+    expect(result).toEqual({
+      cim: [
+        [38372, String.raw`C:\pg\postgres.exe -D C:\T\a -p 1`],
+        [37880, '"C:/pg/postgres.exe" --forkchild="io_worker" 5908'],
+      ],
+      ps: [
+        [10, '/usr/bin/postgres -D /tmp/a -p 1'],
+        [11, 'postgres: walwriter'],
+      ],
+    });
+  });
+
+  it("counts a live postgres PID as this directory's postmaster only when its -D names this directory", () => {
+    const dir = path.join(os.tmpdir(), 'ppbf-identity-pg-test-1');
+    const other = path.join(os.tmpdir(), 'ppbf-other-pg-test-2');
+    const lines: Array<[number, string]> = [
+      // This directory's postmaster, spelled the way Postgres echoes it back.
+      [100, `postgres.exe -D ${dir} -p 1`],
+      // The PID collisions that killed live clusters: another cluster's
+      // forked backend, and another cluster's postmaster.
+      [101, '"postgres.exe" --forkchild="backend" 6120'],
+      [102, `postgres.exe -D ${other} -p 2`],
+    ];
+    const result = evaluateScript(`
+      const dir = ${JSON.stringify(dir)};
+      const lines = new Map(${JSON.stringify(lines)});
+      process.stdout.write(JSON.stringify({
+        ownPostmaster: await m.identifyPostmaster(100, dir, 'postgres', lines),
+        otherClustersChild: await m.identifyPostmaster(101, dir, 'postgres', lines),
+        otherClustersPostmaster: await m.identifyPostmaster(102, dir, 'postgres', lines),
+        notListed: await m.identifyPostmaster(103, dir, 'postgres', lines),
+        listingFailed: await m.identifyPostmaster(100, dir, 'postgres', null),
+        deadPassesThrough: await m.identifyPostmaster(100, dir, 'dead', lines),
+        reusedPassesThrough: await m.identifyPostmaster(100, dir, 'reused', lines),
+      }));
+    `);
+    expect(result).toEqual({
+      ownPostmaster: 'postgres',
+      otherClustersChild: 'foreign',
+      otherClustersPostmaster: 'foreign',
+      notListed: 'foreign',
+      listingFailed: 'unknown',
+      deadPassesThrough: 'dead',
+      reusedPassesThrough: 'reused',
+    });
+  });
+
   it('classifies a postmaster PID by liveness first, then by image', () => {
     const gone = deadPid();
     const result = evaluateScript(`
@@ -207,15 +291,26 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
 
   it('removes only what is provably abandoned and keeps everything owned or uncertain', async () => {
     const gone = deadPid();
-    // Three stand-ins for a postmaster. The process list handed to the sweep
-    // calls them postgres; the sweep's verdict decides which of them is ever
-    // sent taskkill /t /f (Windows) or SIGQUIT (elsewhere).
-    const [orphanPostmaster, ownedPostmaster, misclaimedPostmaster] = [liveDummy(), liveDummy(), liveDummy()];
-    dummies.push(orphanPostmaster, ownedPostmaster, misclaimedPostmaster);
+    // Stand-ins for postgres processes. The process list handed to the sweep
+    // calls them postgres and the command lines say which directory each was
+    // started on; the sweep's verdict decides which of them is ever sent
+    // taskkill /t /f (Windows) or SIGQUIT (elsewhere).
+    const [orphanPostmaster, ownedPostmaster, misclaimedPostmaster, unclaimedPostmaster, victimChild, victimPostmaster] = [
+      liveDummy(),
+      liveDummy(),
+      liveDummy(),
+      liveDummy(),
+      liveDummy(),
+      liveDummy(),
+    ];
+    dummies.push(orphanPostmaster, ownedPostmaster, misclaimedPostmaster, unclaimedPostmaster, victimChild, victimPostmaster);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const orphanPid = orphanPostmaster.pid as number;
     const ownedPid = ownedPostmaster.pid as number;
     const misclaimedPid = misclaimedPostmaster.pid as number;
+    const unclaimedPid = unclaimedPostmaster.pid as number;
+    const victimChildPid = victimChild.pid as number;
+    const victimPostmasterPid = victimPostmaster.pid as number;
 
     const deadPostmaster = cluster('ppbf-dead-pg-test-1', { 'postmaster.pid': postmasterPid(gone, `${root}/ppbf-dead-pg-test-1`) });
     const reusedPid = cluster('ppbf-reused-pg-test-2', { 'postmaster.pid': postmasterPid(process.pid, `${root}/ppbf-reused-pg-test-2`) });
@@ -230,13 +325,28 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
       'ppbf-helper.pid': `${gone}\n`,
     });
     const liveUnclaimed = cluster('ppbf-unclaimed-pg-test-7', {
-      'postmaster.pid': postmasterPid(ownedPid, `${root}/ppbf-unclaimed-pg-test-7`),
+      'postmaster.pid': postmasterPid(unclaimedPid, `${root}/ppbf-unclaimed-pg-test-7`),
     });
     // An orphan whose postmaster.pid names a live postgres that is running on
     // a DIFFERENT directory: the directory goes, the process must not.
     const misclaimed = cluster('ppbf-misclaimed-pg-test-8', {
       'postmaster.pid': postmasterPid(misclaimedPid, `${root}/somewhere-else`),
       'ppbf-helper.pid': `${gone}\n`,
+    });
+    // Abandoned clusters whose recorded postmaster PID Windows has since handed
+    // to a live process of ANOTHER cluster: a forked backend (observed: killing
+    // it made that cluster drop every connection, ECONNRESET mid-COMMIT) and a
+    // postmaster started on a different directory. The directories go; the
+    // processes must not.
+    const collidedChild = cluster('ppbf-collidedchild-pg-test-10', {
+      'postmaster.pid': postmasterPid(victimChildPid, `${root}/ppbf-collidedchild-pg-test-10`),
+      'ppbf-helper.pid': `${gone}
+`,
+    });
+    const collidedPostmaster = cluster('ppbf-collidedpm-pg-test-11', {
+      'postmaster.pid': postmasterPid(victimPostmasterPid, `${root}/ppbf-collidedpm-pg-test-11`),
+      'ppbf-helper.pid': `${gone}
+`,
     });
     const notOurs = cluster('ppbf-cls-notours', { 'postmaster.pid': postmasterPid(gone, `${root}/ppbf-cls-notours`) });
     const self = cluster('ppbf-self-pg-test-9', { 'postmaster.pid': postmasterPid(gone, `${root}/ppbf-self-pg-test-9`) });
@@ -248,10 +358,22 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
         [${ownedPid}, 'postgres.exe'],
         [${misclaimedPid}, 'postgres.exe'],
         [${gone}, 'postgres.exe'],
+        [${unclaimedPid}, 'postgres.exe'],
+        [${victimChildPid}, 'postgres.exe'],
+        [${victimPostmasterPid}, 'postgres.exe'],
       ]);
+      const commandLines = new Map(${JSON.stringify([
+        [orphanPid, `postgres.exe -D ${orphanLive} -p 1`],
+        [ownedPid, `postgres.exe -D ${ownedLive} -p 2`],
+        [misclaimedPid, `postgres.exe -D ${root}/somewhere-else -p 3`],
+        [unclaimedPid, `postgres.exe -D ${liveUnclaimed} -p 4`],
+        [victimChildPid, '"postgres.exe" --forkchild="backend" 6120'],
+        [victimPostmasterPid, `postgres.exe -D ${root}/a-live-cluster -p 5`],
+      ])});
       const summary = await m.sweepStaleDataDirs(${JSON.stringify(root)}, {
         ownDataDir: ${JSON.stringify(self)},
         processes,
+        commandLines,
       });
       process.stdout.write(JSON.stringify({
         removed: summary.removed.map((d) => d.split(/[\\\\/]/).pop()).sort(),
@@ -262,6 +384,8 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
 
     expect(result.failed).toEqual([]);
     expect(result.removed).toEqual([
+      'ppbf-collidedchild-pg-test-10',
+      'ppbf-collidedpm-pg-test-11',
       'ppbf-dead-pg-test-1',
       'ppbf-misclaimed-pg-test-8',
       'ppbf-old-pg-test-3',
@@ -270,7 +394,7 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
     ]);
     expect(result.skipped).toEqual(['ppbf-owned-pg-test-5', 'ppbf-unclaimed-pg-test-7', 'ppbf-young-pg-test-4']);
 
-    for (const dir of [deadPostmaster, reusedPid, neverStartedOld, orphanLive, misclaimed]) {
+    for (const dir of [deadPostmaster, reusedPid, neverStartedOld, orphanLive, misclaimed, collidedChild, collidedPostmaster]) {
       expect({ dir: baseName(dir), exists: fs.existsSync(dir) }).toEqual({ dir: baseName(dir), exists: false });
     }
     for (const dir of [neverStartedYoung, ownedLive, liveUnclaimed, notOurs, self]) {
@@ -278,15 +402,45 @@ describe('embedded-pg-cleanup: sweep decisions', () => {
     }
 
     // The orphan's postmaster was stopped; the owned one, the one whose
-    // postmaster.pid claims another directory, and this test runner (a
-    // recycled PID) were not.
+    // postmaster.pid claims another directory, the two other clusters' processes
+    // that inherited a stale PID, and this test runner (a recycled PID) were not.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    expect({ orphan: isAlive(orphanPid), owned: isAlive(ownedPid), misclaimed: isAlive(misclaimedPid) }).toEqual({
+    expect({
+      orphan: isAlive(orphanPid),
+      owned: isAlive(ownedPid),
+      misclaimed: isAlive(misclaimedPid),
+      unclaimed: isAlive(unclaimedPid),
+      victimChild: isAlive(victimChildPid),
+      victimPostmaster: isAlive(victimPostmasterPid),
+    }).toEqual({
       orphan: false,
       owned: true,
       misclaimed: true,
+      unclaimed: true,
+      victimChild: true,
+      victimPostmaster: true,
     });
   }, 60_000);
+
+  it('keeps a live postgres PID, and kills nothing, when its command line cannot be read', async () => {
+    const holder = liveDummy();
+    dummies.push(holder);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const holderPid = holder.pid as number;
+    const dir = cluster('ppbf-nocmd-pg-test-1', {
+      'postmaster.pid': postmasterPid(holderPid, `${root}/ppbf-nocmd-pg-test-1`),
+      'ppbf-helper.pid': `${deadPid()}
+`,
+    });
+    const result = evaluateScript(`
+      const processes = new Map([[${holderPid}, 'postgres.exe']]);
+      const verdict = await m.judgeStaleDir(${JSON.stringify(dir)}, { processes, commandLines: null });
+      const cleanup = await m.cleanupDataDir(${JSON.stringify(dir)}, { processes, commandLines: null });
+      process.stdout.write(JSON.stringify({ verdict, killed: cleanup.killed, orphansKilled: cleanup.orphansKilled }));
+    `);
+    expect(result).toEqual({ verdict: 'keep', killed: false, orphansKilled: [] });
+    expect(isAlive(holderPid)).toBe(true);
+  }, 30_000);
 
   it('keeps a live cluster when the process list is unavailable', () => {
     const dir = cluster('ppbf-live-pg-test-1', { 'postmaster.pid': postmasterPid(process.pid, `${root}/ppbf-live-pg-test-1`) });

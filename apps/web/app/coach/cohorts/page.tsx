@@ -28,6 +28,22 @@ type Cohort = CohortDefinitionRow;
 type Report = AthleteCohortReport;
 type AthleteChoice = { athlete_id: string; full_name: string };
 
+// A copy, because the server module's own list sits beside database code a
+// client bundle must not pull in. page.test.tsx asserts the rendered options
+// equal COMPETENCE_DOMAINS, so the two cannot drift.
+const LEVEL_DOMAINS = [
+  'stance_base',
+  'footwork',
+  'offense',
+  'defense',
+  'distance_timing',
+  'decision_making',
+  'composure',
+  'conditioning',
+  'ring_craft',
+  'partner_control',
+] as const;
+
 function levelRange(cohort: Cohort): string {
   const { min_level_ordinal: min, max_level_ordinal: max } = cohort;
   if (min === null && max === null) return 'Any level';
@@ -47,6 +63,26 @@ function CoachCohorts() {
   const [report, setReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
+
+  // Setting a level (OD-2026-10-03-002 section 6). The route decides who may;
+  // this form only collects the choice and shows the rooms it now gives.
+  const [levelDomain, setLevelDomain] = useState<string>(LEVEL_DOMAINS[0]);
+  const [levelKey, setLevelKey] = useState('');
+  const [levelNote, setLevelNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+
+  // Everything the form holds belongs to one athlete. Cleared whenever the
+  // athlete changes, so a note typed about one child (left behind by a failed
+  // save) can never be saved against the next.
+  const resetLevelForm = useCallback(() => {
+    setLevelDomain(LEVEL_DOMAINS[0]);
+    setLevelKey('');
+    setLevelNote('');
+    setSaveError('');
+    setSaveMessage('');
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +133,7 @@ function CoachCohorts() {
     // in place shows one athlete's assessment under another athlete's id.
     setReport(null);
     setReportError('');
+    resetLevelForm();
     setReportLoading(true);
     try {
       const response = await fetch(
@@ -113,7 +150,43 @@ function CoachCohorts() {
     } finally {
       setReportLoading(false);
     }
-  }, []);
+  }, [resetLevelForm]);
+
+  const saveLevel = useCallback(async () => {
+    if (!report || levelKey === '') return;
+    setSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/competence-cohorts`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: report.athlete_id,
+          domain: levelDomain,
+          level_key: levelKey,
+          evidence_note: levelNote,
+        }),
+      });
+      if (response.status === 403) throw new Error('You can only set levels for athletes you coach or cover.');
+      if (!response.ok) throw new Error('That level could not be saved.');
+      const payload = (await response.json()) as { result?: { changed?: boolean }; report?: Report };
+      if (payload.report) setReport(payload.report);
+      if (payload.result?.changed === false) {
+        // Nothing was written, so the note was not recorded either: keep it
+        // in the field rather than clearing it as if it had been saved.
+        setSaveMessage('No change: that is already the level.');
+      } else {
+        setLevelNote('');
+        setSaveMessage('Saved. The rooms below are updated.');
+      }
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'That level could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  }, [report, levelDomain, levelKey, levelNote]);
 
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
@@ -144,8 +217,11 @@ function CoachCohorts() {
                   setAthleteId(event.target.value);
                   setReport(null);
                   setReportError('');
+                  resetLevelForm();
                 }}
-                disabled={reportLoading}
+                // Also locked while saving: a save that lands after the id
+                // changed would put the previous athlete's rooms back on screen.
+                disabled={reportLoading || saving}
                 className="input"
                 placeholder="ath_..."
               />
@@ -158,7 +234,7 @@ function CoachCohorts() {
             <button
               type="button"
               onClick={() => void lookUp(athleteId)}
-              disabled={reportLoading || athleteId.trim() === ''}
+              disabled={reportLoading || saving || athleteId.trim() === ''}
               className="btn disabled:cursor-not-allowed disabled:opacity-60"
             >
               {reportLoading ? 'Looking up...' : 'Look up'}
@@ -194,6 +270,79 @@ function CoachCohorts() {
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {levels.length > 0 && (
+                <form
+                  className="mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveLevel();
+                  }}
+                >
+                  <h3 className="t-command text-[length:var(--t-md)]">Set a level</h3>
+                  <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+                    <div className="field">
+                      <label htmlFor="level-domain" className="t-label">Area</label>
+                      <select
+                        id="level-domain"
+                        value={levelDomain}
+                        onChange={(event) => { setLevelDomain(event.target.value); setSaveMessage(''); }}
+                        disabled={saving}
+                        className="input"
+                      >
+                        {LEVEL_DOMAINS.map((domain) => (
+                          <option key={domain} value={domain}>{domain.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="level-key" className="t-label">Level</label>
+                      <select
+                        id="level-key"
+                        value={levelKey}
+                        onChange={(event) => { setLevelKey(event.target.value); setSaveMessage(''); }}
+                        disabled={saving}
+                        className="input"
+                      >
+                        <option value="">Choose a level</option>
+                        {levels.map((level) => (
+                          <option key={level.level_key} value={level.level_key}>
+                            {level.ordinal}. {level.display_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field grow">
+                      <label htmlFor="level-note" className="t-label">What you saw (optional)</label>
+                      <input
+                        id="level-note"
+                        value={levelNote}
+                        onChange={(event) => setLevelNote(event.target.value)}
+                        maxLength={500}
+                        disabled={saving}
+                        className="input"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={saving || levelKey === ''}
+                      className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {saving ? 'Saving...' : 'Save level'}
+                    </button>
+                  </div>
+                  {saveError && (
+                    <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                      {saveError}
+                    </p>
+                  )}
+                  {saveMessage && (
+                    <p role="status" className="t-body mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      {saveMessage}
+                    </p>
+                  )}
+                </form>
               )}
 
               <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">Rooms</h3>

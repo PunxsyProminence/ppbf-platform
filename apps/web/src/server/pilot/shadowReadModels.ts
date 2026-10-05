@@ -1,4 +1,4 @@
-import { athleteIdsForCoach, isOrganizationAdminRole } from './access';
+import { accessibleAthleteIds, athleteIdsForCoach, isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
@@ -175,7 +175,26 @@ interface AthleteScope {
  */
 async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteScope> {
   if (context.actorRole === 'athlete') {
-    return { restrictToAthleteIds: [context.athleteId ?? '__unbound_athlete__'], includeUnscopedRows: false };
+    // Through the guard's own batched answer, not the bare id: a session that
+    // outlived the athlete's deletion carries the same id, and the bare id
+    // admitted it to every row tied to the deleted athlete. A deleted (or
+    // never-existing) athlete reaches no athlete-tied row, like a parent with
+    // no linked child.
+    const ownIds = context.athleteId
+      ? await accessibleAthleteIds(
+          {
+            accountId: context.actorAccountId,
+            role: context.actorRole,
+            organizationId: context.organizationId,
+            athleteId: context.athleteId,
+          },
+          [context.athleteId],
+        )
+      : new Set<string>();
+    return {
+      restrictToAthleteIds: ownIds.size > 0 ? [...ownIds] : ['__unbound_athlete__'],
+      includeUnscopedRows: false,
+    };
   }
 
   if (context.actorRole === 'parent') {
