@@ -85,7 +85,8 @@ const developmentLab = [
   { label: 'Audit Trace', href: '/audit' },
   { label: 'Source Control', href: '/source-control' },
   { label: 'AI/ML Video Analysis', href: '/coach/video-analysis' },
-  { label: 'Compliance Monitoring', href: '/board/compliance-monitoring' },
+  // No /board/compliance-monitoring desk (F-003): its route serves 'board'
+  // alone, and nobody in this page's audience is the board.
   { label: 'Progression Intelligence', href: '/athlete/progression-intelligence' },
   { label: 'Publication Workflow', href: '/source-control/publication-workflow' },
 ];

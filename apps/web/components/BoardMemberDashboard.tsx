@@ -336,12 +336,17 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                     {link.label}
                   </Link>
                 ))}
-                <Link
-                  href="/board/compliance-monitoring"
-                  className="btn btn--ghost"
-                >
-                  Hand-Filed Compliance Register
-                </Link>
+                {/* F-003: the register's route serves 'board' alone, so the
+                    platform owner (platform-observer here) is not shown a
+                    door it cannot open. */}
+                {access.mode !== 'platform-observer' && (
+                  <Link
+                    href="/board/compliance-monitoring"
+                    className="btn btn--ghost"
+                  >
+                    Hand-Filed Compliance Register
+                  </Link>
+                )}
               </div>
             </section>
 
