@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import { lockGuardianLinksForAthlete } from './guardianConsent';
 
 export type PublicationStatus =
   | 'draft'
@@ -357,6 +358,8 @@ export async function retractPublication(params: {
  * and retracts it, or this sweep's lock wins and the publish's re-check
  * runs after the withdrawal committed and refuses. In no interleaving does
  * a publish survive a withdrawal unsuppressed.
+ * Both sides lock in lockGuardianLinksForAthlete's order (parent_id), so
+ * the two cannot deadlock on an athlete with several guardians.
  */
 export async function suppressPublishedMediaForAthlete(params: {
   organizationId: string;
@@ -365,12 +368,7 @@ export async function suppressPublishedMediaForAthlete(params: {
   reason: string;
 }): Promise<string[]> {
   return withTransaction(async (client) => {
-    await client.query(
-      `select parent_id from pilot.guardian_links
-       where organization_id = $1 and athlete_id = $2
-       for update`,
-      [params.organizationId, params.athleteId],
-    );
+    await lockGuardianLinksForAthlete(client, params.organizationId, params.athleteId, 'update');
 
     const retracted = await client.query<{ publication_id: string }>(
       `update pilot.video_publications

@@ -14,6 +14,57 @@ export interface QueryExecutor {
   query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
+/*
+ * THE ONE LOCK ORDER FOR pilot.guardian_links. Every consent reader and
+ * writer locks these rows through the two functions below, and nowhere else
+ * (guardianLinkLockOrderSource.test.ts fails on a raw lock anywhere else).
+ *
+ * Within one athlete the rows are locked in parent_id order. The sweep
+ * (publication.ts suppressPublishedMediaForAthlete) takes FOR UPDATE on every
+ * guardian of an athlete while the publish, Film Study and playback readers
+ * take FOR SHARE on the same set. Those conflict, and two transactions that
+ * lock an overlapping set in different orders can each end up holding a row
+ * the other is waiting for: a deadlock, and Postgres kills one of them. Until
+ * this helper the order was whatever plan the planner picked, which happened
+ * to agree and was not promised. ORDER BY under FOR SHARE/UPDATE locks rows in
+ * the sorted order (the lock is taken above the sort), so the order is now
+ * stated rather than inherited.
+ *
+ * The one-row lock takes a single row and waits on nothing else, so it cannot
+ * be half of a cycle; it lives here only so there is one place to look.
+ */
+export type GuardianLinkLockMode = 'share' | 'update';
+
+export async function lockGuardianLinksForAthlete(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteId: string,
+  mode: GuardianLinkLockMode,
+): Promise<string[]> {
+  const result = await client.query<{ parent_id: string }>(
+    `select parent_id from pilot.guardian_links
+     where organization_id = $1 and athlete_id = $2
+     order by parent_id
+     for ${mode === 'update' ? 'update' : 'share'}`,
+    [organizationId, athleteId],
+  );
+  return result.rows.map((row) => row.parent_id);
+}
+
+export async function lockGuardianLink(
+  client: QueryExecutor,
+  organizationId: string,
+  parentId: string,
+  athleteId: string,
+): Promise<void> {
+  await client.query(
+    `select 1 from pilot.guardian_links
+      where organization_id = $1 and parent_id = $2 and athlete_id = $3
+      for update`,
+    [organizationId, parentId, athleteId],
+  );
+}
+
 /**
  * T-008: guardian consent for a minor's photo/video.
  *
@@ -161,12 +212,12 @@ async function checkGuardianConsentOfType(
   waiverType: string,
   client?: QueryExecutor,
 ): Promise<ConsentCheckResult> {
-  const guardianIds = await readRows<{ parent_id: string }>(
-    client,
-    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2
-     ${client ? 'for share' : ''}`,
-    [organizationId, athleteId],
-  ).then((rows) => rows.map((row) => row.parent_id));
+  const guardianIds = client
+    ? await lockGuardianLinksForAthlete(client, organizationId, athleteId, 'share')
+    : (await query<{ parent_id: string }>(
+      'select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2',
+      [organizationId, athleteId],
+    )).map((row) => row.parent_id);
 
   if (guardianIds.length === 0) {
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
@@ -249,14 +300,8 @@ export async function assertGuardianMediaConsentWithClient(
   // first and the sweep then retracts what it published/approved, or the
   // sweep's lock wins and this re-check runs after the withdrawal committed
   // and refuses. In no interleaving does a publish outlive a withdrawal
-  // unsuppressed.
-  const guardianResult = await client.query<{ parent_id: string }>(
-    `select parent_id from pilot.guardian_links
-     where organization_id = $1 and athlete_id = $2
-     for share`,
-    [organizationId, athleteId],
-  );
-  const guardianIds = guardianResult.rows.map((row) => row.parent_id);
+  // unsuppressed. Both lock in lockGuardianLinksForAthlete's order.
+  const guardianIds = await lockGuardianLinksForAthlete(client, organizationId, athleteId, 'share');
   if (guardianIds.length === 0) {
     throw new GuardianConsentMissingError(athleteId, []);
   }
@@ -326,12 +371,7 @@ async function writeMediaConsentUnderLock(
   waiver: Omit<UpsertWaiverParams, 'organizationId' | 'athleteId' | 'waiverType' | 'parentId'>,
 ): Promise<string> {
   return withTransaction(async (client) => {
-    await client.query(
-      `select 1 from pilot.guardian_links
-        where organization_id = $1 and parent_id = $2 and athlete_id = $3
-        for update`,
-      [organizationId, parentId, athleteId],
-    );
+    await lockGuardianLink(client, organizationId, parentId, athleteId);
 
     return upsertWaiverWithClient(client, {
       ...waiver,

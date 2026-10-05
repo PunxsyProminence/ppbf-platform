@@ -9,7 +9,7 @@ import { ConflictError } from './errors';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
 // two later stops matching the other.
-import { MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
+import { lockGuardianLink, MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
 import { createVolunteer } from './volunteers';
 
 // Roles that can be provisioned as a Microsoft-authenticated account through
@@ -989,12 +989,7 @@ export async function removeGuardianLink(params: {
      * concurrency of the most safety-critical write in this domain and is
      * proposed on the review thread rather than taken unilaterally here.
      */
-    await client.query(
-      `select 1 from pilot.guardian_links
-        where organization_id = $1 and parent_id = $2 and athlete_id = $3
-        for update`,
-      [organizationId, target.parent_id, athleteId],
-    );
+    await lockGuardianLink(client, organizationId, target.parent_id, athleteId);
 
     /*
      * A withdrawal is a standing NO, and this DELETE is the one action that
