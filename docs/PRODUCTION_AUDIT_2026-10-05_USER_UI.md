@@ -18,7 +18,8 @@ executed: no records were named as test data.
 | Item | Value |
 |---|---|
 | Source read | `origin/main` 25e299f03830ca28d9e7a1fb1a81e8ba1924519e (read-only, `git show`) |
-| Production | ac8f3e6138635a4db38cfcd859b3caadce40d34f: the `headSha` of the last successful `deploy-production` run, 37308544899 (2026-10-05T12:17:48Z, release 9). Main is 6 commits ahead, including #1224 (F-002 fix) and #1229 (F-003 fix). |
+| Production | ac8f3e6138635a4db38cfcd859b3caadce40d34f: the `headSha` of the last successful `deploy-production` run, 37308544899 (2026-10-05T12:17:48Z, release 9). Main was 6 commits ahead at the start, including #1224 (F-002 fix) and #1229 (F-003 fix). Every observation in this record was made on this commit. |
+| Later deploy | c00942a16b2354c6a86736747d42ab30180bc317, `deploy-production` 2026-10-05T17:59:30Z, deployed during the run after the browser checks had stopped. It contains #1221, #1224 and #1229 (ancestor checks). Nothing in this record was observed on it. |
 | Window | 2026-10-05 12:31Z to 19:33Z |
 | Auditor | Claude Code auditor lane (Opus), with two read-only sweep agents (one Chrome, one in-app browser), reporting to overwatch |
 | Open PRs touching audited surfaces | #1228 (clip tags API); not an audited surface |
@@ -68,8 +69,8 @@ recreated, not a reproduced app sign-out), so it is not a finding.
 |---|---|---|
 | P0 | 0 | |
 | P1 | 0 | F-001 closed this run |
-| P2 | 1 | F-002 (KNOWN OPEN, fix merged, not deployed) |
-| P3 | 2 | F-003 (fix merged, not deployed; not retested), R2-F-004 (NEW) |
+| P2 | 1 | F-002 (reproduced on `ac8f3e61`; fix deployed 17:59Z; READY FOR RETEST) |
+| P3 | 2 | F-003 (fix deployed 17:59Z; READY FOR RETEST), R2-F-004 (NEW) |
 | UX | 2 | U-001 (KNOWN OPEN, reproduced), U-002 (not retested) |
 
 Every role boundary that was tested held.
@@ -121,13 +122,13 @@ Every role boundary that was tested held.
 |---|---|
 | Severity | P2, NETWORK/API BUG |
 | Observed | COACH-A and ORGADMIN-A: `/coach/intelligence` shows "FAILED — Unable to load the digest"; `GET /api/pilot/coach/intelligence` → 500. Reproduced on reload. |
-| Status | FIX IN PROGRESS: #1224 merged as `5e498d01` but is NOT an ancestor of production `ac8f3e61`. Retest in run 3 after release. |
+| Status | READY FOR RETEST: #1224 (`5e498d01`) was not in `ac8f3e61`, where the 500 was observed; it is in `c00942a1`, deployed 17:59Z after the browser checks stopped. Not retested on `c00942a1`. |
 
 ### F-003 — Board monitoring pages and platform_owner — NOT RETESTED
 
 | | |
 |---|---|
-| Status | FIX IN PROGRESS: #1229 merged as `ee0feb13`, NOT in production. Jason's ruling is overwatch's option (A), hide those doors from the platform owner (OD-2026-10-05-006). |
+| Status | READY FOR RETEST: #1229 (`ee0feb13`) is in `c00942a1`, deployed 17:59Z. Jason's ruling is overwatch's option (A), hide those doors from the platform owner (OD-2026-10-05-006). |
 | This run | PO-A's sweep froze on `/board` and `/board/at-large` before any board check returned. NOT EXECUTED. |
 
 ### R2-F-004 — "Organization Provisioning" door offered to org admins leads to a platform-owner-only page — NEW
@@ -143,7 +144,7 @@ Every role boundary that was tested held.
 | Observed | `/admin/organizations` shows "ACCESS DENIED / PLATFORM OWNER ACCESS REQUIRED". No API call carried data. |
 | Source | Door `apps/web/components/buildingMap.ts:192` uses `ADMIN_GATE` = `['admin','platform_owner']` (org admin collapses to `admin`); page gate `apps/web/app/admin/organizations/page.tsx:138` requires `sessionRole === 'platform_owner'`. The `/admin` console links are a second door to the same page. |
 | Reproduce | Sign in as an organization admin, open `/admin`, follow either provisioning link. |
-| Scope | org admins only; no data exposed. Workaround: none needed. |
+| Scope | org admins only; no data exposed. Workaround: none needed. `buildingMap.ts`, `admin/page.tsx` and `admin/organizations/` are unchanged between `ac8f3e61` and `c00942a1` (git diff), so the finding is expected to persist on the later deploy (INFERRED, not observed). |
 | Root cause | SUSPECTED: door visibility is wider than the page guard. |
 
 ### U-001 — refusal screen on platform-owner-only pages — KNOWN OPEN, reproduced
@@ -186,8 +187,9 @@ SAMPLE VERSION HISTORY), `/simulator`, `/retro-lab` (SAMPLES), `/operations`
 
 ### Deployment discrepancies
 
-Main is ahead of production by #1224, #1229, #1223, #1225, #1226 and #1227.
-F-002 and F-003 are the expected consequences, not new discrepancies.
+While the browser checks ran, main was ahead of production by #1224, #1229, #1223,
+#1225, #1226 and #1227. F-002 and F-003 were the expected consequences, not new
+discrepancies. Release `c00942a1` closed that gap later in the run.
 
 ## H. Authorization, tenant and ownership
 
@@ -256,8 +258,8 @@ independent pass.
 | Item | Run 1 | Run 2 classification |
 |---|---|---|
 | F-001 | OPEN, P1 | CLOSED — VERIFIED (fix deployed, same path, negative control) |
-| F-002 | OPEN, P2 | KNOWN OPEN (reproduced; fix merged, not deployed) |
-| F-003 | OPEN, P3 | NOT RETESTED (fix merged, not deployed; tab froze) |
+| F-002 | OPEN, P2 | KNOWN OPEN on `ac8f3e61` (reproduced); fix since deployed, READY FOR RETEST |
+| F-003 | OPEN, P3 | NOT RETESTED (tab froze); fix since deployed, READY FOR RETEST |
 | U-001 | UX | KNOWN OPEN (reproduced, extended to `/admin/organizations`) |
 | U-002 | UX | NOT RETESTED |
 | `/coach/mental-skills` 404 | expected deployment difference | not separately re-checked |
@@ -270,8 +272,8 @@ independent pass.
 | Finding | Task | Status |
 |---|---|---|
 | F-001 | none | closed |
-| F-002 | #1224 | merged, awaiting release |
-| F-003 | #1229 | merged, awaiting release |
+| F-002 | #1224 | deployed in `c00942a1`; READY FOR RETEST |
+| F-003 | #1229 | deployed in `c00942a1`; READY FOR RETEST |
 | R2-F-004 | chip "Fix Organization Provisioning door shown to org admins (R2-F-004)" | offered, not launched |
 | U-001 | none yet | available on request |
 
@@ -283,8 +285,7 @@ not edited.
 
 ## Y. Repair order
 
-1. Release #1224 and #1229, then run 3 retests F-002 and F-003 on the
-   original paths.
+1. Run 3 retests F-002 and F-003 on the original paths, on `c00942a1` or later.
 2. Run 3 completes the coach, athlete and platform_owner API boundaries.
 3. Parent, board, staff and volunteer accounts, once Jason signs them in.
 4. R2-F-004.
