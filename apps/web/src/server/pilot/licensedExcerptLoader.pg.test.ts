@@ -1,0 +1,420 @@
+// Real PostgreSQL-backed test for the licensed-excerpt loader
+// (OD-2026-10-03-002 section 2; OD-2026-10-05-009, -010).
+//
+// The loader writes through createShadowLibraryDocument and
+// createShadowLibraryChunk, so only a real schema -- with the source-rights
+// triggers (#1238), the unique (organization_id, content_sha256) key and the
+// actor gate's membership rows -- can say whether a plan, an apply, a resume
+// and a refusal land as intended. The "private blob container" here is a local
+// folder: the workflow downloads the container into one, and the loader reads
+// nothing else.
+//
+// Spins up the disposable, local-only embedded Postgres the other library
+// suites use (scripts/test-embedded-pg-server.mjs). It NEVER connects to
+// production or staging.
+
+import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import type { Readable } from 'node:stream';
+
+import { Client } from 'pg';
+
+jest.setTimeout(180_000);
+
+const PG_USER = 'postgres';
+const PG_PASSWORD = 'postgres';
+const DATA_DIR = path.join(os.tmpdir(), `ppbf-licensed-excerpts-pg-test-${Date.now()}`);
+const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+const TEST_DB_NAME = 'ppbf_test_licensed_excerpts';
+
+const PLATFORM = '__platform__';
+const GYM_ID = 'org-excerpt-gym';
+const OTHER_GYM_ID = 'org-excerpt-other';
+const OWNER_ACCOUNT = 'acct-excerpt-owner';
+const GYM_ADMIN_ACCOUNT = 'acct-excerpt-admin';
+const COACH_ACCOUNT = 'acct-excerpt-coach';
+
+const SCHEMA_FILES = [
+  'pilot_slice_postgres.sql',
+  'pilot_slice_postgres_data_retention_deletion_migration.sql',
+  'pilot_slice_postgres_shadow_runtime_migration.sql',
+  'pilot_slice_postgres_shadow_evidence_migration.sql',
+  'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
+  'pilot_slice_postgres_retraction_surveillance_migration.sql',
+  'pilot_slice_postgres_platform_library_scope_migration.sql',
+  'pilot_slice_postgres_source_rights_migration.sql',
+];
+
+// Distinctive strings: the no-text-in-logs assertions look for them.
+const SECRET_A = 'QUOKKA-LICENSED-TEXT-ALPHA a paragraph from a licensed book';
+const SECRET_B = 'QUOKKA-LICENSED-TEXT-BRAVO a second paragraph';
+const SECRET_C = 'QUOKKA-LICENSED-TEXT-CHARLIE a transcript at a timestamp';
+
+let PG_PORT: number;
+let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
+let loader: typeof import('./licensedExcerptLoader');
+let library: typeof import('./shadowLibrary');
+let workDir: string;
+let gymSourceId: string;
+let platformSourceId: string;
+
+function connectionStringFor(database: string): string {
+  return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        const { port } = address;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error('Could not determine a free port')));
+      }
+    });
+  });
+}
+
+async function rawQuery<T extends Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await client.connect();
+  try {
+    return (await client.query<T>(sql, params)).rows;
+  } finally {
+    await client.end();
+  }
+}
+
+async function freshFolder(files: Record<string, unknown>): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(workDir, 'batch-'));
+  for (const [name, body] of Object.entries(files)) {
+    const full = path.join(dir, ...name.split('/'));
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, typeof body === 'string' ? body : JSON.stringify(body, null, 2));
+  }
+  return dir;
+}
+
+function excerptFile(sourceId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    format: 'ppbf-licensed-excerpts/1',
+    source_id: sourceId,
+    document_name: 'Quokka Conditioning, chapter 4',
+    citation: 'Quokka, A. (2024). Conditioning for boxers. Example Press. ISBN 000-0-00-000000-0.',
+    excerpts: [
+      { locator: 'p. 41', text: SECRET_A },
+      { locator: 'section 4.2', text: SECRET_B },
+    ],
+    ...overrides,
+  };
+}
+
+async function run(options: {
+  dir: string;
+  organizationId?: string;
+  actorAccountId?: string;
+  apply?: boolean;
+  confirm?: string;
+  expectedFingerprint?: string;
+}) {
+  const lines: string[] = [];
+  const outcome = await loader
+    .runExcerptLoad({
+      organizationId: options.organizationId ?? GYM_ID,
+      actorAccountId: options.actorAccountId ?? GYM_ADMIN_ACCOUNT,
+      dir: options.dir,
+      apply: options.apply ?? false,
+      confirm: options.confirm,
+      expectedFingerprint: options.expectedFingerprint,
+      log: (line) => lines.push(line),
+    })
+    .then((result) => ({ result, error: null as Error | null }), (error: Error) => ({ result: null, error }));
+  const log = [...lines, outcome.error?.message ?? ''].join('\n');
+  // Every run, whatever its outcome: licensed text never reaches the log.
+  for (const secret of [SECRET_A, SECRET_B, SECRET_C]) expect(log).not.toContain(secret.slice(0, 26));
+  return { ...outcome, log };
+}
+
+async function chunkCount(organizationId = GYM_ID): Promise<number> {
+  const [row] = await rawQuery<{ n: string }>(
+    'select count(*)::text as n from pilot.shadow_library_chunks where organization_id = $1',
+    [organizationId],
+  );
+  return Number(row.n);
+}
+
+beforeAll(async () => {
+  PG_PORT = await findFreePort();
+  serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderrOutput = '';
+  serverProcess.stderr.on('data', (chunk) => {
+    stderrOutput += chunk.toString();
+  });
+  await new Promise<void>((resolve, reject) => {
+    const rl = readline.createInterface({ input: serverProcess.stdout });
+    const timeout = setTimeout(() => {
+      rl.close();
+      reject(new Error(`Embedded Postgres did not become ready in time. stderr:\n${stderrOutput}`));
+    }, 120_000);
+    rl.on('line', (line) => {
+      if (line.includes('EMBEDDED_PG_READY')) {
+        clearTimeout(timeout);
+        rl.close();
+        resolve();
+      }
+    });
+    serverProcess.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Embedded Postgres process exited early (code ${code}). stderr:\n${stderrOutput}`));
+    });
+  });
+
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${TEST_DB_NAME}`);
+  await admin.query(`create database ${TEST_DB_NAME}`);
+  await admin.end();
+
+  const migrate = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await migrate.connect();
+  for (const file of SCHEMA_FILES) {
+    await migrate.query(await fs.readFile(path.join(INFRA_DIR, file), 'utf8'));
+  }
+  for (const org of [GYM_ID, OTHER_GYM_ID]) {
+    await migrate.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [org],
+    );
+  }
+  for (const [accountId, role] of [
+    [OWNER_ACCOUNT, 'platform_owner'],
+    [GYM_ADMIN_ACCOUNT, 'organization_admin'],
+    [COACH_ACCOUNT, 'coach'],
+  ]) {
+    await migrate.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, $2, $3, 'microsoft') on conflict do nothing`,
+      [accountId, role, GYM_ID],
+    );
+    await migrate.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role)
+       values ($1, $2, $3) on conflict do nothing`,
+      [accountId, GYM_ID, role],
+    );
+  }
+  await migrate.end();
+
+  process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
+  process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+
+  loader = await import('./licensedExcerptLoader');
+  library = await import('./shadowLibrary');
+
+  gymSourceId = (await library.createShadowLibrarySource({
+    organizationId: GYM_ID,
+    actorAccountId: GYM_ADMIN_ACCOUNT,
+    actorRole: 'organization_admin',
+    title: 'Quokka Conditioning',
+    sourceType: 'peer_reviewed',
+    authorityTier: 3,
+    status: 'active',
+  })).source_id;
+  platformSourceId = (await library.createShadowLibrarySource({
+    organizationId: PLATFORM,
+    actorAccountId: OWNER_ACCOUNT,
+    actorRole: 'platform_owner',
+    title: 'Quokka Platform Lecture',
+    sourceType: 'governing_body',
+    authorityTier: 3,
+    status: 'active',
+  })).source_id;
+  // The rights marker an excerpt-only source carries (#1238). The loader does
+  // not require it -- excerpts are allowed under any source -- but reports it.
+  await rawQuery(`update pilot.shadow_library_sources set rights_status = 'licensed_excerpt_only' where source_id = $1`, [gymSourceId]);
+
+  workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-excerpts-'));
+});
+
+afterAll(async () => {
+  const { closePool } = await import('./db');
+  await closePool();
+  if (workDir) await fs.rm(workDir, { recursive: true, force: true });
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+    const safetyTimer = setTimeout(finish, 15_000);
+    safetyTimer.unref();
+    serverProcess.once('exit', finish);
+    serverProcess.kill('SIGTERM');
+  });
+});
+
+describe('licensed-excerpt loader (real database)', () => {
+  test('dry run plans, writes nothing, and prints a fingerprint but no text', async () => {
+    const dir = await freshFolder({ 'book/chapter-4.json': excerptFile(gymSourceId) });
+    const before = await chunkCount();
+    const { result, error, log } = await run({ dir });
+    expect(error).toBeNull();
+    expect(result!.plan.blocked).toBe(false);
+    expect(result!.plan.files.map((file) => [file.name, file.status, file.createOrdinals])).toEqual([
+      ['book/chapter-4.json', 'new', [0, 1]],
+    ]);
+    expect(result!.plan.files[0].sourceRights).toBe('licensed_excerpt_only');
+    expect(log).toMatch(/plan_fingerprint: sha256:[0-9a-f]{64}/);
+    expect(log).toContain('mode: dry-run (nothing written)');
+    expect(await chunkCount()).toBe(before);
+  });
+
+  test('apply refuses without the phrase, without a fingerprint, or with a stale one -- before any write', async () => {
+    const dir = await freshFolder({ 'a.json': excerptFile(gymSourceId, { document_name: 'Refusals' }) });
+    const before = await chunkCount();
+    const noPhrase = await run({ dir, apply: true, expectedFingerprint: `sha256:${'0'.repeat(64)}` });
+    expect(noPhrase.error?.message).toMatch(/^CONFIRM_PHRASE_MISMATCH/);
+    const noPrint = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS' });
+    expect(noPrint.error?.message).toMatch(/^MISSING_EXPECTED_FINGERPRINT/);
+    const stale = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: `sha256:${'0'.repeat(64)}` });
+    expect(stale.error?.message).toMatch(/^PLAN_FINGERPRINT_MISMATCH/);
+    expect(await chunkCount()).toBe(before);
+  });
+
+  test('apply with the reviewed fingerprint loads excerpts; a rerun is a no-op', async () => {
+    const dir = await freshFolder({ 'book/chapter-4.json': excerptFile(gymSourceId) });
+    const dry = await run({ dir });
+    const applied = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    expect(applied.error).toBeNull();
+    expect(applied.result).toMatchObject({ documentsCreated: 1, chunksWritten: 2 });
+
+    const documentId = applied.result!.plan.files[0].documentId
+      ?? (await rawQuery<{ document_id: string }>(
+        'select document_id from pilot.shadow_library_documents where content_sha256 = $1',
+        [dry.result!.plan.files[0].contentSha256],
+      ))[0].document_id;
+    const chunks = await rawQuery<{ ordinal: number; text_kind: string; excerpt_locator: string; text_content: string; created_by_role: string }>(
+      `select ordinal, text_kind, excerpt_locator, text_content, created_by_role
+         from pilot.shadow_library_chunks where document_id = $1 order by ordinal`,
+      [documentId],
+    );
+    expect(chunks).toEqual([
+      { ordinal: 0, text_kind: 'excerpt', excerpt_locator: 'p. 41', text_content: SECRET_A, created_by_role: 'organization_admin' },
+      { ordinal: 1, text_kind: 'excerpt', excerpt_locator: 'section 4.2', text_content: SECRET_B, created_by_role: 'organization_admin' },
+    ]);
+    const [document] = await rawQuery<{ approval_state: string; metadata: Record<string, unknown> }>(
+      'select approval_state, metadata from pilot.shadow_library_documents where document_id = $1',
+      [documentId],
+    );
+    // Loaded text waits for a reviewer, exactly as the screen's does.
+    expect(document.approval_state).toBe('pending_review');
+    expect(document.metadata).toMatchObject({ intake_method: 'licensed_excerpt_loader', blob_name: 'book/chapter-4.json' });
+
+    const again = await run({ dir });
+    expect(again.result!.plan.files.map((file) => file.status)).toEqual(['complete']);
+    const before = await chunkCount();
+    const reapplied = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: again.result!.plan.fingerprint });
+    expect(reapplied.result).toMatchObject({ documentsCreated: 0, chunksWritten: 0 });
+    expect(await chunkCount()).toBe(before);
+  });
+
+  test('a partly loaded document resumes at the missing ordinals', async () => {
+    const dir = await freshFolder({ 'resume.json': excerptFile(gymSourceId, { document_name: 'Resume me' }) });
+    const dry = await run({ dir });
+    await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    const [doc] = await rawQuery<{ document_id: string }>(
+      'select document_id from pilot.shadow_library_documents where content_sha256 = $1',
+      [dry.result!.plan.files[0].contentSha256],
+    );
+    // As if the apply had stopped after the first chunk.
+    await rawQuery('delete from pilot.shadow_library_chunks where document_id = $1 and ordinal = 1', [doc.document_id]);
+
+    const resumePlan = await run({ dir });
+    expect(resumePlan.result!.plan.files.map((file) => [file.status, file.createOrdinals])).toEqual([['resume', [1]]]);
+    const resumed = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: resumePlan.result!.plan.fingerprint });
+    expect(resumed.result).toMatchObject({ documentsCreated: 0, chunksWritten: 1 });
+  });
+
+  test('a stored chunk that differs from the file is a conflict and blocks the apply', async () => {
+    const dir = await freshFolder({ 'conflict.json': excerptFile(gymSourceId, { document_name: 'Conflict' }) });
+    const dry = await run({ dir });
+    await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    await rawQuery(
+      `update pilot.shadow_library_chunks set text_content = 'edited by hand'
+        where ordinal = 0 and document_id = (select document_id from pilot.shadow_library_documents where content_sha256 = $1)`,
+      [dry.result!.plan.files[0].contentSha256],
+    );
+    const conflicted = await run({ dir });
+    expect(conflicted.result!.plan.blocked).toBe(true);
+    expect(conflicted.result!.plan.files[0].status).toBe('conflict');
+    const refused = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: conflicted.result!.plan.fingerprint });
+    expect(refused.error?.message).toMatch(/^PLAN_BLOCKED/);
+  });
+
+  test('one bad file blocks the whole batch, and nothing is written', async () => {
+    const dir = await freshFolder({
+      'good.json': excerptFile(gymSourceId, { document_name: 'Good one' }),
+      'no-locator.json': excerptFile(gymSourceId, { document_name: 'No locator', excerpts: [{ locator: '  ', text: SECRET_C }] }),
+      'other-org-source.json': excerptFile(platformSourceId, { document_name: 'Wrong shelf' }),
+      'notes.txt': 'stray file',
+      'twin.json': excerptFile(gymSourceId, { document_name: 'Good one' }),
+    });
+    const before = await chunkCount();
+    const dry = await run({ dir });
+    const byName = Object.fromEntries(dry.result!.plan.files.map((file) => [file.name, file]));
+    expect(byName['good.json'].status).toBe('new');
+    expect(byName['no-locator.json'].problems.join(' ')).toMatch(/locator is required/);
+    expect(byName['other-org-source.json'].problems.join(' ')).toMatch(/does not exist in organization/);
+    expect(byName['notes.txt'].problems).toEqual(['not a .json excerpt file']);
+    expect(byName['twin.json'].problems).toEqual(['same content as good.json']);
+    const refused = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    expect(refused.error?.message).toMatch(/^PLAN_BLOCKED/);
+    expect(await chunkCount()).toBe(before);
+  });
+
+  test('the platform shelf is loaded only by the platform owner; a gym is loaded only by its admin', async () => {
+    const dir = await freshFolder({
+      'lecture.json': excerptFile(platformSourceId, {
+        document_name: 'Lecture transcript',
+        excerpts: [{ locator: '00:12:30', text: SECRET_C }],
+      }),
+    });
+    const byAdmin = await run({ dir, organizationId: PLATFORM, actorAccountId: GYM_ADMIN_ACCOUNT });
+    expect(byAdmin.error?.message).toMatch(/ACTOR_NOT_PLATFORM_OWNER/);
+    const ownerOnGym = await run({ dir, organizationId: GYM_ID, actorAccountId: OWNER_ACCOUNT });
+    expect(ownerOnGym.error?.message).toMatch(/ACTOR_PLATFORM_OWNER/);
+    const coach = await run({ dir, organizationId: GYM_ID, actorAccountId: COACH_ACCOUNT });
+    expect(coach.error?.message).toMatch(/ACTOR_ROLE_NOT_ALLOWED/);
+    const otherGym = await run({ dir, organizationId: OTHER_GYM_ID, actorAccountId: GYM_ADMIN_ACCOUNT });
+    expect(otherGym.error?.message).toMatch(/ACTOR_NOT_A_MEMBER/);
+
+    const dry = await run({ dir, organizationId: PLATFORM, actorAccountId: OWNER_ACCOUNT });
+    const applied = await run({
+      dir,
+      organizationId: PLATFORM,
+      actorAccountId: OWNER_ACCOUNT,
+      apply: true,
+      confirm: 'LOAD EXCERPTS',
+      expectedFingerprint: dry.result!.plan.fingerprint,
+    });
+    expect(applied.error).toBeNull();
+    const rows = await rawQuery<{ text_kind: string; excerpt_locator: string }>(
+      'select text_kind, excerpt_locator from pilot.shadow_library_chunks where organization_id = $1',
+      [PLATFORM],
+    );
+    expect(rows).toEqual([{ text_kind: 'excerpt', excerpt_locator: '00:12:30' }]);
+  });
+});

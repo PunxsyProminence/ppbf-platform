@@ -49,6 +49,7 @@ const COVERED = [
   'check-database.yml',
   'cleanup-membership-orphans.yml',
   'import-shadow-research.yml',
+  'load-licensed-excerpts.yml',
   'move-policy-shelf.yml',
   'repair-research-baseline.yml',
   'rescope-library-baseline.yml',
