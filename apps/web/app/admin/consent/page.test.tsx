@@ -70,6 +70,12 @@ function mockApi(options: {
   return jest.fn(async (url: string, init?: RequestInit) => {
     const target = String(url);
     if (target.includes('/athletes/list')) {
+      // The route exports GET and nothing else, so Next answers any other
+      // method with 405. Matching on the URL alone is what let this page
+      // POST to it and ship "ROSTER UNAVAILABLE" to production (F-001).
+      if ((init?.method ?? 'GET').toUpperCase() !== 'GET') {
+        return { ok: false, status: 405, json: async () => ({}) } as Response;
+      }
       // The route answers with `items` on every branch.
       return jsonResponse({ items: ROSTER });
     }
@@ -97,6 +103,19 @@ async function renderAndPickAthlete(fetchMock: jest.Mock) {
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/domain-get'))).toBe(true),
   );
 }
+
+it('asks for the roster with GET, the only method the route exports', async () => {
+  const fetchMock = mockApi();
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<ConsentPage />);
+
+  expect(await screen.findByText('Sample Athlete One')).toBeTruthy();
+  const rosterCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes('/athletes/list'));
+  expect(rosterCalls.length).toBeGreaterThan(0);
+  for (const [, init] of rosterCalls) {
+    expect((init?.method ?? 'GET').toUpperCase()).toBe('GET');
+  }
+});
 
 it('reads the roster from `items`, the key the route actually sends', async () => {
   const fetchMock = mockApi();

@@ -131,11 +131,11 @@ function ConsentConsole() {
   // effect cascades a render before the request has left.
   const loadRoster = useCallback(async () => {
     try {
+      // GET: the route exports nothing else, and a POST here answered 405 in
+      // production (F-001).
       const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
-        method: 'POST',
+        method: 'GET',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
       });
       // `items`, and only `items`. Every branch of
       // app/api/pilot/athletes/list/route.ts answers with that key. Accepting a
