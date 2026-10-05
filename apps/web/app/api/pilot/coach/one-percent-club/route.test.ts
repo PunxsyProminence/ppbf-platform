@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   castVote,
@@ -21,7 +21,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
-  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
+  return { ...actual, assertActorCanAccessAthlete: jest.fn(), assertAthleteBelongsToOrganization: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -42,6 +42,7 @@ jest.mock('@/src/server/pilot/onePercentClub', () => {
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
 const mockListNominations = listNominations as jest.Mock;
 const mockListMembers = listMembers as jest.Mock;
 const mockGetNomination = getNomination as jest.Mock;
@@ -55,6 +56,7 @@ const mockWithdraw = withdrawNomination as jest.Mock;
 // clearAllMocks clears calls, not implementations.
 beforeEach(() => {
   mockAccess.mockResolvedValue(undefined);
+  mockLiveRow.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -209,4 +211,18 @@ test('a staff nominator is gated per athlete; the athlete self/peer path deliber
   expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
     athleteId: 'a-teammate', nominatorRole: 'athlete', nominatorAthleteId: 'ath-self',
   }));
+});
+
+test("an athlete nominator's own live row is required: a deleted athlete's surviving session nominates no one", async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ath-self' }));
+  mockCreate.mockResolvedValue({ nomination_id: 'nom-3', source: 'self_peer_nomination' });
+
+  expect((await POST(post({ action: 'nominate', athlete_id: 'a-teammate' }))).status).toBe(200);
+  expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-self');
+
+  mockLiveRow.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+  mockCreate.mockClear();
+  const refused = await POST(post({ action: 'nominate', athlete_id: 'a-teammate' }));
+  expect(refused.status).toBe(403);
+  expect(mockCreate).not.toHaveBeenCalled();
 });

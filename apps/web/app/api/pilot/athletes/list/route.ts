@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getAthleteById, getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -17,6 +17,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ items: [] });
       }
 
+      // getAthleteById reads no deletion mark, and this is the athlete's whole
+      // row (dob, emergency contact). A session that outlived the athlete's
+      // deletion carries the same id, so the live row is required first, the
+      // same rule as assertActorCanAccessAthlete's athlete arm
+      // (OD-2026-09-29-002 item 10).
+      await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
       const athlete = await getAthleteById(principal.organizationId, principal.athleteId);
       return NextResponse.json({ items: athlete ? [athlete] : [] });
     }

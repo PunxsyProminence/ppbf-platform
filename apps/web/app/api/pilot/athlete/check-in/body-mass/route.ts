@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
 import {
   bodyMassInputError,
   correctBodyMass,
@@ -22,8 +22,13 @@ export const runtime = 'nodejs';
 // new entry that supersedes the old one; the old one stays on record
 // (athleteBodyMass.ts, correctBodyMass).
 
-function requireOwnAthleteId(principal: { athleteId?: string | null }): string {
+// Live row required, as in the check-in route: a session that outlived the
+// athlete's deletion carries the same id (OD-2026-09-29-002 item 10). The
+// correction was already refused (correctBodyMass -> the access guard); the
+// read was not.
+async function requireOwnAthleteId(principal: { organizationId: string; athleteId?: string | null }): Promise<string> {
   if (!principal.athleteId) throw new ValidationError('This account is not linked to an athlete record.');
+  await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
   return principal.athleteId;
 }
 
@@ -36,7 +41,7 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const athleteId = requireOwnAthleteId(principal);
+    const athleteId = await requireOwnAthleteId(principal);
     return NextResponse.json({ body_mass: await ownLatest(principal.organizationId, athleteId) });
   } catch (error) {
     return jsonError(error);
@@ -47,7 +52,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const athleteId = requireOwnAthleteId(principal);
+    const athleteId = await requireOwnAthleteId(principal);
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const observationId = typeof body.observation_id === 'string' ? body.observation_id.trim() : '';

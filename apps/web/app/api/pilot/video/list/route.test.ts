@@ -67,10 +67,23 @@ describe('GET /api/pilot/video/list', () => {
 
   test('athlete sees only their own videos', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row
     mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1', athlete_id: 'ath-1' }]);
     const res = await GET(request());
     expect(res.status).toBe(200);
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'ready'"), ['org-1', 'ath-1', 50]);
+  });
+
+  test("a deleted athlete's surviving session is refused before any video is read", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce(null); // no live row: deleted_at is set
+    const res = await GET(request());
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
+    expect(queryOne.mock.calls[0][1]).toEqual(['ath-1', 'org-1']);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('athlete without a linked athlete profile sees no videos', async () => {
@@ -280,6 +293,8 @@ describe('GET /api/pilot/video/list', () => {
 describe('GET /api/pilot/video/list tagged clips', () => {
   test('the athlete list leaves tagged clips out', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row
     mockQuery.mockResolvedValueOnce([]);
     await GET(request());
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining(UNTAGGED_SENTINEL), ['org-1', 'ath-1', 50]);

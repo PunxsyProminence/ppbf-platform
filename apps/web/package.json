@@ -130,6 +130,7 @@
     "test": "jest --runInBand --testPathIgnorePatterns=\\.pg\\.test\\.ts$ --testPathIgnorePatterns=\\.pdf\\.test\\.ts$",
     "test:pdf-text": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryPdfText.pdf.test.ts --testTimeout=120000",
     "test:migrations": "node scripts/run-migration-suites.mjs",
+    "test:migrations:athlete-self-paths-deletion": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteSelfPathsDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-intelligence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteIntelligence.pg.test.ts --testTimeout=180000",
     "test:migrations:coach-intelligence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachIntelligence.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-drill-exposure": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDrillExposure.pg.test.ts --testTimeout=180000",

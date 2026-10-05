@@ -226,7 +226,11 @@ export async function createNomination(input: {
   claimedMilestoneKey?: string | null;
 }): Promise<NominationRow | null> {
   const athlete = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+    // deleted_at: a deleted athlete cannot be nominated. The staff path is
+    // already refused at the access guard; a peer nomination reached here on
+    // the id alone. Every list in this module already drops them.
+    `select athlete_id from pilot.athletes
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [input.organizationId, input.athleteId],
   );
   if (!athlete) return null;

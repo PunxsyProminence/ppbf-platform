@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
-import { query } from '@/src/server/pilot/db';
+import { query, queryOne } from '@/src/server/pilot/db';
 import { getAthleteById, getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -22,6 +22,7 @@ jest.mock('@/src/server/pilot/entities', () => ({
 
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
+  queryOne: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
@@ -29,6 +30,7 @@ const mockGetAthleteById = getAthleteById as jest.Mock;
 const mockGetAthletesByOrganization = getAthletesByOrganization as jest.Mock;
 const mockGetAthletesForCoach = getAthletesForCoach as jest.Mock;
 const mockQuery = query as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -124,6 +126,7 @@ describe('which read a role gets', () => {
 
   test('an athlete still gets only their own record', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-1' }));
+    mockQueryOne.mockResolvedValue({ athlete_id: 'ATH-1' }); // live athlete row
     mockGetAthleteById.mockResolvedValue({ athlete_id: 'ATH-1' });
 
     const response = await GET(makeRequest());
@@ -131,6 +134,19 @@ describe('which read a role gets', () => {
     expect(await response.json()).toEqual({ items: [{ athlete_id: 'ATH-1' }] });
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
     expect(mockGetAthletesByOrganization).not.toHaveBeenCalled();
+  });
+
+  test("a deleted athlete's surviving session is refused before their row is read", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-1' }));
+    mockQueryOne.mockResolvedValue(null); // no live row: deleted_at is set
+    mockGetAthleteById.mockResolvedValue({ athlete_id: 'ATH-1' });
+
+    const response = await GET(makeRequest());
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['ATH-1', 'org-1']);
+    expect(mockGetAthleteById).not.toHaveBeenCalled();
   });
 
   test('a parent still resolves children through guardian_links', async () => {

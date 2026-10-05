@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
-import { PATCH, POST } from './route';
+import { GET, PATCH, POST } from './route';
+import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -15,9 +16,21 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+// The athlete arms' live-row read. assertActorCanAccessAthlete (POST) calls
+// the real one inside access.ts, so the POST tests still answer it by queryOne.
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  assertAthleteBelongsToOrganization: jest.fn(),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+
+beforeEach(() => {
+  mockLiveRow.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -212,6 +225,38 @@ describe('PATCH /api/pilot/floor-plans', () => {
     const res = await PATCH(patchRequest({ task_id: 'someone-elses-task', completed: true }));
 
     expect(res.status).toBe(404);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe("a deleted athlete's surviving session", () => {
+  test('GET: the live athlete reads their plans; the deleted one is refused before any plan is read', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1', payload: { tasks: [] } }]);
+    const live = await GET(new NextRequest('http://localhost/api/pilot/floor-plans'));
+    expect(live.status).toBe(200);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+
+    mockQuery.mockClear();
+    mockLiveRow.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+    const refused = await GET(new NextRequest('http://localhost/api/pilot/floor-plans'));
+    expect(refused.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('PATCH: refused before the plan is read or written', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockLiveRow.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+    const res = await PATCH(
+      new NextRequest('http://localhost/api/pilot/floor-plans', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ task_id: 't1', completed: true }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockQueryOne).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });

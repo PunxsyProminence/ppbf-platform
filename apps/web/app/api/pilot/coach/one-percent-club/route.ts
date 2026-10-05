@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -86,7 +86,16 @@ export async function POST(request: NextRequest) {
 
       const athleteId = text(body.athlete_id)?.trim();
       if (!athleteId) throw new ValidationError('nominate needs athlete_id.');
-      if (principal.role !== 'athlete') await assertActorCanAccessAthlete(principal, athleteId);
+      if (principal.role !== 'athlete') {
+        await assertActorCanAccessAthlete(principal, athleteId);
+      } else if (principal.athleteId) {
+        // An athlete nominator is not gated on the nominee (see above), but
+        // the nominator must still be there: a session that outlived the
+        // athlete's own deletion carries the same id (OD-2026-09-29-002 item
+        // 10). The nominee's live row is required in createNomination, for
+        // every role.
+        await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
+      }
 
       const item = await createNomination({
         organizationId: principal.organizationId,

@@ -115,6 +115,9 @@ export async function GET(request: NextRequest) {
       if (!principal.athleteId) {
         return NextResponse.json({ ok: true, hold: null });
       }
+      // Live row required: a session that outlived the athlete's deletion
+      // carries the same id (OD-2026-09-29-002 item 10).
+      await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
       const hold = await getActiveTrainingHold(principal.organizationId, principal.athleteId);
       return NextResponse.json({ ok: true, hold: hold ? await athleteFacing(principal.organizationId, hold) : null });
     }

@@ -177,6 +177,17 @@ describe('the athlete corrects their own weight', () => {
 });
 
 describe('refusals', () => {
+  test("a deleted athlete's surviving session reads no weigh-in: refused at the live-row read", async () => {
+    // ath-gone has no live row in the fake (its deleted_at is set); its
+    // weigh-in is still stored.
+    weighIns.push({ athlete_id: 'ath-gone', observation_id: 'gone-1', numeric_value: 55, unit: 'kilograms', observed_at: new Date(NOW.getTime() - DAY).toISOString() });
+    mockRequirePrincipal.mockResolvedValue(principal({ athleteId: 'ath-gone' }));
+    const response = await GET(new NextRequest('http://localhost/api/pilot/athlete/check-in/body-mass'));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   test('another athlete\'s entry cannot be reached: the id is the session\'s, so it is not found', async () => {
     const { status } = await correctAs({}, { observation_id: 'ath-2-latest', athlete_id: 'ath-2' });
     expect(status).toBe(404);
