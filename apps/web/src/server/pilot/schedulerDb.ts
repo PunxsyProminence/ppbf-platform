@@ -361,7 +361,11 @@ export async function getSchedulerCoachingRequestById(
             preferred_at::text, goals, status, assigned_coach_account_id,
             created_at::text, updated_at::text
      from pilot.scheduler_coaching_requests
-     where organization_id = $1 and request_id = $2`,
+     where organization_id = $1 and request_id = $2
+       -- Same rule as getSchedulerRegistrationById: review_coaching_request
+       -- loaded a deleted athlete's pending request by id, so an admin could
+       -- still decline it (OD-2026-09-29-002 item 10).
+       and ${athleteNotDeletedSql('pilot.scheduler_coaching_requests')}`,
     [organizationId, requestId],
   );
 }
