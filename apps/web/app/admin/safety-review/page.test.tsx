@@ -105,6 +105,22 @@ test('a failed load shows the error state, never a false all-clear', async () =>
   expect(screen.queryByText('Nothing open right now')).toBeNull();
 });
 
+// #991 class, batch 9: the page defaulted every list to [] when a 2xx body
+// did not parse or left a list out, and printed the all-clear over it.
+test.each([
+  ['an unparseable body', { ok: true, json: async () => { throw new SyntaxError('bad'); } } as unknown as Response],
+  ['an empty body', jsonResponse({})],
+  ['a body missing one list', jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], violationsReadLimit: 200, violationsTruncated: false })],
+])('a 2xx with %s is a failed read, never a false all-clear', async (_name, response) => {
+  global.fetch = jest.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  await screen.findByText('The safety review could not be read.');
+  expect(screen.queryByText('Nothing open right now')).toBeNull();
+  expect(screen.queryByText('Nothing open in what this page could read')).toBeNull();
+});
+
 test('a severity badge carries a glyph, not colour alone (Law 3)', async () => {
   global.fetch = jest.fn().mockResolvedValue(
     jsonResponse({

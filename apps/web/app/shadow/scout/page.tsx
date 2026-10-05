@@ -124,6 +124,9 @@ function ScoutReportView() {
   // The reports' own read, kept apart from `error`: a metrics failure must not
   // hide reports that loaded (Codex review on #1144).
   const [jobsUnavailable, setJobsUnavailable] = useState(false);
+  // The metrics read, likewise its own: without it a failed read hid both
+  // scorecard sections and said nothing (#991 class).
+  const [metricsUnavailable, setMetricsUnavailable] = useState(false);
   const [generateFocus, setGenerateFocus] = useState('');
   const [generateBusy, setGenerateBusy] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
@@ -136,6 +139,7 @@ function ScoutReportView() {
     setLoadingJobs(true);
     setError('');
     let jobsRead = false;
+    let metricsHandled = false;
     try {
       const requests: Promise<Response>[] = [
         fetch(`${apiBase()}/api/pilot/shadow/jobs?limit=30`, { credentials: 'include' }),
@@ -158,12 +162,28 @@ function ScoutReportView() {
         setError('Scout Reports could not be loaded.');
       }
 
-      if (scoreRes?.status === 'fulfilled' && scoreRes.value.ok) {
-        const data = await scoreRes.value.json() as { metrics?: ScoreboardResponse };
-        setScoreboard(data.metrics ?? null);
+      if (scoreRes) {
+        let metricsRead = false;
+        if (scoreRes.status === 'fulfilled' && scoreRes.value.ok) {
+          try {
+            const data = await scoreRes.value.json() as { metrics?: ScoreboardResponse };
+            setScoreboard(data.metrics ?? null);
+            metricsRead = true;
+          } catch {
+            // A 2xx whose body does not parse is a failed read too.
+          }
+        }
+        if (!metricsRead) setScoreboard(null);
+        setMetricsUnavailable(!metricsRead);
+        metricsHandled = true;
       }
     } catch {
       if (!jobsRead) setJobsUnavailable(true);
+      // Thrown before the metrics answer was looked at: not read either.
+      if (canViewOrgMetrics && !metricsHandled) {
+        setScoreboard(null);
+        setMetricsUnavailable(true);
+      }
       setError('Failed to load data');
     } finally {
       setLoadingJobs(false);
@@ -310,6 +330,10 @@ function ScoutReportView() {
             </span>
             <p className="t-body mt-[var(--s3)]">{error}</p>
           </div>
+        ) : null}
+
+        {canViewOrgMetrics && metricsUnavailable ? (
+          <p className="t-muted">Not available -- The Scorecard could not be read.</p>
         ) : null}
 
         {/* METRICS DASHBOARD */}
