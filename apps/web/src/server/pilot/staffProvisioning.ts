@@ -556,7 +556,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
 
     if (existing) {
       // Role or organization may have just changed. resolvePrincipal reads
-      // pilot.accounts.role live on every request, so any session minted
+      // the membership role live on every request and judges the session's
+      // credential against it and pilot.accounts.role, so any session minted
       // under the previous configuration must not survive this write.
       await client.query(
         'update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null',

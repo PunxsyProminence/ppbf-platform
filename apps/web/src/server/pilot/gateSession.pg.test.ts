@@ -102,6 +102,8 @@ async function makeAccount(input: {
   authProvider?: 'ppbf_local' | 'microsoft';
   activeFlag?: boolean;
   withMembership?: boolean;
+  /** The home membership's role; defaults to the account role. */
+  membershipRole?: string;
 }): Promise<void> {
   await rawQuery(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag)
@@ -117,7 +119,7 @@ async function makeAccount(input: {
     await rawQuery(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
        values ($1, $2, $3, true) on conflict do nothing`,
-      [input.accountId, ORG_ID, input.role],
+      [input.accountId, ORG_ID, input.membershipRole ?? input.role],
     );
   }
 }
@@ -219,6 +221,19 @@ describe('mintGateSession', () => {
     expect(rows[0].revoked_at).toBeNull();
   });
 
+  test('reports the membership role, the one the session acts with', async () => {
+    await makeAccount({ accountId: 'gate-admin-home-coach-here', role: 'organization_admin', membershipRole: 'coach' });
+
+    const session = await mintGateSession({
+      connectionString: testConnectionString(),
+      accountId: 'gate-admin-home-coach-here',
+      expectedRole: 'coach',
+    });
+
+    expect(session.role).toBe('coach');
+    await session.revoke();
+  });
+
   test('revoke() actually revokes, so a failed gate leaves nothing live', async () => {
     await makeAccount({ accountId: 'gate-admin-2', role: 'organization_admin' });
 
@@ -271,6 +286,26 @@ describe('mintGateSession', () => {
       })).rejects.toThrow(/must be Microsoft-authenticated/);
     });
 
+    test('refuses a local PIN account whose membership role is privileged, even if the account role is athlete', async () => {
+      // resolvePrincipal asks the PIN policy about both roles; the session acts
+      // with the membership role, so a coach membership is revoked on first use.
+      await makeAccount({ accountId: 'gate-local-athlete-coach', role: 'athlete', membershipRole: 'coach', authProvider: 'ppbf_local' });
+
+      await expect(mintGateSession({
+        connectionString: testConnectionString(),
+        accountId: 'gate-local-athlete-coach',
+      })).rejects.toThrow(/local \(PIN\) account/);
+    });
+
+    test('refuses a local PIN account whose account role is privileged, even if the membership role is athlete', async () => {
+      await makeAccount({ accountId: 'gate-local-coach-athlete', role: 'coach', membershipRole: 'athlete', authProvider: 'ppbf_local' });
+
+      await expect(mintGateSession({
+        connectionString: testConnectionString(),
+        accountId: 'gate-local-coach-athlete',
+      })).rejects.toThrow(/local \(PIN\) account with role "coach"/);
+    });
+
     test('refuses an account that does not exist', async () => {
       await expect(mintGateSession({
         connectionString: testConnectionString(),
@@ -286,6 +321,19 @@ describe('mintGateSession', () => {
         accountId: 'gate-coach',
         expectedRole: 'organization_admin',
       })).rejects.toThrow(/has role "coach", expected "organization_admin"/);
+    });
+
+    test('checks the expected role against the membership role the session acts with', async () => {
+      // pilot.accounts.role says coach; the gym's membership says parent.
+      // resolvePrincipal reads the membership (#1197), so the session would
+      // act as a parent and every coach probe would 403.
+      await makeAccount({ accountId: 'gate-coach-home-parent-here', role: 'coach', membershipRole: 'parent' });
+
+      await expect(mintGateSession({
+        connectionString: testConnectionString(),
+        accountId: 'gate-coach-home-parent-here',
+        expectedRole: 'coach',
+      })).rejects.toThrow(/has role "parent", expected "coach"/);
     });
 
     test('refuses an account with no active membership', async () => {
