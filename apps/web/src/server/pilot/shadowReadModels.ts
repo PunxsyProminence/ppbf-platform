@@ -522,8 +522,10 @@ export async function getShadowEventTimeline(
 // athlete its column names is not deleted, and neither is any athlete one of
 // its documents is bound to. The second half covers a case promoted before
 // the column was written whose documents name two athletes, which keeps a
-// NULL column. A case bound to nobody passes both.
-const INTAKE_CASE_ATHLETE_NOT_DELETED = `${athleteNotDeletedSql('c', 'primary_athlete_id')}
+// NULL column. A case bound to nobody passes both. Built per call, not at
+// import, so a module that mocks deletedAthletes can still import this one.
+function intakeCaseAthleteNotDeletedSql(): string {
+  return `${athleteNotDeletedSql('c', 'primary_athlete_id')}
        and not exists (
          select 1
          from pilot.intake_documents owner_doc
@@ -534,6 +536,7 @@ const INTAKE_CASE_ATHLETE_NOT_DELETED = `${athleteNotDeletedSql('c', 'primary_at
            and owner_doc.intake_case_id = c.intake_case_id
            and owner_doc.owner_entity_type = 'athlete'
            and owner_athlete.deleted_at is not null)`;
+}
 
 export async function getShadowReviewProjection(
   context: ShadowReadContext,
@@ -592,8 +595,8 @@ export async function getShadowReviewProjection(
          or ($7::boolean and c.primary_athlete_id is null)
        )
        -- A deleted athlete's case leaves the queue; a case with no athlete
-       -- yet stays (INTAKE_CASE_ATHLETE_NOT_DELETED).
-       and ${INTAKE_CASE_ATHLETE_NOT_DELETED}
+       -- yet stays (intakeCaseAthleteNotDeletedSql).
+       and ${intakeCaseAthleteNotDeletedSql()}
      order by coalesce(se.created_at, c.updated_at) desc
      limit $4
      offset $5`,
@@ -621,7 +624,7 @@ export async function getShadowReviewProjection(
          or c.primary_athlete_id = any($4::text[])
          or ($5::boolean and c.primary_athlete_id is null)
        )
-       and ${INTAKE_CASE_ATHLETE_NOT_DELETED}`,
+       and ${intakeCaseAthleteNotDeletedSql()}`,
     [
       context.organizationId,
       filters.entityId?.trim() || filters.correlationId?.trim() || null,
