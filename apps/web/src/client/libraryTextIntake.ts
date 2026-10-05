@@ -25,6 +25,9 @@ export const INTAKE_MAX_TEXT_LENGTH = 48_000;
 
 export const INTAKE_METHOD = 'manual_text';
 
+// Mirrors MAX_LOCATOR_LENGTH in the chunk route.
+export const INTAKE_MAX_LOCATOR_LENGTH = 200;
+
 // Where a PDF-sourced excerpt says it came from (RINT-02). This is a SEPARATE
 // metadata key on purpose, never a different intake_method: the completeness
 // gate in shadowLibrary.ts (MANUAL_TEXT_INTAKE_COMPLETE_SQL) runs only when
@@ -254,6 +257,10 @@ export function validateIntakeInput(input: IntakeInput): string | null {
   if (!input.sourceId.trim()) return 'Choose the registered source this text comes from.';
   if (!input.documentName.trim()) return 'Give this excerpt a label.';
   if (!input.locator.trim()) return 'Say where in the source this text is: a page, section or timestamp.';
+  // The chunk route's limit (chunks/route.ts MAX_LOCATOR_LENGTH): said here, before any part is saved.
+  if (input.locator.trim().length > INTAKE_MAX_LOCATOR_LENGTH) {
+    return `Keep "where in the source" to ${INTAKE_MAX_LOCATOR_LENGTH} characters or fewer.`;
+  }
   const text = normalizeIntakeText(input.text);
   if (!text) return 'Paste or type the source text.';
   // Refused rather than repaired: stripping them would change the source text,
@@ -395,6 +402,9 @@ export async function submitLibraryTextIntake(
       document_id: documentId,
       ordinal: chunk.ordinal,
       text_content: chunk.text,
+      // An excerpt names where it comes from; the chunk route stores it as one
+      // (source rights, OD-2026-10-03-002 section 3).
+      excerpt_locator: locator,
       metadata: { intake_method: INTAKE_METHOD, locator, join_before: chunk.joinBefore },
       ...shelfField(shelf),
     });

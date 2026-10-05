@@ -14,7 +14,8 @@
 //     locator; rights cannot drop under full text; a document holding full
 //     text cannot move under a lower source;
 //   * two concurrent writes cannot each pass and together break it;
-//   * the research importer loads the whole 2026-08-07 corpus under the rule.
+//   * the research importer loads the whole 2026-08-07 corpus under the rule;
+//   * the routes answer a refusal with a 422 and a plain sentence.
 //
 // Built on the full production schema (scripts/lib/full-schema.mjs).
 // Disposable, local-only embedded Postgres. It NEVER connects to production
@@ -29,7 +30,16 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
+
+import type { PilotPrincipal } from './auth';
+import { requirePrincipal } from './http';
+
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
 
 jest.setTimeout(180_000);
 
@@ -50,6 +60,9 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 const ORG = 'org-rights-gym';
 const ADMIN = 'acct-rights-admin';
 const PROGRAMME = 'src_6563c68e39047128';
+const ROUTE_DB = 'ppbf_test_source_rights_routes';
+
+const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 const POLICY = 'src_b7041e76b524f743';
 
 let PG_PORT: number;
@@ -213,6 +226,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  const { closePool } = await import('./db');
+  await closePool().catch(() => {});
   await new Promise<void>((resolve) => {
     let done = false;
     const finish = () => {
@@ -664,5 +679,140 @@ describe('the research importer under the rule', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+describe('the routes answer the rule in plain words', () => {
+  let routes: {
+    postSource: (r: NextRequest) => Promise<Response>;
+    patchSource: (r: NextRequest) => Promise<Response>;
+    postDocument: (r: NextRequest) => Promise<Response>;
+    postChunk: (r: NextRequest) => Promise<Response>;
+  };
+
+  function principal(role: PilotPrincipal['role']): PilotPrincipal {
+    return { accountId: ADMIN, role, organizationId: ORG } as PilotPrincipal;
+  }
+
+  function request(method: string, url: string, body: unknown): NextRequest {
+    return new NextRequest(`http://localhost${url}`, {
+      method,
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  async function call(handler: (r: NextRequest) => Promise<Response>, method: string, url: string, body: unknown) {
+    const response = await handler(request(method, url, body));
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  beforeAll(async () => {
+    const client = await freshDatabase(ROUTE_DB);
+    await client.end();
+    process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(ROUTE_DB);
+    process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+    routes = {
+      postSource: (await import('@/app/api/pilot/shadow/library/sources/route')).POST,
+      patchSource: (await import('@/app/api/pilot/shadow/library/sources/route')).PATCH,
+      postDocument: (await import('@/app/api/pilot/shadow/library/documents/route')).POST,
+      postChunk: (await import('@/app/api/pilot/shadow/library/chunks/route')).POST,
+    };
+  });
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockReset();
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+  });
+
+  test('register (unknown by default), refuse full text with a 422, accept an excerpt, mark the source, then full text loads; lowering is refused', async () => {
+    const source = await call(routes.postSource, 'POST', '/api/pilot/shadow/library/sources', {
+      title: 'Rights Route Paper',
+      source_type: 'peer_reviewed',
+    });
+    expect(source.status).toBe(201);
+    const sourceRow = source.body.source as { source_id: string; rights_status: string };
+    expect(sourceRow.rights_status).toBe('unknown');
+
+    const bad = await call(routes.postSource, 'POST', '/api/pilot/shadow/library/sources', {
+      title: 'Bad Rights', source_type: 'peer_reviewed', rights_status: 'fair_use',
+    });
+    expect(bad.status).toBe(400);
+
+    const document = await call(routes.postDocument, 'POST', '/api/pilot/shadow/library/documents', {
+      source_id: sourceRow.source_id,
+      document_name: 'Rights route doc',
+    });
+    expect(document.status).toBe(201);
+    const documentId = (document.body.document as { document_id: string }).document_id;
+
+    const full = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 0, text_content: 'Whole chapter.',
+    });
+    expect(full.status).toBe(422);
+    expect(full.body.error).toMatch(/may hold only excerpts/);
+
+    const excerpt = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 0, text_content: 'A chosen passage.', excerpt_locator: 'p. 7',
+    });
+    expect(excerpt.status).toBe(201);
+    expect(excerpt.body.chunk).toMatchObject({ text_kind: 'excerpt', excerpt_locator: 'p. 7' });
+
+    // A page loaded before the field existed: the intake's metadata.locator counts.
+    const legacyClient = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 1, text_content: 'Next passage.', metadata: { locator: 'p. 8' },
+    });
+    expect(legacyClient.status).toBe(201);
+    expect(legacyClient.body.chunk).toMatchObject({ text_kind: 'excerpt', excerpt_locator: 'p. 8' });
+
+    const tooLong = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 2, text_content: 'x', excerpt_locator: 'p'.repeat(201),
+    });
+    expect(tooLong.status).toBe(400);
+    const longFallback = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 2, text_content: 'x', metadata: { locator: 'p'.repeat(201) },
+    });
+    expect(longFallback.status).toBe(400);
+
+    const blank = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 2, text_content: 'x', excerpt_locator: '   ',
+    });
+    expect(blank.status).toBe(400);
+
+    const both = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: sourceRow.source_id, rights_status: 'open_licence', classification_domain: 'R01',
+    });
+    expect(both.status).toBe(400);
+
+    const marked = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: sourceRow.source_id, rights_status: 'open_licence',
+    });
+    expect(marked.status).toBe(200);
+    expect((marked.body.source as { rights_status: string }).rights_status).toBe('open_licence');
+
+    const fullNow = await call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+      document_id: documentId, ordinal: 3, text_content: 'Open-licence full text.',
+    });
+    expect(fullNow.status).toBe(201);
+    expect(fullNow.body.chunk).toMatchObject({ text_kind: 'full_text', excerpt_locator: null });
+
+    const lowered = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: sourceRow.source_id, rights_status: 'licensed_excerpt_only',
+    });
+    expect(lowered.status).toBe(422);
+    expect(lowered.body.error).toMatch(/already holds full text/);
+
+    const missing = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: 'source_nowhere', rights_status: 'open_licence',
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  test('a role outside the reviewer tier cannot set rights', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    const refused = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: 'source_any', rights_status: 'ppbf_owned',
+    });
+    expect(refused.status).toBe(403);
   });
 });

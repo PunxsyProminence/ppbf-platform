@@ -80,6 +80,7 @@ describe('POST /api/pilot/shadow/library/chunks', () => {
       documentId: 'doc_1',
       ordinal: 0,
       textContent: validBody.text_content,
+      excerptLocator: null,
       metadata: { chunk_type: 'doctrine' },
     });
   });

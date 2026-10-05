@@ -9,7 +9,13 @@ import {
   type ShadowLibrarySourceStatus,
   type ShadowLibrarySourceType,
   updateShadowLibrarySourceClassification,
+  updateShadowLibrarySourceRights,
 } from '@/src/server/pilot/shadowLibrary';
+import {
+  isShadowLibraryRightsStatus,
+  rightsRefusalMessage,
+  type ShadowLibraryRightsStatus,
+} from '@/src/server/pilot/shadowLibraryRights';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
 
@@ -131,6 +137,7 @@ export async function POST(request: NextRequest) {
       url?: unknown;
       publication_date?: unknown;
       status?: unknown;
+      rights_status?: unknown;
       metadata?: unknown;
       shelf?: unknown;
     };
@@ -175,6 +182,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unsupported status' }, { status: 400 });
     }
 
+    // Rights (OD-2026-10-03-002 section 3). Absent means unknown: the source
+    // may then hold excerpts only, until a reviewer marks it.
+    if (body.rights_status !== undefined && !isShadowLibraryRightsStatus(body.rights_status)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported rights_status' }, { status: 400 });
+    }
+
     if (
       body.metadata !== undefined
       && (typeof body.metadata !== 'object' || body.metadata === null || Array.isArray(body.metadata))
@@ -202,6 +215,7 @@ export async function POST(request: NextRequest) {
       url: (body.url as string | null | undefined) ?? null,
       publicationDate: (body.publication_date as string | null | undefined) ?? null,
       status: body.status as ShadowLibrarySourceStatus | undefined,
+      rightsStatus: body.rights_status as ShadowLibraryRightsStatus | undefined,
       metadata: body.metadata as Record<string, unknown> | undefined,
     });
 
@@ -230,6 +244,7 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       source_id?: unknown;
       classification_domain?: unknown;
+      rights_status?: unknown;
       shelf?: unknown;
     };
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
@@ -237,6 +252,35 @@ export async function PATCH(request: NextRequest) {
     if (typeof body.source_id !== 'string' || !body.source_id.trim()) {
       return NextResponse.json({ ok: false, error: 'Missing source_id' }, { status: 400 });
     }
+    // The rights marker is the other narrow correction: one field, its own
+    // request, reviewer tier (the curator roles this route already requires).
+    if (body.rights_status !== undefined) {
+      if (body.classification_domain !== undefined) {
+        return NextResponse.json(
+          { ok: false, error: 'Send rights_status and classification_domain as separate requests' },
+          { status: 400 },
+        );
+      }
+      if (!isShadowLibraryRightsStatus(body.rights_status)) {
+        return NextResponse.json({ ok: false, error: 'Unsupported rights_status' }, { status: 400 });
+      }
+      try {
+        const updated = await updateShadowLibrarySourceRights({
+          organizationId,
+          actorAccountId: principal.accountId,
+          actorRole: principal.role,
+          sourceId: body.source_id.trim(),
+          rightsStatus: body.rights_status,
+        });
+        if (!updated) return hiddenNotFound();
+        return NextResponse.json({ ok: true, source: updated });
+      } catch (error) {
+        const refusal = rightsRefusalMessage(error);
+        if (refusal) return NextResponse.json({ ok: false, error: refusal }, { status: 422 });
+        throw error;
+      }
+    }
+
     if (!isResearchClassificationDomain(body.classification_domain)) {
       return NextResponse.json({ ok: false, error: 'Unsupported classification_domain' }, { status: 400 });
     }

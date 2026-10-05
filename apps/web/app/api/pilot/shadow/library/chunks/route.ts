@@ -4,6 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import { createShadowLibraryChunk } from '@/src/server/pilot/shadowLibrary';
+import { rightsRefusalMessage } from '@/src/server/pilot/shadowLibraryRights';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,23 @@ export const runtime = 'nodejs';
 // larger than anything the search snippet path is built to render.
 const MAX_CHUNK_LENGTH = 20_000;
 const MAX_ORDINAL = 100_000;
+const MAX_LOCATOR_LENGTH = 200;
+
+// Rights (OD-2026-10-03-002 section 3; OD-2026-10-02-013 answer 4A). A chunk
+// with `excerpt_locator` (where in the source it is: a page, section or
+// timestamp) is an excerpt, which any source may hold; one without is full
+// text, which the database refuses unless the document's source is ppbf_owned
+// or open_licence (422 below). The /evidence intake already files a `locator`
+// in metadata, and that counts when the body names none, so a page loaded
+// before this route learned the field still saves excerpts.
+function excerptLocatorFrom(body: { excerpt_locator?: unknown; metadata?: unknown }): string | null | undefined {
+  if (body.excerpt_locator !== undefined && body.excerpt_locator !== null) {
+    // A blank locator says nothing about where the text is: refused, not read as full text.
+    return typeof body.excerpt_locator === 'string' && body.excerpt_locator.trim() ? body.excerpt_locator.trim() : undefined;
+  }
+  const fromMetadata = (body.metadata as Record<string, unknown> | undefined)?.locator;
+  return typeof fromMetadata === 'string' ? fromMetadata.trim() : null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,6 +58,7 @@ export async function POST(request: NextRequest) {
       ordinal?: unknown;
       text_content?: unknown;
       metadata?: unknown;
+      excerpt_locator?: unknown;
       shelf?: unknown;
     };
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
@@ -73,6 +92,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
     }
 
+    const excerptLocator = excerptLocatorFrom(body);
+    if (excerptLocator === undefined || (excerptLocator !== null && excerptLocator.length > MAX_LOCATOR_LENGTH)) {
+      return NextResponse.json(
+        { ok: false, error: `excerpt_locator must be non-blank text of ${MAX_LOCATOR_LENGTH} characters or fewer` },
+        { status: 400 },
+      );
+    }
+
     const chunk = await createShadowLibraryChunk({
       organizationId,
       actorAccountId: principal.accountId,
@@ -80,11 +107,16 @@ export async function POST(request: NextRequest) {
       documentId: body.document_id,
       ordinal: body.ordinal as number,
       textContent: body.text_content,
+      excerptLocator: excerptLocator || null,
       metadata: body.metadata as Record<string, unknown> | undefined,
     });
 
     return NextResponse.json({ ok: true, chunk }, { status: 201 });
   } catch (error) {
+    const refusal = rightsRefusalMessage(error);
+    if (refusal) {
+      return NextResponse.json({ ok: false, error: refusal }, { status: 422 });
+    }
     if (error instanceof Error) {
       // Same disclosure rule as the documents route: a document in another
       // organization reads as absent rather than as forbidden.

@@ -9,6 +9,7 @@ import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } f
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
+import type { ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
   CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
@@ -56,6 +57,7 @@ export type ShadowLibrarySourceType =
   | 'other';
 
 export type ShadowLibrarySourceStatus = 'active' | 'archived' | 'rejected' | 'quarantined';
+
 export type ShadowLibraryApprovalState = 'pending_review' | 'approved' | 'rejected';
 export type ShadowLibraryVerificationState = 'unverified' | 'verified';
 
@@ -93,6 +95,7 @@ export interface ShadowLibrarySourceRow {
   url: string | null;
   publication_date: string | null;
   status: ShadowLibrarySourceStatus;
+  rights_status: ShadowLibraryRightsStatus;
   approval_state: ShadowLibraryApprovalState;
   verification_state: ShadowLibraryVerificationState;
   approved_by_account_id: string | null;
@@ -153,6 +156,8 @@ export interface ShadowLibraryChunkRow {
   subject_id: string | null;
   ordinal: number;
   text_content: string;
+  text_kind: 'full_text' | 'excerpt';
+  excerpt_locator: string | null;
   metadata: Record<string, unknown>;
   created_by_account_id: string | null;
   created_by_role: string | null;
@@ -570,14 +575,18 @@ export async function createShadowLibrarySource(input: {
   url?: string | null;
   publicationDate?: string | null;
   status?: ShadowLibrarySourceStatus;
+  rightsStatus?: ShadowLibraryRightsStatus;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibrarySourceRow> {
+  // Marking a source as PPBF-owned or open-licence decides what the Library may
+  // hold of it, so it is the reviewer tier's call, as on the rights PATCH.
+  if (input.rightsStatus && input.rightsStatus !== 'unknown') requireEvidenceReviewer(input.actorRole as PilotRole);
   const sourceId = `source_${randomUUID()}`;
 
   const row = await queryOne<ShadowLibrarySourceRow>(
     `insert into pilot.shadow_library_sources
-      (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12)
+      (source_id, organization_id, title, publisher, source_type, authority_tier, url, publication_date, status, metadata, created_by_account_id, created_by_role, rights_status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10::jsonb,$11,$12,$13)
      returning *`,
     [
       sourceId,
@@ -592,6 +601,7 @@ export async function createShadowLibrarySource(input: {
       JSON.stringify(input.metadata ?? {}),
       input.actorAccountId,
       input.actorRole,
+      input.rightsStatus ?? 'unknown',
     ],
   );
 
@@ -610,6 +620,7 @@ export async function createShadowLibrarySource(input: {
       source_type: row.source_type,
       authority_tier: row.authority_tier,
       status: row.status,
+      rights_status: row.rights_status,
       title: row.title,
     },
   });
@@ -651,6 +662,50 @@ export async function updateShadowLibrarySourceClassification(
     [organizationId, sourceId, classificationDomain],
   );
   return row;
+}
+
+/**
+ * Narrow rights update: the one marker, nothing else about the source. The
+ * reviewer tier decides it, as it decides what becomes citable. Lowering a
+ * source that holds full text is refused by the database (the message is
+ * rightsRefusalMessage's).
+ */
+export async function updateShadowLibrarySourceRights(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  sourceId: string;
+  rightsStatus: ShadowLibraryRightsStatus;
+}): Promise<ShadowLibrarySourceRow | null> {
+  requireEvidenceReviewer(input.actorRole);
+  // One statement: the row is locked as it is read, so the recorded "before"
+  // is the value this update replaced, even when two reviewers race.
+  const row = await queryOne<ShadowLibrarySourceRow & { rights_status_before: ShadowLibraryRightsStatus }>(
+    `with before as (
+       select source_id, rights_status from pilot.shadow_library_sources
+        where organization_id = $1 and source_id = $2
+        for update
+     )
+     update pilot.shadow_library_sources s
+        set rights_status = $3, updated_at = now()
+       from before
+      where s.organization_id = $1 and s.source_id = before.source_id
+     returning s.*, before.rights_status as rights_status_before`,
+    [input.organizationId, input.sourceId, input.rightsStatus],
+  );
+  if (!row) return null;
+  const { rights_status_before: rightsBefore, ...source } = row;
+  if (rightsBefore === source.rights_status) return source;
+  await emitShadowEvent({
+    organizationId: input.organizationId,
+    eventName: 'SHADOW_LIBRARY_SOURCE_RIGHTS_SET',
+    entityType: 'shadow_library_source',
+    entityId: row.source_id,
+    actorAccountId: input.actorAccountId,
+    actorRole: input.actorRole,
+    payload: { rights_status_before: rightsBefore, rights_status: source.rights_status },
+  });
+  return source;
 }
 
 export async function listShadowLibrarySources(input: {
@@ -919,6 +974,8 @@ export async function createShadowLibraryChunk(input: {
   documentId: string;
   ordinal: number;
   textContent: string;
+  /** Where in the source this text is (page, section or timestamp). Given: an excerpt. Absent: full text. */
+  excerptLocator?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryChunkRow> {
   const document = await queryOne<{
@@ -936,11 +993,12 @@ export async function createShadowLibraryChunk(input: {
     throw new Error('Document does not exist in this organization.');
   }
 
+  const excerptLocator = input.excerptLocator?.trim() || null;
   const chunkId = `chunk_${randomUUID()}`;
   const row = await queryOne<ShadowLibraryChunkRow>(
     `insert into pilot.shadow_library_chunks
-      (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, metadata, created_by_account_id, created_by_role)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+      (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, metadata, created_by_account_id, created_by_role, text_kind, excerpt_locator)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
      returning *`,
     [
       chunkId,
@@ -953,6 +1011,8 @@ export async function createShadowLibraryChunk(input: {
       JSON.stringify(input.metadata ?? {}),
       input.actorAccountId,
       input.actorRole,
+      excerptLocator ? 'excerpt' : 'full_text',
+      excerptLocator,
     ],
   );
 

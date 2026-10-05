@@ -110,6 +110,8 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_evidence_migration.sql',
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
+  // The sources route now writes rights_status (source rights).
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 let PG_PORT: number;
