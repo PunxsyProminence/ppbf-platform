@@ -1,5 +1,5 @@
 import { ConflictError } from './errors';
-import { checkGuardianMediaConsent } from './guardianConsent';
+import { checkGuardianMediaConsent, type QueryExecutor } from './guardianConsent';
 // The same trim-and-lowercase the consent readers use. Imported rather than
 // kept as a local copy: this gate and guardianConsent.ts read the SAME
 // column, and a private duplicate is how two readings of one value start
@@ -87,18 +87,14 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
  *      only establishes "no withdrawal as of now" for a credential that
  *      outlives now by an hour.
  *
- * SERIALIZING IT IS A WRITE-PATH CHANGE, not one available here, and that is
- * why this route does not simply open a transaction. The withdrawal takes no
- * lock: POST /api/pilot/parent/consent calls withdrawMediaConsent, a bare
- * upsertWaiver insert that commits on its own, and the guardian_links
- * `for update` lock appears only afterwards in the separate suppression
- * sweep. So a `for share` here -- the pattern
- * assertGuardianMediaConsentWithClient uses -- would order this route against
- * the SWEEP and not against the INSERT that actually revokes consent. It
- * would look like a fix and serialize the wrong pair. The real fix is for
- * withdrawMediaConsent to take that row lock before its insert; once it does,
- * this read and the mint can hold `for share` across both and the window
- * closes.
+ * THE WRITE-PATH HALF OF SERIALIZING IT HAS LANDED; THIS ROUTE HAS NOT USED
+ * IT YET. withdrawMediaConsent now takes `for update` on the guardian link
+ * before its insert (writeMediaConsentUnderLock, guardianConsent.ts), so a
+ * reader holding `for share` across its read and its action is ordered
+ * against the withdrawal itself. Film Study's worker does exactly that before
+ * persisting a proposal (pass a client to assertConsentCoversVideo). The mint
+ * here still reads without a client, so window (2) above stays open on this
+ * route until it does the same.
  *
  * WHAT THIS DELIBERATELY DOES NOT REFUSE: A MISSING CONSENT ROW.
  *
@@ -172,8 +168,14 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
  */
 const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
 
-export async function assertConsentCoversVideo(organizationId: string, athleteId: string): Promise<void> {
-  const consent = await checkGuardianMediaConsent(organizationId, athleteId);
+export async function assertConsentCoversVideo(
+  organizationId: string,
+  athleteId: string,
+  // Inside a transaction, the read holds the guardian links FOR SHARE until
+  // it ends; see checkGuardianMediaConsent.
+  client?: QueryExecutor,
+): Promise<void> {
+  const consent = await checkGuardianMediaConsent(organizationId, athleteId, ...(client ? [client] : []));
 
   // Withdrawal is checked first, and the two refusals stay separate rather
   // than being folded into one "not signed for video" test, because they are

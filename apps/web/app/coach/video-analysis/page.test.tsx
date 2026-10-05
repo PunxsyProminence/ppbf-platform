@@ -579,6 +579,107 @@ describe('requesting Film Study analysis', () => {
     // (e.g. try a different video).
     expect((screen.getByRole('button', { name: 'Request Film Study' }) as HTMLButtonElement).disabled).toBe(false);
   });
+
+  /*
+   * A CONSENT REFUSAL NAMES WHICH ONE, at request time (the route's 409 code)
+   * and when consent changed after queueing (the failed job's reason).
+   * Wording approved by Jason, AskUserQuestion 2026-10-05, overwatch-relayed.
+   */
+  const WITHDRAWN = 'Film Study refused: a guardian has withdrawn media consent for an athlete in this video.';
+  const PHOTO_ONLY = 'Film Study refused: guardian consent for an athlete in this video covers photos only, not video.';
+  const OTHER = 'Film Study refused: guardian media consent for an athlete in this video is missing or could not be read.';
+
+  test.each([
+    ['GUARDIAN_CONSENT_WITHDRAWN', WITHDRAWN],
+    ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', PHOTO_ONLY],
+    ['GUARDIAN_CONSENT_UNREADABLE', OTHER],
+    ['GUARDIAN_CONSENT_MISSING', OTHER],
+  ])('a request refused with %s says why, in the approved words', async (code, sentence) => {
+    global.fetch = mockFetch({
+      videos: () => [video({ status: 'ready' })],
+      requestFilmStudy: () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: 'Blocked: server wording for playback.', code }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Request Film Study' }));
+
+    await screen.findByText(sentence);
+    expect(screen.getByTestId('film-study-status-vid-1').textContent).toBe(sentence);
+    expect((screen.getByRole('button', { name: 'Request Film Study' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test.each([
+    ['SHADOW_FILM_CONSENT_WITHDRAWN', WITHDRAWN],
+    ['SHADOW_FILM_CONSENT_EXCLUDES_VIDEO', PHOTO_ONLY],
+    ['SHADOW_FILM_CONSENT_BLOCKED', OTHER],
+  ])('a queued job that failed with %s says why, in the approved words', async (reason, sentence) => {
+    jest.useFakeTimers();
+    global.fetch = mockFetch({
+      videos: () => [video({ status: 'ready' })],
+      pollFilmStudyJob: () => ({
+        ok: true,
+        json: async () => ({
+          ok: false, jobId: 'job-1', status: 'failed', message: 'Video analysis job did not complete.', reason,
+        }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request Film Study' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(3_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('film-study-status-vid-1').textContent).toBe(sentence);
+  });
+
+  test('a job that failed for any other reason keeps the general message', async () => {
+    jest.useFakeTimers();
+    global.fetch = mockFetch({
+      videos: () => [video({ status: 'ready' })],
+      pollFilmStudyJob: () => ({
+        ok: true,
+        json: async () => ({
+          ok: false, jobId: 'job-1', status: 'failed', message: 'Video analysis job did not complete.',
+          reason: 'SHADOW_JOB_EXECUTION_FAILED',
+        }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request Film Study' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(3_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('film-study-status-vid-1').textContent)
+      .toBe('Film Study: Video analysis job did not complete.');
+  });
 });
 
 describe('Film Study review queue', () => {

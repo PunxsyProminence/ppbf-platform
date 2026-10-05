@@ -1,4 +1,7 @@
+import type { QueryResultRow } from 'pg';
+
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
@@ -7,7 +10,7 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
 // callers inside a withTransaction() block actually have is something
 // query-shaped, and pg's own QueryResult already returns { rows }. Matches
 // the shape publication.ts's decidePublicationCompliance already uses.
-interface QueryExecutor {
+export interface QueryExecutor {
   query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
@@ -44,12 +47,18 @@ interface QueryExecutor {
 
 export const MEDIA_CONSENT_WAIVER_TYPE = 'photo_media';
 
-export class GuardianConsentMissingError extends Error {
+/*
+ * A ConflictError so that a route's 409 carries GUARDIAN_CONSENT_MISSING:
+ * jsonError emits a PilotError's code, and the coach's Film Study page needs
+ * it to say which refusal this was. Status and message are what they were.
+ */
+export class GuardianConsentMissingError extends ConflictError {
   constructor(readonly athleteId: string, readonly missingParentIds: string[]) {
     super(
       missingParentIds.length > 0
         ? `Blocked: guardian media consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Every guardian must have a current, signed photo/video consent on file before this can be approved.`
         : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
+      'GUARDIAN_CONSENT_MISSING',
     );
     this.name = 'GuardianConsentMissingError';
   }
@@ -70,8 +79,10 @@ async function currentConsentByGuardian(
   organizationId: string,
   athleteId: string,
   waiverType: string,
+  client?: QueryExecutor,
 ): Promise<Map<string, CurrentConsentRow>> {
-  const rows = await query<CurrentConsentRow>(
+  const rows = await readRows<CurrentConsentRow>(
+    client,
     `select distinct on (parent_id) parent_id, status, covers_video, public_use_allowed, created_at
      from pilot.waivers
      where organization_id = $1 and athlete_id = $2 and waiver_type = $3 and parent_id is not null
@@ -101,11 +112,33 @@ export interface ConsentCheckResult {
   perGuardian: GuardianConsentStatus[];
 }
 
+// A PoolClient's query() returns { rows }; db.ts's module-level query()
+// returns the bare array. One reader for both, so the in-transaction read
+// below is the same query as the pooled one and cannot drift from it.
+async function readRows<T extends QueryResultRow>(
+  client: QueryExecutor | undefined,
+  text: string,
+  params: unknown[],
+): Promise<T[]> {
+  return client ? (await client.query<T>(text, params)).rows : query<T>(text, params);
+}
+
+/*
+ * WITH A CLIENT, THE READ HOLDS THE GUARDIAN LINKS FOR SHARE until that
+ * client's transaction ends. withdrawMediaConsent and grantMediaConsent take
+ * FOR UPDATE on the same row before writing (writeMediaConsentUnderLock
+ * below), so a caller that reads consent and then acts inside one
+ * transaction is ordered against them: a withdrawal already in flight is
+ * waited for and then read as withdrawn, and one that starts later waits
+ * until the caller has committed. Without a client the read is a plain
+ * pooled select, as before -- it answers "as of now" and nothing more.
+ */
 export async function checkGuardianMediaConsent(
   organizationId: string,
   athleteId: string,
+  client?: QueryExecutor,
 ): Promise<ConsentCheckResult> {
-  return checkGuardianConsentOfType(organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE);
+  return checkGuardianConsentOfType(organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE, client);
 }
 
 /*
@@ -126,9 +159,12 @@ async function checkGuardianConsentOfType(
   organizationId: string,
   athleteId: string,
   waiverType: string,
+  client?: QueryExecutor,
 ): Promise<ConsentCheckResult> {
-  const guardianIds = await query<{ parent_id: string }>(
-    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
+  const guardianIds = await readRows<{ parent_id: string }>(
+    client,
+    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2
+     ${client ? 'for share' : ''}`,
     [organizationId, athleteId],
   ).then((rows) => rows.map((row) => row.parent_id));
 
@@ -136,7 +172,7 @@ async function checkGuardianConsentOfType(
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
   }
 
-  const current = await currentConsentByGuardian(organizationId, athleteId, waiverType);
+  const current = await currentConsentByGuardian(organizationId, athleteId, waiverType, client);
   const perGuardian = guardianIds.map((parentId) => {
     const row = current.get(parentId);
     return {
@@ -180,8 +216,12 @@ async function checkGuardianConsentOfType(
   return { ok: missingParentIds.length === 0, guardianIds, missingParentIds, perGuardian };
 }
 
-export async function assertGuardianMediaConsent(organizationId: string, athleteId: string): Promise<void> {
-  const result = await checkGuardianMediaConsent(organizationId, athleteId);
+export async function assertGuardianMediaConsent(
+  organizationId: string,
+  athleteId: string,
+  client?: QueryExecutor,
+): Promise<void> {
+  const result = await checkGuardianMediaConsent(organizationId, athleteId, ...(client ? [client] : []));
   if (!result.ok) {
     throw new GuardianConsentMissingError(athleteId, result.missingParentIds);
   }
