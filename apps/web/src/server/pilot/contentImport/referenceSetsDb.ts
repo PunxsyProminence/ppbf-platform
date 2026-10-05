@@ -72,7 +72,8 @@ export async function loadDatabaseReferenceSets(client: DbClient, organizationId
           order by lineage_id, version desc
        ) s on s.script_id = b.script_id
        join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
-      where b.organization_id = $1`,
+      where b.organization_id = $1
+      order by 1, 2, 3, 4`,
     [organizationId],
   );
   const committedSteps = new Map<string, CommittedStep[]>();

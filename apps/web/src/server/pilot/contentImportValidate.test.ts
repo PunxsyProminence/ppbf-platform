@@ -633,6 +633,11 @@ describe('row and group rules', () => {
         ...revisedTo('none'),
         input('seed_workout_template_items.csv', [item({ ordinal: '2', drill_id: EXISTING_DRILL })], 'workout-templates'),
       ]))).toEqual([]);
+      // Its root row alone does not: the template keeps its committed steps and carries them to the lowered head.
+      const rootOnly = { template_id: EXISTING_TEMPLATE, name: 'Beginner Footwork', discipline: 'boxing' };
+      expect(lowered(atPlan([...revisedTo('none'), input('seed_workout_templates.csv', [rootOnly], 'workout-templates')]))).toEqual([
+        ['drill-library/seed_drill_library.csv', 2, 'contact_level'],
+      ]);
       // Offline there is no committed-steps map: prepare re-validates the merged package instead.
       expect(lowered(run(revisedTo('none')))).toEqual([]);
     });

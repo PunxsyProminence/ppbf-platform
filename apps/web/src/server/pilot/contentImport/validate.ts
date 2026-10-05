@@ -734,16 +734,17 @@ function checkReferences(file: ParsedFile, targets: Targets, out: Finding[]): vo
 
 // The same rule as step_contact_above_drill, from the drill's side: a drill
 // revision may not lower contact_level beneath a committed step that links
-// its lineage, or that step ends up above its drill. A step whose template or
-// script the package also carries is the package's (checkReferences judges
-// it), so only the others are compared. At plan only (committedSteps).
+// its lineage, or that step ends up above its drill. A template or script
+// with rows in the package's STEP file has its steps replaced by those rows
+// (checkReferences judges them), so its committed steps are not compared. One
+// named only in its root file keeps its committed steps and carries them to
+// the drill's new head (templateScriptVersions.ts, child replacement), so
+// they are. At plan only (committedSteps).
 function checkDrillsAgainstCommittedSteps(parsed: ParsedPackage, references: ReferenceSets, out: Finding[]): void {
   if (!references.committedSteps) return;
   const parents = new Set<string>();
   for (const [file, column] of [
-    ['seed_workout_templates.csv', 'template_id'],
     ['seed_workout_template_items.csv', 'template_id'],
-    ['seed_session_scripts.csv', 'script_id'],
     ['seed_session_script_blocks.csv', 'script_id'],
   ] as const) {
     for (const row of parsed.files.find((f) => f.spec.file === file)?.rows ?? []) if (row.values[column]) parents.add(row.values[column]);

@@ -415,7 +415,7 @@ describe('the workout prompt', () => {
 
   test('the screen says the drill list goes to the AI and nothing about athletes does (OD-2026-10-02-012)', () => {
     render(<ContentImportPage />);
-    expect(screen.getByText(/lists your gym's current drills by name, id and skill code/)).toBeTruthy();
+    expect(screen.getByText(/lists your gym's current drills by name, id, skill code and most contact/)).toBeTruthy();
     expect(screen.getByText(/That list goes to the AI you paste it into\. Nothing about athletes is in it\./)).toBeTruthy();
   });
 

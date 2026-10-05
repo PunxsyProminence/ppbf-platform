@@ -332,7 +332,7 @@ function ContentImportScreen() {
             <li>Save the two files with the names it gives, then choose them below and check them.</li>
           </ol>
           <p className="t-muted max-w-3xl">
-            The prompt lists your gym&apos;s current drills by name, id and skill code, so a step that clearly is one of
+            The prompt lists your gym&apos;s current drills by name, id, skill code and most contact, so a step that clearly is one of
             them can be linked to it. That list goes to the AI you paste it into. Nothing about athletes is in it.
           </p>
           <p className="t-muted max-w-3xl">
