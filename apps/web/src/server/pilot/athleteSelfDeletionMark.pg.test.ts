@@ -431,6 +431,75 @@ describe('scheduler: a deleted athlete cannot act on their own record', () => {
   });
 });
 
+describe('scheduler: an admin cannot act on a deleted athlete', () => {
+  /* The admin arm of assertCanActOnAthlete returned on the role alone and read
+     no athlete row, so an admin could register a deleted athlete for a class
+     or file a coaching request for them by id. Check-in was already refused,
+     as 400 "Missing registration": the registration list drops a deleted
+     athlete. */
+  async function freshClass(): Promise<string> {
+    const start = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const created = await okJson<{ class_id: string }>(
+      await schedulerPost(adminPrincipal, {
+        action: 'create_class',
+        title: 'Admin arm class',
+        start_at: start.toISOString(),
+        end_at: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+        location: 'Main floor',
+        capacity: 20,
+      }),
+    );
+    return created.class_id;
+  }
+
+  const counts = async (athleteId: string) =>
+    (
+      await activeClient!.query(
+        `select
+           (select count(*) from pilot.scheduler_registrations
+             where organization_id = $1 and athlete_id = $2)::text as registrations,
+           (select count(*) from pilot.scheduler_coaching_requests
+             where organization_id = $1 and athlete_id = $2)::text as requests`,
+        [ORG_ID, athleteId],
+      )
+    ).rows[0];
+
+  test('register and request coaching for a deleted athlete are refused at the live-row check, and nothing is written', async () => {
+    const classId = await freshClass();
+    const before = await counts(DELETED_ATHLETE);
+
+    const outcomes: Array<{ action: string; status: number; error: unknown }> = [];
+    for (const body of [
+      { action: 'register_class', class_id: classId, athlete_id: DELETED_ATHLETE },
+      { action: 'request_coaching', athlete_id: DELETED_ATHLETE, preferred_at: new Date(Date.now() + 86_400_000).toISOString(), goals: 'Defence' },
+    ]) {
+      const response = await schedulerPost(adminPrincipal, body);
+      outcomes.push({ action: body.action, status: response.status, error: (await response.json()).error });
+    }
+    expect(outcomes).toEqual(
+      ['register_class', 'request_coaching'].map((action) => ({
+        action,
+        status: 403,
+        error: 'Forbidden: athlete does not belong to organization',
+      })),
+    );
+    expect(await counts(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  test('live control: the admin may register and request coaching for the live athlete', async () => {
+    const classId = await freshClass();
+    await okJson(await schedulerPost(adminPrincipal, { action: 'register_class', class_id: classId, athlete_id: LIVE_ATHLETE }));
+    await okJson(
+      await schedulerPost(adminPrincipal, {
+        action: 'request_coaching',
+        athlete_id: LIVE_ATHLETE,
+        preferred_at: new Date(Date.now() + 86_400_000).toISOString(),
+        goals: 'Footwork',
+      }),
+    );
+  });
+});
+
 describe('Shadow reads: a deleted athlete sees none of their own athlete-tied rows', () => {
   const context = (athleteId: string) => ({
     organizationId: ORG_ID,
