@@ -337,14 +337,13 @@ describe('who may settle a disagreement', () => {
     expect(mockRecord.mock.calls[0][0].adjudicatorAccountId).toBe('admin-2');
   });
 
-  test("http.ts's requireRole would have refused that same row", () => {
-    // The reason the import is from access.ts, made executable rather than
-    // left as a claim in a comment. http.ts's variant does a bare `includes`
-    // on the role string; access.ts's knows the two spellings are one role. A
-    // route on the http.ts one would 403 every un-migrated admin while
-    // resolveAdjudicationEligibility, which resolves the alias through
-    // isOrganizationAdminRole, would have admitted them -- so the write door
-    // and the module behind it would disagree about the same person.
+  test("http.ts's requireRole now admits that same row too", () => {
+    // Both requireRole functions now compare through roleAlias.ts's roleEquals.
+    // http.ts's used to do a bare `includes` on the role string, so a route on
+    // it would 403 every un-migrated admin while resolveAdjudicationEligibility,
+    // which resolves the alias through isOrganizationAdminRole, admitted them
+    // -- the door and the module behind it disagreeing about the same person.
+    // This pins that they no longer can, whichever gate a route imports.
     const legacyPrincipal: PilotPrincipal = {
       accountId: 'admin-2',
       role: 'admin',
@@ -354,7 +353,7 @@ describe('who may settle a disagreement', () => {
       authProvider: 'microsoft',
     };
 
-    expect(() => httpRequireRole(legacyPrincipal, ['organization_admin'])).toThrow(/Forbidden/);
+    expect(() => httpRequireRole(legacyPrincipal, ['organization_admin'])).not.toThrow();
     expect(isOrganizationAdminRole('admin')).toBe(true);
   });
 });
