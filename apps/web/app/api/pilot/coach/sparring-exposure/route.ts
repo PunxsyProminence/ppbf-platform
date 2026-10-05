@@ -4,6 +4,7 @@ import {
   type ActorIdentity,
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
+  isOrganizationAdminRole,
   requireRole,
 } from '@/src/server/pilot/access';
 import {
@@ -17,6 +18,7 @@ import {
 import { gymToday } from '@/src/server/pilot/competenceCohorts';
 import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { type LinkedClip, listLinkedClipsForExposures } from '@/src/server/pilot/videoClipTags';
 import {
   type AthletePresentation,
   type CoachObservedHeadContact,
@@ -289,6 +291,27 @@ function parseEntry(body: Record<string, unknown>): ParsedEntry {
   };
 }
 
+/*
+ * Tagged clips linked to each entry (owner, Jason 2026-10-05, overwatch-
+ * relayed: "behind the scenes now"). Tagged clips are for coaches and the
+ * organization admin only (OD-2026-10-04-003), so any other role gets no
+ * linked_clips at all (undefined). A failed read is null -- "could not
+ * check" -- never [] ("no clips"), and it does not fail the sparring record.
+ */
+async function linkedClips(
+  principal: { role: ActorIdentity['role']; organizationId: string },
+  athleteId: string,
+  exposureIds: string[],
+): Promise<Map<string, LinkedClip[]> | null | undefined> {
+  if (principal.role !== 'coach' && !isOrganizationAdminRole(principal.role)) return undefined;
+  try {
+    return await listLinkedClipsForExposures(principal.organizationId, athleteId, exposureIds);
+  } catch (error) {
+    console.error({ event: 'sparring-linked-clips-read-failed', name: error instanceof Error ? error.name : 'unknown' });
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -318,11 +341,17 @@ export async function GET(request: NextRequest) {
       capCheck(actorOf(principal), athleteId, gymToday()),
     ]);
 
+    const entries = rows.slice(0, ENTRY_LIMIT);
+    const clips = await linkedClips(principal, athleteId, entries.map((entry) => entry.exposure_id));
+
     // counts covers the whole window; entries stops at ENTRY_LIMIT and says so.
     return NextResponse.json({
       window_days: windowDays,
       since_day: sinceDay,
-      entries: rows.slice(0, ENTRY_LIMIT),
+      entries: entries.map((entry) => ({
+        ...entry,
+        ...(clips === undefined ? {} : { linked_clips: clips === null ? null : clips.get(entry.exposure_id) ?? [] }),
+      })),
       entries_truncated: rows.length > ENTRY_LIMIT,
       counts,
       stop_rules: stopRules,

@@ -33,12 +33,14 @@ export interface ClipTagRow {
   athlete_id: string;
   event_kind: ClipEventKind;
   competition_id: string | null;
+  /** The one sparring_exposure entry this sparring tag shows; null = not linked. */
+  exposure_id: string | null;
   note: string;
   tagged_by_account_id: string;
   created_at: string;
 }
 
-const TAG_COLUMNS = `tag_id, video_session_id, athlete_id, event_kind, competition_id, note,
+const TAG_COLUMNS = `tag_id, video_session_id, athlete_id, event_kind, competition_id, exposure_id, note,
   tagged_by_account_id, created_at`;
 
 interface QueryExecutor {
@@ -152,6 +154,7 @@ export async function addClipTag(input: {
   athleteId: string;
   eventKind: ClipEventKind;
   competitionId: string | null;
+  exposureId?: string | null;
   note: string;
   taggedByAccountId: string;
 }): Promise<ClipTagRow> {
@@ -160,6 +163,9 @@ export async function addClipTag(input: {
   }
   if (input.eventKind === 'sparring' && input.competitionId) {
     throw new ValidationError('A sparring clip cannot also name a competition.', 'CLIP_TAG_EVENT_MIXED');
+  }
+  if (input.exposureId && input.eventKind !== 'sparring') {
+    throw new ExposureLinkSparringOnlyError();
   }
   if (input.note.length > 500) {
     throw new ValidationError('The tag note is limited to 500 characters.', 'CLIP_TAG_NOTE_TOO_LONG');
@@ -232,8 +238,8 @@ export async function addClipTag(input: {
       const inserted = await client.query<ClipTagRow>(
         `insert into pilot.video_clip_tags
            (organization_id, tag_id, video_session_id, athlete_id, event_kind,
-            competition_id, note, tagged_by_account_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
+            competition_id, note, tagged_by_account_id, exposure_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          returning ${TAG_COLUMNS}`,
         [
           input.organizationId,
@@ -244,6 +250,7 @@ export async function addClipTag(input: {
           input.competitionId,
           input.note,
           input.taggedByAccountId,
+          input.exposureId ?? null,
         ],
       );
       return inserted.rows[0];
@@ -255,9 +262,96 @@ export async function addClipTag(input: {
       if (code === '23503' && constraint === 'pilot_video_clip_tags_entry_fk') {
         throw new ValidationError('That athlete is not entered in that competition.', 'CLIP_TAG_NOT_ENTERED');
       }
-      throw error;
+      throw exposureLinkError(error);
     }
   });
+}
+
+export class ExposureLinkSparringOnlyError extends ValidationError {
+  constructor() {
+    super('Only a sparring clip can be linked to a sparring entry.', 'CLIP_TAG_EXPOSURE_SPARRING_ONLY');
+  }
+}
+
+/*
+ * The foreign key admits only the tagged athlete's own entry in this
+ * organization (overwatch, 2026-10-05), so a partner's segment, a deleted
+ * entry and another gym's entry all land here, and read alike.
+ */
+function exposureLinkError(error: unknown): unknown {
+  const { code, constraint } = error as { code?: string; constraint?: string };
+  if (code === '23503' && constraint === 'pilot_video_clip_tags_exposure_fk') {
+    return new ValidationError("That sparring entry is not this athlete's.", 'CLIP_TAG_EXPOSURE_NOT_FOUND');
+  }
+  if (code === '23514' && constraint === 'pilot_video_clip_tags_exposure_sparring_check') {
+    return new ExposureLinkSparringOnlyError();
+  }
+  return error;
+}
+
+/**
+ * Links a live sparring tag to one sparring entry, or clears the link (null).
+ * Owner, Jason 2026-10-05 (overwatch-relayed): one entry per tag, optional.
+ * Returns null when no live sparring tag has that id.
+ */
+export async function setClipTagExposure(input: {
+  organizationId: string;
+  tagId: string;
+  exposureId: string | null;
+}): Promise<ClipTagRow | null> {
+  try {
+    const rows = await query<ClipTagRow>(
+      `update pilot.video_clip_tags
+          set exposure_id = $3
+        where organization_id = $1 and tag_id = $2 and removed_at is null and event_kind = 'sparring'
+        returning ${TAG_COLUMNS}`,
+      [input.organizationId, input.tagId, input.exposureId],
+    );
+    return rows[0] ?? null;
+  } catch (error) {
+    throw exposureLinkError(error);
+  }
+}
+
+export interface LinkedClip {
+  tag_id: string;
+  video_session_id: string;
+}
+
+/**
+ * The clips linked to each of this athlete's sparring entries, for the
+ * sparring record: the same clips listTaggedClips shows for this athlete --
+ * live tags, no Teach Shadow footage, no deleted athlete on the clip -- minus
+ * anything a consent block stops (owner, 2026-10-04: "A) Hide"). Ids only, no
+ * title or note.
+ */
+export async function listLinkedClipsForExposures(
+  organizationId: string,
+  athleteId: string,
+  exposureIds: readonly string[],
+): Promise<Map<string, LinkedClip[]>> {
+  const linked = new Map<string, LinkedClip[]>();
+  if (exposureIds.length === 0) return linked;
+  const rows = await query<LinkedClip & { exposure_id: string }>(
+    `select t.exposure_id, t.tag_id, t.video_session_id
+       from pilot.video_clip_tags t
+       join pilot.video_sessions v
+         on v.organization_id = t.organization_id and v.video_session_id = t.video_session_id
+       join pilot.athletes a
+         on a.organization_id = t.organization_id and a.athlete_id = t.athlete_id
+      where t.organization_id = $1 and t.athlete_id = $2 and t.exposure_id = any($3::text[])
+        and ${VISIBLE_CLIP_SQL}
+      order by v.created_at desc, t.tag_id`,
+    [organizationId, athleteId, Array.from(new Set(exposureIds))],
+  );
+  const blocked = await blockedClipVideoIds(organizationId, rows.map((row) => row.video_session_id));
+  for (const row of rows) {
+    if (blocked.has(row.video_session_id)) continue;
+    const list = linked.get(row.exposure_id) ?? [];
+    list.push({ tag_id: row.tag_id, video_session_id: row.video_session_id });
+    linked.set(row.exposure_id, list);
+  }
+  return linked;
 }
 
 /** Soft removal: the row stays as the record of who tagged and who removed. */
@@ -332,25 +426,15 @@ export async function listTaggedClips(input: {
   }
   params.push(0);
   const offsetParam = params.length;
-  const sql = `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.note, t.tagged_by_account_id, t.created_at,
+  const sql = `select t.tag_id, t.video_session_id, t.athlete_id, t.event_kind, t.competition_id, t.exposure_id, t.note, t.tagged_by_account_id, t.created_at,
             v.title, v.status, v.created_at as recorded_at
        from pilot.video_clip_tags t
        join pilot.video_sessions v
          on v.organization_id = t.organization_id and v.video_session_id = t.video_session_id
        join pilot.athletes a
          on a.organization_id = t.organization_id and a.athlete_id = t.athlete_id
-      where t.organization_id = $1 and t.removed_at is null
-        and v.capture_take_id is null and a.deleted_at is null
-        and ${athleteNotDeletedSql('v')}
-        and not exists (
-          select 1 from pilot.video_clip_tags other
-            join pilot.athletes other_athlete
-              on other_athlete.organization_id = other.organization_id
-             and other_athlete.athlete_id = other.athlete_id
-           where other.organization_id = t.organization_id
-             and other.video_session_id = t.video_session_id
-             and other.removed_at is null
-             and other_athlete.deleted_at is not null)
+      where t.organization_id = $1
+        and ${VISIBLE_CLIP_SQL}
         ${filters}
       order by v.created_at desc, t.created_at, t.tag_id
       limit $2 offset $${offsetParam}`;
@@ -373,6 +457,24 @@ export async function listTaggedClips(input: {
   }
   return kept.slice(0, input.limit);
 }
+
+/*
+ * A tag row (t) on its video (v) and athlete (a) that staff lists may show:
+ * the tag is live, the footage is not Teach Shadow, and no athlete on the
+ * clip -- this one or any other live tag -- is deleted.
+ */
+const VISIBLE_CLIP_SQL = `t.removed_at is null
+        and v.capture_take_id is null and a.deleted_at is null
+        and ${athleteNotDeletedSql('v')}
+        and not exists (
+          select 1 from pilot.video_clip_tags other
+            join pilot.athletes other_athlete
+              on other_athlete.organization_id = other.organization_id
+             and other_athlete.athlete_id = other.athlete_id
+           where other.organization_id = t.organization_id
+             and other.video_session_id = t.video_session_id
+             and other.removed_at is null
+             and other_athlete.deleted_at is not null)`;
 
 const LIST_BATCH_ROWS = 100;
 const MAX_SCANNED_ROWS = 5000;

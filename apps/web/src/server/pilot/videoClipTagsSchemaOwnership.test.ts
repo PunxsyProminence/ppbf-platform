@@ -20,7 +20,9 @@ describe('video clip tags schema ownership', () => {
       .filter((statement) => !statement.includes('to_regclass'));
     expect(statements.length).toBeGreaterThanOrEqual(6);
     for (const statement of statements) {
-      expect(statement).toMatch(/organization_id\s*=\s*\$1|insert into pilot\.video_clip_tags\s*\(\s*organization_id|clip_tag\.organization_id/);
+      // other.organization_id = t.organization_id: the shared visibility
+      // fragment, correlated to a tag row whose own statement is scoped by $1.
+      expect(statement).toMatch(/organization_id\s*=\s*\$1|insert into pilot\.video_clip_tags\s*\(\s*organization_id|clip_tag\.organization_id|other\.organization_id\s*=\s*t\.organization_id/);
     }
   });
 

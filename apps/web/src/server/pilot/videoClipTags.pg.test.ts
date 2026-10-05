@@ -40,6 +40,13 @@ const PREREQUISITES = [
   'pilot_slice_postgres_publications_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_video_clip_tags_migration.sql';
+// Every tag read selects exposure_id since the sparring link landed, so the
+// migrated database carries it too (proven in videoClipTagsSparringLink.pg.test.ts).
+const FOLLOW_ON = [
+  'pilot_slice_postgres_activity_log_migration.sql',
+  'pilot_slice_postgres_sparring_exposure_and_load_migration.sql',
+  'pilot_slice_postgres_video_clip_tags_sparring_link_migration.sql',
+];
 const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-video-clip-tags-migration.mjs');
 
 const ORG = 'org-cliptags-a';
@@ -62,6 +69,7 @@ let tags: typeof import('./videoClipTags');
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let prerequisiteSql: string[];
 let migrationSql: string;
+let followOnSql: string[];
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -189,6 +197,7 @@ beforeAll(async () => {
 
   prerequisiteSql = await Promise.all(PREREQUISITES.map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')));
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  followOnSql = await Promise.all(FOLLOW_ON.map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')));
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
 });
@@ -252,6 +261,9 @@ describe('video_clip_tags migration and videoClipTags.ts against the real schema
     await applyMigrationTransaction(main, migrationSql);
     // Idempotent: a second run is a no-op and still passes readiness.
     await applyMigrationTransaction(main, migrationSql);
+    for (const sql of followOnSql) {
+      await main.query(sql);
+    }
 
     await insertVideo(main, 'vid-bout');
     await insertVideo(main, 'vid-spar', { athleteId: null });

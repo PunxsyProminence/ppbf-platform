@@ -13,10 +13,12 @@ import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/
 import {
   addClipTag,
   blockedClipVideoIds,
+  ExposureLinkSparringOnlyError,
   getLiveClipTag,
   listLiveClipTagsForVideo,
   listLiveTagSubjects,
   removeClipTag,
+  setClipTagExposure,
   type ClipEventKind,
 } from '@/src/server/pilot/videoClipTags';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
@@ -105,7 +107,7 @@ export async function POST(
     const { videoId } = await params;
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 
-    for (const field of ['athlete_id', 'competition_id', 'note'] as const) {
+    for (const field of ['athlete_id', 'competition_id', 'exposure_id', 'note'] as const) {
       if (body?.[field] !== undefined && body?.[field] !== null && typeof body?.[field] !== 'string') {
         throw new ValidationError(`${field} must be text.`, 'CLIP_TAG_FIELD_TYPE');
       }
@@ -130,6 +132,7 @@ export async function POST(
       athleteId,
       eventKind: eventKind as ClipEventKind,
       competitionId: optionalText(body?.competition_id),
+      exposureId: optionalText(body?.exposure_id),
       note: typeof body?.note === 'string' ? body.note.trim() : '',
       taggedByAccountId: principal.accountId,
     });
@@ -147,10 +150,98 @@ export async function POST(
         athlete_id: athleteId,
         event_kind: tag.event_kind,
         competition_id: tag.competition_id,
+        exposure_id: tag.exposure_id,
       },
     });
 
     return NextResponse.json(tag, { status: 201 });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+/*
+ * Link a sparring tag to the one sparring entry it shows, or clear the link
+ * with exposure_id: null. Owner, Jason 2026-10-05 (overwatch-relayed): one
+ * entry, optional, behind the scenes for now. The entry must be the tagged
+ * athlete's own (the foreign key). A link changes no playback, so the consent
+ * rules are those of reading the tag: who may see the video, and a coach only
+ * for their own athlete.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ videoId: string }> },
+) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['organization_admin', 'coach']);
+    const { videoId } = await params;
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new ValidationError('Request body must be a JSON object.', 'CLIP_TAG_BODY');
+    }
+    const unknownKey = Object.keys(body).find((key) => key !== 'tag_id' && key !== 'exposure_id');
+    if (unknownKey) {
+      throw new ValidationError(`Unsupported field: ${unknownKey}`, 'CLIP_TAG_FIELD_UNKNOWN');
+    }
+    const tagId = typeof body.tag_id === 'string' ? body.tag_id.trim() : '';
+    if (!tagId) {
+      throw new ValidationError('tag_id is required.', 'CLIP_TAG_ID_REQUIRED');
+    }
+    // Present and explicit: a string links, null clears. Absent is a mistake,
+    // never read as "clear".
+    if (body.exposure_id !== null && (typeof body.exposure_id !== 'string' || !body.exposure_id.trim())) {
+      throw new ValidationError('exposure_id must be a sparring entry id, or null to clear the link.', 'CLIP_TAG_EXPOSURE_ID');
+    }
+    const exposureId = body.exposure_id === null ? null : body.exposure_id.trim();
+
+    if (!(await staffCanSeeVideo(principal, principal.organizationId, videoId))) {
+      return hiddenNotFound();
+    }
+    const tag = await getLiveClipTag(principal.organizationId, tagId);
+    if (!tag || tag.video_session_id !== videoId) {
+      return hiddenNotFound();
+    }
+    if (!isOrganizationAdminRole(principal.role)) {
+      try {
+        await assertActorCanAccessAthlete(principal, tag.athlete_id);
+      } catch {
+        return hiddenNotFound();
+      }
+    }
+    if (tag.event_kind !== 'sparring') {
+      throw new ExposureLinkSparringOnlyError();
+    }
+
+    const updated = await setClipTagExposure({
+      organizationId: principal.organizationId,
+      tagId,
+      exposureId,
+    });
+    if (!updated) {
+      // Removed between the read and the write.
+      return hiddenNotFound();
+    }
+
+    await writePilotAuditEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'video_clip_tag',
+      entity_id: tagId,
+      details: {
+        action: exposureId ? 'video_clip_tag_exposure_linked' : 'video_clip_tag_exposure_cleared',
+        video_session_id: videoId,
+        athlete_id: updated.athlete_id,
+        exposure_id: updated.exposure_id,
+        previous_exposure_id: tag.exposure_id,
+      },
+    });
+
+    // As on GET: a clip a consent block stops shows no note.
+    const blocked = (await blockedClipVideoIds(principal.organizationId, [videoId])).has(videoId);
+    return NextResponse.json(blocked ? { ...updated, note: '' } : updated);
   } catch (error) {
     return jsonError(error);
   }

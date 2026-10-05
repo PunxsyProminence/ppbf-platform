@@ -9,7 +9,11 @@
 //     partner's tag can only point at the partner's own segment;
 //   * only a sparring tag may carry a link;
 //   * deleting the entry clears the link and keeps the tag (the column-list
-//     SET NULL; a whole-key SET NULL fails on NOT NULL organization_id).
+//     SET NULL; a whole-key SET NULL fails on NOT NULL organization_id);
+//   * videoClipTags.ts, against those keys: addClipTag and setClipTagExposure
+//     link, clear and refuse with named errors, and listLinkedClipsForExposures
+//     returns only this athlete's live, visible clips -- a clip with a
+//     consent-blocked or deleted athlete on it stays hidden (OD-2026-10-04-009).
 //
 // Built on the full production schema (scripts/lib/full-schema.mjs).
 // Disposable, local-only embedded Postgres. It NEVER connects to production
@@ -50,6 +54,7 @@ const COACH = 'coach-cliplink';
 const OTHER_COACH = 'coach-cliplink-other';
 const ATHLETE_A = 'ath-cliplink-a';
 const PARTNER = 'ath-cliplink-partner';
+const GONE = 'ath-cliplink-gone';
 const COMPETITION = 'comp-cliplink';
 const DAY = '2026-10-03';
 
@@ -117,7 +122,9 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
      values ($1, 'coach', $2, 'microsoft'), ($3, 'coach', $4, 'microsoft')`,
     [COACH, ORG, OTHER_COACH, OTHER_ORG],
   );
-  for (const [org, athleteId, coach] of [[ORG, ATHLETE_A, COACH], [ORG, PARTNER, COACH], [OTHER_ORG, ATHLETE_A, OTHER_COACH]]) {
+  for (const [org, athleteId, coach] of [
+    [ORG, ATHLETE_A, COACH], [ORG, PARTNER, COACH], [ORG, GONE, COACH], [OTHER_ORG, ATHLETE_A, OTHER_COACH],
+  ]) {
     await client.query(
       `insert into pilot.athletes
          (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -138,7 +145,10 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
      values ($1, 'entry-a', $2, $3, $4)`,
     [ORG, COMPETITION, ATHLETE_A, COACH],
   );
-  for (const [org, videoId, coach] of [[ORG, 'vid-1', COACH], [ORG, 'vid-2', COACH], [ORG, 'vid-3', COACH], [OTHER_ORG, 'vid-other', OTHER_COACH]]) {
+  for (const [org, videoId, coach] of [
+    ...['vid-1', 'vid-2', 'vid-3', 'vid-4', 'vid-5', 'vid-6'].map((id) => [ORG, id, COACH]),
+    [OTHER_ORG, 'vid-other', OTHER_COACH],
+  ]) {
     await client.query(
       `insert into pilot.video_sessions
          (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
@@ -485,6 +495,125 @@ describe('video clip tags sparring link migration', () => {
         { tag_id: 'tag-partner', organization_id: ORG, athlete_id: PARTNER, exposure_id: 'exp-partner-1' },
         { tag_id: 'tag-unlinked', organization_id: ORG, athlete_id: ATHLETE_A, exposure_id: null },
       ]);
+    });
+  });
+
+  describe('videoClipTags.ts on the migrated schema', () => {
+    let client: Client;
+    let tags: typeof import('./videoClipTags');
+    const base = {
+      organizationId: ORG,
+      athleteId: ATHLETE_A,
+      eventKind: 'sparring' as const,
+      competitionId: null as string | null,
+      note: '',
+      taggedByAccountId: COACH,
+    };
+
+    beforeAll(async () => {
+      client = await freshDatabase('cliplink_module');
+      await insertExposure(client, 'exp-a-1', ATHLETE_A);
+      await insertExposure(client, 'exp-a-2', ATHLETE_A);
+      await insertExposure(client, 'exp-partner-1', PARTNER);
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('cliplink_module');
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      jest.resetModules();
+      tags = await import('./videoClipTags');
+    });
+    afterAll(async () => {
+      await client.end();
+      const { closePool } = await import('./db');
+      await closePool();
+    });
+
+    test('addClipTag stores the link; a partner\'s entry and a bout link are refused by name', async () => {
+      const linked = await tags.addClipTag({ ...base, videoSessionId: 'vid-1', exposureId: 'exp-a-1' });
+      expect(linked.exposure_id).toBe('exp-a-1');
+      const plain = await tags.addClipTag({ ...base, videoSessionId: 'vid-2' });
+      expect(plain.exposure_id).toBeNull();
+
+      await expect(tags.addClipTag({ ...base, videoSessionId: 'vid-3', exposureId: 'exp-partner-1' }))
+        .rejects.toMatchObject({ code: 'CLIP_TAG_EXPOSURE_NOT_FOUND' });
+      await expect(tags.addClipTag({
+        ...base, videoSessionId: 'vid-3', eventKind: 'competition', competitionId: COMPETITION, exposureId: 'exp-a-1',
+      })).rejects.toMatchObject({ code: 'CLIP_TAG_EXPOSURE_SPARRING_ONLY' });
+      // Neither refusal left a tag behind.
+      const { rows } = await client.query(`select count(*)::int as n from pilot.video_clip_tags where video_session_id = 'vid-3'`);
+      expect(rows[0].n).toBe(0);
+    });
+
+    test('setClipTagExposure links, moves and clears; refuses another athlete\'s entry; ignores bout and removed tags', async () => {
+      const tag = await tags.addClipTag({ ...base, videoSessionId: 'vid-4' });
+      expect((await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-1' }))?.exposure_id).toBe('exp-a-1');
+      expect((await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-2' }))?.exposure_id).toBe('exp-a-2');
+      await expect(tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-partner-1' }))
+        .rejects.toMatchObject({ code: 'CLIP_TAG_EXPOSURE_NOT_FOUND' });
+      // Another gym cannot reach this tag at all.
+      expect(await tags.setClipTagExposure({ organizationId: OTHER_ORG, tagId: tag.tag_id, exposureId: null })).toBeNull();
+      expect((await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: null }))?.exposure_id).toBeNull();
+
+      const bout = await tags.addClipTag({ ...base, videoSessionId: 'vid-5', eventKind: 'competition', competitionId: COMPETITION });
+      expect(await tags.setClipTagExposure({ organizationId: ORG, tagId: bout.tag_id, exposureId: 'exp-a-1' })).toBeNull();
+
+      await tags.removeClipTag({ organizationId: ORG, tagId: tag.tag_id, removedByAccountId: COACH });
+      expect(await tags.setClipTagExposure({ organizationId: ORG, tagId: tag.tag_id, exposureId: 'exp-a-1' })).toBeNull();
+    });
+
+    test('listLinkedClipsForExposures returns this athlete\'s live, visible clips and hides blocked ones', async () => {
+      // vid-1: A linked to exp-a-1 (from the first test) -- visible.
+      // vid-2: A linked to exp-a-1, PARTNER tagged too; PARTNER's guardian withdraws -- hidden.
+      await tags.setClipTagExposure({
+        organizationId: ORG,
+        tagId: (await tags.listLiveClipTagsForVideo(ORG, 'vid-2'))[0].tag_id,
+        exposureId: 'exp-a-1',
+      });
+      await insertTag(client, 'tag-partner-vid2', { videoId: 'vid-2', athleteId: PARTNER, exposureId: 'exp-partner-1' });
+      // vid-6: A linked to exp-a-1, GONE tagged too, then GONE is deleted -- hidden.
+      await insertTag(client, 'tag-a-vid6', { videoId: 'vid-6', exposureId: 'exp-a-1' });
+      await insertTag(client, 'tag-gone-vid6', { videoId: 'vid-6', athleteId: GONE });
+      // vid-4's tag (linked, then removed) and vid-5's bout tag must not appear either.
+
+      const before = await tags.listLinkedClipsForExposures(ORG, ATHLETE_A, ['exp-a-1', 'exp-a-2', 'exp-partner-1']);
+      expect(Object.fromEntries(before)).toEqual({
+        'exp-a-1': expect.arrayContaining([
+          expect.objectContaining({ video_session_id: 'vid-1' }),
+          expect.objectContaining({ video_session_id: 'vid-2' }),
+          expect.objectContaining({ video_session_id: 'vid-6' }),
+        ]),
+      });
+
+      await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, GONE]);
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, full_name) values ($1, 'par-partner', 'Partner Guardian')`,
+        [ORG],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, 'par-partner', $2, 'mother')`,
+        [ORG, PARTNER],
+      );
+      await client.query(
+        `insert into pilot.waivers
+           (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+            signed_by_role, signed_at, consent_version, status, covers_video)
+         values ($1, gen_random_uuid(), $2, 'par-partner', 'photo_media', 'Partner Guardian',
+                 'parent', now(), 'v1', 'withdrawn', false)`,
+        [ORG, PARTNER],
+      );
+
+      const after = await tags.listLinkedClipsForExposures(ORG, ATHLETE_A, ['exp-a-1', 'exp-a-2', 'exp-partner-1']);
+      expect(Object.fromEntries(after)).toEqual({
+        'exp-a-1': [{ tag_id: expect.any(String), video_session_id: 'vid-1' }],
+      });
+      // The partner's own link is the partner's, never A's.
+      const partners = await tags.listLinkedClipsForExposures(ORG, PARTNER, ['exp-partner-1']);
+      expect(partners.size).toBe(0); // vid-2 is consent-blocked for everyone
+      expect((await tags.listLinkedClipsForExposures(ORG, ATHLETE_A, [])).size).toBe(0);
+    });
+
+    test('the staff clip list carries the link', async () => {
+      const items = await tags.listTaggedClips({ organizationId: ORG, athleteIds: null, athleteId: ATHLETE_A, limit: 50 });
+      expect(items.find((item) => item.video_session_id === 'vid-1')?.exposure_id).toBe('exp-a-1');
     });
   });
 });
