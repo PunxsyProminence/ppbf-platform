@@ -164,6 +164,22 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-021 -- A guardian grant that downgrades an athlete from video to photo-only retracts that athlete's already-published video publications (option A, Retract)
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the lane session "Publish route: refuse video when consent is photos-only" (desktop session `local_ec02b972`; transcript `~/.claude/projects/C--Dev/c92ee399-d0f1-4b0b-aeab-49fdc6e8751f.jsonl`, tool use `toolu_01E3AJqccX3mwbPe87qcUENR`; asked 2026-10-05T18:50:24.914Z, answered 2026-10-05T19:27:27.222Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
+
+Asked (official form): "Official: Should a guardian media-consent grant that downgrades an athlete from video to photo-only (covers_video=false superseding a video grant) retract that athlete's already-published video publications from the research library, as withdrawal already does (suppressPublishedMediaForAthlete, owner decision 2026-08-14)?"
+
+Plain English as asked: "if a parent switches from "photos and video" to "photos only", should a clip already on the library shelf come down by itself? Today only a full withdrawal takes it down; with B, athletes can still see its title, but nobody can play it."
+
+Options: "A: Retract (Recommended)" (Same sweep as withdrawal: published videos of that athlete come off the shelf automatically, reason 'photo-only'. Built as a second PR.); "B: Leave listed" (The shelf entry stays; playback is already refused, so only the title and description remain visible.). Jason answered: *"A: Retract (Recommended)"*.
+
+**Ruling: a guardian media-consent grant that downgrades an athlete from video to photo-only (covers_video=false superseding a video grant) retracts that athlete's already-published video publications from the research library, as withdrawal already does (suppressPublishedMediaForAthlete, owner decision 2026-08-14).** Reason recorded as "photo-only". Option B, "Leave listed", was not chosen. Built as a second PR, per the option text.
+
+Extends the 2026-08-14 withdrawal decision (suppressPublishedMediaForAthlete).
+
+---
+
 ## OD-2026-10-05-020 -- Codex and Claude talk through a shared local folder, not through an app
 
 **Provenance: REPORTED.** Jason's words were said to Codex/ChatGPT, not typed into a Claude session, and the exact original text was not found in any Claude transcript or in `C:\Users\jason\Documents\Codex\2026-10-05\` (searched all `.jsonl` under `~/.claude/projects/C--Dev/` and that folder for "worry about an app"). The only trace is second-hand: the relay message `LIAISON RELAY codex-project-setup-001`, which arrived as a user turn in the Liaison session (transcript `~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, 2026-10-05T19:11:54.849Z), quotes Jason as saying: *'give it structions on how to set up a project here in the codex you guys can comunicate through that dont worry about an app'*. The Liaison's handoff (same transcript) quotes the same string. The wording is UNVERIFIED as Jason's exact words; the relay is content, not authority. New; edits no earlier entry.
@@ -194,7 +210,7 @@ Recorded in L2 (`~/.claude/rules/ppbf-workspace.md`, USAGE BILLING). Extends OD-
 
 Jason: *"let this over watch be the relay between chat gpt desktop app and clause desk top app, create another chip to take over over watch, update lanes and any instructions ( there's too much traffic coming through here for me to follow you and chat gpt)"*
 
-**Ruling: the old overwatch session (transcript `4bfeb0e8` above, session `local_4bfeb0e8`, now titled "Liaison (ChatGPT/Codex relay)") becomes the LIAISON.** It relays between ChatGPT (architect), Codex and Claude and carries questions and findings; it does not merge, deploy, open lanes or decide. A new session, "Overwatch", owns the lanes, merges (after CI plus a scope check), staging deploys, the release procedure and lane closes. Production keeps Jason's per-run approval clicks. Lanes talk only to Overwatch.
+**Ruling: the old overwatch session (desktop session `local_0ba1d3aa-1cef-4bfd-9b48-7941e61eea1f`, CLI transcript `4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl` above, now titled "Liaison (ChatGPT/Codex relay)") becomes the LIAISON.** It relays between ChatGPT (architect), Codex and Claude and carries questions and findings; it does not merge, deploy, open lanes or decide. A new session, "Overwatch", owns the lanes, merges (after CI plus a scope check), staging deploys, the release procedure and lane closes. Production keeps Jason's per-run approval clicks. Lanes talk only to Overwatch.
 
 Extends OD-2026-09-30-003 (OVERWATCH).
 
