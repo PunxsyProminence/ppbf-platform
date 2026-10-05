@@ -1,12 +1,15 @@
-import { query } from './db';
+import { query, queryOne } from './db';
 import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
+  queryOne: jest.fn(),
 }));
 
 const mockQuery = query as jest.Mock;
+// Only the athlete arm uses it: the live-row read behind accessibleAthleteIds.
+const mockQueryOne = queryOne as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -43,14 +46,29 @@ function sqlOf(callIndex: number): string {
 
 describe('listShadowEvents athlete scoping', () => {
   test('athlete role restricts the query to their own athleteId only', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // their live row
     mockQuery.mockResolvedValueOnce([]);
     await listShadowEvents(context({ actorRole: 'athlete', athleteId: 'ath-1' }));
+
+    // The live-row read, in the actor's own gym.
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'ath-1']);
+    expect(String(mockQueryOne.mock.calls[0][0])).toContain('deleted_at is null');
 
     const params = mockQuery.mock.calls[0][1];
     const restrictToAthleteIds = params[8];
     const includeUnscopedRows = params[9];
     expect(restrictToAthleteIds).toEqual(['ath-1']);
     expect(includeUnscopedRows).toBe(false);
+  });
+
+  test('a deleted athlete (no live row) gets a scope that matches nothing', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQuery.mockResolvedValueOnce([]);
+    await listShadowEvents(context({ actorRole: 'athlete', athleteId: 'ath-1' }));
+
+    const params = mockQuery.mock.calls[0][1];
+    expect(params[8]).toEqual(['__unbound_athlete__']);
+    expect(params[9]).toBe(false);
   });
 
   test('parent role restricts the query to their linked athletes, not the whole org', async () => {

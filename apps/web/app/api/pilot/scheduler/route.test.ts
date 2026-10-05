@@ -32,6 +32,10 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/access', () => ({
   assertActiveCoachAccount: jest.fn(),
   assertActorCanAccessAthlete: jest.fn(),
+  // The athlete arm's live-row check. Resolves (a live athlete) unless a
+  // test says otherwise; the deleted-athlete refusal is pinned against a
+  // real database in athleteSelfDeletionMark.pg.test.ts.
+  assertAthleteBelongsToOrganization: jest.fn(),
   assertCoachAssignedToAthlete: jest.fn(),
   athleteIdsForCoach: jest.fn(),
   isOrganizationAdminRole: jest.fn((role: string) => role === 'organization_admin' || role === 'admin'),
