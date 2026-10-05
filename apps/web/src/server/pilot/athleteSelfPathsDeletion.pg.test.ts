@@ -202,7 +202,9 @@ async function snapshot(athleteId: string): Promise<Record<string, unknown>> {
        (select json_agg(f.payload order by f.plan_id) from pilot.athlete_floor_plans f
          where f.organization_id = $1 and f.athlete_id = $2)::text as floor_plans,
        (select count(*) from pilot.one_percent_nominations n
-         where n.organization_id = $1 and (n.athlete_id = $2 or n.nominated_by_account_id = 'acct-' || $2))::text as nominations`,
+         where n.organization_id = $1 and (n.athlete_id = $2 or n.nominated_by_account_id = 'acct-' || $2))::text as nominations,
+       (select count(*) from pilot.audit_events e
+         where e.organization_id = $1 and e.actor_account_id = 'acct-' || $2)::text as audit_events`,
     [ORG_ID, athleteId],
   );
   return rows[0];
@@ -266,6 +268,15 @@ async function seed(client: Client): Promise<void> {
       [`video-${athleteId}`, ORG_ID, COACH, athleteId, `p/${athleteId}.mp4`],
     );
   }
+
+  // The seeded check-ins move to yesterday. A same-day repeat check-in is
+  // idempotent (no new row, no audit, no new weigh-in), so a refusal today
+  // would be indistinguishable from an admitted repeat; from yesterday, an
+  // admitted POST today writes all three, which the snapshot sees.
+  await client.query(
+    `update pilot.athlete_check_ins set checked_in_on = checked_in_on - 1 where organization_id = $1`,
+    [ORG_ID],
+  );
 
   // The deletion: what deleteAthleteRecord writes to the athlete row.
   await client.query(
@@ -415,7 +426,7 @@ describe('reads: the live athlete gets their own record; the deleted athlete is 
 });
 
 describe('writes: the deleted athlete is refused and nothing is written', () => {
-  test('check-in POST (a check-in and a weigh-in)', async () => {
+  test('check-in POST (a check-in, a weigh-in and an audit row)', async () => {
     const before = await snapshot(DELETED_ATHLETE);
     const result = await call(athletePrincipal(DELETED_ATHLETE), checkInPOST, '/api/pilot/athlete/check-in', 'POST', {
       energy: 2,
@@ -424,6 +435,20 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
     });
     expect(outcome(result)).toEqual(REFUSED);
     expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  test("live control: the same POST writes a new check-in, weigh-in and audit row, so the snapshot above would see a write", async () => {
+    const before = await snapshot(LIVE_ATHLETE);
+    const body = await expectOk(call(athletePrincipal(LIVE_ATHLETE), checkInPOST, '/api/pilot/athlete/check-in', 'POST', {
+      energy: 2,
+      body_mass: 58,
+      body_mass_unit: 'kg',
+    }));
+    expect(body.body_mass_saved).toBe(true);
+    const after = await snapshot(LIVE_ATHLETE);
+    expect(JSON.parse(after.check_ins as string)).toHaveLength(JSON.parse(before.check_ins as string).length + 1);
+    expect(Number(after.weigh_ins)).toBe(Number(before.weigh_ins) + 1);
+    expect(Number(after.audit_events)).toBe(Number(before.audit_events) + 1);
   });
 
   test('checkIn itself, below the route, takes no check-in for a deleted athlete', async () => {
@@ -449,6 +474,8 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
       task_id: 't1',
       completed: true,
     }));
+    const [plan] = JSON.parse((await snapshot(LIVE_ATHLETE)).floor_plans as string);
+    expect(plan.tasks[0].completed).toBe(true);
   });
 
   test('one-percent-club: a deleted athlete nominates no one', async () => {
@@ -468,7 +495,7 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
       action: 'nominate',
       athlete_id: DELETED_ATHLETE,
     });
-    expect(result.status).toBe(404);
+    expect({ status: result.status, error: result.body.error }).toEqual({ status: 404, error: 'Not found' });
     expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
   });
 

@@ -88,13 +88,13 @@ export async function POST(request: NextRequest) {
       if (!athleteId) throw new ValidationError('nominate needs athlete_id.');
       if (principal.role !== 'athlete') {
         await assertActorCanAccessAthlete(principal, athleteId);
-      } else {
+      } else if (principal.athleteId) {
         // An athlete nominator is not gated on the nominee (see above), but
         // the nominator must still be there: a session that outlived the
         // athlete's own deletion carries the same id (OD-2026-09-29-002 item
         // 10). The nominee's live row is required in createNomination, for
         // every role.
-        await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId ?? '');
+        await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
       }
 
       const item = await createNomination({

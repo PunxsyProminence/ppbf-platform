@@ -293,6 +293,8 @@ describe('GET /api/pilot/video/list', () => {
 describe('GET /api/pilot/video/list tagged clips', () => {
   test('the athlete list leaves tagged clips out', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row
     mockQuery.mockResolvedValueOnce([]);
     await GET(request());
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining(UNTAGGED_SENTINEL), ['org-1', 'ath-1', 50]);
