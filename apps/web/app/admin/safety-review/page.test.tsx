@@ -107,10 +107,14 @@ test('a failed load shows the error state, never a false all-clear', async () =>
 
 // #991 class, batch 9: the page defaulted every list to [] when a 2xx body
 // did not parse or left a list out, and printed the all-clear over it.
-test.each([
+test.each<[string, Response]>([
   ['an unparseable body', { ok: true, json: async () => { throw new SyntaxError('bad'); } } as unknown as Response],
   ['an empty body', jsonResponse({})],
-  ['a body missing one list', jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], violationsReadLimit: 200, violationsTruncated: false })],
+  ...(['openHolds', 'failingGates', 'openEscalations', 'openViolations'] as const).map((missing) => {
+    const lists: Record<string, unknown> = { openHolds: [], failingGates: [], openEscalations: [], openViolations: [] };
+    delete lists[missing];
+    return [`a body missing ${missing}`, jsonResponse({ ok: true, ...lists, violationsReadLimit: 200, violationsTruncated: false })] as [string, Response];
+  }),
 ])('a 2xx with %s is a failed read, never a false all-clear', async (_name, response) => {
   global.fetch = jest.fn().mockResolvedValue(response) as unknown as typeof fetch;
 
