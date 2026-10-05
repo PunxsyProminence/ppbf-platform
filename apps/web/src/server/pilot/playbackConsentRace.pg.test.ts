@@ -17,8 +17,9 @@
  *   - a withdrawal starting after the check: it waits until the mint's
  *     transaction has ended, so it is recorded after the credential, never
  *     between the check and it.
- * Without the FOR SHARE, the first mints and the second does not wait at
- * all; each test fails on that.
+ * A third runs the first interleaving on a two-athlete tagged clip, with the
+ * withdrawal on the second athlete. Without the FOR SHARE, the first and
+ * third mint and the second does not wait at all; each test fails on that.
  *
  * Spins up the same disposable, local-only embedded Postgres the other
  * migration suites use. It NEVER connects to production or staging.
@@ -54,6 +55,8 @@ const GUARDIAN_ACCOUNT_ID = 'acct-play-race-guardian';
 const PARENT_ID = 'parent-play-race';
 const ATHLETE_ID = 'ath-play-race';
 const VIDEO_SESSION_ID = 'vs-play-race';
+const PARTNER_ATHLETE_ID = 'ath-play-race-partner';
+const PARTNER_PARENT_ID = 'parent-play-race-partner';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -342,5 +345,76 @@ describe("the playback route's consent check and its mint cannot straddle a with
     // And the next request after it is refused.
     await expect(mintPlayback()).rejects.toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
     expect(mintCount).toBe(1);
+  });
+
+  test('a tagged clip: a withdrawal in flight for the SECOND athlete is waited for and blocks the mint', async () => {
+    /* The multi-athlete loop on a real database: the first athlete's links
+       are already held FOR SHARE when the read for the second one meets the
+       withdrawal's FOR UPDATE. Any block blocks the clip (OD-2026-10-04-003). */
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Race Partner', '2012-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
+       on conflict do nothing`,
+      [ORG_ID, PARTNER_ATHLETE_ID, COACH_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, $2, null, 'Partner Guardian') on conflict do nothing`,
+      [ORG_ID, PARTNER_PARENT_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'father') on conflict do nothing`,
+      [ORG_ID, PARTNER_PARENT_ID, PARTNER_ATHLETE_ID],
+    );
+    await client.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+          signed_by_role, signed_at, consent_version, status, covers_video)
+       values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Partner Guardian',
+               'parent', now(), 'v1', 'signed', true)`,
+      [ORG_ID, PARTNER_ATHLETE_ID, PARTNER_PARENT_ID],
+    );
+
+    const holder = new Client({ connectionString: connectionStringFor(PG_DATABASE) });
+    await holder.connect();
+    let observedBlocked = false;
+    let minting: Promise<unknown> | null = null;
+    try {
+      await holder.query('begin');
+      await holder.query(
+        `select 1 from pilot.guardian_links
+          where organization_id = $1 and parent_id = $2 and athlete_id = $3
+          for update`,
+        [ORG_ID, PARTNER_PARENT_ID, PARTNER_ATHLETE_ID],
+      );
+      await holder.query(
+        `insert into pilot.waivers
+           (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+            signed_by_role, signed_at, consent_version, status, covers_video)
+         values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Partner Guardian',
+                 'parent', now(), 'v1', 'withdrawn', false)`,
+        [ORG_ID, PARTNER_ATHLETE_ID, PARTNER_PARENT_ID],
+      );
+
+      minting = playback.mintUnderPlaybackConsent(ORG_ID, [ATHLETE_ID, PARTNER_ATHLETE_ID], () => {
+        mintCount += 1;
+        return 'https://blob.example/sas';
+      }).then(
+        () => 'minted',
+        (error: unknown) => error,
+      );
+      observedBlocked = await someBackendIsWaitingOnALock();
+      await holder.query('commit');
+    } finally {
+      await holder.query('rollback').catch(() => {});
+      await holder.end().catch(() => {});
+    }
+
+    const outcome = await minting;
+
+    expect(observedBlocked).toBe(true);
+    expect(outcome).toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
+    expect(mintCount).toBe(0);
   });
 });
