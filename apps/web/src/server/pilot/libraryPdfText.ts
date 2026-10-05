@@ -17,12 +17,12 @@ import { PDFParse } from 'pdf-parse';
 
 import { PilotError } from './errors';
 
-// The same ceiling as /api/document-ingest. Library PDFs are papers and book
+// The same ceiling /api/document-ingest used (retired 2026-10-03). Library PDFs are papers and book
 // chapters; past this the parse is slow, not more useful, and the route holds
 // the whole file in memory.
 export const LIBRARY_PDF_MAX_BYTES = 10 * 1024 * 1024;
 
-// Same parse budget as /api/document-ingest.
+// The same parse budget /api/document-ingest used.
 export const LIBRARY_PDF_PARSE_TIMEOUT_MS = 15_000;
 
 // A page list this long is already past what a curator pages through to pick an
