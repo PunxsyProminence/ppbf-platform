@@ -315,6 +315,9 @@ export function deriveSuggestions(
         acute_load: acute,
         usual_weekly_load: usual,
         ratio: Number(reading.ratio.toFixed(2)),
+        // The ratio exactly as the coach's text shows it, so the athlete and
+        // parent wording (familyGapDescription below) shows the same figure.
+        ratio_shown: ratio,
         prior_weeks_with_load: reading.prior_weeks_with_load,
       },
     });
@@ -630,6 +633,40 @@ export function ruleFromDetectedFrom(detectedFrom: string | null | undefined): S
   if (!detectedFrom || !detectedFrom.startsWith(DETECTED_FROM_RULE_PREFIX)) return null;
   const rule = detectedFrom.slice(DETECTED_FROM_RULE_PREFIX.length);
   return rule in RULE_JUSTIFICATION_FIELDS ? (rule as SuggestionRule) : null;
+}
+
+export interface FamilyGapSource {
+  gap_description: string;
+  detected_from: string | null;
+  detection_data: Record<string, unknown> | null;
+}
+
+/**
+ * The words an athlete or parent reads for a confirmed gap. Rule 6
+ * (load_jumped) gets Jason's plain sentence (2026-10-05, "A: Plain text");
+ * the coach keeps the stored text, and every other gap is returned as stored.
+ * The ratio comes from the stored evidence, rounded as the coach text rounds
+ * it; when the gap carries no usable ratio, the stored text is returned rather
+ * than a made-up number (overwatch, 2026-10-05).
+ */
+export function familyGapDescription(gap: FamilyGapSource): string {
+  if (ruleFromDetectedFrom(gap.detected_from) !== 'load_jumped') return gap.gap_description;
+  const ratio = loadJumpRatioShown(gap.detection_data, gap.gap_description);
+  if (ratio === null) return gap.gap_description;
+  return `Your training this week was about ${ratio} times your usual week. Your coach is keeping an eye on it.`;
+}
+
+function loadJumpRatioShown(data: Record<string, unknown> | null, storedText: string): string | null {
+  if (!data) return null;
+  const shown = data.ratio_shown;
+  if (typeof shown === 'string' && /^\d+\.\d$/.test(shown)) return shown;
+  // Gaps confirmed before ratio_shown existed: the coach text itself says
+  // "(2.4x," -- take that, because rounding the stored 2-decimal ratio again
+  // can disagree with it (2.449 -> 2.45 -> 2.5). Then the stored ratio.
+  const fromText = /\((\d+\.\d)x,/.exec(storedText);
+  if (fromText) return fromText[1];
+  const ratio = typeof data.ratio === 'number' ? data.ratio : Number.NaN;
+  return Number.isFinite(ratio) && ratio > 0 ? ratio.toFixed(1) : null;
 }
 
 export interface GapJustificationSource {

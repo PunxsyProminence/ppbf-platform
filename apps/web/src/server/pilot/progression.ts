@@ -509,13 +509,24 @@ export async function verifyCompletion(
   return result[0] ?? null;
 }
 
+/**
+ * detected_from and detection_data ride along so the gaps route can give an
+ * athlete or parent the family wording (familyGapDescription); the route
+ * strips both before anything is sent.
+ */
+export interface ProgressionGapWithDetection extends ProgressionGap {
+  detected_from: string | null;
+  detection_data: Record<string, unknown> | null;
+}
+
 export async function getAthleteGaps(
   organizationId: string,
   athleteId: string,
   status?: string,
-): Promise<ProgressionGap[]> {
+): Promise<ProgressionGapWithDetection[]> {
   let sql = `
-    select gap_id, athlete_id, gap_type, gap_description, severity, status, created_at
+    select gap_id, athlete_id, gap_type, gap_description, severity, status, created_at,
+      detected_from, detection_data
     from pilot.progression_gaps
     where organization_id = $1 and athlete_id = $2
   `;
@@ -528,7 +539,7 @@ export async function getAthleteGaps(
 
   sql += ` order by ${SEVERITY_RANK_SQL}, created_at desc`;
 
-  return query<ProgressionGap>(sql, params);
+  return query<ProgressionGapWithDetection>(sql, params);
 }
 
 /**

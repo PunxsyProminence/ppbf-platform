@@ -4,6 +4,7 @@ import type { PilotRole } from './contracts';
 import { isSystemCheckInNote } from '../../shared/sessionNoteSemantics';
 
 import { query, queryOne } from './db';
+import { familyGapDescription } from './progressionSuggestions';
 
 export const PASSBOOK_ATTENDANCE_STATUSES = ['present', 'late', 'absent'] as const;
 export const PASSBOOK_GYM_STATUSES = ['active', 'training', 'inactive'] as const;
@@ -261,6 +262,8 @@ interface ProgressionGapRow {
   gap_description: string;
   severity: string;
   detected_from: string;
+  // Read only to word the gap for a family reader; never sent.
+  detection_data?: Record<string, unknown> | null;
   status: string;
   created_at: string;
 }
@@ -542,7 +545,7 @@ export async function getAthletePassbook(
       [organizationId, athleteId],
     ),
     query<ProgressionGapRow>(
-      `select organization_id, gap_id, gap_type, gap_description, severity, detected_from, status, created_at
+      `select organization_id, gap_id, gap_type, gap_description, severity, detected_from, detection_data, status, created_at
        from pilot.progression_gaps
        where organization_id = $1 and athlete_id = $2
        order by created_at desc`,
@@ -601,7 +604,16 @@ export async function getAthletePassbook(
     .map((row) => ({
       gap_id: row.gap_id,
       gap_type: row.gap_type,
-      gap_description: row.gap_description,
+      // The athlete (or a parent, should one ever be brought here) reads the
+      // family wording (Jason 2026-10-05, Rule 6 only); everyone else reads
+      // the stored text, as the gaps route does.
+      gap_description: viewerRole !== 'athlete' && viewerRole !== 'parent'
+        ? row.gap_description
+        : familyGapDescription({
+          gap_description: row.gap_description,
+          detected_from: row.detected_from,
+          detection_data: row.detection_data ?? null,
+        }),
       severity: row.severity,
       detected_from: row.detected_from,
       status: row.status,

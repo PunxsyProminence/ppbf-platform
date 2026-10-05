@@ -935,3 +935,55 @@ describe('a deleted athlete has no passbook', () => {
     },
   );
 });
+
+// Jason 2026-10-05 ("A: Plain text"): the athlete reads one plain sentence for
+// a confirmed load jump; staff keep the stored coach text.
+describe('passbook: a confirmed load jump in the family wording', () => {
+  const COACH_TEXT = 'Training load jumped: 2400 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.';
+  const FAMILY_TEXT = 'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.';
+
+  function arrange(): void {
+    mockQueryOne.mockResolvedValueOnce({
+      organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer', dob: '2010-05-01',
+      weight_class: '125', gym_status: 'active', active_flag: true, coach_id: 'coach-1',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.progression_gaps')
+        ? [
+          {
+            organization_id: 'org-1', gap_id: 'gap-load', gap_type: 'endurance', gap_description: COACH_TEXT,
+            severity: 'medium', detected_from: 'deterministic_rule:load_jumped', status: 'identified',
+            created_at: '2026-10-05T12:00:00.000Z',
+            detection_data: { acute_load: 2400, usual_weekly_load: 1000, ratio: 2.4, ratio_shown: '2.4', prior_weeks_with_load: 4 },
+          },
+          {
+            organization_id: 'org-1', gap_id: 'gap-manual', gap_type: 'technique', gap_description: 'Drops lead hand',
+            severity: 'medium', detected_from: 'coach_observation', status: 'identified',
+            created_at: '2026-10-05T11:00:00.000Z', detection_data: {},
+          },
+        ]
+        : [],
+    ));
+  }
+
+  test('the SQL reads detection_data', async () => {
+    arrange();
+    await getAthletePassbook('org-1', 'ath-1', 'athlete');
+    const call = mockQuery.mock.calls.find((entry) => (entry[0] as string).includes('from pilot.progression_gaps'));
+    expect(call?.[0]).toMatch(/\bdetection_data\b/);
+  });
+
+  test('the athlete reads the plain sentence, other gaps unchanged, and detection_data is not sent', async () => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
+    expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([FAMILY_TEXT, 'Drops lead hand']);
+    expect(JSON.stringify(result)).not.toContain('ratio_shown');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s keeps the stored coach text', async (role) => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+    expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([COACH_TEXT, 'Drops lead hand']);
+  });
+});

@@ -7,6 +7,7 @@
 import {
   buildGapJustifications,
   deriveSuggestions,
+  familyGapDescription,
   READINESS_DROP_POINTS,
   READINESS_MIN_CHECKINS_PER_HALF,
   RULE_JUSTIFICATION_FIELDS,
@@ -283,6 +284,7 @@ describe('load_jumped', () => {
       acute_load: 2000,
       usual_weekly_load: 1000,
       ratio: 2,
+      ratio_shown: '2.0',
       prior_weeks_with_load: 4,
     });
     expect(suggestions[0].suggested_description).toContain('2000 over the last 7 days');
@@ -553,5 +555,77 @@ describe('buildGapJustifications', () => {
     const readinessFields = new Set(RULE_JUSTIFICATION_FIELDS.readiness_falling);
     const trainingFields = new Set(RULE_JUSTIFICATION_FIELDS.training_days_dropping);
     for (const field of trainingFields) expect(readinessFields.has(field)).toBe(false);
+  });
+});
+
+// Jason 2026-10-05 ("A: Plain text"): athletes and parents read one plain
+// sentence for a confirmed load_jumped gap; coaches keep the stored text.
+describe('familyGapDescription', () => {
+  const NONE: never[] = [];
+  const RULE6 = 'deterministic_rule:load_jumped';
+
+  function confirmed(reading: Partial<LoadJumpReading>) {
+    const [s] = deriveSuggestions([], NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump(reading)]);
+    return { gap_description: s.suggested_description, detected_from: `deterministic_rule:${s.rule}`, detection_data: s.evidence };
+  }
+
+  test('a confirmed load jump reads as Jason\'s sentence, verbatim', () => {
+    expect(familyGapDescription(confirmed({ acute_load: 2400, ratio: 2.4 }))).toBe(
+      'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.',
+    );
+  });
+
+  test('the ratio is the one the coach text shows, not a second rounding of the stored 2-decimal ratio', () => {
+    // 2.449 shows as 2.4 to the coach; the stored ratio is 2.45, which
+    // would round again to 2.5.
+    const gap = confirmed({ acute_load: 2449, ratio: 2.449 });
+    expect(gap.gap_description).toContain('(2.4x');
+    expect(gap.detection_data.ratio).toBe(2.45);
+    expect(familyGapDescription(gap)).toBe(
+      'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.',
+    );
+  });
+
+  test('a gap confirmed before ratio_shown existed falls back to its stored ratio, rounded to one decimal', () => {
+    expect(familyGapDescription({
+      gap_description: 'Training load jumped (coach text with no ratio in it). Worth a look.',
+      detected_from: RULE6,
+      detection_data: { acute_load: 2100, usual_weekly_load: 1000, ratio: 2.1, prior_weeks_with_load: 4 },
+    })).toBe('Your training this week was about 2.1 times your usual week. Your coach is keeping an eye on it.');
+  });
+
+  test('a gap confirmed before ratio_shown existed takes the ratio its own coach text shows, not a second rounding', () => {
+    expect(familyGapDescription({
+      gap_description: 'Training load jumped: 2449 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.',
+      detected_from: RULE6,
+      detection_data: { acute_load: 2449, usual_weekly_load: 1000, ratio: 2.45, prior_weeks_with_load: 4 },
+    })).toBe('Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.');
+  });
+
+  test.each([
+    ['no detection data', null],
+    ['empty detection data', {}],
+    ['a ratio that is not a number', { ratio: 'lots' }],
+    ['a zero ratio', { ratio: 0 }],
+    ['a malformed ratio_shown and no ratio', { ratio_shown: 'about two' }],
+  ])('never invents a ratio: %s returns the stored text', (_label, detection_data) => {
+    expect(familyGapDescription({
+      gap_description: 'stored coach text',
+      detected_from: RULE6,
+      detection_data: detection_data as Record<string, unknown> | null,
+    })).toBe('stored coach text');
+  });
+
+  test.each([
+    'deterministic_rule:readiness_falling',
+    'deterministic_rule:load_up_wellness_down',
+    'coach_observation',
+    null,
+  ])('every other gap (%s) keeps its stored text', (detected_from) => {
+    expect(familyGapDescription({
+      gap_description: 'stored coach text',
+      detected_from,
+      detection_data: { ratio: 2.4, ratio_shown: '2.4' },
+    })).toBe('stored coach text');
   });
 });
