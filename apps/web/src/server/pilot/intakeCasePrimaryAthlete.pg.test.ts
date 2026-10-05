@@ -114,6 +114,7 @@ const C = {
   two: '00000000-0000-4000-8000-000000000005',
   twoWithGone: '00000000-0000-4000-8000-00000000000c',
   mismatch: '00000000-0000-4000-8000-00000000000d',
+  filedForGone: '00000000-0000-4000-8000-00000000000e',
   alreadySet: '00000000-0000-4000-8000-000000000006',
   otherGym: '00000000-0000-4000-8000-000000000007',
   writer: '00000000-0000-4000-8000-000000000008',
@@ -249,6 +250,9 @@ async function seed(client: Client): Promise<void> {
   await seedCase(ORG, C.two, [LIVE, ELSE]);
   await seedCase(ORG, C.twoWithGone, [GONE, LIVE]);
   await seedCase(ORG, C.alreadySet, [LIVE], LIVE);
+  // Filed naming GONE, documents not yet bound: createIntakeCase accepts
+  // primaryAthleteId. Only the column names the athlete here.
+  await seedCase(ORG, C.filedForGone, [null], GONE);
   await seedCase(OTHER_ORG, C.otherGym, [GONE]);
 }
 
@@ -460,8 +464,8 @@ describe('WRITER: bindIntakeDocumentsToOwner, as promotion calls it', () => {
 });
 
 describe('ACCESS: the review queue reads the column', () => {
-  // After the backfill: gone=GONE, live=LIVE, else=ELSE, alreadySet=LIVE;
-  // pending, two and twoWithGone are NULL.
+  // After the backfill: gone=GONE, live=LIVE, else=ELSE, alreadySet=LIVE,
+  // filedForGone=GONE (documents unbound); pending, two and twoWithGone are NULL.
   const unattributed = [C.pending, C.two, C.twoWithGone];
 
   async function totalFor(accountId: string, role: PilotRole): Promise<number> {
@@ -473,15 +477,15 @@ describe('ACCESS: the review queue reads the column', () => {
 
   test('before the deletion: the admin sees every case in the gym, and the count agrees (the positive control)', async () => {
     expect(await queueFor(ORG, ADMIN, 'organization_admin')).toEqual(
-      [C.pending, C.gone, C.live, C.else, C.two, C.twoWithGone, C.alreadySet].sort(),
+      [C.pending, C.gone, C.live, C.else, C.two, C.twoWithGone, C.alreadySet, C.filedForGone].sort(),
     );
-    expect(await totalFor(ADMIN, 'organization_admin')).toBe(7);
+    expect(await totalFor(ADMIN, 'organization_admin')).toBe(8);
     expect(await queueFor(OTHER_ORG, OTHER_ADMIN, 'organization_admin')).toEqual([C.otherGym]);
   });
 
   test("a coach sees their own athletes' cases and the unattributed ones, not another coach's", async () => {
-    expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.gone, C.live, C.alreadySet, ...unattributed].sort());
-    expect(await totalFor(COACH, 'coach')).toBe(6);
+    expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.gone, C.live, C.alreadySet, C.filedForGone, ...unattributed].sort());
+    expect(await totalFor(COACH, 'coach')).toBe(7);
     expect(await queueFor(ORG, ELSE_COACH, 'coach')).toEqual([C.else, ...unattributed].sort());
   });
 
@@ -491,7 +495,7 @@ describe('ACCESS: the review queue reads the column', () => {
   // unattributed; before the column was written it was always empty.
   test("a guardian sees only their own child's cases", async () => {
     expect(await queueFor(ORG, GUARDIAN_LIVE, 'parent')).toEqual([C.live, C.alreadySet].sort());
-    expect(await queueFor(ORG, GUARDIAN_GONE, 'parent')).toEqual([C.gone]);
+    expect(await queueFor(ORG, GUARDIAN_GONE, 'parent')).toEqual([C.gone, C.filedForGone].sort());
   });
 
   test('a platform owner sees only the unattributed cases', async () => {
@@ -508,7 +512,7 @@ describe('ACCESS: the review queue reads the column', () => {
       expect(marked.rows[0].deleted_at).not.toBeNull();
     });
 
-    test("GONE's case, and the NULL-column case one of whose documents names GONE, leave the admin's queue; the rest stay", async () => {
+    test("GONE's cases leave the admin's queue (named by the column, by the documents, or by both); the rest stay", async () => {
       expect(await queueFor(ORG, ADMIN, 'organization_admin')).toEqual(
         [C.pending, C.live, C.else, C.two, C.alreadySet].sort(),
       );
