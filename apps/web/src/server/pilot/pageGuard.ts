@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 
 import { resolvePrincipal, type PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
+import { roleEquals } from './roleAlias';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
 /**
@@ -73,7 +74,10 @@ export async function requirePageRole(allowedRoles: PilotRole[]): Promise<PilotP
     redirect('/change-pin');
   }
 
-  if (!allowedRoles.includes(principal.role)) {
+  // 'admin' and organization_admin satisfy each other (roleAlias.ts); this
+  // used to be an exact match, which sent a legacy 'admin' away from pages
+  // that list only organization_admin.
+  if (!allowedRoles.some((item) => roleEquals(principal.role, item))) {
     // Their own workspace, not a login form. Falls back to /login only for a
     // role with no routable destination at all, which loginWithMicrosoftEmail
     // already refuses to mint a session for.
