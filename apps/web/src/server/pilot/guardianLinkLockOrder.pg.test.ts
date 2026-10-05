@@ -55,6 +55,11 @@ const ATHLETE_ID = 'ath-lock-order';
 // Three guardians, so there is a first, a middle and a last row.
 const PARENT_IDS = ['parent-lock-a', 'parent-lock-b', 'parent-lock-c'];
 const MIDDLE_PARENT_ID = PARENT_IDS[1];
+// A second athlete, after the first in the shared order, who shares the middle
+// guardian -- the guardian the purge removes. Their links span both athletes,
+// which is what makes the purge a multi-athlete locker.
+const ATHLETE_2_ID = 'ath-lock-order-2';
+const PURGED_ACCOUNT_ID = 'acct-lock-order-purged-guardian';
 const DEADLOCK = '40P01';
 
 let PG_PORT: number;
@@ -111,10 +116,12 @@ async function waitUntilBlocked(pid: number): Promise<void> {
 type Locker = (tx: Client) => Promise<unknown>;
 
 /*
- * One deterministic round. Returns the SQLSTATE each side ended with (null =
- * finished). Every connection is closed before returning, whatever happened.
+ * One deterministic round: a holder takes the middle guardian's row on the
+ * first athlete, `firstLock` starts and blocks, `secondLock` starts and
+ * blocks, the holder commits. Returns the SQLSTATE each side ended with (null
+ * = finished). Every connection is closed before returning, whatever happened.
  */
-async function middleRowRound(sweepLock: Locker, readerLock: Locker): Promise<{ sweep: string | null; reader: string | null }> {
+async function middleRowRound(firstLock: Locker, secondLock: Locker): Promise<{ first: string | null; second: string | null }> {
   const holder = await connect();
   const sweeper = await connect();
   const reader = await connect();
@@ -138,18 +145,18 @@ async function middleRowRound(sweepLock: Locker, readerLock: Locker): Promise<{ 
       }
     };
 
-    // The sweep first: it takes the first row and waits on the middle one.
+    // The first locker takes what it can and waits on the middle row.
     await sweeper.query('begin');
-    const sweepDone = settle(sweeper, sweepLock);
+    const sweepDone = settle(sweeper, firstLock);
     await waitUntilBlocked(backendPidOf(sweeper));
 
     await reader.query('begin');
-    const readerDone = settle(reader, readerLock);
+    const readerDone = settle(reader, secondLock);
     await waitUntilBlocked(backendPidOf(reader));
 
     await holder.query('commit');
-    const [sweep, readerCode] = await Promise.all([sweepDone, readerDone]);
-    return { sweep, reader: readerCode };
+    const [first, second] = await Promise.all([sweepDone, readerDone]);
+    return { first, second };
   } finally {
     await Promise.all([holder.end(), sweeper.end(), reader.end()].map((p) => p.catch(() => {})));
   }
@@ -171,6 +178,28 @@ const readInReversedOrder: Locker = (tx) => tx.query(
     order by parent_id desc
     for share`,
   [ORG_ID, ATHLETE_ID],
+);
+
+// Two athletes at once, as Film Study and tagged-clip playback read them.
+// Passed out of order: the helper sorts.
+const readTwoAthletesInOnePass: Locker = (tx) => consent.lockGuardianLinksForAthletes(
+  tx, ORG_ID, [ATHLETE_2_ID, ATHLETE_ID], 'share',
+);
+// The other sanctioned shape: one athlete at a time, ascending athlete_id.
+const readTwoAthletesAscending: Locker = async (tx) => {
+  for (const athleteId of [ATHLETE_2_ID, ATHLETE_ID].sort()) {
+    await consent.lockGuardianLinksForAthlete(tx, ORG_ID, athleteId, 'share');
+  }
+};
+const purgeInSharedOrder: Locker = (tx) => consent.lockGuardianLinksForPurge(tx, [], [PURGED_ACCOUNT_ID]);
+// Test-only: the purge taking the guardian's links in the order its loop
+// used to reach them -- the second athlete's cascade before the first's.
+const purgeInLoopOrder: Locker = (tx) => tx.query(
+  `select 1 from pilot.guardian_links
+    where organization_id = $1 and parent_id = $2
+    order by athlete_id desc
+    for update`,
+  [ORG_ID, MIDDLE_PARENT_ID],
 );
 
 beforeAll(async () => {
@@ -252,6 +281,26 @@ beforeAll(async () => {
     );
   }
 
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Lock Order Athlete Two', '2013-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
+    [ORG_ID, ATHLETE_2_ID, COACH_ID],
+  );
+  await client.query(
+    `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+     values ($1, $2, $3, 'guardian')`,
+    [ORG_ID, MIDDLE_PARENT_ID, ATHLETE_2_ID],
+  );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'parent', $2, 'microsoft')`,
+    [PURGED_ACCOUNT_ID, ORG_ID],
+  );
+  await client.query(
+    'update pilot.parents set account_id = $1 where organization_id = $2 and parent_id = $3',
+    [PURGED_ACCOUNT_ID, ORG_ID, MIDDLE_PARENT_ID],
+  );
+
   // Env before import: db.ts builds its pool on first use.
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
@@ -308,20 +357,20 @@ describe('guardian_links consent locks share one order and cannot deadlock', () 
     // Without this the shared-order test below could pass because the
     // interleaving never produced a cycle at all.
     for (let round = 0; round < 5; round += 1) {
-      const { sweep, reader } = await middleRowRound(sweepInSharedOrder, readInReversedOrder);
-      expect([sweep, reader].filter((code) => code === DEADLOCK)).toHaveLength(1);
+      const { first, second } = await middleRowRound(sweepInSharedOrder, readInReversedOrder);
+      expect([first, second].filter((code) => code === DEADLOCK)).toHaveLength(1);
     }
   });
 
   test('the sweep and a reader in the shared order both finish, every round', async () => {
     for (let round = 0; round < 20; round += 1) {
-      expect(await middleRowRound(sweepInSharedOrder, readInSharedOrder)).toEqual({ sweep: null, reader: null });
+      expect(await middleRowRound(sweepInSharedOrder, readInSharedOrder)).toEqual({ first: null, second: null });
     }
   });
 
   test('two sweeps in the shared order both finish (two guardians withdrawing at once)', async () => {
     for (let round = 0; round < 10; round += 1) {
-      expect(await middleRowRound(sweepInSharedOrder, sweepInSharedOrder)).toEqual({ sweep: null, reader: null });
+      expect(await middleRowRound(sweepInSharedOrder, sweepInSharedOrder)).toEqual({ first: null, second: null });
     }
   });
 
@@ -332,7 +381,31 @@ describe('guardian_links consent locks share one order and cannot deadlock', () 
     ];
     for (const readerLock of readers) {
       for (let round = 0; round < 5; round += 1) {
-        expect(await middleRowRound(sweepInSharedOrder, readerLock)).toEqual({ sweep: null, reader: null });
+        expect(await middleRowRound(sweepInSharedOrder, readerLock)).toEqual({ first: null, second: null });
+      }
+    }
+  });
+
+  /*
+   * The retention purge deletes one guardian's links across several athletes.
+   * The reader goes first here: it takes the first athlete's first row and
+   * queues on the middle one, then the purge queues behind it. In the shared
+   * order the purge is waiting on that same first-athlete row and holds
+   * nothing the reader needs. In the old loop order the purge already holds
+   * the SECOND athlete's row when the reader, granted the middle row, reaches
+   * for it.
+   */
+  test('CONTROL: a purge in its old loop order deadlocks against a two-athlete reader, every round', async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const { first, second } = await middleRowRound(readTwoAthletesInOnePass, purgeInLoopOrder);
+      expect([first, second].filter((code) => code === DEADLOCK)).toHaveLength(1);
+    }
+  });
+
+  test('the purge lock and a two-athlete reader in the shared order both finish, every round', async () => {
+    for (const reader of [readTwoAthletesInOnePass, readTwoAthletesAscending]) {
+      for (let round = 0; round < 10; round += 1) {
+        expect(await middleRowRound(reader, purgeInSharedOrder)).toEqual({ first: null, second: null });
       }
     }
   });

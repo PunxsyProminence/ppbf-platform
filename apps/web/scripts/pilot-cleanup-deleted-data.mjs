@@ -138,6 +138,36 @@ async function attemptPurge(client, athletes, accountIds) {
     blocked[name] = (blocked[name] ?? 0) + 1;
   };
 
+  /* THE GUARDIAN LINKS THIS PURGE CAN CASCADE THROUGH, LOCKED FIRST, IN THE
+     SHARED ORDER. Deleting an athlete cascades to that athlete's
+     guardian_links and deleting a pilot.parents row cascades to one
+     guardian's links across several athletes, and this whole run is one
+     transaction, so before this every cascade locked its links as it went, in
+     list order, and held them to the end. A consent reader holding several
+     athletes' links FOR SHARE in the other order (playback of a clip that
+     shows two children) and this job could each wait on the other: Postgres
+     aborts one, and playback fails closed. Taking them all now, ordered by
+     (organization_id, athlete_id, parent_id) like every other guardian_links
+     locker, leaves the deletes below touching only rows already held.
+
+     The SAME STATEMENT as guardianConsent.ts lockGuardianLinksForPurge, which
+     this script cannot import; guardianLinkLockOrderSource.test.ts fails if
+     the two drift. Locks only: it deletes nothing, and rows held for a
+     candidate skipped below are released with the transaction. */
+  if (athletes.length > 0 || accountIds.length > 0) {
+    await client.query(
+      `select 1 from pilot.guardian_links gl
+      where (gl.organization_id, gl.athlete_id) in (
+              select * from unnest($1::text[], $2::text[]))
+         or (gl.organization_id, gl.parent_id) in (
+              select p.organization_id, p.parent_id from pilot.parents p
+               where p.account_id = any($3::text[]))
+      order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
+      for update of gl`,
+      [athletes.map((a) => a.organization_id), athletes.map((a) => a.athlete_id), accountIds],
+    );
+  }
+
   /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. As a
      single statement, one athlete Postgres refused would take every OTHER
      athlete's purge down with it. That happened: pilot.one_percent_nominations

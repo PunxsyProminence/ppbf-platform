@@ -15,22 +15,31 @@ export interface QueryExecutor {
 }
 
 /*
- * THE ONE LOCK ORDER FOR pilot.guardian_links. Every consent reader and
- * writer locks these rows through the two functions below, and nowhere else
- * (guardianLinkLockOrderSource.test.ts fails on a raw lock anywhere else).
+ * THE ONE LOCK ORDER FOR pilot.guardian_links: (organization_id, athlete_id,
+ * parent_id), compared byte-wise (COLLATE "C"). Every consent reader and
+ * writer, and the retention purge, locks these rows through the functions
+ * below and nowhere else (guardianLinkLockOrderSource.test.ts fails on a raw
+ * lock anywhere else; the purge script, which cannot import this file, holds
+ * the one sanctioned copy of lockGuardianLinksForPurge's statement).
  *
- * Within one athlete the rows are locked in parent_id order. The sweep
- * (publication.ts suppressPublishedMediaForAthlete) takes FOR UPDATE on every
- * guardian of an athlete while the publish, Film Study and playback readers
- * take FOR SHARE on the same set. Those conflict, and two transactions that
+ * WHY. The sweep (publication.ts suppressPublishedMediaForAthlete) takes FOR
+ * UPDATE on every guardian of an athlete while the publish, Film Study and
+ * playback readers take FOR SHARE on the same set, and the purge deletes (so
+ * locks) one guardian's links across several athletes. Two transactions that
  * lock an overlapping set in different orders can each end up holding a row
- * the other is waiting for: a deadlock, and Postgres kills one of them. Until
- * this helper the order was whatever plan the planner picked, which happened
- * to agree and was not promised. ORDER BY under FOR SHARE/UPDATE locks rows in
- * the sorted order (the lock is taken above the sort), so the order is now
- * stated rather than inherited.
+ * the other is waiting for: a deadlock, and Postgres kills one of them. ORDER
+ * BY under FOR SHARE/UPDATE locks rows in the sorted order (the lock is taken
+ * above the sort), so the order is stated rather than left to the planner.
  *
- * THE ORDER HOLDS WITHIN ONE STATEMENT. A transaction that takes the set lock
+ * COLLATE "C" so the order does not depend on the database's locale, and so a
+ * caller that orders athletes in JavaScript (a plain sort, which compares
+ * UTF-16 code units, the same as byte order for ASCII ids) agrees with it.
+ *
+ * A caller that needs several athletes takes them in ONE pass
+ * (lockGuardianLinksForAthletes) or, one athlete at a time, in ascending
+ * athlete_id order. Either way its acquisitions follow the order above.
+ *
+ * THE ORDER HOLDS WITHIN ONE SNAPSHOT. A transaction that takes the set lock
  * twice for the same athlete gets a fresh snapshot the second time, and a
  * guardian link committed in between can sit ahead of rows it already holds.
  * Lock an athlete's set once per transaction where you can. (Film Study still
@@ -53,11 +62,63 @@ export async function lockGuardianLinksForAthlete(
   const result = await client.query<{ parent_id: string }>(
     `select parent_id from pilot.guardian_links
      where organization_id = $1 and athlete_id = $2
-     order by parent_id
+     order by parent_id collate "C"
      for ${mode === 'update' ? 'update' : 'share'}`,
     [organizationId, athleteId],
   );
   return result.rows.map((row) => row.parent_id);
+}
+
+/** Several athletes of one organization, in one pass, in the shared order. */
+export async function lockGuardianLinksForAthletes(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteIds: readonly string[],
+  mode: GuardianLinkLockMode,
+): Promise<void> {
+  if (athleteIds.length === 0) return;
+  await client.query(
+    `select 1 from pilot.guardian_links
+     where organization_id = $1 and athlete_id = any($2::text[])
+     order by athlete_id collate "C", parent_id collate "C"
+     for ${mode === 'update' ? 'update' : 'share'}`,
+    [organizationId, [...athleteIds]],
+  );
+}
+
+/*
+ * THE RETENTION PURGE'S LOCK, taken before it deletes anything: every link of
+ * an athlete it may purge and every link of a guardian record whose account it
+ * may purge, in the shared order. The deletes that follow (an athlete or a
+ * pilot.parents row, cascading to guardian_links) then touch only rows this
+ * transaction already holds, instead of locking them one cascade at a time in
+ * whatever order the candidates were listed. Rows locked for a candidate the
+ * purge then skips are released at commit or rollback; locking deletes nothing.
+ *
+ * scripts/pilot-cleanup-deleted-data.mjs carries the same statement (it cannot
+ * import this file); the source scan checks the two match.
+ */
+export async function lockGuardianLinksForPurge(
+  client: QueryExecutor,
+  athletes: ReadonlyArray<{ organization_id: string; athlete_id: string }>,
+  parentAccountIds: readonly string[],
+): Promise<void> {
+  if (athletes.length === 0 && parentAccountIds.length === 0) return;
+  await client.query(
+    `select 1 from pilot.guardian_links gl
+      where (gl.organization_id, gl.athlete_id) in (
+              select * from unnest($1::text[], $2::text[]))
+         or (gl.organization_id, gl.parent_id) in (
+              select p.organization_id, p.parent_id from pilot.parents p
+               where p.account_id = any($3::text[]))
+      order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
+      for update of gl`,
+    [
+      athletes.map((athlete) => athlete.organization_id),
+      athletes.map((athlete) => athlete.athlete_id),
+      [...parentAccountIds],
+    ],
+  );
 }
 
 export async function lockGuardianLink(

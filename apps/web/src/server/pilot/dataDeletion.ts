@@ -5,6 +5,7 @@ import { formatGymDate } from '../../lib/gymTime';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { ConflictError } from './errors';
+import { lockGuardianLinksForPurge } from './guardianConsent';
 
 export interface ActorIdentity {
   accountId: string;
@@ -544,6 +545,25 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
             for update of acct`,
         [expiredOrgs, expiredIds],
       );
+
+    /* The guardian links every delete below will cascade through, locked now
+       in the shared order (guardianConsent.ts lockGuardianLinksForPurge):
+       those of the athletes locked above and those of every guardian record
+       the parent purge below removes. Without it each cascade locked its links
+       as it went, in no stated order, and against a consent reader holding
+       several athletes' links that is a deadlock. Locks only; the deletes
+       below are unchanged. */
+    const expiredParentAccounts = await client.query<{ account_id: string }>(
+      `select account_id from pilot.accounts
+        where deleted_at is not null
+          and deleted_at < (now() - interval '1 year')
+          and role = 'parent'`,
+    );
+    await lockGuardianLinksForPurge(
+      client,
+      expired.rows,
+      expiredParentAccounts.rows.map((row) => row.account_id),
+    );
 
     // Delete athletes soft-deleted more than 2 years ago: exactly the rows locked above.
     const athleteDelete = expired.rows.length === 0
