@@ -389,7 +389,7 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 
       expect(item).toMatchObject({ stream_url: null, playback_blocked: 'consent_unverified' });
       expect(mockSasUrl).not.toHaveBeenCalled();
-      expect(consoleErrorSpy).toHaveBeenCalledWith({ event: 'video-compliance-playback-consent-check-failed', code: '08006' });
+      expect(consoleErrorSpy).toHaveBeenCalledWith({ event: 'video-compliance-playback-mint-failed', code: '08006' });
       expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('db-host');
       consoleErrorSpy.mockRestore();
     });
@@ -403,7 +403,7 @@ describe('GET /api/pilot/admin/video-compliance', () => {
       expect(mockMintUnderConsent).not.toHaveBeenCalled();
     });
 
-    test('a blocked item can still be rejected or sent back -- neither decision reads playback consent', async () => {
+    test('reject and request_changes never run the video-coverage check, so a blocked item can still be decided', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockCoversVideo.mockRejectedValue(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));

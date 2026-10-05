@@ -72,10 +72,12 @@ async function mintQueuePlayback(
       return { stream_url: null, playback_blocked: 'photo_only' };
     }
     if (!(error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')) {
-      // The SQLSTATE only: a driver message can carry host and query detail.
+      // A fault in the consent read or in signing the link itself; this
+      // cannot tell them apart, so the event names neither. The SQLSTATE
+      // only: a driver message can carry host and query detail.
       const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
       const code = sanitizedSqlState(rawCode);
-      console.error({ event: 'video-compliance-playback-consent-check-failed', ...(code ? { code } : {}) });
+      console.error({ event: 'video-compliance-playback-mint-failed', ...(code ? { code } : {}) });
     }
     return { stream_url: null, playback_blocked: 'consent_unverified' };
   }
@@ -401,9 +403,13 @@ export async function POST(request: NextRequest) {
         decidedByAccountId: principal.accountId,
         approvedByAccountId: decision === 'approve' ? principal.accountId : undefined,
         expectedCurrentStatus: 'pending_review',
-        // Both reads lock the same athlete's guardian links FOR SHARE through
-        // guardianConsent.ts's one helper, in its one order; the second
-        // re-takes locks this transaction already holds.
+        // Both reads lock this one athlete's guardian links FOR SHARE through
+        // guardianConsent.ts's helper, in its order. That is two lock passes,
+        // not the one per transaction that helper's comment prefers: a link
+        // committed between them is locked out of order, and the worst case
+        // is a deadlock victim -- a rolled-back approve, never a wrong one.
+        // One pass would mean copying assertConsentCoversVideo's refusals
+        // here, which is the drift the shared helper exists to prevent.
         verifyBeforeCommit: decision === 'approve'
           ? async (client) => {
             await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);

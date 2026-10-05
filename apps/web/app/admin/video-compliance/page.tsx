@@ -380,14 +380,19 @@ export default function VideoCompliancePage() {
                         <dd>{formatDate(item.created_at)}</dd>
                       </dl>
                       <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
-                        <button
-                          type="button"
-                          disabled={pendingIds.has(item.publication_id)}
-                          onClick={() => void decide(item.publication_id, 'approve')}
-                          className="btn--lever min-h-[44px] disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
+                        {/* Consent stopped playback, so approve would be refused
+                            too; the admin can still reject or send it back
+                            (owner ruling 2026-10-05, option B). */}
+                        {item.playback_blocked ? null : (
+                          <button
+                            type="button"
+                            disabled={pendingIds.has(item.publication_id)}
+                            onClick={() => void decide(item.publication_id, 'approve')}
+                            className="btn--lever min-h-[44px] disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={pendingIds.has(item.publication_id)}
