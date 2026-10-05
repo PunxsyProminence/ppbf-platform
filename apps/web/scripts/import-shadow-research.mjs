@@ -537,7 +537,10 @@ export async function assertReviewGateColumnsPresent(client) {
        exists (select 1 from information_schema.columns
                where table_schema = 'pilot' and table_name = 'shadow_library_documents'
                  and column_name in ('approval_state', 'verification_state')
-               having count(*) = 2) as documents_ready`,
+               having count(*) = 2) as documents_ready,
+       exists (select 1 from information_schema.columns
+               where table_schema = 'pilot' and table_name = 'shadow_library_sources'
+                 and column_name = 'rights_status') as rights_ready`,
   );
   const row = result.rows[0];
   if (!row?.sources_ready || !row?.documents_ready) {
@@ -547,17 +550,33 @@ export async function assertReviewGateColumnsPresent(client) {
       + 'pilot_slice_postgres_shadow_evidence_migration.sql before importing',
     );
   }
+  if (!row?.rights_ready) {
+    fail(
+      'SOURCE_RIGHTS_MIGRATION_NOT_APPLIED: pilot.shadow_library_sources.rights_status is missing -- '
+      + 'apply pilot_slice_postgres_source_rights_migration.sql before importing',
+    );
+  }
 }
 
+// Rights (OD-2026-10-03-002 section 3). The corpus's internal_policy rows are
+// PPBF's own material -- the programme source, whose documents hold the
+// research program's own synthesis, its copy, and the 20 PPBF repo documents
+// (policySourceIds) -- so they are ppbf_owned, which the full-text rule in
+// pilot_slice_postgres_source_rights_migration.sql needs before their chunks
+// load. Nothing on file says any other row is open-licence: unknown. A re-run
+// only ever raises unknown: a reviewer's open_licence or licensed_excerpt_only
+// marking is kept, but a seed PPBF row a reviewer set back to unknown is
+// raised to ppbf_owned again (unknown is also "never reviewed").
 async function upsertSources(client, rows) {
   await client.query(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, publisher, source_type, authority_tier, url,
         publication_date, status, approval_state, verification_state,
-        created_by_account_id, created_by_role, metadata)
+        created_by_account_id, created_by_role, metadata, rights_status)
      select source_id, organization_id, title, publisher, source_type, authority_tier, url,
             nullif(publication_date, '')::date, status, approval_state, verification_state,
-            created_by_account_id, created_by_role, metadata
+            created_by_account_id, created_by_role, metadata,
+            case when source_type = 'internal_policy' then 'ppbf_owned' else 'unknown' end
      from jsonb_to_recordset($1::jsonb) as x(
        source_id text, organization_id text, title text, publisher text, source_type text,
        authority_tier smallint, url text, publication_date text, status text,
@@ -570,7 +589,11 @@ async function upsertSources(client, rows) {
        publication_date = excluded.publication_date, status = excluded.status,
        approval_state = excluded.approval_state, verification_state = excluded.verification_state,
        created_by_account_id = excluded.created_by_account_id,
-       created_by_role = excluded.created_by_role, metadata = excluded.metadata, updated_at = now()`,
+       created_by_role = excluded.created_by_role, metadata = excluded.metadata,
+       rights_status = case when pilot.shadow_library_sources.rights_status = 'unknown'
+                            then excluded.rights_status
+                            else pilot.shadow_library_sources.rights_status end,
+       updated_at = now()`,
     [JSON.stringify(rows)],
   );
 }

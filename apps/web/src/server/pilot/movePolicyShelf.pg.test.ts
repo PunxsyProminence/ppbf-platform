@@ -119,12 +119,14 @@ async function seedSource(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, source_type, authority_tier, url,
         approval_state, verification_state, approved_by_account_id, approved_at,
-        verified_by_account_id, verified_at)
+        verified_by_account_id, verified_at, rights_status)
      values ($1, $2, $3, $4, $5, $6,
        case when $7 then 'approved' else 'pending_review' end,
        case when $7 then 'verified' else 'unverified' end,
        case when $7 then $8 else null end, case when $7 then now() else null end,
-       case when $7 then $8 else null end, case when $7 then now() else null end)`,
+       case when $7 then $8 else null end, case when $7 then now() else null end,
+       -- A gym's own policy text: full text, which needs a ppbf_owned source (source rights).
+       'ppbf_owned')`,
     [sourceId, organizationId, `Title ${sourceId}`, sourceType, tier, url, approved, ADMIN],
   );
 }
