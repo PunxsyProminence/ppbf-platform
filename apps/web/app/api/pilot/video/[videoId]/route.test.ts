@@ -900,6 +900,25 @@ describe('GET /api/pilot/video/[videoId] mints under the consent lock', () => {
     expect(mockTransactionEvents).toEqual(['begin', 'consent:ath-1:tx', 'consent:ath-2:tx', 'mint', 'commit']);
   });
 
+  test('a tagged clip locks its athletes in ascending athlete_id order, whatever order they arrive in', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-m' })).mockResolvedValueOnce({ athlete_id: 'ath-m' });
+    mockTagSubjects.mockResolvedValueOnce([
+      { athlete_id: 'ath-z', athlete_deleted: false },
+      { athlete_id: 'ath-B', athlete_deleted: false },
+      { athlete_id: 'ath-a', athlete_deleted: false },
+      { athlete_id: 'ath-m', athlete_deleted: false },
+    ] as Awaited<ReturnType<typeof listLiveTagSubjects>>);
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    // Code-unit order (COLLATE "C"): upper case before lower case.
+    expect(mockTransactionEvents).toEqual([
+      'begin', 'consent:ath-B:tx', 'consent:ath-a:tx', 'consent:ath-m:tx', 'consent:ath-z:tx', 'mint', 'commit',
+    ]);
+  });
+
   test('a refusal rolls the transaction back and mints nothing', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });

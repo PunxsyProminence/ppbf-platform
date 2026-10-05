@@ -264,8 +264,14 @@ export async function assertConsentCoversVideo(
  * starts after the check waits until the credential exists. A credential is
  * never minted after a withdrawal the check missed.
  *
- * The lock order is the one #1226 used: no ORDER BY, the same plan as the
- * publication sweep. One explicit shared order is a separate change.
+ * ATHLETES ARE LOCKED IN ASCENDING athlete_id ORDER. A tagged clip holds
+ * several athletes' guardian links at once, and two transactions taking two
+ * athletes in opposite orders can deadlock (overwatch, 2026-10-05, after the
+ * retention purge's guardian cascade was found to span athletes). The sort
+ * is by UTF-16 code unit, which is Postgres's COLLATE "C" order, not the
+ * column's default collation. Within one athlete the guardian links come in
+ * whatever order checkGuardianMediaConsent reads them (#1226: no ORDER BY);
+ * the shared helper from the lock-order lane replaces both when it lands.
  *
  * No athletes (unattributed team footage) means no guardian to ask and no
  * row to lock, so the mint runs without opening a transaction.
@@ -275,7 +281,7 @@ export async function mintUnderPlaybackConsent<T>(
   athleteIds: readonly string[],
   mint: () => T | Promise<T>,
 ): Promise<T> {
-  const subjects = [...new Set(athleteIds)];
+  const subjects = [...new Set(athleteIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (subjects.length === 0) {
     return mint();
   }
