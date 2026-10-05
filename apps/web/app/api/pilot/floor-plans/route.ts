@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import {
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+  isOrganizationAdminRole,
+  requireRole,
+} from '@/src/server/pilot/access';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { ForbiddenError, NotFoundError, ValidationError } from '@/src/server/pilot/errors';
@@ -47,6 +52,10 @@ export async function GET(request: NextRequest) {
       if (!principal.athleteId) {
         return NextResponse.json({ items: [] });
       }
+      // The id says whose plans these are, not that the athlete is still
+      // there: a session that outlived the deletion carries the same id
+      // (OD-2026-09-29-002 item 10).
+      await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
 
       const items = await query<{
         athlete_id: string;
@@ -206,6 +215,9 @@ export async function PATCH(request: NextRequest) {
     if (!athleteId) {
       throw new ForbiddenError('Forbidden: this account is not linked to an athlete record');
     }
+    // Same live-row rule as the GET's athlete arm: a deleted athlete's
+    // surviving session ticks nothing off.
+    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
 
     const body = (await request.json()) as { task_id?: string; completed?: boolean };
     const taskId = body.task_id?.trim() || '';

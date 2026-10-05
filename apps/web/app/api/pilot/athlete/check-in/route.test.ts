@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { WELLNESS_COLUMNS, checkIn } from '@/src/server/pilot/athleteCheckIns';
@@ -14,6 +15,12 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+
+// The live-row read; the rest of access.ts stays real.
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  assertAthleteBelongsToOrganization: jest.fn(),
+}));
 
 jest.mock('@/src/server/pilot/athleteBodyMass', () => {
   const actual = jest.requireActual('@/src/server/pilot/athleteBodyMass');
@@ -34,6 +41,11 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCheckIn = checkIn as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockRecordBodyMass = recordCheckInBodyMass as jest.Mock;
+const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+
+beforeEach(() => {
+  mockLiveRow.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -259,4 +271,16 @@ describe('optional body mass (elite-boxing item 5)', () => {
     expect(payload).toMatchObject({ already_checked_in: true, body_mass_saved: true });
     expect(mockRecordBodyMass).toHaveBeenCalledWith(expect.objectContaining({ checkInId: 'ci-1', kilograms: 70 }));
   });
+});
+
+test("a deleted athlete's surviving session is refused on GET and POST, and nothing is read or written", async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockLiveRow.mockRejectedValue(new Error('Forbidden: athlete does not belong to organization'));
+
+  const responses = [await GET(getRequest()), await POST(postRequest({ energy: 4, body_mass: 60, body_mass_unit: 'kg' }))];
+  expect(responses.map((response) => response.status)).toEqual([403, 403]);
+  expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+  expect(mockCheckIn).not.toHaveBeenCalled();
+  expect(mockRecordBodyMass).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
 });

@@ -143,6 +143,19 @@ describe('GET /api/pilot/training-holds', () => {
     expect(serialized).not.toContain('placed_by_account_id');
   });
 
+  test("an athlete's own live row is required: a deleted athlete's surviving session reads no hold", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockGetActive.mockResolvedValueOnce(FULL_HOLD);
+    expect((await GET(getRequest())).status).toBe(200);
+    expect(mockBelongs).toHaveBeenCalledWith('org-a', 'ATH-1');
+
+    mockGetActive.mockClear();
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockBelongs.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+    expect((await GET(getRequest())).status).toBe(403);
+    expect(mockGetActive).not.toHaveBeenCalled();
+  });
+
   test('the placer name falls back to their account id when identity cannot be resolved', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
     mockGetActive.mockResolvedValueOnce(FULL_HOLD);

@@ -205,8 +205,10 @@ export async function checkIn(input: {
   now?: GymTimeInput;
 }): Promise<{ row: AthleteCheckInRow; created: boolean } | null> {
   const athlete = await queryOne<{ athlete_id: string }>(
+    // deleted_at: a deleted athlete's record takes no new check-in. The route
+    // refuses their session first; this keeps the writer itself honest.
     `select athlete_id from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [input.organizationId, input.athleteId],
   );
   if (!athlete) return null;

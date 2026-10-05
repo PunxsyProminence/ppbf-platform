@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import {
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+  isOrganizationAdminRole,
+  requireRole,
+} from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
@@ -116,6 +121,9 @@ export async function GET(request: NextRequest) {
       if (!principal.athleteId) {
         return NextResponse.json({ items: [] });
       }
+      // Live row required: a session that outlived the athlete's deletion
+      // carries the same id (OD-2026-09-29-002 item 10).
+      await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions

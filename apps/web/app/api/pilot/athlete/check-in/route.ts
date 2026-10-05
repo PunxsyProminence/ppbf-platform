@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
 import {
   bodyMassInputError,
   recordCheckInBodyMass,
@@ -29,8 +29,13 @@ export const runtime = 'nodejs';
 // separate read surface; parents have none). Checking in never writes
 // attendance and never touches readiness formula scores.
 
-function requireOwnAthleteId(principal: { athleteId?: string | null }): string {
+// The session's id says whose record this is, not that it is still there: a
+// session that outlived the athlete's deletion carries the same id. So the
+// live row is required too, the same rule as assertActorCanAccessAthlete's
+// athlete arm (OD-2026-09-29-002 item 10).
+async function requireOwnAthleteId(principal: { organizationId: string; athleteId?: string | null }): Promise<string> {
   if (!principal.athleteId) throw new ValidationError('This account is not linked to an athlete record.');
+  await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
   return principal.athleteId;
 }
 
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const athleteId = requireOwnAthleteId(principal);
+    const athleteId = await requireOwnAthleteId(principal);
 
     const [today, recent] = await Promise.all([
       getTodayCheckIn(principal.organizationId, athleteId),
@@ -54,7 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const athleteId = requireOwnAthleteId(principal);
+    const athleteId = await requireOwnAthleteId(principal);
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     // Swept from WELLNESS_COLUMNS rather than a literal list. The three
