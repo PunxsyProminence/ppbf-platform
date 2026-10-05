@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -17,6 +18,7 @@ import {
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
+import { assertConsentCoversVideo, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getAthleteById: jest.fn(),
@@ -59,6 +61,13 @@ jest.mock('@/src/server/pilot/profileDb', () => ({
 jest.mock('@/src/server/pilot/videoClipTags', () => ({
   listLiveTagSubjects: jest.fn(async () => []),
 }));
+// The playback gate is the shared helper; its transaction, lock order and
+// refusals are proven in its own suites (playbackConsentRace.pg.test.ts).
+// Here it passes straight through to the mint unless a test says otherwise.
+jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
+  mintUnderPlaybackConsent: jest.fn(async (_org: string, _ids: string[], mint: () => unknown) => mint()),
+  assertConsentCoversVideo: jest.fn(async () => undefined),
+}));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionById: jest.fn(),
 }));
@@ -84,6 +93,8 @@ const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockSasUrl = jest.mocked(getPilotVideoSasUrl);
 const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
 const mockRetract = jest.mocked(retractPublication);
+const mockMintUnderConsent = jest.mocked(mintUnderPlaybackConsent);
+const mockCoversVideo = jest.mocked(assertConsentCoversVideo);
 const mockReopen = jest.mocked(reopenRetractedPublication);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
@@ -170,6 +181,7 @@ describe('GET /api/pilot/admin/video-compliance', () => {
           previous_review_note: null,
           stream_url: 'https://blob.example/sas',
           tagged_clip: false,
+          playback_blocked: null,
         },
       ],
       drafts: [],
@@ -305,6 +317,110 @@ describe('GET /api/pilot/admin/video-compliance', () => {
     const payload = (await response.json()) as { items: Array<{ stream_url: string | null }> };
     expect(payload.items[0].stream_url).toBeNull();
     expect(mockSasUrl).not.toHaveBeenCalled();
+  });
+
+  // Owner ruling 2026-10-05 (option B, "Apply consent check"): the queue's
+  // playback link goes through the same consent gate as every other playback
+  // surface. A withdrawn or photo-only guardian means no link, and the item
+  // says why; the admin can still reject it or send it back.
+  describe('playback consent (owner ruling 2026-10-05, option B)', () => {
+    function queueOneItem(status = 'ready') {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockList.mockImplementation(async (_org, filters) =>
+        (filters as { status?: string } | undefined)?.status === 'pending_review' ? [publication()] as never : [] as never);
+      mockGetAthlete.mockResolvedValueOnce(null);
+      mockGetSubjectIdentity.mockResolvedValueOnce(null);
+      mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-1', blob_path: '/blob/vs-1.mp4', status } as never);
+    }
+
+    async function onlyItem() {
+      const response = await GET(request('/api/pilot/admin/video-compliance'));
+      expect(response.status).toBe(200);
+      const payload = (await response.json()) as { items: Array<{ stream_url: string | null; playback_blocked: string | null }> };
+      expect(payload.items).toHaveLength(1);
+      return payload.items[0];
+    }
+
+    test('the link is minted under the playback consent gate for the publication athlete', async () => {
+      queueOneItem();
+
+      const item = await onlyItem();
+
+      expect(mockMintUnderConsent).toHaveBeenCalledWith('org-a', ['ath-1'], expect.any(Function));
+      expect(item).toMatchObject({ stream_url: 'https://blob.example/sas', playback_blocked: null });
+    });
+
+    test('a withdrawn guardian consent mints no link and says consent_withdrawn', async () => {
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: 'consent_withdrawn' });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+    });
+
+    test('a photo-only guardian consent mints no link and says photo_only', async () => {
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(new ConflictError('Blocked: photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: 'photo_only' });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+    });
+
+    test('an unreadable consent record fails closed: no link, and the queue still loads', async () => {
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(new ConflictError('Blocked: unreadable', 'GUARDIAN_CONSENT_UNREADABLE'));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: 'consent_unverified' });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+    });
+
+    test('a consent read fault fails closed: no link, the queue still loads, and the fault is logged without its message', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(Object.assign(new Error('connection to db-host:5432 refused'), { code: '08006' }));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: 'consent_unverified' });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith({ event: 'video-compliance-playback-mint-failed', code: '08006' });
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('db-host');
+      consoleErrorSpy.mockRestore();
+    });
+
+    test('an item with no playable footage is not sent through the gate at all', async () => {
+      queueOneItem('quarantined');
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: null });
+      expect(mockMintUnderConsent).not.toHaveBeenCalled();
+    });
+
+    test('reject and request_changes never run the video-coverage check, so a blocked item can still be decided', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockCoversVideo.mockRejectedValue(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+      try {
+        const rejected = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Consent withdrawn.' }));
+        const sentBack = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Hold for consent.' }));
+
+        expect(rejected.status).toBe(200);
+        expect(sentBack.status).toBe(200);
+        expect(mockDecide).toHaveBeenCalledTimes(2);
+        expect(mockCoversVideo).not.toHaveBeenCalled();
+      } finally {
+        mockCoversVideo.mockReset();
+        mockCoversVideo.mockResolvedValue(undefined);
+      }
+    });
   });
 
   test('non-admin roles are refused -- this is an org-admin-only console', async () => {
@@ -573,6 +689,57 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect(mockDecide).toHaveBeenCalled();
     });
 
+    // Overwatch 2026-10-05, same lane: approve checked that every guardian had
+    // SIGNED, never that what they signed covers video, so a photo-only
+    // guardian's child's video could be approved for publication.
+    test('approve is refused with 409 when a guardian signed photo-only consent, audited, and the row is never touched', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError('Blocked: photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' });
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockDecide).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_id: 'pub-1',
+          details: expect.objectContaining({
+            action: 'publication_compliance_approve_blocked_by_consent',
+            reason: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+          }),
+        }),
+      );
+    });
+
+    test('the in-transaction re-check before the approve commits also requires video coverage, on the same client', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      let verify: ((client: never) => Promise<void>) | undefined;
+      mockDecide.mockImplementationOnce(async (params) => {
+        verify = (params as { verifyBeforeCommit?: (client: never) => Promise<void> }).verifyBeforeCommit;
+        return true;
+      });
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+      expect(response.status).toBe(200);
+      expect(verify).toBeDefined();
+
+      // A client whose consent read passes the signed-consent check, so the
+      // coverage check is what refuses.
+      const client = {
+        query: jest.fn(async (text: string) => ({
+          rows: /guardian_links/.test(text)
+            ? [{ parent_id: 'parent-1' }]
+            : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+        })),
+      } as never;
+      mockCoversVideo.mockClear();
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError('Blocked: photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'));
+      await expect(verify!(client)).rejects.toMatchObject({ code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' });
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-a', 'ath-1', client);
+    });
+
     test('reject and request_changes are never gated on consent -- neither publishes anything', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
@@ -581,6 +748,7 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Trim the clip.' }));
 
       expect(mockAssertConsent).not.toHaveBeenCalled();
+      expect(mockCoversVideo).not.toHaveBeenCalled();
     });
   });
 

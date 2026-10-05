@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
@@ -16,6 +17,7 @@ import {
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
+import { assertConsentCoversVideo, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
@@ -36,6 +38,57 @@ async function auditComplianceEvent(event: Parameters<typeof writePilotAuditEven
 }
 
 export const runtime = 'nodejs';
+
+/*
+ * WHY A QUEUED ITEM HAS NO PLAYBACK LINK. Owner ruling 2026-10-05 (option B,
+ * "Apply consent check"): the queue mints its link through the same playback
+ * gate as GET /api/pilot/video/[videoId] -- mintUnderPlaybackConsent, which
+ * checks and mints in one transaction holding the athlete's guardian links
+ * FOR SHARE. A withdrawn or photo-only guardian means no link; the page names
+ * which ("Consent withdrawn" / "Photos only", the ruling's own words).
+ *
+ * Anything else the gate throws -- an unreadable consent record, or a fault
+ * reading it -- also means no link: a consent read never fails toward
+ * playback. It is caught per item rather than failing the whole GET, so the
+ * admin can still reject the item or send it back; neither decision shows
+ * anything. Those two cases carry no label of their own (overwatch,
+ * 2026-10-05): the page shows its plain "Video not playable" state.
+ */
+type PlaybackBlocked = 'consent_withdrawn' | 'photo_only' | 'consent_unverified';
+
+async function mintQueuePlayback(
+  organizationId: string,
+  athleteId: string,
+  blobPath: string,
+): Promise<{ stream_url: string | null; playback_blocked: PlaybackBlocked | null }> {
+  try {
+    const streamUrl = await mintUnderPlaybackConsent(organizationId, [athleteId], () => getPilotVideoSasUrl(blobPath, 60));
+    return { stream_url: streamUrl, playback_blocked: null };
+  } catch (error) {
+    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_WITHDRAWN') {
+      return { stream_url: null, playback_blocked: 'consent_withdrawn' };
+    }
+    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_EXCLUDES_VIDEO') {
+      return { stream_url: null, playback_blocked: 'photo_only' };
+    }
+    if (!(error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')) {
+      // A fault in the consent read or in signing the link itself; this
+      // cannot tell them apart, so the event names neither. The SQLSTATE
+      // only: a driver message can carry host and query detail.
+      const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+      const code = sanitizedSqlState(rawCode);
+      console.error({ event: 'video-compliance-playback-mint-failed', ...(code ? { code } : {}) });
+    }
+    return { stream_url: null, playback_blocked: 'consent_unverified' };
+  }
+}
+
+// The playback gate's coverage refusals, which approve now also runs.
+const COVERAGE_REFUSAL_CODES = new Set([
+  'GUARDIAN_CONSENT_WITHDRAWN',
+  'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+  'GUARDIAN_CONSENT_UNREADABLE',
+]);
 
 /**
  * T-006: THE ADMIN CONSOLE FOR AN ALREADY-BUILT COMPLIANCE WORKFLOW.
@@ -66,7 +119,8 @@ export const runtime = 'nodejs';
  *     is explicitly excluded).
  *
  * T-008: approving is additionally gated on guardian media consent
- * (assertGuardianMediaConsent) -- see guardianConsent.ts for what "consent"
+ * (assertGuardianMediaConsent), and since 2026-10-05 on that consent covering
+ * video (assertConsentCoversVideo) -- see guardianConsent.ts for what "consent"
  * means and what is deliberately not yet enforced (scope matching, retroactive
  * un-publishing on revocation).
  */
@@ -116,6 +170,12 @@ export async function GET(request: NextRequest) {
         // clips are staff film study only and cannot be published (owner,
         // 2026-10-03), so the console mints no playback link for one.
         const taggedClip = clipTags.length > 0;
+        // Only a 'ready' video session has bytes worth streaming -- see
+        // GET /api/pilot/video/[videoId], whose SAS-url pattern this reuses
+        // directly rather than round-tripping through that route.
+        const playback = videoSession && videoSession.status === 'ready' && !taggedClip
+          ? await mintQueuePlayback(principal.organizationId, publication.athlete_id, videoSession.blob_path)
+          : { stream_url: null, playback_blocked: null };
 
         return {
           publication_id: publication.publication_id,
@@ -131,13 +191,9 @@ export async function GET(request: NextRequest) {
           created_at: publication.created_at,
           compliance_check_status: publication.compliance_check_status,
           previous_review_note: latestCheck?.details || null,
-          // Only a 'ready' video session has bytes worth streaming -- see
-          // GET /api/pilot/video/[videoId], whose SAS-url pattern this
-          // reuses directly rather than round-tripping through that route.
-          stream_url: videoSession && videoSession.status === 'ready' && !taggedClip
-            ? getPilotVideoSasUrl(videoSession.blob_path, 60)
-            : null,
+          stream_url: playback.stream_url,
           tagged_clip: taggedClip,
+          playback_blocked: playback.playback_blocked,
         };
       }),
     );
@@ -318,8 +374,16 @@ export async function POST(request: NextRequest) {
       // the CAS UPDATE -- closing the race where a guardian's withdrawal
       // could otherwise commit in the gap between the pre-check returning
       // and this transaction's UPDATE landing.
+      //
+      // Signed is not enough on its own: a guardian can sign photo-only, and
+      // approving here clears VIDEO for publication. So approve also runs the
+      // playback gate's coverage check (assertConsentCoversVideo), here and
+      // again inside the transaction below. Overwatch 2026-10-05, the same
+      // lane as the queue's playback check: before this, a photo-only
+      // guardian's child's video could be approved.
       if (decision === 'approve') {
         await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
       }
 
       // CAS-guarded status transition AND its compliance-check record, as one
@@ -339,8 +403,18 @@ export async function POST(request: NextRequest) {
         decidedByAccountId: principal.accountId,
         approvedByAccountId: decision === 'approve' ? principal.accountId : undefined,
         expectedCurrentStatus: 'pending_review',
+        // Both reads lock this one athlete's guardian links FOR SHARE through
+        // guardianConsent.ts's helper, in its order. That is two lock passes,
+        // not the one per transaction that helper's comment prefers: a link
+        // committed between them is locked out of order, and the worst case
+        // is a deadlock victim -- a rolled-back approve, never a wrong one.
+        // One pass would mean copying assertConsentCoversVideo's refusals
+        // here, which is the drift the shared helper exists to prevent.
         verifyBeforeCommit: decision === 'approve'
-          ? (client) => assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id)
+          ? async (client) => {
+            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+          }
           : undefined,
       });
       if (!applied) {
@@ -362,6 +436,20 @@ export async function POST(request: NextRequest) {
           details: {
             action: 'publication_compliance_approve_blocked_by_consent',
             missing_parent_ids: error.missingParentIds,
+          },
+          shadow_mirror: false,
+        });
+      } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+        await auditComplianceEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'video_publication',
+          entity_id: publicationId,
+          details: {
+            action: 'publication_compliance_approve_blocked_by_consent',
+            reason: error.code,
           },
           shadow_mirror: false,
         });

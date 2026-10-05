@@ -19,7 +19,16 @@ interface PendingPublication {
   compliance_check_status: string;
   previous_review_note: string | null;
   stream_url: string | null;
+  // Why stream_url is null when guardian consent stopped it; the route's
+  // mintQueuePlayback. 'consent_unverified' has no label of its own.
+  playback_blocked?: 'consent_withdrawn' | 'photo_only' | 'consent_unverified' | null;
 }
+
+// Owner ruling 2026-10-05 (option B): the two labels, in Jason's words.
+const PLAYBACK_BLOCKED_LABEL: Partial<Record<NonNullable<PendingPublication['playback_blocked']>, string>> = {
+  consent_withdrawn: 'Consent withdrawn',
+  photo_only: 'Photos only',
+};
 
 interface DraftPublication {
   publication_id: string;
@@ -331,6 +340,16 @@ export default function VideoCompliancePage() {
                     <div>
                       {item.stream_url ? (
                         <video controls src={item.stream_url} className="w-full rounded-[var(--r-md)] bg-black" />
+                      ) : item.playback_blocked && PLAYBACK_BLOCKED_LABEL[item.playback_blocked] ? (
+                        <div className="empty" role="status">
+                          <div className="empty-glyph" aria-hidden="true">▶</div>
+                          <div className="empty-title">{PLAYBACK_BLOCKED_LABEL[item.playback_blocked]}</div>
+                        </div>
+                      ) : item.playback_blocked ? (
+                        <div className="empty">
+                          <div className="empty-glyph" aria-hidden="true">▶</div>
+                          <div className="empty-title">Video not playable</div>
+                        </div>
                       ) : (
                         <div className="empty">
                           <div className="empty-glyph" aria-hidden="true">▶</div>
@@ -361,14 +380,19 @@ export default function VideoCompliancePage() {
                         <dd>{formatDate(item.created_at)}</dd>
                       </dl>
                       <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
-                        <button
-                          type="button"
-                          disabled={pendingIds.has(item.publication_id)}
-                          onClick={() => void decide(item.publication_id, 'approve')}
-                          className="btn--lever min-h-[44px] disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
+                        {/* Consent stopped playback, so approve would be refused
+                            too; the admin can still reject or send it back
+                            (owner ruling 2026-10-05, option B). */}
+                        {item.playback_blocked ? null : (
+                          <button
+                            type="button"
+                            disabled={pendingIds.has(item.publication_id)}
+                            onClick={() => void decide(item.publication_id, 'approve')}
+                            className="btn--lever min-h-[44px] disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={pendingIds.has(item.publication_id)}
