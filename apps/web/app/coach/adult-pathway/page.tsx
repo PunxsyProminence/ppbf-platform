@@ -1,8 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+import AdultPathwayPanel from '@/components/AdultPathwayPanel';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
 import {
   ADULT_PATHWAY_CAVEAT,
   ADULT_PATHWAY_SCOPE,
@@ -12,12 +15,57 @@ import {
 // The adult pathway: four stages, their rough time ranges, and the goals a
 // coach checks off in each.
 //
-// READS NO DATA. This is the ladder itself, not anyone's place on it. Placing
-// an adult on a stage and confirming goals is coach-set (owner decision
-// 2026-10-03) and arrives with its own storage; nothing on this page moves
-// anyone up, and nothing here is worked out from hours or levels.
+// The ladder itself is static. Above it, each athlete this coach may open
+// (the pathway route's accessible_athletes, so a coach sees their own and
+// covered athletes, an admin the whole gym) with a closed AdultPathwayPanel:
+// where a coach has placed them, the goals a coach has ticked, and for minors
+// the allowance. Nothing on this page moves anyone up, and nothing here is
+// worked out from hours or levels (OD-2026-10-04-002).
+
+interface RosterAthlete { athlete_id: string; full_name?: string }
+
+/** The route's per-call cap (MAX_ROSTER_IDS in its route.ts). */
+const ROSTER_BATCH = 1000;
+
+function useRoster(): { roster: RosterAthlete[] | null; failed: boolean } {
+  const [roster, setRoster] = useState<RosterAthlete[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' });
+        const payload = res.ok ? ((await res.json()) as { items?: unknown } | null) : null;
+        if (!payload || !Array.isArray(payload.items)) throw new Error('roster');
+        const all = payload.items as RosterAthlete[];
+        // The route takes at most ROSTER_BATCH ids per call; a large gym is
+        // asked in batches rather than failing as "could not be loaded".
+        const ids = new Set<string>();
+        for (let i = 0; i < all.length; i += ROSTER_BATCH) {
+          const allowedRes = await fetch(`${apiBase()}/api/pilot/coach/adult-pathway`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'accessible_athletes',
+              athlete_ids: all.slice(i, i + ROSTER_BATCH).map((a) => a.athlete_id),
+            }),
+          });
+          const allowed = allowedRes.ok ? ((await allowedRes.json()) as { athlete_ids?: unknown } | null) : null;
+          if (!allowed || !Array.isArray(allowed.athlete_ids)) throw new Error('roster');
+          for (const id of allowed.athlete_ids as string[]) ids.add(id);
+        }
+        setRoster(all.filter((a) => ids.has(a.athlete_id)));
+      } catch {
+        // A roster that could not be read is never shown as "no athletes".
+        setFailed(true);
+      }
+    })();
+  }, []);
+  return { roster, failed };
+}
 
 function CoachAdultPathway() {
+  const { roster, failed } = useRoster();
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
@@ -31,16 +79,39 @@ function CoachAdultPathway() {
           </Link>
         </header>
 
-        <ol className="mt-[var(--s6)] space-y-[var(--s5)]">
+        <section className="mt-[var(--s6)]" aria-labelledby="pathway-athletes">
+          <h2 id="pathway-athletes" className="t-command text-[length:var(--t-lg)]">Athletes</h2>
+          {failed ? (
+            <p className="t-body mt-[var(--s3)]" role="alert">Your roster could not be loaded. Reload to try again.</p>
+          ) : roster === null ? (
+            <p className="t-body mt-[var(--s3)]" role="status">Loading your roster…</p>
+          ) : roster.length === 0 ? (
+            <p className="t-body mt-[var(--s3)]">No athletes you can open.</p>
+          ) : (
+            <ul className="mt-[var(--s3)] space-y-[var(--s3)]" data-pathway-roster="">
+              {roster.map((athlete) => (
+                <li key={athlete.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <span className="t-body font-semibold text-[color:var(--bone-100)]">
+                    {athlete.full_name || athlete.athlete_id}
+                  </span>
+                  <AdultPathwayPanel athleteId={athlete.athlete_id} athleteName={athlete.full_name || athlete.athlete_id} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <h2 className="t-command mt-[var(--s6)] text-[length:var(--t-lg)]">The stages</h2>
+        <ol className="mt-[var(--s3)] space-y-[var(--s5)]" data-pathway-ladder="">
           {ADULT_PATHWAY_STAGES.map((stage, index) => (
             <li key={stage.key} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
               <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                 <span className="plaque">Stage {index + 1}</span>
-                <h2 className="t-command text-[length:var(--t-lg)]">{stage.name}</h2>
+                <h3 className="t-command text-[length:var(--t-lg)]">{stage.name}</h3>
               </div>
               <p className="t-label mt-[var(--s2)]">{stage.typicalRange}</p>
 
-              <h3 className="t-eyebrow mt-[var(--s4)]">Checkpoints a coach confirms</h3>
+              <h4 className="t-eyebrow mt-[var(--s4)]">Checkpoints a coach confirms</h4>
               <ul className="mt-[var(--s2)] list-disc space-y-[var(--s1)] pl-[var(--s5)]">
                 {stage.goals.map((goal) => (
                   <li key={goal.key} className="t-body text-[color:var(--bone-200)]">{goal.text}</li>
