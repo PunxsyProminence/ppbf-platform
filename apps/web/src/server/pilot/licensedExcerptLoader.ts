@@ -22,7 +22,9 @@
  * file's canonical content, and (organization_id, content_sha256) is unique.
  * A rerun finds the document and skips it when complete, or adds the missing
  * ordinals when a previous apply stopped part way. A document whose stored
- * chunks disagree with the file is a conflict and refuses the apply.
+ * chunks disagree with the file is a conflict and refuses the apply, and so is
+ * a file whose name an earlier loaded document carries with other content (an
+ * edited file): it is never loaded as a quiet second copy.
  *
  * REVIEWED PLAN ONLY. A dry run prints the plan and its fingerprint. Apply
  * needs that fingerprint, re-plans, and refuses before its first write unless
@@ -84,6 +86,12 @@ function nonBlank(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+// Postgres refuses U+0000 in text and jsonb. Caught here, so a dry run shows
+// it rather than an apply failing part way at that excerpt on every rerun.
+function hasNul(value: unknown): boolean {
+  return typeof value === 'string' && value.includes('\u0000');
+}
+
 /**
  * The hash a file is known by. Built from the validated, trimmed fields in a
  * fixed order, so whitespace or key order in the file does not change it, and
@@ -108,7 +116,8 @@ export function parseExcerptFile(name: string, raw: Buffer): ParsedExcerptFile |
 
   let data: unknown;
   try {
-    data = JSON.parse(raw.toString('utf8'));
+    // A byte-order mark, which Windows editors add, is not JSON; drop it.
+    data = JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, ''));
   } catch {
     return { name, problems: ['not valid JSON'] };
   }
@@ -162,6 +171,11 @@ export function parseExcerptFile(name: string, raw: Buffer): ParsedExcerptFile |
       }
     });
   }
+
+  const strings = [record.source_id, record.document_name, record.citation,
+    ...(Array.isArray(record.excerpts) ? record.excerpts.flatMap((entry: unknown) =>
+      (typeof entry === 'object' && entry !== null ? Object.values(entry as Record<string, unknown>) : [])) : [])];
+  if (strings.some(hasNul)) problems.push('contains a NUL character (U+0000), which the database refuses');
 
   if (problems.length > 0) return { name, problems };
 
@@ -233,6 +247,8 @@ export interface FilePlan {
 }
 
 export interface LoadPlan {
+  /** hostname/database the plan was made against, so a staging plan cannot authorize production. */
+  target: string;
   organizationId: string;
   actorAccountId: string;
   files: FilePlan[];
@@ -260,6 +276,7 @@ interface ExistingChunk {
  */
 export function planFingerprint(plan: Omit<LoadPlan, 'fingerprint'>): string {
   return `sha256:${sha256(JSON.stringify([
+    plan.target,
     plan.organizationId,
     plan.actorAccountId,
     plan.files.map((file) => [
@@ -274,6 +291,7 @@ export function planFingerprint(plan: Omit<LoadPlan, 'fingerprint'>): string {
 }
 
 export async function buildLoadPlan(input: {
+  target: string;
   organizationId: string;
   actorAccountId: string;
   files: Array<ParsedExcerptFile | InvalidExcerptFile>;
@@ -348,6 +366,29 @@ export async function buildLoadPlan(input: {
       [input.organizationId, file.contentSha256],
     );
     if (!document) {
+      // Same file name, different content: the file was edited after it was
+      // loaded. Loading it would leave two documents, the old one unflagged,
+      // so it is a conflict. The way through is in the runbook: retract the
+      // old document on the screen and load the edited file under a new name.
+      const [earlier] = await query<{ document_id: string }>(
+        `select document_id
+           from pilot.shadow_library_documents
+          where organization_id = $1
+            and metadata->>'intake_method' = 'licensed_excerpt_loader'
+            and metadata->>'blob_name' = $2
+          order by created_at
+          limit 1`,
+        [input.organizationId, file.name],
+      );
+      if (earlier) {
+        plan.status = 'conflict';
+        plan.documentId = earlier.document_id;
+        plan.problems.push(
+          `document ${earlier.document_id} was loaded from this file name with different content; `
+          + 'retract it on the screen and load the edited file under a new name',
+        );
+        continue;
+      }
       plan.createOrdinals = excerpts.map((excerpt) => excerpt.ordinal);
       continue;
     }
@@ -391,6 +432,7 @@ export async function buildLoadPlan(input: {
 
   const blocked = files.some((file) => file.status === 'invalid' || file.status === 'conflict');
   const withoutFingerprint = {
+    target: input.target,
     organizationId: input.organizationId,
     actorAccountId: input.actorAccountId,
     files,
@@ -403,6 +445,7 @@ export async function buildLoadPlan(input: {
 export function describePlan(plan: LoadPlan): string[] {
   const lines: string[] = [];
   const count = (status: FilePlanStatus) => plan.files.filter((file) => file.status === status).length;
+  lines.push(`target: ${plan.target}`);
   lines.push(`organization_id: ${plan.organizationId}`);
   lines.push(`actor_account_id: ${plan.actorAccountId}`);
   lines.push(
@@ -442,6 +485,8 @@ export class ExcerptLoadRefusal extends Error {
 }
 
 export interface LoadOptions {
+  /** hostname/database of the declared write target; part of the fingerprint. */
+  target: string;
   organizationId: string;
   actorAccountId: string;
   dir: string;
@@ -483,7 +528,7 @@ export async function runExcerptLoad(options: LoadOptions): Promise<LoadResult> 
   options.log(`actor_role: ${actor.role}`);
 
   const files = await readExcerptFolder(options.dir);
-  const plan = await buildLoadPlan({ organizationId, actorAccountId, files });
+  const plan = await buildLoadPlan({ target: options.target, organizationId, actorAccountId, files });
   for (const line of describePlan(plan)) options.log(line);
 
   if (!options.apply) {
@@ -542,7 +587,7 @@ export async function runExcerptLoad(options: LoadOptions): Promise<LoadResult> 
     options.log(`loaded ${filePlan.name}: document ${documentId}, ${filePlan.createOrdinals.length} chunk(s)`);
   }
 
-  const after = await buildLoadPlan({ organizationId, actorAccountId, files });
+  const after = await buildLoadPlan({ target: options.target, organizationId, actorAccountId, files });
   const incomplete = after.files.filter((file) => file.status !== 'complete');
   if (incomplete.length > 0) {
     throw new ExcerptLoadRefusal(

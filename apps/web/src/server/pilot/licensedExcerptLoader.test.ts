@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -76,6 +77,15 @@ describe('parseExcerptFile', () => {
     expect(problemsOf({ ...VALID, excerpts: [{ locator: 'p. 1', text: 'x'.repeat(MAX_TEXT_LENGTH) }] })).toEqual([]);
   });
 
+  test('refuses a NUL character, which the database would refuse part way through an apply', () => {
+    expect(problemsOf({ ...VALID, excerpts: [{ locator: 'p. 1', text: 'a\u0000b' }] }).join(' ')).toMatch(/NUL character/);
+    expect(problemsOf({ ...VALID, citation: 'x\u0000' }).join(' ')).toMatch(/NUL character/);
+  });
+
+  test('accepts a file saved with a byte-order mark', () => {
+    expect(isInvalid(parse(`\uFEFF${JSON.stringify(VALID)}`))).toBe(false);
+  });
+
   test('refuses bad JSON and non-objects', () => {
     expect(problemsOf('{nope')).toEqual(['not valid JSON']);
     expect(problemsOf('[]')).toEqual(['top level must be a JSON object']);
@@ -127,12 +137,13 @@ describe('planFingerprint', () => {
     citation: 'c',
     excerpts: [],
   };
-  const plan = { organizationId: 'org', actorAccountId: 'acct', files: [file], blocked: false };
+  const plan = { target: 'host/db', organizationId: 'org', actorAccountId: 'acct', files: [file], blocked: false };
 
   test('is stable and names what the apply would do', () => {
     expect(planFingerprint(plan)).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(planFingerprint(plan)).toBe(planFingerprint({ ...plan }));
     for (const changed of [
+      { ...plan, target: 'other-host/db' },
       { ...plan, organizationId: 'other' },
       { ...plan, actorAccountId: 'other' },
       { ...plan, files: [{ ...file, createOrdinals: [1] }] },
@@ -164,7 +175,7 @@ describe('readExcerptFolder', () => {
 });
 
 describe('runExcerptLoad refuses before touching the database', () => {
-  const base = { organizationId: 'org', actorAccountId: 'acct', dir: '.', log: () => undefined };
+  const base = { target: 'host/db', organizationId: 'org', actorAccountId: 'acct', dir: '.', log: () => undefined };
 
   test.each([
     ['no organization', { ...base, organizationId: ' ', apply: false }, /^MISSING_ORGANIZATION_ID/],
@@ -175,5 +186,31 @@ describe('runExcerptLoad refuses before touching the database', () => {
     ['apply with a malformed fingerprint', { ...base, apply: true, confirm: CONFIRM_PHRASE, expectedFingerprint: 'abc' }, /^MISSING_EXPECTED_FINGERPRINT/],
   ])('%s', async (_label, options, pattern) => {
     await expect(runExcerptLoad(options)).rejects.toThrow(pattern);
+  });
+});
+
+// The downloaded folder holds licensed text (overwatch, 2026-10-05): it is
+// removed in an always() step and never uploaded as an artifact.
+describe('load-licensed-excerpts.yml keeps the licensed text on the runner only', () => {
+  const workflow = readFileSync(path.resolve(__dirname, '../../../../../.github/workflows/load-licensed-excerpts.yml'), 'utf8')
+    .replace(/\r\n/g, '\n');
+
+  test('a step that always runs removes the downloaded folder', () => {
+    expect(workflow).toMatch(/- name: Remove Downloaded Excerpts\n\s+if: always\(\)\n\s+run: rm -rf "\$RUNNER_TEMP\/licensed-excerpts"/);
+    expect(workflow).toContain('DIR="$RUNNER_TEMP/licensed-excerpts"');
+  });
+
+  test('nothing is uploaded as an artifact or cached', () => {
+    expect(workflow).not.toMatch(/upload-artifact|actions\/cache/);
+  });
+
+  test('blob reads use Entra sign-in, never an account key', () => {
+    expect(workflow).not.toMatch(/azure-storage-connection-string|AZURE_STORAGE_CONNECTION_STRING|--account-key|keys list/);
+    const storageCalls = workflow.match(/az storage [^\n]+/g) ?? [];
+    expect(storageCalls.length).toBe(2);
+    for (const call of storageCalls) {
+      const block = workflow.slice(workflow.indexOf(call), workflow.indexOf(call) + 400);
+      expect(block).toContain('--auth-mode login');
+    }
   });
 });

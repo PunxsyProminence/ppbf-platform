@@ -61,12 +61,17 @@ Whole PDFs stay in SharePoint and never go in this container.
 
    Any `conflict` or `invalid` file blocks the whole run. Copy the `plan_fingerprint`.
 4. Run again with mode `apply`, `confirm_load` set to `LOAD EXCERPTS` and `expected_fingerprint`
-   set to the fingerprint you copied. On production, approve the run in GitHub.
+   set to the fingerprint you copied. The fingerprint includes the database it was made against, so
+   copy it from a dry run of the same target. On production, **both** runs (the dry run and the
+   apply) wait for your approval click in GitHub, because the job runs in the production
+   environment either way.
 5. Review the loaded documents on /evidence. Loaded text waits for review just like text added
    on the screen.
 
-Changing a file after it is loaded gives it a new hash, so the next run plans it as a new
-document. It does not edit the old one. Retract the old document on the screen if it should go.
+Changing a file after it is loaded gives it a new hash, and the old document still names that
+file. The next dry run therefore shows the file as `conflict` and blocks the run, so the change is
+never loaded as a quiet second copy. To load the changed version, retract the old document on
+the screen, then upload the changed file under a new name, for example `chapter-4-v2.json`.
 
 ## One-time setup (Jason runs these; nothing here has been run)
 
@@ -134,9 +139,13 @@ gh variable set PPBF_EXCERPT_STORAGE_ACCOUNT --env production --body ppbfstor569
 gh variable set PPBF_EXCERPT_CONTAINER --env production --body ppbf-licensed-excerpts --repo PunxsyProminence/ppbf-platform
 ```
 
+Run the blocks in one PowerShell window: the role assignments use `$scope` from the first block.
+
 No new GitHub secret and no storage key are needed. Role assignments can take a few minutes to
-apply. If the first dry run fails at **Refuse A Public Container** with an authorization error,
-the environment's identity has no reader role yet.
+apply. A missing reader role shows up as an authorization error at **Download Excerpt Files**.
+(On staging it may surface one step earlier, at **Refuse A Public Container**. The production
+identity is a subscription Contributor, so that step's management-level read succeeds even
+without the role.)
 
 Cost: one container in an existing account. Storage for text files is cents a month.
 
@@ -154,6 +163,15 @@ Cost: one container in an existing account. Storage for text files is cents a mo
   `pilot:backfill-chunk-embeddings` fills them later. Keyword search works immediately.
 - **Not exercised against real Azure.** Tests use a local folder. The `az storage` steps, the
   role assignments and the environment variables are proven only by the first staging dry run.
+- **Who else can read the container.** The production identity also signs in for any job on
+  `main` that has no environment (its `github-main` federated credential). Once it holds the
+  reader role, such a job could read the excerpt files without an approval click. Loading still
+  needs one. This is the cost of reading with the existing deploy identity (OD-2026-10-05-009).
+- **Completeness gate.** The screen's rule that a manual-text document cannot be indexed until all
+  its declared parts are stored (`MANUAL_TEXT_INTAKE_COMPLETE_SQL` in `shadowLibrary.ts`) does not
+  cover loader documents. A loader document left part-loaded can be approved with the excerpts it
+  has. Each excerpt carries its own locator, so nothing is cited as more than it is. A dry run
+  shows it as `resume`. Extending the gate is outside this PR.
 - **Same container for both targets.** A staging dry run reads the files production would load.
   This is deliberate, so staging rehearses production's exact input. A staging apply writes those
   excerpts into the staging database.

@@ -25,7 +25,9 @@ name: load-licensed-excerpts
 # downloaded.
 #
 # Dry run by default. Apply needs confirm_load = LOAD EXCERPTS and the
-# plan_fingerprint a dry run of the same target printed; the loader re-plans
+# plan_fingerprint a dry run of the same target printed (the fingerprint
+# includes the database host and name, so a staging plan cannot authorize a
+# production apply); the loader re-plans
 # and refuses before its first write when the fingerprint differs. A production
 # dispatch runs in the production environment, so Jason's approval click in
 # GitHub still holds it. Excerpt text never reaches the log: the plan prints
@@ -130,7 +132,7 @@ jobs:
             echo "::error::vars.PPBF_EXCERPT_STORAGE_ACCOUNT is unset or not a storage account name in the $TARGET environment."
             exit 1
           fi
-          if [[ ! "$EXCERPT_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]]; then
+          if [[ ! "$EXCERPT_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$ ]] || [[ "$EXCERPT_CONTAINER" == *--* ]]; then
             echo "::error::vars.PPBF_EXCERPT_CONTAINER is unset or not a container name in the $TARGET environment."
             exit 1
           fi

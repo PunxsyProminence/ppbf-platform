@@ -35,6 +35,7 @@ async function main(): Promise<void> {
   console.log(`target_database: ${target.database}`);
 
   await runExcerptLoad({
+    target: `${target.hostname}/${target.database}`,
     organizationId: process.env.PPBF_EXCERPT_ORG_ID ?? '',
     actorAccountId: process.env.PPBF_EXCERPT_ACTOR_ID ?? '',
     dir,

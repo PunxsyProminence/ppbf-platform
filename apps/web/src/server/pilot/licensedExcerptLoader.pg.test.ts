@@ -54,6 +54,8 @@ const SCHEMA_FILES = [
 const SECRET_A = 'QUOKKA-LICENSED-TEXT-ALPHA a paragraph from a licensed book';
 const SECRET_B = 'QUOKKA-LICENSED-TEXT-BRAVO a second paragraph';
 const SECRET_C = 'QUOKKA-LICENSED-TEXT-CHARLIE a transcript at a timestamp';
+// Non-ASCII on purpose: the plan's hash (Node) must equal the stored text's hash (Postgres).
+const SECRET_D = 'QUOKKA-LICENSED-TEXT-DELTA na\u00efve caf\u00e9 \u2014 \u201cquoted\u201d \u{1F94A}\u00a0end';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -113,6 +115,7 @@ function excerptFile(sourceId: string, overrides: Record<string, unknown> = {}) 
     excerpts: [
       { locator: 'p. 41', text: SECRET_A },
       { locator: 'section 4.2', text: SECRET_B },
+      { locator: 'p. 42 \u00a7 3', text: SECRET_D },
     ],
     ...overrides,
   };
@@ -129,6 +132,7 @@ async function run(options: {
   const lines: string[] = [];
   const outcome = await loader
     .runExcerptLoad({
+      target: 'localhost/ppbf_test_licensed_excerpts',
       organizationId: options.organizationId ?? GYM_ID,
       actorAccountId: options.actorAccountId ?? GYM_ADMIN_ACCOUNT,
       dir: options.dir,
@@ -140,8 +144,16 @@ async function run(options: {
     .then((result) => ({ result, error: null as Error | null }), (error: Error) => ({ result: null, error }));
   const log = [...lines, outcome.error?.message ?? ''].join('\n');
   // Every run, whatever its outcome: licensed text never reaches the log.
-  for (const secret of [SECRET_A, SECRET_B, SECRET_C]) expect(log).not.toContain(secret.slice(0, 26));
+  for (const secret of [SECRET_A, SECRET_B, SECRET_C, SECRET_D]) expect(log).not.toContain(secret.slice(0, 26));
   return { ...outcome, log };
+}
+
+async function documentCount(organizationId = GYM_ID): Promise<number> {
+  const [row] = await rawQuery<{ n: string }>(
+    'select count(*)::text as n from pilot.shadow_library_documents where organization_id = $1',
+    [organizationId],
+  );
+  return Number(row.n);
 }
 
 async function chunkCount(organizationId = GYM_ID): Promise<number> {
@@ -274,7 +286,7 @@ describe('licensed-excerpt loader (real database)', () => {
     expect(error).toBeNull();
     expect(result!.plan.blocked).toBe(false);
     expect(result!.plan.files.map((file) => [file.name, file.status, file.createOrdinals])).toEqual([
-      ['book/chapter-4.json', 'new', [0, 1]],
+      ['book/chapter-4.json', 'new', [0, 1, 2]],
     ]);
     expect(result!.plan.files[0].sourceRights).toBe('licensed_excerpt_only');
     expect(log).toMatch(/plan_fingerprint: sha256:[0-9a-f]{64}/);
@@ -285,6 +297,7 @@ describe('licensed-excerpt loader (real database)', () => {
   test('apply refuses without the phrase, without a fingerprint, or with a stale one -- before any write', async () => {
     const dir = await freshFolder({ 'a.json': excerptFile(gymSourceId, { document_name: 'Refusals' }) });
     const before = await chunkCount();
+    const docsBefore = await documentCount();
     const noPhrase = await run({ dir, apply: true, expectedFingerprint: `sha256:${'0'.repeat(64)}` });
     expect(noPhrase.error?.message).toMatch(/^CONFIRM_PHRASE_MISMATCH/);
     const noPrint = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS' });
@@ -292,6 +305,7 @@ describe('licensed-excerpt loader (real database)', () => {
     const stale = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: `sha256:${'0'.repeat(64)}` });
     expect(stale.error?.message).toMatch(/^PLAN_FINGERPRINT_MISMATCH/);
     expect(await chunkCount()).toBe(before);
+    expect(await documentCount()).toBe(docsBefore);
   });
 
   test('apply with the reviewed fingerprint loads excerpts; a rerun is a no-op', async () => {
@@ -299,7 +313,7 @@ describe('licensed-excerpt loader (real database)', () => {
     const dry = await run({ dir });
     const applied = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
     expect(applied.error).toBeNull();
-    expect(applied.result).toMatchObject({ documentsCreated: 1, chunksWritten: 2 });
+    expect(applied.result).toMatchObject({ documentsCreated: 1, chunksWritten: 3 });
 
     const documentId = applied.result!.plan.files[0].documentId
       ?? (await rawQuery<{ document_id: string }>(
@@ -314,6 +328,7 @@ describe('licensed-excerpt loader (real database)', () => {
     expect(chunks).toEqual([
       { ordinal: 0, text_kind: 'excerpt', excerpt_locator: 'p. 41', text_content: SECRET_A, created_by_role: 'organization_admin' },
       { ordinal: 1, text_kind: 'excerpt', excerpt_locator: 'section 4.2', text_content: SECRET_B, created_by_role: 'organization_admin' },
+      { ordinal: 2, text_kind: 'excerpt', excerpt_locator: 'p. 42 \u00a7 3', text_content: SECRET_D, created_by_role: 'organization_admin' },
     ]);
     const [document] = await rawQuery<{ approval_state: string; metadata: Record<string, unknown> }>(
       'select approval_state, metadata from pilot.shadow_library_documents where document_id = $1',
@@ -340,12 +355,12 @@ describe('licensed-excerpt loader (real database)', () => {
       [dry.result!.plan.files[0].contentSha256],
     );
     // As if the apply had stopped after the first chunk.
-    await rawQuery('delete from pilot.shadow_library_chunks where document_id = $1 and ordinal = 1', [doc.document_id]);
+    await rawQuery('delete from pilot.shadow_library_chunks where document_id = $1 and ordinal >= 1', [doc.document_id]);
 
     const resumePlan = await run({ dir });
-    expect(resumePlan.result!.plan.files.map((file) => [file.status, file.createOrdinals])).toEqual([['resume', [1]]]);
+    expect(resumePlan.result!.plan.files.map((file) => [file.status, file.createOrdinals])).toEqual([['resume', [1, 2]]]);
     const resumed = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: resumePlan.result!.plan.fingerprint });
-    expect(resumed.result).toMatchObject({ documentsCreated: 0, chunksWritten: 1 });
+    expect(resumed.result).toMatchObject({ documentsCreated: 0, chunksWritten: 2 });
   });
 
   test('a stored chunk that differs from the file is a conflict and blocks the apply', async () => {
@@ -373,6 +388,7 @@ describe('licensed-excerpt loader (real database)', () => {
       'twin.json': excerptFile(gymSourceId, { document_name: 'Good one' }),
     });
     const before = await chunkCount();
+    const docsBefore = await documentCount();
     const dry = await run({ dir });
     const byName = Object.fromEntries(dry.result!.plan.files.map((file) => [file.name, file]));
     expect(byName['good.json'].status).toBe('new');
@@ -383,6 +399,7 @@ describe('licensed-excerpt loader (real database)', () => {
     const refused = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
     expect(refused.error?.message).toMatch(/^PLAN_BLOCKED/);
     expect(await chunkCount()).toBe(before);
+    expect(await documentCount()).toBe(docsBefore);
   });
 
   test('the platform shelf is loaded only by the platform owner; a gym is loaded only by its admin', async () => {
@@ -416,5 +433,70 @@ describe('licensed-excerpt loader (real database)', () => {
       [PLATFORM],
     );
     expect(rows).toEqual([{ text_kind: 'excerpt', excerpt_locator: '00:12:30' }]);
+  });
+
+  test('a file changed between the reviewed dry run and the apply is refused before any write', async () => {
+    const dir = await freshFolder({ 'swap.json': excerptFile(gymSourceId, { document_name: 'Swapped' }) });
+    const dry = await run({ dir });
+    await fs.writeFile(
+      path.join(dir, 'swap.json'),
+      JSON.stringify(excerptFile(gymSourceId, { document_name: 'Swapped', excerpts: [{ locator: 'p. 9', text: SECRET_C }] })),
+    );
+    const chunksBefore = await chunkCount();
+    const docsBefore = await documentCount();
+    const refused = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    expect(refused.error?.message).toMatch(/^PLAN_FINGERPRINT_MISMATCH/);
+    expect(await chunkCount()).toBe(chunksBefore);
+    expect(await documentCount()).toBe(docsBefore);
+  });
+
+  test('the same plan against another database has another fingerprint', async () => {
+    const dir = await freshFolder({ 'target.json': excerptFile(gymSourceId, { document_name: 'Target bound' }) });
+    const here = await run({ dir });
+    const plan = await loader.buildLoadPlan({
+      target: 'production-host/postgres',
+      organizationId: GYM_ID,
+      actorAccountId: GYM_ADMIN_ACCOUNT,
+      files: await loader.readExcerptFolder(dir),
+    });
+    expect(plan.fingerprint).not.toBe(here.result!.plan.fingerprint);
+  });
+
+  test('a loaded file edited and re-uploaded under the same name is a conflict, not a second document', async () => {
+    const dir = await freshFolder({ 'edited.json': excerptFile(gymSourceId, { document_name: 'Edited later' }) });
+    const dry = await run({ dir });
+    await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+
+    await fs.writeFile(
+      path.join(dir, 'edited.json'),
+      JSON.stringify(excerptFile(gymSourceId, { document_name: 'Edited later', citation: 'Corrected citation.' })),
+    );
+    const docsBefore = await documentCount();
+    const replanned = await run({ dir });
+    expect(replanned.result!.plan.files[0].status).toBe('conflict');
+    expect(replanned.result!.plan.files[0].problems.join(' ')).toMatch(/load the edited file under a new name/);
+    const refused = await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: replanned.result!.plan.fingerprint });
+    expect(refused.error?.message).toMatch(/^PLAN_BLOCKED/);
+    expect(await documentCount()).toBe(docsBefore);
+  });
+
+  test.each([
+    ['a changed locator', `update pilot.shadow_library_chunks set excerpt_locator = 'p. 999' where ordinal = 0 and document_id = $1`],
+    ['an extra stored ordinal', `insert into pilot.shadow_library_chunks
+       (chunk_id, document_id, source_id, organization_id, ordinal, text_content, metadata, created_by_account_id, created_by_role, text_kind, excerpt_locator)
+       select 'chunk_extra_' || md5(random()::text), document_id, source_id, organization_id, 7, 'extra', '{}'::jsonb, 'x', 'organization_admin', 'excerpt', 'p. 7'
+         from pilot.shadow_library_documents where document_id = $1`],
+  ])('%s under a loaded document is a conflict', async (label, sql) => {
+    const dir = await freshFolder({ [`tamper-${label.replace(/ /g, '-')}.json`]: excerptFile(gymSourceId, { document_name: `Tamper ${label}` }) });
+    const dry = await run({ dir });
+    await run({ dir, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    const [doc] = await rawQuery<{ document_id: string }>(
+      'select document_id from pilot.shadow_library_documents where content_sha256 = $1',
+      [dry.result!.plan.files[0].contentSha256],
+    );
+    await rawQuery(sql, [doc.document_id]);
+    const replanned = await run({ dir });
+    expect(replanned.result!.plan.files[0].status).toBe('conflict');
+    expect(replanned.result!.plan.blocked).toBe(true);
   });
 });
