@@ -291,9 +291,10 @@ async function main() {
         `insert into pilot.shadow_library_sources
            (source_id, organization_id, title, publisher, source_type, authority_tier, url,
             publication_date, status, approval_state, verification_state, metadata,
-            created_by_account_id, created_by_role)
+            created_by_account_id, created_by_role, rights_status)
          select $1, $2, title, publisher, source_type, authority_tier, url, publication_date,
-                status, 'pending_review', 'unverified', metadata, created_by_account_id, created_by_role
+                status, 'pending_review', 'unverified', metadata, created_by_account_id, created_by_role,
+                rights_status
            from pilot.shadow_library_sources
           where source_id = $3
          on conflict (source_id) do nothing`,

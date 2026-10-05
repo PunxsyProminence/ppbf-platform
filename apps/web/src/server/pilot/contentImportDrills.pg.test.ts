@@ -101,8 +101,10 @@ async function findFreePort(): Promise<number> {
 async function loadPlatformClaims(): Promise<void> {
   const ids = [...claimIdsFromChunksCsv(await fs.readFile(path.join(SEED_DATA_DIR, LOADED_RESEARCH_CHUNKS), 'utf8'))];
   await client.query(
-    `insert into pilot.shadow_library_sources (source_id, organization_id, title, source_type, authority_tier, url)
-     values ('src_drills_test', '__platform__', 'Loaded research claims (test)', 'peer_reviewed', 1, 'https://example.org/drills-test')`,
+    // ppbf_owned: the claims it stands in for are the research program's own
+    // synthesis, and full text loads only under such a source (source rights).
+    `insert into pilot.shadow_library_sources (source_id, organization_id, title, source_type, authority_tier, url, rights_status)
+     values ('src_drills_test', '__platform__', 'Loaded research claims (test)', 'peer_reviewed', 1, 'https://example.org/drills-test', 'ppbf_owned')`,
   );
   await client.query(
     `insert into pilot.shadow_library_documents (document_id, source_id, organization_id, document_name, content_sha256)
