@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 
-import { GET } from './route';
+import { GET, POST } from './route';
 import {
   getAthleteCohortReport,
   listCohortDefinitions,
   listCompetenceLevels,
 } from '@/src/server/pilot/competenceCohorts';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { setAthleteCompetence } from '@/src/server/pilot/competenceWrite';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -30,11 +31,17 @@ jest.mock('@/src/server/pilot/competenceCohorts', () => {
   };
 });
 
+jest.mock('@/src/server/pilot/competenceWrite', () => {
+  const actual = jest.requireActual('@/src/server/pilot/competenceWrite');
+  return { ...actual, setAthleteCompetence: jest.fn() };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockLevels = listCompetenceLevels as jest.Mock;
 const mockCohorts = listCohortDefinitions as jest.Mock;
 const mockReport = getAthleteCohortReport as jest.Mock;
+const mockSet = setAthleteCompetence as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -61,6 +68,7 @@ beforeEach(() => {
   mockLevels.mockResolvedValue([]);
   mockCohorts.mockResolvedValue([]);
   mockReport.mockResolvedValue(null);
+  mockSet.mockResolvedValue({ changed: true, competence_id: 'comp_1', domain: 'footwork', level_key: 'adapting', previous_level_key: null });
 });
 
 describe('GET /api/pilot/competence-cohorts -- the rules', () => {
@@ -118,6 +126,13 @@ describe('GET /api/pilot/competence-cohorts -- one athlete', () => {
 
   it('allows an admin as well as a coach', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'admin' }));
+    mockReport.mockResolvedValue({ athlete_id: 'ath-1', fits: [] });
+
+    expect((await get('http://localhost/api/pilot/competence-cohorts?athlete_id=ath-1')).status).toBe(200);
+  });
+
+  it('allows an organization_admin, which requireRole does not alias to admin', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
     mockReport.mockResolvedValue({ athlete_id: 'ath-1', fits: [] });
 
     expect((await get('http://localhost/api/pilot/competence-cohorts?athlete_id=ath-1')).status).toBe(200);
@@ -192,5 +207,88 @@ describe('GET /api/pilot/competence-cohorts -- one athlete', () => {
 
     expect(response.status).toBe(401);
     expect(mockLevels).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/pilot/competence-cohorts -- a coach sets a level', () => {
+  function post(body: unknown) {
+    return POST(new NextRequest('http://localhost/api/pilot/competence-cohorts', {
+      method: 'POST',
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    }));
+  }
+
+  const valid = { athlete_id: 'ath-1', domain: 'footwork', level_key: 'adapting', evidence_note: ' moved well ' };
+
+  it('writes the level and returns the refreshed report', async () => {
+    mockReport.mockResolvedValue({ athlete_id: 'ath-1', fits: [] });
+
+    const response = await post(valid);
+
+    expect(response.status).toBe(200);
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'coach-1', organizationId: 'org-1' }),
+      { athleteId: 'ath-1', domain: 'footwork', levelKey: 'adapting', evidenceNote: 'moved well' },
+    );
+    expect(mockReport).toHaveBeenCalledWith('org-1', 'ath-1');
+    const payload = await response.json();
+    expect(payload.result.changed).toBe(true);
+    expect(payload.report).toEqual({ athlete_id: 'ath-1', fits: [] });
+  });
+
+  it.each(['admin', 'organization_admin'] as const)('allows %s', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    expect((await post(valid)).status).toBe(200);
+  });
+
+  it.each(['parent', 'athlete', 'platform_owner', 'board', 'staff', 'volunteer'] as const)(
+    'refuses %s before reading the body or writing',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role, athleteId: role === 'athlete' ? 'ath-1' : null }));
+
+      const response = await post(valid);
+
+      expect(response.status).toBe(403);
+      expect(mockSet).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores an organization_id in the body: the write is scoped to the principal', async () => {
+    await post({ ...valid, organization_id: 'org-other' });
+
+    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }), expect.anything());
+    expect(mockSet.mock.calls[0][1]).not.toHaveProperty('organization_id');
+  });
+
+  it('surfaces the access guard refusing a coach with no relationship as 403', async () => {
+    mockSet.mockRejectedValue(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await post(valid);
+
+    expect(response.status).toBe(403);
+    expect(mockReport).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a non-object body', 'not json'],
+    ['a missing athlete_id', { domain: 'footwork', level_key: 'adapting' }],
+    ['an unknown domain', { athlete_id: 'ath-1', domain: 'grappling', level_key: 'adapting' }],
+    ['a missing level_key', { athlete_id: 'ath-1', domain: 'footwork' }],
+    ['a non-text note', { athlete_id: 'ath-1', domain: 'footwork', level_key: 'adapting', evidence_note: 5 }],
+    ['an over-long note', { athlete_id: 'ath-1', domain: 'footwork', level_key: 'adapting', evidence_note: 'x'.repeat(501) }],
+  ])('400s %s without writing', async (_label, body) => {
+    const response = await post(body);
+
+    expect(response.status).toBe(400);
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an unauthenticated caller as 401', async () => {
+    mockRequirePrincipal.mockRejectedValue(new Error('Unauthorized'));
+
+    expect((await post(valid)).status).toBe(401);
+    expect(mockSet).not.toHaveBeenCalled();
   });
 });

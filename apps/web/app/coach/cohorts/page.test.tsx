@@ -7,6 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import CoachCohortsPage from './page';
+import { COMPETENCE_DOMAINS } from '@/src/server/pilot/competenceCohorts';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -21,6 +22,9 @@ jest.mock('next/link', () => ({
 }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+
+// Only COMPETENCE_DOMAINS is read from the server module; its pg import cannot load under jsdom.
+jest.mock('@/src/server/pilot/db', () => ({}));
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
@@ -314,5 +318,179 @@ describe('coach cohorts page -- one athlete', () => {
         expect.anything(),
       );
     });
+  });
+});
+
+describe('coach cohorts page -- setting a level', () => {
+  const LADDER = [
+    ...LEVELS,
+    { level_key: 'adapting', ordinal: 4, display_name: 'Adapting', observable_test: 'Adapts under pressure.', typical_scale: 'B' },
+  ];
+
+  // GET of the rules, GET of the report, and the POST under test.
+  function withSave(postResponse: () => Response) {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (init?.method === 'POST') return postResponse();
+      if (url.includes('athlete_id=')) return jsonResponse({ report: report() });
+      return jsonResponse({ levels: LADDER, cohorts: [OPEN_FLOOR, SPARRING] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return calls;
+  }
+
+  async function openReport() {
+    render(<CoachCohortsPage />);
+    fireEvent.change(await screen.findByLabelText(/athlete id/i), { target: { value: 'ath-1' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /look up/i }));
+    });
+    await screen.findByText('Set a level');
+  }
+
+  async function chooseAndSave(domain: string, levelKey: string, note = '') {
+    fireEvent.change(screen.getByLabelText('Area'), { target: { value: domain } });
+    fireEvent.change(screen.getByLabelText('Level'), { target: { value: levelKey } });
+    if (note) fireEvent.change(screen.getByLabelText(/what you saw/i), { target: { value: note } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save level' }));
+    });
+  }
+
+  it('offers exactly the domains the server accepts', async () => {
+    withSave(() => jsonResponse({}));
+    await openReport();
+
+    const options = Array.from((screen.getByLabelText('Area') as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).toEqual([...COMPETENCE_DOMAINS]);
+  });
+
+  it('offers the gym ladder as the levels, and cannot save until one is chosen', async () => {
+    withSave(() => jsonResponse({}));
+    await openReport();
+
+    const levelOptions = Array.from((screen.getByLabelText('Level') as HTMLSelectElement).options).map((o) => o.value);
+    expect(levelOptions).toEqual(['', 'exploring', 'adapting']);
+    expect(screen.getByRole('button', { name: 'Save level' })).toBeDisabled();
+  });
+
+  it('posts the choice for the looked-up athlete and shows the rooms the route returns', async () => {
+    const updated = report({
+      competence: [
+        { competence_id: 'c-1', domain: 'defense', display_name: 'Adapting', ordinal: 4 },
+        { competence_id: 'c-2', domain: 'composure', display_name: 'Adapting', ordinal: 4 },
+      ],
+      fits: [
+        { cohort_id: 'coh-spar', cohort_name: 'Pressure Group', eligible: true, unmet: [], requires_coach_approval: false, contact_permitted: 'controlled_sparring', regulatory_basis: '' },
+      ],
+    });
+    const calls = withSave(() => jsonResponse({ result: { changed: true }, report: updated }));
+    await openReport();
+    expect(screen.getByText('Not yet')).toBeInTheDocument();
+
+    await chooseAndSave('composure', 'adapting', 'held shape under pressure');
+
+    const post = calls.find((call) => call.init?.method === 'POST');
+    expect(post?.url).toBe('/api/pilot/competence-cohorts');
+    expect(JSON.parse(String(post?.init?.body))).toEqual({
+      athlete_id: 'ath-1',
+      domain: 'composure',
+      level_key: 'adapting',
+      evidence_note: 'held shape under pressure',
+    });
+    expect(await screen.findByText('Saved. The rooms below are updated.')).toBeInTheDocument();
+    expect(screen.getByText('composure: Adapting')).toBeInTheDocument();
+    expect(screen.getByText('Fits')).toBeInTheDocument();
+    expect(screen.queryByText('Not yet')).not.toBeInTheDocument();
+  });
+
+  it('says so when the athlete already holds that level', async () => {
+    withSave(() => jsonResponse({ result: { changed: false }, report: report() }));
+    await openReport();
+
+    await chooseAndSave('defense', 'adapting');
+
+    expect(await screen.findByText('No change: that is already the level.')).toBeInTheDocument();
+  });
+
+  it('names the reason when the coach does not coach or cover the athlete', async () => {
+    withSave(() => jsonResponse({ error: 'Forbidden' }, false, 403));
+    await openReport();
+
+    await chooseAndSave('footwork', 'exploring');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('You can only set levels for athletes you coach or cover.');
+    expect(screen.queryByText(/Saved\./)).not.toBeInTheDocument();
+  });
+
+  it('reports any other failure as not saved, keeping the old rooms', async () => {
+    withSave(() => jsonResponse({ error: 'Internal server error' }, false, 500));
+    await openReport();
+
+    await chooseAndSave('footwork', 'exploring');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That level could not be saved.');
+    expect(screen.getByText('Not yet')).toBeInTheDocument();
+  });
+
+  it('keeps the note when nothing changed, because nothing was recorded', async () => {
+    withSave(() => jsonResponse({ result: { changed: false }, report: report() }));
+    await openReport();
+
+    await chooseAndSave('defense', 'adapting', 'still solid');
+
+    expect(await screen.findByText('No change: that is already the level.')).toBeInTheDocument();
+    expect(screen.getByLabelText(/what you saw/i)).toHaveValue('still solid');
+  });
+
+  it('never carries a note about one athlete over to the next after a failed save', async () => {
+    withSave(() => jsonResponse({ error: 'Internal server error' }, false, 500));
+    await openReport();
+    await chooseAndSave('footwork', 'exploring', 'note about the first child');
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/athlete id/i), { target: { value: 'ath-2' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /look up/i }));
+    });
+    await screen.findByText('Set a level');
+
+    expect(screen.getByLabelText(/what you saw/i)).toHaveValue('');
+    expect(screen.getByLabelText('Level')).toHaveValue('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('locks the athlete id while a save is in flight', async () => {
+    let finish: (response: Response) => void = () => {};
+    withSave(() => jsonResponse({}));
+    const fetchMock = global.fetch as jest.Mock;
+    const realImpl = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => (init?.method === 'POST'
+      ? new Promise<Response>((resolve) => { finish = resolve; })
+      : realImpl(input, init)));
+    await openReport();
+
+    await chooseAndSave('footwork', 'exploring');
+
+    expect(screen.getByLabelText(/athlete id/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: /look up/i })).toBeDisabled();
+    await act(async () => {
+      finish(jsonResponse({ result: { changed: true }, report: report() }));
+    });
+    expect(screen.getByLabelText(/athlete id/i)).not.toBeDisabled();
+  });
+
+  it('clears the saved message when another athlete id is typed', async () => {
+    withSave(() => jsonResponse({ result: { changed: true }, report: report() }));
+    await openReport();
+    await chooseAndSave('footwork', 'exploring');
+    expect(await screen.findByText('Saved. The rooms below are updated.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/athlete id/i), { target: { value: 'ath-2' } });
+
+    expect(screen.queryByText('Saved. The rooms below are updated.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Set a level')).not.toBeInTheDocument();
   });
 });
