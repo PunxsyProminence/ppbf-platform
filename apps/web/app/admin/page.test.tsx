@@ -387,6 +387,27 @@ it('hides the compliance center from a platform owner and keeps it for a gym adm
   expect(screen.getAllByRole('link', { name: /compliance/i }).length).toBeGreaterThan(0);
 });
 
+// R2-F-004: /admin/organizations admits the platform owner only, so an
+// organization admin shown either provisioning link was sent to a refusal.
+it.each(['organization_admin', 'admin'] as const)(
+  'shows %s no link to organization provisioning',
+  async (role) => {
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+    await renderPage(fetchMock, role);
+    const provisioning = screen
+      .queryAllByRole('link')
+      .filter((link) => link.getAttribute('href') === '/admin/organizations');
+    expect(provisioning).toHaveLength(0);
+  },
+);
+
+it('keeps the organization provisioning link for a platform owner', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'platform_owner');
+  expect(screen.getByRole('link', { name: /organization provisioning/i }).getAttribute('href'))
+    .toBe('/admin/organizations');
+});
+
 /**
  * THE SESSION LOG IS AN OFFICE RECORD, IN AN OFFICE HAND.
  *

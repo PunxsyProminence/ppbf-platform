@@ -156,6 +156,15 @@ describe('visibleDoors', () => {
     expect(hrefs).not.toContain('/guardian');
   });
 
+  // R2-F-004: the Organizations page gate admits platform_owner only, so the
+  // door is advertised to that role alone ('admin' covers organization_admin).
+  it('shows the Organizations door to the platform owner and no one else', () => {
+    expect(visibleDoors('platform_owner').map((d) => d.href)).toContain('/admin/organizations');
+    for (const role of ['admin', 'coach', 'athlete', 'parent', 'staff', 'volunteer', 'board'] as const) {
+      expect(visibleDoors(role).map((d) => d.href)).not.toContain('/admin/organizations');
+    }
+  });
+
   it('gives the board its seats and not the admin console', () => {
     const hrefs = visibleDoors('board').map((d) => d.href);
     expect(hrefs).toContain('/board');

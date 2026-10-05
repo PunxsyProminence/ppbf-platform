@@ -189,7 +189,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ADMIN_GATE,
     keywords: 'photos photographs wall pictures upload building frames banners boards chalk customization appearance',
     hint: 'Photographs, boards, and notices — the gym’s look and voice, one desk.' },
-  { href: '/admin/organizations', label: 'Organizations', room: 'office', roles: ADMIN_GATE,
+  { href: '/admin/organizations', label: 'Organizations', room: 'office', roles: ['platform_owner'],
     keywords: 'orgs tenants gyms affiliates' },
   { href: '/admin/grants', label: 'Grant Obligations', room: 'office', roles: ['admin'],
     keywords: 'grants funder deadlines reports deliverables renewals filings compliance obligations',

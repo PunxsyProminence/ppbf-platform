@@ -521,6 +521,10 @@ export default function AdminCapabilitiesPage() {
   // organization-scoped and refuses a platform owner, so the entry point would
   // only lead to a 403.
   const canOpenComplianceCenter = isOrganizationAdminSessionRole(pilotSession.role);
+  // /admin/organizations admits the platform owner only (its page gate checks
+  // role === 'platform_owner'), so an organization admin who follows either
+  // provisioning link lands on a refusal. Show the links only where they open.
+  const canProvisionOrganizations = pilotSession.role === 'platform_owner';
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
   const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
@@ -1322,12 +1326,14 @@ export default function AdminCapabilitiesPage() {
                   <span className="stamp stamp--brass stamp--flat">Planned</span>
                 </Link>
               )}
-              <Link
-                href="/admin/organizations"
-                className="btn btn--ghost"
-              >
-                ORGANIZATION PROVISIONING
-              </Link>
+              {canProvisionOrganizations && (
+                <Link
+                  href="/admin/organizations"
+                  className="btn btn--ghost"
+                >
+                  ORGANIZATION PROVISIONING
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={exportCapabilities}
@@ -1536,12 +1542,14 @@ export default function AdminCapabilitiesPage() {
                       Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
                     </p>
                   </div>
-                  <Link
-                    href="/admin/organizations"
-                    className="btn btn--ghost"
-                  >
-                    Open Gym Admin Provisioning
-                  </Link>
+                  {canProvisionOrganizations && (
+                    <Link
+                      href="/admin/organizations"
+                      className="btn btn--ghost"
+                    >
+                      Open Gym Admin Provisioning
+                    </Link>
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
