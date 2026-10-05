@@ -379,26 +379,46 @@ describe('scheduler: a deleted athlete cannot act on their own record', () => {
     { action: 'attendance_checkin', class_id: seededClassId, status: 'present' },
   ];
 
-  test('register, request coaching and check in are each refused with 403', async () => {
-    const outcomes: Array<{ action: string; status: number }> = [];
+  test('register, request coaching and check in are each refused at the live-row check, and nothing is written', async () => {
+    const snapshot = async () =>
+      (
+        await activeClient!.query(
+          `select
+             (select count(*) from pilot.scheduler_registrations
+               where organization_id = $1 and athlete_id = $2)::text as registrations,
+             (select count(*) from pilot.scheduler_coaching_requests
+               where organization_id = $1 and athlete_id = $2)::text as requests,
+             (select json_agg(a order by a.attendance_id) from pilot.scheduler_attendance a
+               where a.organization_id = $1 and a.athlete_id = $2)::text as attendance`,
+          [ORG_ID, DELETED_ATHLETE],
+        )
+      ).rows[0];
+    const before = await snapshot();
+    // The seeded rows are there, so "unchanged" below is not "never written".
+    expect({ registrations: before.registrations, requests: before.requests }).toEqual({
+      registrations: '1',
+      requests: '1',
+    });
+    expect(before.attendance).not.toBeNull();
+
+    const outcomes: Array<{ action: string; status: number; error: unknown }> = [];
     for (const body of actions(() => openClassId)) {
       const response = await schedulerPost(athletePrincipal(DELETED_ATHLETE), body);
-      outcomes.push({ action: body.action, status: response.status });
+      outcomes.push({ action: body.action, status: response.status, error: (await response.json()).error });
     }
-    expect(outcomes).toEqual(actions(() => openClassId).map((body) => ({ action: body.action, status: 403 })));
-  });
-
-  test('nothing was written for the deleted athlete by those refused calls', async () => {
-    const counts = await activeClient!.query<{ registrations: string; requests: string }>(
-      `select
-         (select count(*) from pilot.scheduler_registrations
-           where organization_id = $1 and athlete_id = $2 and class_id = $3)::text as registrations,
-         (select count(*) from pilot.scheduler_coaching_requests
-           where organization_id = $1 and athlete_id = $2)::text as requests`,
-      [ORG_ID, DELETED_ATHLETE, openClassId],
+    // The message pins WHICH check refused: the live-row read, not the id
+    // match or a missing registration.
+    expect(outcomes).toEqual(
+      actions(() => openClassId).map((body) => ({
+        action: body.action,
+        status: 403,
+        error: 'Forbidden: athlete does not belong to organization',
+      })),
     );
-    // One coaching request is the admin's seeded one; the refused call added none.
-    expect(counts.rows[0]).toEqual({ registrations: '0', requests: '1' });
+
+    // Including the attendance row: the refused check-in targets the seeded
+    // class, where an upsert would overwrite the row without changing a count.
+    expect(await snapshot()).toEqual(before);
   });
 
   test('live control: the live athlete may register, request coaching and check in', async () => {

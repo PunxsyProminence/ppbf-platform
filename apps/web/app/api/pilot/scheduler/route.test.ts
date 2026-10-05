@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import {
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
   athleteIdsForCoach,
 } from '@/src/server/pilot/access';
@@ -271,6 +272,33 @@ describe('POST /api/pilot/scheduler register_class', () => {
 
     expect(res.status).toBe(403);
     expect(recordSafetyGateEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+// The athlete arm's live-row check, pinned here so the PR suite (which does not
+// run the real-database suite) fails if it is removed. What the check reads is
+// pinned against real rows in athleteSelfDeletionMark.pg.test.ts.
+describe('the athlete arm requires the live athlete row', () => {
+  const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+
+  test('an athlete acting on their own record is checked against their own gym', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({ outcome: 'registered', membershipFlags: [] });
+
+    const res = await POST(registerRequest());
+
+    expect(res.status).toBe(200);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+  });
+
+  test('a deleted athlete (no live row) is refused with 403 and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockLiveRow.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+
+    const res = await POST(registerRequest());
+
+    expect(res.status).toBe(403);
+    expect(mockRegister).not.toHaveBeenCalled();
   });
 });
 

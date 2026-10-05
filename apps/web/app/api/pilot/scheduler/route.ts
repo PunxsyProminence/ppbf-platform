@@ -174,9 +174,11 @@ async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): 
     }
     // The id match says whose record it is, not that it is still there. A
     // session that outlived the athlete's deletion carries the same id, and
-    // this arm admitted it on the match alone -- registering, requesting 1:1
-    // coaching and checking in as a deleted athlete. Same live-row rule as
-    // assertActorCanAccessAthlete's athlete arm (OD-2026-09-29-002 item 10).
+    // this arm admitted it on the match alone -- registering for a class and
+    // requesting 1:1 coaching as a deleted athlete. (Check-in was already
+    // refused further down, as "not registered": the registration list drops
+    // a deleted athlete.) Same live-row rule as assertActorCanAccessAthlete's
+    // athlete arm (OD-2026-09-29-002 item 10).
     await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
     return;
   }
