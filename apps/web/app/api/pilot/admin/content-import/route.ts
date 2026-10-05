@@ -132,7 +132,7 @@ async function admit(request: NextRequest) {
  * is listDrillLibrary for the session's organization -- principal.organizationId
  * through admit(), never anything the request names -- so it is the coach
  * browse list: current versions only (active, not superseded). promptDrills()
- * keeps three fields of each row (lineage key, name, primary skill code); the
+ * keeps four fields of each row (lineage key, name, primary skill code, contact_level); the
  * rest of the row, and anything of the session, does not reach the text.
  * Which drill states count as "the gym's list" was settled on 2026-10-03
  * (OD-2026-10-03-002 section 7): the current active library versions, as

@@ -612,6 +612,31 @@ describe('row and group rules', () => {
       expect(contactFindings(result)).toEqual([['session-scripts/seed_session_script_blocks.csv', 3, 'contact_level']]);
     });
 
+    // The same rule from the drill's side, at plan: a drill revision may not
+    // lower contact_level beneath a committed step linking its lineage.
+    it('a drill revised below a committed step that links it is refused, unless the package brings that step too', () => {
+      const committedSteps = new Map([
+        [EXISTING_DRILL, [{ file: 'seed_workout_template_items.csv' as const, parent: EXISTING_TEMPLATE, position: 2, contactLevel: 'light_technical' }]],
+      ]);
+      const atPlan = (inputs: PackageFileInput[]) => validatePackage(inputs, { references: { ...references, committedSteps } });
+      const revisedTo = (level: string) => goodDrillPackage({ drill_id: EXISTING_DRILL, name: 'Touch to Reposition', skill_id: 'SK-FW-04', contact_level: level });
+      const lowered = (result: ValidationResult) =>
+        result.blocking.filter((f) => f.code === 'drill_contact_below_steps').map((f) => [f.file, f.line, f.column]);
+
+      const below = atPlan(revisedTo('none'));
+      expect(lowered(below)).toEqual([['drill-library/seed_drill_library.csv', 2, 'contact_level']]);
+      expect(below.blocking.find((f) => f.code === 'drill_contact_below_steps')?.message).toContain(`${EXISTING_TEMPLATE} / 2 (light_technical)`);
+      expect(lowered(atPlan(revisedTo('light_technical')))).toEqual([]);
+      expect(lowered(atPlan(revisedTo('conditioned')))).toEqual([]);
+      // The package brings the template's steps: they are the package's, and checkReferences judges them.
+      expect(lowered(atPlan([
+        ...revisedTo('none'),
+        input('seed_workout_template_items.csv', [item({ ordinal: '2', drill_id: EXISTING_DRILL })], 'workout-templates'),
+      ]))).toEqual([]);
+      // Offline there is no committed-steps map: prepare re-validates the merged package instead.
+      expect(lowered(run(revisedTo('none')))).toEqual([]);
+    });
+
     it('an unknown drill or an off-ladder step level is its own finding, not this one', () => {
       const result = run([
         input(

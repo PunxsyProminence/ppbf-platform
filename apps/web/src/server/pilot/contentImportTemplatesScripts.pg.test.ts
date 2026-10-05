@@ -620,8 +620,7 @@ describe('workout templates', () => {
   it("an item above its linked drill's contact_level is refused at plan with step_contact_above_drill; at the drill's level it loads", async () => {
     const admin = await createGymWithDisciplines('gym_contact_above');
     const lineage = fixtureDrillId('pad-touch');
-    await insertDrill('gym_contact_above', lineage);
-    await client.query("update pilot.drill_library set contact_level = 'light_technical' where organization_id = 'gym_contact_above' and drill_id = $1", [lineage]);
+    await insertDrill('gym_contact_above', lineage, { contactLevel: 'light_technical' });
 
     const above = await plan('gym_contact_above', admin, templatePackage(
       [templateRow('new:pad-day', { name: 'Pad day' })],

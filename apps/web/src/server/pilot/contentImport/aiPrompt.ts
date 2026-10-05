@@ -17,8 +17,9 @@ import { BOUNDS, VOCABULARIES } from './vocabularies';
 // clearly matches, use words otherwise, and the AI asks when unsure. Your drill
 // names go to the AI you use. No athlete data." The list is handed in by the
 // caller, and only through promptDrills(): per drill its lineage key (what an
-// item's drill_id names, specs/templates.ts), its name and its primary skill
-// code. Nothing else of the library row -- no organization, no account, no
+// item's drill_id names, specs/templates.ts), its name, its primary skill
+// code and its own contact_level (a step may not link it at more contact:
+// step_contact_above_drill, validate.ts). Nothing else of the library row -- no organization, no account, no
 // version id, no coaching text -- can reach the text, because PromptDrill has
 // no field for it. Everything else here is still code constants alone: nothing
 // read from a session or the environment, no organization, account, template
@@ -32,13 +33,15 @@ const TOOL_DECIDED: readonly ColumnSpec['role'][] = ['system', 'placeholder', 'l
 
 export const WORKOUT_PROMPT_DATASET = 'workout-templates';
 
-/** One drill as the prompt shows it. These three fields are all of a drill that leaves the app. */
+/** One drill as the prompt shows it. These four fields are all of a drill that leaves the app. */
 export interface PromptDrill {
   /** The drill's lineage key: the value an item's drill_id names, and the upload checks against the gym's current heads. */
   readonly id: string;
   readonly name: string;
   /** The primary skill code (drill_library.skill_id), or null when the drill has none. */
   readonly skillCode: string | null;
+  /** The drill's own contact_level: the most contact a step linking it may carry (step_contact_above_drill). */
+  readonly contactLevel: string;
 }
 
 /** One line, no separator: a drill's own text can add no line or column to the prompt. \s misses NEL (U+0085). */
@@ -47,17 +50,18 @@ function oneLine(text: string): string {
 }
 
 /**
- * The ONLY way a library row becomes prompt text: lineage key, name and primary
- * skill code are picked by name, so a wider row (listDrillLibrary returns every
+ * The ONLY way a library row becomes prompt text: lineage key, name, primary
+ * skill code and contact_level are picked by name, so a wider row (listDrillLibrary returns every
  * column of drill_library) carries nothing more into the prompt.
  */
 export function promptDrills(
-  rows: readonly { lineage_id: string; name: string; skill_id: string | null }[],
+  rows: readonly { lineage_id: string; name: string; skill_id: string | null; contact_level: string }[],
 ): PromptDrill[] {
   return rows.map((row) => ({
     id: oneLine(row.lineage_id),
     name: oneLine(row.name),
     skillCode: row.skill_id ? oneLine(row.skill_id) : null,
+    contactLevel: oneLine(row.contact_level),
   }));
 }
 
@@ -131,6 +135,9 @@ function drillRules(linking: boolean): string[] {
     '- Any other step: describe it in words in free_text_drill and leave drill_id blank.',
     "- If you are not sure whether a step is one of the gym's drills, or which one, stop and ask me. Do not guess.",
     '  Never write an id that is not on the list.',
+    "- A linked step's contact_level is at most its drill's most contact, as listed. From least to most:",
+    `  ${VOCABULARIES.contact_level.values.join(', ')}. If the document runs a step at more contact than its`,
+    '  drill, do not link it: describe the step in words in free_text_drill and leave drill_id blank.',
   ];
 }
 
@@ -138,8 +145,8 @@ function drillList(drills: readonly PromptDrill[]): string[] {
   if (drills.length === 0) return [];
   return [
     "THE GYM'S DRILLS",
-    'One line per drill: id | name | main skill code.',
-    ...drills.map((drill) => `- ${drill.id} | ${drill.name} | ${drill.skillCode ?? 'none'}`),
+    'One line per drill: id | name | main skill code | most contact.',
+    ...drills.map((drill) => `- ${drill.id} | ${drill.name} | ${drill.skillCode ?? 'none'} | ${drill.contactLevel}`),
     '',
   ];
 }

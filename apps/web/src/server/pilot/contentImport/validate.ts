@@ -732,6 +732,43 @@ function checkReferences(file: ParsedFile, targets: Targets, out: Finding[]): vo
   }
 }
 
+// The same rule as step_contact_above_drill, from the drill's side: a drill
+// revision may not lower contact_level beneath a committed step that links
+// its lineage, or that step ends up above its drill. A step whose template or
+// script the package also carries is the package's (checkReferences judges
+// it), so only the others are compared. At plan only (committedSteps).
+function checkDrillsAgainstCommittedSteps(parsed: ParsedPackage, references: ReferenceSets, out: Finding[]): void {
+  if (!references.committedSteps) return;
+  const parents = new Set<string>();
+  for (const [file, column] of [
+    ['seed_workout_templates.csv', 'template_id'],
+    ['seed_workout_template_items.csv', 'template_id'],
+    ['seed_session_scripts.csv', 'script_id'],
+    ['seed_session_script_blocks.csv', 'script_id'],
+  ] as const) {
+    for (const row of parsed.files.find((f) => f.spec.file === file)?.rows ?? []) if (row.values[column]) parents.add(row.values[column]);
+  }
+  const drillFile = parsed.files.find((f) => f.spec.file === 'seed_drill_library.csv');
+  for (const row of drillFile?.rows ?? []) {
+    const lineage = row.values.drill_id;
+    const level = row.values.contact_level;
+    if (!lineage || isNewId(lineage) || !CONTACT_LADDER.includes(level)) continue;
+    const above = (references.committedSteps.get(lineage) ?? []).filter(
+      (step) => !parents.has(step.parent) && CONTACT_LADDER.indexOf(step.contactLevel) > CONTACT_LADDER.indexOf(level),
+    );
+    if (above.length === 0) continue;
+    const named = above.slice(0, 5).map((step) => `${step.parent} / ${step.position} (${step.contactLevel})`).join(', ');
+    out.push(finding(
+      drillFile!,
+      row,
+      'contact_level',
+      'drill_contact_below_steps',
+      `contact_level ${level} is below ${above.length} committed step${above.length === 1 ? '' : 's'} linking drill '${lineage}': `
+      + `${named}${above.length > 5 ? ', ...' : ''}. Keep the drill's contact_level, or bring those steps in this package at ${level} or less.`,
+    ));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Row and group rules
 
@@ -800,6 +837,7 @@ export function validateParsed(
     checkReferences(file, targets, blocking);
     checkRules(file, context, blocking);
   }
+  checkDrillsAgainstCommittedSteps(parsed, options.references, blocking);
   const minted = mintIds(parsed, options.baseline, blocking);
   const blankKeyIds = resolveBlankKeys(parsed, options.baseline, minted, blocking);
 

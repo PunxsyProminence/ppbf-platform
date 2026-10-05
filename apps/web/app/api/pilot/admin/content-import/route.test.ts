@@ -493,7 +493,7 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
       common_errors: 'ERRORS-TEXT',
       corrections: 'CORRECTIONS-TEXT',
       transfer: 'TRANSFER-TEXT',
-      contact_level: 'CONTACT-LEVEL-TEXT',
+      contact_level: 'light_technical',
       equipment_needed: 'EQUIPMENT-TEXT',
       requires_coach_authorization: false,
       content_class: 'CONTENT-CLASS-TEXT',
@@ -527,16 +527,16 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
-  test('only drill names, lineage ids and skill codes leave: nothing else of the row, the session or an athlete', async () => {
+  test('only drill names, lineage ids, skill codes and contact levels leave: nothing else of the row, the session or an athlete', async () => {
     const row = libraryRow('org-1', 1);
     mockDrills.mockResolvedValue([row]);
     mockPrincipal.mockResolvedValue(principal({ athleteId: 'ath-should-not-appear' }));
 
     const body = await (await get()).json();
     const listed = body.prompt.split('\n').filter((line: string) => line.startsWith('- drl_'));
-    expect(listed).toEqual(['- drl_lineage-org-1-1 | Drill 1 of org-1 | SK-TEST-01']);
+    expect(listed).toEqual(['- drl_lineage-org-1-1 | Drill 1 of org-1 | SK-TEST-01 | light_technical']);
 
-    const leaves = new Set(['lineage_id', 'name', 'skill_id']);
+    const leaves = new Set(['lineage_id', 'name', 'skill_id', 'contact_level']);
     for (const [column, value] of Object.entries(row)) {
       if (leaves.has(column)) continue;
       for (const part of (Array.isArray(value) ? value : [value]).map(String)) {
@@ -560,7 +560,7 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
 
     expect(response.status).toBe(200);
     expect(mockDrills.mock.calls).toEqual([['org-2']]);
-    expect(body.prompt).toContain('- drl_lineage-org-2-1 | Drill 1 of org-2 | SK-TEST-01');
+    expect(body.prompt).toContain('- drl_lineage-org-2-1 | Drill 1 of org-2 | SK-TEST-01 | light_technical');
     expect(body.prompt).not.toContain('org-1');
   });
 
