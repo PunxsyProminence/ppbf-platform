@@ -99,6 +99,7 @@ import { GET as floorPlansGET, PATCH as floorPlansPATCH, POST as floorPlansPOST 
 import { GET as trainingHoldsGET, POST as trainingHoldsPOST } from '@/app/api/pilot/training-holds/route';
 import { GET as videoListGET } from '@/app/api/pilot/video/list/route';
 
+import { checkIn } from './athleteCheckIns';
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
 
@@ -422,6 +423,14 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
       body_mass_unit: 'kg',
     });
     expect(outcome(result)).toEqual(REFUSED);
+    expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  test('checkIn itself, below the route, takes no check-in for a deleted athlete', async () => {
+    // The route refuses first; this pins the writer's own lookup, so a second
+    // caller of checkIn cannot write for a deleted athlete either.
+    const before = await snapshot(DELETED_ATHLETE);
+    expect(await checkIn({ organizationId: ORG_ID, athleteId: DELETED_ATHLETE, energy: 3 })).toBeNull();
     expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
   });
 
