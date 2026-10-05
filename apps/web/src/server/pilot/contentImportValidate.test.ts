@@ -489,7 +489,8 @@ describe('row and group rules', () => {
         'seed_workout_template_items.csv',
         [
           item({ ordinal: '1', drill_id: EXISTING_DRILL, free_text_drill: 'Shadow box' }),
-          item({ ordinal: '2', drill_id: EXISTING_DRILL, contact_level: 'controlled_sparring', duration_minutes: '6' }),
+          // In words: a linked drill below sparring would also be step_contact_above_drill.
+          item({ ordinal: '2', free_text_drill: 'Controlled sparring', contact_level: 'controlled_sparring', duration_minutes: '6' }),
         ],
         'workout-templates',
       ),
@@ -521,6 +522,140 @@ describe('row and group rules', () => {
     expect(result.blocking.map((f) => [f.code, f.line, f.column])).toEqual([['withdrawn_drill', 3, 'drill_id']]);
     expect(result.blocking[0].message).toContain('withdrawn');
     expect(result.blocking[0].message).toContain('free_text_drill');
+  });
+
+  // PR #1208's design (Build List row from PR #1114's reviewer): a step that
+  // LINKS a drill may not run it at more contact than the drill's own
+  // contact_level, on the one ladder none < light_technical < conditioned <
+  // controlled_sparring < open_sparring. EXISTING_DRILL is light_technical.
+  describe('step_contact_above_drill', () => {
+    const item = (overrides: Record<string, string>) => ({ template_id: EXISTING_TEMPLATE, block: 'technical', ...overrides });
+    const contactFindings = (result: ValidationResult) =>
+      result.blocking.filter((f) => f.code === 'step_contact_above_drill').map((f) => [f.file, f.line, f.column]);
+
+    it('a template step above its linked committed drill is refused; at, below and blank are not', () => {
+      const result = run([
+        input(
+          'seed_workout_template_items.csv',
+          [
+            item({ ordinal: '1', drill_id: EXISTING_DRILL, contact_level: 'light_technical' }),
+            item({ ordinal: '2', drill_id: EXISTING_DRILL, contact_level: 'none' }),
+            item({ ordinal: '3', drill_id: EXISTING_DRILL }),
+            item({ ordinal: '4', drill_id: EXISTING_DRILL, contact_level: 'conditioned' }),
+            item({ ordinal: '5', drill_id: EXISTING_DRILL, contact_level: 'open_sparring' }),
+          ],
+          'workout-templates',
+        ),
+      ]);
+      expect(contactFindings(result)).toEqual([
+        ['workout-templates/seed_workout_template_items.csv', 5, 'contact_level'],
+        ['workout-templates/seed_workout_template_items.csv', 6, 'contact_level'],
+      ]);
+      // Only the new rule fires: no volume is set, so the sparring row rule is quiet.
+      expect(codes(result)).toEqual(['step_contact_above_drill', 'step_contact_above_drill']);
+      expect(result.blocking[0].message).toContain('conditioned');
+      expect(result.blocking[0].message).toContain('light_technical');
+      expect(result.blocking[0].message).toContain('free_text_drill');
+    });
+
+    it('a step written in words is never compared', () => {
+      const result = run([
+        input('seed_workout_template_items.csv', [item({ ordinal: '1', free_text_drill: 'Open sparring', contact_level: 'open_sparring' })], 'workout-templates'),
+      ]);
+      expect(result.blocking).toEqual([]);
+    });
+
+    it("a drill in the package is judged by its own row, not the committed one", () => {
+      // The package revises EXISTING_DRILL up to controlled_sparring: a
+      // controlled_sparring step now links it. And a new drill at none
+      // refuses a light_technical step.
+      const revised = drill({ drill_id: EXISTING_DRILL, name: 'Touch to Reposition', skill_id: 'SK-FW-04', contact_level: 'controlled_sparring' });
+      const result = run([
+        input('seed_drill_library.csv', [revised, drill({ contact_level: 'none' })]),
+        input('seed_drill_scale_levels.csv', [
+          scale(EXISTING_DRILL, 'A', false), scale(EXISTING_DRILL, 'B', true), scale(EXISTING_DRILL, 'C', false),
+          scale('new:mirror-jab', 'A', false), scale('new:mirror-jab', 'B', true), scale('new:mirror-jab', 'C', false),
+        ]),
+        input('seed_drill_stop_rules.csv', [stop(EXISTING_DRILL, '1'), stop('new:mirror-jab', '1')]),
+        input(
+          'seed_workout_template_items.csv',
+          [
+            item({ ordinal: '1', drill_id: EXISTING_DRILL, contact_level: 'controlled_sparring' }),
+            item({ ordinal: '2', drill_id: 'new:mirror-jab', contact_level: 'light_technical' }),
+          ],
+          'workout-templates',
+        ),
+      ]);
+      expect(contactFindings(result)).toEqual([['workout-templates/seed_workout_template_items.csv', 3, 'contact_level']]);
+    });
+
+    it('a script block above its linked drill is refused the same way', () => {
+      const script = MINT.script('boxing', 'Footwork Night');
+      const block = (overrides: Record<string, string>) => ({
+        script_id: script,
+        start_offset_min: '0',
+        end_offset_min: '10',
+        block_label: 'Footwork',
+        drill_id: EXISTING_DRILL,
+        ...overrides,
+      });
+      const result = validatePackage(
+        [
+          input(
+            'seed_session_script_blocks.csv',
+            [block({ block_order: '1', contact_level: 'light_technical' }), block({ block_order: '2', contact_level: 'controlled_sparring' })],
+            'session-scripts',
+          ),
+        ],
+        { references: { ...references, scripts: new Set([script]) } },
+      );
+      expect(contactFindings(result)).toEqual([['session-scripts/seed_session_script_blocks.csv', 3, 'contact_level']]);
+    });
+
+    // The same rule from the drill's side, at plan: a drill revision may not
+    // lower contact_level beneath a committed step linking its lineage.
+    it('a drill revised below a committed step that links it is refused, unless the package brings that step too', () => {
+      const committedSteps = new Map([
+        [EXISTING_DRILL, [{ file: 'seed_workout_template_items.csv' as const, parent: EXISTING_TEMPLATE, position: 2, contactLevel: 'light_technical' }]],
+      ]);
+      const atPlan = (inputs: PackageFileInput[]) => validatePackage(inputs, { references: { ...references, committedSteps } });
+      const revisedTo = (level: string) => goodDrillPackage({ drill_id: EXISTING_DRILL, name: 'Touch to Reposition', skill_id: 'SK-FW-04', contact_level: level });
+      const lowered = (result: ValidationResult) =>
+        result.blocking.filter((f) => f.code === 'drill_contact_below_steps').map((f) => [f.file, f.line, f.column]);
+
+      const below = atPlan(revisedTo('none'));
+      expect(lowered(below)).toEqual([['drill-library/seed_drill_library.csv', 2, 'contact_level']]);
+      expect(below.blocking.find((f) => f.code === 'drill_contact_below_steps')?.message).toContain(`${EXISTING_TEMPLATE} / 2 (light_technical)`);
+      expect(lowered(atPlan(revisedTo('light_technical')))).toEqual([]);
+      expect(lowered(atPlan(revisedTo('conditioned')))).toEqual([]);
+      // The package brings the template's steps: they are the package's, and checkReferences judges them.
+      expect(lowered(atPlan([
+        ...revisedTo('none'),
+        input('seed_workout_template_items.csv', [item({ ordinal: '2', drill_id: EXISTING_DRILL })], 'workout-templates'),
+      ]))).toEqual([]);
+      // Its root row alone does not: the template keeps its committed steps and carries them to the lowered head.
+      const rootOnly = { template_id: EXISTING_TEMPLATE, name: 'Beginner Footwork', discipline: 'boxing' };
+      expect(lowered(atPlan([...revisedTo('none'), input('seed_workout_templates.csv', [rootOnly], 'workout-templates')]))).toEqual([
+        ['drill-library/seed_drill_library.csv', 2, 'contact_level'],
+      ]);
+      // Offline there is no committed-steps map: prepare re-validates the merged package instead.
+      expect(lowered(run(revisedTo('none')))).toEqual([]);
+    });
+
+    it('an unknown drill or an off-ladder step level is its own finding, not this one', () => {
+      const result = run([
+        input(
+          'seed_workout_template_items.csv',
+          [
+            item({ ordinal: '1', drill_id: MINT.drill('boxing', 'Nobody Wrote This'), contact_level: 'open_sparring' }),
+            item({ ordinal: '2', drill_id: EXISTING_DRILL, contact_level: 'full_contact' }),
+          ],
+          'workout-templates',
+        ),
+      ]);
+      expect(codes(result)).not.toContain('step_contact_above_drill');
+      expect(codes(result)).toEqual(expect.arrayContaining(['orphan_reference', 'unknown_value']));
+    });
   });
 
   it('secondary skills: never the primary again, and an expected primary must match', () => {

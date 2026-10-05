@@ -220,14 +220,33 @@ function fixtureDrillId(label: string): string {
 }
 
 /** v1 of a drill lineage, by SQL: the drill id IS the lineage key. */
-async function insertDrill(organizationId: string, drillId: string, options: { lineageId?: string; version?: number; supersedes?: string; name?: string } = {}) {
+async function insertDrill(
+  organizationId: string,
+  drillId: string,
+  options: { lineageId?: string; version?: number; supersedes?: string; name?: string; contactLevel?: string } = {},
+) {
   await client.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, version, supersedes_drill_id, name,
-        category, target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like)
-     values ($1,$2,$3,$4,$5,$6,'footwork','t','p','s','e','g','b')`,
-    [organizationId, drillId, options.lineageId ?? drillId, options.version ?? 1, options.supersedes ?? null, options.name ?? drillId],
+        category, target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level)
+     values ($1,$2,$3,$4,$5,$6,'footwork','t','p','s','e','g','b',$7)`,
+    [organizationId, drillId, options.lineageId ?? drillId, options.version ?? 1, options.supersedes ?? null, options.name ?? drillId, options.contactLevel ?? 'none'],
   );
+}
+
+/**
+ * The committed drill's own contact_level (seed_drill_library.csv). A step
+ * may not link a drill above it (step_contact_above_drill), so a gym holding
+ * the committed steps needs their drills at their committed levels, as the
+ * old drill loader stored them (src/testing/legacyLoaderGoldenData).
+ */
+function committedDrillContact(drillId: string): string {
+  const table = readCsv(committedText('drill-library/seed_drill_library.csv'));
+  const id = table.header.indexOf('drill_id');
+  const contact = table.header.indexOf('contact_level');
+  const record = table.records.find((row) => row.cells[id] === drillId);
+  if (!record) throw new Error(`no committed drill ${drillId}`);
+  return record.cells[contact] || 'none';
 }
 
 /**
@@ -411,7 +430,7 @@ describe('the rows the OLD loaders wrote, as production holds them', () => {
     const admin = await createGym(organizationId);
     const target = { organizationId, accountId: admin };
     await insertLegacyGoldenRows(client, ['pilot.disciplines'], target);
-    for (const drillId of oldDrillIds()) await insertDrill(organizationId, drillId);
+    for (const drillId of oldDrillIds()) await insertDrill(organizationId, drillId, { contactLevel: committedDrillContact(drillId) });
     if (withOldRows) await insertLegacyGoldenRows(client, OLD_TABLES, target);
     return admin;
   }
@@ -504,7 +523,7 @@ describe('the committed templates and scripts', () => {
     // load see the item as new), and a second load plans nothing. Reading the
     // OLD loaders' stored forms is the describe block above.
     const admin = await createGymWithDisciplines('gym_engine_first');
-    for (const drillId of committedDrillIds()) await insertDrill('gym_engine_first', drillId);
+    for (const drillId of committedDrillIds()) await insertDrill('gym_engine_first', drillId, { contactLevel: committedDrillContact(drillId) });
     const result = await applyCommitted('gym_engine_first', admin, committedFiles());
     const templates = committedIds(TEMPLATES_CSV, 'template_id');
     const scripts = committedIds(SCRIPTS_CSV, 'script_id');
@@ -593,6 +612,45 @@ describe('workout templates', () => {
     ));
     expect(inWords.plan.blocking).toEqual([]);
     expect(inWords.written['workout-templates']).toEqual({ inserted: [MINT.template('Pivot day')], updated: [], ledgerRows: 0 });
+  });
+
+  // PR #1208's design: at plan the drill's own contact_level is read from
+  // pilot.drill_library (lineage.ts), and a step linking it at more contact
+  // is refused. The same step at the drill's level loads.
+  it("an item above its linked drill's contact_level is refused at plan with step_contact_above_drill; at the drill's level it loads", async () => {
+    const admin = await createGymWithDisciplines('gym_contact_above');
+    const lineage = fixtureDrillId('pad-touch');
+    await insertDrill('gym_contact_above', lineage, { contactLevel: 'light_technical' });
+
+    const above = await plan('gym_contact_above', admin, templatePackage(
+      [templateRow('new:pad-day', { name: 'Pad day' })],
+      [itemRow('new:pad-day', 1, lineage, { contact_level: 'controlled_sparring', duration_minutes: '' })],
+    ));
+    expect(above.blocking.map((finding) => [finding.code, finding.file, finding.line, finding.column])).toEqual([
+      ['step_contact_above_drill', ITEMS_CSV, 2, 'contact_level'],
+    ]);
+
+    const atLevel = await applyCommitted('gym_contact_above', admin, templatePackage(
+      [templateRow('new:pad-day', { name: 'Pad day' })],
+      [itemRow('new:pad-day', 1, lineage, { contact_level: 'light_technical' })],
+    ));
+    expect(atLevel.plan.blocking).toEqual([]);
+    expect(atLevel.written['workout-templates']).toEqual({ inserted: [MINT.template('Pad day')], updated: [], ledgerRows: 0 });
+  });
+
+  it("a script block above its linked drill's contact_level is refused at plan", async () => {
+    const admin = await createGymWithDisciplines('gym_contact_above_block');
+    const lineage = fixtureDrillId('mirror-step');
+    await insertDrill('gym_contact_above_block', lineage);
+
+    const above = await plan('gym_contact_above_block', admin, scriptPackage(
+      [scriptRow('new:mirror-night')],
+      [blockRow('new:mirror-night', 1, { drill_id: lineage, contact_level: 'light_technical' })],
+      [],
+    ));
+    expect(above.blocking.map((finding) => [finding.code, finding.file, finding.line, finding.column])).toEqual([
+      ['step_contact_above_drill', BLOCKS_CSV, 2, 'contact_level'],
+    ]);
   });
 
   it('a changed template creates v2 (active) and supersedes v1 (active=false, superseded_at); v1 keeps its items', async () => {

@@ -874,6 +874,33 @@ describe('a revised drill becomes a new version', () => {
   });
 });
 
+// step_contact_above_drill from the drill's side (PR #1208's rule; overwatch
+// 2026-10-05): a drill revision may not lower contact_level beneath a committed
+// template item that links its lineage. The committed templates link committed
+// drills at or below their own level, so one at exactly its drill's level is
+// the case.
+describe("a drill revision cannot lower contact_level beneath a committed step", () => {
+  it('refused at plan with drill_contact_below_steps, naming the step; the unchanged package plans clean', async () => {
+    const admin = await prepareGym('gym_lowered_drill');
+    await applyCommitted('gym_lowered_drill', admin, drillFiles());
+    const templateFiles = readDatasetFiles(SEED_DATA_DIR, ['workout-templates']);
+    await applyCommitted('gym_lowered_drill', admin, templateFiles);
+
+    const items = rowsOf(templateFiles, 'workout-templates/seed_workout_template_items.csv');
+    const step = items.find((row) => row.drill_id && row.contact_level === 'light_technical' && COMMITTED.byId.get(row.drill_id)?.contact_level === 'light_technical');
+    if (!step) throw new Error('no committed item at its drill\'s light_technical level');
+
+    const clean = await plan('gym_lowered_drill', admin, drillFiles());
+    expect(clean.blocking.filter((finding) => finding.code === 'drill_contact_below_steps')).toEqual([]);
+
+    const lowered = await plan('gym_lowered_drill', admin, withEdit(drillFiles(), LIBRARY_CSV, (row) =>
+      (row.drill_id === step.drill_id ? { ...row, contact_level: 'none' } : row)));
+    const found = lowered.blocking.filter((finding) => finding.code === 'drill_contact_below_steps');
+    expect(found.map((finding) => [finding.file, finding.column])).toEqual([[LIBRARY_CSV, 'contact_level']]);
+    expect(found[0].message).toContain(`${step.template_id} / ${Number(step.ordinal)} (light_technical)`);
+  });
+});
+
 describe('a new:<short-name> never lands on a drill the gym already has', () => {
   it("one that mints a WITHDRAWN drill's id is refused, not planned as a revision that lands withdrawn", async () => {
     // The validator judges minted ids against readBaseline, which holds ACTIVE

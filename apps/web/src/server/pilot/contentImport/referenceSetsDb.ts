@@ -7,7 +7,7 @@ import {
   templateLineageHeads,
 } from './lineage';
 import { skillCodesFromSkillFamilies } from './referenceSets';
-import type { ReferenceSets } from './types';
+import type { CommittedStep, ReferenceSets } from './types';
 
 // WHAT A PACKAGE IS CHECKED AGAINST WHEN THERE IS A DATABASE: the same
 // ReferenceSets the offline validator builds from committed files
@@ -31,6 +31,10 @@ import type { ReferenceSets } from './types';
 //   drills, templates, scripts    lineage keys of the CURRENT versions
 //                (lineage.ts), because a package names a lineage.
 //   blocks       block ids of each script's current version.
+//   committedSteps   the items of each current template and the blocks of
+//                each current script that link a drill, by that drill's
+//                LINEAGE (a step stores a drill version id; any version of
+//                the lineage counts). drill_contact_below_steps reads them.
 
 export async function loadDatabaseReferenceSets(client: DbClient, organizationId: string): Promise<ReferenceSets> {
   const claims = await client.query<{ claim_id: string }>(
@@ -52,6 +56,32 @@ export async function loadDatabaseReferenceSets(client: DbClient, organizationId
   const templates = await templateLineageHeads(client, organizationId);
   const scripts = await sessionScriptLineageHeads(client, organizationId);
   const blocks = await currentScriptBlockIds(client, organizationId);
+  const steps = await client.query<{ lineage_id: string; file: CommittedStep['file']; parent: string; position: number; contact_level: string }>(
+    `select d.lineage_id, 'seed_workout_template_items.csv' as file, t.lineage_id as parent, i.ordinal as position, i.contact_level
+       from pilot.workout_template_items i
+       join pilot.workout_templates t on t.organization_id = i.organization_id and t.template_id = i.template_id and t.superseded_at is null
+       join pilot.drill_library d on d.organization_id = i.organization_id and d.drill_id = i.drill_id
+      where i.organization_id = $1
+     union all
+     select d.lineage_id, 'seed_session_script_blocks.csv', s.lineage_id, b.block_order, b.contact_level
+       from pilot.session_script_blocks b
+       join (
+         select distinct on (lineage_id) script_id, lineage_id
+           from pilot.session_scripts
+          where organization_id = $1
+          order by lineage_id, version desc
+       ) s on s.script_id = b.script_id
+       join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
+      where b.organization_id = $1
+      order by 1, 2, 3, 4`,
+    [organizationId],
+  );
+  const committedSteps = new Map<string, CommittedStep[]>();
+  for (const row of steps.rows) {
+    const list = committedSteps.get(row.lineage_id) ?? [];
+    list.push({ file: row.file, parent: row.parent, position: Number(row.position), contactLevel: row.contact_level });
+    committedSteps.set(row.lineage_id, list);
+  }
 
   return {
     claimIds: new Set(claims.rows.map((row) => row.claim_id)),
@@ -67,5 +97,6 @@ export async function loadDatabaseReferenceSets(client: DbClient, organizationId
     templates: new Set(templates.keys()),
     scripts: new Set(scripts.keys()),
     blocks,
+    committedSteps,
   };
 }

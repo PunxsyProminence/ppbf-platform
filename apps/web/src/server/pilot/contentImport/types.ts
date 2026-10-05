@@ -204,6 +204,8 @@ export type FindingCode =
   | 'duplicate_value'
   | 'orphan_reference'
   | 'withdrawn_drill'
+  | 'step_contact_above_drill'
+  | 'drill_contact_below_steps'
   | 'minted_id_exists'
   | 'literal_organization'
   | 'literal_account'
@@ -261,4 +263,23 @@ export interface ReferenceSets {
   templates: ReadonlySet<string>;
   scripts: ReadonlySet<string>;
   blocks: ReadonlySet<string>;
+  /**
+   * Drill lineage -> the committed steps that link it: items of each current
+   * template, blocks of each current script (drill_contact_below_steps).
+   * Only the plan stage reads them (referenceSetsDb.ts). Offline there is no
+   * map: prepare re-validates the whole merged package (prepare.ts), so a
+   * lowered drill meets its committed steps there as package rows.
+   */
+  committedSteps?: ReadonlyMap<string, readonly CommittedStep[]>;
+}
+
+/** A committed step that links a drill, as drill_contact_below_steps compares it. */
+export interface CommittedStep {
+  /** The package file a revision of this step would arrive in. */
+  file: 'seed_workout_template_items.csv' | 'seed_session_script_blocks.csv';
+  /** The template's or script's lineage key: a package carrying it brings its own steps. */
+  parent: string;
+  /** Ordinal or block_order within the parent. */
+  position: number;
+  contactLevel: string;
 }
