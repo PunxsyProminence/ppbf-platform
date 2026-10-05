@@ -9,7 +9,7 @@ import { ConflictError } from './errors';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
 // two later stops matching the other.
-import { MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
+import { lockGuardianLink, MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
 import { createVolunteer } from './volunteers';
 
 // Roles that can be provisioned as a Microsoft-authenticated account through
@@ -979,22 +979,15 @@ export async function removeGuardianLink(params: {
      * row and the sweep waits (and afterwards finds no link, because the
      * unlink was decided before the withdrawal existed).
      *
-     * WHAT IT DOES NOT CLOSE, stated rather than papered over: the withdrawal
-     * INSERT itself takes no lock -- withdrawMediaConsent is a bare autocommit
-     * insert into pilot.waivers and the sweep runs only afterwards, in its own
-     * transaction -- so an insert committing between the read below and the
-     * DELETE is still lost. That window now contains no other round trip of
-     * ours, but it is not zero. Closing it needs the WRITE path to take this
-     * same guardian_links lock before its insert, which changes the
-     * concurrency of the most safety-critical write in this domain and is
-     * proposed on the review thread rather than taken unilaterally here.
+     * THE WRITE SIDE TAKES IT TOO (owner decision D-2): withdrawMediaConsent
+     * locks this same row FOR UPDATE before inserting its waiver, in one
+     * transaction (guardianConsent.ts writeMediaConsentUnderLock). So a
+     * withdrawal either commits before this lock is granted, and the read
+     * below sees it and refuses, or waits until this unlink has committed.
+     * No insert can land between the read and the DELETE. This comment said
+     * otherwise until the write path took the lock.
      */
-    await client.query(
-      `select 1 from pilot.guardian_links
-        where organization_id = $1 and parent_id = $2 and athlete_id = $3
-        for update`,
-      [organizationId, target.parent_id, athleteId],
-    );
+    await lockGuardianLink(client, organizationId, target.parent_id, athleteId);
 
     /*
      * A withdrawal is a standing NO, and this DELETE is the one action that

@@ -14,6 +14,131 @@ export interface QueryExecutor {
   query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
+/*
+ * THE ONE LOCK ORDER FOR pilot.guardian_links: (organization_id, athlete_id,
+ * parent_id), compared byte-wise (COLLATE "C"). Every consent reader and
+ * writer, and the retention purge, locks these rows through the functions
+ * below and nowhere else (guardianLinkLockOrderSource.test.ts fails on a raw
+ * lock anywhere else; the purge script, which cannot import this file, holds
+ * the one sanctioned copy of lockGuardianLinksForPurge's statement).
+ *
+ * WHY. The sweep (publication.ts suppressPublishedMediaForAthlete) takes FOR
+ * UPDATE on every guardian of an athlete while the publish, Film Study and
+ * playback readers take FOR SHARE on the same set, and the purge deletes (so
+ * locks) one guardian's links across several athletes. Two transactions that
+ * lock an overlapping set in different orders can each end up holding a row
+ * the other is waiting for: a deadlock, and Postgres kills one of them. ORDER
+ * BY under FOR SHARE/UPDATE locks rows in the sorted order (the lock is taken
+ * above the sort), so the order is stated rather than left to the planner.
+ *
+ * COLLATE "C" so the order does not depend on the database's locale, and so a
+ * caller that orders athletes in JavaScript (a plain sort, which compares
+ * UTF-16 code units, the same as byte order for ASCII ids) agrees with it.
+ *
+ * A caller that needs several athletes takes them in ONE pass
+ * (lockGuardianLinksForAthletes) or, one athlete at a time, in ascending
+ * athlete_id order. Either way its acquisitions follow the order above.
+ *
+ * THE ORDER HOLDS WITHIN ONE SNAPSHOT. A transaction that takes the set lock
+ * twice for the same athlete gets a fresh snapshot the second time, and a
+ * guardian link committed in between can sit ahead of rows it already holds.
+ * Lock an athlete's set once per transaction where you can. (Film Study still
+ * reads twice per athlete; the window needs a link inserted mid-transaction
+ * while a sweep runs, and the worst case is one transaction aborted with
+ * 40P01, never a consent read that passes.)
+ *
+ * The one-row lock takes a single row. Its callers take no other
+ * guardian_links lock in the same transaction, which is what keeps it out of
+ * a cycle; it lives here so there is one place to look.
+ */
+export type GuardianLinkLockMode = 'share' | 'update';
+
+export async function lockGuardianLinksForAthlete(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteId: string,
+  mode: GuardianLinkLockMode,
+): Promise<string[]> {
+  const result = await client.query<{ parent_id: string }>(
+    `select parent_id from pilot.guardian_links
+     where organization_id = $1 and athlete_id = $2
+     order by parent_id collate "C"
+     for ${mode === 'update' ? 'update' : 'share'}`,
+    [organizationId, athleteId],
+  );
+  return result.rows.map((row) => row.parent_id);
+}
+
+/** Several athletes of one organization, in one pass, in the shared order; returns the rows in the order locked. */
+export async function lockGuardianLinksForAthletes(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteIds: readonly string[],
+  mode: GuardianLinkLockMode,
+): Promise<Array<{ athlete_id: string; parent_id: string }>> {
+  if (athleteIds.length === 0) return [];
+  const result = await client.query<{ athlete_id: string; parent_id: string }>(
+    `select athlete_id, parent_id from pilot.guardian_links
+     where organization_id = $1 and athlete_id = any($2::text[])
+     order by athlete_id collate "C", parent_id collate "C"
+     for ${mode === 'update' ? 'update' : 'share'}`,
+    [organizationId, [...athleteIds]],
+  );
+  return result.rows;
+}
+
+/*
+ * THE RETENTION PURGE'S LOCK, taken before it deletes anything: every link of
+ * an athlete it may purge and every link of a guardian record it may purge, in
+ * the shared order. Guardian records come in as (organization_id, parent_id)
+ * keys the caller resolved from the expired accounts, so this statement
+ * carries no account predicate (guardianAccess.test.ts treats one beside
+ * guardian_links as a viewer-scoped join). The deletes that follow (an athlete or a
+ * pilot.parents row, cascading to guardian_links) then touch only rows this
+ * transaction already holds, instead of locking them one cascade at a time in
+ * whatever order the candidates were listed. Rows locked for a candidate the
+ * purge then skips are released at commit or rollback; locking deletes nothing.
+ *
+ * scripts/pilot-cleanup-deleted-data.mjs carries the same statement (it cannot
+ * import this file); the source scan checks the two match.
+ */
+export async function lockGuardianLinksForPurge(
+  client: QueryExecutor,
+  athletes: ReadonlyArray<{ organization_id: string; athlete_id: string }>,
+  parents: ReadonlyArray<{ organization_id: string; parent_id: string }>,
+): Promise<void> {
+  if (athletes.length === 0 && parents.length === 0) return;
+  await client.query(
+    `select 1 from pilot.guardian_links gl
+      where (gl.organization_id, gl.athlete_id) in (
+              select * from unnest($1::text[], $2::text[]))
+         or (gl.organization_id, gl.parent_id) in (
+              select * from unnest($3::text[], $4::text[]))
+      order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
+      for update of gl`,
+    [
+      athletes.map((athlete) => athlete.organization_id),
+      athletes.map((athlete) => athlete.athlete_id),
+      parents.map((parent) => parent.organization_id),
+      parents.map((parent) => parent.parent_id),
+    ],
+  );
+}
+
+export async function lockGuardianLink(
+  client: QueryExecutor,
+  organizationId: string,
+  parentId: string,
+  athleteId: string,
+): Promise<void> {
+  await client.query(
+    `select 1 from pilot.guardian_links
+      where organization_id = $1 and parent_id = $2 and athlete_id = $3
+      for update`,
+    [organizationId, parentId, athleteId],
+  );
+}
+
 /**
  * T-008: guardian consent for a minor's photo/video.
  *
@@ -161,12 +286,12 @@ async function checkGuardianConsentOfType(
   waiverType: string,
   client?: QueryExecutor,
 ): Promise<ConsentCheckResult> {
-  const guardianIds = await readRows<{ parent_id: string }>(
-    client,
-    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2
-     ${client ? 'for share' : ''}`,
-    [organizationId, athleteId],
-  ).then((rows) => rows.map((row) => row.parent_id));
+  const guardianIds = client
+    ? await lockGuardianLinksForAthlete(client, organizationId, athleteId, 'share')
+    : (await query<{ parent_id: string }>(
+      'select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2',
+      [organizationId, athleteId],
+    )).map((row) => row.parent_id);
 
   if (guardianIds.length === 0) {
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
@@ -249,14 +374,8 @@ export async function assertGuardianMediaConsentWithClient(
   // first and the sweep then retracts what it published/approved, or the
   // sweep's lock wins and this re-check runs after the withdrawal committed
   // and refuses. In no interleaving does a publish outlive a withdrawal
-  // unsuppressed.
-  const guardianResult = await client.query<{ parent_id: string }>(
-    `select parent_id from pilot.guardian_links
-     where organization_id = $1 and athlete_id = $2
-     for share`,
-    [organizationId, athleteId],
-  );
-  const guardianIds = guardianResult.rows.map((row) => row.parent_id);
+  // unsuppressed. Both lock in lockGuardianLinksForAthlete's order.
+  const guardianIds = await lockGuardianLinksForAthlete(client, organizationId, athleteId, 'share');
   if (guardianIds.length === 0) {
     throw new GuardianConsentMissingError(athleteId, []);
   }
@@ -326,12 +445,7 @@ async function writeMediaConsentUnderLock(
   waiver: Omit<UpsertWaiverParams, 'organizationId' | 'athleteId' | 'waiverType' | 'parentId'>,
 ): Promise<string> {
   return withTransaction(async (client) => {
-    await client.query(
-      `select 1 from pilot.guardian_links
-        where organization_id = $1 and parent_id = $2 and athlete_id = $3
-        for update`,
-      [organizationId, parentId, athleteId],
-    );
+    await lockGuardianLink(client, organizationId, parentId, athleteId);
 
     return upsertWaiverWithClient(client, {
       ...waiver,

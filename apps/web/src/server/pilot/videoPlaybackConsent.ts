@@ -269,9 +269,11 @@ export async function assertConsentCoversVideo(
  * athletes in opposite orders can deadlock (overwatch, 2026-10-05, after the
  * retention purge's guardian cascade was found to span athletes). The sort
  * is by UTF-16 code unit, which is Postgres's COLLATE "C" order, not the
- * column's default collation. Within one athlete the guardian links come in
- * whatever order checkGuardianMediaConsent reads them (#1226: no ORDER BY);
- * the shared helper from the lock-order lane replaces both when it lands.
+ * column's default collation. Within one athlete checkGuardianMediaConsent
+ * locks through guardianConsent.ts lockGuardianLinksForAthlete, ORDER BY
+ * parent_id COLLATE "C", so the whole set is taken in the shared
+ * (athlete_id, parent_id) order -- one of the two shapes that helper's comment
+ * sanctions, the other being lockGuardianLinksForAthletes in one pass.
  *
  * No athletes (unattributed team footage) means no guardian to ask and no
  * row to lock, so the mint runs without opening a transaction.

@@ -1,6 +1,11 @@
 import { withTransaction } from './db';
 import { NotFoundError, PilotError } from './errors';
-import { assertGuardianMediaConsent, GuardianConsentMissingError, type QueryExecutor } from './guardianConsent';
+import {
+  assertGuardianMediaConsent,
+  GuardianConsentMissingError,
+  lockGuardianLinksForAthletes,
+  type QueryExecutor,
+} from './guardianConsent';
 import { listLiveTagSubjects } from './videoClipTags';
 import { assertConsentCoversVideo } from './videoPlaybackConsent';
 
@@ -47,8 +52,14 @@ export async function assertFilmStudyConsent(
   if (subjects.some((subject) => subject.athlete_deleted)) {
     throw new FilmStudyTaggedAthleteDeletedError();
   }
-  const athleteIds = [athleteId, ...subjects.map((subject) => subject.athlete_id)];
-  for (const id of new Set(athleteIds)) {
+  const athleteIds = [...new Set([athleteId, ...subjects.map((subject) => subject.athlete_id)])];
+  // Every athlete's guardian links in ONE pass, in the shared order, before
+  // the per-athlete reads below (which then re-take rows already held). The
+  // loop visits the video's own athlete first, which is not athlete_id order,
+  // and a reader holding several athletes' links in its own order can
+  // deadlock against the retention purge. Refusal order is unchanged.
+  if (client) await lockGuardianLinksForAthletes(client, organizationId, athleteIds, 'share');
+  for (const id of athleteIds) {
     await assertConsentCoversVideo(organizationId, id, ...inTx);
     await assertGuardianMediaConsent(organizationId, id, ...inTx);
   }

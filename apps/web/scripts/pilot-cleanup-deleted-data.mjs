@@ -138,6 +138,71 @@ async function attemptPurge(client, athletes, accountIds) {
     blocked[name] = (blocked[name] ?? 0) + 1;
   };
 
+  /* THE GUARDIAN LINKS THIS PURGE CAN CASCADE THROUGH, LOCKED FIRST, IN THE
+     SHARED ORDER. Deleting an athlete cascades to that athlete's
+     guardian_links and deleting a pilot.parents row cascades to one
+     guardian's links across several athletes, and this whole run is one
+     transaction, so before this every cascade locked its links as it went, in
+     list order, and held them to the end. A consent reader holding several
+     athletes' links FOR SHARE in the other order (playback of a clip that
+     shows two children) and this job could each wait on the other: Postgres
+     aborts one, and playback fails closed. Taking them all now, ordered by
+     (organization_id, athlete_id, parent_id) like every other guardian_links
+     locker, leaves the deletes below touching only rows already held.
+
+     The SAME STATEMENT as guardianConsent.ts lockGuardianLinksForPurge, which
+     this script cannot import; guardianLinkLockOrderSource.test.ts fails if
+     the two drift. Locks only: it deletes nothing, and rows held for a
+     candidate skipped below are released with the transaction.
+
+     ITS OWN SAVEPOINT, so it can never cost the run. It sits before the
+     per-candidate savepoints; an error here unguarded (a deadlock while it
+     waits) would abort the whole transaction and delete nothing. On failure
+     it is rolled back and the purge carries on exactly as it did before this
+     lock existed, cascade by cascade, and the output says so
+     (guardian_link_lock).
+
+     WHAT IT DOES NOT ORDER, stated: intake's guardian write (upsertGuardian
+     then linkGuardianAthlete, in one transaction) takes the pilot.parents row
+     before the link, the reverse of this job (links here, the parents row at
+     its delete below). A run that meets an admin re-linking a guardian whose
+     account was deleted more than a year ago can deadlock with it; if this
+     side is chosen, that one guardian is recorded under blocked_by 40P01 and
+     is purged on the next run. Taking the parents row first instead would
+     reopen the cycle with the consent writer (writeMediaConsentUnderLock locks
+     the link, then its waiver insert takes a key-share lock on the parents
+     row), which the old cascade-order purge had. */
+  let guardianLinkLock = 'none';
+  if (athletes.length > 0 || accountIds.length > 0) {
+    await client.query('savepoint lock_guardian_links');
+    try {
+      const guardianRecords = await client.query(
+        'select organization_id, parent_id from pilot.parents where account_id = any($1::text[])',
+        [accountIds],
+      );
+      await client.query(
+        `select 1 from pilot.guardian_links gl
+      where (gl.organization_id, gl.athlete_id) in (
+              select * from unnest($1::text[], $2::text[]))
+         or (gl.organization_id, gl.parent_id) in (
+              select * from unnest($3::text[], $4::text[]))
+      order by gl.organization_id collate "C", gl.athlete_id collate "C", gl.parent_id collate "C"
+      for update of gl`,
+        [
+          athletes.map((a) => a.organization_id),
+          athletes.map((a) => a.athlete_id),
+          guardianRecords.rows.map((p) => p.organization_id),
+          guardianRecords.rows.map((p) => p.parent_id),
+        ],
+      );
+      await client.query('release savepoint lock_guardian_links');
+      guardianLinkLock = 'held';
+    } catch (error) {
+      await client.query('rollback to savepoint lock_guardian_links');
+      guardianLinkLock = `skipped:${blockedBy(error)}`;
+    }
+  }
+
   /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. As a
      single statement, one athlete Postgres refused would take every OTHER
      athlete's purge down with it. That happened: pilot.one_percent_nominations
@@ -312,7 +377,7 @@ async function attemptPurge(client, athletes, accountIds) {
     }
   }
 
-  return { athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, blocked };
+  return { athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, blocked, guardianLinkLock };
 }
 
 async function main() {
@@ -362,7 +427,7 @@ async function main() {
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
     const outcome = total === 0
-      ? { athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0, blocked: {} }
+      ? { athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0, blocked: {}, guardianLinkLock: 'none' }
       : await attemptPurge(client, expiredAthletes.rows, accountIds);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
@@ -379,6 +444,7 @@ async function main() {
         would_retire_live_athlete_logins: outcome.loginsRetired,
         blocked: blockedCount,
         blocked_by: outcome.blocked,
+        guardian_link_lock: outcome.guardianLinkLock,
         note: 'set PPBF_RETENTION_APPLY=true to delete',
       }));
       // A dry run that found rows it CANNOT delete is a failing monitor, not a
@@ -422,6 +488,7 @@ async function main() {
       total: outcome.athletesDeleted + outcome.accountsDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,
+      guardian_link_lock: outcome.guardianLinkLock,
     }));
     // Rows WERE deleted and the audit row records exactly what, so this commits
     // rather than throwing away good work -- but retention did not fully happen
