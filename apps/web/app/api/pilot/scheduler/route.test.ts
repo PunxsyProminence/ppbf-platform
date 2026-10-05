@@ -302,6 +302,35 @@ describe('the athlete arm requires the live athlete row', () => {
   });
 });
 
+describe('the admin arm requires the live athlete row', () => {
+  const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+  // A queued rejection the route never consumes must not leak into the next
+  // describe; clearAllMocks leaves queued one-time values in place.
+  afterEach(() => mockLiveRow.mockReset());
+  const adminRegister = () => jsonRequest({ action: 'register_class', class_id: 'class-1', athlete_id: 'ath-9' });
+
+  test.each(['organization_admin', 'admin'])('%s acting on an athlete is checked against their own gym', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, { accountId: 'acct-admin-1' }));
+    mockRegister.mockResolvedValueOnce({ outcome: 'registered', membershipFlags: [] });
+
+    const res = await POST(adminRegister());
+
+    expect(res.status).toBe(200);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-9');
+  });
+
+  test('a deleted athlete (no live row) cannot be registered by an admin: 403, nothing written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin-1' }));
+    mockLiveRow.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+
+    const res = await POST(adminRegister());
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+});
+
 describe('attendance_checkin method attribution', () => {
   // A parent checking in their own linked child was previously recorded as
   // method: 'coach_override' -- the else branch that resolveAttendanceMethod

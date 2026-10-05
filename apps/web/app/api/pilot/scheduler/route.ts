@@ -194,6 +194,12 @@ async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): 
   }
 
   if (canManageAll(actor)) {
+    // An admin manages every athlete in their gym, but only athletes that are
+    // in it: this arm read no row at all, so an admin could register a
+    // deleted athlete for a class or file a coaching request for them by id
+    // (OD-2026-09-29-002 item 10). Same live-row rule as the admin arm of
+    // assertActorCanAccessAthlete.
+    await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
     return;
   }
 

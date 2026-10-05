@@ -181,7 +181,11 @@ export async function getSchedulerRegistrationById(
             parent_reviewed, parent_reviewed_at::text, parent_reviewer_account_id,
             status, created_at::text, updated_at::text
      from pilot.scheduler_registrations
-     where organization_id = $1 and registration_id = $2`,
+     where organization_id = $1 and registration_id = $2
+       -- A deleted athlete's registration is not found, as it is in every
+       -- list above: parent_review_registration loaded it by id with no mark,
+       -- so an admin could still mark it reviewed (OD-2026-09-29-002 item 10).
+       and ${athleteNotDeletedSql('pilot.scheduler_registrations')}`,
     [organizationId, registrationId],
   );
 }
@@ -357,7 +361,11 @@ export async function getSchedulerCoachingRequestById(
             preferred_at::text, goals, status, assigned_coach_account_id,
             created_at::text, updated_at::text
      from pilot.scheduler_coaching_requests
-     where organization_id = $1 and request_id = $2`,
+     where organization_id = $1 and request_id = $2
+       -- Same rule as getSchedulerRegistrationById: review_coaching_request
+       -- loaded a deleted athlete's pending request by id, so an admin could
+       -- still decline it (OD-2026-09-29-002 item 10).
+       and ${athleteNotDeletedSql('pilot.scheduler_coaching_requests')}`,
     [organizationId, requestId],
   );
 }

@@ -431,6 +431,173 @@ describe('scheduler: a deleted athlete cannot act on their own record', () => {
   });
 });
 
+describe('scheduler: an admin cannot act on a deleted athlete', () => {
+  /* The admin arm of assertCanActOnAthlete returned on the role alone and read
+     no athlete row, so an admin could register a deleted athlete for a class
+     or file a coaching request for them by id. Check-in was already refused,
+     as 400 "Missing registration": the registration list drops a deleted
+     athlete. */
+  async function freshClass(): Promise<string> {
+    const start = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const created = await okJson<{ class_id: string }>(
+      await schedulerPost(adminPrincipal, {
+        action: 'create_class',
+        title: 'Admin arm class',
+        start_at: start.toISOString(),
+        end_at: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+        location: 'Main floor',
+        capacity: 20,
+      }),
+    );
+    return created.class_id;
+  }
+
+  const counts = async (athleteId: string) =>
+    (
+      await activeClient!.query(
+        `select
+           (select count(*) from pilot.scheduler_registrations
+             where organization_id = $1 and athlete_id = $2)::text as registrations,
+           (select count(*) from pilot.scheduler_coaching_requests
+             where organization_id = $1 and athlete_id = $2)::text as requests`,
+        [ORG_ID, athleteId],
+      )
+    ).rows[0];
+
+  test('register and request coaching for a deleted athlete are refused at the live-row check, and nothing is written', async () => {
+    const classId = await freshClass();
+    const before = await counts(DELETED_ATHLETE);
+
+    const outcomes: Array<{ action: string; status: number; error: unknown }> = [];
+    for (const body of [
+      { action: 'register_class', class_id: classId, athlete_id: DELETED_ATHLETE },
+      { action: 'request_coaching', athlete_id: DELETED_ATHLETE, preferred_at: new Date(Date.now() + 86_400_000).toISOString(), goals: 'Defence' },
+    ]) {
+      const response = await schedulerPost(adminPrincipal, body);
+      outcomes.push({ action: body.action, status: response.status, error: (await response.json()).error });
+    }
+    expect(outcomes).toEqual(
+      ['register_class', 'request_coaching'].map((action) => ({
+        action,
+        status: 403,
+        error: 'Forbidden: athlete does not belong to organization',
+      })),
+    );
+    expect(await counts(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  const seededRegistration = async (athleteId: string) =>
+    (
+      await activeClient!.query<{
+        registration_id: string;
+        parent_reviewed: boolean;
+        parent_reviewed_at: string | null;
+        parent_reviewer_account_id: string | null;
+        updated_at: string;
+      }>(
+        // Every column the review writes, so "unchanged" covers all of them.
+        `select registration_id, parent_reviewed, parent_reviewed_at::text, parent_reviewer_account_id, updated_at::text
+         from pilot.scheduler_registrations
+         where organization_id = $1 and athlete_id = $2 and class_id = $3`,
+        [ORG_ID, athleteId, seededClassId],
+      )
+    ).rows[0];
+
+  test("parent_review_registration: an admin cannot mark a deleted athlete's registration reviewed (not found, row unchanged)", async () => {
+    /* The registration was loaded by id with no deletion mark, so this
+       flipped parent_reviewed on a deleted athlete's row. */
+    const before = await seededRegistration(DELETED_ATHLETE);
+    expect(before.parent_reviewed).toBe(false);
+
+    const response = await schedulerPost(adminPrincipal, {
+      action: 'parent_review_registration',
+      registration_id: before.registration_id,
+    });
+    expect({ status: response.status, error: (await response.json()).error }).toEqual({ status: 404, error: 'Not found' });
+    expect(await seededRegistration(DELETED_ATHLETE)).toEqual(before);
+  });
+
+  test("live control: the admin may mark the live athlete's registration reviewed", async () => {
+    const before = await seededRegistration(LIVE_ATHLETE);
+    expect(before.parent_reviewed).toBe(false);
+    await okJson(
+      await schedulerPost(adminPrincipal, { action: 'parent_review_registration', registration_id: before.registration_id }),
+    );
+    expect(await seededRegistration(LIVE_ATHLETE)).toEqual(
+      expect.objectContaining({
+        parent_reviewed: true,
+        parent_reviewed_at: expect.any(String),
+        parent_reviewer_account_id: ADMIN_ACCOUNT,
+      }),
+    );
+  });
+
+  const seededCoachingRequest = async (athleteId: string) =>
+    (
+      await activeClient!.query<{ request_id: string; status: string; assigned_coach_account_id: string | null; updated_at: string }>(
+        // Seeded through the route before the deletion; the earliest is the seed.
+        `select request_id, status, assigned_coach_account_id, updated_at::text
+         from pilot.scheduler_coaching_requests
+         where organization_id = $1 and athlete_id = $2
+         order by created_at asc limit 1`,
+        [ORG_ID, athleteId],
+      )
+    ).rows[0];
+  const auditRows = async (requestId: string) =>
+    (
+      await activeClient!.query(`select count(*)::text as n from pilot.audit_events where organization_id = $1 and entity_id = $2`, [
+        ORG_ID,
+        requestId,
+      ])
+    ).rows[0].n;
+
+  test("review_coaching_request: an admin cannot decline a deleted athlete's pending request (refused, row and audit unchanged)", async () => {
+    /* The request was loaded by id with no deletion mark, so declining it
+       flipped its status and wrote an audit row naming the deleted athlete. */
+    const before = await seededCoachingRequest(DELETED_ATHLETE);
+    expect(before.status).toBe('pending');
+    const auditBefore = await auditRows(before.request_id);
+
+    const response = await schedulerPost(adminPrincipal, {
+      action: 'review_coaching_request',
+      request_id: before.request_id,
+      decision: 'decline',
+    });
+    expect({ status: response.status, error: (await response.json()).error }).toEqual({
+      status: 400,
+      error: 'Missing coaching request record',
+    });
+    expect(await seededCoachingRequest(DELETED_ATHLETE)).toEqual(before);
+    expect(await auditRows(before.request_id)).toBe(auditBefore);
+  });
+
+  test("live control: the admin may decline the live athlete's pending request", async () => {
+    const before = await seededCoachingRequest(LIVE_ATHLETE);
+    expect(before.status).toBe('pending');
+    const auditBefore = Number(await auditRows(before.request_id));
+    await okJson(
+      await schedulerPost(adminPrincipal, { action: 'review_coaching_request', request_id: before.request_id, decision: 'decline' }),
+    );
+    expect((await seededCoachingRequest(LIVE_ATHLETE)).status).toBe('declined');
+    // The decline is audited under the request id, so the refusal's audit
+    // check above would see a write.
+    expect(Number(await auditRows(before.request_id))).toBe(auditBefore + 1);
+  });
+
+  test('live control: the admin may register and request coaching for the live athlete', async () => {
+    const classId = await freshClass();
+    await okJson(await schedulerPost(adminPrincipal, { action: 'register_class', class_id: classId, athlete_id: LIVE_ATHLETE }));
+    await okJson(
+      await schedulerPost(adminPrincipal, {
+        action: 'request_coaching',
+        athlete_id: LIVE_ATHLETE,
+        preferred_at: new Date(Date.now() + 86_400_000).toISOString(),
+        goals: 'Footwork',
+      }),
+    );
+  });
+});
+
 describe('Shadow reads: a deleted athlete sees none of their own athlete-tied rows', () => {
   const context = (athleteId: string) => ({
     organizationId: ORG_ID,
