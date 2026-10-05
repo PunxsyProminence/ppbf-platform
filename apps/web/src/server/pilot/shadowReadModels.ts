@@ -1,6 +1,7 @@
 import { athleteIdsForCoach, isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { guardianAthleteIds } from './guardianAccess';
 import { PAIN_REPORT_PENDING_REVIEW_EVENT_NAME, classifyPainReporter, readPainReporter } from './formulas/painReportAlert';
 
@@ -517,6 +518,23 @@ export async function getShadowEventTimeline(
   });
 }
 
+// Deletion scope B (OD-2026-09-29-002 item 10, "10 C") for an intake case: the
+// athlete its column names is not deleted, and neither is any athlete one of
+// its documents is bound to. The second half covers a case promoted before
+// the column was written whose documents name two athletes, which keeps a
+// NULL column. A case bound to nobody passes both.
+const INTAKE_CASE_ATHLETE_NOT_DELETED = `${athleteNotDeletedSql('c', 'primary_athlete_id')}
+       and not exists (
+         select 1
+         from pilot.intake_documents owner_doc
+         join pilot.athletes owner_athlete
+           on owner_athlete.organization_id = owner_doc.organization_id
+          and owner_athlete.athlete_id = owner_doc.owner_entity_id
+         where owner_doc.organization_id = c.organization_id
+           and owner_doc.intake_case_id = c.intake_case_id
+           and owner_doc.owner_entity_type = 'athlete'
+           and owner_athlete.deleted_at is not null)`;
+
 export async function getShadowReviewProjection(
   context: ShadowReadContext,
   filters: ShadowListFilters = {},
@@ -573,6 +591,9 @@ export async function getShadowReviewProjection(
          or c.primary_athlete_id = any($6::text[])
          or ($7::boolean and c.primary_athlete_id is null)
        )
+       -- A deleted athlete's case leaves the queue; a case with no athlete
+       -- yet stays (INTAKE_CASE_ATHLETE_NOT_DELETED).
+       and ${INTAKE_CASE_ATHLETE_NOT_DELETED}
      order by coalesce(se.created_at, c.updated_at) desc
      limit $4
      offset $5`,
@@ -599,7 +620,8 @@ export async function getShadowReviewProjection(
          $4::text[] is null
          or c.primary_athlete_id = any($4::text[])
          or ($5::boolean and c.primary_athlete_id is null)
-       )`,
+       )
+       and ${INTAKE_CASE_ATHLETE_NOT_DELETED}`,
     [
       context.organizationId,
       filters.entityId?.trim() || filters.correlationId?.trim() || null,

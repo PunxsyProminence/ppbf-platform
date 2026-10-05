@@ -293,20 +293,20 @@ export async function getIntakeDocumentById(
  * case's life the answer is "nobody yet".
  *
  * `pilot.intake_cases.primary_athlete_id` is the column the schema intends
- * for this, and no code path writes it. `createIntakeCase` is reachable from
- * exactly one caller (app/api/pilot/shadow/upload/route.ts), which never
- * passes `primaryAthleteId`; `updateIntakeCaseStatus` does not touch the
- * column; and no other statement in the repository updates it. Every row
- * carries NULL. That is why a gate spelled `if (primary_athlete_id) await
+ * for this. Until 2026-10-05 no code path wrote it, so every row carried NULL
+ * and a gate spelled `if (primary_athlete_id) await
  * assertActorCanAccessAthlete(...)` was dead on every row it ever guarded.
+ * Now `bindIntakeDocumentsToOwner` sets it at promotion, on the promotion's
+ * transaction, and the intake-case primary-athlete backfill migration set it
+ * on cases promoted before that whose documents name exactly one athlete. It
+ * is still NULL for the whole pending window: a case is filed
+ * (app/api/pilot/shadow/upload/route.ts) before its athlete record exists.
  *
- * `pilot.intake_documents.owner_entity_type/owner_entity_id` are written --
- * `bindIntakeDocumentsToOwner` stamps ('athlete', <athlete_id>) across the
- * whole case at promotion -- so they are the real subject linkage. But they
- * only exist from promotion onward, and the review queue exposes a case for
- * the whole pending window BEFORE that. A gate keyed on the owner columns
- * alone would therefore be dead in exactly the window that matters, which is
- * the same mistake in a different column.
+ * `pilot.intake_documents.owner_entity_type/owner_entity_id` carry the same
+ * athlete from the same write, and they stay a source here: a case promoted
+ * before the backfill whose documents name two athletes has a NULL column and
+ * both owners on its documents. Neither source exists before promotion, which
+ * is the window the review queue exposes a case for.
  *
  * So this returns what is knowable and refuses to guess. An empty
  * `subjectAthleteIds` means "not attributable to an athlete yet" -- never
@@ -523,6 +523,20 @@ export async function bindIntakeDocumentsToOwner(params: {
      where organization_id = $1 and intake_case_id = $2`,
     [params.organizationId, params.intakeCaseId, params.ownerEntityType, params.ownerEntityId],
   );
+
+  // The case names the same athlete its documents now do, on the same
+  // transaction, so the two can never disagree after a promotion. A
+  // re-promotion (reject, approve, promote with another athlete_id) moves both.
+  if (params.ownerEntityType === 'athlete') {
+    await writeRows(
+      client,
+      `update pilot.intake_cases
+       set primary_athlete_id = $3,
+           updated_at = now()
+       where organization_id = $1 and intake_case_id = $2`,
+      [params.organizationId, params.intakeCaseId, params.ownerEntityId],
+    );
+  }
 
   const docs = await writeRows<{
     blob_path: string;

@@ -21,9 +21,9 @@ export async function POST(request: NextRequest) {
     // case -- summary, review notes, payload, and every intake_documents row
     // with its file_name, blob_path and classification -- and only then ask
     // whether the caller was allowed to see it, under
-    // `if (intakeCase.primary_athlete_id)`. No code path in this repository
-    // ever writes that column (see resolveIntakeCaseAuthority), so the
-    // condition was false on every row and the gate never ran once. The read
+    // `if (intakeCase.primary_athlete_id)`. No code path wrote that column
+    // until 2026-10-05 (see resolveIntakeCaseAuthority), so the condition was
+    // false on every row and the gate never ran once. The read
     // IS the disclosure; a check that happens after it is decoration.
     const authority = await assertActorCanAccessIntakeCase(
       principal,

@@ -189,6 +189,12 @@ most of these rows with it.
   "only athlete this guardian is linked to" refusal. The SHADOW library curator queue leaves
   out documents filed against them. Pinned by
   `apps/web/src/server/pilot/deletedAthleteStaffReaders.pg.test.ts`.
+- The intake review queue (`shadowReadModels.ts` `getShadowReviewProjection`): a case whose
+  `primary_athlete_id` names them, or one of whose documents is bound to them, leaves the list
+  and its count. Promotion writes that column, and the intake-case-primary-athlete migration
+  filled it in for cases promoted before 2026-10-05 whose documents name one athlete. A case
+  not yet promoted names nobody and stays.
+  Pinned by `apps/web/src/server/pilot/intakeCasePrimaryAthlete.pg.test.ts`.
 - Records added 2026-10-04, by their own readers: injury records (`athleteInjuries.ts`) and
   sparring exposure entries (`sparringExposure.ts`) filter through `athleteNotDeletedSql`;
   check-in body mass (`athleteBodyMass.ts` `bodyMassVisibleTo`) requires a live athlete row.
@@ -278,8 +284,11 @@ queue is not in this table: it drops a deleted athlete's publications at once (v
 - Rabbit-hole lesson citations (`rabbitHoles.ts` `CITATION_JOIN`): nothing to hide. A lesson
   can cite only a gym-wide document (`d.subject_id is null`, `libraryServability.ts`), never
   one filed against an athlete.
-- The intake review queue (`intake.ts`): `pilot.intake_cases.primary_athlete_id` is never
-  written, so a case names no athlete to filter on. Its own build-list item.
+- Not yet built (its own build-list item): the SHADOW event, telemetry and authority-check
+  lists (`shadowReadModels.ts` `listShadowEvents`, `listShadowTelemetry`,
+  `listShadowAuthorityChecks`) still show, to an organization admin, entries whose payload names
+  a deleted athlete, such as an intake case's approve or reject event. From 2026-10-05 those
+  entries carry the promoted athlete's id.
 
 **Stored files.** Deletion erases no stored file, and neither does the cleanup job: the app's
 only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
