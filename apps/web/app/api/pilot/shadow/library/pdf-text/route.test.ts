@@ -7,7 +7,7 @@ import { ShadowRateLimitExceeded, enforceShadowRateLimit } from '@/src/server/pi
 
 import { LIBRARY_PDF_TEXT_RATE_LIMIT, POST } from './route';
 
-// The parser is mocked, as /api/document-ingest's tests do: the real one needs
+// The parser is mocked, as the retired /api/document-ingest's tests did: the real one needs
 // --experimental-vm-modules (see libraryPdfText.pdf.test.ts).
 const mockGetText = jest.fn();
 const mockDestroy = jest.fn();

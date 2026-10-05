@@ -202,3 +202,70 @@ describe('a failed Scout Reports read', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+// #991 class, batch 9: the metrics read had no else either. A refused or
+// unreadable read hid both scorecard sections and said nothing.
+describe('a failed Scorecard read', () => {
+  function withMetrics(metrics: () => Promise<Response>) {
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/auth/session')) {
+        return jsonResponse({ authenticated: true, role: 'admin', auth_provider: 'microsoft' });
+      }
+      if (target.includes('/shadow/jobs')) return jsonResponse({ ok: true, jobs: [] });
+      return metrics();
+    }) as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('admin'));
+  }
+
+  it.each([
+    ['refused', async () => jsonResponse({ error: 'nope' }, false, 500)],
+    ['rejected', async (): Promise<Response> => { throw new TypeError('Failed to fetch'); }],
+    ['unreadable', async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad'); } }) as unknown as Response],
+  ])('when %s, says the Scorecard could not be read', async (_name, metrics) => {
+    withMetrics(metrics);
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText('Not available -- The Scorecard could not be read.')).toBeTruthy();
+  });
+
+  it('a throw before the metrics answer is read still says so', async () => {
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/auth/session')) {
+        return jsonResponse({ authenticated: true, role: 'admin', auth_provider: 'microsoft' });
+      }
+      // The jobs body does not parse, so the metrics block is never reached.
+      if (target.includes('/shadow/jobs')) {
+        return { ok: true, status: 200, json: async () => { throw new SyntaxError('bad'); } } as unknown as Response;
+      }
+      return jsonResponse({ ok: true, metrics: null });
+    }) as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('admin'));
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText('Not available -- The Scorecard could not be read.')).toBeTruthy();
+    expect(screen.getByText('Not available -- the reports could not be read.')).toBeTruthy();
+  });
+
+  it('a read that answered says nothing about being unavailable', async () => {
+    withMetrics(async () => jsonResponse({ ok: true, metrics: null }));
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText(/No Scout Reports yet/)).toBeTruthy();
+    expect(screen.queryByText(/The Scorecard could not be read/)).toBeNull();
+  });
+
+  it('a coach, who does not read metrics, is told nothing about them', async () => {
+    global.fetch = scoutFetchMock('coach') as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('coach'));
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText(/No Scout Reports yet/)).toBeTruthy();
+    expect(screen.queryByText(/The Scorecard could not be read/)).toBeNull();
+  });
+});
