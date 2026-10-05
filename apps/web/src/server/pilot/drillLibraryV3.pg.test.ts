@@ -943,17 +943,12 @@ describe('drill secondary skill relationships against real Postgres', () => {
         drillId: 'fam-any', name: 'Any Drill', primarySkillId: 'SK-FW-03',
       });
 
-      // SKILL-07 is a real promoted family with no approved crosswalk. The
-      // wrong implementation returns [] here and the caller reads it as
-      // "Footwork / Ringcraft has no drills".
-      //
-      // This case proves the REFUSAL, not its ordering relative to the query:
-      // a client is connected here, so it cannot distinguish "refused before
-      // touching the database" from "refused after". That ordering is proved
-      // by skillFamilies.test.ts, which throws with no database in the process
-      // at all.
-      await expect(listDrillLibrary(ORG_A, { familyId: 'SKILL-07' }))
-        .rejects.toThrow(/no approved code crosswalk yet/);
+      // Every family has an approved crosswalk since 2026-10-05, so a real
+      // family no longer refuses here: SKILL-07 expands to its codes and the
+      // query runs. The refusal for a family WITHOUT a crosswalk is proved in
+      // skillFamilies.test.ts against an injected crosswalk, with no database
+      // in the process at all.
+      await expect(listDrillLibrary(ORG_A, { familyId: 'SKILL-07' })).resolves.toEqual(expect.any(Array));
 
       await expect(listDrillLibrary(ORG_A, { familyId: 'SK-STANCE-01' }))
         .rejects.toThrow(/Unknown skill family/);

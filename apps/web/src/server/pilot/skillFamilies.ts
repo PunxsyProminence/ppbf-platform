@@ -130,88 +130,104 @@ const SKILL_01_MEMBER_CODES = [
 ] as const;
 
 /**
- * Family -> member codes, for every family whose crosswalk has been decided.
+ * SKILL-02..SKILL-12, approved by Jason on 2026-10-05 as drafted ("1 and we ill
+ * need to make sure we can add to as moreskills become available";
+ * AskUserQuestion toolu_01MYKQUdWWwaWnpRAyXej5Cp). Drafted from the Owned_Territory
+ * and Purpose columns of the Skill_Index sheet. One family per code, because
+ * athleteDrillExposure.ts files each drill under exactly one family.
  *
- * Partial ON PURPOSE. A family absent from this map is a family nobody has
- * reconciled yet, and memberCodesForFamily refuses it out loud rather than
- * expanding it to nothing -- see the note there.
+ * MEDIUM-confidence rows, the ones most likely to move: SK-DIST-* in SKILL-02
+ * (its purpose names range and no family owns range), SK-CTR-01 in SKILL-03
+ * (rear hand owns "counters"), SK-IN-* in SKILL-05 (inside position and exits
+ * are held there for v2), SK-ANG-01 / SK-OUT-01 / SK-COMBO-03 / SK-TAC-02 in
+ * SKILL-07, both SKILL-08 codes, and SK-SPAR-04 in SKILL-12.
+ */
+const SKILL_02_TO_12_MEMBER_CODES = {
+  'SKILL-02': ['SK-JAB-01', 'SK-JAB-02', 'SK-JAB-03', 'SK-DIST-01', 'SK-DIST-02', 'SK-DIST-03'],
+  'SKILL-03': ['SK-CROSS-01', 'SK-CTR-01'],
+  'SKILL-04': ['SK-HOOK-01', 'SK-HOOK-02'],
+  'SKILL-05': ['SK-UPPER-01', 'SK-IN-01', 'SK-IN-02'],
+  'SKILL-06': [
+    'SK-DEF-01',
+    'SK-DEF-02',
+    'SK-DEF-03',
+    'SK-DEF-04',
+    'SK-DEF-05',
+    'SK-DEF-06',
+    'SK-DEF-07',
+    'SK-DEF-08',
+    'SK-CTR-02',
+  ],
+  'SKILL-07': [
+    'SK-FW-01',
+    'SK-FW-02',
+    'SK-FW-03',
+    'SK-FW-04',
+    'SK-FW-05',
+    'SK-FW-06',
+    'SK-ANG-01',
+    'SK-OUT-01',
+    'SK-COMBO-03',
+    'SK-TAC-02',
+  ],
+  'SKILL-08': ['SK-TAC-01', 'SK-TAC-04'],
+  'SKILL-09': ['SK-FEINT-01', 'SK-RHY-01'],
+  'SKILL-10': ['SK-BODY-01'],
+  'SKILL-11': ['SK-FW-07', 'SK-BAG-01'],
+  'SKILL-12': ['SK-FILM-01', 'SK-FILM-02', 'SK-SELF-01', 'SK-SPAR-04'],
+} as const satisfies Partial<Record<SkillFamilyId, readonly string[]>>;
+
+/**
+ * Family -> member codes. Every family is reconciled as of 2026-10-05.
+ *
+ * ADDING A SKILL CODE. A new SK-* code in the seed CSV fails
+ * skillFamilies.test.ts until it is either added to one family's list above or
+ * named in UNMAPPED_SKILL_CODES below; that one-line change is the whole job,
+ * and the diff is the reviewable taxonomy decision. Moving a code between
+ * families is the same one-line change.
+ *
+ * Typed Partial on purpose: memberCodesForFamily keeps refusing a family that
+ * has no list, so removing one later cannot turn into an empty drill shelf.
  */
 export const FAMILY_MEMBER_CODES: Readonly<Partial<Record<SkillFamilyId, readonly string[]>>> = {
   'SKILL-01': SKILL_01_MEMBER_CODES,
+  ...SKILL_02_TO_12_MEMBER_CODES,
 };
 
 /**
- * Every other skill code currently carried by the shipped drill library.
+ * Codes the shipped drill library carries that no family owns.
  *
  * This list is not documentation. It is the reason a NEW code cannot enter the
  * seed CSV unnoticed: skillFamilies.test.ts requires every non-empty skill_id
  * in the CSV to be either mapped above or named here, so an unrecognised value
  * fails rather than defaulting into "unmapped" by silence.
  *
- * Being here means "no family decided yet", never "belongs to no family".
+ * Approved to stay unmapped with the 2026-10-05 crosswalk: training formats
+ * (pads, bag purpose, shadow, partner contract, constraint swap, sparring),
+ * safety drills, between-round reset and instruction under fatigue (see the
+ * SKILL-01 note), mental rehearsal, plan-and-adjust, and hand wrapping. Being
+ * here means "no family owns it today", and a code can leave this list for a
+ * family by the same one-line change.
  */
 export const UNMAPPED_SKILL_CODES: readonly string[] = [
-  'SK-ANG-01',
-  'SK-BAG-01',
   'SK-BAG-02',
-  'SK-BODY-01',
   'SK-COMBO-01',
   'SK-COMBO-02',
-  'SK-COMBO-03',
-  'SK-CROSS-01',
-  'SK-CTR-01',
-  'SK-CTR-02',
-  'SK-DEF-01',
-  'SK-DEF-02',
-  'SK-DEF-03',
-  'SK-DEF-04',
-  'SK-DEF-05',
-  'SK-DEF-06',
-  'SK-DEF-07',
-  'SK-DEF-08',
-  'SK-DIST-01',
-  'SK-DIST-02',
-  'SK-DIST-03',
   'SK-DRILL-01',
-  'SK-FEINT-01',
-  'SK-FILM-01',
-  'SK-FILM-02',
-  'SK-FW-01',
-  'SK-FW-02',
-  'SK-FW-03',
-  'SK-FW-04',
-  'SK-FW-05',
-  'SK-FW-06',
-  'SK-FW-07',
   'SK-HAND-01',
-  'SK-HOOK-01',
-  'SK-HOOK-02',
-  'SK-IN-01',
-  'SK-IN-02',
-  'SK-JAB-01',
-  'SK-JAB-02',
-  'SK-JAB-03',
-  'SK-OUT-01',
   'SK-PAD-01',
   'SK-PARTNER-01',
   'SK-RET-01',
   'SK-RET-02',
   'SK-REV-01',
   'SK-REV-02',
-  'SK-RHY-01',
   'SK-SAFE-01',
   'SK-SAFE-02',
-  'SK-SELF-01',
   'SK-SHADOW-01',
   'SK-SPAR-01',
   'SK-SPAR-02',
   'SK-SPAR-03',
-  'SK-SPAR-04',
-  'SK-TAC-01',
-  'SK-TAC-02',
   'SK-TAC-03',
-  'SK-TAC-04',
-  'SK-UPPER-01',
 ];
 
 export function isSkillFamilyId(value: unknown): value is SkillFamilyId {
@@ -226,15 +242,19 @@ export function isSkillFamilyId(value: unknown): value is SkillFamilyId {
  * An unrecognised id is a bad request -- the caller named something that is
  * not a family.
  *
- * A REAL family with no crosswalk yet (SKILL-02..SKILL-12 today) is refused
- * TOO, and this is the case worth being careful about. Returning an empty
+ * A REAL family with no crosswalk is refused TOO (none today: all twelve were
+ * reconciled by 2026-10-05, but the guard stays for a family whose list is
+ * ever withdrawn), and this is the case worth being careful about. Returning an empty
  * array would have been the easy branch and it is the wrong one: the caller
  * would receive an empty drill list, which is indistinguishable from "this
  * family genuinely has no drills" and quietly false. A coach filtering by
  * SKILL-07 must be told the mapping does not exist yet, not shown an empty
  * shelf.
  */
-export function memberCodesForFamily(familyId: string): readonly string[] {
+export function memberCodesForFamily(
+  familyId: string,
+  crosswalk: Readonly<Partial<Record<SkillFamilyId, readonly string[]>>> = FAMILY_MEMBER_CODES,
+): readonly string[] {
   if (!isSkillFamilyId(familyId)) {
     throw new ValidationError(
       `Unknown skill family: ${familyId}`,
@@ -242,7 +262,7 @@ export function memberCodesForFamily(familyId: string): readonly string[] {
     );
   }
 
-  const codes = FAMILY_MEMBER_CODES[familyId];
+  const codes = crosswalk[familyId];
   if (!codes) {
     throw new ValidationError(
       `Skill family ${familyId} (${SKILL_FAMILY_NAMES[familyId]}) has no approved code crosswalk yet.`,

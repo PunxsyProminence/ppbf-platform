@@ -167,8 +167,10 @@ export interface FamilyDrillAssignment {
  * (reference_drill_id) -> that reference drill's primary skill code or any
  * secondary code. A family is the codes memberCodesForFamily expands it to,
  * and that call throws for a family with no crosswalk -- so this function
- * cannot answer "nothing" for SKILL-02..12; it refuses, and the route turns
- * the refusal into "not mapped yet".
+ * cannot answer "nothing" for an unreconciled family; it refuses, and the
+ * route turns the refusal into "not mapped yet". Every family has a crosswalk
+ * since 2026-10-05, so that path is kept for a family whose list is ever
+ * withdrawn rather than reached today.
  *
  * Rows, not a count. A tally of a child's drills is a score produced by
  * arithmetic (the development-blocks route explains why that surface refuses
@@ -219,10 +221,10 @@ export async function listAthleteFamilyDrills(
  *     (the shipped seed has such rows, e.g. warm-ups).
  * The page says so rather than letting the path look complete.
  *
- * A drill WITH a code whose family is undecided (UNMAPPED_SKILL_CODES) is not
- * counted here: it belongs under a family that already reads "not mapped
- * yet", and counting it twice would tell the athlete two different stories
- * about one drill.
+ * A drill WITH a code that no family owns (UNMAPPED_SKILL_CODES: training
+ * formats, safety, mental rehearsal, hand wrapping -- approved to stay
+ * unmapped on 2026-10-05) is not counted here either: it has a skill code, so
+ * calling it "unlinked" would misdescribe it, and it appears under no family.
  *
  * Athlete-wide, so asked once per read, not once per family.
  */

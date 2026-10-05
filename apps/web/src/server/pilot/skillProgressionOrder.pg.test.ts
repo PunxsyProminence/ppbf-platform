@@ -219,8 +219,8 @@ async function seededDatabase(): Promise<Client> {
     [ORG_A],
   );
   await insertOperational(client, ORG_A, 'op-warmup-guard', 'Warm-Up Guard', 'ref-warmup-guard');
-  // A promoted drill whose code has no family decided yet: neither listed
-  // under SKILL-01 nor counted as unlinked (its family reads "not mapped yet").
+  // A promoted drill whose code belongs to a different family (SK-FW-01 is
+  // SKILL-07): neither listed under SKILL-01 nor counted as unlinked.
   await insertReference(client, ORG_A, 'ref-footwork', 'SK-FW-01');
   await insertOperational(client, ORG_A, 'op-footwork', 'Footwork Box', 'ref-footwork');
 
