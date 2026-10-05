@@ -163,6 +163,22 @@ describe('POST /api/pilot/shadow/library/sources', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  // Importer-only provenance. A curator's source claiming to be the importer's
+  // copy of a PPBF seed source was raised to ppbf_owned by the source-rights
+  // migration's old metadata backfill (#1238); the route now refuses the claim.
+  test.each(['copied_from_source_id', 'copied_from_document_id', 'copied_for_scope'])(
+    'refuses metadata.%s',
+    async (key) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { canonical: true, [key]: 'src_6563c68e39047128' } }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(`metadata.${key} is set only by the research importer`);
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+
   test('reports a repeated url as a conflict rather than a server fault', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockCreate.mockRejectedValueOnce(

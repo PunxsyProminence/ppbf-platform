@@ -13,6 +13,8 @@ import {
 } from '@/src/server/pilot/shadowLibrary';
 import {
   isShadowLibraryRightsStatus,
+  reservedProvenanceKey,
+  reservedProvenanceMessage,
   rightsRefusalMessage,
   type ShadowLibraryRightsStatus,
 } from '@/src/server/pilot/shadowLibraryRights';
@@ -193,6 +195,13 @@ export async function POST(request: NextRequest) {
       && (typeof body.metadata !== 'object' || body.metadata === null || Array.isArray(body.metadata))
     ) {
       return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
+    }
+
+    // Importer-only provenance (shadowLibraryRights.ts): a curator's source is
+    // never the importer's copy of a seed source, so it may not say it is.
+    const reservedKey = reservedProvenanceKey(body.metadata);
+    if (reservedKey) {
+      return NextResponse.json({ ok: false, error: reservedProvenanceMessage(reservedKey) }, { status: 400 });
     }
 
     // The classification taxonomy is a shared contract aligned to the

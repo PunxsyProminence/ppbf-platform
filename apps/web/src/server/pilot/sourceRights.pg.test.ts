@@ -64,6 +64,8 @@ const ROUTE_DB = 'ppbf_test_source_rights_routes';
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 const POLICY = 'src_b7041e76b524f743';
+// The importer's one copy of a seed source (policyCopyId(PROGRAMME)).
+const PROGRAMME_COPY = 'src_ppbfpol_6563c68e39047128';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -250,7 +252,7 @@ describe('source rights migration', () => {
     try {
       await insertSource(client, PROGRAMME);
       await insertSource(client, POLICY);
-      await insertSource(client, 'src_pol_copy_6563', { metadata: { copied_from_source_id: PROGRAMME } });
+      await insertSource(client, PROGRAMME_COPY, { metadata: { copied_from_source_id: PROGRAMME } });
       await insertSource(client, 'src_paper');
       await insertDocument(client, 'doc_prog', PROGRAMME);
       await insertDocument(client, 'doc_paper', 'src_paper');
@@ -262,7 +264,7 @@ describe('source rights migration', () => {
 
       expect(await rightsOf(client, PROGRAMME)).toBe('ppbf_owned');
       expect(await rightsOf(client, POLICY)).toBe('ppbf_owned');
-      expect(await rightsOf(client, 'src_pol_copy_6563')).toBe('ppbf_owned');
+      expect(await rightsOf(client, PROGRAMME_COPY)).toBe('ppbf_owned');
       expect(await rightsOf(client, 'src_paper')).toBe('unknown');
       const chunks = await client.query(
         'select chunk_id, text_kind, excerpt_locator from pilot.shadow_library_chunks order by chunk_id',
@@ -282,6 +284,51 @@ describe('source rights migration', () => {
       await applyMigrationTransaction(client, migrationSql);
       expect(await rightsOf(client, 'src_paper')).toBe('open_licence');
       expect((await readSummary(client)).full_text_below_rights).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // #1238 review, P1. The backfill used to also raise any unknown source whose
+  // metadata.copied_from_source_id named a seed id. Metadata is caller-written
+  // through the sources route and the migration re-runs on every
+  // apply-migrations dispatch, so a curator's source could claim to be a copy
+  // and be made ppbf_owned -- full text permitted -- on the next run.
+  test('a source CLAIMING to be a copy of a PPBF source stays unknown, on the first apply and on every re-run; the importer\'s real copy is still classified', async () => {
+    const client = await freshDatabase('ppbf_test_rights_copy_spoof', { preMigration: true });
+    try {
+      await insertSource(client, PROGRAMME);
+      // Positive control: the importer's genuine copy, carrying its provenance.
+      await insertSource(client, PROGRAMME_COPY, {
+        metadata: { copied_from_source_id: PROGRAMME, copied_for_scope: 'ppbf_policy' },
+      });
+      // Negative controls: route-shaped ids, each claiming a seed id.
+      await insertSource(client, 'source_spoof_programme', {
+        metadata: { copied_from_source_id: PROGRAMME, copied_for_scope: 'ppbf_policy' },
+      });
+      await insertSource(client, 'source_spoof_policy', { metadata: { copied_from_source_id: POLICY } });
+      await insertDocument(client, 'doc_spoof', 'source_spoof_programme');
+
+      await applyMigrationTransaction(client, migrationSql);
+
+      expect(await rightsOf(client, PROGRAMME)).toBe('ppbf_owned');
+      expect(await rightsOf(client, PROGRAMME_COPY)).toBe('ppbf_owned');
+      expect(await rightsOf(client, 'source_spoof_programme')).toBe('unknown');
+      expect(await rightsOf(client, 'source_spoof_policy')).toBe('unknown');
+      // And so the trigger holds it to excerpts.
+      const refused = await errorOf(insertChunk(client, 'chunk_spoof_full', 'doc_spoof', 'source_spoof_programme'));
+      expect(refused.message).toMatch(/^SHADOW_LIBRARY_FULL_TEXT_NOT_PERMITTED/);
+
+      // A spoof written AFTER the first apply (as the route allowed until now),
+      // then the re-run every apply-migrations dispatch performs.
+      await insertSource(client, 'source_spoof_late', { metadata: { copied_from_source_id: PROGRAMME } });
+      await applyMigrationTransaction(client, migrationSql);
+      await applyMigrationTransaction(client, migrationSql);
+
+      expect(await rightsOf(client, 'source_spoof_late')).toBe('unknown');
+      expect(await rightsOf(client, 'source_spoof_programme')).toBe('unknown');
+      expect(await rightsOf(client, 'source_spoof_policy')).toBe('unknown');
+      expect(await rightsOf(client, PROGRAMME_COPY)).toBe('ppbf_owned');
     } finally {
       await client.end();
     }

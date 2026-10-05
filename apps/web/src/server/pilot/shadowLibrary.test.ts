@@ -35,9 +35,12 @@ import {
   resolveCoveredCapabilityGapRequirements,
   syncCapabilityGapRequirement,
 } from './shadowResearch';
+import { ValidationError } from './errors';
 import {
   createShadowLibraryChunk,
   createShadowLibraryClaim,
+  createShadowLibraryDocument,
+  createShadowLibrarySource,
   listApprovedGlobalEvidenceForResearchBridge,
   listShadowCapabilityCoverage,
   normalizeSearchScope,
@@ -873,4 +876,29 @@ describe('SHADOW research-bridge export excludes retracted sources', () => {
       .replace(/\s+/g, ' ');
     expect(sql).toContain('not coalesce(s.retrieval_suppressed, false)');
   });
+});
+
+// Importer-only provenance (shadowLibraryRights.ts) is refused here as well as
+// in the routes, so a server caller that skips the route cannot write it.
+describe('SHADOW library writers refuse importer-only provenance', () => {
+  test.each(['copied_from_source_id', 'copied_from_document_id', 'copied_for_scope'])(
+    'createShadowLibrarySource and createShadowLibraryDocument refuse metadata.%s before touching the database',
+    async (key) => {
+      mockQuery.mockReset();
+      mockQueryOne.mockReset();
+      const metadata = { [key]: 'src_6563c68e39047128' };
+
+      await expect(createShadowLibrarySource({
+        organizationId: 'org-1', actorAccountId: 'acct-1', actorRole: 'organization_admin',
+        title: 'Spoof', sourceType: 'peer_reviewed', metadata,
+      })).rejects.toThrow(ValidationError);
+      await expect(createShadowLibraryDocument({
+        organizationId: 'org-1', actorAccountId: 'acct-1', actorRole: 'organization_admin',
+        sourceId: 'source_1', documentName: 'Spoof', metadata,
+      })).rejects.toThrow(`metadata.${key} is set only by the research importer`);
+
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockQueryOne).not.toHaveBeenCalled();
+    },
+  );
 });

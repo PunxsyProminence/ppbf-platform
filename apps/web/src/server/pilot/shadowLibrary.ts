@@ -4,12 +4,12 @@ import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { ConflictError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
-import type { ShadowLibraryRightsStatus } from './shadowLibraryRights';
+import { reservedProvenanceKey, reservedProvenanceMessage, type ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
   CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
@@ -564,6 +564,13 @@ async function ensureCoverageGapResearchRequirement(input: {
   });
 }
 
+// Importer-only provenance (shadowLibraryRights.ts). Held here as well as in the
+// routes, so a server caller that skips the route is refused too.
+function assertNoReservedProvenance(metadata: Record<string, unknown> | undefined): void {
+  const key = reservedProvenanceKey(metadata);
+  if (key) throw new ValidationError(reservedProvenanceMessage(key));
+}
+
 export async function createShadowLibrarySource(input: {
   organizationId: string;
   actorAccountId: string;
@@ -581,6 +588,7 @@ export async function createShadowLibrarySource(input: {
   // Marking a source as PPBF-owned or open-licence decides what the Library may
   // hold of it, so it is the reviewer tier's call, as on the rights PATCH.
   if (input.rightsStatus && input.rightsStatus !== 'unknown') requireEvidenceReviewer(input.actorRole as PilotRole);
+  assertNoReservedProvenance(input.metadata);
   const sourceId = `source_${randomUUID()}`;
 
   const row = await queryOne<ShadowLibrarySourceRow>(
@@ -903,6 +911,7 @@ export async function createShadowLibraryDocument(input: {
   ingestState?: ShadowLibraryIngestState;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryDocumentRow> {
+  assertNoReservedProvenance(input.metadata);
   const source = await queryOne<{ source_id: string }>(
     `select source_id
      from pilot.shadow_library_sources
