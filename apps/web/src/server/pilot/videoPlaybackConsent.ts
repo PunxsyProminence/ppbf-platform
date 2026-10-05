@@ -1,3 +1,4 @@
+import { withTransaction } from './db';
 import { ConflictError } from './errors';
 import { checkGuardianMediaConsent, type QueryExecutor } from './guardianConsent';
 // The same trim-and-lowercase the consent readers use. Imported rather than
@@ -73,28 +74,22 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
  * WHAT WITHDRAWAL STILL CANNOT REACH, stated whole rather than in the
  * comfortable half of it (review finding, PR #820):
  *
- *   1. A SAS URL ALREADY MINTED. This route hands out a 60-minute bearer
- *      credential, so an already-open tab keeps playing for up to an hour
- *      after the withdrawal commits. Closing that means short-lived SAS plus
- *      re-mint, or server-side proxying.
- *   2. A REQUEST ARRIVING IN THE SAME INSTANT. The consent read below is an
- *      ordinary SELECT and nothing serializes it against the withdrawal, so a
- *      withdrawal committing between that read and the mint still yields a
- *      fresh credential. getPilotVideoSasUrl is synchronous (blob.ts:123-125)
- *      and there is no round trip between the two, so the window is a few
- *      statements rather than request-scale -- and it is contained by (1)
- *      rather than separate from it, since even a perfectly serialized read
- *      only establishes "no withdrawal as of now" for a credential that
- *      outlives now by an hour.
+ *   A SAS URL ALREADY MINTED. This route hands out a 60-minute bearer
+ *   credential, so an already-open tab keeps playing for up to an hour after
+ *   the withdrawal commits. Closing that means short-lived SAS plus re-mint,
+ *   or server-side proxying.
  *
- * THE WRITE-PATH HALF OF SERIALIZING IT HAS LANDED; THIS ROUTE HAS NOT USED
- * IT YET. withdrawMediaConsent now takes `for update` on the guardian link
- * before its insert (writeMediaConsentUnderLock, guardianConsent.ts), so a
- * reader holding `for share` across its read and its action is ordered
- * against the withdrawal itself. Film Study's worker does exactly that before
- * persisting a proposal (pass a client to assertConsentCoversVideo). The mint
- * here still reads without a client, so window (2) above stays open on this
- * route until it does the same.
+ * A REQUEST ARRIVING IN THE SAME INSTANT IS NO LONGER A SECOND GAP. The
+ * consent read used to be an ordinary pooled SELECT, so a withdrawal
+ * committing between that read and the mint still yielded a fresh
+ * credential. The route now checks and mints inside mintUnderPlaybackConsent
+ * (below): one transaction whose consent reads hold every subject athlete's
+ * guardian links FOR SHARE, the row withdrawMediaConsent takes FOR UPDATE
+ * before it writes (writeMediaConsentUnderLock, guardianConsent.ts). A
+ * withdrawal in flight is waited for and read as withdrawn; one that starts
+ * after the check waits until the mint's transaction has ended. Film Study's
+ * worker does the same before persisting a proposal (#1226).
+ * playbackConsentRace.pg.test.ts proves both orders on real PostgreSQL.
  *
  * WHAT THIS DELIBERATELY DOES NOT REFUSE: A MISSING CONSENT ROW.
  *
@@ -257,4 +252,43 @@ export async function assertConsentCoversVideo(
       'GUARDIAN_CONSENT_UNREADABLE',
     );
   }
+}
+
+/*
+ * CHECK AND MINT AS ONE TRANSACTION. Every athlete the footage shows is
+ * checked with assertConsentCoversVideo on one client, so each read holds
+ * that athlete's guardian links FOR SHARE until the transaction ends, and
+ * `mint` runs before it ends. withdrawMediaConsent takes FOR UPDATE on the
+ * same rows before it records a withdrawal, so a withdrawal already in flight
+ * is waited for and then read as withdrawn (mint never runs), and one that
+ * starts after the check waits until the credential exists. A credential is
+ * never minted after a withdrawal the check missed.
+ *
+ * ATHLETES ARE LOCKED IN ASCENDING athlete_id ORDER. A tagged clip holds
+ * several athletes' guardian links at once, and two transactions taking two
+ * athletes in opposite orders can deadlock (overwatch, 2026-10-05, after the
+ * retention purge's guardian cascade was found to span athletes). The sort
+ * is by UTF-16 code unit, which is Postgres's COLLATE "C" order, not the
+ * column's default collation. Within one athlete the guardian links come in
+ * whatever order checkGuardianMediaConsent reads them (#1226: no ORDER BY);
+ * the shared helper from the lock-order lane replaces both when it lands.
+ *
+ * No athletes (unattributed team footage) means no guardian to ask and no
+ * row to lock, so the mint runs without opening a transaction.
+ */
+export async function mintUnderPlaybackConsent<T>(
+  organizationId: string,
+  athleteIds: readonly string[],
+  mint: () => T | Promise<T>,
+): Promise<T> {
+  const subjects = [...new Set(athleteIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (subjects.length === 0) {
+    return mint();
+  }
+  return withTransaction(async (client) => {
+    for (const athleteId of subjects) {
+      await assertConsentCoversVideo(organizationId, athleteId, client);
+    }
+    return mint();
+  });
 }
