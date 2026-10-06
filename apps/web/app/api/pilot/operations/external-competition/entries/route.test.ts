@@ -23,9 +23,24 @@ jest.mock('@/src/server/pilot/http', () => {
 // the wiring: that the entry POST calls the gate BEFORE the write, with this
 // competition and this athlete, and that each refusal reaches the caller with
 // its own status instead of being flattened into a 500.
-jest.mock('@/src/server/pilot/competitionSafetyGates', () => ({
-  assertAthleteMayBeEnteredInCompetition: jest.fn(),
-}));
+//
+// The lock and the shared transaction are proven against real Postgres in
+// src/server/pilot/competitionEntryRace.pg.test.ts. This stand-in for
+// runCompetitionEntryUnderSafetyLock does what the real one does in order --
+// gates, then the write on the transaction's client -- so what this file pins
+// is that the route goes through it and hands the write that client.
+jest.mock('@/src/server/pilot/competitionSafetyGates', () => {
+  const assertAthleteMayBeEnteredInCompetition = jest.fn();
+  return {
+    assertAthleteMayBeEnteredInCompetition,
+    runCompetitionEntryUnderSafetyLock: jest.fn(
+      async (input: unknown, write: (client: unknown) => Promise<unknown>) => {
+        await assertAthleteMayBeEnteredInCompetition(input);
+        return write('entry-transaction-client');
+      },
+    ),
+  };
+});
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 
@@ -127,7 +142,7 @@ test('a valid entry files the link under the caller', async () => {
     competitionId: 'c-1',
     athleteId: 'ath-1',
     createdByAccountId: 'acct-1',
-  });
+  }, 'entry-transaction-client');
 });
 
 test('the safety gates run against this athlete and this competition, before the write', async () => {
