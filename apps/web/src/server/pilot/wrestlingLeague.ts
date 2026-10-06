@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import {
   BOARD_MINIMUM_COHORT_SIZE,
   boardCountMetric,
@@ -7,6 +9,11 @@ import {
   type BoardCountMetric,
 } from './boardSummary';
 import { query, queryOne } from './db';
+
+/** On the caller's transaction when given (the entry path's, under its safety lock), else the pool. */
+async function rowsOn<T extends QueryResultRow>(client: PoolClient | undefined, text: string, params: unknown[]): Promise<T[]> {
+  return client ? (await client.query<T>(text, params)).rows : query<T>(text, params);
+}
 
 // Wrestling league minimal skeleton (owner decision 2026-08-15: build both
 // competition skeletons deliberately skeletal -- requirements are guessed
@@ -209,29 +216,32 @@ export async function addLeagueRosterEntry(input: {
   seasonId: string;
   athleteId: string;
   createdByAccountId: string;
-}): Promise<LeagueRosterRow | null> {
-  const season = await queryOne<{ season_id: string }>(
+}, client?: PoolClient): Promise<LeagueRosterRow | null> {
+  const season = (await rowsOn<{ season_id: string }>(
+    client,
     `select season_id from pilot.wrestling_league_seasons
      where organization_id = $1 and season_id = $2`,
     [input.organizationId, input.seasonId],
-  );
+  ))[0] ?? null;
   if (!season) return null;
 
-  const athlete = await queryOne<{ athlete_id: string }>(
+  const athlete = (await rowsOn<{ athlete_id: string }>(
+    client,
     `select athlete_id from pilot.athletes
      where organization_id = $1 and athlete_id = $2`,
     [input.organizationId, input.athleteId],
-  );
+  ))[0] ?? null;
   if (!athlete) return null;
 
   try {
-    const row = await queryOne<{ entry_id: string }>(
+    const row = (await rowsOn<{ entry_id: string }>(
+      client,
       `insert into pilot.wrestling_league_roster_entries
          (organization_id, entry_id, season_id, athlete_id, created_by_account_id)
        values ($1, $2, $3, $4, $5)
        returning entry_id`,
       [input.organizationId, randomUUID(), input.seasonId, input.athleteId, input.createdByAccountId],
-    );
+    ))[0] ?? null;
     if (!row) throw new Error('Unable to add the roster entry.');
   } catch (error) {
     if (error instanceof Error && /pilot_wrestling_league_roster_unique/.test(error.message)) {
@@ -240,7 +250,7 @@ export async function addLeagueRosterEntry(input: {
     throw error;
   }
 
-  const listed = await listLeagueRoster(input.organizationId, input.seasonId);
+  const listed = await listLeagueRoster(input.organizationId, input.seasonId, client);
   return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
 }
 
@@ -270,8 +280,13 @@ export async function withdrawLeagueRosterEntry(input: {
 
 /** Roster with the athlete's name joined from the org-scoped athlete record
  * -- the name is read through its governed home, never copied. */
-export async function listLeagueRoster(organizationId: string, seasonId: string): Promise<LeagueRosterRow[]> {
-  return query<LeagueRosterRow>(
+export async function listLeagueRoster(
+  organizationId: string,
+  seasonId: string,
+  client?: PoolClient,
+): Promise<LeagueRosterRow[]> {
+  return rowsOn<LeagueRosterRow>(
+    client,
     `select r.organization_id, r.entry_id, r.season_id, r.athlete_id, r.status,
             a.full_name as athlete_name, r.created_at
      from pilot.wrestling_league_roster_entries r

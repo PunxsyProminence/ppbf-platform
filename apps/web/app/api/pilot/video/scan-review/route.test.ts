@@ -8,6 +8,8 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -30,6 +32,13 @@ jest.mock('@/src/server/pilot/videoSessions', () => ({
   reviewVideoSessionScan: jest.fn(),
 }));
 
+// review-link and approve now ask the guardian-consent gate (CL-A21);
+// review-link's refusals are asserted in review-link/route.test.ts. Consent
+// covers video unless a test says otherwise.
+jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
+  assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+  mintUnderPlaybackConsent: jest.fn(async (_org: string, _ids: string[], mint: () => unknown) => mint()),
+}));
 jest.mock('@/src/server/pilot/blob', () => ({ getPilotVideoSasUrl: jest.fn(() => 'https://blob/sas') }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn().mockResolvedValue(undefined) }));
@@ -80,6 +89,7 @@ function req(body: unknown, path = 'scan-review') {
 }
 
 const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
+const mockConsent = assertConsentCoversVideo as jest.Mock;
 
 describe('POST /api/pilot/video/scan-review', () => {
   /*
@@ -133,6 +143,36 @@ describe('POST /api/pilot/video/scan-review', () => {
 
     expect(res.status).toBe(403);
     expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  // CL-A21: a review link minted before the guardian went photo-only or
+  // withdrew still satisfies the prerequisite for 15 minutes, so approve asks
+  // consent again rather than putting the footage into circulation after the
+  // guardian said no. Block narrows access and is not asked.
+  test.each(['GUARDIAN_CONSENT_WITHDRAWN', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'])('an approval refused by consent (%s) writes nothing', async (code) => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockConsent.mockRejectedValueOnce(new ConflictError('Blocked: consent', code));
+
+    const res = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe(code);
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test('blocking is not held to consent, and teaching footage has no guardian to ask', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValueOnce(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'quarantined', scan_state: 'blocked' });
+    await POST(req({ video_session_id: 'vs-1', decision: 'block' }));
+    expect(mockConsent).not.toHaveBeenCalled();
+
+    mockGetVideo.mockResolvedValueOnce(video({ athlete_id: null }));
+    mockReview.mockResolvedValue({ ...video({ athlete_id: null }), status: 'ready', scan_state: 'passed' });
+    expect((await POST(req({ video_session_id: 'vs-1', decision: 'approve' }))).status).toBe(200);
+    expect(mockConsent).not.toHaveBeenCalled();
   });
 
   test('an admin releasing a deferred video sets it ready and records who decided', async () => {

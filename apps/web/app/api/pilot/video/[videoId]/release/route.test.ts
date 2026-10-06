@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { ConflictError } from '@/src/server/pilot/errors';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getVideoReleasePolicy } from '@/src/server/pilot/videoReleasePolicy';
 import { queryOne } from '@/src/server/pilot/db';
@@ -32,6 +35,15 @@ jest.mock('@/src/server/pilot/videoScanReview', () => ({
   ...jest.requireActual('@/src/server/pilot/videoScanReview'),
   assertActorHoldsCurrentReviewLink: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
+  assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+}));
+// Only the athlete-reach check is doubled; requireRole and
+// isOrganizationAdminRole stay real.
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
@@ -40,6 +52,8 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockConsent = assertConsentCoversVideo as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -231,6 +245,63 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
     expect(await res.json()).toEqual({ error: 'Not found' });
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  // CL-A21: having uploaded footage is not a standing claim on the athlete in
+  // it. A coach who has since lost the assignment cannot release it.
+  test('the uploading coach who no longer reaches the athlete gets hidden not-found and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), 'ath-1');
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockPrereq).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('teaching footage names nobody, so the uploader rule alone applies to its release', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ athlete_id: null }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalled();
+  });
+
+  // CL-A21 follow-through: a review link minted before a guardian went
+  // photo-only or withdrew still satisfies the prerequisite for 15 minutes,
+  // so the release asks consent again rather than putting the footage into
+  // circulation after the guardian said no.
+  test('consent that no longer covers video refuses the release and writes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockConsent.mockRejectedValueOnce(new ConflictError('Blocked: photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin is not put through the coach assignment check', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ uploaded_by_account_id: 'coach-2' }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalled();
   });
 
   test('an organization admin can release a video another account uploaded', async () => {

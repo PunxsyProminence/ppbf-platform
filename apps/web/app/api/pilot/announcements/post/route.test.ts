@@ -4,6 +4,7 @@ import { POST } from './route';
 import { resolvePrincipal, type PilotPrincipal } from '@/src/server/pilot/auth';
 import { createAnnouncement } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   resolvePrincipal: jest.fn(),
@@ -20,6 +21,12 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/src/server/pilot/boardSeats', () => ({
+  getBoardSeatLabel: jest.requireActual('@/src/server/pilot/boardSeats').getBoardSeatLabel,
+  listSeatsForAccount: jest.fn().mockResolvedValue([]),
+}));
+
+const mockListSeatsForAccount = listSeatsForAccount as jest.MockedFunction<typeof listSeatsForAccount>;
 const mockResolvePrincipal = resolvePrincipal as jest.MockedFunction<typeof resolvePrincipal>;
 const mockCreateAnnouncement = createAnnouncement as jest.MockedFunction<typeof createAnnouncement>;
 const mockWritePilotAuditEvent = writePilotAuditEvent as jest.MockedFunction<typeof writePilotAuditEvent>;
@@ -119,6 +126,7 @@ describe('POST /api/pilot/announcements/post', () => {
   });
 
   test('lets a board principal pick its own seat but nothing outside the board seats', async () => {
+    mockListSeatsForAccount.mockResolvedValue([{ seat: 'treasurer', is_primary: true }]);
     mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
 
     const allowed = await POST(request({ message: 'Hello', author_name: 'Treasurer', author_role: 'board-treasurer' }));
@@ -128,6 +136,41 @@ describe('POST /api/pilot/announcements/post', () => {
     mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
     const denied = await POST(request({ message: 'Hello', author_name: 'Treasurer', author_role: 'admin' }));
     expect(denied.status).toBe(403);
+  });
+
+  // CL-A8: the seat is a public claim about who is speaking for the club, so a
+  // board member may only sign as a seat pilot.board_seats says they hold.
+  test('refuses a board seat the board member does not hold', async () => {
+    mockListSeatsForAccount.mockResolvedValue([{ seat: 'treasurer', is_primary: true }]);
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Treasurer', author_role: 'board-president' }));
+
+    expect(res.status).toBe(403);
+    // The refusal names the seat they CAN sign as, since the picker offers all eight.
+    expect((await res.json()).error).toMatch(/seat you hold \(.*Treasurer.*\)/);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+    expect(mockListSeatsForAccount).toHaveBeenCalledWith('org-1', 'board-1');
+  });
+
+  test('refuses a board member who holds no seat at all', async () => {
+    mockListSeatsForAccount.mockResolvedValue([]);
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-2' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Member', author_role: 'board-at-large' }));
+
+    expect(res.status).toBe(403);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  test('a co-holder of a seat may sign as it', async () => {
+    mockListSeatsForAccount.mockResolvedValue([{ seat: 'secretary', is_primary: false }]);
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-3' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Secretary', author_role: 'board-secretary' }));
+
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ authorRole: 'board-secretary' }));
   });
 
   test('rejects a role that may not post announcements at all', async () => {
