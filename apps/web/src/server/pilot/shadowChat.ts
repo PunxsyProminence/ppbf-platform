@@ -709,14 +709,62 @@ export function validateShadowResponse(
       }
     }
   }
+  // CL-C8 (2026-10-05 audit, measured by Codex at 6736bac7). Both patterns
+  // above name a fixed subject, a fixed verb and seven ailments, so the same
+  // diagnosis passed clean when the model used a name ("Example Athlete has a
+  // concussion"), a copula ("That's a concussion", "This is a sprained
+  // ankle"), a contraction ("You've torn your ACL") or an ailment off the list
+  // ("You have tendinitis"). Under the ruling that in-app AI is never
+  // diagnostic, the shape of the sentence is not the boundary.
+  //
+  // Added, never loosened: the two patterns above are untouched, and these
+  // carry the same conditional and prevention exemptions, so "If you have
+  // tendinitis, a clinician should evaluate it" and "a higher injury risk"
+  // still pass. Generic framing is kept out structurally rather than by
+  // listing sentences: a gap word that turns the noun into a category ("a
+  // COMMON injury", "a sign OF"), a relative or generic subject ("an athlete
+  // WHO has", "EVERYONE has"), and a record-keeping noun after the ailment
+  // ("an injury LOG") each stop the match.
+  if (!makesDiagnosisClaim) {
+    const folded = normaliseForMatching(response).toLowerCase().replace(/\s+/g, ' ');
+    const ailment = String.raw`(?:concussion|fracture|injury|disease|syndrome|disorder|condition|sprain(?:ed)?|strain(?:ed)?|tear|torn|ruptured?|dislocat\w*|separated\s+shoulder|hernia|herniat\w*|whiplash|contusion|[a-z]+itis|stress\s+reaction|shin\s+splints|broken|fractured)\b`;
+    const notARecord = String.raw`(?!\s*(?:risk|prevention|protocol|log|report|record|history|rate|policy|plan|program|management|screen|check|form|list|data|database|question|topic|test|assessment|education|awareness)\b)`;
+    const gap = String.raw`(?:(?!(?:what|how|why|where|which|about|of|for|on|in|to|with|from|at|by|question|topic|common|typical|type|kind|form|sign|example|risk|part|way|reason|cause|reported|recorded|logged|documented|previous|prior|past|different)\b)[a-z'-]+\s+){0,3}?`;
+    const determiner = String.raw`(?:(?:a|an|the|some|your|his|her|their)\s+)?`;
+    const widenedPatterns = [
+      // Copula: "that's a concussion", "this sounds like a torn rotator cuff".
+      new RegExp(String.raw`(?:\b(?:that|this)(?:'s|\s+is|\s+(?:looks|sounds|seems)\s+like)|\b(?:looks|sounds|seems)\s+like)\s+${determiner}${gap}${ailment}${notARecord}`, 'g'),
+      // Any singular subject, a name included: "Jake has a concussion".
+      new RegExp(String.raw`\b(?!(?:who|that|which|one|anyone|someone|everyone|nobody|whoever|each|every|gym|program)\b)[a-z][a-z-]*(?:\s+has|'s\s+got|\s+has\s+got)\s+(?:(?:probably|likely|definitely|clearly|already)\s+)*${determiner}${gap}${ailment}${notARecord}`, 'g'),
+      // Injury verbs: "you've torn your ACL", "he sprained his wrist".
+      /\b(?:you|he|she|they|the\s+(?:athlete|boxer|fighter|kid))(?:'ve|\s+have|\s+has|'s)?\s+(?:(?:probably|likely|definitely|clearly|just|already)\s+)*(?:torn|tore|sprained|strained|broke|broken|fractured|dislocated|ruptured|herniated|separated|pulled|concussed)\s+(?:your|his|her|their)\b(?!\s+(?:personal\s+)?(?:record|best|pr|weight)\b)/g,
+      // The second pattern's own shape, with the ailments it did not list.
+      new RegExp(String.raw`\byou(?:'ve|\s+have|\s+got)\s+${determiner}${gap}${ailment}${notARecord}`, 'g'),
+    ];
+    for (const pattern of widenedPatterns) {
+      for (const match of folded.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        const preceding = folded.slice(Math.max(0, index - 60), index);
+        const following = folded.slice(index + match[0].length, index + match[0].length + 40).split(/[.!?;\n]/)[0] ?? '';
+        if (!conditionalCue(preceding) && !preventionCue.test(preceding + match[0] + following)) {
+          makesDiagnosisClaim = true;
+          break;
+        }
+      }
+      if (makesDiagnosisClaim) break;
+    }
+  }
   if (makesDiagnosisClaim) {
     filtered = true;
     flag('diagnostic_claim');
   }
 
-  // Check for direct prescription claims
+  // Check for direct prescription claims. The drug list named two generics
+  // and no brand, so "Take two Advil" passed (CL-C8); the common
+  // over-the-counter names and the supplements athletes are told to take
+  // are listed now.
   if (
-    /\b(take|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection)\b/.test(normalized)
+    /\b(take|taking|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection|advil|motrin|aleve|naproxen|aspirin|tylenol|paracetamol|nsaids?|painkillers?|pain\s+relievers?|melatonin|creatine|caffeine|antibiotics?|prednisone|steroids?)\b/.test(normalized)
   ) {
     filtered = true;
     flag('prescriptive_claim');

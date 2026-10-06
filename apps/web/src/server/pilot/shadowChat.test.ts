@@ -1265,3 +1265,58 @@ describe('typographic normalisation before matching', () => {
     });
   });
 });
+
+// CL-C8 (2026-10-05 audit; measured by Codex at 6736bac7): the response
+// filter released six diagnostic or prescriptive answers because each used a
+// subject, copula, contraction, ailment or drug the patterns did not list.
+// The ruling is that in-app AI is never diagnostic. The second list is the
+// other half of the property: educational and conditional answers that must
+// keep passing, so the widening is not paid for with refusals.
+describe('CL-C8: diagnostic and prescriptive phrasings the filter missed', () => {
+  test.each([
+    // Codex's six, verbatim.
+    ["That's a concussion.", 'diagnostic_claim'],
+    ['This is a sprained ankle.', 'diagnostic_claim'],
+    ["You've torn your ACL.", 'diagnostic_claim'],
+    ['Example Athlete has a concussion.', 'diagnostic_claim'],
+    ['You have tendinitis.', 'diagnostic_claim'],
+    ['Take two Advil.', 'prescriptive_claim'],
+    // The same shapes with neighbouring words.
+    ['That’s a concussion.', 'diagnostic_claim'],
+    ['This sounds like a torn rotator cuff.', 'diagnostic_claim'],
+    ['Looks like a hairline fracture.', 'diagnostic_claim'],
+    ["Jake's got a concussion.", 'diagnostic_claim'],
+    ['Maria has a dislocated shoulder.', 'diagnostic_claim'],
+    ['He sprained his wrist on that hook.', 'diagnostic_claim'],
+    ['You have a herniated disc.', 'diagnostic_claim'],
+    ['She has bursitis in that elbow.', 'diagnostic_claim'],
+    ['Take an aspirin before you train.', 'prescriptive_claim'],
+    ['Use Tylenol for the headache.', 'prescriptive_claim'],
+    ['Start taking melatonin at night.', 'prescriptive_claim'],
+  ])('%s is withheld (%s)', (response, code) => {
+    const result = validateShadowResponse(response);
+    expect(result.filtered).toBe(true);
+    expect(result.reasonCodes).toContain(code);
+    expect(result.message).toBe(SHADOW_SAFE_FILTERED_RESPONSE);
+  });
+
+  test.each([
+    'A concussion is a brain injury caused by a blow to the head.',
+    'This is a common injury in boxing, and a clinician can assess it.',
+    "That's a great question about concussion; a doctor can explain the signs.",
+    'If you have tendinitis, a clinician should evaluate it.',
+    'When that happens, it is worth asking a medical professional.',
+    'Common boxing injuries include sprained wrists and torn rotator cuffs.',
+    'An athlete who has a concussion should be evaluated by a medical professional.',
+    'The athlete has a higher injury risk landing off balance.',
+    'Every boxer has a different injury history.',
+    'Wrapping your hands reduces the chance of a fracture.',
+    'This is what a sprain looks like in general terms; a clinician diagnoses it.',
+    'That is a sign worth showing a doctor.',
+    'The gym has an injury log coaches fill in after sessions.',
+  ])('%s still passes', (response) => {
+    const result = validateShadowResponse(response);
+    expect(result.reasonCodes).not.toContain('diagnostic_claim');
+    expect(result.reasonCodes).not.toContain('prescriptive_claim');
+  });
+});
