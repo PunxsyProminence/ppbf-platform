@@ -93,7 +93,7 @@ describe('transport validation refuses before a byte is read', () => {
 describe('the descriptor does not trust the client', () => {
   it('accepts a jpeg whose declared type matches its extension', () => {
     expect(describeProfilePhotoUpload({ name: 'me.jpg', type: 'image/jpeg', size: 40_000 }))
-      .toMatchObject({ contentType: 'image/jpeg', generatedFileName: 'portrait.jpg' });
+      .toMatchObject({ contentType: 'image/jpeg', generatedFileName: 'portrait' });
   });
 
   it('refuses a mismatch between the extension and the declared type', () => {
@@ -119,7 +119,7 @@ describe('the descriptor does not trust the client', () => {
     const descriptor = describeProfilePhotoUpload({
       name: '../../etc/my kid at home 2019.jpg', type: 'image/jpeg', size: 40_000,
     });
-    expect(descriptor?.generatedFileName).toBe('portrait.jpg');
+    expect(descriptor?.generatedFileName).toBe('portrait');
     expect(descriptor?.safeOriginalName).not.toContain('/');
     expect(descriptor?.safeOriginalName).not.toContain('..');
   });
