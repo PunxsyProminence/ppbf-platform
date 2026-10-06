@@ -33,6 +33,11 @@
  * turns out to be, a value OUTSIDE it must not read as consent.
  */
 
+/* The consent-set advisory lock is its own statement; stubbed so the
+   scripted client.query sequence below is unchanged (proven against real
+   Postgres in consentSetPhantom.pg.test.ts). */
+jest.mock('./consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),

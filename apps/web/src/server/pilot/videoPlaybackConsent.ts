@@ -1,3 +1,4 @@
+import { lockConsentSets } from './consentSetLock';
 import { withTransaction } from './db';
 import { ConflictError } from './errors';
 import { checkGuardianMediaConsent, type QueryExecutor } from './guardianConsent';
@@ -323,6 +324,10 @@ export async function mintUnderPlaybackConsent<T>(
     return mint();
   }
   return withTransaction(async (client) => {
+    // Every athlete's consent-set lock before any athlete's link rows
+    // (guardianConsent.ts's order). Taken per athlete inside the loop, a mint
+    // would hold A's rows while waiting on B's set behind a link insert.
+    await lockConsentSets(client, organizationId, subjects, 'shared');
     for (const athleteId of subjects) {
       await assertConsentCoversVideo(organizationId, athleteId, client);
     }

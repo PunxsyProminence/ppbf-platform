@@ -12,8 +12,10 @@ and the cleanup job in Method 1. Scope A: the person's record is marked deleted,
 closes and anyone signed in as them is signed out. Scope B: everything tied to the athlete is
 marked deleted at the same moment -- see *What deletion marks* below for exactly what, what it
 leaves, and why. Still **NOT BUILT**: a preview of what will be deleted, a 1-year restore, and
-a compliance report. Stored video and photo files are **not erased** by deletion or by the
-cleanup job; whether the storage account removes them on its own is **UNVERIFIED**.
+a compliance report. Deletion erases no stored file. The cleanup job, when it purges an
+athlete, deletes that athlete's video rows, their video files and the athlete's portrait file
+(*Stored files*, below); any other stored file is **not erased**, and whether the storage
+account removes files on its own is **UNVERIFIED**.
 
 ## Overview
 
@@ -290,11 +292,28 @@ queue is not in this table: it drops a deleted athlete's publications at once (v
   a deleted athlete, such as an intake case's approve or reject event. From 2026-10-05 those
   entries carry the promoted athlete's id.
 
-**Stored files.** Deletion erases no stored file, and neither does the cleanup job: the app's
-only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
+**Stored files.** Deletion erases no stored file. The cleanup job, when it purges an athlete
+(two years after deletion), also deletes, in that athlete's own savepoint: every
+`pilot.video_sessions` row whose `athlete_id` is that athlete (`athlete_id` has no foreign key,
+so nothing cascaded, and a roster that reissued the freed id would have handed the new child the
+old child's footage; audit CL-B3), with what cascades from the video (publications, clip tags,
+capture participants, calibration clips); each of those videos' files in the video container;
+and the portrait file of the athlete's login in that gym, whose photo columns are cleared and
+marked `removed`. A compliance violation filed against another child on one of those videos
+survives with its video pointer cleared. Footage in which the athlete is only a tagged or
+capture participant is another child's video and is **not** deleted. Files are deleted before
+the transaction commits, so a failed commit leaves a row pointing at a missing file, which the
+next run removes. Without storage access (`PPBF_RETENTION_STORAGE_ACCOUNT_URL` plus the
+workflow's identity holding Storage Blob Data Contributor) that athlete is not purged and the
+run fails, dry run included (`blocked_by` `STORAGE_CREDENTIAL_MISSING` or `STORAGE_<code>`).
+A storage container that does not exist is a refusal (`STORAGE_ContainerNotFound`), never a
+pile of "missing" files. Whether the storage account keeps deleted blobs for a while (blob soft
+delete or versioning) is **UNVERIFIED**; if it does, a deleted file stays recoverable for that
+window. The dry run reports `would_delete_videos`, `would_delete_files` and `files_missing`; the audit
+row records counts only, never a path. Pinned by `retentionVideoPurge.pg.test.ts`. Otherwise the
+app's only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
 photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
-also leaves the video rows (`pilot.video_sessions.athlete_id` has no foreign key to athletes)
-and the athlete's own account and portrait row (it removes parent accounts only); the
+leaves the athlete's own account and profile row (it removes parent accounts only); the
 athlete's account is kept but no longer names the athlete record that was removed, and is
 marked deleted if it was not already (*Safety screens*, above). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage

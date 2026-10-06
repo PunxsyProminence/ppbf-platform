@@ -58,6 +58,28 @@ describe('the retention policy is actually enforced by something', () => {
     expect(sweep!.source).toContain("PPBF_RETENTION_APPLY: ${{ inputs.apply == 'APPLY' }}");
   });
 
+  test('the sweep gets a storage account URL, and never the storage key', () => {
+    // The purge deletes a purged athlete's video and portrait files (CL-B3).
+    // Without an account URL every such athlete is blocked; with the
+    // connection string exported, the job would hold the account key rather
+    // than reach storage as its own OIDC identity.
+    const source = workflows.find((workflow) => workflow.source.includes(CLEANUP_INVOCATION))!.source;
+    const fetched = source.indexOf('--secret-name azure-storage-connection-string');
+    const masked = source.indexOf('echo "::add-mask::$STORAGE"');
+    const parsed = source.indexOf('STORAGE="$STORAGE" node -e');
+    const exported = source.indexOf('PPBF_RETENTION_STORAGE_ACCOUNT_URL=$URL" >> "$GITHUB_ENV"');
+    const sweep = source.indexOf(CLEANUP_INVOCATION);
+    // Fetched, masked, parsed, only the URL exported -- all before the sweep.
+    expect(fetched).toBeGreaterThan(-1);
+    expect(fetched).toBeLessThan(masked);
+    expect(masked).toBeLessThan(parsed);
+    expect(parsed).toBeLessThan(exported);
+    expect(exported).toBeLessThan(sweep);
+    // The key never reaches the job's environment, under any spelling, and no
+    // shared override variable can point a target at another target's account.
+    expect(source).not.toMatch(/AZURE_STORAGE_CONNECTION_STRING|\$\{?STORAGE\}?"?\s*>>|vars\.PPBF_RETENTION_STORAGE/);
+  });
+
   test('the npm script the workflow calls exists', () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(REPO_ROOT, 'apps/web/package.json'), 'utf8'),

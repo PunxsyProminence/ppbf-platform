@@ -5,6 +5,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -36,7 +37,12 @@ jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/src/server/pilot/videoSessions', () => ({
+  getVideoSessionById: jest.fn(),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockGetVideoSession = getVideoSessionById as jest.Mock;
 const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockPublish = publishToResearchLibrary as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -45,6 +51,9 @@ const mockAssertConsent = assertGuardianMediaConsent as jest.Mock;
 beforeEach(() => {
   // Consent is on file unless a test says otherwise.
   mockAssertConsent.mockResolvedValue(undefined);
+  // The video is attributed to the publication's athlete unless a test says
+  // otherwise.
+  mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', athlete_id: 'ath-1', status: 'ready' });
 });
 
 afterEach(() => {
@@ -199,6 +208,36 @@ describe('POST /api/pilot/publications/publish', () => {
 
     expect(res.status).toBe(409);
     expect((await res.json()).error).toContain('does not belong to this publication');
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  // Audit CL-B4: a publication cleared before create refused unattributed
+  // footage must not reach the shelf. Its consent checks read only the one
+  // child it names, never whoever is actually in team footage.
+  test('a publication whose video is not linked to an athlete is refused before anything is claimed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vid-1', athlete_id: null, status: 'ready' });
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('VIDEO_NOT_ATTRIBUTED');
+    expect(body.error).toMatch(/isn't linked to an athlete/);
+    expect(mockGetVideoSession).toHaveBeenCalledWith('org-1', 'vid-1');
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  test('a publication whose video cannot be found is refused, since its attribution cannot be confirmed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockGetVideoSession.mockResolvedValueOnce(null);
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code?: string }).code).toBe('VIDEO_NOT_ATTRIBUTED');
     expect(mockPublish).not.toHaveBeenCalled();
   });
 
