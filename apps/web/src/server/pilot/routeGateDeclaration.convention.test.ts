@@ -68,17 +68,20 @@ const API_ROOT = path.join(WEB_ROOT, 'app', 'api');
 const HTTP_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 /**
- * Gates that answer "who is the caller". All five are in http.ts / auth.ts;
- * the last four are the deliberate exceptions requirePrincipal's own header
+ * Gates that answer "who is the caller". All six are in http.ts / auth.ts;
+ * the last five are the deliberate exceptions requirePrincipal's own header
  * names -- the PIN-change route, the session-read route, the Microsoft-only
- * tier for privileged operations, and (BASE04-D004) the credential tier that
- * also admits a local PIN session the server itself attested.
+ * tier for privileged operations, (BASE04-D004) the credential tier that
+ * also admits a local PIN session the server itself attested, and (CL-A7)
+ * the any-adult-session tier for coach authoring.
  */
 const SESSION_GATES = new Set([
   'requirePrincipal',
   'requirePrincipalAllowingPinChange',
   'requireMicrosoftAuthenticatedPrincipal',
   'requireMicrosoftOrAttestedLocalPinPrincipal',
+  // Any adult (non-PIN) session, for the routes coaches author on (audit CL-A7).
+  'requireStaffSessionPrincipal',
   'resolvePrincipal',
 ]);
 
@@ -403,10 +406,10 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
     'SELF-SCOPED, and structurally so: the route takes NO account_id '
       + 'parameter and its header records that there must never be one. The '
       + 'account acted on is the caller\'s, read from the resolved principal. '
-      + 'revokeAllSessionsForAccountInOrganization additionally refuses a '
-      + 'platform owner and an account with no active membership in the '
-      + 'organization. Revoking somebody else\'s sessions stays on the admin '
-      + 'route.',
+      + 'revokeOwnSessionsInOrganization additionally refuses an account '
+      + 'with no active membership in the organization; a platform owner may '
+      + 'end its own sessions (audit CL-A17). Revoking somebody else\'s '
+      + 'sessions stays on the admin route.',
   ],
   [
     'app/api/pilot/auth/logout/route.ts#POST',

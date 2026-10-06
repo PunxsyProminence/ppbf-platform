@@ -17,6 +17,13 @@
  * account lock; the membership change is started while it is parked; the gate
  * is released only once both are seen waiting in pg_stat_activity.
  *
+ * The athlete cases now end in a refusal: the platform route may not change
+ * an athlete's login at all (audit CL-A5, upsertOrganizationMembership). The
+ * refusal is decided on the row read under the account lock, so the order
+ * these tests prove still holds -- the change waits on the account and holds
+ * nothing meanwhile -- and the move-to-another-gym case uses a staff login,
+ * which is the only kind the route still moves.
+ *
  * Spins up the same disposable, local-only embedded Postgres the other
  * migration suites use. It NEVER connects to production or staging.
  */
@@ -50,6 +57,8 @@ const OTHER_ORG_ID = 'org-lock-order-other';
 const ADMIN_ID = 'acct-lock-order-admin';
 const ATHLETE_ID = 'ath-lock-order';
 const ACCOUNT_ID = 'acct-lock-order-athlete';
+const STAFF_ACCOUNT_ID = 'acct-lock-order-coach';
+const ATHLETE_REFUSAL = 'Forbidden: an athlete account is administered by their own gym';
 const ISSUER = { issuedByAccountId: ADMIN_ID, issuedByRole: 'organization_admin' as const };
 
 let PG_PORT: number;
@@ -198,6 +207,21 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  for (const id of [ACCOUNT_ID, STAFF_ACCOUNT_ID]) {
+    await client.query('delete from pilot.session_tokens where account_id = $1', [id]);
+    await client.query('delete from pilot.organization_memberships where account_id = $1', [id]);
+  }
+  await client.query('delete from pilot.accounts where account_id = $1', [STAFF_ACCOUNT_ID]);
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag)
+     values ($1, 'coach', $2, 'microsoft', 'lock-order-coach@example.org', true)`,
+    [STAFF_ACCOUNT_ID, ORG_ID],
+  );
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $2, 'coach', true)`,
+    [STAFF_ACCOUNT_ID, ORG_ID],
+  );
   await client.query('delete from pilot.session_tokens where account_id = $1', [ACCOUNT_ID]);
   await client.query('delete from pilot.account_activation_tokens where account_id = $1', [ACCOUNT_ID]);
   await client.query('delete from pilot.organization_memberships where account_id = $1', [ACCOUNT_ID]);
@@ -214,7 +238,7 @@ beforeEach(async () => {
 });
 
 describe('a membership change and a redemption on the same login', () => {
-  test('redemption holding the account while the membership changes: both finish, neither deadlocks', async () => {
+  test('redemption holding the account while the membership change is attempted: both finish, neither deadlocks', async () => {
     const issued = await activation.issueActivationCode({ accountId: ACCOUNT_ID, organizationId: ORG_ID, ...ISSUER });
     const gate = await connect();
     try {
@@ -240,8 +264,10 @@ describe('a membership change and a redemption on the same login', () => {
       await gate.query('commit');
       await Promise.all([redeeming.done, upserting.done]);
 
+      // The change is refused (an athlete login), and refused cleanly: a
+      // deadlock would surface here as 40P01 instead of the refusal.
       expect(redeeming.state.error).toBeUndefined();
-      expect(upserting.state.error).toBeUndefined();
+      expect((upserting.state.error as Error | undefined)?.message).toBe(ATHLETE_REFUSAL);
       expect(redeeming.state.value).toMatchObject({ accountId: ACCOUNT_ID, organizationId: ORG_ID });
 
       const account = await client.query<{ active_flag: boolean; role: string; pin_set: boolean }>(
@@ -289,7 +315,13 @@ describe('a membership change and a redemption on the same login', () => {
 
       await holder.query('commit');
       await upserting.done;
-      expect(upserting.state.error).toBeUndefined();
+      // Decided under the lock, after the wait: refused, membership untouched.
+      expect((upserting.state.error as Error | undefined)?.message).toBe(ATHLETE_REFUSAL);
+      const membership = await client.query<{ active_flag: boolean }>(
+        'select active_flag from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+        [ACCOUNT_ID, ORG_ID],
+      );
+      expect(membership.rows).toEqual([{ active_flag: false }]);
     } finally {
       await holder.query('rollback').catch(() => undefined);
       await holder.end();
@@ -310,15 +342,15 @@ describe('a membership change and a redemption on the same login', () => {
       await holder.query(
         `insert into pilot.session_tokens (token_hash, account_id, organization_id)
          values ('lock-order-session', $1, $2)`,
-        [ACCOUNT_ID, ORG_ID],
+        [STAFF_ACCOUNT_ID, ORG_ID],
       );
 
-      const upserting = watch(auth.upsertOrganizationMembership(ACCOUNT_ID, OTHER_ORG_ID, 'athlete', true));
+      const upserting = watch(auth.upsertOrganizationMembership(STAFF_ACCOUNT_ID, OTHER_ORG_ID, 'coach', true));
       await waitUntilWaiting(1, 'pilot.accounts');
       expect(upserting.state.settled).toBe(false);
 
       await expect(
-        holder.query('update pilot.accounts set updated_at = now() where account_id = $1', [ACCOUNT_ID]),
+        holder.query('update pilot.accounts set updated_at = now() where account_id = $1', [STAFF_ACCOUNT_ID]),
       ).resolves.toMatchObject({ rowCount: 1 });
 
       await holder.query('commit');
@@ -327,7 +359,7 @@ describe('a membership change and a redemption on the same login', () => {
 
       const account = await client.query<{ organization_id: string }>(
         'select organization_id from pilot.accounts where account_id = $1',
-        [ACCOUNT_ID],
+        [STAFF_ACCOUNT_ID],
       );
       expect(account.rows[0].organization_id).toBe(OTHER_ORG_ID);
     } finally {

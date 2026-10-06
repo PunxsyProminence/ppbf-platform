@@ -102,6 +102,8 @@ export async function linkSessionToObjective(input: {
   organizationId: string;
   runId: string;
   objectiveId: string;
+  /** The block the CALLER cleared. The objective must be on it (CL-A12). */
+  blockId: string;
   linkedByAccountId: string;
 }): Promise<{ link: SessionObjectiveLinkRow; created: boolean } | null> {
   /* Checked FIRST, before any existence read, so a caller with no standing in
@@ -114,9 +116,16 @@ export async function linkSessionToObjective(input: {
   }
 
   /* One statement for the whole precondition: the objective exists in this
-     organization AND the session is already linked to that objective's block.
-     Asking in one place means the block_id written below is the objective's
-     own, never a value assembled from two reads that could disagree. */
+     organization, it is on the block the caller cleared, AND the session is
+     already linked to that block. Asking in one place means the block_id
+     written below is the objective's own, never a value assembled from two
+     reads that could disagree.
+
+     The `o.block_id = $4` predicate is the authorization. Without it the
+     caller's clearance was proved about one block and spent on whichever
+     block the objective belonged to -- on a group run supporting two
+     children's blocks, a coach cleared for one could mark the other's
+     objective (audit CL-A12). Same discipline as unlinkSessionFromObjective. */
   const eligible = await queryOne<{ block_id: string }>(
     `select o.block_id
      from pilot.athlete_development_block_objectives o
@@ -124,8 +133,8 @@ export async function linkSessionToObjective(input: {
        on l.organization_id = o.organization_id
       and l.block_id = o.block_id
       and l.run_id = $3
-     where o.organization_id = $1 and o.objective_id = $2`,
-    [input.organizationId, input.objectiveId, input.runId],
+     where o.organization_id = $1 and o.objective_id = $2 and o.block_id = $4`,
+    [input.organizationId, input.objectiveId, input.runId, input.blockId],
   );
   if (!eligible) return null;
 

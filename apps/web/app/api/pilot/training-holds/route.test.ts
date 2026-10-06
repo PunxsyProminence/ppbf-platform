@@ -423,6 +423,32 @@ describe('POST lift', () => {
     expect(mockCoachAssigned).toHaveBeenCalledWith('acct-caller', 'ATH-1', 'org-a');
   });
 
+  test('a coach cannot lift a hold an admin placed, even on their own athlete (OD-2026-10-05-024 ruling 1)', async () => {
+    for (const placedByRole of ['organization_admin', 'admin']) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+      mockGetById.mockResolvedValueOnce({ ...FULL_HOLD, placed_by_role: placedByRole });
+
+      const response = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
+      const payload = await response.json();
+
+      expect({ placedByRole, status: response.status }).toEqual({ placedByRole, status: 403 });
+      expect(payload.error).toMatch(/only an organization admin can lift/i);
+    }
+    expect(mockLift).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an admin lifts a hold a coach placed, and one an admin placed', async () => {
+    for (const placedByRole of ['coach', 'organization_admin']) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetById.mockResolvedValueOnce({ ...FULL_HOLD, placed_by_role: placedByRole });
+      mockLift.mockResolvedValueOnce({ ...FULL_HOLD, status: 'lifted' });
+
+      const response = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
+      expect({ placedByRole, status: response.status }).toEqual({ placedByRole, status: 200 });
+    }
+  });
+
   test("a coach probing another roster's hold id gets the same Missing as a bogus id", async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     mockGetById.mockResolvedValueOnce(FULL_HOLD);

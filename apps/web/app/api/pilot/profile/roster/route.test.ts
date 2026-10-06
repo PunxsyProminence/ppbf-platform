@@ -287,6 +287,17 @@ describe('the role gate is untouched', () => {
     }
   });
 
+  // OD-2026-10-05-024 ruling 2: a coach reads only their own athletes. The
+  // whole-organization roster is an organization admin's.
+  test('a coach asking for the whole organization is refused before any read runs', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+
+    const response = await GET(makeRequest('?scope=organization'));
+
+    expect(response.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   test('a role outside the gate is still refused before any read runs', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'parent-1' }));
 

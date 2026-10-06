@@ -13,9 +13,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import ShadowReviewsPage from './page';
 
+const mockGateRoles: string[][] = [];
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => children,
+  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles: string[] }) => {
+    mockGateRoles.push(allowedRoles);
+    return children;
+  },
 }));
 
 function jsonResponse(body: unknown, ok = true) {
@@ -48,6 +52,19 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+test('the page is gated to organization admins; platform_owner is not admitted (OD-2026-10-05-024 ruling 3)', async () => {
+  fetchMock.mockResolvedValueOnce(jsonResponse({ reviews: [] }));
+  mockGateRoles.length = 0;
+
+  render(<ShadowReviewsPage />);
+
+  await waitFor(() => expect(mockGateRoles.length).toBeGreaterThan(0));
+  for (const roles of mockGateRoles) {
+    expect(roles).toContain('admin');
+    expect(roles).not.toContain('platform_owner');
+  }
 });
 
 test('the open queue loads first, because that is the queue that needs a person', async () => {
