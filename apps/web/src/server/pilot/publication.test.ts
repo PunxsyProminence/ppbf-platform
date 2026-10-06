@@ -282,7 +282,7 @@ describe('reopenRetractedPublication', () => {
   // CAS, so a withdrawal cannot commit between the check and the reopen.
   test('the consent re-check runs inside the reopen transaction, on its client, before the UPDATE', async () => {
     const order: string[] = [];
-    mockQuery.mockImplementation(async () => {
+    mockQuery.mockImplementationOnce(async () => {
       order.push('update');
       return [{ publication_id: 'pub-1' }];
     });
@@ -297,6 +297,11 @@ describe('reopenRetractedPublication', () => {
     expect(mockWithTransaction).toHaveBeenCalledTimes(1);
     expect(verifyClient).toBeDefined();
     expect(order).toEqual(['verify', 'update']);
+    // The UPDATE runs on the SAME client the check ran on -- the module-level
+    // query() would be a different connection, outside the lock.
+    const clientCalls = (verifyClient as { query: jest.Mock }).query.mock.calls;
+    expect(clientCalls).toHaveLength(1);
+    expect(clientCalls[0][0]).toMatch(/update pilot\.video_publications/);
   });
 
   test('a refused consent re-check reopens nothing', async () => {

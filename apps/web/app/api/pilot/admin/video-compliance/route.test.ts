@@ -914,6 +914,30 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       );
     });
 
+    // Coverage runs first so a withdrawn guardian is refused as withdrawn,
+    // not as missing paperwork -- different facts the admin acts on
+    // differently (videoPlaybackConsent.ts).
+    test('a withdrawn guardian is refused as withdrawn, not as missing consent', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+      // Armed so that a signed-first order would surface as missing consent.
+      // Coverage refuses first, so this rejection is never consumed; reset it
+      // so it cannot leak into a later test (clearAllMocks keeps Once queues).
+      mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+      try {
+        const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
+        expect(mockAssertConsent).not.toHaveBeenCalled();
+        expect(mockReopen).not.toHaveBeenCalled();
+      } finally {
+        mockAssertConsent.mockReset();
+      }
+    });
+
     test('reopen is refused with 409 when guardian consent is missing, audited with the missing parent ids', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
@@ -922,6 +946,7 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
 
       expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/consent/i) });
       expect(mockReopen).not.toHaveBeenCalled();
       expect(mockAudit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -973,6 +998,7 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
 
       expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
       expect(mockAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           details: expect.objectContaining({
