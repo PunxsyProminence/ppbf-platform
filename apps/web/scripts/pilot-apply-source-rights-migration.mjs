@@ -60,7 +60,11 @@ const READINESS_QUERY = `
         and t.tgfoid = to_regprocedure('pilot.shadow_library_chunk_rights_guard()')
         and (select prosrc from pg_proc where oid = t.tgfoid) like '%SHADOW_LIBRARY_FULL_TEXT_NOT_PERMITTED%'
         and (select prosrc from pg_proc where oid = t.tgfoid) like '%where d.document_id = new.document_id%for share;%where s.source_id = v_source%for share;%'
-        and pg_get_triggerdef(t.oid) = 'CREATE TRIGGER shadow_library_chunk_rights_guard BEFORE INSERT OR UPDATE OF document_id, text_kind, text_content ON pilot.shadow_library_chunks FOR EACH ROW EXECUTE FUNCTION pilot.shadow_library_chunk_rights_guard()'
+        and (select prosrc from pg_proc where oid = t.tgfoid) like '%LOCATOR_WHITESPACE_RULE%SHADOW_LIBRARY_LOCATOR_BLANK%'
+        -- The rule itself, not only its name (strpos: no LIKE escaping of the backslashes).
+        and strpos((select prosrc from pg_proc where oid = t.tgfoid), '!~ ''[^ \\t\\n\\v\\f\\r\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]''') > 0
+        and strpos((select prosrc from pg_proc where oid = t.tgfoid), 'jsonb_typeof(new.metadata->''locator'') = ''string''') > 0
+        and pg_get_triggerdef(t.oid) = 'CREATE TRIGGER shadow_library_chunk_rights_guard BEFORE INSERT OR UPDATE OF document_id, text_kind, text_content, excerpt_locator ON pilot.shadow_library_chunks FOR EACH ROW EXECUTE FUNCTION pilot.shadow_library_chunk_rights_guard()'
     ) as chunk_guard_ready,
     exists (
       select 1 from pg_trigger t

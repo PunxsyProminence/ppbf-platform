@@ -112,6 +112,46 @@ describe('POST /api/pilot/shadow/library/chunks', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  // CL-C1 (audit 2026-10-05): a whitespace-only metadata locator used to be
+  // trimmed to "" and stored as full text, while the trigger read it as an
+  // excerpt. It says nothing about where the text is: refused, like a blank
+  // excerpt_locator.
+  test.each(['\t', '\n', '\u00a0', ' \t\u3000 '])('rejects a whitespace-only metadata locator %j', async (blank) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, metadata: { locator: blank } }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test.each([true, 5, {}, []])('rejects a metadata locator that is not text (%j)', async (locator) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, metadata: { locator } }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('an empty metadata locator still means no locator (full text, as before)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, metadata: { locator: '' } }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ excerptLocator: null }));
+  });
+
+  test('a metadata locator wrapped in whitespace is stored trimmed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const response = await POST(postRequest({ ...validBody, metadata: { locator: '\u00a0p. 9\t' } }));
+
+    expect(response.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ excerptLocator: 'p. 9' }));
+  });
+
   test('rejects text_content beyond the length bound', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
 
