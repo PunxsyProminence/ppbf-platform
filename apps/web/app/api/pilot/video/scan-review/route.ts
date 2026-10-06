@@ -26,6 +26,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 import { reviewVideoSessionScan, type VideoScanReviewDecision } from '@/src/server/pilot/videoSessions';
 import {
   assertActorHoldsCurrentReviewLink,
@@ -85,6 +86,13 @@ export async function POST(request: NextRequest) {
      */
     if (decision === 'approve') {
       await assertActorHoldsCurrentReviewLink(principal, videoSessionId, video.scan_state);
+      // AND CONSENT STILL COVERS VIDEO (CL-A21). A link minted before the
+      // guardian went photo-only or withdrew still satisfies the check above
+      // for 15 minutes; approve must not put the footage into circulation
+      // after the guardian said no. Block narrows access and is not asked.
+      if (video.athlete_id) {
+        await assertConsentCoversVideo(principal.organizationId, video.athlete_id);
+      }
     }
 
     const updated = await reviewVideoSessionScan({
