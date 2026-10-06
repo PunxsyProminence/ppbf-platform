@@ -238,7 +238,32 @@ describe('upsertGuardian', () => {
     expect(row).toMatchObject({ phone: '555-0301', email: 'new@example.test' });
   });
 
-  test('full_name still overwrites unconditionally, since it is not optional at either call site', async () => {
+  // CL-B8. The guardian_link route defaulted a missing full_name to the
+  // literal 'Guardian', and this overwrote unconditionally: linking an existing
+  // guardian to a sibling without retyping the name renamed them "Guardian" on
+  // the parent console, the roster export and every later consent signature.
+  test('an upsert that omits full_name keeps the name on file, like phone and email', async () => {
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-b8',
+      fullName: 'Pat Example',
+      phone: '555-0800',
+    });
+
+    await intake.upsertGuardian({ organizationId: ORG_ID, parentId: 'parent-b8' });
+
+    const row = await readParent(ORG_ID, 'parent-b8');
+    expect(row).toMatchObject({ full_name: 'Pat Example', phone: '555-0800' });
+  });
+
+  test('a NEW guardian with no full_name is refused as a validation error, and nothing is written', async () => {
+    await expect(intake.upsertGuardian({ organizationId: ORG_ID, parentId: 'parent-b8-new' }))
+      .rejects.toMatchObject({ name: 'ValidationError', status: 400 });
+    const rows = await client.query('select 1 from pilot.parents where organization_id = $1 and parent_id = $2', [ORG_ID, 'parent-b8-new']);
+    expect(rows.rowCount).toBe(0);
+  });
+
+  test('full_name still overwrites when it is supplied', async () => {
     await intake.upsertGuardian({
       organizationId: ORG_ID,
       parentId: 'parent-4',

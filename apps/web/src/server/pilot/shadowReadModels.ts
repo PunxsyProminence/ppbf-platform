@@ -700,6 +700,54 @@ function intakeCaseAthleteNotDeletedSql(): string {
            and owner_athlete.deleted_at is not null)`;
 }
 
+// Which intake cases a reader may see in the review queue: exactly the cases
+// assertActorCanAccessIntakeCase (intake.ts) would let them open (CL-A10).
+// The queue used to scope on primary_athlete_id alone and admit every case
+// with that column NULL to any coach. The column is NULL for the whole
+// pending window and stays NULL on a promoted case whose documents name two
+// athletes, so the queue handed any coach the summary -- "SHADOW upload:
+// <file name>", often the child's name -- of cases the case gate refuses
+// them. The gate's two branches, in SQL:
+//   - the case names athletes (the column, or an athlete document owner):
+//     the reader must reach EVERY one of them -- reaching one of two is not
+//     authority over a case that discloses both;
+//   - it names nobody: only an organization admin (restrictParam null) or
+//     the account that filed it, and only for a scope that admits unscoped
+//     rows at all (guardians and athletes never see an unattributed case).
+// Built per call from the parameter numbers so the items and count queries
+// carry the identical boundary.
+function intakeCaseReaderScopeSql(restrictParam: number, unscopedParam: number, actorParam: number): string {
+  return `(
+         $${restrictParam}::text[] is null
+         or (
+           cardinality(subj.athlete_ids) > 0
+           and subj.athlete_ids <@ $${restrictParam}::text[]
+         )
+         or (
+           cardinality(subj.athlete_ids) = 0
+           and $${unscopedParam}::boolean
+           and c.submitted_by_account_id = $${actorParam}::text
+         )
+       )`;
+}
+
+// Every athlete an intake case names, from both places resolveIntakeCaseAuthority
+// reads (intake.ts): the column and the athlete owners of its documents.
+const INTAKE_CASE_SUBJECTS_JOIN = `left join lateral (
+       select coalesce(array_agg(distinct subject.athlete_id), '{}'::text[]) as athlete_ids
+       from (
+         select c.primary_athlete_id as athlete_id
+         where c.primary_athlete_id is not null
+         union
+         select owner_doc.owner_entity_id
+         from pilot.intake_documents owner_doc
+         where owner_doc.organization_id = c.organization_id
+           and owner_doc.intake_case_id = c.intake_case_id
+           and owner_doc.owner_entity_type = 'athlete'
+           and owner_doc.owner_entity_id is not null
+       ) subject
+     ) subj on true`;
+
 export async function getShadowReviewProjection(
   context: ShadowReadContext,
   filters: ShadowListFilters = {},
@@ -743,19 +791,14 @@ export async function getShadowReviewProjection(
        where d.organization_id = c.organization_id
          and d.intake_case_id = c.intake_case_id
      ) dc on true
+     ${INTAKE_CASE_SUBJECTS_JOIN}
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
        and ($3::text is null or c.status = $3)
-       -- Same two disjuncts again. Without the second one, scoping a coach
-       -- here would drop every intake case that has no primary athlete yet --
-       -- a case filed before the athlete record exists is precisely what a
-       -- review queue is for -- so the fix to one leak would have emptied the
-       -- queue it protects.
-       and (
-         $6::text[] is null
-         or c.primary_athlete_id = any($6::text[])
-         or ($7::boolean and c.primary_athlete_id is null)
-       )
+       -- The case gate's own rule (intakeCaseReaderScopeSql). A case filed
+       -- before its athlete record exists stays in the queue for the admin
+       -- and for the coach who filed it; it no longer reaches every coach.
+       and ${intakeCaseReaderScopeSql(6, 7, 8)}
        -- A deleted athlete's case leaves the queue; a case with no athlete
        -- yet stays (intakeCaseAthleteNotDeletedSql).
        and ${intakeCaseAthleteNotDeletedSql()}
@@ -770,22 +813,20 @@ export async function getShadowReviewProjection(
       offset,
       scope.restrictToAthleteIds,
       scope.includeUnscopedRows,
+      context.actorAccountId,
     ],
   );
 
   const totalRows = await query<{ count: string }>(
     `select count(*)::text as count
      from pilot.intake_cases c
+     ${INTAKE_CASE_SUBJECTS_JOIN}
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
        and ($3::text is null or c.status = $3)
        -- Must stay identical to the items query's boundary above, or the
        -- caller pages through one set of rows against another set's count.
-       and (
-         $4::text[] is null
-         or c.primary_athlete_id = any($4::text[])
-         or ($5::boolean and c.primary_athlete_id is null)
-       )
+       and ${intakeCaseReaderScopeSql(4, 5, 6)}
        and ${intakeCaseAthleteNotDeletedSql()}`,
     [
       context.organizationId,
@@ -793,6 +834,7 @@ export async function getShadowReviewProjection(
       filters.eventName?.trim() || null,
       scope.restrictToAthleteIds,
       scope.includeUnscopedRows,
+      context.actorAccountId,
     ],
   );
 
