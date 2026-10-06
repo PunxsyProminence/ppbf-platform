@@ -70,14 +70,18 @@ describe('session revocation after provider/role/organization changes', () => {
     mockQueryOne
       .mockResolvedValueOnce(null) // no existing account by email
       .mockResolvedValueOnce({ account_id: 'owner-1' }); // existing account by id
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'owner-1' }] }); // the upsert wrote it
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [] }) // CL-A19: no Microsoft binding to clear
+      .mockResolvedValueOnce({ rows: [{ account_id: 'owner-1' }] }); // the upsert wrote it
     await createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'owner@example.com', organizationId: 'org-1', accountIdHint: 'owner-1' });
     expect(revokeCalls()).toHaveLength(1);
   });
 
   test('createOrUpdateMicrosoftPlatformOwnerAccount does not revoke for a brand-new account', async () => {
     mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'new-owner@example.com' }] }); // the upsert wrote it
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [] }) // CL-A19: no Microsoft binding to clear
+      .mockResolvedValueOnce({ rows: [{ account_id: 'new-owner@example.com' }] }); // the upsert wrote it
     await createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'new-owner@example.com', organizationId: 'org-1' });
     expect(revokeCalls()).toHaveLength(0);
   });

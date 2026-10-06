@@ -998,11 +998,13 @@ describe('the platform owner\'s athlete shell, the guardian repair and the owner
 
   test('owner bootstrap: creates a new owner, and updates a live one, as before', async () => {
     const created = await auth.createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'New-Owner@example.org', organizationId: ORG });
-    expect(created).toEqual({ accountId: 'new-owner@example.org', organizationId: ORG, created: true });
+    // microsoftIdentityCleared is reported, false here: no binding, and the bootstrap-key
+    // rebind was not asked for (#1298).
+    expect(created).toEqual({ accountId: 'new-owner@example.org', organizationId: ORG, created: true, microsoftIdentityCleared: false });
 
     await insertAccount('owner-live', 'coach', { email: 'live-owner@example.org', active: false, microsoft: true });
     const updated = await auth.createOrUpdateMicrosoftPlatformOwnerAccount({ loginEmail: 'live-owner@example.org', organizationId: ORG });
-    expect(updated).toEqual({ accountId: 'owner-live', organizationId: ORG, created: false });
+    expect(updated).toEqual({ accountId: 'owner-live', organizationId: ORG, created: false, microsoftIdentityCleared: false });
     expect(await accountRow('owner-live')).toMatchObject({ role: 'platform_owner', active_flag: true });
   });
 });

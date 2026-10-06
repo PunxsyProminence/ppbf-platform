@@ -24,7 +24,9 @@ import {
   exchangeCodeForIdToken,
   fetchOidcDiscovery,
   getMsOidcConfig,
+  MicrosoftIdentityMismatchError,
   resolveMicrosoftIdentityEmail,
+  resolveMicrosoftIdentityObject,
   verifyAndDecodeMicrosoftIdToken,
 } from '@/src/server/pilot/federatedAuth';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
@@ -194,7 +196,7 @@ export async function GET(request: NextRequest) {
     });
 
     const identityEmail = resolveMicrosoftIdentityEmail(claims);
-    const loginResult = await loginWithMicrosoftEmail(identityEmail);
+    const loginResult = await loginWithMicrosoftEmail(identityEmail, resolveMicrosoftIdentityObject(claims));
 
     if (!loginResult) {
       return redirectToLogin(publicOrigin, 'not-invited');
@@ -268,6 +270,24 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown auth error';
+
+    // CL-A19: the one refusal on this route that is recorded. The email named
+    // an account bound to a different directory user -- someone presenting an
+    // address that is not theirs, or a directory user re-created under it --
+    // and an admin needs to see that happened. Non-fatal like the login row;
+    // the refusal stands either way. The actor is unknown, so it is left null;
+    // no oid is written, the account id says which account was targeted.
+    if (error instanceof MicrosoftIdentityMismatchError) {
+      await auditMicrosoftLoginEvent({
+        event_type: 'microsoft_identity_mismatch',
+        actor_account_id: null,
+        actor_role: null,
+        organization_id: error.account.organizationId,
+        entity_type: 'account',
+        entity_id: error.account.accountId,
+        details: { auth_provider: 'microsoft', reason: error.reason },
+      });
+    }
 
     // Always logged, not gated behind PPBF_AUTH_DIAGNOSTICS: a sign-in that
     // fails here redirects the user to /login with a generic code, so without
