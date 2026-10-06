@@ -445,8 +445,9 @@ async function writeMediaConsentUnderLock(
   athleteId: string,
   parentId: string,
   waiver: Omit<UpsertWaiverParams, 'organizationId' | 'athleteId' | 'waiverType' | 'parentId'>,
+  transaction?: QueryExecutor,
 ): Promise<string> {
-  return withTransaction(async (client) => {
+  const write = async (client: QueryExecutor) => {
     await lockGuardianLink(client, organizationId, parentId, athleteId);
 
     return upsertWaiverWithClient(client, {
@@ -456,8 +457,20 @@ async function writeMediaConsentUnderLock(
       waiverType: MEDIA_CONSENT_WAIVER_TYPE,
       parentId,
     });
-  });
+  };
+  return transaction ? write(transaction) : withTransaction(write);
 }
+
+/*
+ * THE OPTIONAL `transaction` ARGUMENT on both writers below. A consent change
+ * that takes published video down (a withdrawal, a photo-only grant) must commit
+ * together with that takedown or not at all, so publication.ts's
+ * recordMediaConsentAndSuppress runs the write inside its own transaction,
+ * after it has locked the athlete's whole guardian-link set. The writer's
+ * one-row lock is then a row this transaction already holds, which takes no new
+ * lock and cannot wait. Without the argument the writer opens its own
+ * transaction, exactly as before.
+ */
 
 export async function grantMediaConsent(params: {
   organizationId: string;
@@ -487,7 +500,7 @@ export async function grantMediaConsent(params: {
      separate decision and is deliberately not made here. */
   signedAt?: string;
   notes?: string;
-}): Promise<string> {
+}, transaction?: QueryExecutor): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
@@ -504,7 +517,7 @@ export async function grantMediaConsent(params: {
     coversVideo: params.coversVideo,
     publicUseAllowed: params.publicUseAllowed,
     notes: params.notes,
-  });
+  }, transaction);
 }
 
 export async function withdrawMediaConsent(params: {
@@ -517,7 +530,7 @@ export async function withdrawMediaConsent(params: {
      member is recording what a guardian signed off-platform. */
   signedAt?: string;
   notes?: string;
-}): Promise<string> {
+}, transaction?: QueryExecutor): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
@@ -528,7 +541,7 @@ export async function withdrawMediaConsent(params: {
     coversVideo: false,
     publicUseAllowed: false,
     notes: params.notes,
-  });
+  }, transaction);
 }
 
 // Every athlete this account guards, with a full per-guardian consent
