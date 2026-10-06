@@ -7,6 +7,11 @@ import {
   suppressPublishedMediaForAthlete,
 } from './publication';
 
+/* The consent-set advisory lock is its own statement; these tests script
+   client.query call by call, so it is stubbed here and proven against real
+   Postgres in consentSetPhantom.pg.test.ts. */
+jest.mock('./consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),

@@ -171,13 +171,13 @@ async function openLinkTransaction(athleteId: string) {
   };
 }
 
-/** True once a backend other than this test's own (and `except`) is waiting on a lock, advisory included. */
+/** True once a backend other than this test's own (and `except`) is waiting on an advisory lock -- the consent-set lock. */
 async function someoneWaitsOnALock(except: number[] = [], attempts = 200): Promise<boolean> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const waiting = await client.query(
       `select 1 from pg_stat_activity
         where datname = current_database() and pid <> pg_backend_pid()
-          and not (pid = any($1::int[])) and wait_event_type = 'Lock'`,
+          and not (pid = any($1::int[])) and wait_event_type = 'Lock' and wait_event = 'advisory'`,
       [except],
     );
     if ((waiting.rowCount ?? 0) > 0) return true;
@@ -380,8 +380,9 @@ describe('a guardian linked mid-publish is never skipped', () => {
     let insertWaited = true;
     let link: Awaited<ReturnType<typeof openLinkTransaction>> | null = null;
     try {
+      // Not awaited before the check: if the lock were too coarse the insert
+      // would block on the held claim, and awaiting it here would hang.
       link = await openLinkTransaction(OTHER_ATHLETE_ID);
-      await link.linking;
       insertWaited = await someoneWaitsOnALock([claimPid], 20);
     } finally {
       release();

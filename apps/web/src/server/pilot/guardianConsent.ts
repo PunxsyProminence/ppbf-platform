@@ -44,9 +44,8 @@ export interface QueryExecutor {
  * twice for the same athlete gets a fresh snapshot the second time, and a
  * guardian link committed in between can sit ahead of rows it already holds.
  * Lock an athlete's set once per transaction where you can. (Film Study still
- * reads twice per athlete; the window needs a link inserted mid-transaction
- * while a sweep runs, and the worst case is one transaction aborted with
- * 40P01, never a consent read that passes.)
+ * reads twice per athlete. The shared consent-set lock below, held from the
+ * first read, now keeps a link insert out of that window.)
  *
  * The one-row lock takes a single row. Its callers take no other
  * guardian_links lock in the same transaction, which is what keeps it out of
@@ -65,6 +64,11 @@ export interface QueryExecutor {
  *   2. the consent-set lock, athletes ascending by athlete_id in byte order
  *   3. pilot.guardian_links rows, in the order above.
  * Taking a later one and then an earlier one is how a deadlock gets built.
+ * The purge takes no consent-set lock, so its documented cycle with intake
+ * (pilot-cleanup-deleted-data.mjs) can now also pass through a consent reader
+ * waiting on a link insert; it still needs a purge run, a re-link of a purged
+ * guardian and a reader on the same athlete at once, and ends in a 40P01
+ * abort, never a consent read that passes.
  */
 export type GuardianLinkLockMode = 'share' | 'update';
 

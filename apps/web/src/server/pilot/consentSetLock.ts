@@ -43,7 +43,14 @@ export interface ConsentSetLockExecutor {
 
 export type ConsentSetLockMode = 'shared' | 'exclusive';
 
-const KEY_PREFIX = 'ppbf.guardian-consent-set:';
+/*
+ * The two-int form, (class, key): Postgres keeps it apart from the one-bigint
+ * form the other hashtext advisory locks here use (athlete-login, content
+ * import, mental skills), so a hash collision with one of those cannot make
+ * two unrelated locks one. The organization id is length-prefixed so no pair
+ * of ids can spell the same key.
+ */
+const KEY_CLASS = 'ppbf.guardian-consent-set';
 
 export async function lockConsentSets(
   client: ConsentSetLockExecutor,
@@ -54,8 +61,8 @@ export async function lockConsentSets(
   const fn = mode === 'exclusive' ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
   for (const athleteId of [...new Set(athleteIds)].sort()) {
     await client.query(
-      `select ${fn}(hashtext($1::text || $2::text || ':' || $3::text))`,
-      [KEY_PREFIX, organizationId, athleteId],
+      `select ${fn}(hashtext($1::text), hashtext(length($2::text) || ':' || $2::text || $3::text))`,
+      [KEY_CLASS, organizationId, athleteId],
     );
   }
 }
