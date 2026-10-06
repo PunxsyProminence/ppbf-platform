@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
 // and active training holds with athlete-safe explanations ONLY.
@@ -49,6 +50,10 @@ type ClearanceValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 // above) plus hold_id, which the lift action needs and nothing renders.
 interface ActiveHold {
   hold_id?: string;
+  /** Who placed it. A coach may lift only a coach-placed hold
+   *  (OD-2026-10-05-024 ruling 1); the route decides, this only hides a
+   *  button the route would refuse. */
+  placed_by_role?: string;
   scope: string;
   athlete_explanation: string;
   lift_condition_text: string;
@@ -181,6 +186,9 @@ async function readClearance(athleteId: string): Promise<ClearanceReading> {
    is not this -- null, false, an empty object, a row with no sentence for the
    athlete -- is not a hold and is not "no hold" either: the read did not
    deliver what the route always sends, so the hold is unread. */
+const ADMIN_HOLD_COACH_CANNOT_LIFT =
+  'An organization admin placed this hold, so only an organization admin can lift it.';
+
 function isActiveHold(value: unknown): value is ActiveHold {
   if (!value || typeof value !== 'object') return false;
   const hold = value as Record<string, unknown>;
@@ -259,6 +267,8 @@ function clearanceBadge(row: ClearanceRow) {
 }
 
 export default function SportsMedicinePage() {
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const viewerIsCoach = session?.role === 'coach';
   const [rows, setRows] = useState<ClearanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -850,7 +860,10 @@ export default function SportsMedicinePage() {
                             {row.hold.lift_condition_text
                               || 'Not written down — all this athlete is told is to ask whoever placed the hold. Tell them what ends it.'}
                           </p>
-                          {row.hold.hold_id ? (
+                          {row.hold.hold_id && viewerIsCoach
+                            && typeof row.hold.placed_by_role === 'string' && row.hold.placed_by_role !== 'coach' ? (
+                            <p className="t-body mt-[var(--s3)]">{ADMIN_HOLD_COACH_CANNOT_LIFT}</p>
+                          ) : row.hold.hold_id ? (
                             <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
                               <div className="field grow">
                                 <label className="t-label" htmlFor={`lift-note-${row.athlete_id}`}>

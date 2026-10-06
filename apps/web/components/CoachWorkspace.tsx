@@ -742,8 +742,8 @@ interface TodaySessionNote {
  *
  * `unavailable` is every way the read did not land, INCLUDING a 403. The
  * wellness read gives a refusal its own sentence; this one does not, because
- * the refusal is the same refusal -- both routes gate on organization
- * membership -- and the wellness block in this same panel already carries the
+ * the refusal is the same refusal -- both routes gate on
+ * assertActorCanAccessAthlete (OD-2026-10-05-024 ruling 2) -- and the wellness block in this same panel already carries the
  * sentence that names the audience. A second wording for one server answer
  * would be this screen inventing copy nobody ruled, and the failure sentence
  * is true of a refusal: the note could not be loaded, and nothing is claimed

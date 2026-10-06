@@ -46,8 +46,8 @@ const NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
 const NOT_REPORTED = 'Not reported';
 const READ_FAILED =
   'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
-/** The refusal sentence as A-FIN-03R1 leaves it: the audience, with no claim
- *  about assignment or coverage. Pinned as a literal for the same reason as
+/** The refusal sentence as OD-2026-10-05-024 ruling 2 leaves it: the
+ *  athlete's own coach, a covering coach and organization admins. Pinned as a literal for the same reason as
  *  the rest -- imported copy would pass whatever the component said. */
 const NO_ACCESS =
   'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
