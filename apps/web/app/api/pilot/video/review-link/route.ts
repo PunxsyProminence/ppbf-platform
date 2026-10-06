@@ -18,32 +18,37 @@
 // way to look at what they were releasing; this is that missing half, and it
 // is why the view role set is wider than the decide one.
 //
-// NO GUARDIAN-CONSENT GATE HERE, AND THAT IS THE POINT OF THE ROUTE
+// THE GUARDIAN-CONSENT GATE APPLIES HERE TOO (CL-A21).
 //
-// The sibling read route /api/pilot/video/[videoId] now refuses to mint a
-// playback URL when a guardian signed a photo-only consent (covers_video =
-// false). This route deliberately does NOT copy that check, and the next audit
-// comparing the two should stop here rather than "finish the job".
+// This route used to skip it on purpose: every clip it serves is quarantined,
+// and the argument was that a safeguarding reviewer LOOKING at flagged footage
+// is not media USE. Jason ruled otherwise on 2026-10-06 ("No one watches it"):
+// a guardian's photo-only, withdrawn or unreadable media consent refuses the
+// review link as well, the same assertConsentCoversVideo gate that playback,
+// publication and the automated scan already use (OD-2026-10-05-016/-021/
+// -022: photo-only means no video use at all).
 //
-// authorizeVideoScanReview only ever returns a QUARANTINED video -- a 'ready'
-// one is refused as nothing to do. So every clip reachable through here is one
-// the content screen refused or could not settle, and the only reason anyone is
-// looking at it is to decide whether it is safe. Gating that on media consent
-// would mean a clip the scanner flagged 'blocked' becomes permanently
-// unreviewable because a guardian ticked photo-only or never signed at all --
-// consent withheld from MEDIA USE would have silently withdrawn the platform's
-// ability to check the footage for harm, and left it in quarantine with no
-// exit. That is the exact dead end videoScanReview.ts was written to remove.
+// What that leaves: the footage stays quarantined and unplayable, which is
+// where consent says it belongs. Release and approve are closed too, because
+// both require a current review link. An organization admin can still Block
+// it without viewing; Block marks scan_state 'blocked' and the footage stays
+// quarantined -- it is not deleted.
 //
-// Media consent governs whether a child's footage may be USED. It says nothing
-// about whether a safeguarding reviewer may LOOK at footage already flagged as
-// possibly unsafe, and it must never be read as saying so.
+// CHECK AND MINT IN ONE TRANSACTION, through mintUnderPlaybackConsent -- the
+// same call the playback route makes -- so a withdrawal in flight is waited
+// for and read as withdrawn, never missed by a check that ran a moment before
+// the link was minted.
+//
+// The check runs AFTER authorizeVideoScanReview, so its specific 409 reaches
+// only someone already entitled to know the video exists. Teaching footage
+// (athlete_id null) names nobody and has no guardian to ask.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import {
   authorizeVideoScanReview,
   VideoScanReviewRefused,
@@ -66,7 +71,11 @@ export async function POST(request: NextRequest) {
     }
 
     const video = await authorizeVideoScanReview(principal, videoSessionId);
-    const url = getPilotVideoSasUrl(video.blob_path, LINK_EXPIRY_MINUTES);
+    const url = await mintUnderPlaybackConsent(
+      principal.organizationId,
+      video.athlete_id ? [video.athlete_id] : [],
+      () => getPilotVideoSasUrl(video.blob_path, LINK_EXPIRY_MINUTES),
+    );
 
     await writePilotAuditEvent({
       event_type: 'update',

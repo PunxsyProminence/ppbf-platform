@@ -21,7 +21,7 @@
 // it exists by trying to archive it.
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -81,8 +81,22 @@ export async function POST(
     if (!row) {
       return hiddenNotFound();
     }
-    if (!isOrganizationAdminRole(principal.role) && row.uploaded_by_account_id !== principal.accountId) {
-      return hiddenNotFound();
+    if (!isOrganizationAdminRole(principal.role)) {
+      if (row.uploaded_by_account_id !== principal.accountId) {
+        return hiddenNotFound();
+      }
+      // Having uploaded footage is not a standing claim on the athlete in it
+      // (CL-A21). A coach who has since lost the assignment no longer reaches
+      // that athlete, so they may not restore -- or archive -- the footage
+      // either; videoScanReview.ts holds the same line for reviewing it.
+      // Teaching footage names nobody, so the uploader rule alone applies.
+      if (row.athlete_id) {
+        try {
+          await assertActorCanAccessAthlete(principal, row.athlete_id);
+        } catch {
+          return hiddenNotFound();
+        }
+      }
     }
 
     /*

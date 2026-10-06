@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -8,6 +8,7 @@ import {
   getVideoReleasePolicy,
   releasableScanStates,
 } from '@/src/server/pilot/videoReleasePolicy';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 
 export const runtime = 'nodejs';
@@ -65,8 +66,21 @@ export async function POST(
     if (!row) {
       return hiddenNotFound();
     }
-    if (!isOrganizationAdminRole(principal.role) && row.uploaded_by_account_id !== principal.accountId) {
-      return hiddenNotFound();
+    if (!isOrganizationAdminRole(principal.role)) {
+      if (row.uploaded_by_account_id !== principal.accountId) {
+        return hiddenNotFound();
+      }
+      // Having uploaded footage is not a standing claim on the athlete in it
+      // (CL-A21): a coach who has since lost the assignment may not put it
+      // into circulation. Same line videoScanReview.ts holds for viewing it;
+      // teaching footage names nobody, so the uploader rule alone applies.
+      if (row.athlete_id) {
+        try {
+          await assertActorCanAccessAthlete(principal, row.athlete_id);
+        } catch {
+          return hiddenNotFound();
+        }
+      }
     }
 
     if (row.status !== 'quarantined') {
@@ -121,6 +135,15 @@ export async function POST(
      * scanner could clear.
      */
     await assertActorHoldsCurrentReviewLink(principal, videoId, row.scan_state);
+
+    // AND CONSENT STILL COVERS VIDEO (CL-A21). review-link refuses to mint
+    // for a photo-only, withdrawn or unreadable consent, but a link minted
+    // before the guardian changed their answer still satisfies the check above
+    // for 15 minutes. Asked again here so footage is never put into
+    // circulation after the guardian said no. Teaching footage names nobody.
+    if (row.athlete_id) {
+      await assertConsentCoversVideo(principal.organizationId, row.athlete_id);
+    }
 
     /*
      * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
