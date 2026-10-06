@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole } from '@/src/server/pilot/access';
+import { athleteIdsForCoach, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
@@ -19,7 +19,13 @@ export const runtime = 'nodejs';
 //   * organization_admin/admin see the whole organization.
 //   * coach sees only classes they own (coach_account_id,
 //     scheduled_by_account_id, or covering_coach_account_id) -- the same
-//     ownership test the scheduler route's own GET already applies.
+//     ownership test the scheduler route's own GET already applies -- AND,
+//     within those classes, only athletes the coach reaches (assignment of
+//     record or a live coverage grant, athleteIdsForCoach). Ownership alone
+//     was self-granting: cover_class writes the caller in as covering coach
+//     with no approval, so one POST bought any coach every registered
+//     athlete's name, attendance and free-text note for any class (CL-A2).
+//     The scheduler GET closed the same leak the same way.
 //   * athlete, parent, board, volunteer, staff: forbidden here. This is an
 //     operations/reporting surface, not a self-service one; a parent- or
 //     athlete-facing attendance view is real future work (the Parent/Guardian
@@ -37,6 +43,11 @@ export async function GET(request: NextRequest) {
     }
 
     const coachAccountId = isCoach ? principal.accountId : undefined;
+    const reachable = isCoach
+      ? new Set(await athleteIdsForCoach(principal.organizationId, principal.accountId))
+      : null;
+    const inReach = <Row extends { athlete_id: string }>(rows: Row[]): Row[] =>
+      reachable ? rows.filter((row) => reachable.has(row.athlete_id)) : rows;
     const classId = request.nextUrl.searchParams.get('class_id');
 
     if (classId) {
@@ -54,7 +65,7 @@ export async function GET(request: NextRequest) {
       }
 
       const roster = await getClassAttendanceRoster(principal.organizationId, classId);
-      return NextResponse.json({ ok: true, class_id: classId, roster });
+      return NextResponse.json({ ok: true, class_id: classId, roster: inReach(roster) });
     }
 
     // #173: a week-over-week trend, distinct from the current-snapshot
@@ -67,7 +78,11 @@ export async function GET(request: NextRequest) {
       if (weeksRaw !== null && (!Number.isFinite(weeks) || weeks! <= 0)) {
         throw new Error('Unsupported weeks: must be a positive number');
       }
-      const trend = await getWeeklyAttendanceTrend(principal.organizationId, { coachAccountId, weeks });
+      const trend = await getWeeklyAttendanceTrend(principal.organizationId, {
+        coachAccountId,
+        athleteIds: reachable ? [...reachable] : undefined,
+        weeks,
+      });
       return NextResponse.json({ ok: true, trend });
     }
 
@@ -86,7 +101,7 @@ export async function GET(request: NextRequest) {
       sinceIso,
     });
 
-    return NextResponse.json({ ok: true, athletes: summary });
+    return NextResponse.json({ ok: true, athletes: inReach(summary) });
   } catch (error) {
     return jsonError(error);
   }

@@ -169,15 +169,15 @@ describe('getWeeklyAttendanceTrend', () => {
   test('weeks defaults to 8 and is clamped to a sane range', async () => {
     mockQuery.mockResolvedValueOnce([]);
     await getWeeklyAttendanceTrend('org-1');
-    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 8, null]);
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 8, null, null]);
 
     mockQuery.mockResolvedValueOnce([]);
     await getWeeklyAttendanceTrend('org-1', { weeks: 500 });
-    expect(mockQuery.mock.calls[1][1]).toEqual(['org-1', 52, null]);
+    expect(mockQuery.mock.calls[1][1]).toEqual(['org-1', 52, null, null]);
 
     mockQuery.mockResolvedValueOnce([]);
     await getWeeklyAttendanceTrend('org-1', { weeks: 0 });
-    expect(mockQuery.mock.calls[2][1]).toEqual(['org-1', 1, null]);
+    expect(mockQuery.mock.calls[2][1]).toEqual(['org-1', 1, null, null]);
   });
 
   test('a coach scope narrows to their own classes, same ownership test as the org summary', async () => {
@@ -187,6 +187,18 @@ describe('getWeeklyAttendanceTrend', () => {
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('c.coach_account_id = $3');
-    expect(params).toEqual(['org-1', 8, 'coach-1']);
+    expect(params).toEqual(['org-1', 8, 'coach-1', null]);
+  });
+
+  // CL-A2: class ownership is self-grantable through cover_class, so a coach's
+  // counts are also narrowed to the athletes they reach.
+  test('an athleteIds scope narrows the counts to those athletes', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getWeeklyAttendanceTrend('org-1', { coachAccountId: 'coach-1', athleteIds: ['ath-1'] });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('a.athlete_id = any($4::text[])');
+    expect(params).toEqual(['org-1', 8, 'coach-1', ['ath-1']]);
   });
 });

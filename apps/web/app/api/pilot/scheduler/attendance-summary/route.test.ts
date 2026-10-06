@@ -6,6 +6,7 @@ import {
   getOrganizationAttendanceSummary,
   getWeeklyAttendanceTrend,
 } from '@/src/server/pilot/attendanceReporting';
+import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 
@@ -17,6 +18,11 @@ jest.mock('@/src/server/pilot/attendanceReporting', () => ({
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
   getSchedulerClassById: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/access', () => ({
+  isOrganizationAdminRole: (role: string) => role === 'organization_admin' || role === 'admin',
+  athleteIdsForCoach: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -42,6 +48,7 @@ const mockSummary = jest.mocked(getOrganizationAttendanceSummary);
 const mockRoster = jest.mocked(getClassAttendanceRoster);
 const mockGetClass = jest.mocked(getSchedulerClassById);
 const mockTrend = jest.mocked(getWeeklyAttendanceTrend);
+const mockReachable = jest.mocked(athleteIdsForCoach);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -59,6 +66,7 @@ function request(url: string): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockReachable.mockResolvedValue([]);
 });
 
 describe('GET /api/pilot/scheduler/attendance-summary', () => {
@@ -190,7 +198,7 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
 
       await GET(request('/api/pilot/scheduler/attendance-summary?trend=1'));
 
-      expect(mockTrend).toHaveBeenCalledWith('org-a', { coachAccountId: 'acct-coach-1', weeks: undefined });
+      expect(mockTrend).toHaveBeenCalledWith('org-a', { coachAccountId: 'acct-coach-1', athleteIds: [], weeks: undefined });
     });
 
     test('a weeks param is passed through', async () => {
@@ -218,6 +226,93 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
         expect(response.status).toBe(403);
       }
       expect(mockTrend).not.toHaveBeenCalled();
+    });
+  });
+
+  // CL-A2. cover_class lets any coach write themselves in as the covering
+  // coach with no approval, so class ownership alone is self-granting. These
+  // rows name individual athletes (and the roster carries free-text notes), so
+  // a coach sees only athletes they reach: assignment of record or a live
+  // coverage grant -- the rule the scheduler GET already applies.
+  describe('a coach sees only athletes they can reach (CL-A2)', () => {
+    const coveredClass = {
+      class_id: 'class-1',
+      coach_account_id: 'acct-coach-1',
+      scheduled_by_account_id: 'acct-coach-1',
+      covering_coach_account_id: 'acct-covering',
+    };
+
+    test('a self-granted covering coach does not get unreachable athletes or their notes from the roster', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-covering' }));
+      mockGetClass.mockResolvedValueOnce(coveredClass as never);
+      mockReachable.mockResolvedValueOnce(['ath-mine']);
+      mockRoster.mockResolvedValueOnce([
+        { athlete_id: 'ath-mine', full_name: 'Mine', status: 'present', method: 'coach', note: null, checked_in_at: null },
+        { athlete_id: 'ath-other', full_name: 'Other Child', status: 'absent', method: 'coach', note: 'family matter', checked_in_at: null },
+      ] as never);
+
+      const response = await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'));
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload.roster.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
+      expect(JSON.stringify(payload)).not.toContain('family matter');
+      expect(JSON.stringify(payload)).not.toContain('Other Child');
+      expect(mockReachable).toHaveBeenCalledWith('org-a', 'acct-covering');
+    });
+
+    test('a coach with no reachable athletes gets an empty roster, not the class list', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-covering' }));
+      mockGetClass.mockResolvedValueOnce(coveredClass as never);
+      mockReachable.mockResolvedValueOnce([]);
+      mockRoster.mockResolvedValueOnce([
+        { athlete_id: 'ath-other', full_name: 'Other Child', status: 'absent', method: 'coach', note: 'x', checked_in_at: null },
+      ] as never);
+
+      const payload = await (await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'))).json();
+
+      expect(payload.roster).toEqual([]);
+    });
+
+    test('the coach summary drops athletes the coach cannot reach', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-covering' }));
+      mockReachable.mockResolvedValueOnce(['ath-mine']);
+      mockSummary.mockResolvedValueOnce([
+        { athlete_id: 'ath-mine', full_name: 'Mine' },
+        { athlete_id: 'ath-other', full_name: 'Other Child' },
+      ] as never);
+
+      const payload = await (await GET(request('/api/pilot/scheduler/attendance-summary'))).json();
+
+      expect(payload.athletes.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
+    });
+
+    test('the coach trend counts only reachable athletes', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-covering' }));
+      mockReachable.mockResolvedValueOnce(['ath-mine']);
+      mockTrend.mockResolvedValueOnce([]);
+
+      await GET(request('/api/pilot/scheduler/attendance-summary?trend=1'));
+
+      expect(mockTrend).toHaveBeenCalledWith('org-a', {
+        coachAccountId: 'acct-covering',
+        athleteIds: ['ath-mine'],
+        weeks: undefined,
+      });
+    });
+
+    test('an organization admin is not narrowed and never consults coach reach', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetClass.mockResolvedValueOnce(coveredClass as never);
+      mockRoster.mockResolvedValueOnce([
+        { athlete_id: 'ath-mine', full_name: 'Mine' },
+        { athlete_id: 'ath-other', full_name: 'Other Child' },
+      ] as never);
+
+      const payload = await (await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'))).json();
+
+      expect(payload.roster).toHaveLength(2);
+      expect(mockReachable).not.toHaveBeenCalled();
     });
   });
 });
