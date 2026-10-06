@@ -12,15 +12,13 @@ import {
 } from '@/src/server/pilot/guardianConsent';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
+import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
 
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/publication', () => ({
-  suppressPublishedMediaForAthlete: jest.fn(),
-}));
+jest.mock('@/src/server/pilot/publication', () => ({ recordMediaConsentAndSuppress: jest.fn() }));
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getAthleteById: jest.fn(),
@@ -61,7 +59,21 @@ const mockGrant = jest.mocked(grantMediaConsent);
 const mockWithdraw = jest.mocked(withdrawMediaConsent);
 const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockAudit = jest.mocked(writePilotAuditEvent);
-const mockSuppress = jest.mocked(suppressPublishedMediaForAthlete);
+const mockRecord = jest.mocked(recordMediaConsentAndSuppress);
+
+/* recordMediaConsentAndSuppress stands in for the one transaction: the consent
+   writer runs with TX, then the takedown (mockSweep, the step that can fail).
+   Whether a failure really rolls the consent back is a database question; the
+   proof is consentSuppressionAtomic.pg.test.ts. */
+const TX = { query: jest.fn() } as never;
+const mockSweep = jest.fn<Promise<string[]>, [Record<string, unknown>]>();
+function emulateOneTransaction(): void {
+  mockRecord.mockImplementation(async ({ write, ...sweepParams }) => {
+    const waiverId = await write(TX);
+    const publicationIds = await mockSweep(sweepParams);
+    return { waiverId, publicationIds };
+  });
+}
 const mockGetAthlete = jest.mocked(getAthleteById);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
@@ -88,11 +100,12 @@ function jsonRequest(body: Record<string, unknown>): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  emulateOneTransaction();
   mockGuardianAthleteIds.mockResolvedValue(['ath-1']);
   mockResolveParent.mockResolvedValue({ parentId: 'p1', fullName: 'Jane Guardian' });
   mockCallerParentIdSet.mockResolvedValue(new Set(['p1']));
   // No published media unless a test says otherwise.
-  mockSuppress.mockResolvedValue([]);
+  mockSweep.mockResolvedValue([]);
   mockGetAthlete.mockResolvedValue({ athlete_id: 'ath-1', full_name: 'Sample Child' } as never);
 });
 
@@ -217,6 +230,7 @@ describe('POST /api/pilot/parent/consent', () => {
     expect(response.status).toBe(200);
     expect(mockWithdraw).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1' }),
+      TX,
     );
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn', entity_id: 'ath-1' }));
   });
@@ -227,13 +241,13 @@ describe('POST /api/pilot/parent/consent', () => {
     // withdrawal and each suppression must be independently auditable.
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockWithdraw.mockResolvedValueOnce('waiver-2');
-    mockSuppress.mockReset();
-    mockSuppress.mockResolvedValueOnce(['pub-1', 'pub-2']);
+    mockSweep.mockReset();
+    mockSweep.mockResolvedValueOnce(['pub-1', 'pub-2']);
 
     const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw' }));
 
     expect(response.status).toBe(200);
-    expect(mockSuppress).toHaveBeenCalledWith({
+    expect(mockSweep).toHaveBeenCalledWith({
       organizationId: 'org-a',
       athleteId: 'ath-1',
       suppressedByAccountId: 'acct-parent',
@@ -259,24 +273,25 @@ describe('POST /api/pilot/parent/consent', () => {
     );
   });
 
-  test('a failed sweep surfaces loudly instead of quietly leaving media distributed', async () => {
+  test('a failed sweep surfaces loudly and records nothing, instead of quietly leaving media distributed', async () => {
     // A lost audit row is tolerable; a suppression that did not happen is
-    // not. The withdrawal itself already committed, so the response says
-    // exactly that and tells the guardian how to retry.
+    // not. The withdrawal and the takedown roll back together, so the
+    // response says nothing was recorded and tells the guardian how to retry.
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockWithdraw.mockResolvedValueOnce('waiver-2');
-    mockSuppress.mockReset();
-    mockSuppress.mockRejectedValueOnce(new Error('deadlock detected'));
+    mockSweep.mockReset();
+    mockSweep.mockRejectedValueOnce(new Error('deadlock detected'));
 
     const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw' }));
 
     expect(response.status).toBe(500);
     const body = (await response.json()) as { ok?: boolean; error?: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/withdrawal was recorded, but suppressing already-published media failed/);
-    // The withdrawal itself still committed and was audited before the sweep.
-    expect(mockWithdraw).toHaveBeenCalled();
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn' }));
+    expect(body.error).toMatch(/withdrawal was not recorded: it is saved together with taking down already-published media, and that did not complete/);
+    // The withdrawal ran inside the sweep's transaction, which rolled back, so
+    // no consent_withdrawn event claims it happened.
+    expect(mockWithdraw).toHaveBeenCalledWith(expect.anything(), TX);
+    expect(mockAudit).not.toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_withdrawn' }));
     // The failure itself is durably audited -- without this row an auditor
     // cannot tell a failed sweep apart from an athlete with no published
     // media.
@@ -296,7 +311,7 @@ describe('POST /api/pilot/parent/consent', () => {
     const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant' }));
 
     expect(response.status).toBe(200);
-    expect(mockSuppress).not.toHaveBeenCalled();
+    expect(mockSweep).not.toHaveBeenCalled();
   });
 
   // The whole reason for this route to check guardianAthleteIds itself:
@@ -433,7 +448,7 @@ describe('POST /api/pilot/parent/consent -- the scope flags must be real boolean
     );
 
     expect(response.status).toBe(200);
-    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }));
+    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }), TX);
   });
 
   test('an explicit null covers_video is refused rather than read as consent', async () => {
@@ -473,15 +488,15 @@ describe('POST /api/pilot/parent/consent -- photo-only grant', () => {
   test('a photo-only grant sweeps the athlete\'s published media with its own reason and audits each retraction', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockGrant.mockResolvedValueOnce('waiver-3');
-    mockSuppress.mockReset();
-    mockSuppress.mockResolvedValueOnce(['pub-1']);
+    mockSweep.mockReset();
+    mockSweep.mockResolvedValueOnce(['pub-1']);
 
     const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: false }));
 
     expect(response.status).toBe(200);
     // The consent itself was recorded first, then the sweep ran.
-    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }));
-    expect(mockSuppress).toHaveBeenCalledWith({
+    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }), TX);
+    expect(mockSweep).toHaveBeenCalledWith({
       organizationId: 'org-a',
       athleteId: 'ath-1',
       suppressedByAccountId: 'acct-parent',
@@ -501,15 +516,17 @@ describe('POST /api/pilot/parent/consent -- photo-only grant', () => {
   test('a failed photo-only sweep surfaces loudly and is audited', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockGrant.mockResolvedValueOnce('waiver-3');
-    mockSuppress.mockReset();
-    mockSuppress.mockRejectedValueOnce(new Error('deadlock detected'));
+    mockSweep.mockReset();
+    mockSweep.mockRejectedValueOnce(new Error('deadlock detected'));
 
     const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: false }));
 
     expect(response.status).toBe(500);
     const body = (await response.json()) as { ok?: boolean; error?: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/photos only was recorded, but taking down already-published video failed/);
+    expect(body.error).toMatch(/photos only was not recorded: it is saved together with taking down already-published video, and that did not complete/);
+    expect(mockGrant).toHaveBeenCalledWith(expect.anything(), TX);
+    expect(mockAudit).not.toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_granted' }));
     expect(mockAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         entity_type: 'guardian_media_consent',

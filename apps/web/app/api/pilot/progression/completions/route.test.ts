@@ -212,6 +212,42 @@ describe('POST /api/pilot/progression/completions', () => {
       .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'verified' }]); // verifyCompletion
     const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1', verify: true, verified: true }));
     expect(res.status).toBe(201);
+    // CX-4: the body is the row as it stands after verification, not the
+    // pending row the insert returned.
+    expect((await res.json()).verification_status).toBe('verified');
+  });
+
+  test('assigned coach recording a disputed completion gets the disputed row back', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce(assignmentRow());
+    mockQuery
+      .mockResolvedValueOnce([{ status: 'assigned' }])
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'pending' }])
+      .mockResolvedValueOnce([{ frequency_per_week: null, status: 'assigned' }])
+      .mockResolvedValueOnce([{ n: '1' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'disputed' }]);
+    const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1', verify: true, verified: false }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).verification_status).toBe('disputed');
+  });
+
+  test('a verification that matches no row after the insert is an error, not a pending row passed off as done', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce(assignmentRow());
+    mockQuery
+      .mockResolvedValueOnce([{ status: 'assigned' }])
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'pending' }])
+      .mockResolvedValueOnce([{ frequency_per_week: null, status: 'assigned' }])
+      .mockResolvedValueOnce([{ n: '1' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1', verify: true, verified: true }));
+    expect(res.status).toBe(500);
   });
 
   test('assigned coach can verify an existing pending completion without creating a new log', async () => {
