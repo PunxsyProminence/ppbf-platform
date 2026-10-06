@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 11;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -54,6 +54,12 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
 // reads source rights. What goes into authorizedContext is unchanged; bumped
 // because a listed file moved. A v8 job still queued at deploy is refused as
 // STALE.
+// 10: SHADOW filters (CL-C7/C8/C10): shadowChat.ts's response filter catches
+// more diagnostic and prescriptive phrasings, and an answer that passed no
+// longer asks for a review row. What goes into authorizedContext is
+// unchanged; bumped because a listed file moved. A v9 job still queued at
+// deploy is refused as STALE. (#1267 also claims 10; whichever merges second
+// re-bumps to 11.)
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -116,7 +122,8 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 7, sha256: '89b51b15eaa9c8c93dad39df694b1fe55f312eea897964ba868a733f221fdfb2' },
   { version: 8, sha256: 'b85aec5f0ba1997dd8858b2dde3d9f9903f39a7c7e3fcccad5052616885fcb2b' },
   { version: 9, sha256: 'a212014dfeeced705d843be036e03384357cad75ee9bccea0ceaefb0a788dcf6' },
-  { version: 10, sha256: '3b055c9870078b22b98f8e5e6a2e38ab1933b01e1ecc24caa84f834784682b81' },
+  { version: 10, sha256: '931ddb2d93063c18bade41f7035e4c085060f9464c04c2e8e63ec77540f1b2f0' },
+  { version: 11, sha256: 'd7e17c04fba847858774b0df7e5638958f945f91e3011f6b2be648ea47900b32' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -473,6 +480,18 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
          AND expires_at > NOW()
          AND retry_count < max_retries
          AND ($1::text IS NULL OR job_type = $1)
+         -- A job stamped by a NEWER context contract is left for a worker
+         -- that runs it (audit CL-C17). During a rollout the old revision's
+         -- worker is still polling; claiming such a job made the processor
+         -- fail it as CONTRACT_AHEAD, each failure spent a retry, and the
+         -- third wiped input_payload, so the question was never answered.
+         -- CASE, not AND: Postgres does not promise to short-circuit AND, and
+         -- the cast must only see a JSON number. Unstamped jobs still claim.
+         AND CASE
+           WHEN jsonb_typeof(input_payload -> 'contextContractVersion') = 'number'
+             THEN (input_payload ->> 'contextContractVersion')::numeric <= $3
+           ELSE TRUE
+         END
        ORDER BY priority ASC, created_at ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED
@@ -511,7 +530,7 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
                jobs.priority, jobs.retry_count, jobs.max_retries, jobs.lease_token,
                jobs.lease_expires_at, jobs.created_at, jobs.started_at,
                jobs.completed_at, jobs.expires_at`,
-    [jobType ?? null, JOB_LEASE_SECONDS],
+    [jobType ?? null, JOB_LEASE_SECONDS, SHADOW_CONTEXT_CONTRACT_VERSION],
   );
 
   return row ? mapJobRow(row) : null;
@@ -640,6 +659,11 @@ export async function cancelJobForActor(jobId: string, actor: ActorIdentity): Pr
   return result !== null;
 }
 
+// Upper bound on rows one job listing reads while filling its page, and the
+// rows read per query, so a small page does not mean hundreds of round trips.
+export const JOB_LIST_MAX_SCANNED_ROWS = 500;
+export const JOB_LIST_BATCH_ROWS = 100;
+
 export async function getJobsForActor(
   actor: ActorIdentity,
   requestedLimit = 20,
@@ -647,35 +671,55 @@ export async function getJobsForActor(
   const limit = Number.isSafeInteger(requestedLimit)
     ? Math.max(1, Math.min(requestedLimit, 100))
     : 20;
-  const rows = await query<ShadowJobRow>(
-    `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
-            status, input_payload, output_payload, error_message, safety_status,
-            priority, retry_count, max_retries, lease_token, lease_expires_at,
-            created_at, started_at,
-            completed_at, expires_at
-     FROM pilot.shadow_jobs
-     WHERE organization_id = $1
-       AND (
-         account_id = $2
-         OR (
-           $3::boolean
-           AND job_type NOT IN ('heavy_bag_session', 'scout_report')
+  const canReadAllOrgJobs = actorCanReadAllOrgJobs(actor);
+  const results: JobStatusResult[] = [];
+  const seenJobIds = new Set<string>();
+
+  // The athlete-access filter runs here, after SQL, so a page cut at `limit`
+  // in SQL came back short whenever some of its rows were athletes this
+  // actor cannot reach (audit CL-C23). Read batch after batch until the page
+  // is full or the rows run out, capped so one listing cannot walk the
+  // whole table. job_id breaks created_at ties so the order is total; a job
+  // enqueued between batches shifts OFFSET by one and would repeat the last
+  // row read, so rows already seen are skipped.
+  for (let offset = 0; offset < JOB_LIST_MAX_SCANNED_ROWS; offset += JOB_LIST_BATCH_ROWS) {
+    const rows = await query<ShadowJobRow>(
+      `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
+              status, input_payload, output_payload, error_message, safety_status,
+              priority, retry_count, max_retries, lease_token, lease_expires_at,
+              created_at, started_at,
+              completed_at, expires_at
+       FROM pilot.shadow_jobs
+       WHERE organization_id = $1
+         AND (
+           account_id = $2
+           OR (
+             $3::boolean
+             AND job_type NOT IN ('heavy_bag_session', 'scout_report')
+           )
          )
-       )
-     ORDER BY created_at DESC
-     LIMIT $4`,
-    [actor.organizationId, actor.accountId, actorCanReadAllOrgJobs(actor), limit],
-  );
+       ORDER BY created_at DESC, job_id DESC
+       LIMIT $4 OFFSET $5`,
+      [actor.organizationId, actor.accountId, canReadAllOrgJobs, JOB_LIST_BATCH_ROWS, offset],
+    );
 
-  const subjectIds = rows
-    .map((row) => row.subject_id)
-    .filter((subjectId): subjectId is string => subjectId !== null);
-  const accessibleSubjectIds =
-    subjectIds.length > 0 ? await accessibleAthleteIds(actor, subjectIds) : new Set<string>();
+    const subjectIds = rows
+      .map((row) => row.subject_id)
+      .filter((subjectId): subjectId is string => subjectId !== null);
+    const accessibleSubjectIds =
+      subjectIds.length > 0 ? await accessibleAthleteIds(actor, subjectIds) : new Set<string>();
 
-  return rows
-    .filter((row) => actorCanAccessJobRow(actor, row, accessibleSubjectIds))
-    .map((row) => toStatusResult(mapJobRow(row)));
+    for (const row of rows) {
+      if (seenJobIds.has(row.job_id)) continue;
+      seenJobIds.add(row.job_id);
+      if (!actorCanAccessJobRow(actor, row, accessibleSubjectIds)) continue;
+      results.push(toStatusResult(mapJobRow(row)));
+      if (results.length === limit) return results;
+    }
+    if (rows.length < JOB_LIST_BATCH_ROWS) break;
+  }
+
+  return results;
 }
 
 function jobTypeToSessionType(jobType: JobType): ShadowSessionType {

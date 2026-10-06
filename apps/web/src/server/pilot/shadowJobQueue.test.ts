@@ -7,9 +7,12 @@ import {
   failJob,
   getJobsForActor,
   getJobStatusForActor,
+  JOB_LIST_BATCH_ROWS,
+  JOB_LIST_MAX_SCANNED_ROWS,
   normalizeJobPriority,
   normalizeJobTtlHours,
   purgeTerminalShadowJobs,
+  SHADOW_CONTEXT_CONTRACT_VERSION,
   TERMINAL_JOB_RETENTION_DAYS,
 } from './shadowJobQueue';
 
@@ -118,7 +121,9 @@ describe('SHADOW job queue safeguards', () => {
     // 300, not 120: the lease must exceed the 120s provider ceiling plus
     // persistence overhead, or completion throws on its own expired lease and
     // the re-claim duplicates an already-appended answer.
-    expect(params).toEqual(['heavy_bag_session', 300]);
+    // The third parameter is this worker's context contract version: jobs
+    // stamped newer are left for a current worker (CL-C17).
+    expect(params).toEqual(['heavy_bag_session', 300, SHADOW_CONTEXT_CONTRACT_VERSION]);
   });
 
   test('does not reveal another account job within the same tenant', async () => {
@@ -275,6 +280,60 @@ describe('SHADOW job queue safeguards', () => {
     // athlete-2's job is dropped (not in the accessible set); the
     // subject-less job passes through with no lookup needed.
     expect(results.map((job) => job.jobId)).toEqual(['job-1', 'job-3', 'job-4']);
+  });
+
+  // CL-C23: the access filter ran after the SQL LIMIT, so rows the actor may
+  // not see used up the page and the caller got fewer jobs than exist.
+  test('keeps reading past rows the actor cannot see until the page is full', async () => {
+    const hiddenBatch = Array.from({ length: JOB_LIST_BATCH_ROWS }, (_, index) =>
+      ({ ...jobRow, job_id: `hidden-${index}`, subject_id: 'athlete-2' }));
+    mockQuery
+      .mockResolvedValueOnce(hiddenBatch)
+      .mockResolvedValueOnce([
+        // Repeated from the first batch: a job enqueued between the two reads
+        // shifts OFFSET by one.
+        hiddenBatch[JOB_LIST_BATCH_ROWS - 1],
+        { ...jobRow, job_id: 'job-1', subject_id: 'athlete-1' },
+        { ...jobRow, job_id: 'job-1', subject_id: 'athlete-1' },
+        { ...jobRow, job_id: 'job-2', subject_id: null },
+      ]);
+    mockAccessibleAthleteIds.mockImplementation(async (_actor, ids) =>
+      new Set([...ids].filter((id) => id === 'athlete-1')));
+
+    const results = await getJobsForActor(coach, 2);
+
+    expect(results.map((job) => job.jobId)).toEqual(['job-1', 'job-2']);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [firstSql, firstParams] = mockQuery.mock.calls[0];
+    const [, secondParams] = mockQuery.mock.calls[1];
+    // A stable order is what makes the next batch start where this one ended.
+    expect(firstSql).toContain('ORDER BY created_at DESC, job_id DESC');
+    expect(firstParams?.slice(-2)).toEqual([JOB_LIST_BATCH_ROWS, 0]);
+    expect(secondParams?.slice(-2)).toEqual([JOB_LIST_BATCH_ROWS, JOB_LIST_BATCH_ROWS]);
+  });
+
+  test('stops reading when a batch comes back short', async () => {
+    mockQuery.mockResolvedValueOnce([{ ...jobRow, job_id: 'hidden-1', subject_id: 'athlete-2' }]);
+
+    const results = await getJobsForActor(coach, 2);
+
+    expect(results).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('bounds how many rows one listing will scan', async () => {
+    let call = 0;
+    mockQuery.mockImplementation(async () => {
+      call += 1;
+      return Array.from({ length: JOB_LIST_BATCH_ROWS }, (_, index) =>
+        ({ ...jobRow, job_id: `hidden-${call}-${index}`, subject_id: 'athlete-2' }));
+    });
+
+    const results = await getJobsForActor(coach, 1);
+
+    expect(results).toEqual([]);
+    // A page of one still reads in full batches, not one row per query.
+    expect(mockQuery).toHaveBeenCalledTimes(JOB_LIST_MAX_SCANNED_ROWS / JOB_LIST_BATCH_ROWS);
   });
 
   test('skips the batched lookup entirely when no row on the page has a subject', async () => {

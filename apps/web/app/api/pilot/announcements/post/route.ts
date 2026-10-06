@@ -8,6 +8,7 @@ import {
   type AnnouncementAuthorRole,
 } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { getBoardSeatLabel, listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
@@ -17,8 +18,15 @@ export const runtime = 'nodejs';
 // speaking for the club, so it is constrained by the caller's session role
 // rather than taken from the request body. Board seats are finer-grained than
 // PilotRole, so a board principal may still pick which seat it is posting as --
-// but only from the board seats, and no other role can claim one.
-function resolveAuthorRole(principalRole: PilotRole, requested: string): AnnouncementAuthorRole | null {
+// but only a seat pilot.board_seats says it holds (outright or as a
+// co-holder), and no other role can claim one. Before CL-A8 any board member
+// could sign as any seat, e.g. the treasurer as `board-president`, on a notice
+// the public wall serves unauthenticated.
+async function resolveAuthorRole(
+  principal: { role: PilotRole; organizationId: string; accountId: string },
+  requested: string,
+): Promise<AnnouncementAuthorRole | null> {
+  const principalRole = principal.role;
   if (principalRole === 'coach') {
     return 'coach';
   }
@@ -28,7 +36,21 @@ function resolveAuthorRole(principalRole: PilotRole, requested: string): Announc
   }
 
   if (principalRole === 'board') {
-    return isAllowedAnnouncementRole(requested) && requested.startsWith('board-') ? requested : null;
+    if (!isAllowedAnnouncementRole(requested) || !requested.startsWith('board-')) {
+      return null;
+    }
+    const seats = await listSeatsForAccount(principal.organizationId, principal.accountId);
+    if (seats.some((item) => `board-${item.seat}` === requested)) {
+      return requested;
+    }
+    // Name the seats they CAN sign as. /notices offers only held seats, but a
+    // stale page or another client may still send one, and a bare refusal
+    // would not tell a treasurer what to pick.
+    throw new Error(
+      seats.length === 0
+        ? 'Forbidden: you hold no board seat, so you cannot post as one'
+        : `Forbidden: you may post only as a board seat you hold (${seats.map((item) => getBoardSeatLabel(item.seat)).join(', ')})`,
+    );
   }
 
   return null;
@@ -70,7 +92,7 @@ export async function POST(request: NextRequest) {
     const organizationId = principal.organizationId;
     const message = body.message?.trim() || '';
     const authorName = body.author_name?.trim() || '';
-    const authorRole = resolveAuthorRole(principal.role, body.author_role?.trim() || '');
+    const authorRole = await resolveAuthorRole(principal, body.author_role?.trim() || '');
     const placement = body.placement?.trim() || 'gym_notices';
     const kind = body.kind?.trim() || 'notice';
     const startsAt = parseScheduleBound(body.starts_at, 'starts_at');

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { lockGuardianLinksForAthlete } from './guardianConsent';
+import { lockGuardianLinksForAthlete, type QueryExecutor } from './guardianConsent';
 
 export type PublicationStatus =
   | 'draft'
@@ -369,33 +369,71 @@ export async function suppressPublishedMediaForAthlete(params: {
 }): Promise<string[]> {
   return withTransaction(async (client) => {
     await lockGuardianLinksForAthlete(client, params.organizationId, params.athleteId, 'update');
-
-    const retracted = await client.query<{ publication_id: string }>(
-      `update pilot.video_publications
-       set status = 'retracted',
-           updated_at = now()
-       where organization_id = $1 and athlete_id = $2 and status = 'published'
-       returning publication_id`,
-      [params.organizationId, params.athleteId],
-    );
-
-    const publicationIds = retracted.rows.map((row) => row.publication_id);
-    if (publicationIds.length === 0) {
-      return [];
-    }
-
-    await client.query(
-      `update pilot.research_library
-       set suppressed_at = now(),
-           suppressed_by_account_id = $3,
-           suppressed_reason = $4,
-           updated_at = now()
-       where organization_id = $1 and publication_id = any($2) and suppressed_at is null`,
-      [params.organizationId, publicationIds, params.suppressedByAccountId, params.reason],
-    );
-
-    return publicationIds;
+    return suppressUnderHeldLock(client, params);
   });
+}
+
+/**
+ * A CONSENT CHANGE AND ITS TAKEDOWN, ONE TRANSACTION. A withdrawal (owner
+ * decision 2026-08-14) and a photo-only grant (Jason 2026-10-05: "A: Retract
+ * (Recommended)") both take this athlete's published video down. Run as two
+ * transactions, a failed sweep left the consent change committed and the video
+ * live; even a sweep that succeeded left a window between the two commits.
+ * Here the consent row, the retraction and the shelf suppression commit
+ * together or not at all, so a failure leaves the consent exactly as it was
+ * and the video exactly as it was, and the caller can say nothing was recorded.
+ *
+ * LOCKS: the athlete's whole guardian-link set FOR UPDATE, ONCE, first --
+ * the same statement and order the stand-alone sweep takes. `write` is
+ * grantMediaConsent or withdrawMediaConsent handed this transaction; its own
+ * one-row lock is a row of that set, already held, so it adds nothing.
+ */
+export async function recordMediaConsentAndSuppress(params: {
+  organizationId: string;
+  athleteId: string;
+  suppressedByAccountId: string;
+  reason: string;
+  write: (transaction: QueryExecutor) => Promise<string>;
+}): Promise<{ waiverId: string; publicationIds: string[] }> {
+  return withTransaction(async (client) => {
+    await lockGuardianLinksForAthlete(client, params.organizationId, params.athleteId, 'update');
+    const waiverId = await params.write(client);
+    const publicationIds = await suppressUnderHeldLock(client, params);
+    return { waiverId, publicationIds };
+  });
+}
+
+// Caller holds lockGuardianLinksForAthlete(..., 'update') for this athlete in
+// this same transaction.
+async function suppressUnderHeldLock(
+  client: QueryExecutor,
+  params: { organizationId: string; athleteId: string; suppressedByAccountId: string; reason: string },
+): Promise<string[]> {
+  const retracted = await client.query<{ publication_id: string }>(
+    `update pilot.video_publications
+     set status = 'retracted',
+         updated_at = now()
+     where organization_id = $1 and athlete_id = $2 and status = 'published'
+     returning publication_id`,
+    [params.organizationId, params.athleteId],
+  );
+
+  const publicationIds = retracted.rows.map((row) => row.publication_id);
+  if (publicationIds.length === 0) {
+    return [];
+  }
+
+  await client.query(
+    `update pilot.research_library
+     set suppressed_at = now(),
+         suppressed_by_account_id = $3,
+         suppressed_reason = $4,
+         updated_at = now()
+     where organization_id = $1 and publication_id = any($2) and suppressed_at is null`,
+    [params.organizationId, publicationIds, params.suppressedByAccountId, params.reason],
+  );
+
+  return publicationIds;
 }
 
 // The only exit from 'retracted', and it goes backwards, not forwards: into

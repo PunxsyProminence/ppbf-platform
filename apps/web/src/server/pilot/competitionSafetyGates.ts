@@ -1,4 +1,8 @@
+import type { PoolClient } from 'pg';
+
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
+import { lockCompetitionSafety } from './competitionSafetyLock';
+import { withTransaction } from './db';
 import { ConflictError, ForbiddenError } from './errors';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation, type SafetyGateDefinition } from './safetyGateMatrix';
 import { findContactEventBlockingHold } from './trainingHolds';
@@ -221,7 +225,7 @@ function travelWaiverRefusal(status: WaiverStatus, event: string): string {
  * prefix convention can be (errors.ts records the incident that taught the
  * repo this). Callers need no per-gate catch block.
  */
-export async function assertAthleteMayBeEnteredInCompetition(input: {
+export interface CompetitionGateInput {
   actor: ActorIdentity;
   athleteId: string;
   kind: CompetitionEventKind;
@@ -229,10 +233,16 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   contextId: string;
   /** Injectable clock, for the evaluation timestamp only. */
   at?: string;
-}): Promise<void> {
-  const event = EVENT_DESCRIPTION[input.kind];
-  const { organizationId } = input.actor;
+}
 
+type HoldEvaluation = Parameters<typeof recordTrainingHoldEvaluation>[0];
+
+export async function assertAthleteMayBeEnteredInCompetition(input: CompetitionGateInput): Promise<void> {
+  await assertCoachScope(input);
+  await assertHoldAndTravelGates(input, undefined, recordTrainingHoldEvaluation);
+}
+
+async function assertCoachScope(input: CompetitionGateInput): Promise<void> {
   // GATE 1 -- coach scoping. The same call every other athlete-scoped
   // capability makes (progression assignments, the scheduler, goals,
   // coach-reviews): coach of record or an active coach_coverage grant, admins
@@ -241,6 +251,23 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   // simply is not this coach's, so a 403 here discloses no more than the
   // hidden not-found it replaces on the athlete arm.
   await assertActorCanAccessAthlete(input.actor, input.athleteId);
+}
+
+/**
+ * Gates 2 and 3. `client` is the entry's transaction, already holding the
+ * competition-safety lock (runCompetitionEntryUnderSafetyLock, the only caller
+ * that passes one): the hold and waiver reads run on it so their answer is the
+ * one the insert commits against. Without it the reads go through the pool,
+ * which is a check and nothing more. `record` writes or defers the hold gate's
+ * evaluation rows.
+ */
+async function assertHoldAndTravelGates(
+  input: CompetitionGateInput,
+  client: PoolClient | undefined,
+  record: (evaluation: HoldEvaluation) => Promise<void>,
+): Promise<void> {
+  const event = EVENT_DESCRIPTION[input.kind];
+  const { organizationId } = input.actor;
 
   // GATE 2 -- training holds. A match and a competition are contact and
   // maximal exertion, so both 'all_training' (STOP) and 'contact_only'
@@ -248,12 +275,12 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   // in findContactEventBlockingHold rather than here. 403 with the hold's own
   // words, matching the scheduler's 'training_hold' branch: the explanation
   // was written FOR the athlete and the lift condition is the teaching moment.
-  const hold = await findContactEventBlockingHold(organizationId, input.athleteId);
+  const hold = await findContactEventBlockingHold(organizationId, input.athleteId, client);
   // One timestamp for whichever of the two outcomes below fires.
   const evaluatedAt = input.at ?? new Date().toISOString();
 
   if (hold) {
-    await recordTrainingHoldEvaluation({
+    await record({
       organizationId,
       actor: input.actor,
       athleteId: input.athleteId,
@@ -293,7 +320,7 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   // gate history was in before: absent for every child a different gate
   // stopped, which is precisely the child whose record most needs to show that
   // the hold gate was checked and cleared.
-  await recordTrainingHoldEvaluation({
+  await record({
     organizationId,
     actor: input.actor,
     athleteId: input.athleteId,
@@ -317,8 +344,70 @@ export async function assertAthleteMayBeEnteredInCompetition(input: {
   // away meet from a home one, and guessing wrong in the permissive direction
   // is a child in a vehicle without consent. Fail closed until a real
   // home/away distinction exists to read.
-  const travelStatus = await getAthleteWaiverStatus(organizationId, input.athleteId, TRAVEL_WAIVER);
+  const travelStatus = await getAthleteWaiverStatus(organizationId, input.athleteId, TRAVEL_WAIVER, client);
   if (travelStatus !== 'signed') {
     throw new ConflictError(travelWaiverRefusal(travelStatus, event), 'TRAVEL_WAIVER_NOT_SIGNED');
   }
+}
+
+/**
+ * Runs the three gates and the entry's write as ONE unit, under the
+ * per-athlete competition-safety lock (competitionSafetyLock.ts). This is the
+ * way a competition route enters a child; calling the gates and then the write
+ * separately is the race Codex CX-1 found -- a hold placed, or a travel consent
+ * withdrawn, that committed between the gate's read and the insert still
+ * entered the child.
+ *
+ * The lock is the transaction's first statement, so it comes first in the lock
+ * order. placeTrainingHold and every travel-waiver write take the same lock
+ * before they write, so whichever side arrives second waits for the first to
+ * commit: a hold or withdrawal already in flight is read and refuses the
+ * entry; an entry already in flight commits before the hold or withdrawal can.
+ *
+ * `write` receives the transaction and must do its reads and its insert on it.
+ * A refusal throws out of the gates, so the transaction rolls back with
+ * nothing written.
+ *
+ * NOTHING INSIDE THE TRANSACTION TAKES A SECOND POOL CONNECTION. A request
+ * holding its transaction's connection while it waits for another can starve
+ * the pool against itself (max 10, no acquire timeout: ten concurrent entries
+ * would each hold one and wait forever for an eleventh). So gate 1, which reads
+ * through the pool and is not state this lock orders, runs before the
+ * transaction opens -- still first, so an actor with no relationship to the
+ * child learns nothing about holds or consent. And the training-hold gate's
+ * evaluation rows are collected inside and written through the pool after the
+ * transaction ends, commit or rollback: a refusal recorded only inside the
+ * refused transaction would vanish with it. If writing them fails after a
+ * refusal, the refusal is what the caller sees and the write failure is
+ * logged. If it fails after the entry committed, the caller gets the error --
+ * loud rather than an entry whose gate history silently lacks its row.
+ */
+export async function runCompetitionEntryUnderSafetyLock<T>(
+  input: CompetitionGateInput,
+  write: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  await assertCoachScope(input);
+
+  const evaluations: HoldEvaluation[] = [];
+  let result: T;
+  try {
+    result = await withTransaction(async (client) => {
+      await lockCompetitionSafety(client, input.actor.organizationId, input.athleteId);
+      await assertHoldAndTravelGates(input, client, async (evaluation) => {
+        evaluations.push(evaluation);
+      });
+      return write(client);
+    });
+  } catch (error) {
+    for (const evaluation of evaluations) {
+      await recordTrainingHoldEvaluation(evaluation).catch((recordError: unknown) => {
+        console.error('competition entry: could not record the training-hold gate evaluation', recordError);
+      });
+    }
+    throw error;
+  }
+  for (const evaluation of evaluations) {
+    await recordTrainingHoldEvaluation(evaluation);
+  }
+  return result;
 }

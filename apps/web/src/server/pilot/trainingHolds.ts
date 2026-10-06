@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
+import { lockCompetitionSafety } from './competitionSafetyLock';
 import { isContactObservation } from './contactClearanceGate';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
@@ -175,6 +176,11 @@ export interface PlaceHoldInput {
  */
 export async function placeTrainingHold(input: PlaceHoldInput): Promise<TrainingHoldRow> {
   return withTransaction(async (client) => {
+    // First statement: a competition entry in flight for this athlete commits
+    // before this hold can, and an entry arriving later waits for the hold and
+    // reads it (competitionSafetyLock.ts, which is first in the lock order).
+    await lockCompetitionSafety(client, input.organizationId, input.athleteId);
+
     // Free a lapsed slot before the duplicate check: the partial unique
     // index is keyed on status='active' alone, so a stale-but-active row
     // would otherwise both fail the duplicate check with a misattributing
@@ -480,18 +486,39 @@ export async function findRegistrationBlockingHold(
 export async function findContactEventBlockingHold(
   organizationId: string,
   athleteId: string,
+  client?: PoolClient,
 ): Promise<Pick<TrainingHoldRow, 'hold_id' | 'scope' | 'athlete_explanation' | 'lift_condition_text'> | null> {
-  try {
-    return await queryOne<Pick<TrainingHoldRow, 'hold_id' | 'scope' | 'athlete_explanation' | 'lift_condition_text'>>(
-      `select hold_id, scope, athlete_explanation, lift_condition_text
+  type Row = Pick<TrainingHoldRow, 'hold_id' | 'scope' | 'athlete_explanation' | 'lift_condition_text'>;
+  const sql = `select hold_id, scope, athlete_explanation, lift_condition_text
        from pilot.training_holds
        where organization_id = $1 and athlete_id = $2
          and status = 'active'
          and scope in ('all_training', 'contact_only')
          and (expires_at is null or expires_at > now())
-       limit 1`,
-      [organizationId, athleteId],
-    );
+       limit 1`;
+  const params = [organizationId, athleteId];
+
+  if (client) {
+    // On the competition entry's own transaction, under its lock. A bare
+    // 42P01 would abort that transaction (25P02) for every later statement,
+    // so the probe is scoped by a SAVEPOINT exactly as
+    // findRegistrationBlockingHold's is.
+    await client.query('SAVEPOINT contact_hold_probe');
+    try {
+      const result = await client.query<Row>(sql, params);
+      await client.query('RELEASE SAVEPOINT contact_hold_probe');
+      return result.rows[0] ?? null;
+    } catch (error) {
+      if (!isMissingTableError(error)) {
+        throw error;
+      }
+      await client.query('ROLLBACK TO SAVEPOINT contact_hold_probe');
+      return null;
+    }
+  }
+
+  try {
+    return await queryOne<Row>(sql, params);
   } catch (error) {
     if (!isMissingTableError(error)) {
       throw error;

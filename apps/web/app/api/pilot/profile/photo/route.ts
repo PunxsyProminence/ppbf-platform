@@ -82,7 +82,17 @@ export async function POST(request: NextRequest) {
     // Path is derived from the account, not from a random id, so one account
     // holds exactly one portrait and a replacement overwrites rather than
     // accumulating a history of a child's faces in a container.
-    const blobPath = `portrait/${principal.organizationId}/${principal.accountId}/${descriptor.generatedFileName}`;
+    const accountFolder = `portrait/${principal.organizationId}/${principal.accountId}/`;
+    const blobPath = `${accountFolder}${descriptor.generatedFileName}`;
+
+    // Portraits stored before audit CL-B9 are named portrait.jpg or
+    // portrait.png; every upload now writes the one name above. Read what the
+    // row points at now, and once the row points at the new file, delete a
+    // differently-named old one: a child's earlier face must not stay in the
+    // container with nothing naming it. Only a path inside this account's own
+    // folder is ever deleted here. Two uploads racing each other both write
+    // the same name, so neither can delete the file the other just recorded.
+    const previousBlobPath = (await getAccountProfile(principal.organizationId, principal.accountId)).photoBlobPath;
 
     await uploadPilotProfilePhoto(blobPath, storedBytes, descriptor.contentType);
     await setPhoto(principal.organizationId, principal.accountId, {
@@ -93,6 +103,14 @@ export async function POST(request: NextRequest) {
       height: validation.dimensions.height,
       sha256: contentSha256,
     });
+
+    let previousPhotoDeleted: boolean | null = null;
+    if (previousBlobPath && previousBlobPath !== blobPath && previousBlobPath.startsWith(accountFolder)) {
+      // The new portrait is already stored and recorded; a storage failure
+      // here must not report the upload as failed. It is recorded instead, so
+      // the leftover file is findable from the audit trail.
+      previousPhotoDeleted = await deletePilotProfilePhoto(previousBlobPath).then(() => true, () => false);
+    }
 
     await writePilotAuditEvent({
       event_type: 'update',
@@ -109,6 +127,7 @@ export async function POST(request: NextRequest) {
         height: validation.dimensions.height,
         metadata_stripped_bytes: uploadBytes.byteLength - storedBytes.byteLength,
         review_state: 'pending_review',
+        ...(previousPhotoDeleted === null ? {} : { previous_photo_deleted: previousPhotoDeleted }),
       },
       shadow_mirror: false,
     });
