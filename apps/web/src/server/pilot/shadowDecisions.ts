@@ -49,10 +49,15 @@ export async function recordDecision(input: {
 
   return withTransaction(async (client) => {
     if (input.recommendationId) {
+      // Scoped to THIS athlete as well as the organization. The route clears
+      // only the athlete in the body, so without athlete_id here a decision
+      // about one child could cite another child's recommendation -- and the
+      // 409 would read out that recommendation's status (CL-A16). Someone
+      // else's recommendation is reported exactly like a missing one.
       const recommendation = await client.query<{ status: string }>(
         `select status from pilot.shadow_recommendations
-         where organization_id = $1 and recommendation_id = $2`,
-        [input.organizationId, input.recommendationId],
+         where organization_id = $1 and recommendation_id = $2 and athlete_id = $3`,
+        [input.organizationId, input.recommendationId, input.athleteId],
       );
       const status = recommendation.rows[0]?.status;
       const isActionable = status === 'provisional' || status === 'accepted';

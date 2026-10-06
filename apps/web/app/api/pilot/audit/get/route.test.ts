@@ -195,3 +195,93 @@ describe('POST /api/pilot/audit/get', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /api/pilot/audit/get — every athlete a row names is gated (CL-A13)', () => {
+  // A mentorship row names TWO athletes and neither under the key athlete_id.
+  // The filter used to read details.athlete_id alone, so these rows counted as
+  // "names no athlete" and reached every coach in the gym.
+  const rows = [
+    {
+      entity_type: 'mentorship',
+      entity_id: 'm-both-mine',
+      details: { mentor_athlete_id: 'ath-mine', mentee_athlete_id: 'ath-mine-2' },
+    },
+    {
+      entity_type: 'mentorship',
+      entity_id: 'm-half-mine',
+      details: { mentor_athlete_id: 'ath-mine', mentee_athlete_id: 'ath-victim' },
+    },
+    {
+      entity_type: 'mentorship',
+      entity_id: 'm-none-mine',
+      details: { mentor_athlete_id: 'ath-victim', mentee_athlete_id: 'ath-victim-2' },
+    },
+    { entity_type: 'session', entity_id: 's-camel', details: { athleteId: 'ath-victim' } },
+    { entity_type: 'session', entity_id: 's-list', details: { athlete_ids: ['ath-mine', 'ath-victim'] } },
+    { entity_type: 'session', entity_id: 's-nested', details: { roster: [{ athlete_id: 'ath-victim' }] } },
+    { entity_type: 'session', entity_id: 's-list-mine', details: { athlete_ids: ['ath-mine'] } },
+    { entity_type: 'mentorship', entity_id: 'm-ended', details: { ended_on: '2026-10-01' } },
+  ];
+
+  test('a coach sees a row only when they can reach EVERY athlete it names', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockQuery.mockResolvedValueOnce(rows);
+    mockAccessible.mockResolvedValueOnce(new Set(['ath-mine', 'ath-mine-2']));
+
+    const response = await POST(request({}));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    const ids = (payload.events as Array<{ entity_id: string }>).map((e) => e.entity_id);
+    // m-ended names no athlete but a mentorship is always about two
+    // children, so it is hidden rather than treated as org-wide.
+    expect(ids).toEqual(['m-both-mine', 's-list-mine']);
+    const askedFor = mockAccessible.mock.calls[0][1] as string[];
+    expect(askedFor).toEqual(
+      expect.arrayContaining(['ath-mine', 'ath-mine-2', 'ath-victim', 'ath-victim-2']),
+    );
+  });
+
+  test('an org admin still gets every row unfiltered', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockQuery.mockResolvedValueOnce(rows);
+
+    const response = await POST(request({}));
+    const payload = await response.json();
+
+    expect(payload.events).toHaveLength(rows.length);
+    expect(mockAccessible).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/pilot/audit/get \u2014 athlete-owned rows that name no athlete (CL-A13 review)', () => {
+  // Many writers name the child only through entity_id: an intervention
+  // execution's outcome update, a coach review's {session_id}. Those rows
+  // used to count as org-wide and reach every coach.
+  const rows = [
+    { entity_type: 'intervention_execution', entity_id: 'ex-1', details: { outcome: 'worse', correction_reason: 'free text' } },
+    { entity_type: 'coach_review', entity_id: 'rev-1', details: { session_id: 'sess-1' } },
+    { entity_type: 'announcement', entity_id: 'a-1', details: { placement: 'gym_notices' } },
+    { entity_type: 'drill', entity_id: 'd-1', details: {} },
+  ];
+
+  test('a coach does not see them; gym-wide types without an athlete are kept', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockQuery.mockResolvedValueOnce(rows);
+    mockAccessible.mockResolvedValueOnce(new Set(['ath-mine']));
+
+    const payload = await (await POST(request({}))).json();
+
+    const ids = (payload.events as Array<{ entity_id: string }>).map((e) => e.entity_id);
+    expect(ids).toEqual(['a-1', 'd-1']);
+  });
+
+  test('an org admin still sees them', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockQuery.mockResolvedValueOnce(rows);
+
+    const payload = await (await POST(request({}))).json();
+
+    expect(payload.events).toHaveLength(rows.length);
+  });
+});

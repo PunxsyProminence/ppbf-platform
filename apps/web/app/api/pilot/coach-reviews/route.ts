@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getCoachReviewById, getSessionAthleteId, upsertCoachReview } from '@/src/server/pilot/entities';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { validateCoachReviewPayload } from '@/src/server/pilot/validation';
 
@@ -62,7 +63,29 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing session for existing coach review');
       }
       await assertActorCanAccessAthlete(principal, existingAthleteId);
-      await upsertCoachReview(principal.organizationId, payload, {
+      // Owner decision (Jason 2026-10-06, "Author + org admin"; audit CL-A14):
+      // reaching the athlete is not enough to edit a review. Only the coach
+      // who wrote it, or an organization admin, may. Another coach writes
+      // their own review instead.
+      if (principal.role === 'coach' && existing.coach_id !== principal.accountId) {
+        throw new Error('Forbidden: only the coach who wrote this review, or an organization admin, may edit it');
+      }
+      // A review stays on the session it was written about. The update used
+      // to write payload.session_id, so an author could move a review onto
+      // another child's session -- re-parenting a clearance record across
+      // athletes. Refused rather than silently pinned, so the caller learns
+      // the move did not happen (overwatch 2026-10-06, closing CL-A14).
+      if (payload.session_id !== existing.session_id) {
+        throw new ValidationError(
+          'A coach review cannot be moved to another session. Write a new review for that session.',
+          'COACH_REVIEW_SESSION_FIXED',
+        );
+      }
+      // The author never changes on an edit. The update writes coach_id from
+      // the payload, which is how a second coach used to become the author of
+      // a review they only edited; pin it to the stored author. An admin's
+      // edit is attributed to the admin by the audit row below.
+      await upsertCoachReview(principal.organizationId, { ...payload, coach_id: existing.coach_id }, {
         mode: 'update',
         expectedSessionId: existing.session_id,
       });

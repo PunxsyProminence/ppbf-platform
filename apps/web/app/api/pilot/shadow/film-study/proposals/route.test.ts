@@ -25,6 +25,10 @@ jest.mock('@/src/server/pilot/videoDestination', () => ({
   ...jest.requireActual('@/src/server/pilot/videoDestination'),
   assertVideoIsFilmStudyMedia: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/videoAthleteScope', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoAthleteScope'),
+  assertVideoConcernsAthlete: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowFilmStudyProposals', () => ({
   createCoachReportedObservation: jest.fn(),
@@ -384,5 +388,40 @@ describe('POST a coach-reported missed detection', () => {
     }));
     expect(response.status).toBe(400);
     expect(mockCreateCoachReport).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST: the video must be of the athlete the observation is about (CL-A16)', () => {
+  // A coach cleared for ATH-1 could cite any film-study video in the gym --
+  // another child's bout -- and file an observation about ATH-1 against it.
+  // Owner ruling (via overwatch 2026-10-06): allowed only when the video is
+  // ATH-1's own or ATH-1 is a live tag subject in it.
+  const body = {
+    athlete_id: 'ATH-1',
+    video_session_id: 'vs-other-child',
+    observation_text: 'Something the model missed.',
+  };
+
+  test('the check runs on the athlete and video named, after the athlete access check', async () => {
+    await POST(req('POST', body));
+    const mockConcerns = jest.mocked(
+      jest.requireMock('@/src/server/pilot/videoAthleteScope').assertVideoConcernsAthlete,
+    );
+    expect(mockConcerns).toHaveBeenCalledWith('org-1', 'vs-other-child', 'ATH-1');
+    expect(mockAccess.mock.invocationCallOrder[0])
+      .toBeLessThan(mockConcerns.mock.invocationCallOrder[0]);
+  });
+
+  test('a video that is not of that athlete is refused and nothing is written', async () => {
+    const { VideoNotOfAthleteError } = jest.requireActual('@/src/server/pilot/videoAthleteScope');
+    jest.mocked(
+      jest.requireMock('@/src/server/pilot/videoAthleteScope').assertVideoConcernsAthlete,
+    ).mockRejectedValueOnce(new VideoNotOfAthleteError());
+
+    const response = await POST(req('POST', body));
+
+    expect(response.status).toBe(400);
+    expect(mockCreateCoachReport).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
