@@ -48,11 +48,13 @@ export async function flagNearMiss(input: {
     // column's foreign key is on decision_id alone, and the route clears only
     // the athlete in the body, so nothing else stopped a near miss about one
     // child from pointing at another child's decision (CL-A16). Missing,
-    // another athlete's and another gym's all answer the same 404.
+    // another athlete's and another gym's all answer the same 404. Compared
+    // as lowercase text so a malformed id is a 404 rather than a cast error,
+    // and an uppercase UUID still matches.
     if (input.decisionId) {
       const decision = await client.query(
         `select 1 from pilot.shadow_decisions
-         where organization_id = $1 and decision_id::text = $2 and athlete_id = $3`,
+         where organization_id = $1 and decision_id::text = lower($2) and athlete_id = $3`,
         [input.organizationId, input.decisionId, input.athleteId],
       );
       if (decision.rows.length === 0) {
