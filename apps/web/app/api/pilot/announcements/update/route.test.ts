@@ -33,6 +33,9 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
     athleteId: null,
     sessionToken: 'token-1',
     authProvider: 'microsoft',
+    // A coach's real session: an emailed link. This route is gated on any
+    // adult session (requireStaffSessionPrincipal), not a Microsoft one.
+    signInMethod: 'magic_link',
     ...overrides,
   } as PilotPrincipal;
 }

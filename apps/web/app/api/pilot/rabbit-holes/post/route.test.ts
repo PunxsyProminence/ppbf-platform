@@ -49,6 +49,9 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
     athleteId: null,
     sessionToken: 'token-1',
     authProvider: 'microsoft',
+    // A coach's real session: an emailed link. This route is gated on any
+    // adult session (requireStaffSessionPrincipal), not a Microsoft one.
+    signInMethod: 'magic_link',
     ...overrides,
   } as PilotPrincipal;
 }
@@ -88,7 +91,7 @@ describe('POST /api/pilot/rabbit-holes/post', () => {
 
   // A PIN session is athlete self-service; a lesson speaks to the whole gym.
   test('refuses a PIN-authenticated session', async () => {
-    mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'ppbf_local' }));
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'ppbf_local', signInMethod: 'pin' }));
 
     const response = await POST(request(VALID));
 

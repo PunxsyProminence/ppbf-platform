@@ -26,6 +26,7 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
     athleteId: null,
     sessionToken: 'token-1',
     authProvider: 'microsoft',
+    signInMethod: 'microsoft',
     ...overrides,
   } as PilotPrincipal;
 }
