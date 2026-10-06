@@ -144,3 +144,49 @@ describe('coach-reviews create authorizes the STORED review owner before overwri
     );
   });
 });
+
+describe('only the author or an org admin may edit a coach review (CL-A14)', () => {
+  // Owner decision (Jason, relayed by overwatch 2026-10-06): "Author + org
+  // admin". Reaching the athlete is not enough: before this, a second coach who
+  // could reach the athlete saved over the first coach's review AND became its
+  // author, because the update wrote the payload's coach_id.
+  const AUTHORED_BY_OTHER = {
+    review_id: 'rev-1',
+    session_id: 'sess-A',
+    coach_id: 'acct-other-coach',
+    decision: 'pending',
+    notes: 'their words',
+    approved_flag: false,
+    created_at: 'x',
+    updated_at: 'x',
+  };
+
+  test('another coach who CAN reach the athlete is refused and nothing is written', async () => {
+    mockGetReview.mockResolvedValue(AUTHORED_BY_OTHER);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(403);
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+  });
+
+  test('an org admin may edit it, and the author stays the coach who wrote it', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal(), accountId: 'acct-admin', role: 'organization_admin' });
+    mockGetReview.mockResolvedValue(AUTHORED_BY_OTHER);
+    mockValidate.mockReturnValue({ ...PAYLOAD, coach_id: 'acct-admin' });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mockUpsert).toHaveBeenCalledWith(
+      'org-a',
+      expect.objectContaining({ review_id: 'rev-1', coach_id: 'acct-other-coach' }),
+      { mode: 'update', expectedSessionId: 'sess-A' },
+    );
+    // The audit row names who actually made the edit.
+    expect(writePilotAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'update', actor_account_id: 'acct-admin' }),
+    );
+  });
+});
