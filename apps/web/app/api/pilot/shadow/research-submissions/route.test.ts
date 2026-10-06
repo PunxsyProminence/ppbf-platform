@@ -413,3 +413,31 @@ describe('the subject gate on a requirement that names a child', () => {
     expect(getRequirementStatusesInOrg as jest.Mock).toHaveBeenCalledWith('org-1', [7]);
   });
 });
+
+// Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
+// the curator got a 500 for what is their own malformed request.
+describe('malformed JSON bodies (CL-C24)', () => {
+  const raw = (method: 'POST' | 'PATCH', body: string) =>
+    new NextRequest('http://localhost/api/pilot/shadow/research-submissions', {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+
+  test.each([
+    ['POST', '{not json'],
+    ['POST', 'null'],
+    ['POST', '[1,2]'],
+    ['PATCH', '{not json'],
+    ['PATCH', 'null'],
+    ['PATCH', '"text"'],
+  ] as const)('%s %s is a 400, and nothing is written', async (method, body) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    const response = method === 'POST' ? await POST(raw(method, body)) : await PATCH(raw(method, body));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+});

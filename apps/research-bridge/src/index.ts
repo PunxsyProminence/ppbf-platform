@@ -2,6 +2,7 @@ import { createAzureClients, createCredential } from './azureClients.js';
 import { loadConfig } from './config.js';
 import { EvidenceSearchService } from './evidenceSearch.js';
 import { PpbfResearchClient } from './ppbfClient.js';
+import { CachedResearchSource } from './researchCache.js';
 import { createBridgeApp } from './server.js';
 import { initializeTelemetry, trackSafeEvent } from './telemetry.js';
 
@@ -10,7 +11,8 @@ initializeTelemetry(config.applicationInsightsConnectionString);
 const credential = createCredential(config);
 const clients = createAzureClients(config, credential);
 const app = createBridgeApp(config, {
-  research: new PpbfResearchClient(config, credential),
+  // One export fetch serves MCP tool calls for a minute (CL-C22).
+  research: new CachedResearchSource(new PpbfResearchClient(config, credential), { ttlMs: 60_000 }),
   evidence: new EvidenceSearchService(clients.searchClient, { maxAgeHours: config.evidenceMaxAgeHours }),
 });
 

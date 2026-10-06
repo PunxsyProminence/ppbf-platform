@@ -111,7 +111,7 @@ describe('rate limits are tunable without a deploy', () => {
 
   test('every key resolves to a limit the enforcer will accept', () => {
     for (const key of [
-      'chat', 'chat_daily', 'feedback', 'heavy_bag', 'shadow_upload', 'video_upload',
+      'chat', 'chat_daily', 'feedback', 'heavy_bag', 'shadow_upload', 'video_upload', 'library_claim',
       'safety_review', 'safety_review_critical',
     ] as const) {
       const policy = resolveShadowRateLimit(key, {});

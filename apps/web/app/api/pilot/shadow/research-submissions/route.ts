@@ -150,19 +150,29 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Audit CL-C24: an unreadable or non-object body is the caller's malformed
+// request, a 400 -- not an unhandled throw that surfaced as a 500.
+async function readJsonObject<T>(request: NextRequest): Promise<T> {
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ValidationError('Request body must be a JSON object.');
+  }
+  return body as T;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
 
-    const body = (await request.json()) as {
+    const body = await readJsonObject<{
       research_requirement_id?: number;
       source_id?: string;
       document_id?: string | null;
       provenance?: Record<string, unknown>;
       submission_note?: string;
       shelf?: unknown;
-    };
+    }>(request);
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     // Normalized once, used everywhere below: a blank document_id means "no
@@ -221,12 +231,12 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_LIBRARY_CURATOR_ROLES]);
 
-    const body = (await request.json()) as {
+    const body = await readJsonObject<{
       submission_id?: string;
       applicability_state?: string;
       review_note?: string;
       shelf?: unknown;
-    };
+    }>(request);
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
     if (!body.submission_id?.trim()) {

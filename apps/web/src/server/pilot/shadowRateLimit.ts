@@ -111,6 +111,11 @@ const RATE_LIMIT_DEFAULTS = {
   // batch of session video is the one action here with an unbounded byte cost.
   shadow_upload: { limit: 40, windowSeconds: 3_600 },
   video_upload: { limit: 20, windowSeconds: 3_600 },
+  // Library Q&A (audit CL-C15). Every role may ask, and each question the
+  // Library cannot answer opens a research requirement, so without a cap one
+  // account could mint requirements without end. Ordinary use is a handful an
+  // hour; this stops a script, not a person.
+  library_claim: { limit: 120, windowSeconds: 3_600 },
   // The human-review queue writes (OD-2026-09-30-005: "3 per hour"). Each
   // counts review ROWS, per account. Reaching one suppresses the row and
   // nothing else: the person still gets their response. A slot whose row was

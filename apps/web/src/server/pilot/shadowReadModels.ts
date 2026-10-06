@@ -106,18 +106,20 @@ export interface ShadowObservationProjectionItem {
   created_at: string;
 }
 
+// Floored as well as clamped (audit CL-C24): these arrive from a JSON body and
+// are bound as Postgres bigint, which refuses 2.5 and the caller got a 500.
 function clampLimit(value: number | undefined, fallback: number, max: number): number {
   if (!Number.isFinite(value)) {
     return fallback;
   }
-  return Math.max(1, Math.min(max, Number(value)));
+  return Math.max(1, Math.min(max, Math.floor(Number(value))));
 }
 
 function clampOffset(value: number | undefined): number {
   if (!Number.isFinite(value)) {
     return 0;
   }
-  return Math.max(0, Number(value));
+  return Math.max(0, Math.floor(Number(value)));
 }
 
 /**

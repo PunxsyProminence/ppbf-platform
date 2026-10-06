@@ -1080,4 +1080,23 @@ describe('Library relevance: whole words, a relevance bar, confidence and resear
     expect(result.evidenceCount).toBe(0);
     expect(result.researchRequirementId).not.toBeNull();
   });
+
+  // Audit CL-C15: the duplicate is found by key in SQL, and the row key no
+  // longer carries Date.now(), so two questions in one millisecond stay two.
+  test('the same unanswered question reuses its open requirement; a different one in the same millisecond opens its own', async () => {
+    const first = await ask('zorblat sparring tariffs remain unknown');
+    const again = await ask('zorblat sparring tariffs remain unknown');
+    expect(again.researchRequirementId).toBe(first.researchRequirementId);
+
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000);
+    try {
+      const a = await ask('glimmerfox footwork tariffs remain unknown');
+      const b = await ask('quillbeast footwork tariffs remain unknown');
+      expect(a.researchRequirementId).not.toBeNull();
+      expect(b.researchRequirementId).not.toBeNull();
+      expect(b.researchRequirementId).not.toBe(a.researchRequirementId);
+    } finally {
+      now.mockRestore();
+    }
+  });
 });
