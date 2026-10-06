@@ -692,6 +692,16 @@ describe('the sweep end to end against real Postgres', () => {
       ...jest.requireActual('./guardianConsent'),
       assertGuardianMediaConsent: jest.fn(async () => {}),
     }));
+    // The sweep also asks whether consent covers VIDEO (#1273), through
+    // videoPlaybackConsent, which reads guardian links, waivers and the
+    // retained-restriction table (#1271) -- none of which this suite's
+    // database carries. Mocked to 'covers video' for the reason above; the
+    // gate has real-database coverage in retainedMediaRestriction.pg.test.ts
+    // and mocked-unit coverage in videoScanSweep.test.ts.
+    jest.doMock('./videoPlaybackConsent', () => ({
+      ...jest.requireActual('./videoPlaybackConsent'),
+      assertConsentCoversVideo: jest.fn(async () => {}),
+    }));
     const sweepModule = await import('./videoScanSweep');
     const { closePool: closeRegistryPool } = await import('./db');
     registryPools.push(closeRegistryPool);
@@ -707,6 +717,7 @@ describe('the sweep end to end against real Postgres', () => {
     jest.dontMock('./shadowEvents');
     jest.dontMock('./escalationLadder');
     jest.dontMock('./guardianConsent');
+    jest.dontMock('./videoPlaybackConsent');
     jest.resetModules();
   });
 
