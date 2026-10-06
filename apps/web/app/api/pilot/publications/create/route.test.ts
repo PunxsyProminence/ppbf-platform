@@ -401,6 +401,27 @@ describe('POST /api/pilot/publications/create', () => {
     expect((await res.json()).video_status).toBe('quarantined');
     expect(mockQuery).not.toHaveBeenCalled();
   });
+
+  // Audit CL-B4. The attribution check only compared athlete ids when the
+  // video HAD one, so unattributed team footage passed for any athlete the
+  // caller could reach -- and every later consent check reads only that one
+  // child, not whoever is actually in the footage.
+  test('an unattributed video cannot be drafted under a single athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ video_session_id: 'vid-team', organization_id: 'org-1', athlete_id: null, status: 'ready' });
+
+    const res = await POST(
+      postRequest({ video_session_id: 'vid-team', athlete_id: 'ath-1', publication_type: 'research_library', title: 'Team drill' }),
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('VIDEO_NOT_ATTRIBUTED');
+    expect(body.error).toMatch(/isn't linked to an athlete/);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
 });
 
 // Tagged sparring and bout clips are staff film study only (owner,

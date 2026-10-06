@@ -4,6 +4,7 @@ import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { getPublicationForPublish, submitPublicationForReview } from '@/src/server/pilot/publication';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
         { error: 'The video behind this publication is not in a released state, so it cannot go to review.' },
         { status: 409 },
       );
+    }
+
+    // Create refuses unattributed footage (audit CL-B4); a draft made before
+    // it did must not reach a reviewer whose consent check reads only the one
+    // child this publication names.
+    if (!videoSession.athlete_id) {
+      throw new ConflictError("This video isn't linked to an athlete, so it can't be published. Link it to an athlete in Video Analysis first.", 'VIDEO_NOT_ATTRIBUTED');
     }
 
     // The CAS inside re-checks 'draft', so a submit racing an admin decision

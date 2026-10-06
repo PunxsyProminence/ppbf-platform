@@ -45,6 +45,11 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
   assertVideoHasNoLiveClipTags: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Attribution is route.test.ts's subject; here the video is ath-1's.
+jest.mock('@/src/server/pilot/videoSessions', () => ({
+  getVideoSessionById: jest.fn().mockResolvedValue({ video_session_id: 'vid-1', athlete_id: 'ath-1', status: 'ready' }),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockGetPublication = getPublicationForPublish as jest.Mock;
