@@ -1074,7 +1074,15 @@ export function validateShadowResponse(
     message,
     reasons,
     reasonCodes,
-    requiresHumanReview: filtered || reasons.length > 0,
+    // A withheld answer asks for a review row; an answer that passed does
+    // not, even when it carries `human_review`. That reason is the deferral
+    // the doctrine requires ("a physician should evaluate"), and every row
+    // asked for here draws on the owner's 3-per-hour allowance
+    // (OD-2026-10-01-006), so routine deferrals used up the hour a withheld
+    // answer's row needed (CL-C7). Every other reason sets `filtered`, so this
+    // is the only reason the change affects. The route and the background
+    // worker both read this field, so they move together.
+    requiresHumanReview: filtered,
     citationIds: filtered ? [] : citationIds,
     ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
   };

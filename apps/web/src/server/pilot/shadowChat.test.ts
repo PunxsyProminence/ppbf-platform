@@ -531,18 +531,35 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   });
 
   describe('Response Validation and Filtering', () => {
-    // Test 9: Recommendation includes human review language
-    test('validates recommendation includes human review language', () => {
+    // Test 9: Recommendation includes human review language.
+    // CL-C7 (2026-10-05): deferral language is what the doctrine REQUIRES of
+    // an answer, so it is recorded as a reason but no longer asks for a human
+    // review row. Before, every "see a doctor" answer wrote one and drew on
+    // the owner's 3-per-hour allowance (OD-2026-10-01-006), so three routine
+    // answers could suppress the row of a fourth that was actually withheld.
+    test('records human review language without asking for a review row', () => {
       const response = `Based on the data, you might benefit from additional assessment. 
         This requires professional medical evaluation.`;
       const result = validateShadowResponse(response);
-      expect(result.requiresHumanReview).toBe(true);
+      expect(result.filtered).toBe(false);
+      expect(result.reasonCodes).toEqual(['human_review']);
+      expect(result.requiresHumanReview).toBe(false);
     });
 
     // Test 10: Recommendation includes confidence or research marker
-    test('validates response includes confidence markers', () => {
+    // Withheld for the uncited "research suggests", so it still asks for a
+    // review row; the research marker is not what decides that.
+    test('an uncited research claim is withheld and still asks for a review row', () => {
       const response = 'Research suggests that hydration is important. Further study required.';
       const result = validateShadowResponse(response);
+      expect(result.filtered).toBe(true);
+      expect(result.reasonCodes).toContain('uncited_claim');
+      expect(result.requiresHumanReview).toBe(true);
+    });
+
+    test('a withheld answer that also defers still asks for a review row', () => {
+      const result = validateShadowResponse('You have a concussion. A physician should confirm it.');
+      expect(result.filtered).toBe(true);
       expect(result.requiresHumanReview).toBe(true);
     });
 

@@ -1046,12 +1046,31 @@ export async function getOwnShadowDataDeletionRequest(
   };
 }
 
+/**
+ * Apply a person's own SHADOW memory correction, and record it.
+ *
+ * It used to record it and nothing more: the row was written `pending`, the
+ * route answered "pending_review", and nothing anywhere read the row or
+ * removed the fact, so the fact went on feeding that person's prompts
+ * (CL-C10, 2026-10-05 audit). For an account that may belong to a child, a
+ * memory the person cannot correct is the defect forgetRememberedFact was
+ * written to end.
+ *
+ * Both actions now remove the named fact from the requester's OWN profile
+ * (account and organization, both) in the same transaction as the row, which
+ * is written `applied`. A replace's corrected value is kept on the row and is
+ * NOT written into remembered_facts: the prompt presents those as
+ * "observations, not settings this person chose", and a value the person
+ * typed would make that line false (overwatch's ruling, option A). One
+ * statement does the removal, so it does not race the read-modify-write in
+ * upsertRememberedFact for the same fact.
+ */
 export async function submitMemoryCorrection(input: {
   actor: ActorIdentity;
   factKey: string;
   correctedValue?: string;
   action: 'replace' | 'forget';
-}): Promise<string> {
+}): Promise<{ correctionId: string; status: 'applied'; factRemoved: boolean }> {
   requireTenantOwner(input.actor);
   if (input.actor.role === 'board') {
     throw new Error('Forbidden: board role cannot access account-level SHADOW memory');
@@ -1063,20 +1082,38 @@ export async function submitMemoryCorrection(input: {
   }
 
   const correctionId = randomUUID();
-  await query(
-    `insert into pilot.shadow_chat_memory_corrections
-       (correction_id, organization_id, account_id, fact_key, corrected_value, action)
-     values ($1, $2, $3, $4, $5, $6)`,
-    [
-      correctionId,
-      input.actor.organizationId,
-      input.actor.accountId,
-      factKey,
-      input.correctedValue?.trim().slice(0, 2_000) ?? null,
-      input.action,
-    ],
-  );
-  return correctionId;
+  return withTransaction(async (client) => {
+    const removed = await client.query(
+      `update pilot.shadow_user_profiles
+          set remembered_facts = coalesce(
+                (select jsonb_agg(remembered.fact order by remembered.position)
+                   from jsonb_array_elements(remembered_facts) with ordinality as remembered(fact, position)
+                  where remembered.fact->>'key' is distinct from $3),
+                '[]'::jsonb),
+              updated_at = now()
+        where account_id = $1
+          and organization_id = $2
+          and exists (
+            select 1 from jsonb_array_elements(remembered_facts) as remembered(fact)
+             where remembered.fact->>'key' = $3
+          )`,
+      [input.actor.accountId, input.actor.organizationId, factKey],
+    );
+    await client.query(
+      `insert into pilot.shadow_chat_memory_corrections
+         (correction_id, organization_id, account_id, fact_key, corrected_value, action, status)
+       values ($1, $2, $3, $4, $5, $6, 'applied')`,
+      [
+        correctionId,
+        input.actor.organizationId,
+        input.actor.accountId,
+        factKey,
+        input.correctedValue?.trim().slice(0, 2_000) ?? null,
+        input.action,
+      ],
+    );
+    return { correctionId, status: 'applied' as const, factRemoved: (removed.rowCount ?? 0) > 0 };
+  });
 }
 
 export async function queueHumanReview(input: {
