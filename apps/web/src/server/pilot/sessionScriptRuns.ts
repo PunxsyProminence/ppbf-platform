@@ -5,8 +5,8 @@ import { query, queryOne, withTransaction } from './db';
 // The delivery side of a session script. sessionScripts.ts reads the plan; this module writes what
 // is happening to it right now, into pilot.session_script_runs.
 //
-// Columns owned by infra/azure/pilot_slice_postgres_session_run_state_migration.sql. Nothing here
-// issues DDL.
+// Columns owned by infra/azure/pilot_slice_postgres_session_run_state_migration.sql and (show_on_wall)
+// pilot_slice_postgres_session_run_show_on_wall_migration.sql. Nothing here issues DDL.
 //
 // THE SERVER OWNS THE CLOCK. Callers never send elapsed time and this module never trusts one.
 // elapsed_seconds is computed from started_at, paused_seconds and (while paused) paused_at, so a
@@ -50,6 +50,9 @@ export interface SessionScriptRunRow {
   current_block_id: string | null;
   paused_at: string | null;
   paused_seconds: number | null;
+  // Added by the show-on-wall migration. False on every row until the delivering coach turns it
+  // on, and only ever true on a live run (pilot_ssrun_wall_only_live).
+  show_on_wall: boolean;
 }
 
 // What a live run looks like to a caller: the stored row plus the two things only the server can
@@ -75,7 +78,7 @@ const RUN_COLUMNS = `
   organization_id, run_id, script_id, script_version, activity_id,
   delivered_by_account_id, delivered_on, athletes_present, blocks_completed,
   reset_protocol_used, deviation_note, what_worked, what_did_not, created_at,
-  run_state, started_at, ended_at, current_block_id, paused_at, paused_seconds
+  run_state, started_at, ended_at, current_block_id, paused_at, paused_seconds, show_on_wall
 `;
 
 // Elapsed is derived, never stored: storing it would go stale the moment nobody was writing.
@@ -352,6 +355,37 @@ export async function resumeSessionScriptRun(
   return toLiveRun(rows[0]);
 }
 
+// The coach's "Show on TV" switch (show-on-wall migration). Only the delivering coach can flip it,
+// and only on a live run: requireOwnLiveRun gives another coach's run the same 404 as a missing one,
+// exactly as for the cursor. Setting it to the value it already has succeeds -- a double tap, or a
+// retried request after a dropped response, reaches the state the coach asked for.
+//
+// The live-run condition sits in the UPDATE as well as in the read, so a run that settles between
+// the two is refused with 409 rather than having the switch written onto a finished session (which
+// pilot_ssrun_wall_only_live would also refuse, as a database error instead of a nameable one).
+export async function setSessionScriptRunShowOnWall(
+  organizationId: string,
+  accountId: string,
+  runId: string,
+  showOnWall: boolean,
+): Promise<LiveSessionScriptRun> {
+  await requireOwnLiveRun(organizationId, accountId, runId);
+
+  const rows = await query<SessionScriptRunRow>(
+    `update pilot.session_script_runs
+        set show_on_wall = $4
+      where organization_id = $1 and run_id = $2
+        and delivered_by_account_id = $3
+        and run_state = 'in_progress'
+      returning ${RUN_COLUMNS}`,
+    [organizationId, runId, accountId, showOnWall],
+  );
+  if (rows.length === 0) {
+    throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
+  }
+  return toLiveRun(rows[0]);
+}
+
 export interface FinishSessionScriptRunInput {
   runState: 'completed' | 'abandoned';
   blocksCompleted?: number | null;
@@ -394,6 +428,10 @@ export async function finishSessionScriptRun(
                                  else 0
                                end,
             paused_at = null,
+            -- Off the TV in the same statement that settles the run. pilot_ssrun_wall_only_live
+            -- would refuse a settled run left showing, and the wall must never present a finished
+            -- session as the one on the floor now.
+            show_on_wall = false,
             blocks_completed = coalesce($4, blocks_completed),
             athletes_present = coalesce($5, athletes_present),
             reset_protocol_used = coalesce($6, reset_protocol_used),

@@ -36,6 +36,7 @@ function liveRun(overrides: Partial<LiveSessionScriptRun> = {}): LiveSessionScri
     current_block_id: 'blk-2',
     paused_at: null,
     paused_seconds: 0,
+    show_on_wall: false,
     elapsed_seconds: 125,
     is_paused: false,
     ...overrides,
@@ -304,6 +305,54 @@ describe('pause and resume', () => {
 
     expect(patchCalls(fetchMock)).toEqual([{ action: 'resume' }]);
     expect(screen.getByText('RUNNING')).toBeInTheDocument();
+  });
+});
+
+describe('the Show on TV switch', () => {
+  it('a new run is off the TV, and Show on TV sends show: true and adopts the server answer', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: true }) }),
+    });
+    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: true }]);
+    expect(screen.getByText('ON THE TV')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Take off the TV' })).toBeInTheDocument();
+  });
+
+  it('Take off the TV sends show: false -- an explicit value, never a toggle', async () => {
+    const { fetchMock } = await renderLive(liveRun({ show_on_wall: true }), {
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Take off the TV' }));
+    });
+
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: false }]);
+    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+  });
+
+  it('a refused switch leaves the shown state as it was and says why', async () => {
+    await renderLive(liveRun(), {
+      patch: () => jsonResponse({ error: 'SOMETHING_ELSE' }, false, 422),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+
+    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('SOMETHING_ELSE');
+  });
+
+  it('says plainly that the TV does not show sessions yet', async () => {
+    await renderLive(liveRun());
+    expect(screen.getByText(/The gym TV does not show sessions yet/)).toBeInTheDocument();
   });
 });
 

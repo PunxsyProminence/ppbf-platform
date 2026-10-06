@@ -48,6 +48,7 @@ const liveRun = {
   current_block_id: 'blk-1',
   paused_at: null,
   paused_seconds: 0,
+  show_on_wall: false,
   elapsed_seconds: 600,
   is_paused: false,
 };
@@ -206,7 +207,7 @@ describe('POST runs — start', () => {
   // The whole point of the narrow body: these are the server's to set. Accepting either is how a
   // coach's clock becomes whatever their device believed, so they must be refused BY NAME rather
   // than quietly ignored -- a silently dropped field looks like it worked.
-  it.each(['run_state', 'started_at', 'ended_at', 'paused_seconds', 'elapsed_seconds'])(
+  it.each(['run_state', 'started_at', 'ended_at', 'paused_seconds', 'elapsed_seconds', 'show_on_wall'])(
     'refuses %s rather than ignoring it',
     async (field) => {
       const response = await POST(post({ script_id: 'scr-1', [field]: 'anything' }));

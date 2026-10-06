@@ -97,6 +97,10 @@ const MIGRATIONS: ReadonlyArray<{ file: string; runner: string }> = [
     runner: 'pilot-apply-session-run-state-migration.mjs',
   },
   {
+    file: 'pilot_slice_postgres_session_run_show_on_wall_migration.sql',
+    runner: 'pilot-apply-session-run-show-on-wall-migration.mjs',
+  },
+  {
     file: 'pilot_slice_postgres_workout_templates_v2_migration.sql',
     runner: 'pilot-apply-workout-templates-v2-migration.mjs',
   },
