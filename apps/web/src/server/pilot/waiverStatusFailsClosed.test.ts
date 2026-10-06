@@ -118,7 +118,8 @@ function arrangeOneGuardianWith(status: string): void {
       covers_video: true,
       public_use_allowed: true,
       created_at: '2026-01-01T00:00:00.000Z',
-    }]);
+    }])
+    .mockResolvedValueOnce([]); // retained restrictions: none
 }
 
 describe('checkGuardianMediaConsent', () => {
@@ -178,7 +179,8 @@ describe('assertGuardianMediaConsentWithClient', () => {
           public_use_allowed: true,
           created_at: '2026-01-01T00:00:00.000Z',
         }],
-      }),
+      })
+      .mockResolvedValueOnce({ rows: [] }), // retained restrictions: none
   });
 
   test.each(OUTSIDE_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {
