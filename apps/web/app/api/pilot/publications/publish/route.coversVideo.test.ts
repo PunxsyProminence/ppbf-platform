@@ -17,6 +17,11 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * both at the pre-check and inside the claim's own transaction.
  */
 
+/* The consent-set advisory lock is its own statement; these tests script
+   client.query call by call, so it is stubbed here and proven against real
+   Postgres in consentSetPhantom.pg.test.ts. */
+jest.mock('@/src/server/pilot/consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
