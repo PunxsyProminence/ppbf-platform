@@ -1,4 +1,4 @@
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import type { PilotRole } from './contracts';
 
 export interface RememberedFact {
@@ -114,51 +114,61 @@ export async function upsertRememberedFact(
   organizationId: string,
   fact: Omit<RememberedFact, 'updatedAt' | 'observationCount' | 'firstObservedAt'>,
 ): Promise<void> {
-  const profile = await queryOne<{ remembered_facts: RememberedFact[] }>(
-    `SELECT remembered_facts FROM pilot.shadow_user_profiles
-     WHERE account_id = $1 AND organization_id = $2`,
-    [accountId, organizationId],
-  );
+  // LOCKED READ. The whole array is written back below, so a plain read let a
+  // memory correction (submitMemoryCorrection) that committed between this
+  // read and the write be undone: the forgotten fact came back with the next
+  // learning-loop signal for ANY key, while the correction row said 'applied'
+  // (reviewer finding, 2026-10-06, proven in shadowMemoryCorrection.pg.test.ts).
+  // FOR UPDATE makes this wait for the correction and read what it left.
+  await withTransaction(async (client) => {
+    const { rows } = await client.query<{ remembered_facts: RememberedFact[] }>(
+      `SELECT remembered_facts FROM pilot.shadow_user_profiles
+       WHERE account_id = $1 AND organization_id = $2
+       FOR UPDATE`,
+      [accountId, organizationId],
+    );
+    const profile = rows[0];
 
-  if (!profile) return;
+    if (!profile) return;
 
-  const existing = profile.remembered_facts || [];
-  const idx = existing.findIndex(f => f.key === fact.key);
-  const now = new Date().toISOString();
-  const previous = idx >= 0 ? existing[idx] : undefined;
+    const existing = profile.remembered_facts || [];
+    const idx = existing.findIndex(f => f.key === fact.key);
+    const now = new Date().toISOString();
+    const previous = idx >= 0 ? existing[idx] : undefined;
 
-  const updated: RememberedFact = {
-    ...fact,
-    // A row written before counting existed evidences one observation; this one
-    // makes two. Absent means one, never zero -- the fact is on the row because
-    // something was seen.
-    observationCount: (previous?.observationCount ?? (previous ? 1 : 0)) + 1,
-    firstObservedAt: previous?.firstObservedAt ?? now,
-    updatedAt: now,
-  };
+    const updated: RememberedFact = {
+      ...fact,
+      // A row written before counting existed evidences one observation; this one
+      // makes two. Absent means one, never zero -- the fact is on the row because
+      // something was seen.
+      observationCount: (previous?.observationCount ?? (previous ? 1 : 0)) + 1,
+      firstObservedAt: previous?.firstObservedAt ?? now,
+      updatedAt: now,
+    };
 
-  if (idx >= 0) {
-    existing[idx] = updated;
-  } else {
-    existing.push(updated);
-  }
+    if (idx >= 0) {
+      existing[idx] = updated;
+    } else {
+      existing.push(updated);
+    }
 
-  // Keep 20 facts. Most-observed first, heuristic weight breaking ties -- the
-  // weight alone used to decide this, which meant a 0.8 seen once outranked a
-  // 0.6 seen forty times.
-  const sorted = existing.toSorted((a, b) => {
-    const observed = (b.observationCount ?? 1) - (a.observationCount ?? 1);
-    return observed !== 0 ? observed : b.confidence - a.confidence;
+    // Keep 20 facts. Most-observed first, heuristic weight breaking ties -- the
+    // weight alone used to decide this, which meant a 0.8 seen once outranked a
+    // 0.6 seen forty times.
+    const sorted = existing.toSorted((a, b) => {
+      const observed = (b.observationCount ?? 1) - (a.observationCount ?? 1);
+      return observed !== 0 ? observed : b.confidence - a.confidence;
+    });
+    const pruned = sorted
+      .slice(0, 20);
+
+    await client.query(
+      `UPDATE pilot.shadow_user_profiles
+       SET remembered_facts = $3::jsonb, updated_at = NOW()
+       WHERE account_id = $1 AND organization_id = $2`,
+      [accountId, organizationId, JSON.stringify(pruned)],
+    );
   });
-  const pruned = sorted
-    .slice(0, 20);
-
-  await query(
-    `UPDATE pilot.shadow_user_profiles
-     SET remembered_facts = $3::jsonb, updated_at = NOW()
-     WHERE account_id = $1 AND organization_id = $2`,
-    [accountId, organizationId, JSON.stringify(pruned)],
-  );
 }
 
 /**

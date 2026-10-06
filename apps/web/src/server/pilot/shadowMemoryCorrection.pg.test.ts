@@ -53,6 +53,7 @@ jest.mock('./db', () => ({
 }));
 
 import { submitMemoryCorrection } from './shadowConversations';
+import { upsertRememberedFact } from './shadowUserProfile';
 
 jest.setTimeout(180_000);
 
@@ -269,6 +270,40 @@ describe('SHADOW memory corrections are applied, against real Postgres', () => {
 
       expect(result).toEqual({ correctionId: expect.any(String), status: 'applied', factRemoved: false });
       expect(await corrections(client)).toHaveLength(1);
+    });
+  });
+
+  // Reviewer B, 2026-10-06. upsertRememberedFact read the facts with a plain
+  // SELECT and wrote the whole array back, so a learning-loop write for ANY
+  // key that read before a correction committed put the forgotten fact back
+  // after it -- with the correction row saying 'applied' and the person told
+  // "SHADOW no longer remembers this". Here the correction's removal is held
+  // open on a second connection while the upsert starts; the upsert must wait
+  // for it and keep the removal.
+  test('a learning-loop write racing a forget does not bring the forgotten fact back', async () => {
+    await withDatabase('ppbf_test_memory_race', async (client) => {
+      const other = new Client({ connectionString: connectionStringFor('ppbf_test_memory_race') });
+      await other.connect();
+      try {
+        await other.query('BEGIN');
+        await other.query(
+          `update pilot.shadow_user_profiles
+              set remembered_facts = (select coalesce(jsonb_agg(f), '[]'::jsonb)
+                                        from jsonb_array_elements(remembered_facts) f
+                                       where f->>'key' <> 'stance')
+            where account_id = $1 and organization_id = $2`,
+          [ACCOUNT, ORG],
+        );
+        const learning = upsertRememberedFact(ACCOUNT, ORG, { key: 'asks_follow_up_questions', value: 'true', confidence: 0.6 });
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        await other.query('COMMIT');
+        await learning;
+      } finally {
+        await other.end();
+      }
+      const keys = await factKeys(client, ACCOUNT, ORG);
+      expect(keys).not.toContain('stance');
+      expect(keys).toEqual(expect.arrayContaining(['prefers_concise_answers', 'asks_follow_up_questions']));
     });
   });
 });

@@ -1061,9 +1061,11 @@ export async function getOwnShadowDataDeletionRequest(
  * is written `applied`. A replace's corrected value is kept on the row and is
  * NOT written into remembered_facts: the prompt presents those as
  * "observations, not settings this person chose", and a value the person
- * typed would make that line false (overwatch's ruling, option A). One
- * statement does the removal, so it does not race the read-modify-write in
- * upsertRememberedFact for the same fact.
+ * typed would make that line false (overwatch's ruling, option A). The
+ * removal is one statement, and it holds the profile row's lock until this
+ * transaction commits; upsertRememberedFact reads with FOR UPDATE, so a
+ * learning-loop write that starts meanwhile waits and keeps the removal
+ * instead of writing back an array read before it.
  */
 export async function submitMemoryCorrection(input: {
   actor: ActorIdentity;
@@ -1108,7 +1110,7 @@ export async function submitMemoryCorrection(input: {
         input.actor.organizationId,
         input.actor.accountId,
         factKey,
-        input.correctedValue?.trim().slice(0, 2_000) ?? null,
+        input.action === 'replace' ? input.correctedValue?.trim().slice(0, 2_000) ?? null : null,
         input.action,
       ],
     );
