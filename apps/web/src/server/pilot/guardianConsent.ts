@@ -1,5 +1,6 @@
 import type { QueryResultRow } from 'pg';
 
+import { lockConsentSet, lockConsentSets } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
@@ -50,6 +51,20 @@ export interface QueryExecutor {
  * The one-row lock takes a single row. Its callers take no other
  * guardian_links lock in the same transaction, which is what keeps it out of
  * a cycle; it lives here so there is one place to look.
+ *
+ * ROW LOCKS DO NOT COVER A GUARDIAN WHO IS NOT LINKED YET. Each reader, the
+ * sweep and both consent writers therefore take the consent-set lock SHARED
+ * (consentSetLock.ts) inside these helpers, before any row, and every
+ * guardian_links INSERT takes it EXCLUSIVE. A link insert and a consent
+ * decision on the same athlete cannot overlap: whichever starts second waits,
+ * and a reader that waited reads the new guardian. The purge does not take it;
+ * it only removes links, and removal is ordered by the row locks above.
+ *
+ * THE FULL ORDER, when a transaction needs more than one of these:
+ *   1. the competition-safety per-athlete lock (ppbf.athlete-competition-safety)
+ *   2. the consent-set lock, athletes ascending by athlete_id in byte order
+ *   3. pilot.guardian_links rows, in the order above.
+ * Taking a later one and then an earlier one is how a deadlock gets built.
  */
 export type GuardianLinkLockMode = 'share' | 'update';
 
@@ -59,6 +74,7 @@ export async function lockGuardianLinksForAthlete(
   athleteId: string,
   mode: GuardianLinkLockMode,
 ): Promise<string[]> {
+  await lockConsentSet(client, organizationId, athleteId, 'shared');
   const result = await client.query<{ parent_id: string }>(
     `select parent_id from pilot.guardian_links
      where organization_id = $1 and athlete_id = $2
@@ -77,6 +93,7 @@ export async function lockGuardianLinksForAthletes(
   mode: GuardianLinkLockMode,
 ): Promise<Array<{ athlete_id: string; parent_id: string }>> {
   if (athleteIds.length === 0) return [];
+  await lockConsentSets(client, organizationId, athleteIds, 'shared');
   const result = await client.query<{ athlete_id: string; parent_id: string }>(
     `select athlete_id, parent_id from pilot.guardian_links
      where organization_id = $1 and athlete_id = any($2::text[])
@@ -131,6 +148,7 @@ export async function lockGuardianLink(
   parentId: string,
   athleteId: string,
 ): Promise<void> {
+  await lockConsentSet(client, organizationId, athleteId, 'shared');
   await client.query(
     `select 1 from pilot.guardian_links
       where organization_id = $1 and parent_id = $2 and athlete_id = $3
