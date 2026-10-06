@@ -357,6 +357,19 @@ export async function POST(request: NextRequest) {
           }
           throw error;
         }
+
+        // RULING (Jason 2026-10-06, rows about a child): "Family reads, staff
+        // closes (Recommended)". The athlete and their parents may read a
+        // requirement about that child; only a coach or organization admin
+        // closes one. Placed after the gate, so a caller outside the family
+        // still gets the plain 404 and only the family -- who already see the
+        // row in their list -- learn that closing it is not theirs.
+        if (!isResearchStaff(principal.role)) {
+          return NextResponse.json(
+            { ok: false, error: 'Forbidden: only coaches and organization admins close research requirements' },
+            { status: 403 },
+          );
+        }
       }
 
       // Only now, after the caller is known to be entitled to this row.

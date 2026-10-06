@@ -668,10 +668,12 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     expect(mockResolve).toHaveBeenCalledTimes(1);
   });
 
-  // THE LEGITIMATE PATH, PART 1. A parent closing their own child's
-  // requirement. Both bounds are present: the guardian's linked-athlete list
-  // the route always sent, AND the stored row's authorized owner.
-  test('a parent still resolves their own child requirement', async () => {
+  // RULING (Jason 2026-10-06, rows about a child): "Family reads, staff
+  // closes (Recommended)". A parent or the athlete may READ a requirement
+  // about their own child; only a coach or organization admin closes any row.
+  // The parent passes the relationship gate, so they are told plainly (403)
+  // rather than "not found" -- the row is already in their list.
+  test('a parent may not close their own child requirement', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
@@ -682,18 +684,44 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
       metadata: { resolved_from: 'research_page' },
     }));
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, resolved: true });
+    expect(response.status).toBe(403);
     expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-mine');
-    expect(mockResolve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        athleteIds: ['ath-mine'],
-        expectedSubjectAthleteId: 'ath-mine',
-        resolvedByAccountId: 'acct-1',
-        resolvedByRole: 'parent',
-        metadata: { resolved_from: 'research_page' },
-      }),
-    );
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('an athlete may not close a requirement about themselves', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
+    mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(403);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // The gate still runs first for a non-staff caller: one who is NOT the
+  // child's family gets the plain 404, never a 403 that confirms the row.
+  test('a non-staff caller with no relationship to the child still gets the plain 404', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // Reading is unchanged: the family still sees the row.
+  test('a parent still reads their own child requirement', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    mockList.mockResolvedValue([stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } })]);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+    const body = (await response.json()) as { items: ShadowResearchRequirementRow[] };
+
+    expect(body.items).toHaveLength(1);
   });
 
   // THE LEGITIMATE PATH, PART 2. An organization admin administers the whole

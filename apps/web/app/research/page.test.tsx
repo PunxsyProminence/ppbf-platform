@@ -405,12 +405,12 @@ test('a projection that answered empty prints real zeros', async () => {
   expect(summaryTileValues()).toEqual(['0', '0', '0', '0']);
 });
 
-// CL-A3 / CL-C14 (Jason 2026-10-06, "Staff only"). A member now sees their
-// own research question, but closing a need that names no athlete is the
-// staff's call and the server refuses anyone else (403). The button must not
-// be offered to someone it would refuse. A row that names an athlete is still
-// decided by the relationship gate server-side, so it keeps its button.
-describe('Mark Resolved on research needs that name no athlete', () => {
+// CL-A3 / CL-C14 (Jason 2026-10-06: "Staff only"; "Family reads, staff
+// closes"). Members see their own questions and families see rows about their
+// child, but only coaches and organization admins close any requirement, and
+// the server refuses everyone else (403). The button must not be offered to
+// someone it would refuse.
+describe('Mark Resolved is offered to staff only', () => {
   const ABOUT_A_CHILD = { ...SECOND_REQUIREMENT, subject_id: 'ath-1', metadata: {} };
 
   test.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner'])(
@@ -427,30 +427,17 @@ describe('Mark Resolved on research needs that name no athlete', () => {
     },
   );
 
-  test('a row naming an athlete only in metadata is still a row about a child', async () => {
-    global.fetch = mockFetch({
-      curator: false,
-      role: 'athlete',
-      requirements: [{ ...REQUIREMENT, subject_id: null, metadata: { athlete_id: 'ath-1' } }],
-    });
-
-    await act(async () => {
-      render(<ResearchIntakePage />);
-    });
-
-    await screen.findByText('Is RPE reliable at age 12?');
-    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
-  });
-
-  test('an athlete keeps Mark Resolved on a row about themselves', async () => {
-    global.fetch = mockFetch({ curator: false, role: 'athlete', requirements: [ABOUT_A_CHILD] });
+  // "Family reads, staff closes" (Jason 2026-10-06): a row about the athlete
+  // themselves is shown, with no button to close it.
+  test.each(['athlete', 'parent'])('a %s reads a row about their child with no Mark Resolved', async (role) => {
+    global.fetch = mockFetch({ curator: false, role, requirements: [ABOUT_A_CHILD] });
 
     await act(async () => {
       render(<ResearchIntakePage />);
     });
 
     await screen.findByText('Does footwork drill order matter?');
-    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
   });
 
   test.each(['coach', 'organization_admin', 'admin'])('a %s keeps Mark Resolved on every open row', async (role) => {
