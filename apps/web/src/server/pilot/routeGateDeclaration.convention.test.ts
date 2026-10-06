@@ -533,17 +533,6 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'portrait is a different route (/photo/review) with its own gate.',
   ],
   [
-    'app/api/pilot/scheduler/attendance-summary/route.ts#GET',
-    'INLINE, twice. The handler admits only coach and '
-      + 'organization_admin/admin and throws Forbidden for everyone else, then '
-      + 'refuses again when a coach names a class they do not own (checked '
-      + 'against coach_account_id, scheduled_by_account_id and '
-      + 'covering_coach_account_id -- the same ownership test the scheduler '
-      + 'route applies). The header records that a parent- or athlete-facing '
-      + 'attendance view is deliberately deferred to its own scoping decision '
-      + 'rather than reusing this route\'s shape.',
-  ],
-  [
     'app/api/pilot/shadow/data/route.ts#GET',
     'SELF-SCOPED. exportOwnShadowData(principal) lists only conversations '
       + 'where organization_id and account_id both match the caller, filters '
