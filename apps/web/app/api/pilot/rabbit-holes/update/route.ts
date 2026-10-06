@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { hiddenNotFound, jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { hiddenNotFound, jsonError, requireStaffSessionPrincipal } from '@/src/server/pilot/http';
 import {
   assertCanManageRabbitHole,
   getRabbitHole,
@@ -23,7 +23,7 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireStaffSessionPrincipal(request);
     const body = (await request.json()) as {
       rabbit_hole_id?: string;
       status?: string;

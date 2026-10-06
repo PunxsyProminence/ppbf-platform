@@ -383,6 +383,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let videosDeleted = 0;
   let filesDeleted = 0;
   let filesMissing = 0;
+  let correctionsDeleted = 0;
   for (const athlete of athletes) {
     await client.query('savepoint purge_athlete');
     try {
@@ -456,6 +457,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // back or never happened.
       let unlinkedHere = 0;
       let retiredHere = 0;
+      let correctionsHere = 0;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           await client.query(
@@ -479,6 +481,19 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
               [login.account_id],
             );
             if (login.live) retiredHere += 1;
+            /* THE SHADOW MEMORY CORRECTIONS THIS ATHLETE TYPED GO TOO. The
+               login outlives the purge, so the account foreign key's cascade
+               never fires for it, and corrected_value is the child's own
+               words. They are read only on that account's own behalf, which
+               a retired login no longer has; nothing needs them for
+               audit. dataDeletion.ts carries the same statement. */
+            if (tables.corrections) {
+              const corrections = await client.query(
+                'delete from pilot.shadow_chat_memory_corrections where account_id = $1',
+                [login.account_id],
+              );
+              correctionsHere += corrections.rowCount ?? 0;
+            }
           }
         }
       }
@@ -532,6 +547,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       if (removed.rows.length > 0) athletesDeleted += 1;
       loginsUnlinked += unlinkedHere;
       loginsRetired += retiredHere;
+      correctionsDeleted += correctionsHere;
       videosDeleted += videoPaths.length;
       filesDeleted += filesHere;
       filesMissing += missingHere;
@@ -622,9 +638,15 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         [accountId],
       );
       await client.query('delete from pilot.parents where account_id = $1', [accountId]);
+      // The guardian's SHADOW memory corrections: deleted here rather than left
+      // to the account foreign key's cascade, so the audit row can count them.
+      const corrections = tables.corrections
+        ? await client.query('delete from pilot.shadow_chat_memory_corrections where account_id = $1', [accountId])
+        : { rowCount: 0 };
       await client.query('delete from pilot.accounts where account_id = $1', [accountId]);
       await client.query('release savepoint purge_account');
       accountsDeleted += 1;
+      correctionsDeleted += corrections.rowCount ?? 0;
     } catch (error) {
       await client.query('rollback to savepoint purge_account');
       record(error);
@@ -633,7 +655,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
 
   return {
     athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
-    blocked, guardianLinkLock,
+    correctionsDeleted, blocked, guardianLinkLock,
   };
 }
 
@@ -668,6 +690,7 @@ async function main() {
       `select to_regclass('pilot.video_sessions') is not null as videos,
               to_regclass('pilot.compliance_violations') is not null as violations,
               to_regclass('pilot.account_profiles') is not null as profiles,
+              to_regclass('pilot.shadow_chat_memory_corrections') is not null as corrections,
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
@@ -718,7 +741,7 @@ async function main() {
     const outcome = families === 0
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
-        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, blocked: {}, guardianLinkLock: 'none',
+        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, blocked: {}, guardianLinkLock: 'none',
       }
       : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });
 
@@ -768,6 +791,7 @@ async function main() {
         files_missing: outcome.filesMissing,
         would_unlink_athlete_logins: outcome.loginsUnlinked,
         would_retire_live_athlete_logins: outcome.loginsRetired,
+        would_delete_shadow_memory_corrections: outcome.correctionsDeleted,
         blocked: blockedCount,
         blocked_by: outcome.blocked,
         guardian_link_lock: outcome.guardianLinkLock,
@@ -803,6 +827,7 @@ async function main() {
           inquiries_deferred: inquiriesDeferred,
           files_deleted: outcome.filesDeleted,
           files_missing: outcome.filesMissing,
+          shadow_memory_corrections_deleted: outcome.correctionsDeleted,
           total_rows_deleted:
             outcome.athletesDeleted + outcome.accountsDeleted + outcome.videosDeleted + inquiriesDeleted,
           blocked: blockedCount,
@@ -824,6 +849,7 @@ async function main() {
       inquiries_deferred: inquiriesDeferred,
       files_deleted: outcome.filesDeleted,
       files_missing: outcome.filesMissing,
+      shadow_memory_corrections_deleted: outcome.correctionsDeleted,
       total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,

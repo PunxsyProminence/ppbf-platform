@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { setAnnouncementActive } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireStaffSessionPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 // found.
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireStaffSessionPrincipal(request);
     requireRole(principal, ['platform_owner', 'organization_admin', 'admin', 'coach', 'board']);
 
     const body = (await request.json()) as {

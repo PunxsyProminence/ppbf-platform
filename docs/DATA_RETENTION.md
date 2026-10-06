@@ -344,7 +344,13 @@ app's only stored-file deletes are a portrait its owner removes or a reviewer re
 photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
 leaves the athlete's own account and profile row (it removes parent accounts only); the
 athlete's account is kept but no longer names the athlete record that was removed, and is
-marked deleted if it was not already (*Safety screens*, above). A playback
+marked deleted if it was not already (*Safety screens*, above). The SHADOW memory corrections
+that account typed (`pilot.shadow_chat_memory_corrections`, whose `corrected_value` is the
+person's own words) are deleted in the same transaction (in the cleanup job, the same
+per-person savepoint), as are a purged guardian's; both purge paths count them as
+`shadow_memory_corrections_deleted`. Until the purge they stay behind the account, read only on
+that account's own behalf (its export), so unreadable once the account is marked deleted. Pinned by
+`shadowMemoryCorrectionPurge.pg.test.ts`. A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.

@@ -158,11 +158,16 @@ export async function mintGateSession({
       );
     }
 
+    // sign_in_method as the app's own sign-in would record it (audit CL-A7):
+    // the Microsoft-gated routes read it, and a gate session without one is
+    // refused there. A local account reaching this line is an athlete, whose
+    // real sign-in is a PIN; every other fixture is Microsoft-provisioned.
+    const signInMethod = account.auth_provider === 'ppbf_local' ? 'pin' : 'microsoft';
     const token = randomBytes(32).toString('hex');
     await client.query(
-      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at)
-       values ($1, $2, $3, now() + ($4 || ' minutes')::interval)`,
-      [hashToken(token), account.account_id, account.organization_id, String(ttlMinutes)],
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
+       values ($1, $2, $3, now() + ($4 || ' minutes')::interval, $5)`,
+      [hashToken(token), account.account_id, account.organization_id, String(ttlMinutes), signInMethod],
     );
 
     return {

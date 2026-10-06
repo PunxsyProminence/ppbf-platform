@@ -68,7 +68,12 @@ export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
-    const body = await request.json() as ReviewBody;
+    // Audit CL-C24: an unreadable or non-object body is a 400, not a 500.
+    const raw: unknown = await request.json().catch(() => null);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json({ error: 'Request body must be a JSON object.' }, { status: 400 });
+    }
+    const body = raw as ReviewBody;
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'review');
 
     if (body.entityType === 'document' && body.action === 'complete_indexing') {

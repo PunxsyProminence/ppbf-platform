@@ -15,7 +15,6 @@ import {
   CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
   createShadowResearchRequirement,
-  listShadowResearchRequirements,
   resolveCoveredCapabilityGapRequirements,
   syncCapabilityGapRequirement,
 } from './shadowResearch';
@@ -463,11 +462,21 @@ async function ensureClaimResearchRequirement(input: {
   const researchRequirement = `Strengthen SHADOW Library evidence for ${input.scope} claim`;
   const knowledgeGap = `Question lacks sufficient SHADOW Library evidence: ${input.question}. Evidence count: ${input.evidenceCount}. Distinct sources: ${input.distinctSourceCount}.`;
 
-  const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
-  const duplicate = openItems.find((item) => {
-    const metadata = (item.metadata ?? {}) as Record<string, unknown>;
-    return metadata.question === input.question && metadata.scope === input.scope && metadata.subject_id === input.subjectId;
-  });
+  // The open duplicate, found by key in SQL (audit CL-C15). This used to read
+  // every open requirement in the organization into memory on every claim.
+  const duplicate = await queryOne<{ research_requirement_id: number }>(
+    `select research_requirement_id
+     from pilot.shadow_research_requirements
+     where organization_id = $1
+       and source_entity_type = 'shadow_library_claim'
+       and status = 'open'
+       and metadata->>'question' = $2
+       and metadata->>'scope' = $3
+       and (metadata->>'subject_id') is not distinct from $4::text
+     order by created_at desc
+     limit 1`,
+    [input.organizationId, input.question, input.scope, input.subjectId],
+  );
 
   if (duplicate) {
     return { id: duplicate.research_requirement_id, researchRequirement, knowledgeGap };
@@ -477,7 +486,9 @@ async function ensureClaimResearchRequirement(input: {
     organizationId: input.organizationId,
     sourceEventName: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
     sourceEntityType: 'shadow_library_claim',
-    sourceEntityId: `${input.scope}:${input.subjectId ?? 'global'}:${Date.now()}`,
+    // Random, not Date.now(): two different questions in one millisecond
+    // collided on the unique key and the second merged into the first.
+    sourceEntityId: `${input.scope}:${input.subjectId ?? 'global'}:${randomUUID()}`,
     researchRequirement,
     knowledgeGap,
     evidenceLabel: input.subjectId,
