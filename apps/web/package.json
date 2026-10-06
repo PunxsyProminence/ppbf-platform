@@ -466,6 +466,7 @@
     "test:migrations:rehome-test-login": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rehomeTestLogin.pg.test.ts --testTimeout=240000"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",
