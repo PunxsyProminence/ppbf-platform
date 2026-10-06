@@ -74,6 +74,11 @@ describe('emergency phrases reach the emergency response', () => {
     ["i can't breath"],
     ['he is not responsive'],
     ['hes not responding'],
+    // Codex review on #1296: landing on furniture does not make a collapse
+    // non-emergent, so the bed/couch exclusion was removed. "I collapsed on
+    // the couch after training" now over-flags, the safe direction.
+    ['I collapsed onto the couch and was out for a minute'],
+    ['I collapsed on the couch after training'],
   ])('%s', (message) => {
     const result = check(message);
     expect(result.valid).toBe(false);
@@ -103,7 +108,6 @@ describe('boxing technique and definition sentences still pass', () => {
     ['Your elbows collapsed on the body shot, keep them tight'],
     ['You collapsed the distance too early'],
     ['He collapsed the range with a step-in jab'],
-    ['I collapsed on the couch after training, how should I recover?'],
     // breathing as technique
     ["You're not breathing out when you punch"],
     ['He is not breathing between combinations'],
@@ -133,6 +137,11 @@ describe('boxing technique and definition sentences still pass', () => {
     ["my son won't wake up in the morning for training"],
     ["I can't wake him up in the mornings for runs"],
     ['What is a collapsed lung?'],
+    // Codex review on #1296: performance and feedback, not people.
+    ['My conditioning collapsed in the third round'],
+    ['My cardio collapsed late in sparring'],
+    ['his gas tank collapsed after round two'],
+    ['The coach says I am unresponsive to feedback on my jab'],
     // waking as schedule
     ["I won't wake up early enough for roadwork"],
     ['He wont wake up for practice'],
