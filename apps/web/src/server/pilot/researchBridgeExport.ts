@@ -2,13 +2,28 @@ import { createHash } from 'node:crypto';
 
 import {
   listApprovedGlobalEvidenceForResearchBridge,
+  listShadowCapabilityCoverage,
   type ShadowApprovedEvidenceExportRow,
+  type ShadowCapabilityCoverageRow,
+  type ShadowLibrarySourceType,
 } from './shadowLibrary';
 import {
+  buildCapabilityGapResearchFields,
+  CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+  CAPABILITY_GAP_SOURCE_EVENT_NAME,
   listShadowResearchRequirements,
   subjectAthleteIdOf,
+  type CapabilityGapFields,
   type ShadowResearchRequirementRow,
 } from './shadowResearch';
+
+// The research bridge's own limits (apps/research-bridge/src/schemas.ts). An
+// export past any of them is rejected whole, and a rejected export never
+// reaches the bridge's delete step -- so evidence withdrawn here would stay
+// served there. The export keeps inside them instead.
+export const RESEARCH_BRIDGE_MAX_NEEDS = 500;
+export const RESEARCH_BRIDGE_MAX_EVIDENCE = 2_000;
+export const RESEARCH_BRIDGE_MAX_URL_LENGTH = 2_000;
 
 export interface SanitizedResearchNeed {
   id: string;
@@ -74,56 +89,113 @@ function hasSubjectLink(metadata: Record<string, unknown>): boolean {
     .some((key) => typeof metadata[key] === 'string' && Boolean((metadata[key] as string).trim()));
 }
 
+// A capability key is a curator's identifier (motor_learning_practice_design),
+// never prose.
+const CAPABILITY_KEY = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
+const KNOWN_SOURCE_TYPES: readonly ShadowLibrarySourceType[] = [
+  'peer_reviewed', 'clinical_guideline', 'governing_body', 'coach_observation', 'athlete_self_report',
+  'sensor_data', 'internal_policy', 'textbook', 'media', 'other',
+];
+
+function nonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * The capability rule a gap ticket stands for, or null when the row is not a
+ * gap ticket for a rule the gym actually has.
+ *
+ * WHO WROTE A ROW cannot be read from it: the coverage check stores the role
+ * of whoever triggered the recompute; POST
+ * /api/pilot/shadow/research-requirements let any member choose the event
+ * name, entity type and metadata until it refused the reserved kinds; and its
+ * resolve action still merges caller metadata into any row it may resolve. So
+ * the export trusts nothing a row stores but the capability key it names. The
+ * rule -- required source types, minimums, coverage, matched count -- comes
+ * from pilot.shadow_library_capability_map, which only curators write, and the
+ * text is rebuilt from it. A row naming a key the gym has no rule for (a forged
+ * row, a rule since deleted) is not exported.
+ */
+function capabilityGapFieldsOf(
+  row: ShadowResearchRequirementRow,
+  rules: ReadonlyMap<string, ShadowCapabilityCoverageRow>,
+): CapabilityGapFields | null {
+  const key = row.source_entity_id;
+  const rule = rules.get(key);
+  if (
+    row.source_event_name !== CAPABILITY_GAP_SOURCE_EVENT_NAME
+    || row.source_entity_type !== CAPABILITY_GAP_SOURCE_ENTITY_TYPE
+    || !CAPABILITY_KEY.test(key)
+    || !rule
+    || (rule.coverage_state !== 'uncovered' && rule.coverage_state !== 'partial')
+    || !Array.isArray(rule.required_source_types)
+    || !rule.required_source_types.every((type) => (KNOWN_SOURCE_TYPES as readonly string[]).includes(type))
+    || !nonNegativeInteger(rule.minimum_authority_tier)
+    || !nonNegativeInteger(rule.minimum_source_count)
+    || !nonNegativeInteger(rule.matched_sources)
+  ) {
+    return null;
+  }
+  return {
+    capabilityKey: key,
+    coverageState: rule.coverage_state,
+    requiredSourceTypes: rule.required_source_types,
+    minimumAuthorityTier: rule.minimum_authority_tier,
+    minimumSourceCount: rule.minimum_source_count,
+    matchedSources: rule.matched_sources,
+  };
+}
+
 /**
  * Is this requirement about NO child, and therefore exportable?
  *
  * WHICH ATHLETE A ROW NAMES is shadowResearch's question, and
  * subjectAthleteIdOf is its answer: the dedicated subject_id COLUMN first,
  * then the metadata fallbacks, in the priority order every other reader uses
- * (shadowResearch.ts -- "subject_id is the authority"). This filter used to
- * ask a private metadata-only helper instead, so the column that
- * pilot_slice_postgres_research_requirement_subject_migration.sql added
- * precisely to record "which child is this row about" was selected, carried on
- * the row, and never read here.
+ * (shadowResearch.ts -- "subject_id is the authority"). The metadata keys
+ * hasSubjectLink refuses are refused as well, so a row is excluded if either
+ * finds somebody.
  *
- * The gap was reachable, not theoretical. POST
- * /api/pilot/shadow/research-requirements passes source_entity_type straight
- * from the request body, so a row written with subject_id set, metadata {} and
- * an allowlisted source_entity_type read as subject-less and was exported --
- * a research requirement about one named child, with its free-text
- * research_requirement and knowledge_gap, leaving the platform through a
- * payload whose whole claim is that it carries none.
- *
- * Deliberately additive: the metadata keys hasSubjectLink already refused are
- * still refused, so this widens what is excluded and narrows nothing.
+ * Only capability-coverage gaps are exportable. Library claim rows are not:
+ * their knowledge_gap quotes the question a member typed, which may name a
+ * child or a health detail that redaction does not catch.
  */
-function isEligibleResearchNeed(row: ShadowResearchRequirementRow): boolean {
-  const metadata = row.metadata ?? {};
-  if (subjectAthleteIdOf(row) !== null || hasSubjectLink(metadata)) {
-    return false;
-  }
-  if (row.source_entity_type === 'shadow_library_capability_map') {
-    return true;
-  }
-  return row.source_entity_type === 'shadow_library_claim'
-    && metadata.scope === 'scoped'
-    && (metadata.subject_id === null || metadata.subject_id === undefined || metadata.subject_id === '');
+function namesNobody(row: ShadowResearchRequirementRow): boolean {
+  return subjectAthleteIdOf(row) === null && !hasSubjectLink(row.metadata ?? {});
 }
 
-export function sanitizeResearchNeeds(rows: ShadowResearchRequirementRow[]): SanitizedResearchNeed[] {
+export function sanitizeResearchNeeds(
+  rows: ShadowResearchRequirementRow[],
+  capabilityRules: ShadowCapabilityCoverageRow[],
+): SanitizedResearchNeed[] {
+  const rules = new Map(capabilityRules.map((rule) => [rule.capability_key, rule]));
   return rows
-    .filter(isEligibleResearchNeed)
-    .map((row) => ({
-      id: opaqueId('need', row.organization_id, String(row.research_requirement_id)),
-      title: redactResearchText(row.research_requirement, 500),
-      knowledge_gap: redactResearchText(row.knowledge_gap),
-      evidence_status: row.source_status,
-      confidence_tier: row.source_confidence_tier,
-      verification_state: row.source_verification_state,
-      status: row.status,
-      created_at: row.created_at,
-    }))
-    .filter((row) => row.title.length > 0 && row.knowledge_gap.length > 0);
+    .flatMap((row) => {
+      const fields = namesNobody(row) ? capabilityGapFieldsOf(row, rules) : null;
+      return fields ? [{ row, fields }] : [];
+    })
+    // Newest first, so the cap keeps the gaps the coverage check saw last.
+    // (node-postgres hands timestamptz back as a Date and bigserial as a
+    // string, whatever the row type says, so both are compared as numbers.)
+    .sort((a, b) => (
+      new Date(b.row.created_at).getTime() - new Date(a.row.created_at).getTime()
+      || Number(b.row.research_requirement_id) - Number(a.row.research_requirement_id)
+    ))
+    .slice(0, RESEARCH_BRIDGE_MAX_NEEDS)
+    .map(({ row, fields }) => {
+      const text = buildCapabilityGapResearchFields(fields);
+      return {
+        id: opaqueId('need', row.organization_id, String(row.research_requirement_id)),
+        title: redactResearchText(text.requirement, 500),
+        knowledge_gap: redactResearchText(text.knowledgeGap),
+        // The values syncCapabilityGapRequirement writes, not the row's.
+        evidence_status: text.sourceStatus,
+        confidence_tier: 'INSUFFICIENT',
+        verification_state: 'unknown',
+        status: row.status,
+        created_at: row.created_at,
+      };
+    });
 }
 
 function safePublicUrl(value: string | null): string | null {
@@ -132,7 +204,11 @@ function safePublicUrl(value: string | null): string | null {
   }
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+    const serialized = url.toString();
+    return serialized.length <= RESEARCH_BRIDGE_MAX_URL_LENGTH ? serialized : null;
   } catch {
     return null;
   }
@@ -153,20 +229,22 @@ export function sanitizeApprovedEvidence(
       publication_date: row.publication_date,
       excerpt: redactResearchText(row.text_content),
     }))
-    .filter((row) => row.title.length > 0 && row.excerpt.length > 0);
+    .filter((row) => row.title.length > 0 && row.excerpt.length > 0)
+    .slice(0, RESEARCH_BRIDGE_MAX_EVIDENCE);
 }
 
 export async function buildResearchBridgeExport(organizationId: string) {
-  const [researchNeeds, approvedEvidence] = await Promise.all([
+  const [researchNeeds, capabilityRules, approvedEvidence] = await Promise.all([
     listShadowResearchRequirements(organizationId),
-    listApprovedGlobalEvidenceForResearchBridge({ organizationId, limit: 2_000 }),
+    listShadowCapabilityCoverage(organizationId),
+    listApprovedGlobalEvidenceForResearchBridge({ organizationId, limit: RESEARCH_BRIDGE_MAX_EVIDENCE }),
   ]);
 
   return {
     schema_version: '1' as const,
     classification: 'sanitized-staging-only' as const,
     generated_at: new Date().toISOString(),
-    research_needs: sanitizeResearchNeeds(researchNeeds),
+    research_needs: sanitizeResearchNeeds(researchNeeds, capabilityRules),
     approved_evidence: sanitizeApprovedEvidence(organizationId, approvedEvidence),
   };
 }

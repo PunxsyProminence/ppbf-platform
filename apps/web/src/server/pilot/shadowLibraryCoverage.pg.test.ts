@@ -88,6 +88,9 @@ const SCHEMA_FILES = [
      search reads it (R1, Jason 2026-09-29); the migration creates the reserved
      organization and the CHECK that keeps athlete-scoped rows off it. */
   'pilot_slice_postgres_platform_library_scope_migration.sql',
+  /* The rights marker (#1258) the research-bridge export now reads, and the
+     triggers that keep full text off any source not PPBF-owned or open-licence. */
+  'pilot_slice_postgres_source_rights_migration.sql',
 ];
 
 function connectionStringFor(database: string): string {
@@ -182,6 +185,10 @@ async function seedSource(
      * in another source's document (see the "real corpus shape" cases).
      */
     ownsDocument?: boolean;
+    /** Defaults to ppbf_owned, which may hold the full-text chunk seeded below. */
+    rightsStatus?: 'ppbf_owned' | 'open_licence' | 'licensed_excerpt_only' | 'unknown';
+    /** Seeds the chunk as an excerpt at this locator instead of full text. */
+    excerptLocator?: string;
   } = {},
 ) {
   const state = options.state ?? 'servable';
@@ -191,13 +198,14 @@ async function seedSource(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, source_type, authority_tier, status,
         approval_state, verification_state,
-        approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+        approved_by_account_id, approved_at, verified_by_account_id, verified_at, rights_status)
      values ($1, $2, $1, $3, $4, 'active',
         case when $5::boolean then 'approved' else 'pending_review' end,
         case when $5::boolean then 'verified' else 'unverified' end,
         case when $5::boolean then $6::text end, case when $5::boolean then now() end,
-        case when $5::boolean then $6::text end, case when $5::boolean then now() end)`,
-    [sourceId, organizationId, options.sourceType ?? 'article', options.authorityTier ?? 1, sourceApproved, ADMIN_ID],
+        case when $5::boolean then $6::text end, case when $5::boolean then now() end, $7)`,
+    [sourceId, organizationId, options.sourceType ?? 'article', options.authorityTier ?? 1, sourceApproved, ADMIN_ID,
+      options.rightsStatus ?? 'ppbf_owned'],
   );
 
   if (options.ownsDocument !== false) {
@@ -214,6 +222,7 @@ async function seedSource(
       organizationId,
       subjectId,
       text: options.text,
+      excerptLocator: options.excerptLocator,
     });
   }
 
@@ -273,12 +282,12 @@ async function seedChunk(
   chunkId: string,
   documentId: string,
   citedSourceId: string,
-  options: { organizationId?: string; subjectId?: string | null; ordinal?: number; text?: string } = {},
+  options: { organizationId?: string; subjectId?: string | null; ordinal?: number; text?: string; excerptLocator?: string } = {},
 ) {
   await client.query(
     `insert into pilot.shadow_library_chunks
-       (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content)
-     values ($1, $2, $3, $4, $6, $7, $5)`,
+       (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, text_kind, excerpt_locator)
+     values ($1, $2, $3, $4, $6, $7, $5, case when $8::text is null then 'full_text' else 'excerpt' end, $8)`,
     [
       chunkId,
       documentId,
@@ -287,6 +296,7 @@ async function seedChunk(
       options.text ?? `Evidence text for ${citedSourceId}.`,
       options.subjectId ?? null,
       options.ordinal ?? 0,
+      options.excerptLocator ?? null,
     ],
   );
 }
@@ -1272,6 +1282,63 @@ describe('listApprovedGlobalEvidenceForResearchBridge against real rows', () => 
       const rows = await listApprovedGlobalEvidenceForResearchBridge({ organizationId: ORG_ID });
 
       expect(rows.map((row) => row.text_content)).toEqual(['Standing evidence passage.']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // CL-C4. Licensed excerpts live in the database only (OD-2026-10-02-013
+  // answer 2A); only PPBF-owned or open-licence text may leave it (answer 4A).
+  test('only PPBF-owned and open-licence text is exported; licensed and unknown-rights excerpts stay', async () => {
+    const client = await freshDatabase('bridge_rights');
+    activeClient = client;
+    try {
+      await seedSource(client, 'src-owned', { sourceType: 'peer_reviewed', text: 'Owned passage.' });
+      await seedSource(client, 'src-open', { sourceType: 'peer_reviewed', rightsStatus: 'open_licence', text: 'Open passage.' });
+      await seedSource(client, 'src-licensed', {
+        sourceType: 'peer_reviewed',
+        rightsStatus: 'licensed_excerpt_only',
+        excerptLocator: 'p. 12',
+        text: 'Licensed excerpt.',
+      });
+      await seedSource(client, 'src-unknown', {
+        sourceType: 'textbook',
+        rightsStatus: 'unknown',
+        excerptLocator: 'section 3',
+        text: 'Unknown-rights excerpt.',
+      });
+
+      const rows = await listApprovedGlobalEvidenceForResearchBridge({ organizationId: ORG_ID });
+
+      expect(rows.map((row) => row.text_content).sort()).toEqual(['Open passage.', 'Owned passage.']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a chunk citing an open source inside a licensed source's document is not exported", async () => {
+    // The text belongs to the document it was cut from; the source it cites
+    // does not make it free to copy. The database's own full-text guard reads
+    // the document's source for the same reason.
+    const client = await freshDatabase('bridge_rights_document');
+    activeClient = client;
+    try {
+      await seedSource(client, 'src-open-cited', { sourceType: 'peer_reviewed', rightsStatus: 'open_licence', ownsDocument: false });
+      await seedSource(client, 'src-licensed-host', {
+        sourceType: 'peer_reviewed',
+        rightsStatus: 'licensed_excerpt_only',
+        excerptLocator: 'p. 4',
+        text: 'Host excerpt.',
+      });
+      await seedChunk(client, 'chunk-cites-open', 'doc-src-licensed-host', 'src-open-cited', {
+        ordinal: 1,
+        excerptLocator: 'p. 5',
+        text: 'Licensed text citing an open paper.',
+      });
+
+      const rows = await listApprovedGlobalEvidenceForResearchBridge({ organizationId: ORG_ID });
+
+      expect(rows).toEqual([]);
     } finally {
       await client.end();
     }
