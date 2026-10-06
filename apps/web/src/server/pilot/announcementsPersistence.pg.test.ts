@@ -308,6 +308,7 @@ describe('announcements.ts against the real schema', () => {
       organizationId: ORG_D,
       announcementId: retired.announcement_id,
       active: false,
+      onlyAuthorAccountId: null,
     });
 
     const visible = await announcements.listLiveAnnouncements(ORG_D, { placement: 'gym_notices', kind: 'notice' });
@@ -330,11 +331,83 @@ describe('announcements.ts against the real schema', () => {
       organizationId: ORG_B,
       announcementId: foreign.announcement_id,
       active: false,
+      onlyAuthorAccountId: null,
     });
 
     expect(result).toBeNull();
     const stillLive = await announcements.listLiveAnnouncements(ORG_A, { placement: 'gym_notices', kind: 'notice' });
     expect(stillLive.map((a) => a.message)).toContain('Org A only.');
+  });
+  // CL-A8: the author is the actor on the notice's 'create' audit row, and
+  // the restriction rides on the UPDATE itself so there is no read-then-write
+  // window. A notice with no create row can be retired only by an admin
+  // (onlyAuthorAccountId null).
+  test('a non-admin retires only a notice whose create audit row names them', async () => {
+    const notice = await announcements.createAnnouncement({
+      organizationId: ORG_A,
+      message: 'Coach A posted this.',
+      authorName: 'Coach A',
+      authorRole: 'coach',
+    });
+    const orphan = await announcements.createAnnouncement({
+      organizationId: ORG_A,
+      message: 'Nobody recorded posting this.',
+      authorName: 'Unknown',
+      authorRole: 'admin',
+    });
+    const { writePilotAuditEvent } = await import('./audit');
+    await writePilotAuditEvent({
+      event_type: 'create',
+      actor_account_id: 'coach-a',
+      actor_role: 'coach',
+      organization_id: ORG_A,
+      entity_type: 'announcement',
+      entity_id: notice.announcement_id,
+      details: {},
+    });
+    // A create row in ANOTHER organization naming the same id must not count.
+    await writePilotAuditEvent({
+      event_type: 'create',
+      actor_account_id: 'coach-b',
+      actor_role: 'coach',
+      organization_id: ORG_B,
+      entity_type: 'announcement',
+      entity_id: notice.announcement_id,
+      details: {},
+    });
+
+    // The read the authoring page uses to offer Retire agrees with the write.
+    expect(
+      await announcements.listAuthoredAnnouncementIds(ORG_A, 'coach-a', [notice.announcement_id, orphan.announcement_id]),
+    ).toEqual([notice.announcement_id]);
+    expect(
+      await announcements.listAuthoredAnnouncementIds(ORG_A, 'coach-b', [notice.announcement_id, orphan.announcement_id]),
+    ).toEqual([]);
+
+    const byOther = await announcements.setAnnouncementActive({
+      organizationId: ORG_A, announcementId: notice.announcement_id, active: false, onlyAuthorAccountId: 'coach-b',
+    });
+    expect(byOther).toBeNull();
+
+    const orphanByCoach = await announcements.setAnnouncementActive({
+      organizationId: ORG_A, announcementId: orphan.announcement_id, active: false, onlyAuthorAccountId: 'coach-a',
+    });
+    expect(orphanByCoach).toBeNull();
+
+    const live = await announcements.listLiveAnnouncements(ORG_A, { placement: 'gym_notices', kind: 'notice', limit: 25 });
+    expect(live.map((a) => a.announcement_id)).toEqual(
+      expect.arrayContaining([notice.announcement_id, orphan.announcement_id]),
+    );
+
+    const byAuthor = await announcements.setAnnouncementActive({
+      organizationId: ORG_A, announcementId: notice.announcement_id, active: false, onlyAuthorAccountId: 'coach-a',
+    });
+    expect(byAuthor?.active).toBe(false);
+
+    const orphanByAdmin = await announcements.setAnnouncementActive({
+      organizationId: ORG_A, announcementId: orphan.announcement_id, active: false, onlyAuthorAccountId: null,
+    });
+    expect(orphanByAdmin?.active).toBe(false);
   });
 });
 

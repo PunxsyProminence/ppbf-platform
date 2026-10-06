@@ -230,18 +230,68 @@ export async function createAnnouncement(params: {
 // because a notice that was live is part of what the gym told people.
 // Returns null when no row in this organization carries that id, so the
 // caller can report "nothing changed" rather than a silent success.
+//
+// WHO MAY (CL-A8; Jason 2026-10-06, "author + org admin", the CL-A14 line).
+// onlyAuthorAccountId null means an organization admin: any notice in the
+// organization. Otherwise the write lands only if that account is the actor
+// on the notice's 'create' audit row in this organization. The table has no
+// author column -- author_name is a typed byline, not an identity -- and the
+// post route has always written that audit row, so it is the record of who
+// posted. A notice with no create row can be retired by an admin only. The
+// check rides on the UPDATE itself, so there is no read-then-write window,
+// and a refusal is the same null as a missing row.
 export async function setAnnouncementActive(params: {
   organizationId: string;
   announcementId: string;
   active: boolean;
+  // Required, not optional: leaving it out must not quietly mean "admin".
+  onlyAuthorAccountId: string | null;
 }): Promise<PilotAnnouncement | null> {
   const rows = await query<PilotAnnouncement>(
-    `update pilot.announcements
+    `update pilot.announcements a
      set active = $3, updated_at = now()
-     where organization_id = $1 and announcement_id = $2
+     where a.organization_id = $1 and a.announcement_id = $2
+       and (
+         $4::text is null
+         or exists (
+           select 1 from pilot.audit_events ae
+           where ae.organization_id = a.organization_id
+             and ae.entity_type = 'announcement'
+             and ae.entity_id = a.announcement_id::text
+             and ae.event_type = 'create'
+             and ae.actor_account_id = $4::text
+         )
+       )
      returning ${ANNOUNCEMENT_FIELDS}`,
-    [params.organizationId, params.announcementId, params.active],
+    [params.organizationId, params.announcementId, params.active, params.onlyAuthorAccountId],
   );
 
   return rows[0] ?? null;
+}
+
+// Of these notices, the ones this account posted: the actor on each notice's
+// 'create' audit row in this organization, the same authorship
+// setAnnouncementActive enforces. Read so the authoring page offers Retire and
+// Restore only where the update route would accept them; the write still
+// decides on its own.
+export async function listAuthoredAnnouncementIds(
+  organizationId: string,
+  accountId: string,
+  announcementIds: readonly string[],
+): Promise<string[]> {
+  if (announcementIds.length === 0) {
+    return [];
+  }
+  const rows = await query<{ entity_id: string }>(
+    `select distinct entity_id
+     from pilot.audit_events
+     where organization_id = $1
+       and entity_type = 'announcement'
+       and event_type = 'create'
+       and actor_account_id = $2
+       and entity_id = any($3::text[])`,
+    [organizationId, accountId, [...announcementIds]],
+  );
+  const authored = new Set(rows.map((row) => row.entity_id));
+  return announcementIds.filter((id) => authored.has(id));
 }

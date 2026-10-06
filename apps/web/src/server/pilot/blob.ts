@@ -45,6 +45,17 @@ export async function uploadPilotVideoFile(path: string, file: File): Promise<vo
 }
 
 /**
+ * Delete one stored video outright. Missing is success, as for portraits.
+ * Used where a write stored the bytes and then failed to record them: footage
+ * no row names is footage no review, export or deletion can ever reach.
+ */
+export async function deletePilotVideoFile(blobPath: string): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotVideoContainerName());
+  await containerClient.getBlockBlobClient(blobPath).deleteIfExists();
+}
+
+/**
  * Read one video blob into memory, server-side.
  *
  * Film Study's executor runs inside the worker with no browser and no user

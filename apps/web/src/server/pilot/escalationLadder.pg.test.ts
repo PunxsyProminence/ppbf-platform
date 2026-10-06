@@ -722,6 +722,49 @@ describe('the real listEscalations against real rows', () => {
       await client.end();
     }
   });
+
+  // CX-2: the retry window exists to absorb a resent REQUEST. A report that
+  // differs in severity or in when it happened is not a resend -- returning
+  // the earlier row would silently drop a corrected 'critical' or a second
+  // occurrence. The exact resend is the control: it must still collapse.
+  test('the incident retry window collapses an exact resend, and only an exact resend', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_incident_dedup', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    activeClient = client;
+    const base = {
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      reason: 'Athlete took a hard shot to the head in sparring.',
+      reportedByAccountId: COACH_ID,
+      reportedByRole: 'coach',
+    };
+    try {
+      const first = await fileIncidentReport({ ...base, severity: 'high' });
+      const resend = await fileIncidentReport({ ...base, severity: 'high' });
+      expect(resend.escalation_id).toBe(first.escalation_id);
+
+      const corrected = await fileIncidentReport({ ...base, severity: 'critical' });
+      expect(corrected.escalation_id).not.toBe(first.escalation_id);
+      expect(corrected.severity).toBe('critical');
+
+      const earlier = await fileIncidentReport({ ...base, severity: 'high', occurredAt: '2026-08-04' });
+      expect(earlier.escalation_id).not.toBe(first.escalation_id);
+      const later = await fileIncidentReport({ ...base, severity: 'high', occurredAt: '2026-08-05' });
+      expect(later.escalation_id).not.toBe(earlier.escalation_id);
+      const laterResend = await fileIncidentReport({ ...base, severity: 'high', occurredAt: '2026-08-05' });
+      expect(laterResend.escalation_id).toBe(later.escalation_id);
+
+      const rows = await client.query(
+        `select severity from pilot.safety_escalations where source_type = 'incident'`,
+      );
+      expect(rows.rows.map((row) => row.severity).sort()).toEqual(['critical', 'high', 'high', 'high']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });
 
 // The runner's OWN readiness assertion, not just the SQL it applies.

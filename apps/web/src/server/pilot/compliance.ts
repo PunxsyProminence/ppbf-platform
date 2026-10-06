@@ -7,6 +7,7 @@ import {
   boardCountMetric,
   type BoardCountMetric,
 } from './boardSummary';
+import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
@@ -464,11 +465,18 @@ export const COMPLIANCE_VIOLATION_OPEN_STATUSES: ReadonlyArray<ComplianceViolati
  * escalation still reading in_progress is exactly the contradictory state
  * the transaction exists to make unrepresentable. The escalation rows
  * themselves are history and are never deleted.
+ *
+ * `audit`, when given, is written on the same transaction after the CAS
+ * hits. A resolution or dismissal's stated reason lives only in that audit
+ * row, so the route passes it here for those two: if the reason cannot be
+ * recorded the closure rolls back with it, rather than committing a closed
+ * violation whose reason exists nowhere (CX-3).
  */
 export async function transitionComplianceViolation(params: {
   organizationId: string;
   violationId: string;
   transition: ComplianceViolationTransition;
+  audit?: PilotAuditEvent;
 }): Promise<boolean> {
   const contract = TRANSITION_CONTRACT[params.transition];
 
@@ -498,6 +506,10 @@ export async function transitionComplianceViolation(params: {
          where organization_id = $1 and violation_id = $2 and resolved_at is null`,
         [params.organizationId, params.violationId],
       );
+    }
+
+    if (params.audit) {
+      await writePilotAuditEvent(params.audit, client);
     }
 
     return true;

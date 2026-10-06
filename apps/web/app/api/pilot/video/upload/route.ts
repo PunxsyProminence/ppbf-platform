@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
-import { query } from '@/src/server/pilot/db';
+import { deletePilotVideoFile, uploadPilotVideoFile } from '@/src/server/pilot/blob';
+import { query, queryOne } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import {
@@ -264,37 +264,63 @@ export async function POST(request: NextRequest) {
 
     await uploadPilotVideoFile(blobPath, file);
 
-    await query(
-      `insert into pilot.video_sessions
-         (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title, notes, blob_path, file_name, file_size_bytes, mime_type, status,
-          recording_session_id, capture_take_id, camera_view_id, camera_view, recorded_at, capture_source, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'quarantined',
-               $11, $12, $13, $14, $15, $16, now(), now())`,
-      [
-        videoSessionId,
-        principal.organizationId,
-        principal.accountId,
-        // NULL for teaching media, by the rule above -- and nowhere else
-        // either. Teaching footage names nobody at all.
-        captureTakeIdForRow ? null : athleteId,
-        title,
-        notes,
-        blobPath,
-        uploadDescriptor.safeOriginalName,
-        file.size,
-        uploadDescriptor.contentType,
-        recordingSessionId,
-        captureTakeIdForRow,
-        // A PPBF identity for this view, minted here. Never a browser device
-        // id or hardware fingerprint: those follow a person's phone across
-        // sessions, which this has no need to know. It only has to tell this
-        // camera apart from the others in the same take.
-        captureTakeIdForRow ? randomUUID() : null,
-        cameraView,
-        recordedAt,
-        captureSource,
-      ],
-    );
+    // The bytes are stored before the row exists. If the row then fails, take
+    // the bytes back out (audit CL-B13): footage of a child with no row naming
+    // it can never be reviewed, exported or deleted. A failed clean-up must
+    // not mask the insert error, which is what the caller needs to see.
+    //
+    // An insert can report failure after it committed (the connection drops
+    // between the commit and the reply), so look for the row first and delete
+    // only when the database says there is none. If even that lookup fails,
+    // keep the bytes: deleting footage a row may name cannot be undone, and an
+    // unreferenced file is what this route left behind before the fix.
+    try {
+      await query(
+        `insert into pilot.video_sessions
+           (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title, notes, blob_path, file_name, file_size_bytes, mime_type, status,
+            recording_session_id, capture_take_id, camera_view_id, camera_view, recorded_at, capture_source, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'quarantined',
+                 $11, $12, $13, $14, $15, $16, now(), now())`,
+        [
+          videoSessionId,
+          principal.organizationId,
+          principal.accountId,
+          // NULL for teaching media, by the rule above -- and nowhere else
+          // either. Teaching footage names nobody at all.
+          captureTakeIdForRow ? null : athleteId,
+          title,
+          notes,
+          blobPath,
+          uploadDescriptor.safeOriginalName,
+          file.size,
+          uploadDescriptor.contentType,
+          recordingSessionId,
+          captureTakeIdForRow,
+          // A PPBF identity for this view, minted here. Never a browser device
+          // id or hardware fingerprint: those follow a person's phone across
+          // sessions, which this has no need to know. It only has to tell this
+          // camera apart from the others in the same take.
+          captureTakeIdForRow ? randomUUID() : null,
+          cameraView,
+          recordedAt,
+          captureSource,
+        ],
+      );
+    } catch (insertError) {
+      let recorded: boolean | null;
+      try {
+        recorded = Boolean(await queryOne(
+          'select 1 as recorded from pilot.video_sessions where video_session_id = $1',
+          [videoSessionId],
+        ));
+      } catch {
+        recorded = null;
+      }
+      if (recorded === false) {
+        await deletePilotVideoFile(blobPath).catch(() => undefined);
+      }
+      throw insertError;
+    }
 
     await emitShadowEvent({
       organizationId: principal.organizationId,

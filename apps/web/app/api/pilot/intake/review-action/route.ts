@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccountWithClient } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { isCompetitionGatedWaiverType, lockCompetitionSafety } from '@/src/server/pilot/competitionSafetyLock';
 import { withTransaction } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -558,6 +559,16 @@ export async function POST(request: NextRequest) { // NOSONAR
     // that as a deadlock. The shadow event, research requirement and metric
     // below are written after it commits, as before.
     await withTransaction(async (client) => {
+      // A travel waiver in this promotion is a write the competition entry
+      // gate reads, so this transaction takes the competition-safety lock --
+      // and takes it FIRST, before the athlete-login and consent-set locks
+      // the writes below take, because that is the documented lock order
+      // (competitionSafetyLock.ts). upsertWaiver takes it again at the waiver
+      // insert; advisory locks are re-entrant within a session.
+      if (promotion.waiver && isCompetitionGatedWaiverType(promotion.waiver.waiver_type)) {
+        await lockCompetitionSafety(client, principal.organizationId, promotion.athlete.athlete_id);
+      }
+
       // The athlete-record checks -- withdrawn; held by a deleted login, on
       // every promotion, account_id or not (OD-2026-09-29-002 item 4, path i);
       // the account_id's refusals -- and the athlete write, in one transaction
