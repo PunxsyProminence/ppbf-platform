@@ -1310,6 +1310,29 @@ describe('CL-C8: diagnostic and prescriptive phrasings the filter missed', () =>
     ['Take an aspirin before you train.', 'prescriptive_claim'],
     ['Use Tylenol for the headache.', 'prescriptive_claim'],
     ['Start taking melatonin at night.', 'prescriptive_claim'],
+    // Reviewer A, 2026-10-06: the realistic forms. A model writes the
+    // diagnosis together with an instruction, and the instruction must not
+    // excuse it.
+    ["You've torn your ACL, so avoid sparring.", 'diagnostic_claim'],
+    ["That's a concussion, so don't spar this week.", 'diagnostic_claim'],
+    ["Example Athlete has a concussion and shouldn't spar.", 'diagnostic_claim'],
+    ['You have tendinitis, so reduce volume.', 'diagnostic_claim'],
+    ["That's a sprained ankle without question.", 'diagnostic_claim'],
+    // Passive and other near forms.
+    ["You're concussed.", 'diagnostic_claim'],
+    ['Example Athlete is concussed.', 'diagnostic_claim'],
+    ['Your wrist is broken.', 'diagnostic_claim'],
+    ['Your ACL is torn.', 'diagnostic_claim'],
+    ['Your ankle is sprained.', 'diagnostic_claim'],
+    ["Example Athlete's wrist is fractured.", 'diagnostic_claim'],
+    ["It's a concussion.", 'diagnostic_claim'],
+    ["I think it's a boxer's fracture.", 'diagnostic_claim'],
+    ['You suffered a concussion.', 'diagnostic_claim'],
+    ['Example Athlete sustained a fracture.', 'diagnostic_claim'],
+    ['Maria tore her ACL in the second round.', 'diagnostic_claim'],
+    ['Take two Advils.', 'prescriptive_claim'],
+    ['Pop two ibuprofen.', 'prescriptive_claim'],
+    ['Try Tylenol for the headache.', 'prescriptive_claim'],
   ])('%s is withheld (%s)', (response, code) => {
     const result = validateShadowResponse(response);
     expect(result.filtered).toBe(true);
@@ -1331,6 +1354,44 @@ describe('CL-C8: diagnostic and prescriptive phrasings the filter missed', () =>
     'This is what a sprain looks like in general terms; a clinician diagnoses it.',
     'That is a sign worth showing a doctor.',
     'The gym has an injury log coaches fill in after sessions.',
+    // Reviewer A, 2026-10-06: a first cut of this fix withheld every one of
+    // these. Boxing describes technique with injury verbs, and education
+    // defines injuries with a copula; "educate, do not restrict"
+    // (OD-2026-10-01-006) says they are answered.
+    'She broke his guard with a feint.',
+    'He pulled his punches in sparring, which is good for beginners.',
+    "You've pulled your punches all round; commit to the shot.",
+    'You broke your stance on the pivot; keep the rear heel up.',
+    'He separated his feet too wide.',
+    'The athlete tore his hand wraps; rewrap before sparring.',
+    'He has a broken stance after combinations. Reset his feet.',
+    'The kid has a broken guard in the third round, so drill the high guard.',
+    'Jordan has a broken rhythm on the double jab.',
+    "Ali's got a broken rhythm when he throws the hook",
+    'That looks like a broken-down jab; reset.',
+    'You have a broken hand wrap; rewrap.',
+    'You have a torn-up glove, replace it.',
+    "You've got a strained voice from yelling",
+    "That's a dislocation of the timing between your feet and hands",
+    'Coach Dan has a condition on sparring: only light contact.',
+    'Sarah has a condition for practice: she needs a signed waiver first.',
+    'Example Athlete has a condition-specific plan from the coach',
+    "A boxer's fracture is a break of the fifth metacarpal. That's a fracture that usually comes from punching with poor wrist alignment, so wrap properly.",
+    'Shin splints are irritation along the tibia. This is a condition coaches see in runners who ramp mileage too fast.',
+    "That's a concussion symptom worth knowing: headache, confusion, light sensitivity. A physician should evaluate any athlete who shows them.",
+    "That is an injury coaches should know: a boxer's fracture. A physician should evaluate it.",
+    'This is a contusion, commonly called a bruise; a physician should evaluate anything severe.',
+    'This sounds like tendinitis territory only a clinician can sort out; please have a physician evaluate it.',
+    'That looks like a strain pattern on the video, but only a physician can say; get it evaluated.',
+    'Concussion education: the brain has a concussion threshold that varies',
+    "That's a stress reaction to the crowd",
+    "That's a disease of the modern gym: skipping the warm-up.",
+    'Avoid taking painkillers to mask an injury; see a physician.',
+    'Taking steroids is banned in amateur boxing and dangerous; talk with a physician.',
+    'Many boxers use caffeine before training; talk with a physician before using it.',
+    'Athletes taking caffeine before sparring should know a physician can advise on dose.',
+    'Use caffeine carefully: a physician can explain the risks.',
+    'Never take painkillers to mask pain before sparring; tell your coach.',
   ])('%s still passes', (response) => {
     const result = validateShadowResponse(response);
     expect(result.reasonCodes).not.toContain('diagnostic_claim');
