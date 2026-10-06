@@ -68,6 +68,7 @@ jest.mock('./db', () => {
 });
 
 import { createOrUpdateMicrosoftPlatformOwnerAccount, loginWithMicrosoftEmail } from './auth';
+import { unbindMicrosoftIdentity } from './microsoftIdentityUnbind';
 import { createOrUpdateMicrosoftStaffAccount } from './staffProvisioning';
 
 jest.setTimeout(180_000);
@@ -530,5 +531,187 @@ describe('provisioning a different login email clears the binding', () => {
 
     expect(await storedIdentity(accountId)).toEqual({ microsoft_oid: owner, microsoft_tid: TENANT });
     expect(await clearedAuditRows(accountId)).toBe(0);
+  });
+});
+
+// The recovery #1294's release gate asks for: a directory user deleted and
+// re-created gets a new oid, and every sign-in is refused until something
+// clears the binding. Owner ruling (relayed by overwatch, 2026-10-06), option
+// A: an organization admin clears it for active members of their own
+// organization, never the platform owner, never themselves; the platform
+// owner clears it for anyone but themselves; the bootstrap-key route clears
+// the platform owner's own.
+describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
+  const OTHER_ORG_ID = 'org-other';
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [OTHER_ORG_ID],
+    );
+  });
+
+  async function seedMember(options: {
+    role?: string;
+    organizationId?: string;
+    platformOwner?: boolean;
+    membershipActive?: boolean;
+  } = {}): Promise<{ accountId: string; email: string; oid: string }> {
+    sequence += 1;
+    const role = options.role ?? 'coach';
+    const organizationId = options.organizationId ?? ORG_ID;
+    const email = `member-${sequence}@example.com`;
+    const accountId = `Member-${sequence}@example.com`;
+    const oid = objectId();
+    await client.query(
+      `insert into pilot.accounts
+         (account_id, role, organization_id, auth_provider, login_email, active_flag, is_platform_owner, microsoft_oid, microsoft_tid)
+       values ($1, $2, $3, 'microsoft', $4, true, $5, $6, $7)`,
+      [accountId, role, organizationId, email, options.platformOwner === true, oid, TENANT],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, $3, $4)`,
+      [accountId, organizationId, role, options.membershipActive ?? true],
+    );
+    return { accountId, email, oid };
+  }
+
+  async function unbindAuditRows(accountId: string): Promise<Array<{ actor_account_id: string | null; actor_role: string | null; organization_id: string; details: Record<string, unknown> }>> {
+    return (await client.query(
+      `select actor_account_id, actor_role, organization_id, details from pilot.audit_events
+        where entity_type = 'account' and entity_id = $1 and event_type = 'update'
+          and details->>'change' = 'microsoft_identity_cleared'
+        order by audit_id`,
+      [accountId],
+    )).rows;
+  }
+
+  async function unbind(actor: { accountId: string; role: string; organizationId: string }, target: string): Promise<string> {
+    try {
+      const result = await unbindMicrosoftIdentity(
+        actor as Parameters<typeof unbindMicrosoftIdentity>[0],
+        target,
+      );
+      return result.cleared ? 'cleared' : 'already-unbound';
+    } catch (error) {
+      return error instanceof Error ? `THREW:${error.message}` : 'THREW';
+    }
+  }
+
+  test('an organization admin unbinds a member of their own organization; the audit row names them; the next sign-in re-binds', async () => {
+    const admin = await seedMember({ role: 'organization_admin' });
+    const coach = await seedMember();
+    const recreated = objectId();
+    expect(await signIn(coach.email, recreated)).toBe('THREW:Forbidden: Microsoft identity mismatch');
+
+    expect(await unbind({ accountId: admin.accountId, role: 'organization_admin', organizationId: ORG_ID }, coach.accountId)).toBe('cleared');
+
+    expect(await storedIdentity(coach.accountId)).toEqual({ microsoft_oid: null, microsoft_tid: null });
+    const rows = await unbindAuditRows(coach.accountId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actor_account_id: admin.accountId,
+      actor_role: 'organization_admin',
+      organization_id: ORG_ID,
+      details: {
+        change: 'microsoft_identity_cleared',
+        reason: 'admin_unbind',
+        previous_microsoft_tid: TENANT,
+        previous_microsoft_oid_suffix: coach.oid.slice(-4),
+      },
+    });
+
+    expect(await signIn(coach.email, recreated)).toBe(coach.accountId);
+    expect(await storedIdentity(coach.accountId)).toEqual({ microsoft_oid: recreated, microsoft_tid: TENANT });
+  });
+
+  test('an organization admin cannot unbind outside their organization, an inactive member, the platform owner, or themselves', async () => {
+    const admin = await seedMember({ role: 'organization_admin' });
+    const actor = { accountId: admin.accountId, role: 'organization_admin', organizationId: ORG_ID };
+    const elsewhere = await seedMember({ organizationId: OTHER_ORG_ID });
+    const inactive = await seedMember({ membershipActive: false });
+    const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+
+    expect(await unbind(actor, elsewhere.accountId)).toBe('THREW:Not found: account');
+    expect(await unbind(actor, inactive.accountId)).toBe('THREW:Not found: account');
+    expect(await unbind(actor, owner.accountId)).toBe('THREW:Not found: account');
+    expect(await unbind(actor, 'no-such-account')).toBe('THREW:Not found: account');
+    expect(await unbind(actor, admin.accountId)).toBe('THREW:Forbidden: an account cannot unbind its own Microsoft identity');
+
+    for (const target of [elsewhere, inactive, owner, admin]) {
+      expect(await storedIdentity(target.accountId)).toEqual({ microsoft_oid: target.oid, microsoft_tid: TENANT });
+      expect(await unbindAuditRows(target.accountId)).toHaveLength(0);
+    }
+  });
+
+  test('a coach cannot unbind anyone', async () => {
+    const coach = await seedMember();
+    const other = await seedMember();
+
+    expect(await unbind({ accountId: coach.accountId, role: 'coach', organizationId: ORG_ID }, other.accountId))
+      .toBe('THREW:Forbidden: role not allowed');
+    expect(await storedIdentity(other.accountId)).toEqual({ microsoft_oid: other.oid, microsoft_tid: TENANT });
+  });
+
+  test('the platform owner unbinds an organization admin in any organization, but not themselves', async () => {
+    const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+    const actor = { accountId: owner.accountId, role: 'platform_owner', organizationId: ORG_ID };
+    const otherAdmin = await seedMember({ role: 'organization_admin', organizationId: OTHER_ORG_ID });
+
+    expect(await unbind(actor, otherAdmin.accountId)).toBe('cleared');
+    expect(await storedIdentity(otherAdmin.accountId)).toEqual({ microsoft_oid: null, microsoft_tid: null });
+    expect(await unbindAuditRows(otherAdmin.accountId)).toEqual([
+      expect.objectContaining({ actor_account_id: owner.accountId, actor_role: 'platform_owner', organization_id: OTHER_ORG_ID }),
+    ]);
+
+    expect(await unbind(actor, owner.accountId)).toBe('THREW:Forbidden: an account cannot unbind its own Microsoft identity');
+    expect(await storedIdentity(owner.accountId)).toEqual({ microsoft_oid: owner.oid, microsoft_tid: TENANT });
+  });
+
+  test('an account that is not bound is reported as such and records nothing', async () => {
+    const admin = await seedMember({ role: 'organization_admin' });
+    const coach = await seedMember();
+    await client.query('update pilot.accounts set microsoft_oid = null, microsoft_tid = null where account_id = $1', [coach.accountId]);
+
+    expect(await unbind({ accountId: admin.accountId, role: 'organization_admin', organizationId: ORG_ID }, coach.accountId))
+      .toBe('already-unbound');
+    expect(await unbindAuditRows(coach.accountId)).toHaveLength(0);
+  });
+
+  test('the bootstrap-key path clears the platform owner\'s own binding, same email, and records it', async () => {
+    const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+
+    const result = await createOrUpdateMicrosoftPlatformOwnerAccount({
+      loginEmail: owner.email,
+      organizationId: ORG_ID,
+      accountIdHint: owner.accountId,
+      rebindMicrosoftIdentity: true,
+    });
+
+    expect(result.microsoftIdentityCleared).toBe(true);
+    expect(await storedIdentity(owner.accountId)).toEqual({ microsoft_oid: null, microsoft_tid: null });
+    expect(await unbindAuditRows(owner.accountId)).toEqual([
+      expect.objectContaining({
+        actor_account_id: null,
+        details: expect.objectContaining({ reason: 'owner_bootstrap', previous_microsoft_oid_suffix: owner.oid.slice(-4) }),
+      }),
+    ]);
+  });
+
+  test('the bootstrap path refused for a deleted login keeps the binding', async () => {
+    const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+    await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [owner.accountId]);
+
+    await expect(createOrUpdateMicrosoftPlatformOwnerAccount({
+      loginEmail: owner.email,
+      organizationId: ORG_ID,
+      accountIdHint: owner.accountId,
+      rebindMicrosoftIdentity: true,
+    })).rejects.toThrow();
+
+    expect(await storedIdentity(owner.accountId)).toEqual({ microsoft_oid: owner.oid, microsoft_tid: TENANT });
+    expect(await unbindAuditRows(owner.accountId)).toHaveLength(0);
   });
 });

@@ -79,6 +79,10 @@ export async function POST(request: NextRequest) {
       loginEmail: primaryOwnerEmail,
       organizationId,
       accountIdHint: primaryOwnerEmail,
+      // CL-A19: this key is how the platform owner recovers when its own
+      // directory user was re-created and every sign-in is refused. Clearing
+      // here (audited inside the write) lets the next sign-in bind again.
+      rebindMicrosoftIdentity: true,
     });
 
     await writePilotAuditEvent({
@@ -93,6 +97,7 @@ export async function POST(request: NextRequest) {
         login_email: primaryOwnerEmail,
         auth_provider: 'microsoft',
         pin_hash: null,
+        microsoft_identity_cleared: result.microsoftIdentityCleared,
       },
     });
 
@@ -106,6 +111,7 @@ export async function POST(request: NextRequest) {
       organization_id: organizationId,
       active_flag: true,
       pin_hash: null,
+      microsoft_identity_cleared: result.microsoftIdentityCleared,
     });
   } catch (error) {
     return jsonError(error);

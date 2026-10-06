@@ -18,6 +18,7 @@ import {
 import { writePilotAuditEvent } from './audit';
 import { PILOT_SESSION_COOKIE } from './env';
 import { MicrosoftIdentityMismatchError, type MicrosoftDirectoryIdentity } from './federatedAuth';
+import { clearMicrosoftIdentityTx } from './microsoftIdentityUnbind';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
@@ -1287,7 +1288,15 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
   loginEmail: string;
   organizationId: string;
   accountIdHint?: string;
-}): Promise<{ accountId: string; organizationId: string; created: boolean }> {
+  /**
+   * CL-A19 recovery for the platform owner itself: also clear the account's
+   * Microsoft binding when the email is unchanged, so the owner's next
+   * sign-in binds whichever directory user now holds the address. Set only by
+   * the bootstrap-key route, the break-glass credential that already mints and
+   * overwrites this account (owner ruling 2026-10-06, option A).
+   */
+  rebindMicrosoftIdentity?: boolean;
+}): Promise<{ accountId: string; organizationId: string; created: boolean; microsoftIdentityCleared: boolean }> {
   const normalizedEmail = params.loginEmail.trim().toLowerCase();
   if (!normalizedEmail) {
     throw new Error('Missing loginEmail');
@@ -1301,8 +1310,8 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
   const accountId = existingByEmail?.account_id || params.accountIdHint?.trim() || normalizedEmail;
   const existingByAccountId = await queryOne<{ account_id: string }>('select account_id from pilot.accounts where account_id = $1', [accountId]);
 
-  await withTransaction(async (client) => {
-    await clearMicrosoftIdentityOnLoginEmailChangeTx(client, accountId, normalizedEmail);
+  const microsoftIdentityCleared = await withTransaction(async (client) => {
+    const clearedForNewEmail = await clearMicrosoftIdentityOnLoginEmailChangeTx(client, accountId, normalizedEmail);
 
     // A deleted login is not re-made the platform owner (OD-2026-09-30-004
     // e2): the upsert set active_flag back to true on a row sign-in refuses,
@@ -1349,12 +1358,31 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
       // any sessions minted under the previous configuration.
       await revokeAllSessionsForAccountTx(client, accountId);
     }
+
+    // After the upsert, so a refused write (a deleted login) rolls this back too.
+    if (params.rebindMicrosoftIdentity && !clearedForNewEmail) {
+      const bound = await client.query<{ account_id: string; microsoft_oid: string | null; microsoft_tid: string | null }>(
+        'select account_id, microsoft_oid, microsoft_tid from pilot.accounts where account_id = $1 for update',
+        [accountId],
+      );
+      const row = bound.rows[0];
+      return row
+        ? clearMicrosoftIdentityTx(client, row, {
+          reason: 'owner_bootstrap',
+          actorAccountId: null,
+          actorRole: null,
+          organizationId: params.organizationId,
+        })
+        : false;
+    }
+    return clearedForNewEmail;
   });
 
   return {
     accountId,
     organizationId: params.organizationId,
     created: !existingByAccountId,
+    microsoftIdentityCleared,
   };
 }
 
