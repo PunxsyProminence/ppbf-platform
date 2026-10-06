@@ -238,24 +238,8 @@ export async function PATCH(request: NextRequest) {
       return hiddenNotFound();
     }
 
-    const applied = await transitionComplianceViolation({
-      organizationId: principal.organizationId,
-      violationId,
-      transition: action,
-    });
-
-    // The CAS refused: the violation is not in a state this transition may
-    // leave from, or another operator's transition already committed since
-    // the read above. Name the current state so the refusal is actionable.
     const pastTense = action === 'acknowledge' ? 'acknowledged' : action === 'resolve' ? 'resolved' : 'dismissed';
-    if (!applied) {
-      return NextResponse.json(
-        { error: `This violation cannot be ${pastTense} from its current state.`, status: violation.status },
-        { status: 409 },
-      );
-    }
-
-    await auditViolationEvent({
+    const auditEvent: Parameters<typeof writePilotAuditEvent>[0] = {
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
@@ -269,7 +253,33 @@ export async function PATCH(request: NextRequest) {
         note: note || undefined,
       },
       shadow_mirror: false,
+    };
+
+    // A closure's reason exists only in its audit row, so a resolve or
+    // dismiss writes that row inside the transition's transaction: no reason
+    // recorded, no closure. An acknowledgement carries no reason and keeps
+    // its best-effort audit after the commit.
+    const isClosure = action !== 'acknowledge';
+    const applied = await transitionComplianceViolation({
+      organizationId: principal.organizationId,
+      violationId,
+      transition: action,
+      ...(isClosure ? { audit: auditEvent } : {}),
     });
+
+    // The CAS refused: the violation is not in a state this transition may
+    // leave from, or another operator's transition already committed since
+    // the read above. Name the current state so the refusal is actionable.
+    if (!applied) {
+      return NextResponse.json(
+        { error: `This violation cannot be ${pastTense} from its current state.`, status: violation.status },
+        { status: 409 },
+      );
+    }
+
+    if (!isClosure) {
+      await auditViolationEvent(auditEvent);
+    }
 
     return NextResponse.json({ ok: true, violation_id: violationId, prior_status: violation.status });
   } catch (error) {
