@@ -552,6 +552,46 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          shape is the real defect and is left alone here -- it is a schema
          change to a different migration, and retention is the only path that
          deletes a pilot.parents row today. */
+      /* THE GUARDIAN'S MEDIA CHOICE IS KEPT, BEFORE THE POINTER IS CLEARED.
+         Owner ruling, Jason 2026-10-05 ("Keep the 'no' (Recommended)"): a
+         withdrawal or photo-only choice outlives the guardian's deletion, and
+         the child's media stays restricted until a remaining guardian grants
+         it. Clearing parent_id and cascading the links drops this guardian out
+         of every consent read, so each child's current photo_media waiver from
+         them is recorded first, against the child (guardianConsent.ts reads it
+         as it reads a linked guardian's). Only children they are still linked
+         to: a choice an unlink already dropped from the gate stays dropped.
+         Whatever the status: the gate applies its own rules to it, so no
+         second reading of the status lives here. The key is a hash of the
+         parent_id (an invited guardian's is their login email); a re-invited
+         guardian purged again replaces their own row. retained_at is the
+         clock at this statement, not the run's start, so a grant recorded
+         while this long transaction runs does not count as post-purge.
+         'photo_media' is guardianConsent.ts MEDIA_CONSENT_WAIVER_TYPE, which
+         this script cannot import. dataDeletion.ts purgeExpiredDeletedData
+         carries the same statement. */
+      await client.query(
+        `insert into pilot.retained_media_consent_restrictions
+           (organization_id, athlete_id, former_parent_key, waiver_id, retained_at)
+         select distinct on (w.organization_id, w.athlete_id, w.parent_id)
+                w.organization_id, w.athlete_id,
+                encode(sha256(convert_to(w.parent_id, 'UTF8')), 'hex'),
+                w.waiver_id, clock_timestamp()
+           from pilot.waivers w
+           join pilot.parents p
+             on p.organization_id = w.organization_id
+            and p.parent_id = w.parent_id
+           join pilot.guardian_links gl
+             on gl.organization_id = w.organization_id
+            and gl.parent_id = w.parent_id
+            and gl.athlete_id = w.athlete_id
+          where p.account_id = $1
+            and w.waiver_type = 'photo_media'
+          order by w.organization_id, w.athlete_id, w.parent_id, w.created_at desc
+         on conflict (organization_id, athlete_id, former_parent_key)
+         do update set waiver_id = excluded.waiver_id, retained_at = excluded.retained_at`,
+        [accountId],
+      );
       await client.query(
         `update pilot.waivers w
             set parent_id = null

@@ -81,6 +81,7 @@ function consent(perGuardian: Array<{ parentId: string; status: string | null }>
       publicUseAllowed: g.status === null ? null : false,
       signedAt: g.status === null ? null : '2026-09-01T00:00:00.000Z',
     })),
+    retained: [],
   };
 }
 
