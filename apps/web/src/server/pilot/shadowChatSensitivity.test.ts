@@ -538,11 +538,77 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 // makes such a message's topic loss_of_consciousness instead, the route
 // calls the model and queues nothing before generation.
 // ---------------------------------------------------------------------------
+// NAMED ADDITIONS (2026-10-06, SHADOW emergency-phrase lane). The first change
+// to the classifier since the fold, declared here as S1d asks, and undone by
+// S1a and S1d before they compare with main. The frozen copy is NOT edited.
+//
+// Each addition only adds matches, so properties 1-3 still hold against main:
+//   - a new alternative OR'd into an existing pattern, inside its outermost
+//     group (urgent_symptom, hasUrgentSymptom, hasAcuteImpactConcern), so any
+//     message the pattern matched it still matches;
+//   - one new topic row, LAST, so it is reached only when every one of main's
+//     rows missed: the topic changes only from none, to loss_of_consciousness,
+//     which is an emergency topic and a critical classification. (Not in the
+//     existing loss_of_consciousness row: that sits above return_to_play and
+//     medical_clearance and would take their canned fallback away from an
+//     allowed question -- the "less caution" case described above.)
+// The new words carry lookarounds and an apostrophe; they are new matches,
+// so the fold argument about main's patterns (S3, S4) is untouched by them.
+// ---------------------------------------------------------------------------
+const ADDED_CANT = String.raw`|\bcant\s+(?:breathe|see|move)|(?:can(?:not|'t)|\bcant)\s+breath\b`;
+const ADDED_EMERGENCY = String.raw`(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:on|onto|into)\s+(?:the\s+|my\s+|his\s+|her\s+|their\s+)?(?:bed|couch|sofa|chair)\b)(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b)`;
+const ADDED_ACUTE_CANT = String.raw`|\bcant\s+(?:breathe|see|move|feel)`;
+const ADDED_ROW_SOURCE = `['loss_of_consciousness', /${ADDED_EMERGENCY}/i]`;
+/** In-pattern additions, by owner: [owner, text that must appear exactly once and is removed]. */
+const ADDED_IN_PATTERN: Array<[string, string]> = [
+  ['topic urgent_symptom', ADDED_CANT],
+  ['hasUrgentSymptom', ADDED_CANT + '|' + ADDED_EMERGENCY],
+  ['hasAcuteImpactConcern', ADDED_ACUTE_CANT],
+];
+
+/** NOW's patterns with the named additions undone: the added row dropped, each in-pattern addition removed once. */
+function undoNamedAdditions(patterns: Pattern[]): Pattern[] {
+  const rows = patterns.filter((p) => p.owner === 'topic loss_of_consciousness' && p.source === ADDED_EMERGENCY);
+  if (rows.length !== 1) throw new Error(`expected the added row once, found ${rows.length}`);
+  const kept = patterns.filter((p) => p !== rows[0]);
+  for (const [owner, added] of ADDED_IN_PATTERN) {
+    const owned = kept.filter((p) => p.owner === owner);
+    if (owned.length !== 1) throw new Error(`expected one pattern owned by ${owner}, found ${owned.length}`);
+    const parts = owned[0].source.split(added);
+    if (parts.length !== 2) throw new Error(`expected the addition in ${owner} once, found ${parts.length - 1}`);
+    // Inside the outermost group, at its end: the pattern is main's with `|X` before the final `)`.
+    expect(parts[1]).toBe(')');
+    owned[0].source = parts.join('');
+  }
+  return kept;
+}
+
+/**
+ * Whether the folded message reaches one of the named additions. Where it
+ * does, the current code is NOT main of the fold -- it is main plus the
+ * additions -- so the field-for-field comparisons below excuse it, and only
+ * it, and only when the one-way properties still hold against main.
+ */
+const ADDED_REGEXES = [ADDED_EMERGENCY, ADDED_CANT.slice(1), ADDED_ACUTE_CANT.slice(1)].map((s) => new RegExp(s, 'i'));
+function explainedByAddition(message: string, was: Verdict, is: Verdict): boolean {
+  const folded = normaliseForMatching(message);
+  if (!ADDED_REGEXES.some((r) => r.test(folded))) return false;
+  return !(withheld(was) && !withheld(is)) && !(emergency(was) && !emergency(is)) && !(critical(was) && !critical(is));
+}
+
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
 
-  test('S1a: the shipping functions carry exactly main\'s patterns and phrases, in order', () => {
-    expect(NOW_PATTERNS).toEqual(MAIN_PATTERNS);
+  test('S1a: the shipping functions carry exactly main\'s patterns and phrases, in order, but for the named additions', () => {
+    // The added row comes straight after urgent_symptom, which is main's last
+    // topic row: so it is reached only when every one of main's rows missed.
+    const nowClassifyPatterns = patternsOf(NOW_CLASSIFY);
+    const urgentRow = nowClassifyPatterns.findIndex((p) => p.owner === 'topic urgent_symptom');
+    expect(nowClassifyPatterns[urgentRow + 1].source).toBe(ADDED_EMERGENCY);
+    const mainClassifyPatterns = patternsOf(MAIN_CLASSIFY);
+    const mainUrgentRow = mainClassifyPatterns.findIndex((p) => p.owner === 'topic urgent_symptom');
+    expect(mainClassifyPatterns[mainUrgentRow + 1].owner.startsWith('topic ')).toBe(false);
+    expect(undoNamedAdditions(NOW_PATTERNS.map((p) => ({ ...p })))).toEqual(MAIN_PATTERNS);
     expect(includesLiteralsOf(NOW_VALIDATE)).toEqual(includesLiteralsOf(MAIN_VALIDATE));
     // Every string literal of validateShadowRequest: the error texts, the
     // classifications, the three emergency topics, 'none'. (Not compared for
@@ -675,6 +741,9 @@ describe('the premises of the argument, read from source', () => {
     classify = undo(classify, 'let classifiedTopic: HighRiskTopic = ', 'let classifiedTopic = ', 1);
     classify = drop(classify, 'const examples: ');
     classify = undo(classify, ', examples: examples[classifiedTopic]', '', 1);
+    // The named additions (see NAMED ADDITIONS above).
+    classify = undo(classify, ADDED_CANT, '', 1);
+    classify = undo(classify, ', ' + ADDED_ROW_SOURCE, '', 1);
     const mainClassifyShape = shape(MAIN_CLASSIFY, GUARD);
     expect(classify).toEqual(mainClassifyShape.statements);
     expect(nowClassify.parameters).toEqual(mainClassifyShape.parameters);
@@ -688,6 +757,8 @@ describe('the premises of the argument, read from source', () => {
     validate = drop(validate, 'const text = normaliseForMatching(message);');
     validate = undo(validate, 'text.toLowerCase()', 'message.toLowerCase()', 1);
     validate = undo(validate, '.test(text)', '.test(message)', 17);
+    validate = undo(validate, ADDED_CANT + '|' + ADDED_EMERGENCY, '', 1);
+    validate = undo(validate, ADDED_ACUTE_CANT, '', 1);
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -1315,7 +1386,7 @@ describe('main against the current code: every look-alike at every position of e
           if (critical(was) && !critical(is)) downgraded.push(show(message));
           // Step 1 of the argument, run: the current code is main applied to
           // the folded message, in every field.
-          if (!same(is, main(normaliseForMatching(message)))) notMainOfFold.push(show(message));
+          if (!same(is, main(normaliseForMatching(message))) && !explainedByAddition(message, was, is)) notMainOfFold.push(show(message));
 
           if (!withheld(was) && withheld(is)) newlyWithheld += 1;
           if (!withheld(was) && withheld(is) && !emergency(is)) newlyWithheldWithoutEmergencyText += 1;
@@ -1375,7 +1446,7 @@ describe('main against the current code: every look-alike at every position of e
     for (const [, seed] of SEEDS) {
       for (const message of variantsOf(seed, '\uFEFF')) {
         compared += 1;
-        if (!same(main(message), now(message))) different.push(show(message));
+        if (!same(main(message), now(message)) && !explainedByAddition(message, main(message), now(message))) different.push(show(message));
       }
     }
     expect(different.slice(0, 20)).toEqual([]);
@@ -1759,12 +1830,17 @@ const SEED_DIFFERENTIAL_COUNTS = {
   },
   // Messages main allowed that are now withheld: the fix. Each of them
   // carries the emergency text, which the test asserts separately.
-  newlyWithheld: 83,
+  // 2026-10-06 named additions: +72 here, +72 newlyEmergency, +144
+  // anyFieldDiffers. They are seeds with a look-alike inside "breathe"
+  // ("can't breath<x>e"), which the added `can't breath` typo alternative
+  // catches; every one is a move of a kind already listed below (R9 -> R3,
+  // or topic none -> urgent_symptom under R1/R2), only more of them.
+  newlyWithheld: 155,
   // Those 83, and 48 that main withheld without the emergency text and that
   // now get it: 12 from each of R4, R5, R6 and R7.
-  newlyEmergency: 131,
+  newlyEmergency: 203,
   // Messages where any field differs from main's.
-  anyFieldDiffers: 211,
+  anyFieldDiffers: 355,
   // Those 211, by what changed: the return, or the topic under an unchanged
   // return. These thirteen are the kinds this seed set produces, and they
   // sum to 211. Each is of a kind Step 5 of the argument allows -- a return
@@ -1774,8 +1850,8 @@ const SEED_DIFFERENTIAL_COUNTS = {
   // combinations than these seeds produce: a topic change under R4, R5 or
   // R7, for one, is allowed and not seeded.
   moves: {
-    'R1 prescription or weight cut, topic none -> urgent_symptom': 12,
-    'R2 educational, allowed, topic none -> urgent_symptom': 12,
+    'R1 prescription or weight cut, topic none -> urgent_symptom': 48,
+    'R2 educational, allowed, topic none -> urgent_symptom': 48,
     'R2 educational, allowed, topic return_to_play -> loss_of_consciousness': 11,
     'R3 urgent, topic urgent_symptom -> loss_of_consciousness': 11,
     'R4 personal health -> R3 urgent': 12,
@@ -1785,7 +1861,7 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R7 medication -> R3 urgent': 12,
     'R8 high-risk fallback -> R3 urgent': 12,
     'R8 high-risk fallback, topic chest_pain -> loss_of_consciousness': 11,
-    'R9 nothing matched, allowed -> R3 urgent': 72,
+    'R9 nothing matched, allowed -> R3 urgent': 144,
     'R9 nothing matched, allowed -> R8 high-risk fallback': 11,
   },
 };

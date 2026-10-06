@@ -1100,13 +1100,22 @@ describe('typographic normalisation before matching', () => {
   // survives scrutiny rather than patched a fifth time under release
   // pressure.
   //
-  // Asserted as NOT caught so the gap is visible in the suite rather than
-  // merely absent from it. When #1036 closes it, this test flips.
+  // FLIPPED 2026-10-06 (SHADOW emergency-phrase lane) for "cant" ONLY. The
+  // optional apostrophe is still not used. "cant" is a separate alternative,
+  // `\bcant\s+(?:breathe|see|move)` (plus `feel` in the impact pattern),
+  // beside the untouched can't/cannot ones, so nothing caught before stops
+  // being caught, and it needs a word start AND one of a few verbs after it:
+  // "significant", "vacant", "cantilever" and "cantina" cannot reach it.
+  // What still can is a word split at its "cant" by a hyphen and followed by
+  // one of those verbs ("signifi-cant move"); that over-flags, which is the
+  // safe direction. couldn't/couldnt/can not/wont stop stay with #1036.
   test.each([
     ['i cant breathe after that hit'],
     ['i cant see after that punch'],
-  ])('KNOWN GAP, moved to #1036 -- an omitted apostrophe is not caught: %s', (message) => {
-    expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
+  ])('an omitted apostrophe in "cant" is now an emergency: %s', (message) => {
+    const result = validateShadowRequest(message, 'athlete', 'org-123');
+    expect(result.valid).toBe(false);
+    expect(result.classification).toBe('urgent_personal_symptom');
   });
 
   // CONTROL, NOT EVIDENCE. KO'd is the one pattern that already carried
