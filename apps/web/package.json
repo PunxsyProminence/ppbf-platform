@@ -216,6 +216,7 @@
     "test:migrations:source-rights": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sourceRights.pg.test.ts --testTimeout=180000",
     "test:migrations:intake-case-primary-athlete": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/intakeCasePrimaryAthlete.pg.test.ts --testTimeout=180000",
     "test:migrations:retained-media-restriction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/retainedMediaRestriction.pg.test.ts --testTimeout=180000",
+    "test:migrations:shadow-memory-correction-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowMemoryCorrectionPurge.pg.test.ts --testTimeout=180000",
     "test:migrations:sparring-exposure-contact-stage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sparringExposureContactStage.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-development-blocks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlocks.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-development-block-competition-target": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlockCompetitionTarget.pg.test.ts --testTimeout=180000",
