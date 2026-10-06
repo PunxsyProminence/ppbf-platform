@@ -131,7 +131,11 @@ describe('POST /api/pilot/auth/logout-all', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('a platform owner is refused, as they are on the admin route', async () => {
+  test('a platform owner can sign out their own sessions', async () => {
+    // Audit CL-A17: the shared admin-revoke function refuses a platform owner
+    // target, and this route used to inherit that, leaving the most
+    // privileged account no self-service way to end its sessions after a
+    // suspected compromise. Acting on yourself is not acting on the owner.
     mockRequirePrincipal.mockResolvedValueOnce(
       principal({ accountId: 'acct-owner', role: 'platform_owner', authProvider: 'microsoft' }),
     );
@@ -139,9 +143,9 @@ describe('POST /api/pilot/auth/logout-all', () => {
 
     const response = await POST(makeRequest());
 
-    expect(response.status).not.toBe(200);
-    expect(revocationCall()).toBeUndefined();
-    expect(mockAudit).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(revocationCall()?.[1]).toEqual(['acct-owner', 'org-1']);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
   });
 
   test('the audit row names the caller as both actor and subject', async () => {

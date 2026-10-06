@@ -1,3 +1,5 @@
+import { isOrganizationAdminRole } from './access';
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ShadowConfidenceTier } from './shadowAuthority';
 import type { ShadowSourceVerificationState } from './shadow';
@@ -168,6 +170,32 @@ export function namedAthleteIdsOf(row: SubjectBearingRow): string[] {
 /** The athlete a requirement row is ABOUT, or null when it is about no one. */
 export function subjectAthleteIdOf(row: SubjectBearingRow): string | null {
   return namedAthleteIdsOf(row)[0] ?? null;
+}
+
+/**
+ * Who sees and closes the gym's research questions and needs: the rows that
+ * name no athlete.
+ *
+ * Those rows carry the asker's own words -- a Library question goes in as
+ * metadata.question and knowledge_gap, a negative feedback note from the
+ * learning loop as knowledge_gap and metadata.note. They were readable, and
+ * their submissions and review notes too, by every role the research routes
+ * admit, so one family's question was readable by every other family (CL-A3).
+ *
+ * RULING (Jason 2026-10-06, CL-A3): "Staff only" -- coaches and organization
+ * admins see the gym's research questions and needs; everyone else sees only
+ * their own. One copy for both routes (research-requirements and
+ * research-submissions), so they cannot drift apart.
+ */
+export function isResearchStaff(role: PilotRole): boolean {
+  return role === 'coach' || isOrganizationAdminRole(role);
+}
+
+export function mayReadSubjectlessResearchRow(
+  actor: { accountId: string; role: PilotRole },
+  row: Pick<ShadowResearchRequirementRow, 'created_by_account_id'>,
+): boolean {
+  return isResearchStaff(actor.role) || row.created_by_account_id === actor.accountId;
 }
 
 export async function getShadowResearchRequirementById(

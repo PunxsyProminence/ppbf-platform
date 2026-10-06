@@ -221,6 +221,27 @@ describe('mintGateSession', () => {
     expect(rows[0].revoked_at).toBeNull();
   });
 
+  test("records sign_in_method 'microsoft', so a Microsoft-gated route admits the gate's admin session", async () => {
+    // requireMicrosoftAuthenticatedPrincipal reads the session's recorded
+    // method (audit CL-A7). A gate session with none is refused, which broke
+    // the staging SHADOW gate's pin-reset step and the org-admin runtime
+    // probes on the Microsoft-gated admin routes.
+    await makeAccount({ accountId: 'gate-admin-method', role: 'organization_admin' });
+
+    const session = await mintGateSession({
+      connectionString: testConnectionString(),
+      accountId: 'gate-admin-method',
+      expectedRole: 'organization_admin',
+    });
+
+    const rows = await rawQuery<{ sign_in_method: string | null }>(
+      'select sign_in_method from pilot.session_tokens where account_id = $1',
+      ['gate-admin-method'],
+    );
+    expect(rows).toEqual([{ sign_in_method: 'microsoft' }]);
+    await session.revoke();
+  });
+
   test('reports the membership role, the one the session acts with', async () => {
     await makeAccount({ accountId: 'gate-admin-home-coach-here', role: 'organization_admin', membershipRole: 'coach' });
 

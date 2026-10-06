@@ -242,7 +242,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/video-review', label: 'Video Scan Review', room: 'office', roles: ADMIN_GATE,
     keywords: 'quarantine scan escalation approve block video safeguarding',
     hint: 'Quarantined footage the automated scanner deferred to a human.' },
-  { href: '/admin/shadow-reviews', label: 'SHADOW Human Review', room: 'office', roles: ADMIN_GATE,
+  /* roles is ['admin'], not ADMIN_GATE: the queue is gym business and its
+     route and page refuse platform_owner (OD-2026-10-05-024 ruling 3). */
+  { href: '/admin/shadow-reviews', label: 'SHADOW Human Review', room: 'office', roles: ['admin'],
     keywords: 'shadow chat safety boundary escalation critical chest pain fainting review queue safeguarding',
     hint: 'SHADOW chats sent for human review. Critical tickets first.' },
   /* roles is ['admin'] and NOT ADMIN_GATE, deliberately. ADMIN_GATE carries
