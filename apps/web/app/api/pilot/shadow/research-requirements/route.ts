@@ -15,6 +15,7 @@ import {
   createShadowResearchRequirement,
   CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
+  COVERED_AFTER_RESOLUTION_KEY,
   getShadowResearchRequirementById,
   listShadowResearchRequirements,
   namedAthleteId,
@@ -65,6 +66,46 @@ function requirementNotFound(): NextResponse {
 }
 
 /**
+ * Who sees and closes the gym's research questions and needs: the rows that
+ * name no athlete.
+ *
+ * Those rows carry the asker's own words -- a Library question goes in as
+ * metadata.question and knowledge_gap, a negative feedback note from the
+ * learning loop as knowledge_gap and metadata.note -- and they were readable
+ * by every role this route admits, so one family's question was readable by
+ * every other family (CL-A3). They were also closable by every member but a
+ * parent, and a person's resolution of a capability-gap ticket parks it until
+ * that capability grades covered (CL-C14).
+ *
+ * RULING (Jason 2026-10-06, CL-A3): "Staff only" -- coaches and organization
+ * admins see the gym's research questions and needs; everyone else sees only
+ * their own. Closing one is the staff's call, so a member who can see their
+ * own question still cannot close it.
+ */
+function isResearchStaff(role: ActorIdentity['role']): boolean {
+  return role === 'coach' || isOrganizationAdminRole(role);
+}
+
+function mayReadSubjectlessRow(actor: ActorIdentity, row: ShadowResearchRequirementRow): boolean {
+  return isResearchStaff(actor.role) || row.created_by_account_id === actor.accountId;
+}
+
+/**
+ * Metadata keys the capability-coverage check writes and reads back.
+ * `resolution` = 'capability_covered' marks a closure as the check's own, so it
+ * may reopen the row; COVERED_AFTER_RESOLUTION_KEY says coverage happened since
+ * a person closed it, which also lets it reopen. A caller writing either
+ * steers how the check later treats the row; the other two are its closure
+ * and reopen record. resolved_by_* are not listed: the write overwrites them.
+ */
+const COVERAGE_CHECK_METADATA_KEYS = [
+  'resolution',
+  COVERED_AFTER_RESOLUTION_KEY,
+  'resolved_matched_sources',
+  'reopened_after_resolution_at',
+] as const;
+
+/**
  * Would this caller-supplied resolve metadata change which athlete the stored
  * row is about?
  *
@@ -74,6 +115,11 @@ function requirementNotFound(): NextResponse {
  * into org-wide data that volunteer and staff accounts may read. Restating
  * the subject the row already has is a no-op and stays allowed, so a client
  * that echoes the row back is not broken by this.
+ *
+ * A value that is not cleanly a string or null (see subjectValueIsUnambiguous)
+ * counts as a repoint whatever it is: TypeScript would read it as "names no
+ * athlete" while the SQL that decides the write and the coverage check reads
+ * it as a subject.
  */
 function metadataWouldRepointSubject(
   metadata: Record<string, unknown> | undefined,
@@ -84,8 +130,31 @@ function metadataWouldRepointSubject(
   }
 
   return SUBJECT_NAMING_METADATA_KEYS.some(
-    (key) => key in metadata && namedAthleteId(metadata[key]) !== currentSubjectAthleteId,
+    (key) =>
+      key in metadata &&
+      (!subjectValueIsUnambiguous(metadata[key]) || namedAthleteId(metadata[key]) !== currentSubjectAthleteId),
   );
+}
+
+/**
+ * Do TypeScript and SQL agree on whether this metadata value names an athlete?
+ *
+ * namedAthleteId reads a non-string, or a string String.trim empties, as "no
+ * athlete". The SQL subject resolution (resolveShadowResearchRequirement's
+ * predicate, and namesNoAthleteSql behind the capability-coverage check) reads
+ * `metadata->>'athlete_id'` through btrim, which renders 5 as '5' and strips
+ * only spaces, so 5, true, {} or "\t" name an athlete there. A row carrying one
+ * is shown as subject-less here and treated as about someone by the database:
+ * a coverage ticket closed with {athlete_id: 5} is never reopened again, and a
+ * row created with it can never be resolved. Only null and strings with no
+ * surrounding whitespace read the same both ways.
+ */
+function subjectValueIsUnambiguous(value: unknown): boolean {
+  return value === null || (typeof value === 'string' && value.trim() === value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -96,7 +165,8 @@ function metadataWouldRepointSubject(
  * relationship gate (accessibleAthleteIds -- assignment of record UNION an
  * active, unexpired coach_coverage grant, a guardian's own dependents, an
  * athlete's own record, and nothing at all for volunteer/staff/platform_owner);
- * a row that names no athlete is org-wide operational data and is kept.
+ * a row that names no athlete is the gym's research backlog and is kept for
+ * staff, and for anyone else only if they filed it (mayReadSubjectlessRow).
  *
  * Organization admins administer the whole gym's records, so their reach and
  * the organization predicate the query already carries are the same set --
@@ -130,14 +200,12 @@ async function scopeToReachableSubjects(
     .map((row) => subjectAthleteIdOf(row))
     .filter((athleteId): athleteId is string => athleteId !== null);
 
-  if (namedAthleteIds.length === 0) {
-    return rows;
-  }
-
-  const reachable = await accessibleAthleteIds(actor, namedAthleteIds);
+  const reachable = namedAthleteIds.length > 0
+    ? await accessibleAthleteIds(actor, namedAthleteIds)
+    : new Set<string>();
   return rows.filter((row) => {
     const athleteId = subjectAthleteIdOf(row);
-    return athleteId === null || reachable.has(athleteId);
+    return athleteId === null ? mayReadSubjectlessRow(actor, row) : reachable.has(athleteId);
   });
 }
 
@@ -215,6 +283,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'subject_id must be a string' }, { status: 400 });
     }
 
+    // Both branches merge `metadata` into a jsonb row and test keys with `in`,
+    // which throws on a string or number (a 500, not a 400). Checked before
+    // any row is read, so it says nothing about whether one exists.
+    if (body.metadata !== undefined && !isPlainObject(body.metadata)) {
+      return NextResponse.json({ ok: false, error: 'metadata must be an object' }, { status: 400 });
+    }
+
     if (body.action === 'resolve') {
       if (!body.research_requirement_id) {
         return NextResponse.json({ ok: false, error: 'missing research_requirement_id' }, { status: 400 });
@@ -259,16 +334,22 @@ export async function POST(request: NextRequest) {
       const subjectAthleteId = subjectAthleteIdOf(stored);
 
       if (subjectAthleteId === null) {
-        // A row that names no athlete is org-wide operational work (a
-        // capability-coverage gap, an upload classification, a learning-loop
-        // gap) and stays closable by the in-organization roles this route
-        // admits. Parents are the exception, and only to preserve exactly
-        // what they could do before: their athleteIds scope has always
-        // matched on subject_id, which never matches a subject-less row, and
-        // the list they read is scoped the same way. Widening a guardian to
-        // the gym's doctrine backlog is not this fix's business.
-        if (principal.role === 'parent') {
-          return requirementNotFound();
+        // A row that names no athlete is the gym's research backlog (a
+        // capability-coverage gap, an upload classification, a Library
+        // question, a learning-loop gap). Only staff close it (CL-C14,
+        // isResearchStaff). Anyone else who cannot see it gets the same 404
+        // as a missing id; one who can see it because they filed it is told
+        // plainly that closing it is not theirs. Parents keep the 404 they
+        // always got: their list is scoped by subject_id, so they never see a
+        // subject-less row, even their own.
+        if (!isResearchStaff(principal.role)) {
+          if (principal.role === 'parent' || !mayReadSubjectlessRow(principal, stored)) {
+            return requirementNotFound();
+          }
+          return NextResponse.json(
+            { ok: false, error: 'Forbidden: only coaches and organization admins close research requirements' },
+            { status: 403 },
+          );
         }
       } else {
         // The one central relationship gate, evaluated against the STORED
@@ -312,6 +393,21 @@ export async function POST(request: NextRequest) {
       if (metadataWouldRepointSubject(body.metadata, subjectAthleteId)) {
         return NextResponse.json(
           { ok: false, error: 'resolve metadata cannot change which athlete a requirement is about' },
+          { status: 400 },
+        );
+      }
+
+      // CL-C14: the coverage check's own markers are the server's to write.
+      // Only resolved_by_* were protected (the write puts them last); a
+      // caller could still set resolution = 'capability_covered' or
+      // covered_after_resolution_at and so decide whether the check later
+      // reopens the row or leaves it closed. Same placement as above: after
+      // the gate, so an unentitled caller still gets the plain 404.
+      const metadata = body.metadata ?? {};
+      const reservedKey = COVERAGE_CHECK_METADATA_KEYS.find((key) => key in metadata);
+      if (reservedKey) {
+        return NextResponse.json(
+          { ok: false, error: `resolve metadata cannot set ${reservedKey}; the coverage check writes it` },
           { status: 400 },
         );
       }
@@ -361,7 +457,17 @@ export async function POST(request: NextRequest) {
       // knowledge_gap of their choosing -- against a child they have no
       // relationship with, simply by putting the athlete id in metadata and
       // leaving subject_id out. Every athlete this row will name has to be
-      // one the actor can reach, whichever field names it.
+      // one the actor can reach, whichever field names it -- and the field has
+      // to name it the same way to TypeScript and to SQL, or the gate below
+      // is skipped for a row the database treats as about someone.
+      const createMetadata = body.metadata ?? {};
+      if (SUBJECT_NAMING_METADATA_KEYS.some((key) => key in createMetadata && !subjectValueIsUnambiguous(createMetadata[key]))) {
+        return NextResponse.json(
+          { ok: false, error: 'metadata subject_id and athlete_id must be a trimmed string or null' },
+          { status: 400 },
+        );
+      }
+
       for (const athleteId of namedAthleteIdsOf({ subject_id: subjectId, metadata: body.metadata ?? {} })) {
         await assertActorCanAccessAthlete(principal, athleteId);
       }
