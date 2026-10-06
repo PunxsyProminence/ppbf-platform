@@ -709,3 +709,37 @@ describe('getShadowKnowledgeProjection stream placement', () => {
     ]);
   });
 });
+
+// Audit CL-C24. limit and offset arrive from a JSON body and were clamped but
+// not rounded, so 2.5 reached Postgres as a bigint bind and the caller got a
+// 500. Every number bound into these reads must be a whole number.
+describe('paging values are whole numbers before they reach SQL (CL-C24)', () => {
+  const readers: Array<[string, (filters: { limit?: number; offset?: number }) => Promise<unknown>]> = [
+    ['listShadowEvents', (filters) => listShadowEvents(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowTelemetry', (filters) => listShadowTelemetry(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowAuthorityChecks', (filters) => listShadowAuthorityChecks(context({ actorRole: 'organization_admin' }), filters)],
+    ['getShadowReviewProjection', (filters) => getShadowReviewProjection(context({ actorRole: 'organization_admin' }), filters)],
+  ];
+
+  test.each(readers)('%s floors a fractional limit and offset', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 2.5, offset: 1.5 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([2, 1]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
+  });
+
+  test.each(readers)('%s still reads at least one row for a limit under 1', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 0.4, offset: 0.9 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([1, 0]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
+  });
+});

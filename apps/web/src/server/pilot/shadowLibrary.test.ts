@@ -649,6 +649,69 @@ describe('SHADOW library claim honesty', () => {
   });
 });
 
+// Audit CL-C15. The duplicate check read EVERY open requirement in the
+// organization into memory on every claim, and the new row's key carried
+// Date.now(), so two different questions in the same millisecond collided on
+// the unique key and the second was silently merged into the first.
+describe('SHADOW library claim research requirement (CL-C15)', () => {
+  const ask = (question: string) => createShadowLibraryClaim({
+    organizationId: 'org-1',
+    actorAccountId: 'acct-1',
+    actorRole: 'organization_admin',
+    athleteId: null,
+    question,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    mockIsSemanticEnabled.mockReturnValue(false);
+    mockQuery.mockResolvedValue([] as never); // no evidence -> unsupported
+    mockQueryOne.mockResolvedValue(null as never); // no open duplicate
+    jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
+    jest.mocked(createShadowResearchRequirement).mockResolvedValue(101);
+  });
+
+  it('looks up the open duplicate by key in SQL, one row, instead of reading every open requirement', async () => {
+    await ask('Is there evidence for a claim nobody has written about?');
+
+    expect(listShadowResearchRequirements).not.toHaveBeenCalled();
+    const lookup = mockQueryOne.mock.calls.find(([sql]) => /shadow_research_requirements/.test(String(sql)));
+    expect(lookup).toBeDefined();
+    const sql = String(lookup![0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("status = 'open'");
+    expect(sql).toMatch(/limit 1/i);
+    expect(lookup![1]).toEqual(expect.arrayContaining([
+      'org-1',
+      'Is there evidence for a claim nobody has written about?',
+    ]));
+  });
+
+  it('reuses the open duplicate the lookup finds and opens no new row', async () => {
+    mockQueryOne.mockResolvedValue({ research_requirement_id: 77 } as never);
+
+    const result = await ask('Is there evidence for a claim nobody has written about?');
+
+    expect(result.researchRequirementId).toBe(77);
+    expect(createShadowResearchRequirement).not.toHaveBeenCalled();
+  });
+
+  it('two different questions in the same millisecond get two different row keys', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000);
+    try {
+      await ask('Is there evidence for the first unanswered question?');
+      await ask('Is there evidence for the second unanswered question?');
+    } finally {
+      now.mockRestore();
+    }
+
+    const keys = jest.mocked(createShadowResearchRequirement).mock.calls.map(([row]) => row.sourceEntityId);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).not.toContain('1760000000000');
+  });
+});
+
 // What search serves is the bar. The coverage count used to accept any active
 // source, so a rule read "covered" on a source still waiting for review, never
 // indexed, or suppressed for retraction -- while search returned nothing for
