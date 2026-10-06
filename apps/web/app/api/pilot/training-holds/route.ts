@@ -285,6 +285,13 @@ export async function POST(request: NextRequest) {
         } catch {
           throw new Error('Missing hold record');
         }
+        // OD-2026-10-05-024 ruling 1: a coach can NOT lift a training hold an
+        // admin set; only an admin can. Checked after the assignment gate, so
+        // only a coach who can already see this hold learns who placed it.
+        // Anything but a coach-placed hold is refused (fail closed).
+        if (existing.placed_by_role !== 'coach') {
+          throw new Error('Forbidden: only an organization admin can lift a hold an admin placed');
+        }
       }
 
       const lifted = await liftTrainingHold(principal.organizationId, holdId, principal.accountId, liftNote);

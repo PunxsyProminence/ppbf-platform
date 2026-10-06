@@ -370,9 +370,12 @@ describe('the subject gate on a requirement that names a child', () => {
     expect(mockList).toHaveBeenCalled();
   });
 
-  test('a requirement about nobody stays org-wide operational data', async () => {
+  // CL-A3 (Jason 2026-10-06, "Staff only"): a requirement about nobody is the
+  // gym's research backlog, often a member's own question. Its submissions and
+  // review notes are for staff and for whoever filed it.
+  test('a guardian reads the submissions on a question they filed about nobody', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(guardian());
-    mockGetRequirement.mockResolvedValueOnce(requirementAbout(null));
+    mockGetRequirement.mockResolvedValueOnce({ ...requirementAbout(null), created_by_account_id: 'acct-parent' });
     mockRequirementStatus.mockResolvedValueOnce('open');
     mockList.mockResolvedValueOnce([]);
 
@@ -380,6 +383,61 @@ describe('the subject gate on a requirement that names a child', () => {
 
     expect(response.status).toBe(200);
     expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['parent', 'acct-parent'],
+    ['athlete', 'acct-athlete'],
+    ['volunteer', 'acct-vol'],
+    ['staff', 'acct-staff'],
+    ['platform_owner', 'acct-owner'],
+  ] as const)('a %s is refused the submissions on someone else\'s question about nobody', async (role, accountId) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId, role, athleteId: null }));
+    mockGetRequirement.mockResolvedValueOnce({ ...requirementAbout(null), created_by_account_id: 'acct-other-family' });
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+
+    expect(response.status).toBe(404);
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockRequirementStatus).not.toHaveBeenCalled();
+  });
+
+  test('a coach reads the submissions on anyone\'s question about nobody', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockGetRequirement.mockResolvedValueOnce({ ...requirementAbout(null), created_by_account_id: 'acct-other-family' });
+    mockRequirementStatus.mockResolvedValueOnce('open');
+    mockList.mockResolvedValueOnce([]);
+
+    expect((await GET(getRequest('research_requirement_id=7'))).status).toBe(200);
+  });
+
+  // The platform shelf is the platform owner's own Library; it stays readable
+  // there whoever filed the row.
+  test('platform_owner reads the submissions on a platform-shelf question about nobody', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'acct-owner', role: 'platform_owner' }));
+    mockGetRequirement.mockResolvedValueOnce({
+      ...requirementAbout(null), organization_id: '__platform__', created_by_account_id: 'acct-someone',
+    });
+    mockRequirementStatus.mockResolvedValueOnce('open');
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await GET(getRequest('research_requirement_id=7&shelf=platform'));
+
+    expect(response.status).toBe(200);
+    expect(mockGetRequirement).toHaveBeenCalledWith('__platform__', 7);
+  });
+
+  test('the batch read drops other people\'s questions about nobody for a non-staff caller', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' }));
+    mockGetRequirement
+      .mockResolvedValueOnce({ ...requirementAbout(null), research_requirement_id: 7, created_by_account_id: 'acct-athlete' })
+      .mockResolvedValueOnce({ ...requirementAbout(null), research_requirement_id: 8, created_by_account_id: 'acct-other' });
+    (getRequirementStatusesInOrg as jest.Mock).mockResolvedValueOnce(new Map());
+    (getAnswerStates as jest.Mock).mockResolvedValueOnce(new Map());
+
+    await GET(getRequest('research_requirement_ids=7,8'));
+
+    expect(getRequirementStatusesInOrg as jest.Mock).toHaveBeenCalledWith('org-1', [7]);
   });
 
   test('an organization admin is not narrowed, and costs no extra read', async () => {
@@ -411,5 +469,33 @@ describe('the subject gate on a requirement that names a child', () => {
 
     // Only the reachable id reaches the status read.
     expect(getRequirementStatusesInOrg as jest.Mock).toHaveBeenCalledWith('org-1', [7]);
+  });
+});
+
+// Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
+// the curator got a 500 for what is their own malformed request.
+describe('malformed JSON bodies (CL-C24)', () => {
+  const raw = (method: 'POST' | 'PATCH', body: string) =>
+    new NextRequest('http://localhost/api/pilot/shadow/research-submissions', {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+
+  test.each([
+    ['POST', '{not json'],
+    ['POST', 'null'],
+    ['POST', '[1,2]'],
+    ['PATCH', '{not json'],
+    ['PATCH', 'null'],
+    ['PATCH', '"text"'],
+  ] as const)('%s %s is a 400, and nothing is written', async (method, body) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    const response = method === 'POST' ? await POST(raw(method, body)) : await PATCH(raw(method, body));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
   });
 });

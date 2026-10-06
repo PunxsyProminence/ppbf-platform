@@ -17,8 +17,8 @@ jest.mock('pdf-parse', () => ({
     constructor() {
       mockParserConstructed();
     }
-    getText() {
-      return mockGetText();
+    getText(params: unknown) {
+      return mockGetText(params);
     }
     destroy() {
       return mockDestroy();
@@ -109,12 +109,16 @@ beforeEach(() => {
   mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
   mockEnforce.mockResolvedValue(undefined);
   mockDestroy.mockResolvedValue(undefined);
-  mockGetText.mockResolvedValue({
-    pages: [
-      { num: 1, text: 'Page one words.' },
-      { num: 2, text: '' },
-    ],
-  });
+  // pdf-parse answers one page per call (libraryPdfText reads page by page):
+  // `total` is the document's page count, `pages` only the page asked for.
+  const documentPages = [
+    { num: 1, text: 'Page one words.' },
+    { num: 2, text: '' },
+  ];
+  mockGetText.mockImplementation(async (params?: { partial?: number[] }) => ({
+    total: documentPages.length,
+    pages: documentPages.filter((page) => params?.partial?.includes(page.num)),
+  }));
   consoleSpies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
     jest.spyOn(console, level).mockImplementation(() => undefined),
   );
@@ -205,7 +209,7 @@ describe('POST /api/pilot/shadow/library/pdf-text: nothing from the upload is ke
   });
 
   test('writes neither the file name nor any page text to any log', async () => {
-    mockGetText.mockResolvedValueOnce({ pages: [{ num: 1, text: 'SECRET-PAGE-WORDS' }] });
+    mockGetText.mockResolvedValueOnce({ total: 1, pages: [{ num: 1, text: 'SECRET-PAGE-WORDS' }] });
 
     await POST(await uploadRequest(PDF_BYTES, { name: 'secret-file-name.pdf' }));
     mockGetText.mockRejectedValueOnce(new Error('parser echoed SECRET-PAGE-WORDS'));

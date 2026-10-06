@@ -92,7 +92,20 @@ export interface PilotPrincipal {
    * consumer reads it off those.
    */
   pinAuthPermitted?: boolean;
+  /**
+   * How THIS SESSION was signed in: pilot.session_tokens.sign_in_method.
+   * Not the account's provider -- staff provisioning sets auth_provider
+   * 'microsoft' on coaches, staff, volunteers and parents who sign in by
+   * emailed link or password (audit CL-A7). The privileged gates in http.ts
+   * read this. null is a session minted before its sign-in path recorded the
+   * method; those gates refuse it. Optional only so hand-built principal
+   * fixtures need not restate it.
+   */
+  signInMethod?: SignInMethod | null;
 }
+
+/** pilot.session_tokens.sign_in_method, as its check constraint allows. */
+export type SignInMethod = 'microsoft' | 'magic_link' | 'password' | 'pin';
 
 /**
  * Whether a session signed in under the account's home role may act with
@@ -340,7 +353,8 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   const expiresAt = computeSessionExpiry();
 
   await query(
-    'insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at) values ($1, $2, $3, $4)',
+    `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
+     values ($1, $2, $3, $4, 'pin')`,
     [tokenHash, data.account_id, organizationId, expiresAt],
   );
 
@@ -355,6 +369,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
       authProvider: data.auth_provider,
       hasMasterShadowAccess: data.has_master_shadow_access,
       mustChangePin: data.must_change_pin,
+      signInMethod: 'pin',
     },
   };
 }
@@ -527,8 +542,11 @@ export async function loginWithMicrosoftEmail(
   const tokenHash = hashToken(token);
   const expiresAt = computeSessionExpiry();
 
+  // sign_in_method 'microsoft' is what requireMicrosoftAuthenticatedPrincipal
+  // checks; the account's auth_provider alone does not say how it signed in.
   await query(
-    'insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at) values ($1, $2, $3, $4)',
+    `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
+     values ($1, $2, $3, $4, 'microsoft')`,
     [tokenHash, data.account_id, organizationId, expiresAt],
   );
 
@@ -544,6 +562,7 @@ export async function loginWithMicrosoftEmail(
       hasMasterShadowAccess: data.has_master_shadow_access,
       // Microsoft accounts never hold a PIN, so they are never mid-bootstrap.
       mustChangePin: false,
+      signInMethod: 'microsoft',
     },
   };
 }
@@ -573,6 +592,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     organization_status: string | null;
     /** Whether this account holds a seat on the SESSION organization's board. */
     holds_board_seat: boolean;
+    sign_in_method: SignInMethod | null;
   }>(
     `select
        a.account_id,
@@ -593,6 +613,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
        a.has_master_shadow_access,
        a.must_change_pin,
        o.status as organization_status,
+       st.sign_in_method,
        -- Scoped to the SESSION's organization, the same expression the
        -- organization join above uses. A session carrying an explicit
        -- organization must be judged against seats on that board, not on the
@@ -704,6 +725,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     // decision; it does not make a second, weaker one. A microsoft session was
     // never asked the question and does not need the answer.
     pinAuthPermitted: row.auth_provider === 'ppbf_local',
+    signInMethod: row.sign_in_method ?? null,
   };
 }
 
@@ -736,6 +758,31 @@ export async function revokeAllSessionsForAccountInOrganization(accountId: strin
   );
 
   if (!membership || membership.is_platform_owner) {
+    throw new Error('Account not found or cannot be revoked');
+  }
+
+  await query(
+    'update pilot.session_tokens set revoked_at = now() where account_id = $1 and organization_id = $2 and revoked_at is null',
+    [accountId, organizationId],
+  );
+}
+
+// The caller ending its OWN sessions in this organization
+// (/api/pilot/auth/logout-all). The same membership requirement as the admin
+// path above, without its platform-owner refusal: that refusal stops an
+// organization admin acting on the owner, and here the actor is the target.
+// The owner is the account that most needs to end its sessions after a
+// suspected compromise (audit CL-A17). Never call this with an account id
+// taken from a request; the route passes the resolved principal's.
+export async function revokeOwnSessionsInOrganization(accountId: string, organizationId: string): Promise<void> {
+  const membership = await queryOne<{ account_id: string }>(
+    `select om.account_id
+     from pilot.organization_memberships om
+     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true`,
+    [accountId, organizationId],
+  );
+
+  if (!membership) {
     throw new Error('Account not found or cannot be revoked');
   }
 
@@ -1409,7 +1456,27 @@ export async function upsertOrganizationMembership(accountId: string, organizati
     // UPDATE. Taken any weaker here, it would be upgraded mid-transaction,
     // waiting on any open transaction that inserted a row referencing this
     // account -- a new deadlock the old order could not form.
-    await client.query('select 1 from pilot.accounts where account_id = $1 for update', [accountId]);
+    //
+    // The row read under that lock decides two refusals before anything is
+    // written (audit CL-A5). An athlete's login is administered by their own
+    // gym, the boundary platform/users/status holds: this route could move a
+    // child's login between gyms or deactivate it. And the platform owner's
+    // own account is not an organization seat: the update below used to clear
+    // is_platform_owner on it. A missing row falls through to the update,
+    // which reports it as before.
+    const target = await client.query<{ athlete_login: boolean; platform_owner: boolean }>(
+      `select (role = 'athlete' or athlete_id is not null) as athlete_login,
+              (is_platform_owner or role = 'platform_owner') as platform_owner
+       from pilot.accounts where account_id = $1 for update`,
+      [accountId],
+    );
+    const targetRow = target.rows[0];
+    if (targetRow?.athlete_login === true) {
+      throw new Error('Forbidden: an athlete account is administered by their own gym');
+    }
+    if (targetRow?.platform_owner === true) {
+      throw new Error('Forbidden: the platform owner account is not managed through organization memberships');
+    }
 
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
@@ -1432,6 +1499,9 @@ export async function upsertOrganizationMembership(accountId: string, organizati
            is_platform_owner = case when $3 = 'platform_owner' then true else false end,
            updated_at = now()
        where account_id = $1
+         and is_platform_owner = false
+         and role not in ('platform_owner', 'athlete')
+         and athlete_id is null
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [accountId, organizationId, role, activeFlag],
@@ -1489,13 +1559,17 @@ export async function transferOrganizationAdmin(
       throw new Error('Missing target account for admin transfer');
     }
 
+    // The demoted side carries the same platform-owner exclusion (audit
+    // CL-A6): named as from_account_id in its own organization, the owner
+    // used to be demoted with is_platform_owner = false.
     const demotedRows = await client.query<{ account_id: string }>(
       `update pilot.accounts a
        set role = $3,
            active_flag = true,
-           is_platform_owner = false,
            updated_at = now()
        where account_id = $1 and organization_id = $2
+         and is_platform_owner = false
+         and role <> 'platform_owner'
          and not ${accountDeletedSql('a')}
        returning account_id`,
       [fromAccountId, organizationId, demoteRole],

@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { resolvePrincipal, type PilotPrincipal } from '@/src/server/pilot/auth';
-import { listAnnouncements, listLiveAnnouncements } from '@/src/server/pilot/announcements';
+import { listAnnouncements, listAuthoredAnnouncementIds, listLiveAnnouncements } from '@/src/server/pilot/announcements';
+import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   resolvePrincipal: jest.fn(),
@@ -11,6 +12,7 @@ jest.mock('@/src/server/pilot/auth', () => ({
 jest.mock('@/src/server/pilot/announcements', () => ({
   listAnnouncements: jest.fn(),
   listLiveAnnouncements: jest.fn(),
+  listAuthoredAnnouncementIds: jest.fn().mockResolvedValue([]),
   isAnnouncementPlacement: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementPlacement,
   isAnnouncementKind: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementKind,
   // The real projection, not a stub: these tests exist to prove what it
@@ -18,6 +20,12 @@ jest.mock('@/src/server/pilot/announcements', () => ({
   projectAnnouncementForBoard: jest.requireActual('@/src/server/pilot/announcements').projectAnnouncementForBoard,
 }));
 
+jest.mock('@/src/server/pilot/boardSeats', () => ({
+  listSeatsForAccount: jest.fn().mockResolvedValue([]),
+}));
+
+const mockListAuthored = listAuthoredAnnouncementIds as jest.Mock;
+const mockListSeats = listSeatsForAccount as jest.Mock;
 const mockResolvePrincipal = resolvePrincipal as jest.MockedFunction<typeof resolvePrincipal>;
 const mockListAnnouncements = listAnnouncements as jest.MockedFunction<typeof listAnnouncements>;
 const mockListLiveAnnouncements = listLiveAnnouncements as jest.MockedFunction<typeof listLiveAnnouncements>;
@@ -207,5 +215,76 @@ describe('the board aggregate-only boundary, on the wire', () => {
 
     expect(body.announcements[0].message).toBe('Congratulations to Maya R. on her first bout.');
     expect(body.announcements[0].author_name).toBe('Coach Jason');
+  });
+});
+
+/*
+ * CL-A8: the authoring view tells the page what this caller may DO, so it
+ * does not offer a seat the post route will refuse or a Retire the update
+ * route will refuse. Both are top-level arrays, not row fields, so the board
+ * projection's allow-list above is untouched.
+ */
+describe('what the authoring view says this caller may do', () => {
+  const ROW = (id: string) => ({
+    announcement_id: id,
+    organization_id: 'org-1',
+    message: 'm',
+    author_name: 'n',
+    author_role: 'coach',
+    created_at: '2026-08-01T00:00:00Z',
+    placement: 'gym_notices',
+    kind: 'notice',
+    active: true,
+    starts_at: null,
+    ends_at: null,
+  });
+
+  test('a coach may edit only the notices they posted, and signs as no seat', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockListAnnouncements.mockResolvedValueOnce([ROW('ann-1'), ROW('ann-2')] as never);
+    mockListAuthored.mockResolvedValueOnce(['ann-2']);
+
+    const body = await (await POST(request({ view: 'authoring' }))).json();
+
+    expect(mockListAuthored).toHaveBeenCalledWith('org-1', 'coach-1', ['ann-1', 'ann-2']);
+    expect(body.editable_announcement_ids).toEqual(['ann-2']);
+    expect(body.author_seats).toEqual([]);
+    expect(mockListSeats).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('an %s may edit every notice listed', async (role) => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role, accountId: 'admin-1' }));
+    mockListAnnouncements.mockResolvedValueOnce([ROW('ann-1'), ROW('ann-2')] as never);
+
+    const body = await (await POST(request({ view: 'authoring' }))).json();
+
+    expect(body.editable_announcement_ids).toEqual(['ann-1', 'ann-2']);
+    expect(mockListAuthored).not.toHaveBeenCalled();
+  });
+
+  test('a board member is offered only the seats they hold, held-outright first', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
+    mockListAnnouncements.mockResolvedValueOnce([ROW('ann-1')] as never);
+    mockListAuthored.mockResolvedValueOnce([]);
+    mockListSeats.mockResolvedValueOnce([
+      { seat: 'treasurer', is_primary: true },
+      { seat: 'secretary', is_primary: false },
+    ]);
+
+    const body = await (await POST(request({ view: 'authoring' }))).json();
+
+    expect(mockListSeats).toHaveBeenCalledWith('org-1', 'board-1');
+    expect(body.author_seats).toEqual(['board-treasurer', 'board-secretary']);
+    expect(body.editable_announcement_ids).toEqual([]);
+  });
+
+  test('the live view carries neither', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockListLiveAnnouncements.mockResolvedValueOnce([ROW('ann-1')] as never);
+
+    const body = await (await POST(request({}))).json();
+
+    expect(body).not.toHaveProperty('editable_announcement_ids');
+    expect(body).not.toHaveProperty('author_seats');
   });
 });

@@ -633,19 +633,14 @@ const WELLNESS_NOT_REPORTED = 'Not reported';
 const WELLNESS_NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
 const WELLNESS_READ_FAILED =
   'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
-/* The refusal sentence names the audience and no longer names a relationship.
-   Until A-FIN-03R1 it said check-ins were shown to the athlete's own coach, a
-   coach covering for them, and organization admins -- which was the rule the
-   route enforced then and is false now that any coach or admin in the
-   athlete's organization may read one. What a coach sees this for now is that
-   the athlete is not a LIVE athlete in the coach's own organization: another
-   gym's athlete, a soft-deleted one, or an id that names nobody anywhere. A
-   coach inside the organization can reach it too -- the deleted case -- so it
-   is never "the wrong coach for this athlete", and the screen cannot say
-   which of the three it is: the route refuses all three with the same 403 and
+/* The refusal sentence names the audience the route enforces: the athlete's
+   own coach, a coach covering for them, and organization admins
+   (OD-2026-10-05-024 ruling 2, which restored that rule after A-FIN-03R1 had
+   widened it to any coach in the organization). The same 403 also covers
+   another gym's athlete, a soft-deleted one and an id that names nobody, and
    the panel must not invent a distinction the server withheld. */
 const WELLNESS_NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
 
 /* A stored answer is a finite number or null. Anything else -- a missing key,
    a string, NaN -- makes the response unreadable, and it is treated as a
@@ -747,8 +742,8 @@ interface TodaySessionNote {
  *
  * `unavailable` is every way the read did not land, INCLUDING a 403. The
  * wellness read gives a refusal its own sentence; this one does not, because
- * the refusal is the same refusal -- both routes gate on organization
- * membership -- and the wellness block in this same panel already carries the
+ * the refusal is the same refusal -- both routes gate on
+ * assertActorCanAccessAthlete (OD-2026-10-05-024 ruling 2) -- and the wellness block in this same panel already carries the
  * sentence that names the audience. A second wording for one server answer
  * would be this screen inventing copy nobody ruled, and the failure sentence
  * is true of a refusal: the note could not be loaded, and nothing is claimed
@@ -2048,14 +2043,14 @@ export default function CoachWorkspace() {
   }
 
   /* GET /api/pilot/coach/athlete-check-in decides, server-side, whether this
-     coach may see this athlete at all: any coach or organization admin in the
-     athlete's own organization may (A-FIN-03R1, owner instruction 2026-09-22
-     "any coach or admin should be able to read it"). Assignment and coverage
-     are not part of that rule any more, so a coach picking an athlete they
-     have never been assigned gets the check-in rather than a refusal.
+     coach may see this athlete at all: the athlete's coach of record, a coach
+     with a live coverage grant, or an organization admin (OD-2026-10-05-024
+     ruling 2, superseding A-FIN-03R1). The roster picker still offers the
+     whole gym, so a coach picking an athlete they are not assigned to gets a
+     refusal.
 
-     A 403 is still an expected outcome, not a bug -- an athlete outside this
-     organization, or one who has been deleted -- so it keeps its own plain
+     A 403 is an expected outcome, not a bug -- not this coach's athlete, an
+     athlete outside this organization, or one who has been deleted -- so it keeps its own plain
      sentence and is never softened into "no check-in". The status of any
      other failure goes to the console, not to the coach: a bare "500" tells a
      coach nothing they can act on. */
@@ -2068,8 +2063,8 @@ export default function CoachWorkspace() {
 
     const superseded = () => controller.signal.aborted || wellnessAthleteRef.current !== athleteId;
 
-    /* Body mass comes from its own route (coach/athlete-body-mass), which has
-       a narrower gate for a youth than the check-in has. Fetched beside the
+    /* Body mass comes from its own route (coach/athlete-body-mass), which adds
+       a youth rule behind the same assigned-coach gate. Fetched beside the
        check-in and never allowed to fail or delay it: any refusal or error is
        simply no weight shown. */
     const bodyMassRead = fetch(
@@ -2147,11 +2142,9 @@ export default function CoachWorkspace() {
   }, []);
 
   /* GET /api/pilot/coach/athlete-session-note decides, server-side, whether
-     this staff member may read this athlete's note at all: any coach or
-     organization admin in the athlete's own organization may (Jason
-     2026-09-25, "any coach or admin in the organization" -- the same rule
-     A-FIN-03R1 settled for the wellness check-in, and settled for the same
-     reason, that the roster a coach works from is the whole gym).
+     this staff member may read this athlete's note at all: the athlete's coach
+     of record, a coach with a live coverage grant, or an organization admin
+     (OD-2026-10-05-024 ruling 2, superseding OD-2026-09-25-003).
 
      NOT /api/pilot/sessions/list. That route carries the whole session record
      behind the narrower coach-of-record-or-coverage gate, so widening it for

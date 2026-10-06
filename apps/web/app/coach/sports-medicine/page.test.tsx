@@ -20,6 +20,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
@@ -439,6 +440,41 @@ test('a hold with no athlete sentence is refused before the request is sent', as
   expect(stamp.className).toContain('stamp--brass');
   expect(screen.getByText(/Write the sentence this athlete reads/)).toBeTruthy();
   expect(harness.posted).toHaveLength(0);
+});
+
+describe('a hold an admin placed (OD-2026-10-05-024 ruling 1)', () => {
+  afterEach(() => clearRoleSession());
+
+  test('a coach is not offered Lift, and is told only an organization admin can lift it', async () => {
+    createPersistentRoleSession('coach');
+    mockWriteFetch({ holdsBefore: [{ ...HOLD, placed_by_role: 'organization_admin' }] });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(/Active Training Hold — sparring/);
+
+    expect(screen.queryByRole('button', { name: 'Lift this hold' })).toBeNull();
+    expect(screen.getByText(/only an organization admin can lift it/)).toBeTruthy();
+  });
+
+  test('a coach is still offered Lift on a hold a coach placed', async () => {
+    createPersistentRoleSession('coach');
+    mockWriteFetch({ holdsBefore: [{ ...HOLD, placed_by_role: 'coach' }] });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(/Active Training Hold — sparring/);
+
+    expect(screen.getByRole('button', { name: 'Lift this hold' })).toBeTruthy();
+  });
+
+  test('an admin is offered Lift on a hold an admin placed', async () => {
+    createPersistentRoleSession('admin');
+    mockWriteFetch({ holdsBefore: [{ ...HOLD, placed_by_role: 'admin' }] });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(/Active Training Hold — sparring/);
+
+    expect(screen.getByRole('button', { name: 'Lift this hold' })).toBeTruthy();
+  });
 });
 
 test('lifting an active hold posts the hold id and the board stops showing it', async () => {

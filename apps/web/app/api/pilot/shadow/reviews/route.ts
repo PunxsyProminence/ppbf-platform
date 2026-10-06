@@ -13,6 +13,11 @@ import {
   updateHumanReview,
 } from '@/src/server/pilot/shadowConversations';
 
+// OD-2026-10-05-024 ruling 3: the chat human-review queue is gym business.
+// platform_owner is not in this list -- it cannot access organization-private
+// athlete records by default (access.ts assertActorCanAccessAthlete).
+const SHADOW_REVIEW_QUEUE_ROLES = ['organization_admin', 'admin'] as const;
+
 const REVIEW_STATUSES = new Set<ShadowReviewStatus>([
   'open',
   'in_review',
@@ -23,7 +28,7 @@ const REVIEW_STATUSES = new Set<ShadowReviewStatus>([
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
+    requireRole(principal, [...SHADOW_REVIEW_QUEUE_ROLES]);
     const rawStatus = request.nextUrl.searchParams.get('status') ?? 'open';
     if (!REVIEW_STATUSES.has(rawStatus as ShadowReviewStatus)) {
       return NextResponse.json({ error: 'Unsupported review status' }, { status: 400 });
@@ -41,7 +46,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
+    requireRole(principal, [...SHADOW_REVIEW_QUEUE_ROLES]);
     const body = await request.json() as { reviewId?: unknown; status?: unknown };
     if (!isUuid(body.reviewId)) return hiddenNotFound();
     if (

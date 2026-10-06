@@ -241,10 +241,16 @@ describe('suppressPublishedMediaForAthlete', () => {
 });
 
 describe('reopenRetractedPublication', () => {
+  const noop = jest.fn(async () => undefined);
+
   test('the only exit from retracted goes backwards into review with the check reset', async () => {
     mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
 
-    const applied = await reopenRetractedPublication('org-1', 'pub-1');
+    const applied = await reopenRetractedPublication({
+      organizationId: 'org-1',
+      publicationId: 'pub-1',
+      verifyBeforeCommit: noop,
+    });
 
     expect(applied).toBe(true);
     const [sql] = mockQuery.mock.calls[0];
@@ -261,9 +267,57 @@ describe('reopenRetractedPublication', () => {
   test('anything not retracted reports a miss', async () => {
     mockQuery.mockResolvedValueOnce([]);
 
-    const applied = await reopenRetractedPublication('org-1', 'pub-published');
+    const applied = await reopenRetractedPublication({
+      organizationId: 'org-1',
+      publicationId: 'pub-published',
+      verifyBeforeCommit: noop,
+    });
 
     expect(applied).toBe(false);
+  });
+
+  // A consent retraction (owner decision 2026-08-14; OD-2026-10-05-021 for
+  // photo-only) must not be undone while that consent still stands. The
+  // consent re-check runs on the reopen's own transaction client, BEFORE the
+  // CAS, so a withdrawal cannot commit between the check and the reopen.
+  test('the consent re-check runs inside the reopen transaction, on its client, before the UPDATE', async () => {
+    const order: string[] = [];
+    mockQuery.mockImplementationOnce(async () => {
+      order.push('update');
+      return [{ publication_id: 'pub-1' }];
+    });
+    let verifyClient: unknown;
+    const verify = jest.fn(async (client: unknown) => {
+      verifyClient = client;
+      order.push('verify');
+    });
+
+    await reopenRetractedPublication({ organizationId: 'org-1', publicationId: 'pub-1', verifyBeforeCommit: verify });
+
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    expect(verifyClient).toBeDefined();
+    expect(order).toEqual(['verify', 'update']);
+    // The UPDATE runs on the SAME client the check ran on -- the module-level
+    // query() would be a different connection, outside the lock.
+    const clientCalls = (verifyClient as { query: jest.Mock }).query.mock.calls;
+    expect(clientCalls).toHaveLength(1);
+    expect(clientCalls[0][0]).toMatch(/update pilot\.video_publications/);
+  });
+
+  test('a refused consent re-check reopens nothing', async () => {
+    const refusal = Object.assign(new Error('Blocked: photo-only'), { code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' });
+
+    await expect(
+      reopenRetractedPublication({
+        organizationId: 'org-1',
+        publicationId: 'pub-1',
+        verifyBeforeCommit: async () => {
+          throw refusal;
+        },
+      }),
+    ).rejects.toBe(refusal);
+
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

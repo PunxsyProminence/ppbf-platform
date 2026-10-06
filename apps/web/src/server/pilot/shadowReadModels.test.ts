@@ -1,6 +1,7 @@
 import { query, queryOne } from './db';
 import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
+import type { PilotRole } from './contracts';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -369,6 +370,155 @@ describe('sanitizeEventPayload', () => {
   });
 });
 
+describe('Library question text in the events feed (CL-A3, staff only)', () => {
+  // Jason 2026-10-06, CL-A3 "Staff only": Library research questions are for
+  // coaches and org admins. platform_owner is not staff and gets no
+  // org-private access by default -- yet it reads unscoped rows and, through
+  // roleCanViewSensitivePayload, the whole payload, and a claim-gap payload's
+  // knowledge_gap quotes the question a member typed.
+  const QUESTION = 'Question lacks sufficient SHADOW Library evidence: my son keeps getting headaches after sparring, is that normal?. Evidence count: 0. Distinct sources: 0.';
+
+  function claimGapRow() {
+    return {
+      shadow_event_id: 7,
+      organization_id: 'org-1',
+      event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      entity_type: 'shadow_library_claim',
+      entity_id: 'scoped:1759700000000',
+      actor_account_id: 'acct-parent',
+      actor_role: 'parent',
+      payload: {
+        scope: 'scoped',
+        subject_id: null,
+        status: 'unsupported',
+        evidence_count: 0,
+        confidence_level: 'none',
+        distinct_source_count: 0,
+        research_requirement_id: 'rr-1',
+        research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+        knowledge_gap: QUESTION,
+        question: 'my son keeps getting headaches after sparring, is that normal?',
+      },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test('platform_owner gets the claim-gap event without the question text, operational fields intact', async () => {
+    mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event_name).toBe('SHADOW_LIBRARY_CLAIM_GAP_DETECTED');
+    expect(rows[0].payload).not.toHaveProperty('knowledge_gap');
+    expect(rows[0].payload).not.toHaveProperty('question');
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+    expect(rows[0].payload).toEqual({
+      scope: 'scoped',
+      subject_id: null,
+      status: 'unsupported',
+      evidence_count: 0,
+      confidence_level: 'none',
+      distinct_source_count: 0,
+      research_requirement_id: 'rr-1',
+      research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+    });
+  });
+
+  test('platform_owner gets the allowlist on SHADOW_LIBRARY_CLAIM_SUPPORTED too', async () => {
+    const row = { ...claimGapRow(), event_name: 'SHADOW_LIBRARY_CLAIM_SUPPORTED' };
+    row.payload = { ...row.payload, status: 'supported', question_excerpt: 'headaches after sparring' } as typeof row.payload;
+    mockQuery.mockResolvedValueOnce([row]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+    expect(rows[0].payload.status).toBe('supported');
+  });
+
+  test('platform_owner research panel keeps the gap item but not the question', async () => {
+    mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+    const items = await getShadowResearchProjection(context({ actorRole: 'platform_owner' }));
+
+    expect(items).toHaveLength(1);
+    expect(items[0].source_event_name).toBe('SHADOW_LIBRARY_CLAIM_GAP_DETECTED');
+    expect(items[0].requirement).toBe('Strengthen SHADOW Library evidence for scoped claim');
+    expect(items[0].knowledge_gap).toBeNull();
+  });
+
+  // Every role, typed as a Record so a role added to PilotRole fails to compile
+  // here until someone decides which side of the ruling it is on.
+  const READS_LIBRARY_QUESTIONS: Record<PilotRole, boolean> = {
+    coach: true,
+    organization_admin: true,
+    admin: true,
+    platform_owner: false,
+    staff: false,
+    volunteer: false,
+    board: false,
+    parent: false,
+    athlete: false,
+  };
+  const OPERATIONAL_KEYS = [
+    'scope',
+    'subject_id',
+    'status',
+    'evidence_count',
+    'confidence_level',
+    'distinct_source_count',
+    'research_requirement_id',
+    'research_requirement',
+  ];
+
+  test.each(Object.entries(READS_LIBRARY_QUESTIONS) as [PilotRole, boolean][])(
+    '%s: reads the question text on a Library claim event = %s',
+    async (actorRole, readsQuestions) => {
+      // The roles whose scope is resolved by a lookup answer it first (empty):
+      // a coach's roster, a parent's guardian links. The row is fed to the
+      // mocked events query either way -- this pins the payload filter, not
+      // the row scope above it.
+      if (actorRole === 'coach' || actorRole === 'parent') {
+        mockQuery.mockResolvedValueOnce([]);
+      }
+      mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      if (readsQuestions) {
+        expect(rows[0].payload.knowledge_gap).toBe(QUESTION);
+        expect(rows[0].payload.question).toBeDefined();
+      } else {
+        expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+        for (const key of Object.keys(rows[0].payload)) {
+          expect(OPERATIONAL_KEYS).toContain(key);
+        }
+      }
+    },
+  );
+
+  test('platform_owner gets only operational keys on a Library claim event, so a key added later cannot carry the question', async () => {
+    const row = claimGapRow();
+    row.payload = { ...row.payload, question_excerpt: 'headaches after sparring', detail: { text: 'headaches' } } as typeof row.payload;
+    mockQuery.mockResolvedValueOnce([row]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+  });
+
+  test('platform_owner keeps the full payload of non-Library events (operational visibility unchanged)', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { ...claimGapRow(), event_name: 'SHADOW_JOB_FAILED', entity_type: 'shadow_job', payload: { job_id: 'j-1', error: 'timeout' } },
+    ]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(rows[0].payload).toEqual({ job_id: 'j-1', error: 'timeout' });
+  });
+
+});
+
 describe('getShadowResearchProjection event-name filter', () => {
   function eventRow(overrides: Partial<{
     shadow_event_id: number;
@@ -557,5 +707,39 @@ describe('getShadowKnowledgeProjection stream placement', () => {
     expect(items.map((item) => item.type)).toEqual([
       'Observation', 'Observation', 'Observation', 'Pattern', 'Finding',
     ]);
+  });
+});
+
+// Audit CL-C24. limit and offset arrive from a JSON body and were clamped but
+// not rounded, so 2.5 reached Postgres as a bigint bind and the caller got a
+// 500. Every number bound into these reads must be a whole number.
+describe('paging values are whole numbers before they reach SQL (CL-C24)', () => {
+  const readers: Array<[string, (filters: { limit?: number; offset?: number }) => Promise<unknown>]> = [
+    ['listShadowEvents', (filters) => listShadowEvents(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowTelemetry', (filters) => listShadowTelemetry(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowAuthorityChecks', (filters) => listShadowAuthorityChecks(context({ actorRole: 'organization_admin' }), filters)],
+    ['getShadowReviewProjection', (filters) => getShadowReviewProjection(context({ actorRole: 'organization_admin' }), filters)],
+  ];
+
+  test.each(readers)('%s floors a fractional limit and offset', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 2.5, offset: 1.5 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([2, 1]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
+  });
+
+  test.each(readers)('%s still reads at least one row for a limit under 1', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 0.4, offset: 0.9 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([1, 0]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
   });
 });

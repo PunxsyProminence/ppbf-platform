@@ -307,38 +307,41 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
     expect(await idsFrom(response)).toEqual([10]);
   });
 
+  // The org-wide row (10) was filed by someone else, so since CL-A3 a member
+  // who is not staff does not read it (Jason 2026-10-06, "Staff only").
   test('an athlete cannot read another athlete requirements', async () => {
     mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
     mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
 
     const response = await GET(getRequest());
 
-    expect(await idsFrom(response)).toEqual([10, 11]);
+    expect(await idsFrom(response)).toEqual([11]);
   });
 
   // assertActorCanAccessAthlete refuses volunteer and staff for every athlete
   // record, and accessibleAthleteIds mirrors that with an empty set. Neither
-  // may read a row about a named child here either.
-  test.each(['volunteer', 'staff'] as const)('a %s reads only rows that name no athlete', async (role) => {
+  // may read a row about a named child here either, and since CL-A3 neither
+  // reads an org-wide row someone else filed.
+  test.each(['volunteer', 'staff'] as const)('a %s reads no child row and no org-wide row filed by others', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     mockAccessibleAthleteIds.mockResolvedValue(new Set());
 
     const response = await GET(getRequest());
 
-    expect(await idsFrom(response)).toEqual([10]);
+    expect(await idsFrom(response)).toEqual([]);
   });
 
   // Omega is broader in BREADTH and strictly narrower in DEPTH
-  // (shadowRoleSets.ts). It keeps the organization's doctrine gaps and gets no
-  // athlete depth at all -- the same answer assertActorCanAccessAthlete gives
-  // it unconditionally.
-  test('platform_owner keeps organization doctrine rows and gets no athlete depth', async () => {
+  // (shadowRoleSets.ts). It gets no athlete depth at all -- the same answer
+  // assertActorCanAccessAthlete gives it unconditionally -- and since CL-A3 it
+  // is not a staff seat for a gym's research questions either.
+  test('platform_owner gets no athlete depth and no gym research questions', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('platform_owner'));
     mockAccessibleAthleteIds.mockResolvedValue(new Set());
 
     const response = await GET(getRequest());
 
-    expect(await idsFrom(response)).toEqual([10]);
+    expect(await idsFrom(response)).toEqual([]);
   });
 
   // THE LEGITIMATE PATH, PART 1. An organization admin administers the whole
@@ -665,10 +668,12 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     expect(mockResolve).toHaveBeenCalledTimes(1);
   });
 
-  // THE LEGITIMATE PATH, PART 1. A parent closing their own child's
-  // requirement. Both bounds are present: the guardian's linked-athlete list
-  // the route always sent, AND the stored row's authorized owner.
-  test('a parent still resolves their own child requirement', async () => {
+  // RULING (Jason 2026-10-06, rows about a child): "Family reads, staff
+  // closes (Recommended)". A parent or the athlete may READ a requirement
+  // about their own child; only a coach or organization admin closes any row.
+  // The parent passes the relationship gate, so they are told plainly (403)
+  // rather than "not found" -- the row is already in their list.
+  test('a parent may not close their own child requirement', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
     mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
@@ -679,18 +684,44 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
       metadata: { resolved_from: 'research_page' },
     }));
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, resolved: true });
+    expect(response.status).toBe(403);
     expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-mine');
-    expect(mockResolve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        athleteIds: ['ath-mine'],
-        expectedSubjectAthleteId: 'ath-mine',
-        resolvedByAccountId: 'acct-1',
-        resolvedByRole: 'parent',
-        metadata: { resolved_from: 'research_page' },
-      }),
-    );
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('an athlete may not close a requirement about themselves', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
+    mockGetById.mockResolvedValue(stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } }));
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(403);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // The gate still runs first for a non-staff caller: one who is NOT the
+  // child's family gets the plain 404, never a 403 that confirms the row.
+  test('a non-staff caller with no relationship to the child still gets the plain 404', async () => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal('athlete'), athleteId: 'ath-mine' });
+    mockAssertAthlete.mockRejectedValue(REFUSED);
+
+    const response = await POST(postRequest({ action: 'resolve', research_requirement_id: 4171 }));
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // Reading is unchanged: the family still sees the row.
+  test('a parent still reads their own child requirement', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockAccessibleAthleteIds.mockResolvedValue(new Set(['ath-mine']));
+    mockList.mockResolvedValue([stored({ subject_id: 'ath-mine', metadata: { athlete_id: 'ath-mine' } })]);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+    const body = (await response.json()) as { items: ShadowResearchRequirementRow[] };
+
+    expect(body.items).toHaveLength(1);
   });
 
   // THE LEGITIMATE PATH, PART 2. An organization admin administers the whole
@@ -707,8 +738,9 @@ describe('POST /api/pilot/shadow/research-requirements (resolve) athlete scope',
     );
   });
 
-  // A row that names no athlete is the gym's own operational backlog and
-  // stays closable by the in-organization roles this route admits.
+  // A row that names no athlete is the gym's own research backlog. Since
+  // CL-C14 only coaches and organization admins close it (see the CL-A3 /
+  // CL-C14 block at the end of this file).
   test('an organization-wide requirement is still resolvable, with no athlete gate', async () => {
     mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockGetById.mockResolvedValue(storedOrgWide());
@@ -839,5 +871,233 @@ describe('POST /api/pilot/shadow/research-requirements (create) metadata subject
 
     expect(response.status).toBe(200);
     expect(mockAssertAthlete).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CL-A3 / CL-C14 -- research questions that name no athlete
+// ---------------------------------------------------------------------------
+//
+// A Library question, or a negative feedback note from the learning loop, is
+// stored with the asker's raw text and no subject. Rows with no subject were
+// kept for every role this route admits, so one family's free-text question
+// was readable gym-wide (CL-A3), and any member but a parent could close one,
+// including a capability-gap ticket the coverage check then stops reopening
+// (CL-C14).
+//
+// RULING (Jason 2026-10-06, CL-A3): "Staff only" -- coaches and organization
+// admins see the gym's research questions and needs; everyone else sees only
+// their own.
+describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
+  function row(overrides: Partial<ShadowResearchRequirementRow>): ShadowResearchRequirementRow {
+    return {
+      research_requirement_id: 1,
+      organization_id: 'org-real',
+      source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      source_entity_type: 'shadow_library_claim',
+      source_entity_id: 'athlete:global:1',
+      research_requirement: 'Strengthen SHADOW Library evidence for athlete claim',
+      knowledge_gap: 'Question lacks sufficient SHADOW Library evidence.',
+      evidence_label: null,
+      source_status: 'missing',
+      source_confidence_tier: 'INSUFFICIENT',
+      source_verification_state: 'unknown',
+      status: 'open',
+      created_by_account_id: 'acct-1',
+      created_by_role: 'athlete',
+      metadata: {},
+      created_at: '2026-10-06T00:00:00Z',
+      resolved_at: null,
+      subject_id: null,
+      ...overrides,
+    };
+  }
+
+  const MY_QUESTION = row({
+    research_requirement_id: 30,
+    metadata: { question: 'my own question about making weight', scope: 'athlete', subject_id: null },
+  });
+  const OTHER_FAMILY_QUESTION = row({
+    research_requirement_id: 31,
+    created_by_account_id: 'acct-other-family',
+    created_by_role: 'parent',
+    knowledge_gap: 'Question lacks sufficient SHADOW Library evidence: my son keeps getting headaches after sparring.',
+    metadata: { question: 'my son keeps getting headaches after sparring', scope: 'athlete', subject_id: null },
+  });
+  const FEEDBACK_NOTE = row({
+    research_requirement_id: 32,
+    source_event_name: 'shadow_learning_negative_outcome',
+    source_entity_type: 'shadow_learning_event',
+    created_by_account_id: 'acct-other-family',
+    created_by_role: 'athlete',
+    knowledge_gap: 'this advice made my anxiety worse',
+    metadata: { topic: 'general', note: 'this advice made my anxiety worse' },
+  });
+  const CAPABILITY_GAP = row({
+    research_requirement_id: 33,
+    source_event_name: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+    source_entity_type: 'shadow_library_capability_map',
+    source_entity_id: 'capability.readiness',
+    created_by_account_id: 'acct-admin',
+    created_by_role: 'organization_admin',
+  });
+
+  const ALL = [MY_QUESTION, OTHER_FAMILY_QUESTION, FEEDBACK_NOTE, CAPABILITY_GAP];
+
+  async function listAs(role: PilotPrincipal['role']) {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    mockAccessibleAthleteIds.mockResolvedValue(new Set());
+    mockList.mockResolvedValue(ALL);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+    expect(response.status).toBe(200);
+    return (await response.json()) as { items: ShadowResearchRequirementRow[] };
+  }
+
+  test.each(['athlete', 'volunteer', 'staff', 'platform_owner'] as const)(
+    'a %s reads only the research questions they filed themselves',
+    async (role) => {
+      const body = await listAs(role);
+
+      expect(body.items.map((item) => item.research_requirement_id)).toEqual([30]);
+      const raw = JSON.stringify(body);
+      expect(raw).not.toContain('headaches after sparring');
+      expect(raw).not.toContain('anxiety');
+    },
+  );
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)(
+    'a %s reads every research question in the gym',
+    async (role) => {
+      const body = await listAs(role);
+
+      expect(body.items.map((item) => item.research_requirement_id)).toEqual([30, 31, 32, 33]);
+    },
+  );
+
+  function resolveAs(
+    role: PilotPrincipal['role'],
+    stored: ShadowResearchRequirementRow,
+    metadata?: Record<string, unknown>,
+  ) {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    mockGetById.mockResolvedValue(stored);
+    mockResolve.mockResolvedValue(true);
+    return POST(
+      postRequest({
+        action: 'resolve',
+        research_requirement_id: stored.research_requirement_id,
+        ...(metadata ? { metadata } : {}),
+      }),
+    );
+  }
+
+  // The CL-C14 attack: closing a capability-gap ticket parks it, because a
+  // person's resolution is respected until the capability grades covered.
+  // Refused as "not found": the caller cannot see these rows.
+  test.each(['athlete', 'volunteer', 'staff'] as const)(
+    'a %s cannot close a research need someone else filed',
+    async (role) => {
+      for (const stored of [CAPABILITY_GAP, OTHER_FAMILY_QUESTION, FEEDBACK_NOTE]) {
+        const response = await resolveAs(role, stored);
+        expect(response.status).toBe(404);
+      }
+      expect(mockResolve).not.toHaveBeenCalled();
+    },
+  );
+
+  // Seeing your own question is not the same as closing the gym's research
+  // need it raised. Refused openly, because the caller can already see it.
+  test.each(['athlete', 'volunteer', 'staff'] as const)(
+    'a %s cannot close their own research question either',
+    async (role) => {
+      const response = await resolveAs(role, MY_QUESTION);
+
+      expect(response.status).toBe(403);
+      expect(mockResolve).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)(
+    'a %s still closes a research need that names no athlete',
+    async (role) => {
+      const response = await resolveAs(role, CAPABILITY_GAP, { resolved_from: 'research_page' });
+
+      expect(response.status).toBe(200);
+      expect(mockResolve).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedSubjectAthleteId: null, metadata: { resolved_from: 'research_page' } }),
+      );
+    },
+  );
+
+  // The coverage check's own markers. `resolution: 'capability_covered'` lets
+  // the check reopen a row; `covered_after_resolution_at` says coverage
+  // happened since a person closed it. A caller writing either steers the
+  // check; the other two are its closure and reopen record.
+  test.each([
+    ['resolution', 'capability_covered'],
+    ['resolution', 'not pursuing'],
+    ['covered_after_resolution_at', '2026-10-06T00:00:00Z'],
+    ['resolved_matched_sources', 3],
+    ['reopened_after_resolution_at', '2026-10-06T00:00:00Z'],
+  ])('resolve metadata may not carry the coverage check key %s', async (key, value) => {
+    const response = await resolveAs('organization_admin', CAPABILITY_GAP, { [key]: value });
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // Refusal order: an unentitled caller gets the same 404 whatever metadata
+  // they sent, so the 400 cannot confirm that a row exists.
+  test('an unentitled caller with reserved metadata still gets the plain 404', async () => {
+    const response = await resolveAs('athlete', CAPABILITY_GAP, { resolution: 'capability_covered' });
+
+    expect(response.status).toBe(404);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  // Reviewer finding: namedAthleteId reads these as "no athlete", so the
+  // repoint check passed them on a subject-less row, while SQL (->> and
+  // btrim) reads them as a subject. The closed ticket then stopped matching
+  // the coverage check's "names no athlete" filter and was parked for good.
+  test.each([
+    ['athlete_id', 5],
+    ['athlete_id', true],
+    ['subject_id', {}],
+    ['athlete_id', '\t'],
+    ['athlete_id', ' ath-x'],
+  ])('resolve refuses metadata %s = %p that SQL would read as a subject', async (key, value) => {
+    const response = await resolveAs('organization_admin', CAPABILITY_GAP, { [key]: value });
+
+    expect(response.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  test('resolve still accepts restating "no athlete" as null', async () => {
+    const response = await resolveAs('coach', CAPABILITY_GAP, { athlete_id: null, subject_id: null });
+
+    expect(response.status).toBe(200);
+  });
+
+  test.each([5, true, '\t', ' ath-x'])('create refuses metadata.athlete_id = %p and runs no athlete gate', async (value) => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const response = await POST(postRequest({ ...validBody, metadata: { athlete_id: value } }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test.each(['a string', 7, ['a', 'b']])('metadata %p is a 400, not a 500', async (metadata) => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockGetById.mockResolvedValue(CAPABILITY_GAP);
+
+    const resolve = await POST(postRequest({ action: 'resolve', research_requirement_id: 33, metadata }));
+    const create = await POST(postRequest({ ...validBody, metadata }));
+
+    expect(resolve.status).toBe(400);
+    expect(create.status).toBe(400);
+    expect(mockGetById).not.toHaveBeenCalled();
+    expect(mockResolve).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

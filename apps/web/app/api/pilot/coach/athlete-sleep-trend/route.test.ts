@@ -48,7 +48,12 @@ beforeEach(() => {
   mockQueryOne.mockImplementation(async (sql: string, params: string[]) => {
     const text = normalize(sql);
     statements.push(text);
+    // OD-2026-10-05-024 ruling 2: a coach passes assertActorCanAccessAthlete.
+    // No coverage grants are modelled here; the assignment rule itself is
+    // proven in ../assignedCoachReads.test.ts.
+    if (text.includes('from pilot.coach_coverage')) return null;
     if (!text.includes('from pilot.athletes')) throw new Error(`unexpected SQL: ${text}`);
+    if (text.includes('coach_id = $2') && params[1] !== 'coach-1') return null;
     const orgPredicate = /organization_id = \$(\d+)/.exec(text);
     const organizationId = orgPredicate ? params[Number(orgPredicate[1]) - 1] : null;
     const liveOnly = text.includes('deleted_at is null');

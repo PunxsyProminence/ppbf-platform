@@ -593,7 +593,7 @@ describe('the module (real database)', () => {
       await linkBlock(client, 'run-1', 'blk-a');
 
       const first = await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a',
         linkedByAccountId: COACH_ID,
       });
       expect(first).toMatchObject({ created: true });
@@ -602,7 +602,7 @@ describe('the module (real database)', () => {
       expect(first?.link.block_id).toBe('blk-a');
 
       const second = await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a',
         linkedByAccountId: SECOND_COACH_ID,
       });
       expect(second).toMatchObject({ created: false });
@@ -617,14 +617,14 @@ describe('the module (real database)', () => {
     const client = await seededDatabase('sol_mod_precondition');
     try {
       expect(await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a',
         linkedByAccountId: COACH_ID,
       })).toBeNull();
 
       // A block link for a DIFFERENT block does not satisfy it either.
       await linkBlock(client, 'run-1', 'blk-b');
       expect(await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a',
         linkedByAccountId: COACH_ID,
       })).toBeNull();
 
@@ -643,11 +643,11 @@ describe('the module (real database)', () => {
       await linkBlock(client, 'run-1', 'blk-a');
 
       expect(await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-other',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-other', blockId: 'blk-a',
         linkedByAccountId: COACH_ID,
       })).toBeNull();
       expect(await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-never',
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-never', blockId: 'blk-a',
         linkedByAccountId: COACH_ID,
       })).toBeNull();
     } finally {
@@ -668,10 +668,10 @@ describe('the module (real database)', () => {
       await linkBlock(client, 'run-1', 'blk-a');
       await linkBlock(client, 'run-2', 'blk-a');
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
       });
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-2', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-2', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
       });
 
       const forSession = await listObjectivesForSessionBlock(ORG_ID, 'run-1', 'blk-a');
@@ -712,10 +712,10 @@ describe('the module (real database)', () => {
       await linkBlock(client, 'run-1', 'blk-a');
       await linkBlock(client, 'run-1', 'blk-b');
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
       });
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', blockId: 'blk-b', linkedByAccountId: COACH_ID,
       });
 
       /* Both objectives hang off the same run, and they belong to two
@@ -738,7 +738,7 @@ describe('the module (real database)', () => {
     try {
       await linkBlock(client, 'run-1', 'blk-a');
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
       });
 
       expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a', COACH_ID)).toBe(true);
@@ -784,7 +784,7 @@ describe('the module (real database)', () => {
       await linkBlock(client, 'run-1', 'blk-a');
       await linkBlock(client, 'run-1', 'blk-b');
       await linkSessionToObjective({
-        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', linkedByAccountId: COACH_ID,
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', blockId: 'blk-b', linkedByAccountId: COACH_ID,
       });
 
       // blk-a is the block the caller cleared. obj-b is the other child's.
@@ -806,6 +806,40 @@ describe('the module (real database)', () => {
     }
   });
 
+  /* THE SAME HOLE ON THE LINK SIDE (audit CL-A12). The route cleared the
+     block in the body and the module then linked the objective under ITS OWN
+     block, never comparing the two. With run-1 supporting two children's
+     blocks, a coach cleared for blk-a could mark obj-b -- the other child's
+     objective -- by naming blk-a at the door. */
+  test('a block the caller cleared cannot be spent on linking another block\'s objective', async () => {
+    const client = await seededDatabase('sol_mod_link_block_scope');
+    try {
+      await linkBlock(client, 'run-1', 'blk-a');
+      await linkBlock(client, 'run-1', 'blk-b');
+
+      expect(await linkSessionToObjective({
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', blockId: 'blk-a',
+        linkedByAccountId: COACH_ID,
+      })).toBeNull();
+
+      const written = await client.query(
+        `select count(*)::int as n from pilot.session_run_block_objective_links
+         where organization_id = $1 and run_id = $2 and objective_id = $3`,
+        [ORG_ID, 'run-1', 'obj-b'],
+      );
+      expect(written.rows[0].n).toBe(0);
+
+      // Naming the objective's own block links it, so the predicate scopes
+      // the write rather than breaking it.
+      expect(await linkSessionToObjective({
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', blockId: 'blk-b',
+        linkedByAccountId: COACH_ID,
+      })).toMatchObject({ created: true });
+    } finally {
+      await client.end();
+    }
+  });
+
   /* THE ROLE THAT GOVERNS A WRITE IS THE ONE ON THE MEMBERSHIP ROW HERE, and
      the route's requireRole was answering a different question -- it compares
      principal.role, which resolvePrincipal reads from pilot.accounts.role, the
@@ -818,7 +852,7 @@ describe('the module (real database)', () => {
         await linkBlock(client, 'run-1', 'blk-a');
 
         await expect(linkSessionToObjective({
-          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a',
           linkedByAccountId: DEMOTED_COACH_ID,
         })).rejects.toBeInstanceOf(ForbiddenError);
 
@@ -838,7 +872,7 @@ describe('the module (real database)', () => {
       try {
         await linkBlock(client, 'run-1', 'blk-a');
         await linkSessionToObjective({
-          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
         });
 
         await expect(
@@ -862,7 +896,7 @@ describe('the module (real database)', () => {
         await linkBlock(client, 'run-1', 'blk-a');
 
         const linked = await linkSessionToObjective({
-          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
         });
         expect(linked?.created).toBe(true);
         expect(

@@ -26,6 +26,7 @@ function principal(overrides: Record<string, unknown> = {}) {
     athleteId: null,
     sessionToken: 'token',
     authProvider: 'microsoft',
+    signInMethod: 'microsoft',
     mustChangePin: false,
     ...overrides,
   } as never;
@@ -71,6 +72,17 @@ describe('requireMicrosoftOrAttestedLocalPinPrincipal', () => {
 
     await expect(requireMicrosoftOrAttestedLocalPinPrincipal(request())).rejects.toThrow(/^Forbidden/);
   });
+
+  // Audit CL-A7: the Microsoft branch reads how the SESSION was signed in, as
+  // requireMicrosoftAuthenticatedPrincipal does, not only the account's provider.
+  test.each(['magic_link', 'password', 'pin', null] as const)(
+    "refuses a microsoft-provider account on a %s session",
+    async (signInMethod) => {
+      mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'microsoft', signInMethod }));
+
+      await expect(requireMicrosoftOrAttestedLocalPinPrincipal(request())).rejects.toThrow(/^Forbidden/);
+    },
+  );
 
   test('an unauthenticated caller is refused as Unauthorized before any credential is read', async () => {
     mockResolvePrincipal.mockResolvedValueOnce(null);
