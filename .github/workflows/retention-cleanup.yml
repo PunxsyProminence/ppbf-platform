@@ -169,6 +169,40 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      # The purge deletes a purged athlete's video and portrait files, so it
+      # needs the storage account those files live in. Read from the SAME
+      # target-named Container App as the database, for the same reason: asking
+      # for staging's app cannot return production's account. Only the account
+      # name and endpoint suffix leave this step. The key in the same string is
+      # masked before anything parses it and is never exported -- the script
+      # reaches storage with this workflow's OIDC identity (DefaultAzureCredential),
+      # which needs Storage Blob Data Contributor on the account; without it the
+      # sweep fails loudly (blocked_by STORAGE_*) and deletes nothing for that
+      # athlete. Deliberately no override variable: a repo variable is shared by
+      # both targets, and a production run pointed at staging's account would
+      # find every file "missing" and delete the rows over the real files.
+      - name: Resolve Storage Account
+        run: |
+          STORAGE="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-storage-connection-string \
+            --query value -o tsv)"
+          test -n "$STORAGE"
+          echo "::add-mask::$STORAGE"
+          URL="$(STORAGE="$STORAGE" node -e '
+            const parts = Object.fromEntries(process.env.STORAGE.split(";").filter(Boolean).map((p) => {
+              const i = p.indexOf("=");
+              return [p.slice(0, i), p.slice(i + 1)];
+            }));
+            const name = parts.AccountName;
+            const suffix = parts.EndpointSuffix || "core.windows.net";
+            if (!/^[a-z0-9]{3,24}$/.test(name || "")) { process.exit(2); }
+            process.stdout.write(`https://${name}.blob.${suffix}`);
+          ')"
+          test -n "$URL"
+          echo "PPBF_RETENTION_STORAGE_ACCOUNT_URL=$URL" >> "$GITHUB_ENV"
+
       # A scheduled run has no inputs, so `inputs.apply` is empty and this
       # resolves to false. Deleting can therefore only ever be a deliberate
       # dispatch by a person who typed APPLY.

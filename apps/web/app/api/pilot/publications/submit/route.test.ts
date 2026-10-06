@@ -32,8 +32,9 @@ const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockGetVideoSession = getVideoSessionById as jest.Mock;
 
 beforeEach(() => {
-  // The underlying video session is released unless a test says otherwise.
-  mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', status: 'ready' });
+  // The underlying video session is released, and attributed to the
+  // publication's athlete, unless a test says otherwise.
+  mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', athlete_id: 'ath-1', status: 'ready' });
 });
 
 afterEach(() => {
@@ -211,6 +212,23 @@ describe('POST /api/pilot/publications/submit', () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toMatch(/not in a released state/);
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  // Audit CL-B4: a draft made from unattributed team footage before create
+  // refused it must not reach the review queue, where approval checks only
+  // the one child the publication names.
+  test('a draft whose video is not linked to an athlete cannot enter the queue', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(draftRow());
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vid-1', athlete_id: null, status: 'ready' });
+
+    const res = await POST(postRequest({ publication_id: 'pub-1' }));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('VIDEO_NOT_ATTRIBUTED');
+    expect(body.error).toMatch(/isn't linked to an athlete/);
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
