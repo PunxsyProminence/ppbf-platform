@@ -24,7 +24,15 @@ jest.mock('./db', () => ({
   queryOne: jest.fn(),
 }));
 
+// The SHADOW timeline is read through its own module; stubbed so a test can
+// hand the aggregate a staff-written event row.
+jest.mock('./shadowReadModels', () => {
+  const actual = jest.requireActual('./shadowReadModels');
+  return { ...actual, getShadowEventTimeline: jest.fn() };
+});
+
 import { getIntakeCaseAggregate } from './intake';
+import { getShadowEventTimeline } from './shadowReadModels';
 import { query, queryOne } from './db';
 import type { PilotRole } from './contracts';
 
@@ -49,6 +57,7 @@ beforeEach(() => {
     payload: {},
   })) as never);
   mockQuery.mockImplementation((() => Promise.resolve([])) as never);
+  jest.mocked(getShadowEventTimeline).mockResolvedValue([]);
 });
 
 /** The select list of the read whose SQL mentions `table`, normalized. */
@@ -376,5 +385,43 @@ describe('the aggregate intake case and document projection (CL-B7)', () => {
     await run('parent');
 
     expect(paramsFor('from pilot.medical_intake')).toEqual([ORG, ATHLETE]);
+  });
+});
+
+// CL-B7, the third read. review-action records SHADOW_INTAKE_CASE_PROMOTED
+// (and approved / rejected) with the reviewer as actor and the athlete in the
+// payload, so the event reaches that athlete's guardian through the timeline
+// -- carrying the same reviewer account id the case projection above removes.
+describe('the aggregate SHADOW timeline (CL-B7)', () => {
+  const REVIEW_EVENT = {
+    shadow_event_id: 7,
+    organization_id: ORG,
+    event_name: 'SHADOW_INTAKE_CASE_PROMOTED',
+    entity_type: 'intake_case',
+    entity_id: CASE_ID,
+    actor_account_id: 'acct-reviewing-coach',
+    actor_role: 'coach',
+    payload: { athlete_id: ATHLETE },
+    created_at: '2026-10-06T00:00:00Z',
+  };
+
+  async function timelineFor(role: PilotRole) {
+    jest.mocked(getShadowEventTimeline).mockResolvedValueOnce([{ ...REVIEW_EVENT }]);
+    const aggregate = await getIntakeCaseAggregate(ORG, CASE_ID, { actorAccountId: `acct-${role}`, actorRole: role });
+    return (aggregate?.shadow_timeline ?? []) as Array<Record<string, unknown>>;
+  }
+
+  test.each(FAMILY_READERS)('THE DEFECT: %s receives the event without the staff account id', async (role) => {
+    const timeline = await timelineFor(role);
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0].event_name).toBe('SHADOW_INTAKE_CASE_PROMOTED');
+    expect(timeline[0].actor_account_id).toBeNull();
+  });
+
+  test.each(STAFF_READERS)('%s keeps who acted', async (role) => {
+    const timeline = await timelineFor(role);
+
+    expect(timeline[0].actor_account_id).toBe('acct-reviewing-coach');
   });
 });

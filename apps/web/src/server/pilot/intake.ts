@@ -2159,9 +2159,17 @@ export async function getIntakeCaseAggregate(
       : Promise.resolve([]),
   ]);
 
+  // The timeline's actor is the staff member who reviewed, approved or
+  // promoted the case -- the same account id the case projection above keeps
+  // from family readers (CL-B7). The event itself stays; who did it does not.
+  const readerIsStaff = isOrganizationAdminRole(readerRole) || readerRole === 'coach';
+  const timelineForReader = readerIsStaff
+    ? shadowTimeline
+    : shadowTimeline.map((event) => ({ ...event, actor_account_id: null }));
+
   return {
     intake_case: intakeCase,
-    shadow_timeline: shadowTimeline,
+    shadow_timeline: timelineForReader,
     documents,
     emergency_contacts: emergencyContacts,
     medical_intake: medical,
