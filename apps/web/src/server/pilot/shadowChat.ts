@@ -709,6 +709,81 @@ export function validateShadowResponse(
       }
     }
   }
+  // CL-C8 (2026-10-05 audit, measured by Codex at 6736bac7). Both patterns
+  // above name a fixed subject, a fixed verb and seven ailments, so the same
+  // diagnosis passed clean when the model used a name ("Example Athlete has a
+  // concussion"), a copula ("That's a concussion", "This is a sprained
+  // ankle"), a contraction ("You've torn your ACL"), a passive ("Your wrist is
+  // broken") or an ailment off the list ("You have tendinitis"). Under the
+  // ruling that in-app AI is never diagnostic, the shape of the sentence is
+  // not the boundary.
+  //
+  // Added, never loosened: the two patterns above are untouched. What these
+  // must NOT do is withhold education or coaching ("educate, do not
+  // restrict", OD-2026-10-01-006), and a first cut did: boxing describes
+  // technique with injury verbs ("he pulled his punches", "you broke your
+  // stance", "a broken guard") and defines injuries with a copula ("that's a
+  // fracture that usually comes from..."). So:
+  //   - an injury ADJECTIVE or VERB counts only with a body part after it
+  //     ("a sprained ankle", "tore his ACL"), never a wrap, a guard or a rhythm;
+  //   - the nouns are the unambiguous ones (concussion, fracture, sprain,
+  //     tendinitis...), not "condition" or "disease", which coaching uses;
+  //   - a name is a capitalised word, so "the brain has" or "boxing has" is
+  //     not a person;
+  //   - a word after the ailment that makes it a category, a record or a
+  //     definition ("concussion SYMPTOM", "a strain PATTERN", "a fracture THAT
+  //     USUALLY comes from", "commonly called") stops the match;
+  //   - the conditional and prevention exemptions read the clause BEFORE the
+  //     match only. Read after it, "You've torn your ACL, so avoid sparring"
+  //     was exempted by its own advice (reviewer, 2026-10-06), and a model
+  //     writes a diagnosis together with an instruction.
+  if (!makesDiagnosisClaim) {
+    const folded = normaliseForMatching(response).replace(/\s+/g, ' ');
+    const body = String.raw`(?:(?:left|right|upper|lower|front|back|lead|rear)\s+)?(?:wrists?|hands?|knuckles?|thumbs?|fingers?|ankles?|knees?|acl|mcl|pcl|meniscus|shoulders?|rotator\s+cuff|elbows?|nose|jaw|ribs?|orbital|eye\s+socket|hamstrings?|groin|neck|achilles|tendons?|ligaments?|biceps?|triceps?|calf|calves|hips?|toes?|collarbone|clavicle|metacarpals?|eardrums?|disc|spine)\b(?!\s*(?:wraps?|guards?|position|placement|speed|work|strength|positioning|technique|form)\b)`;
+    const injured = String.raw`(?:sprained|strained|torn|broken|fractured|dislocated|ruptured|herniated|separated|bruised|injured|hyperextended|jammed)`;
+    const ailmentNoun = String.raw`(?:concussions?|fractures?|sprains?|[a-z]+itis|contusion|hernia|whiplash|(?:mild\s+)?tbi|injury|injuries)\b`;
+    const ailment = String.raw`(?:${ailmentNoun}|${injured}\s+${body})`;
+    const generic = String.raw`(?!,?\s*(?:risk|prevention|protocol|log|report|record|history|rate|policy|plan|program|management|screen|check|form|list|data|database|question|topic|test|assessment|education|awareness|symptoms?|signs?|threshold|pattern|territory|problem|coaches|athletes|boxers|people|commonly|usually|often|typically|also\s+called|sometimes|(?:that|which)\s+(?:usually|commonly|often|typically|can|tends?|comes?|happens?|occurs?))\b)`;
+    const gap = String.raw`(?:(?!(?:what|how|why|where|which|about|of|for|on|in|to|with|from|at|by|question|topic|common|typical|type|kind|form|sign|example|risk|part|way|reason|cause|reported|recorded|logged|documented|previous|prior|past|different)\b)[a-z']+\s+){0,3}?`;
+    const determiner = String.raw`(?:(?:a|an|the|some|your|his|her|their)\s+)?`;
+    const adverbs = String.raw`(?:(?:probably|likely|definitely|clearly|already|just|obviously)\s+)*`;
+    // A name is a capitalised word (or two), not one of these, directly
+    // followed by what the patterns below look for after a person ("has",
+    // "'s", "is", "tore"...), so "Looks like" and "Concussion education" are
+    // not names. Each is replaced by one placeholder BEFORE lowercasing, so the
+    // patterns treat "Maria", "Example Athlete" and "he" alike and still match
+    // "ACL" in any case.
+    const name = new RegExp(String.raw`\b(?!(?:This|That|It|There|Everyone|Anyone|Someone|Nobody|Each|Every|Boxing|Sparring|Training|A|An|The|If|When|You|He|She|They|What|How|Why|Your|His|Her|Their|My|Our)\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?=(?:'s|\s+(?:has|have|is|was|probably|likely|definitely|clearly|already|just|obviously|suffered|sustained|torn|tore|sprained|strained|broke|broken|fractured|dislocated|ruptured|herniated|separated|pulled|bruised|injured|hyperextended|jammed))\b)`, 'g');
+    const text = folded.replace(name, 'xnamex').toLowerCase();
+    const person = String.raw`(?:you|he|she|they|xnamex|the\s+(?:athlete|boxer|fighter|kid))`;
+    const injuryVerb = String.raw`(?:torn|tore|sprained|strained|broke|broken|fractured|dislocated|ruptured|herniated|separated|pulled|bruised|injured|hyperextended|jammed)`;
+    const widenedPatterns = [
+      // Copula: "that's a concussion", "this sounds like a torn rotator cuff",
+      // "it's a boxer's fracture".
+      new RegExp(String.raw`(?:\b(?:that|this|it)(?:'s|\s+is|\s+(?:looks|sounds|seems)\s+like)|\b(?:looks|sounds|seems)\s+like)\s+${adverbs}${determiner}${gap}${ailment}${generic}`, 'g'),
+      // A person or a name has / has got / suffered / sustained it ("Example
+      // Athlete has a concussion", "you've got tendinitis").
+      new RegExp(String.raw`\b${person}(?:'ve\s+got|'s\s+got|\s+have(?:\s+got)?|\s+has(?:\s+got)?|(?:'ve|'s|\s+have|\s+has)?\s+(?:suffered|sustained))\s+${adverbs}${determiner}${gap}${ailment}${generic}`, 'g'),
+      // Injury verbs on a body part: "you've torn your ACL", "Maria tore her
+      // ACL", "he sprained his wrist". Not "pulled his punches".
+      new RegExp(String.raw`\b${person}(?:'ve|\s+have|\s+has|'s)?\s+${adverbs}${injuryVerb}\s+(?:your|his|her|their)\s+${body}`, 'g'),
+      // Passive: "your wrist is broken", "Maria's ACL is torn", "you're
+      // concussed".
+      new RegExp(String.raw`\b(?:your|his|her|their|xnamex's)\s+${body}\s+(?:is|are|was|looks|seems)\s+${adverbs}${injured}\b`, 'g'),
+      new RegExp(String.raw`\b(?:you're|you\s+are|he's|she's|they're|he\s+is|she\s+is|they\s+are|xnamex\s+is|xnamex\s+was)\s+${adverbs}concussed\b`, 'g'),
+    ];
+    for (const pattern of widenedPatterns) {
+      for (const match of text.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        const clause = text.slice(Math.max(0, index - 60), index).split(/[.!?;\n]/).pop() ?? '';
+        if (!conditionalCue(clause) && !preventionCue.test(clause)) {
+          makesDiagnosisClaim = true;
+          break;
+        }
+      }
+      if (makesDiagnosisClaim) break;
+    }
+  }
   if (makesDiagnosisClaim) {
     filtered = true;
     flag('diagnostic_claim');
@@ -720,6 +795,20 @@ export function validateShadowResponse(
   ) {
     filtered = true;
     flag('prescriptive_claim');
+  }
+  // CL-C8: the rule above names two generics and no brand, so "Take two
+  // Advil" passed. Brands and the other drugs a model names are a separate
+  // rule so that it can carry an exemption the one above never had: a
+  // directive is "take/start/use/try/pop X", and the same words under
+  // "avoid", "never" or "don't" are a warning, which is education.
+  for (const match of normalized.matchAll(/\b(take|start|use|try|pop|double)\b.{0,40}?\b(advils?|motrin|aleve|naproxen|aspirin|tylenol|paracetamol|nsaids?|painkillers?|pain\s+relievers?|melatonin|antibiotics?|prednisone|steroids?|ibuprofen|acetaminophen)\b/g)) {
+    const index = match.index ?? 0;
+    const clause = normalized.slice(Math.max(0, index - 40), index).split(/[.!?;\n]/).pop() ?? '';
+    if (!/\b(avoid|never|don.?t|do\s+not|not|no|banned|instead\s+of)\b/.test(clause + ' ' + match[0])) {
+      filtered = true;
+      flag('prescriptive_claim');
+      break;
+    }
   }
 
   // Minute-scale rest is training vocabulary, not a medical directive.
@@ -1026,7 +1115,15 @@ export function validateShadowResponse(
     message,
     reasons,
     reasonCodes,
-    requiresHumanReview: filtered || reasons.length > 0,
+    // A withheld answer asks for a review row; an answer that passed does
+    // not, even when it carries `human_review`. That reason is the deferral
+    // the doctrine requires ("a physician should evaluate"), and every row
+    // asked for here draws on the owner's 3-per-hour allowance
+    // (OD-2026-10-01-006), so routine deferrals used up the hour a withheld
+    // answer's row needed (CL-C7). Every other reason sets `filtered`, so this
+    // is the only reason the change affects. The route and the background
+    // worker both read this field, so they move together.
+    requiresHumanReview: filtered,
     citationIds: filtered ? [] : citationIds,
     ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
   };

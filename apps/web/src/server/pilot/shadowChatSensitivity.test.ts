@@ -733,7 +733,23 @@ describe('the premises of the argument, read from source', () => {
       walk(PRODUCTION, (n) => { if (ts.isIdentifier(n) && n.text === name) count += 1; });
       return count;
     };
-    expect(mentions('normaliseForMatching')).toBe(3); // declared, and called at the two sites
+    // Declared, called at the two request-side sites, and called once more by
+    // the RESPONSE validator (CL-C8, 2026-10-05), which reads the folded text
+    // for its own patterns and returns nothing through it. That fourth mention
+    // is pinned to being a plain call inside validateShadowResponse, so an
+    // alias or wrapper still adds one this count does not allow.
+    expect(mentions('normaliseForMatching')).toBe(4);
+    let responseSideCalls = 0;
+    walk(PRODUCTION, (n) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === 'validateShadowResponse') {
+        walk(n, (inner) => {
+          if (ts.isCallExpression(inner) && ts.isIdentifier(inner.expression) && inner.expression.text === 'normaliseForMatching') {
+            responseSideCalls += 1;
+          }
+        });
+      }
+    });
+    expect(responseSideCalls).toBe(1);
     expect(mentions('classifyHighRiskTopic')).toBe(2); // declared, and called by the validator
     expect(mentions('validateShadowRequest')).toBe(1); // declared; called only from outside this file
 
