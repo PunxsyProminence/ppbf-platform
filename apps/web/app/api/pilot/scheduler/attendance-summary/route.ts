@@ -43,10 +43,11 @@ export async function GET(request: NextRequest) {
     }
 
     const coachAccountId = isCoach ? principal.accountId : undefined;
-    const reachable = isCoach
-      ? new Set(await athleteIdsForCoach(principal.organizationId, principal.accountId))
-      : null;
-    const inReach = <Row extends { athlete_id: string }>(rows: Row[]): Row[] =>
+    // Looked up only after each branch's own checks pass, so a refused or
+    // malformed request costs no extra query. null = not narrowed (admin).
+    const coachReach = async (): Promise<Set<string> | null> =>
+      isCoach ? new Set(await athleteIdsForCoach(principal.organizationId, principal.accountId)) : null;
+    const inReach = <Row extends { athlete_id: string }>(rows: Row[], reachable: Set<string> | null): Row[] =>
       reachable ? rows.filter((row) => reachable.has(row.athlete_id)) : rows;
     const classId = request.nextUrl.searchParams.get('class_id');
 
@@ -64,8 +65,9 @@ export async function GET(request: NextRequest) {
         throw new Error('Forbidden: coach does not own this class');
       }
 
+      const reachable = await coachReach();
       const roster = await getClassAttendanceRoster(principal.organizationId, classId);
-      return NextResponse.json({ ok: true, class_id: classId, roster: inReach(roster) });
+      return NextResponse.json({ ok: true, class_id: classId, roster: inReach(roster, reachable) });
     }
 
     // #173: a week-over-week trend, distinct from the current-snapshot
@@ -78,6 +80,7 @@ export async function GET(request: NextRequest) {
       if (weeksRaw !== null && (!Number.isFinite(weeks) || weeks! <= 0)) {
         throw new Error('Unsupported weeks: must be a positive number');
       }
+      const reachable = await coachReach();
       const trend = await getWeeklyAttendanceTrend(principal.organizationId, {
         coachAccountId,
         athleteIds: reachable ? [...reachable] : undefined,
@@ -96,12 +99,13 @@ export async function GET(request: NextRequest) {
       throw new Error('Unsupported since: must be a valid date string');
     }
     const sinceIso = sinceRaw ?? undefined;
+    const reachable = await coachReach();
     const summary = await getOrganizationAttendanceSummary(principal.organizationId, {
       coachAccountId,
       sinceIso,
     });
 
-    return NextResponse.json({ ok: true, athletes: inReach(summary) });
+    return NextResponse.json({ ok: true, athletes: inReach(summary, reachable) });
   } catch (error) {
     return jsonError(error);
   }

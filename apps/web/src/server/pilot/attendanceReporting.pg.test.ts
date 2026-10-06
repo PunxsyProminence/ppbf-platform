@@ -306,6 +306,10 @@ describe('getWeeklyAttendanceTrend against real Postgres', () => {
       expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, athleteIds: ['ATH-SOMEONE-ELSE'] })).toEqual([]);
       expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, athleteIds: [] })).toEqual([]);
       expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1 })).toHaveLength(1);
+      // Both scopes together are an AND: the class's coach with the athlete in
+      // reach counts; another coach with the same athlete list does not.
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, coachAccountId: COACH_ID, athleteIds: [ATHLETE_ID] })).toHaveLength(1);
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, coachAccountId: 'acct-not-this-class', athleteIds: [ATHLETE_ID] })).toEqual([]);
     } finally {
       activeClient = null;
       await client.end();

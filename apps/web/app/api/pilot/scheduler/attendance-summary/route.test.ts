@@ -301,6 +301,16 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
       });
     });
 
+    test('a coach refused the class is refused before any reach lookup', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-stranger' }));
+      mockGetClass.mockResolvedValueOnce(coveredClass as never);
+
+      const response = await GET(request('/api/pilot/scheduler/attendance-summary?class_id=class-1'));
+
+      expect(response.status).toBe(403);
+      expect(mockReachable).not.toHaveBeenCalled();
+    });
+
     test('an organization admin is not narrowed and never consults coach reach', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetClass.mockResolvedValueOnce(coveredClass as never);
