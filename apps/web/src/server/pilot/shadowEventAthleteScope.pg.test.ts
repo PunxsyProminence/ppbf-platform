@@ -82,6 +82,8 @@ const ORG_ID = 'org-sesc';
 const ADMIN = 'acct-admin-sesc';
 const COACH_A = 'acct-coach-a-sesc';
 const COACH_B = 'acct-coach-b-sesc';
+/** Assigned nobody; holds a live coverage grant for athlete A. */
+const COACH_COVER = 'acct-coach-cover-sesc';
 const STAFF = 'acct-staff-sesc';
 const PLATFORM_OWNER = 'acct-owner-sesc';
 const PARENT_A = 'acct-parent-a-sesc';
@@ -95,6 +97,7 @@ const ATHLETE_B_ACCOUNT = 'acct-ath-b-sesc';
  * which rows a role reads.
  */
 const OPS = 'ops-library-source';            // names no athlete
+const PAIN_A = ATHLETE_A;                    // entity_type 'athlete' (the pain-report shape)
 const LOGIN_A = ATHLETE_A_ACCOUNT;           // audit mirror, details.athlete_id = A
 const LOGIN_B = ATHLETE_B_ACCOUNT;           // audit mirror, details.athlete_id = B
 const FILM_B = 'film-proposal-b';            // audit mirror, details.athlete_id = B
@@ -102,6 +105,9 @@ const CLAIM_B = 'subject:claim-b';           // Library claim, subject_id = B
 const PAIR_AB = 'pair-a-b';                  // names A and B
 const NESTED_B = 'nested-b';                 // athlete_id = B inside an array of objects
 const NAME_ONLY = 'name-only';               // names an athlete without any id
+const LOGOUT_B = `logout:${ATHLETE_B_ACCOUNT}`; // audit mirror naming only B's account (details {})
+const CAMEL_B = 'camel-b';                   // athleteId = B
+const OBJECTS_AB = 'objects-a-b';            // athlete_id = A plus athletes: [{ id: B }]
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -137,6 +143,7 @@ async function seed(client: Client): Promise<void> {
     [ADMIN, 'organization_admin'],
     [COACH_A, 'coach'],
     [COACH_B, 'coach'],
+    [COACH_COVER, 'coach'],
     [STAFF, 'staff'],
     [PARENT_A, 'parent'],
   ] as const) {
@@ -146,9 +153,9 @@ async function seed(client: Client): Promise<void> {
       [accountId, role, ORG_ID],
     );
   }
-  for (const [athleteId, coachId] of [
-    [ATHLETE_A, COACH_A],
-    [ATHLETE_B, COACH_B],
+  for (const [athleteId, coachId, accountId] of [
+    [ATHLETE_A, COACH_A, ATHLETE_A_ACCOUNT],
+    [ATHLETE_B, COACH_B, ATHLETE_B_ACCOUNT],
   ] as const) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
@@ -156,7 +163,17 @@ async function seed(client: Client): Promise<void> {
        values ($1, $2, 'Scoped Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
       [ORG_ID, athleteId, coachId],
     );
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id)
+       values ($1, 'athlete', $2, $3)`,
+      [accountId, ORG_ID, athleteId],
+    );
   }
+  await client.query(
+    `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+     values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '2 hours')`,
+    [ORG_ID, ATHLETE_A, COACH_COVER, ADMIN],
+  );
   await client.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
      values ($1, 'parent-sesc-a', $2, 'Guardian A')`,
@@ -177,6 +194,17 @@ async function seed(client: Client): Promise<void> {
     actorAccountId: ADMIN,
     actorRole: 'organization_admin',
     payload: { source_id: OPS, title: 'Footwork primer' },
+  });
+
+  // A pain report, the shape formulas/painReportAlert.ts emits.
+  await emitShadowEvent({
+    organizationId: ORG_ID,
+    eventName: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+    entityType: 'athlete',
+    entityId: PAIN_A,
+    actorAccountId: COACH_A,
+    actorRole: 'coach',
+    payload: { athlete_id: ATHLETE_A, severity_1_10: 6, location: 'left wrist' },
   });
 
   // PIN sign-ins, written through the real audit writer with the shape
@@ -245,6 +273,42 @@ async function seed(client: Client): Promise<void> {
     actorAccountId: COACH_B,
     actorRole: 'coach',
     payload: { details: { roster: [{ athlete_id: ATHLETE_B, note: 'late' }] } },
+  });
+
+  // A sign-out, the shape auth/logout/route.ts audits: the athlete's account
+  // and nothing else; the account row says whose it is. Written by an admin
+  // here so the acting-athlete lookup is not what ties it.
+  await writePilotAuditEvent({
+    event_type: 'logout',
+    actor_account_id: ADMIN,
+    actor_role: 'organization_admin',
+    organization_id: ORG_ID,
+    entity_type: 'account',
+    entity_id: ATHLETE_B_ACCOUNT,
+    details: {},
+  });
+
+  // A camel-cased athlete key.
+  await emitShadowEvent({
+    organizationId: ORG_ID,
+    eventName: 'SHADOW_TEST_CAMEL',
+    entityType: 'session',
+    entityId: CAMEL_B,
+    actorAccountId: COACH_B,
+    actorRole: 'coach',
+    payload: { athleteId: ATHLETE_B },
+  });
+
+  // A second athlete inside objects under an athlete key: unresolvable, so
+  // only org-wide roles read it, even though athlete_id = A is reachable.
+  await emitShadowEvent({
+    organizationId: ORG_ID,
+    eventName: 'SHADOW_TEST_OBJECTS',
+    entityType: 'session',
+    entityId: OBJECTS_AB,
+    actorAccountId: ADMIN,
+    actorRole: 'organization_admin',
+    payload: { athlete_id: ATHLETE_A, athletes: [{ id: ATHLETE_B }] },
   });
 
   // Names an athlete with no id at all. Nothing can prove who may read it,
@@ -334,7 +398,9 @@ afterAll(async () => {
 
 async function visibleTo(actorAccountId: string, actorRole: PilotRole, athleteId: string | null = null): Promise<string[]> {
   const rows = await listShadowEvents({ organizationId: ORG_ID, actorAccountId, actorRole, athleteId }, { limit: 200 });
-  return rows.map((row) => row.entity_id).sort();
+  // A sign-out and a sign-in share the account as entity_id; the label keeps
+  // them apart.
+  return rows.map((row) => (row.event_name.includes('LOGOUT') ? `logout:${row.entity_id}` : row.entity_id)).sort();
 }
 
 const sorted = (ids: string[]) => [...ids].sort();
@@ -345,23 +411,25 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
       `select entity_id from pilot.shadow_events where organization_id = $1`,
       [ORG_ID],
     );
-    expect(stored.rows.map((row) => row.entity_id).sort()).toEqual(
-      sorted([OPS, LOGIN_A, LOGIN_B, FILM_B, CLAIM_B, PAIR_AB, NESTED_B, NAME_ONLY]),
-    );
+    expect(stored.rows).toHaveLength(12);
   });
 
   test('control: the organization admin reads every row', async () => {
     expect(await visibleTo(ADMIN, 'organization_admin')).toEqual(
-      sorted([OPS, LOGIN_A, LOGIN_B, FILM_B, CLAIM_B, PAIR_AB, NESTED_B, NAME_ONLY]),
+      sorted([OPS, PAIN_A, LOGIN_A, LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, PAIR_AB, NESTED_B, NAME_ONLY, CAMEL_B, OBJECTS_AB]),
     );
   });
 
   test("a coach reads their own athlete's rows and the operational feed, not another coach's athlete", async () => {
-    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, LOGIN_A]));
+    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, PAIN_A, LOGIN_A]));
   });
 
-  test("the other coach reads B's rows, including the nested and Library ones, but not the row that also names A", async () => {
-    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, LOGIN_B, FILM_B, CLAIM_B, NESTED_B]));
+  test("the other coach reads B's rows, including the nested, Library, sign-out and camel-cased ones, but not a row that also names A", async () => {
+    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, NESTED_B, CAMEL_B]));
+  });
+
+  test('a coach covering athlete A reads what the assigned coach reads', async () => {
+    expect(await visibleTo(COACH_COVER, 'coach')).toEqual(sorted([OPS, PAIN_A, LOGIN_A]));
   });
 
   test('the platform owner reads no athlete-tied row', async () => {
@@ -373,10 +441,10 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
   });
 
   test('an athlete reads only their own rows', async () => {
-    expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual([LOGIN_A]);
+    expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(sorted([PAIN_A, LOGIN_A]));
   });
 
   test("a parent reads only their child's rows", async () => {
-    expect(await visibleTo(PARENT_A, 'parent')).toEqual([LOGIN_A]);
+    expect(await visibleTo(PARENT_A, 'parent')).toEqual(sorted([PAIN_A, LOGIN_A]));
   });
 });
