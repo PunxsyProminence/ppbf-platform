@@ -205,6 +205,12 @@ export function checkRateLimit(key: string): { isLimited: boolean; delayMs?: num
   return { isLimited: false };
 }
 
+// Delay = INITIAL_BACKOFF_MS * (BACKOFF_MULTIPLIER ^ (max(0, count - MAX_ATTEMPTS_THRESHOLD)))
+function backoffMsFor(attempts: number): number {
+  const attemptsOverThreshold = Math.max(0, attempts - MAX_ATTEMPTS_THRESHOLD);
+  return Math.min(INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attemptsOverThreshold), MAX_BACKOFF_MS);
+}
+
 /**
  * Record a failed attempt and update the rate limit.
  * Returns the delay (in ms) before the next attempt is allowed.
@@ -216,10 +222,7 @@ export function recordFailedAttempt(key: string): { delayMs: number } {
   entry.count += 1;
   entry.lastAttempt = now;
 
-  // Calculate exponential backoff
-  // Delay = INITIAL_BACKOFF_MS * (BACKOFF_MULTIPLIER ^ (max(0, count - MAX_ATTEMPTS_THRESHOLD)))
-  const attemptsOverThreshold = Math.max(0, entry.count - MAX_ATTEMPTS_THRESHOLD);
-  const delayMs = Math.min(INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attemptsOverThreshold), MAX_BACKOFF_MS);
+  const delayMs = backoffMsFor(entry.count);
 
   entry.blockedUntil = now + delayMs;
   rateLimitStore.set(key, entry);
@@ -281,8 +284,7 @@ export async function recordDurableFailedAttempt(key: string): Promise<{ delayMs
       );
 
       const attempts = (existing.rows[0]?.attempt_count ?? 0) + 1;
-      const attemptsOverThreshold = Math.max(0, attempts - MAX_ATTEMPTS_THRESHOLD);
-      const delayMs = Math.min(INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attemptsOverThreshold), MAX_BACKOFF_MS);
+      const delayMs = backoffMsFor(attempts);
 
       await client.query(
         `insert into pilot.auth_rate_limit_buckets (bucket_key, attempt_count, blocked_until, updated_at)
@@ -316,6 +318,98 @@ export async function clearDurableRateLimit(key: string): Promise<void> {
       [key],
     );
     return true;
+  });
+}
+
+/**
+ * COUNT THE ATTEMPT BEFORE IT IS CHECKED (CL-A4, audit 2026-10-05).
+ *
+ * The check-then-record pattern above (checkRateLimit, then the PIN check,
+ * then recordFailedAttempt) lets every guess in a burst pass the "is limited"
+ * read before the first failure is written, because the PIN check awaits
+ * scrypt in between. This counts the attempt first, atomically, and admits it
+ * only if no bucket was already blocked:
+ *
+ *   - in memory: every key is checked and then recorded in the same
+ *     synchronous step, so of any number of requests on one process one is
+ *     admitted per backoff window and the rest are refused;
+ *   - durable: one INSERT ... ON CONFLICT DO UPDATE ... WHERE blocked_until <=
+ *     now() per key. Postgres locks the row and re-reads it, so across
+ *     replicas exactly one concurrent writer finds the bucket open; the others
+ *     get no row back and are refused.
+ *
+ * An admitted attempt has already cost its backoff, exactly as a recorded
+ * failure did. The caller clears its buckets on success as before and records
+ * nothing more on failure. A durable store that cannot be reached leaves the
+ * in-memory half as the gate, never "deny" (see withDurableClient).
+ *
+ * A request refused in memory is not counted anywhere. In Postgres the keys
+ * are reserved in order and the first refusal stops the rest; keys reserved
+ * before it stay counted (and are already counted in memory), which errs
+ * toward the limiter.
+ */
+export async function reserveAttempts(
+  keys: string[],
+): Promise<{ isLimited: false } | { isLimited: true; key: string; durable: boolean; delayMs: number }> {
+  cleanupExpiredEntries();
+  // NOTHING MAY AWAIT BETWEEN THIS CHECK AND THE RECORDS BELOW.
+  for (const key of keys) {
+    const check = checkRateLimit(key);
+    if (check.isLimited) {
+      return { isLimited: true, key, durable: false, delayMs: check.delayMs ?? 0 };
+    }
+  }
+  for (const key of keys) {
+    recordFailedAttempt(key);
+  }
+
+  for (const key of keys) {
+    const durable = await reserveDurableAttempt(key);
+    if (durable?.isLimited) {
+      return { isLimited: true, key, durable: true, delayMs: durable.delayMs };
+    }
+  }
+  return { isLimited: false };
+}
+
+/** One key, durable half only (exported for the replica test). null: durable store off or unreachable (the in-memory half decides). */
+export async function reserveDurableAttempt(key: string): Promise<{ isLimited: boolean; delayMs: number } | null> {
+  return withDurableClient(async (client) => {
+    await client.query(
+      `delete from pilot.auth_rate_limit_buckets
+       where updated_at < now() - ($1::int * interval '1 second')`,
+      [DURABLE_WINDOW_SECONDS],
+    );
+
+    // The attempt count restarts once a bucket has been quiet for the window,
+    // matching the delete above for a row another writer touched in between.
+    const admitted = await client.query<{ attempt_count: number }>(
+      `insert into pilot.auth_rate_limit_buckets as b (bucket_key, attempt_count, blocked_until, updated_at)
+       values ($1, 1, now() + ($3::int * interval '1 millisecond'), now())
+       on conflict (bucket_key) do update set
+         attempt_count = case when b.updated_at < now() - ($2::int * interval '1 second')
+                              then 1 else b.attempt_count + 1 end,
+         blocked_until = now() + (least(
+           $3::int * power($4::int, greatest(0,
+             (case when b.updated_at < now() - ($2::int * interval '1 second')
+                   then 1 else b.attempt_count + 1 end) - $5::int)),
+           $6::int) * interval '1 millisecond'),
+         updated_at = now()
+       where b.blocked_until <= now()
+       returning b.attempt_count`,
+      [key, DURABLE_WINDOW_SECONDS, INITIAL_BACKOFF_MS, BACKOFF_MULTIPLIER, MAX_ATTEMPTS_THRESHOLD, MAX_BACKOFF_MS],
+    );
+    if (admitted.rows.length > 0) {
+      return { isLimited: false, delayMs: 0 };
+    }
+
+    // The bucket was already blocked: this request is refused and not counted.
+    const row = await client.query<{ blocked_until: Date }>(
+      `select blocked_until from pilot.auth_rate_limit_buckets where bucket_key = $1`,
+      [key],
+    );
+    const blockedUntil = row.rows[0] ? new Date(row.rows[0].blocked_until).getTime() : Date.now();
+    return { isLimited: true, delayMs: Math.max(0, blockedUntil - Date.now()) };
   });
 }
 

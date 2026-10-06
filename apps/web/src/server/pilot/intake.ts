@@ -7,6 +7,7 @@ import {
   isOrganizationAdminRole,
   type ActorIdentity,
 } from './access';
+import { lockConsentSet } from './consentSetLock';
 import type { PilotAthlete, PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount } from './deletedAccountSignIn';
@@ -1918,16 +1919,25 @@ export async function linkGuardianAthlete(params: {
   athleteId: string;
   relationshipToAthlete: string;
 }, client?: PoolClient): Promise<void> {
-  await writeRows(
-    client,
-    `insert into pilot.guardian_links
-     (organization_id, parent_id, athlete_id, relationship_to_athlete)
-     values ($1,$2,$3,$4)
-     on conflict (organization_id, parent_id, athlete_id) do update set
-       relationship_to_athlete = excluded.relationship_to_athlete,
-       updated_at = now()`,
-    [params.organizationId, params.parentId, params.athleteId, params.relationshipToAthlete],
-  );
+  // A new guardian joins the set every consent reader evaluates, so the
+  // insert takes the consent-set lock exclusively first (consentSetLock.ts):
+  // an in-flight publish claim, playback mint or sweep finishes on the old
+  // set, and any that starts later waits and reads this guardian. It needs a
+  // transaction to hold the lock until commit, hence the wrap when the caller
+  // passes no client.
+  const link = async (tx: PoolClient) => {
+    await lockConsentSet(tx, params.organizationId, params.athleteId, 'exclusive');
+    await tx.query(
+      `insert into pilot.guardian_links
+       (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1,$2,$3,$4)
+       on conflict (organization_id, parent_id, athlete_id) do update set
+         relationship_to_athlete = excluded.relationship_to_athlete,
+         updated_at = now()`,
+      [params.organizationId, params.parentId, params.athleteId, params.relationshipToAthlete],
+    );
+  };
+  await (client ? link(client) : withTransaction(link));
 }
 
 export async function getIntakeCaseAggregate(

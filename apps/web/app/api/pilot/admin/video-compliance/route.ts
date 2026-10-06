@@ -414,6 +414,17 @@ export async function POST(request: NextRequest) {
     const publication = await getPublicationForPublish(principal.organizationId, publicationId);
     if (!publication) return hiddenNotFound();
 
+    // Approval checks consent for the one athlete this publication names, so
+    // it cannot clear footage attributed to nobody (audit CL-B4) -- nor footage
+    // whose attribution cannot be read at all. Reject and request_changes
+    // publish nothing and stay open, so the item can still leave the queue.
+    if (decision === 'approve') {
+      const videoSession = await getVideoSessionById(principal.organizationId, publication.video_session_id);
+      if (!videoSession?.athlete_id) {
+        throw new ConflictError("This video isn't linked to an athlete, so it can't be published. Link it to an athlete in Video Analysis first.", 'VIDEO_NOT_ATTRIBUTED');
+      }
+    }
+
     const newStatus = DECISION_TO_NEW_STATUS[decision];
     const checkStatus = DECISION_TO_CHECK_STATUS[decision];
 

@@ -5,6 +5,11 @@
    lock the writers now take is observable. */
 const mockTxClient = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }) };
 
+/* The consent-set advisory lock is its own statement; these tests script
+   client.query call by call, so it is stubbed here and proven against real
+   Postgres in consentSetPhantom.pg.test.ts. */
+jest.mock('./consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -714,5 +719,40 @@ describe('a signature recorded untidily is still a signature', () => {
         assertGuardianMediaConsentWithClient(clientWith(status), 'org-a', 'ath-1'),
       ).rejects.toThrow(GuardianConsentMissingError);
     });
+  });
+});
+
+describe('the link-lock helpers take the consent-set lock first', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const lockModule = require('./consentSetLock') as typeof import('./consentSetLock');
+  const helpers = require('./guardianConsent') as typeof import('./guardianConsent');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  function recordingClient(order: string[]) {
+    (lockModule.lockConsentSet as jest.Mock).mockImplementation(async (_c, _o, athleteId, mode) => {
+      order.push(`set:${athleteId}:${mode}`);
+    });
+    (lockModule.lockConsentSets as jest.Mock).mockImplementation(async (_c, _o, athleteIds, mode) => {
+      order.push(`sets:${[...athleteIds].join(',')}:${mode}`);
+    });
+    return {
+      query: jest.fn(async () => {
+        order.push('rows');
+        return { rows: [] };
+      }),
+    };
+  }
+
+  test('one athlete, several athletes and the one-row lock: shared set lock, then rows', async () => {
+    const order: string[] = [];
+    const client = recordingClient(order);
+    await helpers.lockGuardianLinksForAthlete(client, 'org', 'ath-a', 'update');
+    await helpers.lockGuardianLinksForAthletes(client, 'org', ['ath-b', 'ath-c'], 'share');
+    await helpers.lockGuardianLink(client, 'org', 'parent-1', 'ath-d');
+    expect(order).toEqual([
+      'set:ath-a:shared', 'rows',
+      'sets:ath-b,ath-c:shared', 'rows',
+      'set:ath-d:shared', 'rows',
+    ]);
   });
 });

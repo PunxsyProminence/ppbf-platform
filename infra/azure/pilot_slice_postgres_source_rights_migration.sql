@@ -86,12 +86,20 @@ alter table pilot.shadow_library_chunks
 
 -- Existing intake excerpts: classified before the shape check is added, so the
 -- check is validated against rows that already satisfy it.
+--
+-- WHAT COUNTS AS A LOCATOR (CL-C1, audit 2026-10-05): one with a character
+-- outside JavaScript's trim set -- the rule the chunks route applies. btrim
+-- strips only the ASCII space, so a tab or NBSP "locator" used to read as one
+-- here and as blank in the route. The class below is copied verbatim from
+-- apps/web/src/server/pilot/locatorWhitespace.ts (LOCATOR_WHITESPACE_CLASS);
+-- locatorWhitespace.test.ts fails if the two drift.
 update pilot.shadow_library_chunks
    set text_kind = 'excerpt',
-       excerpt_locator = btrim(metadata->>'locator')
+       excerpt_locator = regexp_replace(metadata->>'locator', '^[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g')
  where text_kind = 'full_text'
    and excerpt_locator is null
-   and btrim(coalesce(metadata->>'locator', '')) <> '';
+   and jsonb_typeof(metadata->'locator') = 'string'
+   and metadata->>'locator' ~ '[^ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 do $pilot_chunk_text_kind_check$
 begin
@@ -132,10 +140,26 @@ begin
   -- in metadata (the /evidence intake, live before this migration's app
   -- release) is writing an excerpt: store it as one, exactly as the backfill
   -- above does for existing rows. No release window refuses that intake.
+  -- LOCATOR_WHITESPACE_RULE: a locator is one with a character outside
+  -- JavaScript's trim set, the chunks route's rule (see the backfill above).
+  -- A whitespace-only metadata locator is no locator, and neither is a number,
+  -- boolean, object or array (->> would read true as 'true'): the row stays
+  -- full text and the rights rule below decides it.
   if new.text_kind = 'full_text' and new.excerpt_locator is null
-     and btrim(coalesce(new.metadata->>'locator', '')) <> '' then
+     and jsonb_typeof(new.metadata->'locator') = 'string'
+     and new.metadata->>'locator' ~ '[^ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]' then
     new.text_kind := 'excerpt';
-    new.excerpt_locator := btrim(new.metadata->>'locator');
+    new.excerpt_locator := regexp_replace(new.metadata->>'locator', '^[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+|[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+$', '', 'g');
+  end if;
+  -- A whitespace-only excerpt_locator says nothing about where the text is.
+  -- The CHECK refuses '' and spaces; this refuses the rest of the trim set.
+  -- Only when the locator is being written, so a row stored before this rule
+  -- is not blocked from an edit that leaves its locator alone.
+  if new.excerpt_locator is not null and btrim(new.excerpt_locator) <> ''
+     and new.excerpt_locator !~ '[^ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'
+     and (tg_op = 'INSERT' or new.excerpt_locator is distinct from old.excerpt_locator) then
+    raise exception 'SHADOW_LIBRARY_LOCATOR_BLANK: an excerpt locator must name a page, section or timestamp, not only whitespace.'
+      using errcode = '23514';
   end if;
   if new.text_kind <> 'full_text' then
     return new;
@@ -165,7 +189,7 @@ $fn$;
 
 drop trigger if exists shadow_library_chunk_rights_guard on pilot.shadow_library_chunks;
 create trigger shadow_library_chunk_rights_guard
-  before insert or update of document_id, text_kind, text_content
+  before insert or update of document_id, text_kind, text_content, excerpt_locator
   on pilot.shadow_library_chunks
   for each row execute function pilot.shadow_library_chunk_rights_guard();
 
