@@ -165,18 +165,36 @@ async function resetToPublishedWithVideoConsent(): Promise<void> {
   );
 }
 
-/* A REAL failure in the takedown, raised by Postgres on the retraction's own
-   UPDATE -- the step after the consent row. Not a rejected mock: what is left
-   afterwards is what the database kept. */
-async function failTakedown(): Promise<void> {
+/* A REAL failure in the takedown, raised by Postgres on one of its own
+   UPDATEs -- both come after the consent row. 'video_publications' fails the
+   retraction itself; 'research_library' fails the shelf suppression after the
+   retraction has already run, so the rollback also has to undo a half-done
+   takedown. Not a rejected mock: what is left afterwards is what the database
+   kept. */
+type TakedownTable = 'video_publications' | 'research_library';
+
+async function failTakedown(table: TakedownTable = 'video_publications'): Promise<void> {
   await db.query(
-    `create trigger consent_atomic_injected_failure before update on pilot.video_publications
+    `create trigger consent_atomic_injected_failure before update on pilot.${table}
        for each row execute function pilot.consent_atomic_injected_failure()`,
   );
 }
 
 async function stopFailing(): Promise<void> {
   await db.query('drop trigger if exists consent_atomic_injected_failure on pilot.video_publications');
+  await db.query('drop trigger if exists consent_atomic_injected_failure on pilot.research_library');
+}
+
+/* The failure audit is written after the rolled-back transaction, on its own
+   connection, so it must survive the rollback. */
+async function rolledBackAuditRows(): Promise<number> {
+  const rows = await db.query<{ n: string }>(
+    `select count(*) as n from pilot.audit_events
+      where organization_id = $1 and entity_type = 'guardian_media_consent' and entity_id = $2
+        and details->>'rolled_back' = 'true'`,
+    [ORG, ATHLETE],
+  );
+  return Number(rows.rows[0].n);
 }
 
 function postTo(handler: typeof parentConsent, url: string, body: Record<string, unknown>) {
@@ -390,8 +408,12 @@ describe('with nothing failing', () => {
    Before this change the consent row had already committed in its own
    transaction: the guardian's "no video" was on file while the video stayed
    live, and the route answered 500. Now the two roll back together. */
+const FAILURE_POINTS = CHANGES.flatMap((change) =>
+  (['video_publications', 'research_library'] as const).map((table) => ({ ...change, table })),
+);
+
 describe('when the takedown fails', () => {
-  test.each(CHANGES)('$name: 500, and neither the consent nor the video changed', async (change) => {
+  test.each(FAILURE_POINTS)('$name, failing on $table: 500, and neither the consent nor the video changed', async (change) => {
     mockRequirePrincipal.mockResolvedValue(change.as());
     const before = await state();
     expect(before).toEqual({
@@ -400,7 +422,8 @@ describe('when the takedown fails', () => {
       publication: 'published',
       shelfSuppressed: false,
     });
-    await failTakedown();
+    const auditsBefore = await rolledBackAuditRows();
+    await failTakedown(change.table);
 
     const response = await change.send();
     const body = (await response.json()) as Record<string, unknown>;
@@ -411,6 +434,7 @@ describe('when the takedown fails', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ code: 'P0001' }));
 
     expect(await state()).toEqual(before);
+    expect(await rolledBackAuditRows()).toBe(auditsBefore + 1);
   });
 
   test.each(CHANGES)('$name: repeated once the takedown works, it is recorded exactly once', async (change) => {
@@ -428,6 +452,32 @@ describe('when the takedown fails', () => {
       current: change.after,
       publication: 'retracted',
       shelfSuppressed: true,
+    });
+  });
+});
+
+/* -- Nothing published: the combined path still records the consent ---------
+   An athlete with no live video must not have the consent change refused or
+   dropped because there was nothing to take down. */
+describe('with no published video', () => {
+  test.each(CHANGES)('$name records the consent change and retracts nothing', async (change) => {
+    mockRequirePrincipal.mockResolvedValue(change.as());
+    await db.query(
+      `update pilot.video_publications set status = 'archived' where organization_id = $1 and publication_id = $2`,
+      [ORG, PUBLICATION],
+    );
+    const before = await state();
+
+    const response = await change.send();
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, retracted_publication_ids: [] });
+    expect(await state()).toEqual({
+      waiverRows: before.waiverRows + 1,
+      current: change.after,
+      publication: 'archived',
+      shelfSuppressed: false,
     });
   });
 });

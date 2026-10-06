@@ -275,8 +275,8 @@ describe('POST /api/pilot/parent/consent', () => {
 
   test('a failed sweep surfaces loudly and records nothing, instead of quietly leaving media distributed', async () => {
     // A lost audit row is tolerable; a suppression that did not happen is
-    // not. The withdrawal itself already committed, so the response says
-    // exactly that and tells the guardian how to retry.
+    // not. The withdrawal and the takedown roll back together, so the
+    // response says nothing was recorded and tells the guardian how to retry.
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockWithdraw.mockResolvedValueOnce('waiver-2');
     mockSweep.mockReset();
@@ -287,7 +287,7 @@ describe('POST /api/pilot/parent/consent', () => {
     expect(response.status).toBe(500);
     const body = (await response.json()) as { ok?: boolean; error?: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/withdrawal was not recorded, because suppressing already-published media failed/);
+    expect(body.error).toMatch(/withdrawal was not recorded: it is saved together with taking down already-published media, and that did not complete/);
     // The withdrawal ran inside the sweep's transaction, which rolled back, so
     // no consent_withdrawn event claims it happened.
     expect(mockWithdraw).toHaveBeenCalledWith(expect.anything(), TX);
@@ -524,7 +524,7 @@ describe('POST /api/pilot/parent/consent -- photo-only grant', () => {
     expect(response.status).toBe(500);
     const body = (await response.json()) as { ok?: boolean; error?: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toMatch(/photos only was not recorded, because taking down already-published video failed/);
+    expect(body.error).toMatch(/photos only was not recorded: it is saved together with taking down already-published video, and that did not complete/);
     expect(mockGrant).toHaveBeenCalledWith(expect.anything(), TX);
     expect(mockAudit).not.toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_granted' }));
     expect(mockAudit).toHaveBeenCalledWith(

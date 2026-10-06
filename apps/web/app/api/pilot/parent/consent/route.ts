@@ -277,7 +277,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(
             {
               ok: false,
-              error: 'Your consent for photos only was not recorded, because taking down already-published video failed. Nothing was changed. Submit it again to retry, or contact your organization admin.',
+              error: 'Your consent for photos only was not recorded: it is saved together with taking down already-published video, and that did not complete. Nothing was changed. Submit it again to retry, or contact your organization admin.',
               athlete_id: athleteId,
               decision,
             },
@@ -326,7 +326,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             ok: false,
-            error: 'Your consent withdrawal was not recorded, because suppressing already-published media failed. Nothing was changed. Withdraw again to retry, or contact your organization admin.',
+            error: 'Your consent withdrawal was not recorded: it is saved together with taking down already-published media, and that did not complete. Nothing was changed. Withdraw again to retry, or contact your organization admin.',
             athlete_id: athleteId,
             decision,
           },

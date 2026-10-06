@@ -49,7 +49,10 @@ export interface QueryExecutor {
  *
  * The one-row lock takes a single row. Its callers take no other
  * guardian_links lock in the same transaction, which is what keeps it out of
- * a cycle; it lives here so there is one place to look.
+ * a cycle; it lives here so there is one place to look. The one exception is
+ * recordMediaConsentAndSuppress (publication.ts), which takes the athlete's
+ * whole set first and then this one row: the row is already held by that
+ * transaction, so the second lock cannot wait.
  *
  * ROW LOCKS DO NOT COVER A GUARDIAN WHO IS NOT LINKED YET. Each reader, the
  * sweep and both consent writers therefore take the consent-set lock SHARED
