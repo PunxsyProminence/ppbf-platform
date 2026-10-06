@@ -445,23 +445,39 @@ async function suppressUnderHeldLock(
 // is not published and its old approval no longer stands -- leaving the
 // prior reviewer's name on a row whose fresh review might reject it would
 // be a false attribution in a safeguarding table.
-export async function reopenRetractedPublication(
-  organizationId: string,
-  publicationId: string,
-): Promise<boolean> {
-  const result = await query<{ publication_id: string }>(
-    `update pilot.video_publications
-     set status = 'pending_review',
-         compliance_check_status = 'pending',
-         published_at = null,
-         approved_by_account_id = null,
-         updated_at = now()
-     where organization_id = $1 and publication_id = $2 and status = 'retracted'
-     returning publication_id`,
-    [organizationId, publicationId],
-  );
+//
+// The reopen is consent-gated itself. A withdrawal retracts published media
+// (owner decision, 2026-08-14) and a photo-only downgrade retracts published
+// video (OD-2026-10-05-021); neither retraction may be undone while that
+// consent still stands. Approve and publish would refuse such an item
+// later, but reopening it would put a minor's footage back into a review
+// queue the ruling took it out of. Same contract as publishToResearchLibrary:
+// verifyBeforeCommit runs on THIS transaction's client before the CAS, so a
+// withdrawal cannot commit between the check and the reopen, and it is
+// REQUIRED so no caller can reopen without the guardian_links FOR SHARE
+// lock the withdrawal sweep serializes against.
+export async function reopenRetractedPublication(params: {
+  organizationId: string;
+  publicationId: string;
+  verifyBeforeCommit: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    await params.verifyBeforeCommit(client);
 
-  return result.length > 0;
+    const result = await client.query<{ publication_id: string }>(
+      `update pilot.video_publications
+       set status = 'pending_review',
+           compliance_check_status = 'pending',
+           published_at = null,
+           approved_by_account_id = null,
+           updated_at = now()
+       where organization_id = $1 and publication_id = $2 and status = 'retracted'
+       returning publication_id`,
+      [params.organizationId, params.publicationId],
+    );
+
+    return result.rows.length > 0;
+  });
 }
 
 export interface PublicationCheckSummary {

@@ -504,3 +504,66 @@ describe('the consent write takes the lock the readers take', () => {
     expect(await currentStatus()).toBe('withdrawn');
   });
 });
+
+// Reopen is the only exit from 'retracted', and a withdrawal or photo-only
+// downgrade is what retracts (owner decision 2026-08-14; OD-2026-10-05-021).
+// These drive the SHIPPED reopen with the route's own in-transaction checks:
+// a retraction must not be undone while the consent behind it still stands.
+describe('a reopen cannot undo a consent retraction', () => {
+  async function seedRetractedPublication(): Promise<string> {
+    const publicationId = `pub_${randomUUID().split('-')[0]}`;
+    await client.query(
+      `insert into pilot.video_publications
+         (publication_id, organization_id, video_session_id, athlete_id, submitted_by_account_id,
+          publication_type, title, description, status, compliance_check_status)
+       values ($1, $2, $3, $4, $5, 'research_library', 'Jab mechanics', 'Six rounds.',
+               'retracted', 'passed')`,
+      [publicationId, ORG_ID, VIDEO_SESSION_ID, ATHLETE_ID, COACH_ID],
+    );
+    return publicationId;
+  }
+
+  async function reopen(publicationId: string): Promise<boolean> {
+    const { assertConsentCoversVideo } = await import('./videoPlaybackConsent');
+    return publication.reopenRetractedPublication({
+      organizationId: ORG_ID,
+      publicationId,
+      verifyBeforeCommit: async (c) => {
+        await consent.assertGuardianMediaConsentWithClient(c, ORG_ID, ATHLETE_ID);
+        await assertConsentCoversVideo(ORG_ID, ATHLETE_ID, c);
+      },
+    });
+  }
+
+  test('CONTROL: with consent signed for video, a retracted publication reopens into review', async () => {
+    await writeConsent('signed');
+    const publicationId = await seedRetractedPublication();
+
+    await expect(reopen(publicationId)).resolves.toBe(true);
+    expect(await publicationStatus(publicationId)).toBe('pending_review');
+  });
+
+  test('a standing withdrawal refuses the reopen, and the row stays retracted', async () => {
+    await writeConsent('signed');
+    await writeConsent('withdrawn');
+    const publicationId = await seedRetractedPublication();
+
+    await expect(reopen(publicationId)).rejects.toBeInstanceOf(consent.GuardianConsentMissingError);
+    expect(await publicationStatus(publicationId)).toBe('retracted');
+  });
+
+  test('a photo-only consent refuses the reopen of video, and the row stays retracted', async () => {
+    await client.query(
+      `insert into pilot.waivers
+         (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+          signed_by_role, signed_at, consent_version, status, covers_video)
+       values ($1, gen_random_uuid(), $2, $3, 'photo_media', 'Race Guardian',
+               'parent', now(), 'v1', 'signed', false)`,
+      [ORG_ID, ATHLETE_ID, PARENT_ID],
+    );
+    const publicationId = await seedRetractedPublication();
+
+    await expect(reopen(publicationId)).rejects.toMatchObject({ code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' });
+    expect(await publicationStatus(publicationId)).toBe('retracted');
+  });
+});

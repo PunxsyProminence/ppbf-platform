@@ -283,11 +283,12 @@ export async function POST(request: NextRequest) {
 
     // The retraction workflow's two levers (owner decision, 2026-08-14).
     // They are lifecycle transitions, not compliance decisions: no check row
-    // is filed, and no consent gate runs here -- retracting needs no consent
-    // (it removes distribution), and reopening only re-enters the queue,
-    // where approval and publish each re-run the consent gate themselves.
-    // An org admin can suppress; nothing here can grant or restore a
-    // guardian's consent.
+    // is filed. Retracting needs no consent (it removes distribution).
+    // Reopening runs the publish claim's consent gate -- signed AND covering
+    // video -- because a withdrawal or photo-only retraction
+    // (OD-2026-10-05-021) must not be undone while that consent stands;
+    // approval and publish still re-run it themselves. An org admin can
+    // suppress; nothing here can grant or restore a guardian's consent.
     if (rawDecision === 'retract' || rawDecision === 'reopen_review') {
       // A retraction of a minor's published footage without a stated reason
       // is unauditable; the reason lands on the suppressed shelf row and in
@@ -325,7 +326,59 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true, publication_id: publicationId, status: 'retracted' });
       }
 
-      const applied = await reopenRetractedPublication(principal.organizationId, publicationId);
+      let applied: boolean;
+      try {
+        // Same two layers, same order as publications/publish: a cheap
+        // pre-check (coverage first, so withdrawn or photo-only is refused
+        // with that reason rather than as missing paperwork), then the same
+        // checks inside the reopen's own transaction. There the signed check
+        // goes first and takes the guardian_links FOR SHARE lock, and the
+        // coverage check second, matching the publish claim.
+        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+
+        applied = await reopenRetractedPublication({
+          organizationId: principal.organizationId,
+          publicationId,
+          verifyBeforeCommit: async (client) => {
+            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+          },
+        });
+      } catch (error) {
+        // A blocked reopen is audited like a blocked approve or publish: who
+        // tried to put this child's retracted footage back in the queue.
+        if (error instanceof GuardianConsentMissingError) {
+          await auditComplianceEvent({
+            event_type: 'update',
+            actor_account_id: principal.accountId,
+            actor_role: principal.role,
+            organization_id: principal.organizationId,
+            entity_type: 'video_publication',
+            entity_id: publicationId,
+            details: {
+              action: 'publication_reopen_blocked_by_consent',
+              missing_parent_ids: error.missingParentIds,
+            },
+            shadow_mirror: false,
+          });
+        } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+          await auditComplianceEvent({
+            event_type: 'update',
+            actor_account_id: principal.accountId,
+            actor_role: principal.role,
+            organization_id: principal.organizationId,
+            entity_type: 'video_publication',
+            entity_id: publicationId,
+            details: {
+              action: 'publication_reopen_blocked_by_consent',
+              reason: error.code,
+            },
+            shadow_mirror: false,
+          });
+        }
+        throw error;
+      }
       if (!applied) {
         return NextResponse.json(
           { error: 'Only a retracted publication can be reopened for review.', status: publication.status },
