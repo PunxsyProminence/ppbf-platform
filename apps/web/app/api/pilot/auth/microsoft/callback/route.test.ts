@@ -4,7 +4,7 @@ import { GET } from './route';
 import { loginWithMicrosoftEmail } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
-import { getMsOidcConfig } from '@/src/server/pilot/federatedAuth';
+import { MicrosoftIdentityMismatchError, getMsOidcConfig } from '@/src/server/pilot/federatedAuth';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 jest.mock('@/src/server/pilot/auth', () => ({
@@ -24,6 +24,9 @@ jest.mock('@/src/server/pilot/boardSeats', () => {
 });
 
 jest.mock('@/src/server/pilot/federatedAuth', () => ({
+  // The real error class, so the route's instanceof check is the one under test.
+  MicrosoftIdentityMismatchError: jest.requireActual('@/src/server/pilot/federatedAuth').MicrosoftIdentityMismatchError,
+  resolveMicrosoftIdentityObject: jest.fn(() => ({ objectId: 'oid-1', tenantId: 'tenant-1' })),
   getMsOidcConfig: jest.fn(() => ({
     tenantId: 'tenant-1',
     clientId: 'client-1',
@@ -375,6 +378,83 @@ describe('the audit write cannot change who gets in', () => {
 
     expect(res.headers.get('location')).toBe('https://ppbf.example/board/treasurer');
     expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('board-token');
+
+    consoleError.mockRestore();
+  });
+});
+
+// CL-A19: the sign-in is bound to the token's oid + tid, and a refusal for a
+// different directory user is the one refusal this route records.
+describe('Microsoft directory identity binding', () => {
+  test('passes the token oid and tid to the sign-in', async () => {
+    mockLogin.mockResolvedValueOnce(microsoftLogin('coach'));
+
+    await GET(request());
+
+    expect(mockLogin).toHaveBeenCalledWith('owner@example.com', { objectId: 'oid-1', tenantId: 'tenant-1' });
+  });
+
+  test.each([
+    ['oid_mismatch', 'a different directory user'],
+    ['bound_to_other_account', 'a directory user bound to another account'],
+  ] as const)('a %s refusal (%s) sets no cookie, lands on auth-forbidden and is recorded', async (reason, _label) => {
+    mockLogin.mockRejectedValueOnce(new MicrosoftIdentityMismatchError(reason, { accountId: 'Coach@example.com', organizationId: 'org-1' }));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await GET(request());
+
+    expect(res.headers.get('location')).toBe('https://ppbf.example/login?error=auth-forbidden');
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+    expect(mockWritePilotAuditEvent).toHaveBeenCalledTimes(1);
+    expect(mockWritePilotAuditEvent).toHaveBeenCalledWith({
+      event_type: 'microsoft_identity_mismatch',
+      actor_account_id: null,
+      actor_role: null,
+      organization_id: 'org-1',
+      entity_type: 'account',
+      entity_id: 'Coach@example.com',
+      details: { auth_provider: 'microsoft', reason },
+    });
+
+    consoleError.mockRestore();
+  });
+
+  test('a failing audit write does not turn the refusal into an admission', async () => {
+    mockLogin.mockRejectedValueOnce(new MicrosoftIdentityMismatchError('oid_mismatch', { accountId: 'Coach@example.com', organizationId: 'org-1' }));
+    mockWritePilotAuditEvent.mockRejectedValueOnce(new Error('audit down'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await GET(request());
+
+    expect(res.headers.get('location')).toBe('https://ppbf.example/login?error=auth-forbidden');
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+
+    consoleError.mockRestore();
+  });
+
+  test('a token without an oid is refused before any account lookup', async () => {
+    const federated = jest.requireMock('@/src/server/pilot/federatedAuth') as { resolveMicrosoftIdentityObject: jest.Mock };
+    federated.resolveMicrosoftIdentityObject.mockImplementationOnce(() => {
+      throw new Error('No Microsoft object id / tenant claim available');
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await GET(request());
+
+    expect(res.headers.get('location')).toBe('https://ppbf.example/login?error=auth-failed');
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+    expect(mockLogin).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+  });
+
+  test('another Forbidden refusal is not recorded as an identity mismatch', async () => {
+    mockLogin.mockRejectedValueOnce(new Error('Forbidden: platform owner identity mismatch'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await GET(request());
+
+    expect(mockWritePilotAuditEvent).not.toHaveBeenCalled();
 
     consoleError.mockRestore();
   });

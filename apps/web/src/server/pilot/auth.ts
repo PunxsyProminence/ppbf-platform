@@ -15,7 +15,9 @@ import {
   refuseIfLoginDeleted,
   type AccountDeletionFlag,
 } from './deletedAccountSignIn';
+import { writePilotAuditEvent } from './audit';
 import { PILOT_SESSION_COOKIE } from './env';
+import { MicrosoftIdentityMismatchError, type MicrosoftDirectoryIdentity } from './federatedAuth';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
@@ -159,6 +161,9 @@ interface FederatedAccountRow extends AccountDeletionFlag {
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
+  /** CL-A19: the Entra user this account is bound to. Null until its first Microsoft sign-in. */
+  microsoft_oid?: string | null;
+  microsoft_tid?: string | null;
 }
 
 async function revokeAllSessionsForAccountTx(client: PoolClient, accountId: string): Promise<void> {
@@ -354,7 +359,98 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   };
 }
 
-export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ principal: PilotPrincipal; token: string } | null> {
+// CL-A19: the email found the account; this decides whether the directory user
+// presenting it is the one the account belongs to. The first sign-in binds the
+// account to the (tid, oid) it presented (trust on first use, no backfill);
+// every later one must present the same pair. Runs after every refusal this
+// function makes, so an account it turns away is never bound by the attempt,
+// and before the session insert, so a refused sign-in leaves no token behind.
+// (The callback's own later checks -- seat lookup, destination -- run after
+// both; a sign-in they refuse has already bound the user's own pair.)
+async function bindMicrosoftIdentity(
+  accountId: string,
+  organizationId: string,
+  row: FederatedAccountRow,
+  identity: MicrosoftDirectoryIdentity,
+): Promise<void> {
+  const refuse = (reason: MicrosoftIdentityMismatchError['reason']) =>
+    new MicrosoftIdentityMismatchError(reason, { accountId, organizationId });
+  const matches = (stored: { microsoft_oid?: string | null; microsoft_tid?: string | null } | null) =>
+    stored?.microsoft_oid === identity.objectId && stored?.microsoft_tid === identity.tenantId;
+
+  if (row.microsoft_oid) {
+    if (!matches(row)) throw refuse('oid_mismatch');
+    return;
+  }
+
+  // Guarded by "still unbound": a sign-in that bound this account after the
+  // read above wins, and this one is judged against what it stored.
+  let bound: { microsoft_oid: string | null; microsoft_tid: string | null } | null;
+  try {
+    bound = await queryOne(
+      `update pilot.accounts
+          set microsoft_oid = $2, microsoft_tid = $3
+        where account_id = $1 and microsoft_oid is null
+        returning microsoft_oid, microsoft_tid`,
+      [accountId, identity.objectId, identity.tenantId],
+    );
+  } catch (error) {
+    // pilot_accounts_microsoft_identity_uq: this directory user already owns another account.
+    const code = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    if (code === '23505') throw refuse('bound_to_other_account');
+    throw error;
+  }
+  if (!bound) {
+    bound = await queryOne(
+      'select microsoft_oid, microsoft_tid from pilot.accounts where account_id = $1',
+      [accountId],
+    );
+  }
+  if (!matches(bound)) throw refuse('oid_mismatch');
+}
+
+/**
+ * CL-A19: a provisioning write that is about to give an account a different
+ * login email first clears its Microsoft binding, inside the caller's
+ * transaction. The binding says which directory user the account's email
+ * belonged to; once the email names someone else, keeping it would refuse the
+ * new holder forever and keep admitting the old one through any address of
+ * theirs that is re-pointed here. A case-only change keeps the binding: the
+ * sign-in lookup is case-insensitive, so it is the same login. Recorded as an
+ * 'update' on the account, since the binding is part of the account row.
+ */
+export async function clearMicrosoftIdentityOnLoginEmailChangeTx(
+  client: PoolClient,
+  accountId: string,
+  newLoginEmail: string,
+): Promise<boolean> {
+  const cleared = await client.query<{ organization_id: string }>(
+    `update pilot.accounts
+        set microsoft_oid = null, microsoft_tid = null
+      where account_id = $1
+        and microsoft_oid is not null
+        and lower(coalesce(login_email, '')) <> lower($2)
+      returning organization_id`,
+    [accountId, newLoginEmail],
+  );
+  const row = cleared.rows[0];
+  if (!row) return false;
+  await writePilotAuditEvent({
+    event_type: 'update',
+    actor_account_id: null,
+    actor_role: null,
+    organization_id: row.organization_id,
+    entity_type: 'account',
+    entity_id: accountId,
+    details: { change: 'microsoft_identity_cleared', reason: 'login_email_changed' },
+  }, client);
+  return true;
+}
+
+export async function loginWithMicrosoftEmail(
+  emailOrUpn: string,
+  identity?: MicrosoftDirectoryIdentity,
+): Promise<{ principal: PilotPrincipal; token: string } | null> {
   const normalizedEmail = emailOrUpn.trim().toLowerCase();
   if (!normalizedEmail) {
     return null;
@@ -372,7 +468,9 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
        ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status,
-       ${homeMembershipRoleSql('a')} as membership_role
+       ${homeMembershipRoleSql('a')} as membership_role,
+       a.microsoft_oid,
+       a.microsoft_tid
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where lower(a.login_email) = $1
@@ -419,6 +517,10 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
   }
   if (data.membership_role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
     throw new Error('Forbidden: platform owner identity mismatch');
+  }
+
+  if (identity) {
+    await bindMicrosoftIdentity(data.account_id, organizationId, data, identity);
   }
 
   const token = createOpaqueToken();
@@ -1153,6 +1255,8 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
   const existingByAccountId = await queryOne<{ account_id: string }>('select account_id from pilot.accounts where account_id = $1', [accountId]);
 
   await withTransaction(async (client) => {
+    await clearMicrosoftIdentityOnLoginEmailChangeTx(client, accountId, normalizedEmail);
+
     // A deleted login is not re-made the platform owner (OD-2026-09-30-004
     // e2): the upsert set active_flag back to true on a row sign-in refuses,
     // and the bootstrap reported success. The condition is on the upsert's own
