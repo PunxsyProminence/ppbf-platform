@@ -232,8 +232,40 @@ function pickSafeRecord(input: Record<string, unknown>, keys: string[]): Record<
   return out;
 }
 
-function sanitizeEventPayload(payload: Record<string, unknown>, role: PilotRole): Record<string, unknown> {
+/**
+ * Library research questions are staff only (Jason 2026-10-06, CL-A3): coaches
+ * and organization admins read them; platform_owner is not staff and gets no
+ * org-private access by default. roleCanViewSensitivePayload passes
+ * platform_owner the whole payload, and a SHADOW_LIBRARY_CLAIM_* payload's
+ * knowledge_gap quotes the question a member typed (shadowLibrary.ts), so for
+ * those events platform_owner gets a fixed set of operational keys. It is an
+ * allowlist so that a key added to the emitter later is withheld until someone
+ * decides it is safe. Every other event keeps its payload for platform_owner;
+ * the remaining non-staff roles already get the safe keys below, none of which
+ * a claim event carries text in.
+ */
+function roleCanReadLibraryQuestions(role: PilotRole): boolean {
+  return role === 'organization_admin' || role === 'admin' || role === 'coach';
+}
+
+const LIBRARY_CLAIM_OPERATIONAL_KEYS = [
+  'scope',
+  'subject_id',
+  'status',
+  'evidence_count',
+  'confidence_level',
+  'distinct_source_count',
+  'research_requirement_id',
+  // A fixed template naming only the scope ("Strengthen SHADOW Library
+  // evidence for <scope> claim"); no member text.
+  'research_requirement',
+];
+
+function sanitizeEventPayload(payload: Record<string, unknown>, role: PilotRole, eventName: string): Record<string, unknown> {
   if (roleCanViewSensitivePayload(role)) {
+    if (eventName.toUpperCase().startsWith('SHADOW_LIBRARY_CLAIM_') && !roleCanReadLibraryQuestions(role)) {
+      return pickSafeRecord(payload, LIBRARY_CLAIM_OPERATIONAL_KEYS);
+    }
     return payload;
   }
 
@@ -453,7 +485,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
 
   return rows.map((row) => ({
     ...row,
-    payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole),
+    payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole, row.event_name),
   }));
 }
 
