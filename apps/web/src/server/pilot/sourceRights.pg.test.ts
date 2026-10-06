@@ -382,8 +382,34 @@ describe('source rights migration', () => {
            create trigger shadow_library_chunk_rights_guard before insert or update of document_id, text_kind
              on pilot.shadow_library_chunks for each row execute function pilot.shadow_library_chunk_rights_guard()`,
           `drop trigger shadow_library_chunk_rights_guard on pilot.shadow_library_chunks;
+           create trigger shadow_library_chunk_rights_guard before insert or update of document_id, text_kind, text_content, excerpt_locator
+             on pilot.shadow_library_chunks for each row execute function pilot.shadow_library_chunk_rights_guard()`,
+        ],
+        [
+          // CL-C1: the trigger before this rule fired on these columns only.
+          'chunk guard blind to locator edits',
+          `drop trigger shadow_library_chunk_rights_guard on pilot.shadow_library_chunks;
            create trigger shadow_library_chunk_rights_guard before insert or update of document_id, text_kind, text_content
              on pilot.shadow_library_chunks for each row execute function pilot.shadow_library_chunk_rights_guard()`,
+          migrationSql,
+        ],
+        [
+          // CL-C1: the body before this rule (btrim locators), still locking and refusing.
+          'chunk guard without the locator whitespace rule',
+          `create or replace function pilot.shadow_library_chunk_rights_guard() returns trigger language plpgsql as $f$
+           declare v_source text; v_rights text;
+           begin
+             if new.text_kind <> 'full_text' then return new; end if;
+             select d.source_id into v_source from pilot.shadow_library_documents d
+              where d.document_id = new.document_id
+                for share;
+             select s.rights_status into v_rights from pilot.shadow_library_sources s
+              where s.source_id = v_source
+                for share;
+             if v_rights in ('ppbf_owned', 'open_licence') then return new; end if;
+             raise exception 'SHADOW_LIBRARY_FULL_TEXT_NOT_PERMITTED';
+           end $f$`,
+          migrationSql,
         ],
         [
           'chunk guard that no longer locks what it reads',
@@ -404,12 +430,20 @@ describe('source rights migration', () => {
         ],
         [
           'excerpt_locator not text',
+          // The chunk guard fires on excerpt_locator updates (CL-C1), and Postgres
+          // will not retype a column a trigger names: it is set aside and back.
           `alter table pilot.shadow_library_chunks drop constraint pilot_shadow_library_chunks_text_kind_check;
-           alter table pilot.shadow_library_chunks alter column excerpt_locator type varchar(200)`,
-          `alter table pilot.shadow_library_chunks alter column excerpt_locator type text;
+           drop trigger shadow_library_chunk_rights_guard on pilot.shadow_library_chunks;
+           alter table pilot.shadow_library_chunks alter column excerpt_locator type varchar(200);
+           create trigger shadow_library_chunk_rights_guard before insert or update of document_id, text_kind, text_content, excerpt_locator
+             on pilot.shadow_library_chunks for each row execute function pilot.shadow_library_chunk_rights_guard()`,
+          `drop trigger shadow_library_chunk_rights_guard on pilot.shadow_library_chunks;
+           alter table pilot.shadow_library_chunks alter column excerpt_locator type text;
            alter table pilot.shadow_library_chunks add constraint pilot_shadow_library_chunks_text_kind_check
              check (((text_kind = 'full_text' and excerpt_locator is null)
-                     or (text_kind = 'excerpt' and btrim(coalesce(excerpt_locator, '')) <> '')))`,
+                     or (text_kind = 'excerpt' and btrim(coalesce(excerpt_locator, '')) <> '')));
+           create trigger shadow_library_chunk_rights_guard before insert or update of document_id, text_kind, text_content, excerpt_locator
+             on pilot.shadow_library_chunks for each row execute function pilot.shadow_library_chunk_rights_guard()`,
         ],
         [
           'source guard that no longer refuses',
@@ -540,6 +574,75 @@ describe('the full-text rule, held by the database for every writer', () => {
       insertChunk(client, 'chunk_full_locator', 'doc_ppbf_owned', 'src_ppbf_owned', { ordinal: 31, kind: 'full_text', locator: 'p. 1' }),
     );
     expect(refused.constraint).toBe('pilot_shadow_library_chunks_text_kind_check');
+  });
+
+  // CL-C1 (audit 2026-10-05). The route trimmed with JavaScript (tabs, line
+  // breaks, NBSP are blank) and the trigger with btrim (spaces only), so a
+  // tab "locator" was full text to the route and an excerpt to the database,
+  // and the full-text rule was never asked.
+  const BLANKS = ['\t', '\n', '\r\n', '\u00a0', '\u2003', '\ufeff', ' \t\u3000\u2028 '];
+
+  test('a whitespace-only metadata locator is no locator: under an unknown source the full-text rule refuses it', async () => {
+    for (const [i, blank] of BLANKS.entries()) {
+      const refused = await errorOf(
+        insertChunk(client, `chunk_ws_meta_${i}`, 'doc_unknown', 'src_unknown', { ordinal: 700 + i, metadata: { locator: blank } }),
+      );
+      expect(refused.message).toMatch(/SHADOW_LIBRARY_FULL_TEXT_NOT_PERMITTED/);
+    }
+    // Nor is a locator that is not text: ->> would read true as 'true'.
+    for (const [i, notText] of [true, 5, {}, ['p. 1']].entries()) {
+      const refused = await errorOf(
+        insertChunk(client, `chunk_nt_meta_${i}`, 'doc_unknown', 'src_unknown', { ordinal: 730 + i, metadata: { locator: notText } }),
+      );
+      expect(refused.message).toMatch(/SHADOW_LIBRARY_FULL_TEXT_NOT_PERMITTED/);
+    }
+    // A real locator wrapped in any of that whitespace is stored trimmed by the same rule.
+    await insertChunk(client, 'chunk_ws_meta_wrapped', 'doc_unknown', 'src_unknown', {
+      ordinal: 720,
+      metadata: { locator: '\u00a0\tp. 9\n' },
+    });
+    const stored = await client.query(
+      "select text_kind, excerpt_locator from pilot.shadow_library_chunks where chunk_id = 'chunk_ws_meta_wrapped'",
+    );
+    expect(stored.rows[0]).toEqual({ text_kind: 'excerpt', excerpt_locator: 'p. 9' });
+  });
+
+  test('a whitespace-only excerpt_locator is refused on insert, and when an update sets one', async () => {
+    for (const [i, blank] of BLANKS.entries()) {
+      const refused = await errorOf(
+        insertChunk(client, `chunk_ws_ex_${i}`, 'doc_ppbf_owned', 'src_ppbf_owned', { ordinal: 740 + i, kind: 'excerpt', locator: blank }),
+      );
+      expect(refused.code).toBe('23514');
+    }
+    await insertChunk(client, 'chunk_ws_ex_ok', 'doc_unknown', 'src_unknown', { ordinal: 760, kind: 'excerpt', locator: 'p. 2' });
+    const refused = await errorOf(
+      client.query("update pilot.shadow_library_chunks set excerpt_locator = E'\\t' where chunk_id = 'chunk_ws_ex_ok'"),
+    );
+    expect(refused.code).toBe('23514');
+  });
+
+  test('a row already holding a whitespace-only locator is not blocked by an edit that leaves the locator alone', async () => {
+    await client.query('alter table pilot.shadow_library_chunks disable trigger shadow_library_chunk_rights_guard');
+    try {
+      await insertChunk(client, 'chunk_ws_legacy', 'doc_ppbf_owned', 'src_ppbf_owned', { ordinal: 780, kind: 'excerpt', locator: '\t' });
+    } finally {
+      await client.query('alter table pilot.shadow_library_chunks enable trigger shadow_library_chunk_rights_guard');
+    }
+    await client.query("update pilot.shadow_library_chunks set text_content = 'edited' where chunk_id = 'chunk_ws_legacy'");
+    await client.query("update pilot.shadow_library_chunks set excerpt_locator = 'p. 3' where chunk_id = 'chunk_ws_legacy'");
+    const stored = await client.query(
+      "select text_content, excerpt_locator from pilot.shadow_library_chunks where chunk_id = 'chunk_ws_legacy'",
+    );
+    expect(stored.rows[0]).toEqual({ text_content: 'edited', excerpt_locator: 'p. 3' });
+  });
+
+  test('a re-apply does not turn full text with a whitespace-only metadata locator into an "excerpt"', async () => {
+    await insertChunk(client, 'chunk_ws_reapply', 'doc_ppbf_owned', 'src_ppbf_owned', { ordinal: 790, metadata: { locator: '\t' } });
+    await client.query(migrationSql);
+    const stored = await client.query(
+      "select text_kind, excerpt_locator from pilot.shadow_library_chunks where chunk_id = 'chunk_ws_reapply'",
+    );
+    expect(stored.rows[0]).toEqual({ text_kind: 'full_text', excerpt_locator: null });
   });
 
   test('the document\'s source decides, not the source a chunk cites (the seed\'s synthesis pattern)', async () => {

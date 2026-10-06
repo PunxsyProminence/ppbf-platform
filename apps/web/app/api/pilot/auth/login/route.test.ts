@@ -7,9 +7,8 @@ import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPol
 import {
   checkRateLimit,
   checkDurableRateLimit,
-  recordFailedAttempt,
   recordDurableFailedAttempt,
-  clearRateLimit,
+  reserveAttempts,
   clearDurableRateLimit,
 } from '@/src/server/pilot/rateLimit';
 
@@ -23,24 +22,23 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 jest.mock('@/src/server/pilot/rateLimit', () => ({
   getClientIp: jest.fn(() => '127.0.0.1'),
+  // The IP bucket: checked, then recorded on failure (both stores).
   checkRateLimit: jest.fn(() => ({ isLimited: false })),
-  recordFailedAttempt: jest.fn(),
-  clearRateLimit: jest.fn(),
-  // The durable half. recordDurableFailedAttempt and clearDurableRateLimit
-  // write the volatile entry too, so the route calls only those two on the
-  // failure and success paths -- the volatile spies below assert through them.
   checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
   recordDurableFailedAttempt: jest.fn(async () => ({ delayMs: 1000 })),
+  // The account bucket: counted before the PIN check in both stores (CL-A4);
+  // clearDurableRateLimit clears both on success. The real burst behaviour
+  // is in ./route.burst.test.ts, with rateLimit.ts unmocked.
+  reserveAttempts: jest.fn(async () => ({ isLimited: false })),
   clearDurableRateLimit: jest.fn(async () => undefined),
 }));
 
 const mockLogin = loginWithAccountIdAndPin as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCheckRateLimit = checkRateLimit as jest.Mock;
-const mockRecordFailedAttempt = recordFailedAttempt as jest.Mock;
-const mockClearRateLimit = clearRateLimit as jest.Mock;
 const mockCheckDurable = checkDurableRateLimit as jest.Mock;
 const mockRecordDurable = recordDurableFailedAttempt as jest.Mock;
+const mockReserve = reserveAttempts as jest.Mock;
 const mockClearDurable = clearDurableRateLimit as jest.Mock;
 
 afterEach(() => {
@@ -107,13 +105,15 @@ describe('POST /api/pilot/auth/login', () => {
     const res = await POST(request('acct-cookie-2'));
     expect(res.status).toBe(401);
     expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
-    expect(mockRecordDurable).toHaveBeenCalledTimes(2);
+    // The account is counted before the check; the IP after the failure.
+    expect(mockReserve).toHaveBeenCalledWith(['pin_account:acct-cookie-2']);
+    expect(mockReserve.mock.invocationCallOrder[0]).toBeLessThan(mockLogin.mock.invocationCallOrder[0]);
+    expect(mockRecordDurable).toHaveBeenCalledWith('pin_ip:127.0.0.1');
+    expect(mockRecordDurable).toHaveBeenCalledTimes(1);
   });
 
   test('returns 429 when account lockout is active', async () => {
-    mockCheckRateLimit
-      .mockReturnValueOnce({ isLimited: true, delayMs: 30000 })
-      .mockReturnValueOnce({ isLimited: false });
+    mockReserve.mockResolvedValueOnce({ isLimited: true, key: 'pin_account:acct-locked', durable: false, delayMs: 30000 });
 
     const res = await POST(request('acct-locked'));
     expect(res.status).toBe(429);
@@ -144,7 +144,9 @@ describe('POST /api/pilot/auth/login', () => {
     const res = await POST(request('coach-acct'));
     expect(res.status).toBe(401);
     expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
-    expect(mockRecordDurable).toHaveBeenCalledTimes(2);
+    expect(mockReserve).toHaveBeenCalledTimes(1);
+    expect(mockRecordDurable).toHaveBeenCalledTimes(1);
+    expect(mockClearDurable).not.toHaveBeenCalled();
   });
 });
 
@@ -154,14 +156,9 @@ describe('POST /api/pilot/auth/login', () => {
 // pilot.accounts has no failed-attempt column, so nothing else survived a
 // restart. /auth/activate already used both limiters; login did not.
 describe('POST /api/pilot/auth/login durable rate limiting', () => {
-  beforeEach(() => {
-    mockCheckDurable.mockResolvedValue({ isLimited: false });
-  });
-
   test('a durable lockout blocks the attempt even when the in-memory store is empty', async () => {
     // The restart case: process memory is clean, the durable row is not.
-    mockCheckRateLimit.mockReturnValue({ isLimited: false });
-    mockCheckDurable.mockResolvedValueOnce({ isLimited: true, delayMs: 30_000 });
+    mockReserve.mockResolvedValueOnce({ isLimited: true, key: 'pin_account:acct-durable-1', durable: true, delayMs: 30_000 });
 
     const res = await POST(request('acct-durable-1'));
 
@@ -170,11 +167,7 @@ describe('POST /api/pilot/auth/login durable rate limiting', () => {
   });
 
   test('an IP-scoped durable lockout blocks it too', async () => {
-    mockCheckRateLimit.mockReturnValue({ isLimited: false });
-    // First call is the account key, second is the IP key.
-    mockCheckDurable
-      .mockResolvedValueOnce({ isLimited: false })
-      .mockResolvedValueOnce({ isLimited: true, delayMs: 5_000 });
+    mockCheckDurable.mockResolvedValueOnce({ isLimited: true, delayMs: 5_000 });
 
     const res = await POST(request('acct-durable-2'));
 
@@ -185,13 +178,13 @@ describe('POST /api/pilot/auth/login durable rate limiting', () => {
   // The property that matters most -- a rate-limit lookup is a guard, not the
   // operation: if the durable store is unreachable it must degrade to the
   // volatile limiter, never deny -- used to be "verified" right here, but the
-  // test only ever set mockCheckDurable to resolve { isLimited: false }: the
+  // test only ever set the durable check mock to resolve { isLimited: false }: the
   // exact same value the beforeEach above already defaults it to. It never
   // simulated the durable store failing, so it was byte-for-byte the ordinary
   // successful-login path with an outage-flavored name and comment.
   //
   // Because @/src/server/pilot/rateLimit is mocked wholesale at the top of
-  // this file, checkDurableRateLimit here IS the "durable store" as far as
+  // this file, reserveAttempts here IS the "durable store" as far as
   // route.ts is concerned -- there is no lower layer left in this module
   // registry to fail. Genuinely simulating the outage (the Postgres pool
   // rejecting) and proving the real withDurableClient/checkDurableRateLimit
@@ -201,7 +194,6 @@ describe('POST /api/pilot/auth/login durable rate limiting', () => {
 
   test('the volatile limiter still blocks on its own', async () => {
     // Belt and braces: durable clear, volatile limited.
-    mockCheckDurable.mockResolvedValue({ isLimited: false });
     mockCheckRateLimit.mockReturnValueOnce({ isLimited: true, delayMs: 2_000 });
 
     const res = await POST(request('acct-volatile'));

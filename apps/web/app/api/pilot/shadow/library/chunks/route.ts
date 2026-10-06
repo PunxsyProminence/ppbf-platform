@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
+import { trimLocator } from '@/src/server/pilot/locatorWhitespace';
 import { createShadowLibraryChunk } from '@/src/server/pilot/shadowLibrary';
 import { rightsRefusalMessage } from '@/src/server/pilot/shadowLibraryRights';
 import { SHADOW_LIBRARY_CURATOR_ROLES } from '@/src/server/pilot/shadowRoleSets';
@@ -42,10 +43,20 @@ const MAX_LOCATOR_LENGTH = 200;
 function excerptLocatorFrom(body: { excerpt_locator?: unknown; metadata?: unknown }): string | null | undefined {
   if (body.excerpt_locator !== undefined && body.excerpt_locator !== null) {
     // A blank locator says nothing about where the text is: refused, not read as full text.
-    return typeof body.excerpt_locator === 'string' && body.excerpt_locator.trim() ? body.excerpt_locator.trim() : undefined;
+    return typeof body.excerpt_locator === 'string' && trimLocator(body.excerpt_locator) ? trimLocator(body.excerpt_locator) : undefined;
   }
   const fromMetadata = (body.metadata as Record<string, unknown> | undefined)?.locator;
-  return typeof fromMetadata === 'string' ? fromMetadata.trim() : null;
+  if (fromMetadata === undefined || fromMetadata === null || fromMetadata === '') {
+    return null;
+  }
+  // A number, boolean or object is not a locator; the trigger reads it as text
+  // ('true'), so it is refused here rather than stored as full text.
+  if (typeof fromMetadata !== 'string') {
+    return undefined;
+  }
+  // Whitespace only (a tab, a line break, NBSP): refused, not read as full
+  // text. The database trigger applies the same rule (CL-C1; locatorWhitespace.ts).
+  return trimLocator(fromMetadata) || undefined;
 }
 
 export async function POST(request: NextRequest) {
