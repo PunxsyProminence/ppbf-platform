@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 9;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -54,6 +54,9 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 9;
 // reads source rights. What goes into authorizedContext is unchanged; bumped
 // because a listed file moved. A v8 job still queued at deploy is refused as
 // STALE.
+// 10: Library claims (CL-C15): ensureClaimResearchRequirement finds the open
+// duplicate in SQL and keys new rows with a random id. What goes into
+// authorizedContext is unchanged; bumped because a listed file moved.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -116,6 +119,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 7, sha256: '89b51b15eaa9c8c93dad39df694b1fe55f312eea897964ba868a733f221fdfb2' },
   { version: 8, sha256: 'b85aec5f0ba1997dd8858b2dde3d9f9903f39a7c7e3fcccad5052616885fcb2b' },
   { version: 9, sha256: 'a212014dfeeced705d843be036e03384357cad75ee9bccea0ceaefb0a788dcf6' },
+  { version: 10, sha256: 'ce5bbbc6a34a05b45645b3bae5a9992a40c1dca1188a1fd27fe96d7c655a90f1' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
