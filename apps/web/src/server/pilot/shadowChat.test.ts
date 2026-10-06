@@ -1293,6 +1293,12 @@ describe('CL-C9: an emergency about someone else gets the emergency line', () =>
     'What causes it when his neck went numb after the fall?',
     'What does it mean when her pupils look unequal? She has unequal pupils.',
     'What does it mean when the boxer had a seizure?',
+    // Reviewer A, 2026-10-06: subjects the first cut did not know.
+    "What does it mean when the kiddo can't breathe?",
+    'What does it mean when this boxer has slurred speech?',
+    'What does it mean when the 12 year old has slurred speech?',
+    "What does it mean when the other boxer can't breathe?",
+    'What does it mean when hes got blurry vision after a punch',
   ])('%s', (message) => {
     const result = validateShadowRequest(message, 'coach', 'org-1');
     expect(result.valid).toBe(false);
@@ -1309,6 +1315,15 @@ describe('CL-C9: an emergency about someone else gets the emergency line', () =>
     'What causes vomiting blood in athletes?',
     'What are the signs athletes show when their vision is blurry?',
     'How do coaches respond when a boxer collapses?',
+    // Reviewer A, 2026-10-06: a pronoun or "the athlete" that refers to a
+    // general subject is not a specific person.
+    'What causes a boxer to faint after his weigh-in?',
+    'What can cause a wrestler to have a headache after he cuts weight?',
+    'What does a referee look for when deciding if a boxer is knocked out or if he can continue?',
+    'What is the difference between fainting and a seizure in an athlete and how would a coach tell if he or she needs help?',
+    'What are the signs that a fighter is unconscious versus just dazed, and what should the coach do for him?',
+    'What is syncope and how does it differ from when someone just feels her legs go weak?',
+    'What is a concussion and what headache signs should the athlete watch for?',
   ])('a general question still gets an answer: %s', (message) => {
     const result = validateShadowRequest(message, 'coach', 'org-1');
     expect(result.valid).toBe(true);
