@@ -9,9 +9,8 @@ import {
   getClientIp,
   checkRateLimit,
   checkDurableRateLimit,
-  recordFailedAttempt,
   recordDurableFailedAttempt,
-  clearRateLimit,
+  reserveAttempts,
   clearDurableRateLimit,
 } from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
@@ -63,28 +62,34 @@ export async function POST(request: NextRequest) {
     // degrades to the volatile limiter instead of locking every athlete out
     // -- failing this check closed would be a worse outage than the brute
     // force it guards against.
-    const accountLimitCheck = checkRateLimit(accountKey);
+    //
+    // THE ACCOUNT IS COUNTED BEFORE THE PIN IS CHECKED (CL-A4). Reading the
+    // bucket, awaiting scrypt and recording the failure afterwards let every
+    // guess in a burst at one child's PIN past the read before the first
+    // failure landed. reserveAttempts counts this attempt atomically and
+    // admits it only if the account bucket was not already blocked.
+    //
+    // THE IP BUCKET STAYS CHECK-THEN-RECORD, deliberately. Reserving it would
+    // block the gym's other tablets (one public IP) for the length of every
+    // CORRECT sign-in, so a class signing in together would read 429s. It
+    // still slows a spray across accounts after each failure, as before.
     const ipLimitCheck = checkRateLimit(ipKey);
-    const durableAccountCheck = await checkDurableRateLimit(accountKey);
     const durableIpCheck = await checkDurableRateLimit(ipKey);
-
-    if (durableAccountCheck.isLimited || durableIpCheck.isLimited) {
+    if (ipLimitCheck.isLimited || durableIpCheck.isLimited) {
       return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.' },
+        {
+          error: ipLimitCheck.isLimited
+            ? 'Too many login attempts from this IP. Please try again later.'
+            : 'Too many login attempts. Please try again later.',
+        },
         { status: 429 }
       );
     }
 
-    if (accountLimitCheck.isLimited) {
+    const reservation = await reserveAttempts([accountKey]);
+    if (reservation.isLimited) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
-      );
-    }
-
-    if (ipLimitCheck.isLimited) {
-      return NextResponse.json(
-        { error: 'Too many login attempts from this IP. Please try again later.' },
         { status: 429 }
       );
     }
@@ -93,11 +98,8 @@ export async function POST(request: NextRequest) {
     const loginResult = await loginWithAccountIdAndPin(accountId, pin);
 
     if (!loginResult) {
-      // Both records: the durable helpers write the volatile entry too, so
-      // these two calls cover both stores.
-      await recordDurableFailedAttempt(accountKey);
+      // The account attempt is already counted; the IP one is recorded here.
       await recordDurableFailedAttempt(ipKey);
-
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
