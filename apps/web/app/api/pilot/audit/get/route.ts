@@ -76,6 +76,36 @@ function optionalFilter(value: unknown, field: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+// Allow-listed types whose every record is ABOUT an athlete, even when an
+// audit row for it names none. Many writers put the child only in entity_id
+// (intervention execution/outcome updates, coach_review {session_id},
+// mentorship end, coverage revoke), so "names no athlete" did not mean
+// "org-wide" and those rows reached every coach. For a coach, a row of one of
+// these types that names no athlete is now hidden: it fails CLOSED, at the
+// cost of a coach not seeing such rows about their own athletes here. The
+// per-type routes remain the place to read those records. Types left out
+// (announcement, behavior_standard, drill, floor_plan, intervention_protocol,
+// program_phase, rabbit_hole) are gym-wide.
+const ATHLETE_OWNED_ENTITY_TYPES = new Set([
+  'athlete_milestone',
+  'athlete_program',
+  'coach_coverage',
+  'coach_note',
+  'coach_review',
+  'external_competition_entry',
+  'goal',
+  'intervention_evidence_link',
+  'intervention_execution',
+  'intervention_outcome_review',
+  'mentorship',
+  'one_percent_nomination',
+  'recognition',
+  'scheduler_coaching_request',
+  'session',
+  'video_session',
+  'wrestling_league_roster_entry',
+]);
+
 // Every athlete a details blob names, under ANY athlete-named key, at any
 // depth. Reading details.athlete_id alone let mentorship rows -- which carry
 // mentor_athlete_id / mentee_athlete_id and no athlete_id -- count as naming
@@ -156,7 +186,11 @@ export async function POST(request: NextRequest) {
     const namedByRow = rows.map((row) => athleteIdsNamedIn(row.details));
     const reachable = await accessibleAthleteIds(principal, [...new Set(namedByRow.flat())]);
     const scoped = rows
-      .filter((_, index) => namedByRow[index].every((id) => reachable.has(id)))
+      .filter((row, index) => {
+        const named = namedByRow[index];
+        if (named.length === 0) return !ATHLETE_OWNED_ENTITY_TYPES.has(row.entity_type);
+        return named.every((id) => reachable.has(id));
+      })
       .slice(0, limit);
 
     return NextResponse.json({ ok: true, events: scoped });

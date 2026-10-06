@@ -44,6 +44,12 @@ describe('assertVideoConcernsAthlete', () => {
     await expect(assertVideoConcernsAthlete('org-1', 'vs-1', 'ATH-1')).rejects.toBeInstanceOf(VideoNotOfAthleteError);
   });
 
+  test('a tag on a deleted athlete does not count', async () => {
+    mockQueryOne.mockResolvedValue({ athlete_id: null });
+    mockSubjects.mockResolvedValue([{ athlete_id: 'ATH-1', athlete_deleted: true }] as never);
+    await expect(assertVideoConcernsAthlete('org-1', 'vs-1', 'ATH-1')).rejects.toBeInstanceOf(VideoNotOfAthleteError);
+  });
+
   test('an untagged group video with no athlete is refused until tagged', async () => {
     mockQueryOne.mockResolvedValue({ athlete_id: null });
     await expect(assertVideoConcernsAthlete('org-1', 'vs-1', 'ATH-1')).rejects.toBeInstanceOf(VideoNotOfAthleteError);

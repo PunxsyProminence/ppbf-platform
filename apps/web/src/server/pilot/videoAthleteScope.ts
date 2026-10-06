@@ -12,8 +12,8 @@ import { listLiveTagSubjects } from './videoClipTags';
  *
  * "Of the athlete" means (owner ruling, relayed by overwatch 2026-10-06):
  *   - the video's own athlete_id is that athlete, or
- *   - that athlete is a LIVE tag subject of the video (a removed tag no
- *     longer counts).
+ *   - that athlete is a LIVE tag subject of the video (a removed tag, or a
+ *     tag on a deleted athlete, does not count).
  * An untagged group video with no athlete_id is of nobody yet, and is refused
  * until someone tags the athlete in it.
  *
@@ -43,7 +43,9 @@ export async function assertVideoConcernsAthlete(
   if (video.athlete_id === athleteId) return;
 
   const subjects = await listLiveTagSubjects(organizationId, videoSessionId);
-  if (subjects.some((subject) => subject.athlete_id === athleteId)) return;
+  // A tag on a deleted athlete does not count: the video gate already treats
+  // such footage as gone (tags/route.ts), and this must not disagree with it.
+  if (subjects.some((subject) => subject.athlete_id === athleteId && !subject.athlete_deleted)) return;
 
   throw new VideoNotOfAthleteError();
 }

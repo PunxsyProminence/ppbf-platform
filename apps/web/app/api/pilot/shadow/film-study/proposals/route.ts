@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
     // Clearing the athlete says nothing about the video. Without this a coach
     // cleared for one child could file an observation about them against
     // another child's bout (audit CL-A16). Checked after the athlete gate so
-    // the refusal cannot be used to probe videos of children the caller
+    // this refusal adds nothing to probe with about children the caller
     // cannot reach.
     await assertVideoConcernsAthlete(principal.organizationId, videoSessionId, athleteId);
 
