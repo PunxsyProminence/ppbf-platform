@@ -5,7 +5,7 @@ import { formatGymDate } from '../../lib/gymTime';
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
 import { ConflictError } from './errors';
-import { lockGuardianLinksForPurge } from './guardianConsent';
+import { lockGuardianLinksForPurge, MEDIA_CONSENT_WAIVER_TYPE } from './guardianConsent';
 
 export interface ActorIdentity {
   accountId: string;
@@ -636,6 +636,37 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
        organization_id, which is NOT NULL. Deleting the guardian record without
        this fails with 23502. Same reasoning, and the same two statements, as
        scripts/pilot-cleanup-deleted-data.mjs. */
+    /* The guardian's media choice is kept first, against each child: owner
+       ruling, Jason 2026-10-05 ("Keep the 'no' (Recommended)"). Same statement
+       and reasoning as scripts/pilot-cleanup-deleted-data.mjs; read by
+       guardianConsent.ts. */
+    await client.query(
+      `insert into pilot.retained_media_consent_restrictions
+         (organization_id, athlete_id, former_parent_key, waiver_id, retained_at)
+       select distinct on (w.organization_id, w.athlete_id, w.parent_id)
+              w.organization_id, w.athlete_id,
+              encode(sha256(convert_to(w.parent_id, 'UTF8')), 'hex'),
+              w.waiver_id, clock_timestamp()
+         from pilot.waivers w
+         join pilot.parents p
+           on p.organization_id = w.organization_id
+          and p.parent_id = w.parent_id
+         join pilot.guardian_links gl
+           on gl.organization_id = w.organization_id
+          and gl.parent_id = w.parent_id
+          and gl.athlete_id = w.athlete_id
+        where p.account_id in (
+                select account_id from pilot.accounts
+                 where deleted_at is not null
+                   and deleted_at < (now() - interval '1 year')
+                   and role = 'parent'
+              )
+          and w.waiver_type = $1
+        order by w.organization_id, w.athlete_id, w.parent_id, w.created_at desc
+       on conflict (organization_id, athlete_id, former_parent_key)
+       do update set waiver_id = excluded.waiver_id, retained_at = excluded.retained_at`,
+      [MEDIA_CONSENT_WAIVER_TYPE],
+    );
     await client.query(
       `update pilot.waivers w
           set parent_id = null

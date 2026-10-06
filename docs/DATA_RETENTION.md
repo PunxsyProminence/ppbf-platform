@@ -405,6 +405,15 @@ When a guardian is deleted, their linked athlete records are automatically soft-
 guardian in the organization is not withdrawn by a different adult's account deletion --
 withdrawing that child stays a separate, explicit action (see *Athlete Withdraws* below).
 
+**A guardian's media "no" outlives their record** (Jason 2026-10-05: "Keep the 'no'
+(Recommended)"). When Method 1 hard-deletes a guardian, both purge paths first record that
+guardian's current photo/video consent against each child in
+`pilot.retained_media_consent_restrictions` (a pointer to the surviving waiver, keyed by a
+hash of the guardian record's id, never the id itself, since that is usually their email).
+Only children the guardian was still linked to are recorded. A withdrawal there keeps refusing publication, Film Study, the content scan and
+playback; a photo-only choice keeps refusing video. It lifts only when a guardian still linked
+records a signed consent covering video after the purge. It is deleted with the child.
+
 "Another guardian" is counted by account, so a single adult holding two guardian records
 for the same child is still that child's only guardian, and a co-guardian whose own account
 has already been deleted does not count as remaining. A guardian recorded without a login
