@@ -245,6 +245,44 @@ test('a guardian_link write with no account_id skips account validation but stil
   expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }), TX_CLIENT);
 });
 
+// CL-B8. A missing full_name used to reach upsertGuardian as the literal
+// 'Guardian', which then replaced the real name on file. An omitted name is
+// now passed as omitted, and upsertGuardian keeps the existing one.
+test('a guardian_link write with no full_name does not invent one', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockResolvedValue(undefined);
+
+  for (const fullName of [undefined, '', '   ']) {
+    mockUpsertGuardian.mockClear();
+    const response = await POST(postRequest({
+      ...GUARDIAN_LINK_BODY,
+      payload: { ...GUARDIAN_LINK_BODY.payload, ...(fullName === undefined ? {} : { full_name: fullName }) },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertGuardian).toHaveBeenCalledTimes(1);
+    expect(mockUpsertGuardian.mock.calls[0][0].fullName).toBeUndefined();
+  }
+});
+
+test('a supplied full_name is passed through, trimmed', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockResolvedValue(undefined);
+
+  await POST(postRequest({
+    ...GUARDIAN_LINK_BODY,
+    payload: { ...GUARDIAN_LINK_BODY.payload, full_name: '  Pat Example ' },
+  }));
+
+  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'Pat Example' }), TX_CLIENT);
+});
+
 // Naming an existing guardian record with a different login is refused by
 // upsertGuardian (proved against a real database in guardianUpsert.pg.test.ts).
 // This pins what the route does with that refusal: the admin sees a 409 that

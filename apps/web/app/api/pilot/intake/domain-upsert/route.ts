@@ -248,7 +248,11 @@ export async function POST(request: NextRequest) { // NOSONAR
           organizationId: principal.organizationId,
           parentId,
           accountId: guardianAccountId,
-          fullName: asString(payload.full_name, 'Guardian'),
+          // Omitted, not 'Guardian' (CL-B8): upsertGuardian keeps the name
+          // on file, and refuses a new guardian that has none.
+          fullName: typeof payload.full_name === 'string' && payload.full_name.trim()
+            ? payload.full_name.trim()
+            : undefined,
           phone: typeof payload.phone === 'string' ? payload.phone : undefined,
           email: typeof payload.email === 'string' ? payload.email : undefined,
         }, client);

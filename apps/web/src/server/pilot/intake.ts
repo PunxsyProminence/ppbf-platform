@@ -13,7 +13,7 @@ import type { PilotAthlete, PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount } from './deletedAccountSignIn';
 import { upsertAthlete } from './entities';
-import { ConflictError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
@@ -199,10 +199,20 @@ export async function createIntakeDocument(params: {
 }): Promise<string> {
   const intakeDocumentId = randomUUID();
 
-  await query(
+  // Only onto a case in this organization that is still pending review
+  // (CL-A9). The upload route checks the same thing before it stores the
+  // file; this repeats it in the insert itself so a case approved, rejected
+  // or promoted in between takes no new document, and a missing case is a
+  // refusal rather than a foreign-key 500.
+  const inserted = await query<{ intake_document_id: string }>(
     `insert into pilot.intake_documents
      (organization_id, intake_document_id, intake_case_id, shadow_intake_id, document_type, file_name, blob_path, classification, review_status, metadata)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+     select $1::text, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text, $7::text, $8::text, $9::text, $10::jsonb
+     where exists (
+       select 1 from pilot.intake_cases
+       where organization_id = $1::text and intake_case_id = $3::uuid and status = 'pending_review'
+     )
+     returning intake_document_id`,
     [
       params.organizationId,
       intakeDocumentId,
@@ -216,6 +226,10 @@ export async function createIntakeDocument(params: {
       JSON.stringify(params.metadata ?? {}),
     ],
   );
+
+  if (inserted.length === 0) {
+    throw new ConflictError('This intake case is no longer open for review; upload without a case to start a new one.');
+  }
 
   return intakeDocumentId;
 }
@@ -1521,6 +1535,72 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
 }
 
 /**
+ * WHICH COLUMNS OF AN INTAKE CASE AND ITS DOCUMENTS A READER MAY SEE (CL-B7).
+ *
+ * The last two reads in getIntakeCaseAggregate still on `select *`. The case
+ * carries review_notes -- whatever the reviewer wrote when deciding it --
+ * with the reviewer's and the filer's account ids, and the upload's own
+ * payload (classification, routing queue). Each document carries metadata:
+ * the hint a coach typed at upload, up to 1000 characters
+ * (shadow/upload/route.ts), and the security reviewer's notes and account id
+ * (reviewIntakeDocumentSecurity), plus the storage path and the triage
+ * classification. That is staff writing about a family, and the athlete and
+ * the guardian reach this aggregate (OD-2026-10-05-011 kept that read,
+ * "trimmed per role"). They get what the case and its files ARE; the staff
+ * record of handling them stays with staff, as for the seven tables above.
+ */
+export const INTAKE_CASE_IDENTITY_COLUMNS = [
+  'organization_id',
+  'intake_case_id',
+  'status',
+  'primary_athlete_id',
+  'summary',
+  'promoted_at',
+  'rejected_at',
+  'created_at',
+  'updated_at',
+] as const;
+
+export const INTAKE_CASE_STAFF_COLUMNS = [
+  'source_shadow_intake_id',
+  'submitted_by_account_id',
+  'reviewed_by_account_id',
+  'review_notes',
+  'payload',
+] as const;
+
+export function intakeCaseColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...INTAKE_CASE_IDENTITY_COLUMNS, ...INTAKE_CASE_STAFF_COLUMNS];
+  }
+
+  return [...INTAKE_CASE_IDENTITY_COLUMNS];
+}
+
+export const INTAKE_DOCUMENT_IDENTITY_COLUMNS = [
+  'organization_id',
+  'intake_document_id',
+  'intake_case_id',
+  'document_type',
+  'file_name',
+  'review_status',
+  'owner_entity_type',
+  'owner_entity_id',
+  'created_at',
+  'updated_at',
+] as const;
+
+export const INTAKE_DOCUMENT_STAFF_COLUMNS = ['shadow_intake_id', 'blob_path', 'classification', 'metadata'] as const;
+
+export function intakeDocumentColumnsForReader(role: PilotRole): string[] {
+  if (isOrganizationAdminRole(role) || role === 'coach') {
+    return [...INTAKE_DOCUMENT_IDENTITY_COLUMNS, ...INTAKE_DOCUMENT_STAFF_COLUMNS];
+  }
+
+  return [...INTAKE_DOCUMENT_IDENTITY_COLUMNS];
+}
+
+/**
  * Refuses, before anything is written, an athlete account_id that intake
  * promotion's call to createOrUpdateAthleteAccount must not touch.
  *
@@ -1881,7 +1961,7 @@ export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
   accountId?: string;
-  fullName: string;
+  fullName?: string;
   phone?: string;
   email?: string;
 }, client?: PoolClient): Promise<void> {
@@ -1891,8 +1971,13 @@ export async function upsertGuardian(params: {
   // do, meant naming an EXISTING parent_id with a shorter payload silently
   // nulled a real guardian's account link and contact details rather than
   // leaving them alone. coalesce against the current row so an omitted field
-  // preserves what is already on file; full_name has no optional caller path
-  // (both call sites always supply one) and keeps overwriting as before.
+  // preserves what is already on file. full_name too (CL-B8): the comment
+  // here used to say both call sites always supply one, but the guardian_link
+  // route filled a missing name with the literal 'Guardian', which then
+  // replaced the real name everywhere it is shown and on every later consent
+  // signature. An omitted name now keeps the one on file. A NEW guardian has
+  // no name on file, so the insert carries NULL into a NOT NULL column and is
+  // refused below as the caller's to fix.
   //
   // account_id may FILL an empty link or restate the same one, never replace
   // a different one. coalesce alone let a supplied account_id overwrite the
@@ -1901,23 +1986,38 @@ export async function upsertGuardian(params: {
   // so no row comes back and the write is refused below. It is in the same
   // statement as the write, so a concurrent change cannot slip between a
   // check and the update.
-  const written = await writeRows<{ parent_id: string }>(
-    client,
-    `insert into pilot.parents
-     (organization_id, parent_id, account_id, full_name, phone, email)
-     values ($1,$2,$3,$4,$5,$6)
-     on conflict (organization_id, parent_id) do update set
-       account_id = coalesce(excluded.account_id, pilot.parents.account_id),
-       full_name = excluded.full_name,
-       phone = coalesce(excluded.phone, pilot.parents.phone),
-       email = coalesce(excluded.email, pilot.parents.email),
-       updated_at = now()
-     where pilot.parents.account_id is null
-        or excluded.account_id is null
-        or pilot.parents.account_id = excluded.account_id
-     returning parent_id`,
-    [params.organizationId, params.parentId, params.accountId ?? null, params.fullName, params.phone ?? null, params.email ?? null],
-  );
+  const fullName = params.fullName?.trim() || null;
+  let written: Array<{ parent_id: string }>;
+  try {
+    written = await writeRows<{ parent_id: string }>(
+      client,
+      `insert into pilot.parents
+       (organization_id, parent_id, account_id, full_name, phone, email)
+       values (
+         $1, $2, $3,
+         coalesce($4::text, (select existing.full_name from pilot.parents existing
+                             where existing.organization_id = $1 and existing.parent_id = $2)),
+         $5, $6
+       )
+       on conflict (organization_id, parent_id) do update set
+         account_id = coalesce(excluded.account_id, pilot.parents.account_id),
+         full_name = coalesce($4::text, pilot.parents.full_name),
+         phone = coalesce(excluded.phone, pilot.parents.phone),
+         email = coalesce(excluded.email, pilot.parents.email),
+         updated_at = now()
+       where pilot.parents.account_id is null
+          or excluded.account_id is null
+          or pilot.parents.account_id = excluded.account_id
+       returning parent_id`,
+      [params.organizationId, params.parentId, params.accountId ?? null, fullName, params.phone ?? null, params.email ?? null],
+    );
+  } catch (error) {
+    const pgError = error as { code?: unknown; column?: unknown };
+    if (fullName === null && pgError.code === '23502' && pgError.column === 'full_name') {
+      throw new ValidationError(`Missing payload.full_name: guardian record "${params.parentId}" is new and needs a name.`);
+    }
+    throw error;
+  }
 
   if (written.length === 0) {
     // Only the where clause can leave nothing written, and it only fails
@@ -1958,7 +2058,12 @@ export async function getIntakeCaseAggregate(
   intakeCaseId: string,
   context?: { actorAccountId: string; actorRole: PilotRole },
 ): Promise<Record<string, unknown> | null> {
-  const intakeCase = await getIntakeCaseById(organizationId, intakeCaseId);
+  const readerRole = context?.actorRole ?? 'athlete';
+  const intakeCase = await queryOne<Pick<IntakeCaseRecord, 'primary_athlete_id'> & Record<string, unknown>>(
+    `select ${intakeCaseColumnsForReader(readerRole).join(', ')} from pilot.intake_cases
+     where organization_id = $1 and intake_case_id = $2`,
+    [organizationId, intakeCaseId],
+  );
   if (!intakeCase) {
     return null;
   }
@@ -1979,7 +2084,6 @@ export async function getIntakeCaseAggregate(
   // wrote to a coach in confidence and the 'parent_message' rows addressed to
   // the other household. Two reads of one table cannot give two answers to
   // "what may this reader see".
-  const readerRole = context?.actorRole ?? 'athlete';
   const guardianColumns = guardianColumnsForReader(readerRole);
   const emergencyContactColumns = emergencyContactColumnsForReader(readerRole);
   const waiverColumns = waiverColumnsForReader(readerRole);
@@ -1988,9 +2092,14 @@ export async function getIntakeCaseAggregate(
   const assessmentColumns = assessmentColumnsForReader(readerRole);
   const readinessColumns = readinessColumnsForReader(readerRole);
   const readableNoteTypes = coachObservationNoteTypesForReader(readerRole);
+  const intakeDocumentColumns = intakeDocumentColumnsForReader(readerRole);
 
   const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
-    query('select * from pilot.intake_documents where organization_id = $1 and intake_case_id = $2 order by created_at asc', [organizationId, intakeCaseId]),
+    query(
+      `select ${intakeDocumentColumns.join(', ')} from pilot.intake_documents
+       where organization_id = $1 and intake_case_id = $2 order by created_at asc`,
+      [organizationId, intakeCaseId],
+    ),
     query(
       `select ${emergencyContactColumns.join(', ')} from pilot.emergency_contacts
        where organization_id = $1 and athlete_id = $2 order by created_at desc`,
@@ -2050,9 +2159,17 @@ export async function getIntakeCaseAggregate(
       : Promise.resolve([]),
   ]);
 
+  // The timeline's actor is the staff member who reviewed, approved or
+  // promoted the case -- the same account id the case projection above keeps
+  // from family readers (CL-B7). The event itself stays; who did it does not.
+  const readerIsStaff = isOrganizationAdminRole(readerRole) || readerRole === 'coach';
+  const timelineForReader = readerIsStaff
+    ? shadowTimeline
+    : shadowTimeline.map((event) => ({ ...event, actor_account_id: null }));
+
   return {
     intake_case: intakeCase,
-    shadow_timeline: shadowTimeline,
+    shadow_timeline: timelineForReader,
     documents,
     emergency_contacts: emergencyContacts,
     medical_intake: medical,
