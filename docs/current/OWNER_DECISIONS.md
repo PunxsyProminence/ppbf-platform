@@ -164,6 +164,110 @@ and should not try to.
 
 ---
 
+## OD-2026-10-05-026 -- Production re-home: Jason overrode the "Jason runs the script" clause of OD-2026-10-05-008 for this run and authorized the lane to run prod-rehome-test-login.cjs (dry run, then --apply)
+
+**Provenance: PRIMARY.** Jason's typed message in the helper session titled "Open parent portal logins (staging + production)" (desktop session `local_1384fac3`; transcript `~/.claude/projects/C--Dev/b3fa43d1-a2dc-4341-932d-cd8f4c9e003b.jsonl`, line 229, user message 2026-10-06T01:45:54.517Z; queued 2026-10-06T01:45:54.390Z, line 227). Read by script from that transcript (records pass, 2026-10-05). The message answers the helper's question put at 2026-10-06T00:28:20.083Z (line 225, plain-text question, no AskUserQuestion tool use). New; edits no earlier entry except as stated below.
+
+Asked (official form, by the helper session): "How do you want to free up that email?" Options: "1. (Recommended) Run the re-home script." (node `C:\Users\jason\Documents\PPBF-overwatch\prod-rehome-test-login.cjs`, dry run first; "If the dry run ends in PASS, run it again with ` --apply`. Then add the parent on the parent screen as `ppbf@`."); "2. Delete the old login instead." ("That's a new production change. Overwatch would need to open a lane to write and test a delete script, which takes longer."). The helper had also said it could not delete the login, being read-only, and that "Overwatch has also said production writes are yours to run." (the OD-2026-10-05-008 clause). Plain English as asked: *"removing" the old login and "moving" it reach the same place, and the move is the one that's ready to use today.* Jason's preceding message (line 220, 2026-10-06T00:28:06.429Z) chose option 1 of an earlier question and asked to have the old login removed so he could use that email; it is not quoted here because it contains an email address, and this entry records none.
+
+Jason, 2026-10-06T01:45:54.517Z: *"I give you permission to be more than ready only full authorization to fix it"*
+
+**Ruling: for this item only, Jason overrode the "run by Jason, not by any AI session" clause of OD-2026-10-05-008 and gave the lane full authorization to run the re-home script `prod-rehome-test-login.cjs` itself, as a dry run first and then with `--apply`.** The rest of OD-2026-10-05-008 stands: the `danielles` organization is a test, the login is re-homed to `punxsy_prominence` as a parent, and the script is the reviewed dry-run-first one (option B of that entry). "Delete the old login instead" (option 2) was not chosen and no delete script is authorized. This is not standing authority: it covers this one script run and this one login; any later production data change needs its own authorization.
+
+Qualifies OD-2026-10-05-008 (for that run only); edits no other entry.
+
+---
+
+## OD-2026-10-05-025 -- Merges before review: #1258 may merge before the ChatGPT review, and #1261/#1262 may merge before the Codex review (two "Yes" answers)
+
+**Provenance: PRIMARY.** Two one-word user messages in the Overwatch session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`). Read by script from that transcript (records pass, 2026-10-05). Both questions were plain-text assistant messages (no AskUserQuestion tool use, so no tool use id). Timestamps are as stored (UTC). New; edits no earlier entry.
+
+**(a) #1258.** Asked by Overwatch, line 503, 2026-10-05T20:17:04.107Z (official form, then plain English, as written):
+
+> **Decision for you (official):** should the P0 fix #1258 merge now and be reviewed after merge, instead of waiting for ChatGPT? I recommend **merge now**.
+> **Plain English:** it closes a hole that is open today. The hole only matters when the database-update job runs, and none is scheduled, so waiting costs little. Merging now still removes the risk. If you don't answer, it waits for the review.
+
+Jason, line 507, 2026-10-05T20:17:17.457Z (queued 2026-10-05T20:17:17.369Z): *"Yes"*
+
+**(b) #1261 and #1262.** Asked by Overwatch, line 725, 2026-10-06T00:28:54.095Z, in answer to Jason's "Whats the recommendation":
+
+> My recommendation is to merge #1261 and #1262 now and let Codex review them afterwards.
+> [...] Say "yes" and I'll merge #1261, then #1262.
+
+(The omitted bullets gave the reasons: a minors' privacy gap open today, two independent adversarial reviews with fixes and tests that failed before the fix, all CI checks passing, and Codex reading the shared folder only when prompted.)
+
+Jason, line 729, 2026-10-06T01:25:14.956Z (queued 2026-10-06T01:25:14.853Z): *"Yes"*
+
+**Ruling: Jason authorized (a) merging #1258 before the ChatGPT review, and (b) merging #1261 and then #1262 before the Codex review; each review happens after the merge, and a finding becomes a fix in a follow-up lane.** Each "Yes" covers the one question it answers; it is not standing permission to merge unreviewed work.
+
+Extends OD-2026-09-30-003 (MERGES: only overwatch merges lane PRs after CI and its scope check) by allowing review to follow the merge for these three PRs.
+
+---
+
+## OD-2026-10-05-024 -- Audit owner questions, batch of eight: "Go with all recommendations" (hold, coach reads, chat safety queue, co-guardians, disputed completions, withdrawn competition entry, excerpt size limit, research bridge)
+
+**Provenance: PRIMARY.** Jason's message in the Overwatch session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`, line 1084, user message 2026-10-06T03:27:26.886Z; queued 2026-10-06T03:27:26.853Z), answering Overwatch's plain-text message at line 1080, 2026-10-06T03:23:47.693Z, which lists 8 numbered questions with "Rec:" lines and says: Answer "all recommended" or give numbers. Read by script from that transcript (records pass, 2026-10-05). Question and recommendation text below is copied from that message, including its bold markers. New; edits no earlier entry.
+
+Jason: *"Go with all reco,endations and create chips"* (his spelling)
+
+The questions as put to Jason (official form, with the plain-English gloss as written):
+
+1. **Training hold:** can a coach lift a hold an admin set? Rec: **No.** Plain: only an admin can undo an admin's hold.
+2. **Coach reads:** should some coach screens show any athlete in the gym, or only the coach's assigned athletes? Rec: **assigned only.** Plain: coaches see their own kids' details.
+3. **Platform owner and the chat safety queue:** should Admin@ see it? Rec: **No.** Plain: it's gym business, not platform business.
+4. **Co-guardians:** can both parents see each other's consent choice? Rec: **Yes, the status only.** Plain: Mom can see that Dad chose "photos only".
+5. **Disputed completions:** does a disputed drill completion count toward finishing an assignment? Rec: **No, not until resolved.**
+6. **Withdrawn competition entry:** can it be re-entered? Rec: **Yes, re-running every safety check.**
+7. **Excerpt size limit (C2):** nothing caps how long a licensed excerpt can be. Rec: **ChatGPT proposes a limit and you approve it.**
+8. **Research bridge:** still waiting on **"yes A"**: close it to outside traffic. Codex found that its sign-in setup was designed with a lock, but the live setting has drifted to no lock (I confirmed with az: auth config is empty). That makes A even more clearly right.
+
+For item 8, option A had been put by Overwatch earlier (line 1009, 2026-10-06T01:48:06.385Z) as: "A, close the research bridge to the outside today", to be run as `az containerapp ingress update -n ca-ppbf-research-dfbc -g rg-ppbf-staging-dfbc --type internal`, with "a code lane to make the bridge check the caller properly" to follow once it is closed. Jason's "yes A" was not found typed in this transcript; this answer ("Go with all reco,endations") is the answer on record.
+
+**Ruling: every recommendation is accepted as written.**
+
+1. A coach cannot lift a training hold an admin set; only an admin can.
+2. Coach read routes: the assigned coach only, not any coach in the gym.
+3. The platform owner (Admin@) does not see the chat safety queue.
+4. Co-guardians see each other's consent status only (for example that the other parent chose "photos only"), nothing more.
+5. A disputed drill completion does not count toward finishing an assignment until the dispute is resolved.
+6. A withdrawn competition entry can be re-entered, re-running every safety gate.
+7. Licensed-excerpt size limit: ChatGPT proposes a limit and Jason approves it. No number is decided yet.
+8. Research bridge: option A. Close the bridge's ingress to internal; a code fix to check the caller follows.
+
+"Create chips" is the instruction to turn the confirmed fixes into fix chips (suggestions only until Jason starts them). Item 7 stays open until Jason approves a number.
+
+---
+
+## OD-2026-10-05-023 -- A deleted guardian's media consent choice keeps restricting the child's media (option "Keep the 'no'")
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the Overwatch session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`, tool use `toolu_01HmhGkvRsR1KPrLZt5AFsCC`; asked 2026-10-06T01:35:27.609Z, answered 2026-10-06T01:35:47.131Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
+
+Asked (official form): "Official (audit CL-B2): when a guardian's parent account is deleted (pilot.parents row purged, cascading their guardian_links), should that guardian's last media-consent choice (withdrawn or photo-only) keep restricting the child's media? Today it stops counting; only the remaining guardians' consent is checked."
+
+Plain English as asked: "if a parent said 'no video' or 'withdraw' and then their account is deleted, should their 'no' still protect the kid? Right now it disappears with the account."
+
+Options: "Keep the 'no' (Recommended)" (A withdrawal or photo-only choice outlives the guardian's account deletion; the child's media stays restricted until a remaining guardian grants it. Fix lane.); "Drop it" (Current behaviour is right: a deleted guardian's choice no longer counts; remaining guardians decide. Recorded as a ruling, no fix.). Jason answered: *"Keep the 'no' (Recommended)"*.
+
+**Ruling: a guardian's withdrawal or photo-only choice outlives that guardian's account deletion; the child's media stays restricted until a remaining guardian grants it.** "Drop it" was not chosen. A fix lane follows, per the option text.
+
+---
+
+## OD-2026-10-05-022 -- Photo-only consent means no video use: the automated video safety scan skips that child's video, treated as P0 (option "Skip scan")
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the Overwatch session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`, tool use `toolu_01JrwLToce4y21nuHGEGK1rR`; asked 2026-10-06T01:34:42.900Z, answered 2026-10-06T01:35:19.191Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
+
+Asked (official form): "Official: when a guardian's consent is photo-only (covers_video=false), may the automated video safety scan (vision model on frames, PPBF_VIDEO_CONTENT_SCAN=vision in production) still analyse that athlete's video? Today it does, because the scan gate checks only 'signed', not covers_video (videoScanSweep.ts:185-191)."
+
+Plain English as asked: "if a parent said 'photos only', should the computer safety check still look at that kid's video? Right now it does."
+
+Options: "Skip scan (Recommended)" (Photo-only = no video use at all. The scan skips that child's video (marked 'skipped for consent'), the same as for no consent. Treated as P0, fix lane now.); "Allow scan" (A safety scan isn't 'use'. It keeps running on photo-only children's video; only publishing and playback are blocked. Recorded as a ruling, no fix.). Jason answered: *"Skip scan (Recommended)"*.
+
+**Ruling: photo-only consent means no video use at all; the automated video safety scan skips that child's video, marked "skipped for consent", the same as for no consent. Treated as P0, fix lane now.** "Allow scan" was not chosen.
+
+Extends the photo-only consent line of OD-2026-10-05-016 and -021 (photo-only blocks playback and publication) to the automated scan.
+
+---
+
 ## OD-2026-10-05-021 -- A guardian grant that downgrades an athlete from video to photo-only retracts that athlete's already-published video publications (option A, Retract)
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the lane session "Publish route: refuse video when consent is photos-only" (desktop session `local_ec02b972`; transcript `~/.claude/projects/C--Dev/c92ee399-d0f1-4b0b-aeab-49fdc6e8751f.jsonl`, tool use `toolu_01E3AJqccX3mwbPe87qcUENR`; asked 2026-10-05T18:50:24.914Z, answered 2026-10-05T19:27:27.222Z). Read by script from that transcript (records pass, 2026-10-05); question and option text below is as printed by the script. New; edits no earlier entry.
