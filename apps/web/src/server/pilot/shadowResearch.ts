@@ -219,6 +219,36 @@ export async function listShadowResearchRequirements(
 export const CAPABILITY_GAP_SOURCE_EVENT_NAME = 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED';
 export const CAPABILITY_GAP_SOURCE_ENTITY_TYPE = 'shadow_library_capability_map';
 
+export interface CapabilityGapFields {
+  capabilityKey: string;
+  coverageState: 'uncovered' | 'partial';
+  requiredSourceTypes: string[];
+  minimumAuthorityTier: number;
+  minimumSourceCount: number;
+  matchedSources: number;
+}
+
+/**
+ * The gap ticket's text, composed only from the capability rule's own fields.
+ * The coverage check writes it, and the research-bridge export rebuilds it from
+ * the row's metadata rather than shipping the stored prose -- so a row a
+ * member forged carries none of its own words out.
+ */
+export function buildCapabilityGapResearchFields(fields: CapabilityGapFields) {
+  const requiredTypes = fields.requiredSourceTypes.length > 0 ? fields.requiredSourceTypes.join(', ') : 'any verified source type';
+  const requirement = `Close SHADOW Library coverage gap for capability ${fields.capabilityKey}`;
+  const knowledgeGap =
+    fields.coverageState === 'uncovered'
+      ? `No qualifying SHADOW Library sources currently support capability ${fields.capabilityKey}. Required source types: ${requiredTypes}. Minimum authority tier: ${fields.minimumAuthorityTier}. Minimum source count: ${fields.minimumSourceCount}.`
+      : `Capability ${fields.capabilityKey} has only ${fields.matchedSources} qualifying sources and requires ${fields.minimumSourceCount}. Required source types: ${requiredTypes}. Minimum authority tier: ${fields.minimumAuthorityTier}.`;
+
+  return {
+    requirement,
+    knowledgeGap,
+    sourceStatus: fields.coverageState === 'uncovered' ? 'missing' : 'weak',
+  } as const;
+}
+
 /**
  * The metadata.resolution a coverage closure writes. It marks the closure as
  * the coverage check's own, so the same check may reopen that row as soon as

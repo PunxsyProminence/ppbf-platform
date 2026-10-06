@@ -147,6 +147,9 @@ async function freshDatabase(name: string, options: { withSecondGuardian?: boole
      with `column "recorded_by_account_id" of relation "waivers" does not
      exist` -- nothing to do with media consent. */
   await client.query(waiverRecordedBySql);
+  // pilot.retained_media_consent_restrictions: every consent check reads it
+  // (a purged guardian's retained choice), so the functions under test need it.
+  await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_retained_media_restriction_migration.sql'), 'utf8'));
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -517,7 +520,7 @@ describe('guardianConsent.ts against real Postgres', () => {
         {
           athleteId: ATHLETE_ID,
           athleteName: 'Consent Athlete',
-          consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] },
+          consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] },
           guardians: [],
         },
       ]);

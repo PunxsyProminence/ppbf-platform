@@ -33,6 +33,11 @@
  * turns out to be, a value OUTSIDE it must not read as consent.
  */
 
+/* The consent-set advisory lock is its own statement; stubbed so the
+   scripted client.query sequence below is unchanged (proven against real
+   Postgres in consentSetPhantom.pg.test.ts). */
+jest.mock('./consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -113,7 +118,8 @@ function arrangeOneGuardianWith(status: string): void {
       covers_video: true,
       public_use_allowed: true,
       created_at: '2026-01-01T00:00:00.000Z',
-    }]);
+    }])
+    .mockResolvedValueOnce([]); // retained restrictions: none
 }
 
 describe('checkGuardianMediaConsent', () => {
@@ -173,7 +179,8 @@ describe('assertGuardianMediaConsentWithClient', () => {
           public_use_allowed: true,
           created_at: '2026-01-01T00:00:00.000Z',
         }],
-      }),
+      })
+      .mockResolvedValueOnce({ rows: [] }), // retained restrictions: none
   });
 
   test.each(OUTSIDE_THE_CONSENT_VOCABULARY)('a status of %p refuses', async (status) => {

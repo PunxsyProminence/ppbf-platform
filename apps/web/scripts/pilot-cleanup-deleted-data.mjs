@@ -96,6 +96,111 @@ if (requestedMaxRows > MAX_ROWS_CEILING) {
   );
 }
 
+/* STORED FILES GO WITH THEIR ROWS. A purged athlete's video rows and portrait
+   point at files in blob storage; deleting the rows alone would leave the
+   footage of a child in storage with nothing left that names it. So each file
+   is deleted inside the athlete's savepoint, BEFORE the transaction commits
+   (Overwatch ruling, 2026-10-05, option B): if the commit then fails, what is
+   left is a row pointing at a missing file, which the next run deletes
+   (deleteIfExists is idempotent) -- never a file nothing points at, which no
+   run would ever find again.
+
+   NO STORAGE ACCESS, NO PURGE OF THAT ATHLETE. When files are due and the job
+   has no storage account, or storage refuses it, the athlete's savepoint is
+   rolled back and the refusal is recorded by name (STORAGE_CREDENTIAL_MISSING,
+   STORAGE_<code>) -- in a dry run too, so the schedule warns before anyone
+   applies. The rows stay, so a later run with access can still find the files.
+
+   The account is reached with DefaultAzureCredential (the workflow's OIDC
+   login), never a key. PPBF_RETENTION_BLOB_STUB_DIR swaps in a directory on
+   disk for the tests, and is refused for any database that is not local. */
+const VIDEO_CONTAINER = process.env.PPBF_PILOT_VIDEO_CONTAINER?.trim() || 'ppbf-pilot-video';
+const PROFILE_CONTAINER = process.env.PPBF_PILOT_PROFILE_CONTAINER?.trim() || 'ppbf-pilot-profile';
+
+class StorageRefusal extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
+
+function storageRefusalFrom(error) {
+  if (error instanceof StorageRefusal) return error;
+  // Every way DefaultAzureCredential says it has no identity to offer: one
+  // credential unavailable, the whole chain unavailable, or a sign-in needed.
+  if (error && typeof error === 'object'
+    && ['CredentialUnavailableError', 'AggregateAuthenticationError', 'AuthenticationRequiredError'].includes(error.name)) {
+    return new StorageRefusal('STORAGE_CREDENTIAL_MISSING');
+  }
+  const raw = error && typeof error === 'object' ? (error.code ?? error.statusCode ?? error.name) : undefined;
+  // An identifier only: the message and details of a storage error can carry
+  // the blob's path, which names an organization and a video.
+  return new StorageRefusal(`STORAGE_${String(raw ?? 'ERROR').replace(/[^A-Za-z0-9_]/g, '_')}`);
+}
+
+const blobStubDir = process.env.PPBF_RETENTION_BLOB_STUB_DIR?.trim();
+if (blobStubDir) {
+  const target = new URL(connectionString);
+  const host = target.hostname.toLowerCase();
+  // pg lets ?host= override the URL's host, so a string naming localhost could
+  // still connect elsewhere; any host parameter is refused outright.
+  if (!['localhost', '127.0.0.1', '[::1]', '::1'].includes(host) || target.searchParams.has('host')) {
+    console.error(JSON.stringify({ event: 'retention.cleanup.refused', reason: 'BLOB_STUB_NOT_LOCAL' }));
+    process.exit(1);
+  }
+}
+
+async function createBlobStore() {
+  if (blobStubDir) {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const fileFor = (container, blobPath) => path.join(blobStubDir, container, ...blobPath.split('/'));
+    return {
+      async exists(container, blobPath) {
+        return fs.access(fileFor(container, blobPath)).then(() => true, () => false);
+      },
+      async deleteIfExists(container, blobPath) {
+        return fs.rm(fileFor(container, blobPath)).then(() => true, () => false);
+      },
+    };
+  }
+  const accountUrl = process.env.PPBF_RETENTION_STORAGE_ACCOUNT_URL?.trim();
+  if (!accountUrl) return null;
+  // An Azure blob endpoint and nothing else: the identity's storage token is
+  // sent to whatever host this names.
+  if (!/^https:\/\/[a-z0-9]{3,24}\.blob\.core\.(windows\.net|usgovcloudapi\.net|chinacloudapi\.cn)\/?$/.test(accountUrl)) {
+    throw new StorageRefusal('STORAGE_ACCOUNT_URL_INVALID');
+  }
+  const { BlobServiceClient } = await import('@azure/storage-blob');
+  const { DefaultAzureCredential } = await import('@azure/identity');
+  const service = new BlobServiceClient(accountUrl, new DefaultAzureCredential());
+  /* A MISSING CONTAINER IS A REFUSAL, NOT A MISSING FILE. A file that is not
+     there counts as already gone, so a run pointed at the wrong account or
+     container would otherwise report every file "missing", delete the rows
+     and exit green, orphaning the real files for good. Checked once per
+     container per run. */
+  const confirmed = new Set();
+  const containerFor = async (container) => {
+    const client = service.getContainerClient(container);
+    if (!confirmed.has(container)) {
+      if (!(await client.exists())) throw new StorageRefusal('STORAGE_ContainerNotFound');
+      confirmed.add(container);
+    }
+    return client;
+  };
+  return {
+    async exists(container, blobPath) {
+      return (await containerFor(container)).getBlobClient(blobPath).exists();
+    },
+    async deleteIfExists(container, blobPath) {
+      // Snapshots too: a blob with snapshots otherwise refuses the delete, and
+      // a snapshot of the footage is still the footage.
+      const blob = (await containerFor(container)).getBlobClient(blobPath);
+      return (await blob.deleteIfExists({ deleteSnapshots: 'include' })).succeeded;
+    },
+  };
+}
+
 const pool = new Pool({ connectionString });
 
 /**
@@ -131,7 +236,7 @@ function blockedBy(error) {
  * others, and the constraint that blocked it has to reach the log by name or
  * nobody can act on it.
  */
-async function attemptPurge(client, athletes, accountIds) {
+async function attemptPurge(client, athletes, accountIds, { tables, blobStore }) {
   const blocked = {};
   const record = (error) => {
     const name = blockedBy(error);
@@ -255,6 +360,9 @@ async function attemptPurge(client, athletes, accountIds) {
   let athletesDeleted = 0;
   let loginsUnlinked = 0;
   let loginsRetired = 0;
+  let videosDeleted = 0;
+  let filesDeleted = 0;
+  let filesMissing = 0;
   for (const athlete of athletes) {
     await client.query('savepoint purge_athlete');
     try {
@@ -281,6 +389,43 @@ async function attemptPurge(client, athletes, accountIds) {
             for update`,
         key,
       );
+      /* THE ATHLETE'S VIDEO ROWS GO IN THE SAME SAVEPOINT. video_sessions.
+         athlete_id has no foreign key, so nothing cascades: left behind, the
+         rows would name an athlete_id the roster may give to a new child, who
+         would inherit the purged child's footage (audit CL-B3). Their
+         dependants (publications, clip tags, capture participants, calibration
+         clips) cascade from the video. compliance_violations.video_session_id
+         has no delete action, and a violation recorded against ANOTHER child on
+         this video must survive, so its pointer is cleared first -- the
+         waivers.parent_id pattern below. The purged child's own violations
+         cascade from the athlete row.
+
+         Only videos whose athlete_id is this child. Footage where the child is
+         only a tagged or capture participant is someone else's video and is
+         not deleted here. */
+      let videoPaths = [];
+      if (tables.videos) {
+        const videos = await client.query(
+          `select video_session_id from pilot.video_sessions
+            where organization_id = $1 and athlete_id = $2
+              for update`,
+          key,
+        );
+        const videoIds = videos.rows.map((row) => row.video_session_id);
+        if (videoIds.length > 0) {
+          if (tables.violations) {
+            await client.query(
+              'update pilot.compliance_violations set video_session_id = null where video_session_id = any($1::text[])',
+              [videoIds],
+            );
+          }
+          const deletedVideos = await client.query(
+            'delete from pilot.video_sessions where video_session_id = any($1::text[]) returning blob_path',
+            [videoIds],
+          );
+          videoPaths = deletedVideos.rows.map((row) => row.blob_path);
+        }
+      }
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -317,10 +462,59 @@ async function attemptPurge(client, athletes, accountIds) {
           }
         }
       }
+      /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
+         cleared the way a reviewer's removal clears it (profileDb.ts). */
+      const portraitPaths = [];
+      if (removed.rows.length > 0 && tables.profiles) {
+        for (const login of linked.rows.filter((row) => row.role === 'athlete')) {
+          const portrait = await client.query(
+            `select photo_blob_path from pilot.account_profiles
+              where organization_id = $1 and account_id = $2 and photo_blob_path is not null
+                for update`,
+            [athlete.organization_id, login.account_id],
+          );
+          if (portrait.rows.length === 0) continue;
+          await client.query(
+            `update pilot.account_profiles
+                set photo_blob_path = null, photo_content_type = null, photo_bytes = null,
+                    photo_width = null, photo_height = null, photo_sha256 = null,
+                    photo_review_state = 'removed', photo_reviewed_at = now(),
+                    photo_reviewed_by_account_id = null, updated_at = now()
+              where organization_id = $1 and account_id = $2`,
+            [athlete.organization_id, login.account_id],
+          );
+          portraitPaths.push(portrait.rows[0].photo_blob_path);
+        }
+      }
+      // The files last, still inside the savepoint: a refusal here rolls the
+      // athlete's rows back with it (see createBlobStore).
+      const files = [
+        ...videoPaths.map((blobPath) => [VIDEO_CONTAINER, blobPath]),
+        ...portraitPaths.map((blobPath) => [PROFILE_CONTAINER, blobPath]),
+      ];
+      let filesHere = 0;
+      let missingHere = 0;
+      if (files.length > 0) {
+        if (!blobStore) throw new StorageRefusal('STORAGE_CREDENTIAL_MISSING');
+        try {
+          for (const [container, blobPath] of files) {
+            const done = apply
+              ? await blobStore.deleteIfExists(container, blobPath)
+              : await blobStore.exists(container, blobPath);
+            if (done) filesHere += 1;
+            else missingHere += 1;
+          }
+        } catch (error) {
+          throw storageRefusalFrom(error);
+        }
+      }
       await client.query('release savepoint purge_athlete');
       if (removed.rows.length > 0) athletesDeleted += 1;
       loginsUnlinked += unlinkedHere;
       loginsRetired += retiredHere;
+      videosDeleted += videoPaths.length;
+      filesDeleted += filesHere;
+      filesMissing += missingHere;
     } catch (error) {
       await client.query('rollback to savepoint purge_athlete');
       record(error);
@@ -358,6 +552,46 @@ async function attemptPurge(client, athletes, accountIds) {
          shape is the real defect and is left alone here -- it is a schema
          change to a different migration, and retention is the only path that
          deletes a pilot.parents row today. */
+      /* THE GUARDIAN'S MEDIA CHOICE IS KEPT, BEFORE THE POINTER IS CLEARED.
+         Owner ruling, Jason 2026-10-05 ("Keep the 'no' (Recommended)"): a
+         withdrawal or photo-only choice outlives the guardian's deletion, and
+         the child's media stays restricted until a remaining guardian grants
+         it. Clearing parent_id and cascading the links drops this guardian out
+         of every consent read, so each child's current photo_media waiver from
+         them is recorded first, against the child (guardianConsent.ts reads it
+         as it reads a linked guardian's). Only children they are still linked
+         to: a choice an unlink already dropped from the gate stays dropped.
+         Whatever the status: the gate applies its own rules to it, so no
+         second reading of the status lives here. The key is a hash of the
+         parent_id (an invited guardian's is their login email); a re-invited
+         guardian purged again replaces their own row. retained_at is the
+         clock at this statement, not the run's start, so a grant recorded
+         while this long transaction runs does not count as post-purge.
+         'photo_media' is guardianConsent.ts MEDIA_CONSENT_WAIVER_TYPE, which
+         this script cannot import. dataDeletion.ts purgeExpiredDeletedData
+         carries the same statement. */
+      await client.query(
+        `insert into pilot.retained_media_consent_restrictions
+           (organization_id, athlete_id, former_parent_key, waiver_id, retained_at)
+         select distinct on (w.organization_id, w.athlete_id, w.parent_id)
+                w.organization_id, w.athlete_id,
+                encode(sha256(convert_to(w.parent_id, 'UTF8')), 'hex'),
+                w.waiver_id, clock_timestamp()
+           from pilot.waivers w
+           join pilot.parents p
+             on p.organization_id = w.organization_id
+            and p.parent_id = w.parent_id
+           join pilot.guardian_links gl
+             on gl.organization_id = w.organization_id
+            and gl.parent_id = w.parent_id
+            and gl.athlete_id = w.athlete_id
+          where p.account_id = $1
+            and w.waiver_type = 'photo_media'
+          order by w.organization_id, w.athlete_id, w.parent_id, w.created_at desc
+         on conflict (organization_id, athlete_id, former_parent_key)
+         do update set waiver_id = excluded.waiver_id, retained_at = excluded.retained_at`,
+        [accountId],
+      );
       await client.query(
         `update pilot.waivers w
             set parent_id = null
@@ -377,7 +611,10 @@ async function attemptPurge(client, athletes, accountIds) {
     }
   }
 
-  return { athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, blocked, guardianLinkLock };
+  return {
+    athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
+    blocked, guardianLinkLock,
+  };
 }
 
 async function main() {
@@ -407,8 +644,27 @@ async function main() {
       `select organization_id, athlete_id from pilot.athletes
         where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})`,
     );
+    const present = await client.query(
+      `select to_regclass('pilot.video_sessions') is not null as videos,
+              to_regclass('pilot.compliance_violations') is not null as violations,
+              to_regclass('pilot.account_profiles') is not null as profiles`,
+    );
+    const tables = present.rows[0];
+    // Reported, NOT counted against the blast radius. The cap measures how
+    // many people a run removes; a child's videos go only with that child. One
+    // athlete with years of footage counted here would refuse the WHOLE run --
+    // every other family's purge too -- every night, and past the 200 ceiling
+    // could never be purged at all.
+    const expiredVideos = tables.videos && expiredAthletes.rows.length > 0
+      ? await client.query(
+        `select count(*)::int as n from pilot.video_sessions v
+          where (v.organization_id, v.athlete_id) in (select * from unnest($1::text[], $2::text[]))`,
+        [expiredAthletes.rows.map((a) => a.organization_id), expiredAthletes.rows.map((a) => a.athlete_id)],
+      )
+      : { rows: [{ n: 0 }] };
     const athletes = expiredAthletes.rows.length;
     const accounts = expiredAccounts.rows.length;
+    const videos = expiredVideos.rows[0].n;
     const total = athletes + accounts;
 
     if (total > maxRows) {
@@ -418,6 +674,7 @@ async function main() {
         reason: 'BLAST_RADIUS_EXCEEDED',
         athletes,
         accounts,
+        videos,
         total,
         max_rows: maxRows,
       }));
@@ -427,8 +684,11 @@ async function main() {
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
     const outcome = total === 0
-      ? { athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0, blocked: {}, guardianLinkLock: 'none' }
-      : await attemptPurge(client, expiredAthletes.rows, accountIds);
+      ? {
+        athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
+        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, blocked: {}, guardianLinkLock: 'none',
+      }
+      : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
     if (!apply) {
@@ -437,9 +697,13 @@ async function main() {
         event: 'retention.cleanup.dry-run',
         athletes,
         accounts,
+        videos,
         total,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
+        would_delete_videos: outcome.videosDeleted,
+        would_delete_files: outcome.filesDeleted,
+        files_missing: outcome.filesMissing,
         would_unlink_athlete_logins: outcome.loginsUnlinked,
         would_retire_live_athlete_logins: outcome.loginsRetired,
         blocked: blockedCount,
@@ -470,7 +734,10 @@ async function main() {
           accounts_deleted: outcome.accountsDeleted,
           athlete_logins_unlinked: outcome.loginsUnlinked,
           live_athlete_logins_retired: outcome.loginsRetired,
-          total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted,
+          videos_deleted: outcome.videosDeleted,
+          files_deleted: outcome.filesDeleted,
+          files_missing: outcome.filesMissing,
+          total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted + outcome.videosDeleted,
           blocked: blockedCount,
           blocked_by: outcome.blocked,
         }),
@@ -485,6 +752,9 @@ async function main() {
       accounts: outcome.accountsDeleted,
       athlete_logins_unlinked: outcome.loginsUnlinked,
       live_athlete_logins_retired: outcome.loginsRetired,
+      videos: outcome.videosDeleted,
+      files_deleted: outcome.filesDeleted,
+      files_missing: outcome.filesMissing,
       total: outcome.athletesDeleted + outcome.accountsDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,

@@ -5,6 +5,11 @@
    lock the writers now take is observable. */
 const mockTxClient = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }) };
 
+/* The consent-set advisory lock is its own statement; these tests script
+   client.query call by call, so it is stubbed here and proven against real
+   Postgres in consentSetPhantom.pg.test.ts. */
+jest.mock('./consentSetLock', () => ({ lockConsentSet: jest.fn(), lockConsentSets: jest.fn() }));
+
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -50,6 +55,10 @@ const mockWithTransaction = jest.mocked(withTransaction);
 beforeEach(() => {
   jest.clearAllMocks();
   mockTxClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
+  // The retained-restriction read (a purged guardian's choice) is the last
+  // query of every consent check; none is on file unless a test says so.
+  mockQuery.mockImplementation((async (sql: string) =>
+    (String(sql).includes('retained_media_consent_restrictions') ? [] : undefined)) as never);
   // Runs the real callback against the recording client, so the writers'
   // lock-then-insert sequence actually executes rather than being stubbed out.
   mockWithTransaction.mockImplementation(((fn: (c: unknown) => unknown) => fn(mockTxClient)) as never);
@@ -66,9 +75,11 @@ describe('checkGuardianMediaConsent', () => {
 
     const result = await checkGuardianMediaConsent('org-a', 'ath-1');
 
-    expect(result).toEqual({ ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] });
-    // The current-consent query must never run when there are no guardians.
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] });
+    // The current-consent query must never run when there are no guardians;
+    // the retained-restriction read still does (the video gate needs it).
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    expect(String(mockQuery.mock.calls[1][0])).toContain('retained_media_consent_restrictions');
   });
 
   test('ok when every linked guardian has a current signed row', async () => {
@@ -442,7 +453,8 @@ describe('assertGuardianMediaConsentWithClient', () => {
     let call = 0;
     const query = jest.fn(async () => {
       call += 1;
-      return { rows: call === 1 ? guardianRows : consentRows };
+      // The third read is the retained-restriction one: none on file.
+      return { rows: call === 1 ? guardianRows : call === 2 ? consentRows : [] };
     });
     return { query } as unknown as Parameters<typeof assertGuardianMediaConsentWithClient>[0] & { query: jest.Mock };
   }
@@ -492,7 +504,7 @@ describe('assertGuardianMediaConsentWithClient', () => {
 
     await assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1');
 
-    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(client.query).toHaveBeenCalledTimes(3);
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });
@@ -506,6 +518,7 @@ describe('listConsentForGuardian', () => {
     // value -- the mock has to branch on the call's own arguments instead.
     mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
       const athleteId = params[1];
+      if (String(sql).includes('retained_media_consent_restrictions')) return [];
       if (String(sql).includes('guardian_links')) {
         return [{ parent_id: 'p1' }];
       }
@@ -556,7 +569,7 @@ describe('listOrganizationConsentStatus', () => {
       {
         athleteId: 'ath-1',
         athleteName: 'Sample Athlete',
-        consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] },
+        consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] },
         guardians: [],
       },
     ]);
@@ -700,7 +713,8 @@ describe('a signature recorded untidily is still a signature', () => {
         .mockResolvedValueOnce({ rows: [{ parent_id: 'p1' }] })
         .mockResolvedValueOnce({
           rows: [{ parent_id: 'p1', status, covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
-        }),
+        })
+        .mockResolvedValueOnce({ rows: [] }), // retained restrictions: none
     });
 
     test.each([' Signed ', 'SIGNED', 'Signed'])('%p does not refuse', async (status) => {
@@ -714,5 +728,40 @@ describe('a signature recorded untidily is still a signature', () => {
         assertGuardianMediaConsentWithClient(clientWith(status), 'org-a', 'ath-1'),
       ).rejects.toThrow(GuardianConsentMissingError);
     });
+  });
+});
+
+describe('the link-lock helpers take the consent-set lock first', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const lockModule = require('./consentSetLock') as typeof import('./consentSetLock');
+  const helpers = require('./guardianConsent') as typeof import('./guardianConsent');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  function recordingClient(order: string[]) {
+    (lockModule.lockConsentSet as jest.Mock).mockImplementation(async (_c, _o, athleteId, mode) => {
+      order.push(`set:${athleteId}:${mode}`);
+    });
+    (lockModule.lockConsentSets as jest.Mock).mockImplementation(async (_c, _o, athleteIds, mode) => {
+      order.push(`sets:${[...athleteIds].join(',')}:${mode}`);
+    });
+    return {
+      query: jest.fn(async () => {
+        order.push('rows');
+        return { rows: [] };
+      }),
+    };
+  }
+
+  test('one athlete, several athletes and the one-row lock: shared set lock, then rows', async () => {
+    const order: string[] = [];
+    const client = recordingClient(order);
+    await helpers.lockGuardianLinksForAthlete(client, 'org', 'ath-a', 'update');
+    await helpers.lockGuardianLinksForAthletes(client, 'org', ['ath-b', 'ath-c'], 'share');
+    await helpers.lockGuardianLink(client, 'org', 'parent-1', 'ath-d');
+    expect(order).toEqual([
+      'set:ath-a:shared', 'rows',
+      'sets:ath-b,ath-c:shared', 'rows',
+      'set:ath-d:shared', 'rows',
+    ]);
   });
 });

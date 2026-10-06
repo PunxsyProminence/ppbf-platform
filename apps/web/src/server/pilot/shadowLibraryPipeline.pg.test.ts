@@ -406,6 +406,47 @@ describe('SHADOW Library write path (real database)', () => {
     // the whole document must go back through review.
     expect(await search('clinical conclusion evidence')).toHaveLength(0);
   });
+
+  // CL-C3. The chunk used to be committed first and the document reset after
+  // a network call to the embedding service, as separate statements. For that
+  // whole window -- and for good, if the process died or the pool failed in it
+  // -- the unreviewed chunk was searchable under the still-approved document.
+  test('a new chunk is never searchable under the approved document, even while it is being embedded', async () => {
+    for (const action of [{ action: 'complete_indexing' }, { action: 'review', approvalState: 'approved' }]) {
+      const response = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+        entityType: 'document',
+        entityId: documentId,
+        ...action,
+      }));
+      expect(response.status).toBe(200);
+    }
+    expect(await search('clinical conclusion evidence')).toHaveLength(1);
+
+    const embeddings = await import('./shadowEmbeddings');
+    const seenDuringEmbedding: number[] = [];
+    let inside = false;
+    const spy = jest.spyOn(embeddings, 'embedText').mockImplementation(async () => {
+      if (!inside) {
+        inside = true;
+        seenDuringEmbedding.push((await search('quokka unreviewed passage')).length);
+        inside = false;
+      }
+      return null;
+    });
+    try {
+      const response = await routes.postChunk(jsonRequest('/api/pilot/shadow/library/chunks', 'POST', {
+        document_id: documentId,
+        ordinal: 2,
+        text_content: 'A quokka unreviewed passage added after approval.',
+      }));
+      expect(response.status).toBe(201);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(seenDuringEmbedding).toEqual([0]);
+    expect(await search('quokka unreviewed passage')).toHaveLength(0);
+  });
 });
 
 // RINT-01. Manual text intake writes a document that declares how many parts

@@ -13,6 +13,7 @@ import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
 import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
 
@@ -94,6 +95,15 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 },
       );
+    }
+
+    // The consent checks below read the one athlete this publication names, so
+    // footage attributed to nobody -- team footage -- or whose attribution
+    // cannot be read cannot reach the shelf (audit CL-B4). Create refuses it
+    // now; this stops a row drafted or cleared before it did.
+    const videoSession = await getVideoSessionById(principal.organizationId, publication.video_session_id);
+    if (!videoSession?.athlete_id) {
+      throw new ConflictError("This video isn't linked to an athlete, so it can't be published. Link it to an athlete in Video Analysis first.", 'VIDEO_NOT_ATTRIBUTED');
     }
 
     let libraryId: string | null;

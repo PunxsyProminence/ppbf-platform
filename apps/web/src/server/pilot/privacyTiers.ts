@@ -455,14 +455,20 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
   'scheduler_attendance.note': {
     tier: 'organization',
     enforcedBy: [
-      'attendanceReporting.ts#getClassAttendanceRoster',
+      '../../../app/api/pilot/scheduler/attendance-summary/route.ts#inReach',
       '../../../app/api/pilot/scheduler/route.ts#familyAttendance',
+      '../../../app/api/pilot/scheduler/route.ts#coachReachableAthleteIds',
     ],
     note:
-      'Free text a coach typed about a child. Honest, not aspirational: reads are bounded to '
-      + 'class-owning coaches and org admins, which is class scope, not per-athlete scope -- so '
-      + 'the enforced tier is organization. The public floor is separately held by the wall '
-      + 'denylist (bare \'note\' in the forbidden columns).\n\n'
+      'Free text a coach typed about a child. Staff only: families never receive it, so the tier '
+      + 'is organization, not athlete_record (which would admit the athlete and guardians). Within '
+      + 'staff, org admins read the whole gym; a coach reads a note only for a class they own AND '
+      + 'an athlete they reach (athleteIdsForCoach: coach of record or a live coverage grant). '
+      + 'Class ownership alone was self-grantable through cover_class (CL-A2), so both readers '
+      + 'filter by reach: the attendance-summary route (inReach) and GET /api/pilot/scheduler '
+      + '(coachReachableAthleteIds). getClassAttendanceRoster is NOT itself a gate -- it returns '
+      + 'the whole class, and any new caller must filter by reach. The public floor is separately '
+      + 'held by the wall denylist (bare \'note\' in the forbidden columns).\n\n'
       + 'TWO GATES, NOT ONE. GET /api/pilot/scheduler is a second reader this entry named for a '
       + 'while and did not: it returned the column to parents and athletes until familyAttendance '
       + 'was added. That is why enforcedBy is a list -- an auditor reading only the first name '

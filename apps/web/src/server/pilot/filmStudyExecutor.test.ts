@@ -87,6 +87,7 @@ function consent(coversVideo: boolean, status = 'signed') {
     guardianIds: ['parent-1'],
     missingParentIds: status === 'signed' ? [] : ['parent-1'],
     perGuardian: [{ parentId: 'parent-1', status, coversVideo, publicUseAllowed: false, signedAt: null }],
+    retained: [],
   };
 }
 

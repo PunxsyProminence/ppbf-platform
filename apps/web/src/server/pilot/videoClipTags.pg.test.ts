@@ -34,6 +34,8 @@ const PRE_MIGRATION_DB_NAME = 'ppbf_test_cliptags_pre';
 const PREREQUISITES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_data_retention_deletion_migration.sql',
+  // The consent gate the clip tags call reads covers_video, which arrives here.
+  'pilot_slice_postgres_guardian_media_consent_migration.sql',
   'pilot_slice_postgres_video_sessions_migration.sql',
   'pilot_slice_postgres_capture_sessions_migration.sql',
   'pilot_slice_postgres_external_competition_migration.sql',
@@ -48,7 +50,12 @@ const MIGRATION_FILE = 'pilot_slice_postgres_video_clip_tags_migration.sql';
 // migrated database carries it too (proven in videoClipTagsSparringLink.pg.test.ts,
 // on the full production schema). This suite does not touch sparring_exposure
 // itself, so its later alters (session-date, contact-stage) are not applied.
-const FOLLOW_ON = ['pilot_slice_postgres_video_clip_tags_sparring_link_migration.sql'];
+// The consent gate also reads a purged guardian's retained choice
+// (pilot.retained_media_consent_restrictions), deployed after video-clip-tags.
+const FOLLOW_ON = [
+  'pilot_slice_postgres_video_clip_tags_sparring_link_migration.sql',
+  'pilot_slice_postgres_retained_media_restriction_migration.sql',
+];
 const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-video-clip-tags-migration.mjs');
 
 const ORG = 'org-cliptags-a';

@@ -434,6 +434,62 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 });
 
 describe('POST /api/pilot/admin/video-compliance', () => {
+  beforeEach(() => {
+    // The publication's video is attributed to its athlete unless a test
+    // says otherwise.
+    mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-1', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+  });
+
+  // Audit CL-B4: approval checks consent for the one athlete the publication
+  // names. Footage attributed to nobody -- team footage -- shows children
+  // that check never reads, so it cannot be approved for publication.
+  describe('unattributed footage (audit CL-B4)', () => {
+    test('approve is refused with 409 when the video is not linked to an athlete, and the row is never touched', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: null, blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as { error?: string; code?: string };
+      expect(body.code).toBe('VIDEO_NOT_ATTRIBUTED');
+      expect(body.error).toMatch(/isn't linked to an athlete/);
+      expect(mockGetVideoSession).toHaveBeenCalledWith('org-a', 'vs-1');
+      expect(mockDecide).not.toHaveBeenCalled();
+    });
+
+    test('approve is refused when the video cannot be found, since its attribution cannot be confirmed', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValueOnce(null);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { code?: string }).code).toBe('VIDEO_NOT_ATTRIBUTED');
+      expect(mockDecide).not.toHaveBeenCalled();
+    });
+
+    test('reject still works on an unattributed item, so the queue can be cleared', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: null, blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Team footage.' }));
+
+      expect(response.status).toBe(200);
+      expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'rejected' }));
+    });
+
+    test('request_changes still works on an unattributed item', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: null, blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Link the athlete.' }));
+
+      expect(response.status).toBe(200);
+      expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'pending_review' }));
+    });
+  });
+
   test('approve decides atomically and writes a fully-formed audit event', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
@@ -729,9 +785,11 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       // coverage check is what refuses.
       const client = {
         query: jest.fn(async (text: string) => ({
-          rows: /guardian_links/.test(text)
-            ? [{ parent_id: 'parent-1' }]
-            : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+          rows: /retained_media_consent_restrictions/.test(text)
+            ? [] // no purged guardian's choice retained
+            : /guardian_links/.test(text)
+              ? [{ parent_id: 'parent-1' }]
+              : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
         })),
       } as never;
       mockCoversVideo.mockClear();
