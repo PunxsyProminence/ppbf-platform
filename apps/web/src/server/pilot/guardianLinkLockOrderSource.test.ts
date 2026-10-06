@@ -97,3 +97,69 @@ describe('guardian_links row locks', () => {
     expect(normalise(scriptLocks[0])).toBe(normalise(helperPurge ?? ''));
   });
 });
+
+/*
+ * Every INSERT into pilot.guardian_links takes the consent-set lock EXCLUSIVE
+ * in the same function, before it (consentSetLock.ts). A link added without it
+ * is a guardian an in-flight consent reader never evaluates: the phantom
+ * consentSetPhantom.pg.test.ts proves against real Postgres. Scans src/ and
+ * app/; scripts/ seed fixtures and are not request paths.
+ *
+ * A textual check: it sees that the call precedes the insert in an enclosing
+ * function, not that it ran on the same connection for the same athlete, and
+ * it reads only a template's head. It catches the omission, which is the
+ * failure that happened; the pg suite is what proves the lock works.
+ */
+const INSERT_INTO_LINKS = /insert\s+into\s+pilot\.guardian_links/i;
+const EXCLUSIVE_CALL = /lock(?:ConsentSet|ConsentSets)\(\s*[^;]*?'exclusive'\s*,?\s*\)/;
+
+function unguardedLinkInserts(text: string): string[] {
+  if (!/guardian_links/i.test(text)) return [];
+  const source = ts.createSourceFile('scan.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const offenders: string[] = [];
+  const visit = (node: ts.Node) => {
+    const literal = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+      ? node.text
+      : ts.isTemplateExpression(node) ? node.head.text : null;
+    if (literal !== null && INSERT_INTO_LINKS.test(literal)) {
+      // The enclosing functions, nearest first: the lock may sit in the
+      // function itself or around a callback handed to withTransaction.
+      const scopes: ts.Node[] = [];
+      for (let up: ts.Node | undefined = node.parent; up; up = up.parent) {
+        if (ts.isFunctionLike(up)) scopes.push(up);
+      }
+      // Comments stripped, so a comment naming the call does not count as taking it.
+      const before = (scope: ts.Node) => text
+        .slice(scope.getStart(source), node.getStart(source))
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/[^\n]*/g, '');
+      if (!scopes.some((scope) => EXCLUSIVE_CALL.test(before(scope)))) {
+        offenders.push(literal.replace(/\s+/g, ' ').slice(0, 80));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return offenders;
+}
+
+describe('guardian_links inserts', () => {
+  test('the scanner flags an insert with no exclusive consent-set lock before it', () => {
+    expect(unguardedLinkInserts("async function f(c) { await c.query('insert into pilot.guardian_links (a) values ($1)'); }")).toHaveLength(1);
+    expect(unguardedLinkInserts("async function f(c) { await c.query('insert into pilot.guardian_links (a) values ($1)'); await lockConsentSet(c, o, a, 'exclusive'); }")).toHaveLength(1);
+    expect(unguardedLinkInserts("async function f(c) { await lockConsentSet(c, o, a, 'shared'); await c.query('insert into pilot.guardian_links (a) values ($1)'); }")).toHaveLength(1);
+    expect(unguardedLinkInserts("async function f(c) { await lockConsentSet(c, o, a, 'exclusive'); await c.query(`insert into pilot.guardian_links (a) values ($1)`); }")).toHaveLength(0);
+    expect(unguardedLinkInserts("async function f(c) {\n // lockConsentSet(c, o, a, 'exclusive')\n await c.query('insert into pilot.guardian_links (a) values ($1)'); }")).toHaveLength(1);
+  });
+
+  test('every one in src/ and app/ takes the exclusive consent-set lock first', () => {
+    const files = ['src', 'app'].map((dir) => path.join(WEB_ROOT, dir)).flatMap(sourceFiles);
+    const offenders = files.flatMap((file) => unguardedLinkInserts(fs.readFileSync(file, 'utf8')).map(
+      (literal) => `${path.relative(WEB_ROOT, file)}: ${literal}`,
+    ));
+    expect(offenders).toEqual([]);
+    // Found at least the two shipped writers, so an empty list is not a scan that matched nothing.
+    const found = files.filter((file) => INSERT_INTO_LINKS.test(fs.readFileSync(file, 'utf8')));
+    expect(found.length).toBeGreaterThanOrEqual(2);
+  });
+});

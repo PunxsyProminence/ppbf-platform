@@ -11,6 +11,7 @@ import {
   createPublication,
   getOrganizationPublications,
 } from '@/src/server/pilot/publication';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError, parseSafeLimit } from '@/src/server/pilot/http';
 import { assertVideoHasNoLiveClipTags } from '@/src/server/pilot/videoClipTags';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -130,6 +131,15 @@ export async function POST(request: NextRequest) {
     const videoSession = await getVideoSessionById(principal.organizationId, body.video_session_id);
     if (!videoSession || (videoSession.athlete_id && videoSession.athlete_id !== body.athlete_id)) {
       return hiddenNotFound();
+    }
+
+    // A publication names one athlete, and approval and publish check that one
+    // child's consent. Footage attributed to nobody -- team footage -- shows
+    // children those checks never read, so it cannot be published under any
+    // single name (audit CL-B4). Not hidden: coaches can already open untagged
+    // team footage (GET /api/pilot/video/[videoId]).
+    if (!videoSession.athlete_id) {
+      throw new ConflictError("This video isn't linked to an athlete, so it can't be published. Link it to an athlete in Video Analysis first.", 'VIDEO_NOT_ATTRIBUTED');
     }
 
     // Footage nobody has released is footage nobody has looked at. A

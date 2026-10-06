@@ -4,12 +4,7 @@ import { MAGIC_LINK_ROLES, MICROSOFT_ROLES } from './credentialPolicy';
 import { query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { ConflictError, ForbiddenError, PilotError, ValidationError } from './errors';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  clearDurableRateLimit,
-  recordDurableFailedAttempt,
-} from './rateLimit';
+import { clearDurableRateLimit, reserveAttempts } from './rateLimit';
 import { hashPin, verifyPin } from './security';
 
 /**
@@ -311,13 +306,12 @@ export async function verifyLabellerPin(input: {
 }): Promise<LabellerPickerEntry> {
   const keys = [labellerPinTargetKey(input.organizationId, input.accountId), ...(input.extraLimiterKeys ?? [])];
 
-  const durableChecks = await Promise.all(keys.map((key) => checkDurableRateLimit(key)));
-  // NOTHING MAY AWAIT BETWEEN THIS CHECK AND THE RECORDS BELOW: the in-memory
-  // record is the first, synchronous, step of recordDurableFailedAttempt.
-  if (durableChecks.some((check) => check.isLimited) || keys.some((key) => checkRateLimit(key).isLimited)) {
+  // In memory this was already counted before checked; the durable half was
+  // a read and a later write, so replicas could each admit a guess (CL-A4).
+  // reserveAttempts does both halves atomically.
+  if ((await reserveAttempts(keys)).isLimited) {
     throw labellerPinSlowDown();
   }
-  await Promise.all(keys.map((key) => recordDurableFailedAttempt(key)));
 
   const row = await queryOne<LabellerPickerEntry & { pin_hash: string }>(
     `select lc.account_id, lc.display_name, lc.pin_hash
