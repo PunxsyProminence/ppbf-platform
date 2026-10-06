@@ -117,6 +117,72 @@ async function recordConsentChangeWithSweep(
   return result;
 }
 
+/**
+ * T-008: THE GUARDIAN'S OWN SIDE OF MEDIA CONSENT.
+ *
+ * Every write here is scoped to the signed-in guardian's OWN linked
+ * athletes (guardianAthleteIds) -- a parent may grant or withdraw consent
+ * for their own child and nobody else's, checked before any write, not
+ * inferred from a caller-supplied athlete_id being merely well-formed.
+ *
+ * Grant and withdraw are both just new pilot.waivers rows (append-only,
+ * same shape admin/consent/page.tsx already uses) -- see
+ * guardianConsent.ts's own header for why this reuses that table instead of
+ * a new one.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['parent']);
+
+    const [items, ownParentIds] = await Promise.all([
+      listConsentForGuardian(principal.organizationId, principal.accountId),
+      // A SET, not a single "the" parent_id: a guardian of more than one
+      // child can legitimately be backed by a different pilot.parents row
+      // per child (see resolveActingParent's own header for why picking
+      // just one was a real bug). Membership-tested per row below, so every
+      // one of this account's own guardian rows reads as "you", not just
+      // whichever row an arbitrary "first" pick happened to land on.
+      callerParentIdSet(principal.organizationId, principal.accountId),
+    ]);
+
+    // The child's name, not just the id: a guardian of more than one child
+    // deciding consent against a raw athlete_id is guessing which child
+    // they are acting on -- on the surface whose withdraw now retracts
+    // published media. Their own linked children's names are already shown
+    // to them on the parent hub; this discloses nothing new.
+    const athleteNames = new Map(
+      await Promise.all(
+        items.map(async ({ athleteId }) => {
+          const athlete = await getAthleteById(principal.organizationId, athleteId);
+          return [athleteId, athlete?.full_name ?? null] as const;
+        }),
+      ),
+    );
+
+    return NextResponse.json({
+      ok: true,
+      items: items.map(({ athleteId, consent }) => ({
+        athlete_id: athleteId,
+        athlete_name: athleteNames.get(athleteId) ?? null,
+        consent_ok: consent.ok,
+        guardian_count: consent.guardianIds.length,
+        missing_guardian_count: consent.missingParentIds.length,
+        per_guardian: consent.perGuardian.map((g) => ({
+          parent_id: g.parentId,
+          you: ownParentIds.has(g.parentId),
+          status: g.status,
+          covers_video: g.coversVideo,
+          public_use_allowed: g.publicUseAllowed,
+          signed_at: g.signedAt,
+        })),
+      })),
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
 type ConsentDecision = 'grant' | 'withdraw';
 
 const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
