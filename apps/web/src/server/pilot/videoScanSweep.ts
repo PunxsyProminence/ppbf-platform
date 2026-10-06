@@ -14,8 +14,10 @@
 
 import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
 import { resolveScanSubject } from './captureParticipants';
+import { PilotError } from './errors';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
+import { assertConsentCoversVideo } from './videoPlaybackConsent';
 import { scanVideoSession } from './videoScan';
 import {
   claimNextVideoSessionForScan,
@@ -38,6 +40,17 @@ import {
 // 'promote' is terminal too but needs nobody's attention; 'retry' is not
 // terminal at all.
 type VideoScanEscalationDecision = 'infected' | 'blocked' | 'needs_human_review';
+
+/*
+ * CL-B1: the refusals assertConsentCoversVideo can make, each a decision a
+ * guardian made (or a record the platform cannot read) rather than a fault.
+ * Each becomes a skip; anything else it throws is a fault and propagates.
+ */
+const COVERAGE_SKIP_REASONS: Record<string, string> = {
+  GUARDIAN_CONSENT_WITHDRAWN: 'guardian_consent_withdrawn',
+  GUARDIAN_CONSENT_EXCLUDES_VIDEO: 'guardian_consent_excludes_video',
+  GUARDIAN_CONSENT_UNREADABLE: 'guardian_consent_unreadable',
+};
 
 function isEscalatingScanDecision(decision: VideoScanDecision): decision is VideoScanEscalationDecision {
   return decision === 'infected' || decision === 'blocked' || decision === 'needs_human_review';
@@ -178,7 +191,19 @@ export async function sweepQuarantinedVideos(options: {
     // frame, and the owner ruled it carries no per-athlete permission and that
     // filming for it is never restricted.
     const subject = await resolveScanSubject(claim.organization_id, claim.video_session_id);
+    //
+    // CL-B1: "SIGNED" IS NOT "SIGNED FOR VIDEO". Owner ruling 2026-10-05:
+    // photo-only consent (covers_video=false) means no video use at all, so
+    // the vision screen skips that child's video exactly as it does for
+    // missing consent. assertGuardianMediaConsent asks only whether every
+    // guardian signed, so the coverage check playback and publish use
+    // (assertConsentCoversVideo) runs as well. It runs even when the first
+    // check already refused: a withdrawal is then recorded as a withdrawal
+    // rather than as missing paperwork, and the skip never rests on one
+    // check alone. Same skip path as missing consent: reclaimable, backed
+    // off, and re-checked on every retry.
     let contentSkippedForConsent = false;
+    let contentSkippedReason: string | null = null;
     if (config.content === 'vision') {
       if (subject.isTeaching) {
         // Nothing to ask, and nobody to ask it of.
@@ -188,6 +213,15 @@ export async function sweepQuarantinedVideos(options: {
         } catch (error) {
           if (!(error instanceof GuardianConsentMissingError)) throw error;
           contentSkippedForConsent = true;
+          contentSkippedReason = 'guardian_consent_missing';
+        }
+        try {
+          await assertConsentCoversVideo(claim.organization_id, claim.athlete_id);
+        } catch (error) {
+          const reason = error instanceof PilotError && error.code ? COVERAGE_SKIP_REASONS[error.code] : undefined;
+          if (!reason) throw error;
+          contentSkippedForConsent = true;
+          contentSkippedReason = reason;
         }
       }
     }
@@ -219,7 +253,7 @@ export async function sweepQuarantinedVideos(options: {
         attempts: claim.scan_attempts,
         duration_ms: scan.durationMs,
         scanned_at: new Date().toISOString(),
-        ...(contentSkippedForConsent ? { content_skipped_reason: 'guardian_consent_missing' } : {}),
+        ...(contentSkippedReason ? { content_skipped_reason: contentSkippedReason } : {}),
       },
       retryInSeconds: terminal ? 0 : scanRetryBackoffSeconds(claim.scan_attempts),
       terminal,

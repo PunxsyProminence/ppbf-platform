@@ -9,7 +9,12 @@ import {
 import { emitShadowEvent } from './shadowEvents';
 import { fileEscalation } from './escalationLadder';
 import { resolveScanSubject } from './captureParticipants';
-import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
+import {
+  assertGuardianMediaConsent,
+  checkGuardianMediaConsent,
+  GuardianConsentMissingError,
+  type ConsentCheckResult,
+} from './guardianConsent';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
 jest.mock('./guardianConsent', () => {
@@ -17,6 +22,10 @@ jest.mock('./guardianConsent', () => {
   return {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
+    // Doubled so the REAL assertConsentCoversVideo (videoPlaybackConsent.ts,
+    // not mocked) reads these guardians: the scope refusals under test are
+    // that function's, not a copy of them written into this suite.
+    checkGuardianMediaConsent: jest.fn(),
   };
 });
 /*
@@ -55,6 +64,7 @@ const mockedSettle = settleVideoSessionScan as jest.MockedFunction<typeof settle
 const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent>;
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
+const mockedCheckConsent = checkGuardianMediaConsent as jest.MockedFunction<typeof checkGuardianMediaConsent>;
 const mockedResolveSubject = resolveScanSubject as jest.MockedFunction<typeof resolveScanSubject>;
 const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
 const mockedRearm = rearmUnconfiguredVideoSessions as jest.MockedFunction<typeof rearmUnconfiguredVideoSessions>;
@@ -69,6 +79,21 @@ const CLAIM = {
   status: 'quarantined',
   scan_attempts: 1,
 };
+
+function consentOf(...guardians: Array<{ status: string; coversVideo: boolean }>): ConsentCheckResult {
+  return {
+    ok: guardians.every((guardian) => guardian.status === 'signed'),
+    guardianIds: guardians.map((_, index) => `parent-${index + 1}`),
+    missingParentIds: [],
+    perGuardian: guardians.map((guardian, index) => ({
+      parentId: `parent-${index + 1}`,
+      status: guardian.status,
+      coversVideo: guardian.coversVideo,
+      publicUseAllowed: true,
+      signedAt: '2026-10-01T00:00:00.000Z',
+    })),
+  };
+}
 
 function scanResult(overrides: Partial<Awaited<ReturnType<typeof scanVideoSession>>>) {
   return {
@@ -97,6 +122,8 @@ beforeEach(() => {
   // before this check existed. Tests below override this to simulate the
   // missing-consent path specifically.
   mockedAssertConsent.mockResolvedValue(undefined);
+  mockedCheckConsent.mockReset();
+  mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: true }));
   mockedMarkUnconfigured.mockReset();
   mockedRearm.mockReset();
   mockedMarkUnconfigured.mockResolvedValue(0);
@@ -426,6 +453,105 @@ describe('sweepQuarantinedVideos', () => {
       await sweepQuarantinedVideos({ env: MALWARE_ONLY });
 
       expect(mockedAssertConsent).not.toHaveBeenCalled();
+    });
+  });
+
+  /*
+   * CL-B1. Owner ruling 2026-10-05: photo-only consent (covers_video=false)
+   * means no video use at all, so the vision screen skips that child's video
+   * exactly as it does for missing consent. assertGuardianMediaConsent only
+   * asks "signed?", so these drive the real assertConsentCoversVideo.
+   */
+  describe('consent that does not cover video also skips the content screen', () => {
+    test('a photo-only guardian: the video is not sent to the vision screen', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: false }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedCheckConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+      expect(result.scanned).toBe(1);
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
+        config: { malware: 'off', content: 'vision' },
+        skipContentScreen: true,
+      }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_excludes_video');
+    });
+
+    test('one photo-only guardian among video-consenting ones is enough to skip', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedCheckConsent.mockResolvedValue(consentOf(
+        { status: 'signed', coversVideo: true },
+        { status: 'signed', coversVideo: false },
+      ));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+    });
+
+    test('a withdrawn guardian is skipped by the coverage check too, not only by the signed check', async () => {
+      // assertGuardianMediaConsent already refuses a withdrawal (status is not
+      // 'signed'); this pins the second layer on its own, so withdrawal does
+      // not depend on one check alone.
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'withdrawn', coversVideo: false }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_withdrawn');
+    });
+
+    test('a withdrawn guardian refused by the signed check is still skipped', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'withdrawn', coversVideo: false }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      // Recorded as the withdrawal it is, not as missing paperwork: the
+      // coverage check runs even after the signed check refused.
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_withdrawn');
+    });
+
+    test('a consent status the platform cannot read is skipped, not guessed at', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'pending_review', coversVideo: true }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_unreadable');
+    });
+
+    test('a real error reading coverage is not swallowed as a skip', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedCheckConsent.mockRejectedValue(new Error('db unavailable'));
+
+      await expect(sweepQuarantinedVideos({ env: CONTENT_ON })).rejects.toThrow('db unavailable');
+      expect(mockedScan).not.toHaveBeenCalled();
+    });
+
+    test('teaching footage is still not asked about coverage', async () => {
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: [] });
+      mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedCheckConsent).not.toHaveBeenCalled();
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
     });
   });
 
