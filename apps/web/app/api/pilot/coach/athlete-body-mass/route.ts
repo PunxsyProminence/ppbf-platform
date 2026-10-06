@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
 import {
   bodyMassInputError,
   bodyMassVisibleTo,
@@ -19,18 +19,15 @@ export const runtime = 'nodejs';
 // Staff read of ONE athlete's latest weigh-in and seven-day weight change
 // (elite-boxing item 5).
 //
-// A SIBLING OF coach/athlete-check-in, NOT PART OF IT. That route is pinned to
-// organization membership alone (A-FIN-03R1) and its tests hold it there. Body
-// mass is narrower for a youth (Jason 2026-10-04: "B everyone, youth
-// limited", "Yes, keep org admin"), so it gets its own gate here instead of
-// loosening that one:
+// A SIBLING OF coach/athlete-check-in, NOT PART OF IT. The read's gates:
 //   1. role: coach or organization admin;
-//   2. the athlete is live in the caller's organization -- otherwise the same
-//      403 the check-in route gives;
-//   3. bodyMassVisibleTo: an adult's weight goes to any reader past 2; a
-//      youth's (or no recorded date of birth) only to a reader
-//      assertActorCanAccessAthlete admits -- the assigned or covering coach,
-//      or the organization admin.
+//   2. assertActorCanAccessAthlete (OD-2026-10-05-024 ruling 2, Jason
+//      2026-10-05, narrowing the 2026-10-04 "B everyone, youth limited" for
+//      coaches): the athlete's coach of record, a covering coach with a live
+//      grant, or the organization admin -- otherwise the same 403 the
+//      check-in route gives;
+//   3. bodyMassVisibleTo: the youth rule (no recorded date of birth counts as
+//      a youth), kept behind 2 so it still holds if 2 ever widens again.
 // A reader who fails 3 gets `body_mass: null`, the same answer as an athlete
 // who never entered a weight, so the response does not reveal that a youth's
 // weight exists.
@@ -48,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim();
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
-    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
+    await assertActorCanAccessAthlete(principal, athleteId);
 
     if (!(await bodyMassVisibleTo(principal, principal.organizationId, athleteId))) {
       return NextResponse.json({ body_mass: null, can_correct: false });

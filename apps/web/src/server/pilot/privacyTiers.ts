@@ -215,7 +215,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note: 'Minutes the athlete says they trained, answered at check-out. Same audience as sessions.rpe.',
   },
   'sessions.notes': {
-    tier: 'organization',
+    tier: 'athlete_record',
     enforcedBy: [
       '../../../app/api/pilot/coach/athlete-session-note/route.ts#GET',
       'sessionNotes.ts#getTodaySessionNote',
@@ -235,14 +235,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'open owner decision, left open deliberately by A-FIN-08; until it is made, the honest '
       + 'caption names nobody.'
       + '\n\n'
-      + 'THE ENFORCED TIER IS ORGANIZATION, NOT athlete_record. A-FIN-08 (owner decision '
-      + '2026-09-25, "any coach or admin in the organization") reads this column through a '
-      + 'dedicated staff route gated by assertAthleteBelongsToOrganization -- organization '
-      + 'membership, not the per-relationship coach-of-record-or-coverage rule that '
-      + 'assertActorCanAccessAthlete holds. Recording it as athlete_record would claim a '
-      + 'narrower gate than the code actually applies. assertActorCanAccessAthlete stays in '
-      + 'the list because /api/pilot/sessions/list still returns the whole session record '
-      + 'behind it; that path was deliberately NOT widened.'
+      + 'THE ENFORCED TIER IS athlete_record. The dedicated staff route (A-FIN-08) is gated by '
+      + 'assertActorCanAccessAthlete -- coach of record, a covering coach with a live grant, or '
+      + 'an organization admin -- since OD-2026-10-05-024 ruling 2 (Jason 2026-10-05), which '
+      + 'superseded the 2026-09-25 "any coach or admin in the organization" read. '
+      + '/api/pilot/sessions/list returns the whole session record behind the same gate.'
       + '\n\n'
       + 'LINKED GUARDIANS ARE EXCLUDED. The passbook omits the key entirely for a parent '
       + 'rather than sending null, because null would assert that no note exists. Absence '
@@ -398,7 +395,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'family projection, which never selects this column (owner decision 2026-10-04).',
   },
   'shadow_formula_observations.body_weight': {
-    tier: 'organization',
+    tier: 'athlete_record',
     enforcedBy: [
       'athleteBodyMass.ts#bodyMassVisibleTo',
       'athleteBodyMass.ts#athleteIsYouth',
@@ -408,11 +405,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     ],
     note:
       'Body mass, from the athlete check-in and the sparring form, and the seven-day fast-change flag built on '
-      + 'it (elite-boxing item 5; Jason 2026-10-04 "B everyone, youth limited", "Yes, keep org admin"). Tiered '
-      + 'at the widest rule the code runs: the weight of an ADULT reaches any coach or organization admin in the '
-      + 'gym. The weight of a YOUTH -- and an athlete with no recorded date of birth -- is narrowed to the athlete_record '
-      + 'relationship by bodyMassVisibleTo: assigned or covering coach, organization admin, linked parent, '
-      + 'self; any other coach gets the same null as "no weigh-in". Parents read it for a youth only.',
+      + 'it (elite-boxing item 5; Jason 2026-10-04 "B everyone, youth limited", "Yes, keep org admin"). '
+      + 'Staff reads go through assertActorCanAccessAthlete since OD-2026-10-05-024 ruling 2 (Jason '
+      + '2026-10-05): assigned or covering coach, or organization admin, for an adult and a youth alike; '
+      + 'any other coach is refused. bodyMassVisibleTo still narrows a YOUTH (and an athlete with no '
+      + 'recorded date of birth) behind that gate. Parents read it for a youth only.',
   },
   'training_holds.reason_category': {
     tier: 'organization',

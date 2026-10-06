@@ -50,7 +50,7 @@ const READ_FAILED =
  *  about assignment or coverage. Pinned as a literal for the same reason as
  *  the rest -- imported copy would pass whatever the component said. */
 const NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s own coach, a coach covering for them, and organization admins.';
 
 /** The panel's one empty state, which A-FIN-08 made cover both subsections.
  *  The wellness-only sentence it replaces would otherwise have stood beside a
@@ -564,19 +564,19 @@ describe('an empty day, a failed read and a refusal are three different answers'
     expect(panel().textContent).not.toMatch(/Forbidden|403/);
   });
 
-  it('the refusal does not restate the obsolete coach-of-record / coverage rule', async () => {
-    /* A-FIN-03R1: wellness is no longer limited to the athlete's own coach or
-       a coach covering for them, so a refusal that still explained the rule
-       that way would send a coach off to ask for an assignment that would not
-       have helped -- a true refusal behind a false explanation. The words are
-       checked, not just the sentence, so the old wording cannot return in a
-       paraphrase. */
-    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, { ok: false, status: 403 }));
+  it('the refusal names the relationship rule the route enforces, not organization membership', async () => {
+    /* OD-2026-10-05-024 ruling 2: wellness is limited to the athlete's own
+       coach, a coach covering for them, and organization admins. A refusal
+       that still said "coaches in the athlete's own organization" would be a
+       true refusal behind a false explanation. */
+    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }));
     await pickAthlete('Jordan P.');
 
     const text = panel().textContent ?? '';
     expect(text).toContain(NO_ACCESS);
-    expect(text).not.toMatch(/coach of record|covering|coverage|assigned/i);
+    expect(text).toMatch(/own coach/i);
+    expect(text).toMatch(/covering/i);
+    expect(text).not.toMatch(/in the athlete.s own organization/i);
   });
 
   it('a failed read can be tried again, and the retry reads the same athlete', async () => {

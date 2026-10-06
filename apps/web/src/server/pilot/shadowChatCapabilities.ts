@@ -52,8 +52,13 @@ export interface ShadowChatCapabilities {
    * Renamed from canReviewSafetyEvents, which read as though it also covered
    * SafeSport and incident reporting. It never did -- no incident,
    * concussion, or return-to-play table exists in the schema -- but the name
-   * invited a future youth-protection surface to reuse a flag that is true
-   * for the cross-organization tier.
+   * invited a future youth-protection surface to reuse a flag that was then
+   * true for the cross-organization tier.
+   *
+   * Organization admins only (OD-2026-10-05-024 ruling 3, Jason 2026-10-05):
+   * the human-review queue this gates (/api/pilot/shadow/reviews) carries
+   * member summaries and account ids, which is gym business. platform_owner
+   * is refused it, as assertActorCanAccessAthlete refuses it athlete records.
    *
    * WHEN INCIDENT OR SAFESPORT CONTENT IS BUILT (capability L26), IT MUST NOT
    * REUSE THIS FLAG. shadowRoleSets.ts is explicit that Omega must never
@@ -87,7 +92,8 @@ export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabiliti
     canExportOwnData: false,
     canRequestDeletion: true,
     deletionFulfillment: 'manual_review_required',
-    canReviewChatSafetyTelemetry: master,
+    // OD-2026-10-05-024 ruling 3: organization admins only, never Omega.
+    canReviewChatSafetyTelemetry: organizationAdmin,
   };
 }
 

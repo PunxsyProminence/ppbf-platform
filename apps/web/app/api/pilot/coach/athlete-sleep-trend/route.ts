@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertAthleteBelongsToOrganization, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { listRecentCheckIns } from '@/src/server/pilot/athleteCheckIns';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -11,10 +11,11 @@ export const runtime = 'nodejs';
 // on the coach's wellness panel. A sibling of /api/pilot/coach/athlete-check-in
 // rather than a widening of it: that route's body is pinned to `{ today }`.
 //
-// Same audience and same gates as that route: any coach or organization admin
-// in the athlete's own organization, and assertAthleteBelongsToOrganization
-// refuses another gym's athlete and a soft-deleted one alike, before any
-// check-in row is read. The organization is the session's, never a parameter.
+// Same audience and same gate as that route (OD-2026-10-05-024 ruling 2): the
+// athlete's coach of record, a covering coach with a live grant, or an
+// organization admin, through assertActorCanAccessAthlete, which also refuses
+// another gym's athlete and a soft-deleted one before any check-in row is
+// read. The organization is the session's, never a parameter.
 //
 // SLEEP ONLY, AND NOTHING DERIVED. Each item is the day and the hours the
 // athlete reported, newest first; a skipped question stays null. No average,
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id')?.trim();
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
-    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
+    await assertActorCanAccessAthlete(principal, athleteId);
 
     const rows = await listRecentCheckIns(principal.organizationId, athleteId, SLEEP_TREND_LIMIT);
     const items = rows.map((row) => ({ checked_in_on: row.checked_in_on, sleep_hours: row.sleep_hours }));

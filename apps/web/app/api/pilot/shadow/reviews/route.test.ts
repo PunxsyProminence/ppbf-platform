@@ -98,7 +98,7 @@ describe('GET /api/pilot/shadow/reviews', () => {
   });
 
   test('status defaults to open, so the queue that matters is what loads first', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockList.mockResolvedValueOnce([] as never);
 
     await GET(new NextRequest('https://example.test/api/pilot/shadow/reviews'));
@@ -114,6 +114,17 @@ describe('GET /api/pilot/shadow/reviews', () => {
     );
 
     expect(response.status).toBe(400);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner cannot read the queue -- it is gym business (OD-2026-10-05-024 ruling 3)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await GET(
+      new NextRequest('https://example.test/api/pilot/shadow/reviews'),
+    );
+
+    expect(response.status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
   });
 
@@ -183,6 +194,15 @@ describe('PATCH /api/pilot/shadow/reviews', () => {
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-b' }),
     );
+  });
+
+  test('platform_owner cannot triage (OD-2026-10-05-024 ruling 3)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await PATCH(patch({ reviewId: REVIEW_ID, status: 'resolved' }));
+
+    expect(response.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   test('a coach cannot triage', async () => {
