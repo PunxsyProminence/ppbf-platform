@@ -17,7 +17,9 @@ import {
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
   COVERED_AFTER_RESOLUTION_KEY,
   getShadowResearchRequirementById,
+  isResearchStaff,
   listShadowResearchRequirements,
+  mayReadSubjectlessResearchRow,
   namedAthleteId,
   namedAthleteIdsOf,
   resolveShadowResearchRequirement,
@@ -65,30 +67,12 @@ function requirementNotFound(): NextResponse {
   return NextResponse.json({ ok: false, error: 'Requirement not found' }, { status: 404 });
 }
 
-/**
- * Who sees and closes the gym's research questions and needs: the rows that
- * name no athlete.
- *
- * Those rows carry the asker's own words -- a Library question goes in as
- * metadata.question and knowledge_gap, a negative feedback note from the
- * learning loop as knowledge_gap and metadata.note -- and they were readable
- * by every role this route admits, so one family's question was readable by
- * every other family (CL-A3). They were also closable by every member but a
- * parent, and a person's resolution of a capability-gap ticket parks it until
- * that capability grades covered (CL-C14).
- *
- * RULING (Jason 2026-10-06, CL-A3): "Staff only" -- coaches and organization
- * admins see the gym's research questions and needs; everyone else sees only
- * their own. Closing one is the staff's call, so a member who can see their
- * own question still cannot close it.
- */
-function isResearchStaff(role: ActorIdentity['role']): boolean {
-  return role === 'coach' || isOrganizationAdminRole(role);
-}
-
-function mayReadSubjectlessRow(actor: ActorIdentity, row: ShadowResearchRequirementRow): boolean {
-  return isResearchStaff(actor.role) || row.created_by_account_id === actor.accountId;
-}
+// Who sees and closes the rows that name no athlete: isResearchStaff and
+// mayReadSubjectlessResearchRow in shadowResearch.ts (CL-A3, Jason 2026-10-06
+// "Staff only"), shared with the research-submissions route. Closing one is
+// the staff's call (CL-C14), so a member who can see their own question still
+// cannot close it, and a person's resolution of a capability-gap ticket parks
+// it until that capability grades covered.
 
 /**
  * Metadata keys the capability-coverage check writes and reads back.
@@ -166,7 +150,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * active, unexpired coach_coverage grant, a guardian's own dependents, an
  * athlete's own record, and nothing at all for volunteer/staff/platform_owner);
  * a row that names no athlete is the gym's research backlog and is kept for
- * staff, and for anyone else only if they filed it (mayReadSubjectlessRow).
+ * staff, and for anyone else only if they filed it (mayReadSubjectlessResearchRow).
  *
  * Organization admins administer the whole gym's records, so their reach and
  * the organization predicate the query already carries are the same set --
@@ -205,7 +189,7 @@ async function scopeToReachableSubjects(
     : new Set<string>();
   return rows.filter((row) => {
     const athleteId = subjectAthleteIdOf(row);
-    return athleteId === null ? mayReadSubjectlessRow(actor, row) : reachable.has(athleteId);
+    return athleteId === null ? mayReadSubjectlessResearchRow(actor, row) : reachable.has(athleteId);
   });
 }
 
@@ -343,7 +327,7 @@ export async function POST(request: NextRequest) {
         // always got: their list is scoped by subject_id, so they never see a
         // subject-less row, even their own.
         if (!isResearchStaff(principal.role)) {
-          if (principal.role === 'parent' || !mayReadSubjectlessRow(principal, stored)) {
+          if (principal.role === 'parent' || !mayReadSubjectlessResearchRow(principal, stored)) {
             return requirementNotFound();
           }
           return NextResponse.json(

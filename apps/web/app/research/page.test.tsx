@@ -67,9 +67,22 @@ const SECOND_REQUIREMENT = {
   research_requirement: 'Does footwork drill order matter?',
 };
 
-function mockFetch(options: { curator: boolean; capture?: { posts: unknown[] }; requirements?: Array<Record<string, unknown>> }) {
+function mockFetch(options: {
+  curator: boolean;
+  capture?: { posts: unknown[] };
+  requirements?: Array<Record<string, unknown>>;
+  role?: string;
+}) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // A coach unless a test says otherwise: closing a research need that names
+    // no athlete is a staff act since CL-C14.
+    if (url.includes('/api/pilot/auth/session')) {
+      return {
+        ok: true,
+        json: async () => ({ authenticated: true, role: options.role ?? 'coach', auth_provider: 'microsoft' }),
+      } as Response;
+    }
     if (url.includes('/research-submissions') && init?.method === 'POST') {
       options.capture?.posts.push(JSON.parse(String(init.body)));
       return { ok: true, json: async () => ({ item: {} }) } as Response;
@@ -390,6 +403,66 @@ test('a projection that answered empty prints real zeros', async () => {
   await screen.findByText('Empty State');
   expect(screen.getByText('ITEMS: 0')).toBeTruthy();
   expect(summaryTileValues()).toEqual(['0', '0', '0', '0']);
+});
+
+// CL-A3 / CL-C14 (Jason 2026-10-06, "Staff only"). A member now sees their
+// own research question, but closing a need that names no athlete is the
+// staff's call and the server refuses anyone else (403). The button must not
+// be offered to someone it would refuse. A row that names an athlete is still
+// decided by the relationship gate server-side, so it keeps its button.
+describe('Mark Resolved on research needs that name no athlete', () => {
+  const ABOUT_A_CHILD = { ...SECOND_REQUIREMENT, subject_id: 'ath-1', metadata: {} };
+
+  test.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner'])(
+    'a %s sees their own question with no Mark Resolved',
+    async (role) => {
+      global.fetch = mockFetch({ curator: false, role, requirements: [{ ...REQUIREMENT, subject_id: null, metadata: {} }] });
+
+      await act(async () => {
+        render(<ResearchIntakePage />);
+      });
+
+      await screen.findByText('Is RPE reliable at age 12?');
+      expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+    },
+  );
+
+  test('a row naming an athlete only in metadata is still a row about a child', async () => {
+    global.fetch = mockFetch({
+      curator: false,
+      role: 'athlete',
+      requirements: [{ ...REQUIREMENT, subject_id: null, metadata: { athlete_id: 'ath-1' } }],
+    });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
+  });
+
+  test('an athlete keeps Mark Resolved on a row about themselves', async () => {
+    global.fetch = mockFetch({ curator: false, role: 'athlete', requirements: [ABOUT_A_CHILD] });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Does footwork drill order matter?');
+    expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'])('a %s keeps Mark Resolved on every open row', async (role) => {
+    global.fetch = mockFetch({ curator: false, role, requirements: [REQUIREMENT, ABOUT_A_CHILD] });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.getAllByRole('button', { name: 'Mark Resolved' })).toHaveLength(2);
+  });
 });
 
 // The guard. /research shipped with no gate at all: an unauthenticated visitor

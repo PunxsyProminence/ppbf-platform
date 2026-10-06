@@ -7,6 +7,7 @@ import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/
 import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   getShadowResearchRequirementById,
+  mayReadSubjectlessResearchRow,
   subjectAthleteIdOf,
 } from '@/src/server/pilot/shadowResearch';
 import {
@@ -66,7 +67,9 @@ export const runtime = 'nodejs';
  *
  * Same rule as the sibling: a row naming an athlete is readable only by an
  * actor who can reach that athlete through the one central relationship gate;
- * a row naming nobody is org-wide operational data and stays readable.
+ * a row naming nobody is the gym's research backlog -- often a member's own
+ * Library question -- and is readable by staff and by whoever filed it
+ * (mayReadSubjectlessResearchRow; CL-A3, Jason 2026-10-06 "Staff only").
  * Organization admins administer the whole gym, so the organization predicate
  * the queries already carry is their reach.
  */
@@ -85,7 +88,7 @@ async function mayReadRequirement(
 
   const subjectAthleteId = subjectAthleteIdOf(requirement);
   if (subjectAthleteId === null) {
-    return true;
+    return mayReadSubjectlessResearchRow(actor, requirement);
   }
 
   const reachable = await accessibleAthleteIds(actor, [subjectAthleteId]);

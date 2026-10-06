@@ -5,7 +5,7 @@ import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
-import { usePilotSession } from '@/components/usePilotSession';
+import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import LibraryTextIntakePanel, { SHELF_WORDS } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
@@ -38,6 +38,25 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  subject_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/* CL-C14 (Jason 2026-10-06, "Staff only"): a research need that names no
+   athlete is closed by coaches and organization admins only, and the server
+   refuses anyone else. A row that names an athlete is decided server-side by
+   the relationship gate, so it keeps its button. The subject is read the way
+   subjectAthleteIdOf (shadowResearch.ts, server-only) reads it: the column,
+   then metadata.subject_id, then metadata.athlete_id. */
+function namesAnAthlete(requirement: ShadowResearchRequirement): boolean {
+  const metadata = requirement.metadata ?? {};
+  return [requirement.subject_id, metadata.subject_id, metadata.athlete_id].some(
+    (value) => typeof value === 'string' && value.trim() !== '',
+  );
+}
+
+function mayOfferResolve(role: PilotSessionRole | null, requirement: ShadowResearchRequirement): boolean {
+  return role === 'coach' || isOrganizationAdminSessionRole(role) || namesAnAthlete(requirement);
 }
 
 /* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
@@ -762,7 +781,7 @@ export default function ResearchIntakePage() {
                     );
                   })()
                 ) : null}
-                {requirement.status === 'open' ? (
+                {requirement.status === 'open' && mayOfferResolve(session.role, requirement) ? (
                   <button
                     type="button"
                     onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
