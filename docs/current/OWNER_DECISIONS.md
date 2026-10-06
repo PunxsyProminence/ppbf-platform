@@ -164,6 +164,61 @@ and should not try to.
 
 ---
 
+## OD-2026-10-06-004 -- Public inquiry retention: every public inquiry older than 12 months is deleted, joined or not (option "Delete all after 12 mo")
+
+**Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, tool use `toolu_01RiCLxyqvxK9Ha3Do5ifuPM`; asked 2026-10-06T12:54:45.823Z, line 520; answered 2026-10-06T12:55:48.480Z, line 521). Read by script from that transcript (records pass, 2026-10-06); question and option text below is as printed by the script. The one tool call carried three questions and Jason answered all three together; this is the third. See OD-2026-10-06-002 and -003. New; edits no earlier entry.
+
+Asked (official, then plain, as written): "12-month inquiry deletion: the privacy page says we delete public inquiries after 12 months 'unless you join', but nothing records who joined. Which rule? (Plain: we promised to delete website inquiries after a year. The app can't tell who later became a member. What should it do?)" Options: "Delete all after 12 mo (Recommended)" -- "Delete every inquiry older than 12 months, joined or not. Stricter than the promise, and simplest. A member's real record lives in their account anyway."; "Keep if email has account" -- "Keep inquiries whose email matches a live account. It's a guess and could keep a stranger's inquiry."; "Staff mark 'joined'" -- "Add a 'joined' status staff set by hand. Needs a database change and a screen change."
+
+Jason, 2026-10-06T12:55:48.480Z: *"Delete all after 12 mo (Recommended)"*
+
+**Ruling: every public inquiry older than 12 months is deleted, whether or not the person later joined.** No "joined" status is added and no email matching is used. This is stricter than the privacy page's "unless you join" wording; this entry does not change that page.
+
+**Recorded with this batch (OBSERVED, not a ruling):** CL-C12 is mitigated by configuration, so overwatch made no code change for it. Overwatch read `az containerapp auth show -n ca-ppbf-research-dfbc -g rg-ppbf-staging-dfbc` (same transcript, tool use `toolu_01Kuh4mwGxcSUZSQd5HMvPyQ`, line 556, 2026-10-06T12:57:34.821Z): `platform.enabled` true; `globalValidation.unauthenticatedClientAction` `Return401`, with `excludedPaths` `/health`; `identityProviders.azureActiveDirectory.enabled` true, with `validation.defaultAuthorizationPolicy.allowedApplications` set (one application).
+
+---
+
+## OD-2026-10-06-003 -- CL-A3 Library research questions: staff only; members and athletes see only their own (option "Staff only")
+
+**Provenance: PRIMARY.** Same AskUserQuestion as OD-2026-10-06-004 (tool use `toolu_01RiCLxyqvxK9Ha3Do5ifuPM`, transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, answered 2026-10-06T12:55:48.480Z); this is the second of its three questions. Read by script (records pass, 2026-10-06). New; edits no earlier entry.
+
+Asked (official, then plain, as written): "CL-A3: who may read the research questions members ask the Library? (Plain: when a member asks the Library something it can't answer, that question is saved as a 'research need'. Right now anyone in the gym can read those. Who should see them?)" Options: "Staff only (Recommended)" -- "Coaches and org admins see them; members and athletes see only their own."; "Asker + admins" -- "Only the person who asked and org admins. Coaches don't see them."; "Whole gym (as now)" -- "Everyone in the organization can read every question."
+
+Jason, 2026-10-06T12:55:48.480Z: *"Staff only (Recommended)"*
+
+**Ruling: Library research questions ("research needs") are readable by coaches and organization admins; members and athletes see only the ones they asked.** The whole-organization read described in the question is to be closed.
+
+---
+
+## OD-2026-10-06-002 -- CL-A14 coach review edits: only the review's author or an org admin may edit it; another coach writes their own (option "Author + org admin")
+
+**Provenance: PRIMARY.** Same AskUserQuestion as OD-2026-10-06-004 (tool use `toolu_01RiCLxyqvxK9Ha3Do5ifuPM`, transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, answered 2026-10-06T12:55:48.480Z); this is the first of its three questions. Read by script (records pass, 2026-10-06). New; edits no earlier entry.
+
+Asked (official, then plain, as written): "CL-A14: when a coach updates a coach review, who may edit it? (Plain: right now coach B can overwrite coach A's written review of an athlete, and it then shows as B's. Who should be allowed to change a review?)" Options: "Author + org admin (Recommended)" -- "Only the coach who wrote it, or an org admin, can edit. Another coach writes their own review instead. Each coach's words stay theirs."; "Any reaching coach, author kept" -- "Any coach who works with the athlete can edit, but the review still shows the original author and the log records who edited it."; "Leave as is" -- "Any reaching coach can overwrite it and becomes the author."
+
+Jason, 2026-10-06T12:55:48.480Z: *"Author + org admin (Recommended)"*
+
+**Ruling: a coach review may be edited only by the coach who wrote it or by an organization admin. Another coach who works with the athlete writes their own review instead of editing it.** The behavior described in the question (another coach overwrites the review and becomes its author) is to be closed.
+
+---
+
+## OD-2026-10-06-001 -- Overwatch moved to the new account: session "Overwatch lane" acts as OVERWATCH until the old account resets on Oct 8, with model, effort and agents "wide open"
+
+**Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script from that transcript (records pass, 2026-10-06). The question was a plain-text assistant message (no AskUserQuestion tool use). Timestamps are as stored (UTC). New; qualifies earlier entries only as stated below.
+
+Context. Jason, line 174 (queued message, 2026-10-06T12:42:10.652Z): *"The clause rean out of usage, read and reopen those lanes"*. Overwatch then reported (line 212) that every old session, including the old Overwatch and the Liaison, ended with "You've hit your weekly limit · resets Oct 8, 7pm", and asked (line 212, 2026-10-06T12:43:54.172Z, as written):
+
+> Official: should this session ("Overwatch lane") act as OVERWATCH on this account until the old account resets on Oct 8 (merge PRs when green, answer the lanes, release)? (A) Yes, recommended. (B) No, start a separate Overwatch session.
+> Plain: the chips tell each lane to report to this session. If you say A, I'll start merging the 4 waiting PRs as their checks go green and keep the handoff file up to date.
+
+Jason, line 216, 2026-10-06T12:46:06.009Z: *"Yes, I have an abundance of usage left too so model effort agents and capabilities are wide open to get as much done as possible, open chat gpt in browser to use as a review"*
+
+**Ruling: (a) the session "Overwatch lane" (`local_c5872d8e`) holds the OVERWATCH role of OD-2026-09-30-003 on this account until the old account resets on Oct 8 (option A); no separate Overwatch session is started. (b) On this account, model, effort, agents and capabilities are "wide open to get as much done as possible". (c) ChatGPT is opened in the browser to use as a reviewer.** Part (b) loosens the USAGE guidance in the OVERWATCH section of `~/.claude/rules/ppbf-workspace.md` (Jason 2026-09-30: "dont overkill models and effort") for work on this account; it does not authorize credit-billed surfaces (OD-2026-10-05-019 stands) and changes no authorization, merge or production rule. What happens to the role after the old account resets is not ruled here.
+
+Qualifies OD-2026-10-05-018 (who holds OVERWATCH) while it applies; edits no other entry.
+
+---
+
 ## OD-2026-10-05-026 -- Production re-home: Jason overrode the "Jason runs the script" clause of OD-2026-10-05-008 for this run and authorized the lane to run prod-rehome-test-login.cjs (dry run, then --apply)
 
 **Provenance: PRIMARY.** Jason's typed message in the helper session titled "Open parent portal logins (staging + production)" (desktop session `local_1384fac3`; transcript `~/.claude/projects/C--Dev/b3fa43d1-a2dc-4341-932d-cd8f4c9e003b.jsonl`, line 229, user message 2026-10-06T01:45:54.517Z; queued 2026-10-06T01:45:54.390Z, line 227). Read by script from that transcript (records pass, 2026-10-05). The message answers the helper's question put at 2026-10-06T00:28:20.083Z (line 225, plain-text question, no AskUserQuestion tool use). New; edits no earlier entry except as stated below.

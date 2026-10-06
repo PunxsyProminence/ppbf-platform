@@ -7,6 +7,7 @@ import {
   isOrganizationAdminRole,
   type ActorIdentity,
 } from './access';
+import { isCompetitionGatedWaiverType, lockCompetitionSafety } from './competitionSafetyLock';
 import { lockConsentSet } from './consentSetLock';
 import type { PilotAthlete, PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
@@ -738,8 +739,15 @@ export interface UpsertWaiverParams {
 }
 
 export async function upsertWaiver(params: UpsertWaiverParams, client?: PoolClient): Promise<string> {
+  // A travel waiver is what the competition entry gate reads, so its write
+  // takes the competition-safety lock (competitionSafetyLock.ts) -- which needs
+  // a transaction, so the pooled path gets one of its own.
+  if (!client && isCompetitionGatedWaiverType(params.waiverType)) {
+    return withTransaction((tx) => upsertWaiverWithClient(tx, params));
+  }
+  if (client) return upsertWaiverWithClient(client, params);
   const waiverId = randomUUID();
-  await writeRows(client, WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
+  await writeRows(undefined, WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
   return waiverId;
 }
 
@@ -761,6 +769,11 @@ export async function upsertWaiverWithClient(
   client: { query(text: string, values?: unknown[]): Promise<unknown> },
   params: UpsertWaiverParams,
 ): Promise<string> {
+  // Before the insert, so an entry in flight finishes first and an entry that
+  // arrives later reads this row (competitionSafetyLock.ts).
+  if (isCompetitionGatedWaiverType(params.waiverType)) {
+    await lockCompetitionSafety(client, params.organizationId, params.athleteId);
+  }
   const waiverId = randomUUID();
   await client.query(WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
   return waiverId;

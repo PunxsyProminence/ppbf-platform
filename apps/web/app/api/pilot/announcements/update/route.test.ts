@@ -90,6 +90,7 @@ describe('POST /api/pilot/announcements/update', () => {
       organizationId: 'org-1',
       announcementId: 'ann-1',
       active: false,
+      onlyAuthorAccountId: 'coach-1',
     });
     expect(mockWritePilotAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
       event_type: 'update',
@@ -105,6 +106,47 @@ describe('POST /api/pilot/announcements/update', () => {
     mockSetAnnouncementActive.mockResolvedValueOnce(null);
 
     const res = await POST(request({ announcement_id: 'ann-missing', active: false }));
+
+    expect(res.status).toBe(404);
+    expect(mockWritePilotAuditEvent).not.toHaveBeenCalled();
+  });
+  // CL-A8: retiring a notice is limited to its author or an organization
+  // admin (Jason 2026-10-06, Q2 option A, the same "author + org admin" line
+  // as CL-A14). The author is the actor on the notice's 'create' audit row;
+  // the module enforces it inside the UPDATE, so the route's job is to say
+  // whose authorship to require.
+  test.each(['coach', 'board', 'platform_owner'] as const)(
+    'a %s may retire only a notice they posted',
+    async (role) => {
+      mockResolvePrincipal.mockResolvedValueOnce(principal({ role, accountId: `${role}-7` }));
+
+      const res = await POST(request({ announcement_id: 'ann-1', active: false }));
+
+      expect(res.status).toBe(200);
+      expect(mockSetAnnouncementActive).toHaveBeenCalledWith(expect.objectContaining({
+        announcementId: 'ann-1',
+        onlyAuthorAccountId: `${role}-7`,
+      }));
+    },
+  );
+
+  test.each(['organization_admin', 'admin'] as const)('an %s may retire any notice in the organization', async (role) => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role, accountId: 'admin-1' }));
+
+    const res = await POST(request({ announcement_id: 'ann-1', active: false }));
+
+    expect(res.status).toBe(200);
+    expect(mockSetAnnouncementActive).toHaveBeenCalledWith(expect.objectContaining({
+      announcementId: 'ann-1',
+      onlyAuthorAccountId: null,
+    }));
+  });
+
+  test('someone else\'s notice reads as not found, and nothing is audited', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-2' }));
+    mockSetAnnouncementActive.mockResolvedValueOnce(null);
+
+    const res = await POST(request({ announcement_id: 'ann-1', active: false }));
 
     expect(res.status).toBe(404);
     expect(mockWritePilotAuditEvent).not.toHaveBeenCalled();

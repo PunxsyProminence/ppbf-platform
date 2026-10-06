@@ -28,9 +28,11 @@ jest.mock('next/link', () => ({
   ),
 }));
 
+// Switchable per test; the `mock` prefix lets the factory read it.
+let mockSessionRole = 'coach';
 jest.mock('@/components/usePilotSession', () => ({
   usePilotSession: () => ({
-    role: 'coach',
+    role: mockSessionRole,
     organizationId: 'org-1',
     authProvider: 'microsoft',
     accountId: 'coach-1',
@@ -364,4 +366,89 @@ test('puts no ghost button on the paper', async () => {
     .map((el) => el.textContent?.trim());
   expect(ghostsOnPaper).toEqual([]);
   expect(document.querySelector('.mat-paper .btn--lever')).not.toBeNull();
+});
+
+/*
+ * CL-A8. The post route accepts only a seat the board member holds, and the
+ * update route only the notice's author or an organization admin. The page
+ * offers exactly that, from what /get says this caller may do, so nobody is
+ * handed a default that the server then refuses.
+ */
+describe('offers only what the server will accept', () => {
+  afterEach(() => {
+    mockSessionRole = 'coach';
+  });
+
+  function capabilityFetch(body: Record<string, unknown>): jest.Mock {
+    return jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/announcements/post')) {
+        return jsonResponse({ ok: true, announcement: item() });
+      }
+      if (String(url).includes('/api/pilot/announcements/get')) {
+        return jsonResponse({ ok: true, announcements: [], ...body });
+      }
+      throw new Error(`Unexpected fetch: ${String(url)}`);
+    });
+  }
+
+  test('a board member picks only from the seats they hold, and the first is the default', async () => {
+    mockSessionRole = 'board';
+    const fetchMock = await renderPage(capabilityFetch({ author_seats: ['board-treasurer', 'board-secretary'] }));
+
+    const picker = screen.getByLabelText('Board seat') as HTMLSelectElement;
+    expect(Array.from(picker.options).map((option) => option.value)).toEqual(['board-treasurer', 'board-secretary']);
+    expect(picker.value).toBe('board-treasurer');
+
+    fireEvent.change(screen.getByPlaceholderText('What should this surface say?'), { target: { value: 'Dues due.' } });
+    fireEvent.change(screen.getByPlaceholderText('Your name, as members will see it'), { target: { value: 'T.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    });
+
+    const postCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/announcements/post'));
+    expect(JSON.parse(String((postCall?.[1] as RequestInit).body)).author_role).toBe('board-treasurer');
+  });
+
+  test('a board member who holds no seat is told so and cannot publish', async () => {
+    mockSessionRole = 'board';
+    await renderPage(capabilityFetch({ author_seats: [] }));
+
+    expect(screen.queryByLabelText('Board seat')).toBeNull();
+    expect(screen.getByText(/hold no board seat/i)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('What should this surface say?'), { target: { value: 'Hi' } });
+    fireEvent.change(screen.getByPlaceholderText('Your name, as members will see it'), { target: { value: 'B.' } });
+    expect((screen.getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('Retire and Restore appear only on notices this caller may change', async () => {
+    await renderPage(jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/announcements/get')) {
+        return jsonResponse({
+          ok: true,
+          announcements: [
+            item({ announcement_id: 'mine', message: 'Mine.' }),
+            item({ announcement_id: 'theirs', message: 'Theirs.', active: false }),
+          ],
+          editable_announcement_ids: ['mine'],
+          author_seats: [],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${String(url)}`);
+    }));
+
+    const mine = screen.getByText('Mine.', { selector: 'td' }).closest('tr') as HTMLElement;
+    const theirs = screen.getByText('Theirs.', { selector: 'td' }).closest('tr') as HTMLElement;
+    expect(within(mine).getByRole('button', { name: 'Retire' })).toBeTruthy();
+    expect(within(theirs).queryByRole('button')).toBeNull();
+  });
+
+  test('a board member whose list failed to load can still try, and the server decides', async () => {
+    mockSessionRole = 'board';
+    await renderPage(jest.fn(async () => jsonResponse({}, false)));
+
+    expect(screen.queryByText(/hold no board seat/i)).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('What should this surface say?'), { target: { value: 'Hi' } });
+    fireEvent.change(screen.getByPlaceholderText('Your name, as members will see it'), { target: { value: 'B.' } });
+    expect((screen.getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });

@@ -131,7 +131,14 @@ export function describeProfilePhotoUpload(file: {
     // The stored name never carries the uploader's filename. A blob path is
     // read by staff and appears in logs; "my_kid_at_home_2019.jpg" does not
     // need to be in either.
-    generatedFileName: expectedType === 'image/png' ? 'portrait.png' : 'portrait.jpg',
+    //
+    // Nor the type (audit CL-B9). It was portrait.jpg or portrait.png, so a
+    // replacement in the other format wrote a SECOND file and left the first
+    // -- a child's earlier face -- in the container with nothing naming it.
+    // One name means a replacement always overwrites. The type travels in the
+    // blob's Content-Type header and in photo_content_type, which is what the
+    // read route serves from.
+    generatedFileName: 'portrait',
     contentType: expectedType,
   };
 }

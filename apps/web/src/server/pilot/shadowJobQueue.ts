@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 11;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -54,10 +54,16 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
 // reads source rights. What goes into authorizedContext is unchanged; bumped
 // because a listed file moved. A v8 job still queued at deploy is refused as
 // STALE.
-// 10: owner role/read-scope rulings (#1267, OD-2026-10-05-024 ruling 3):
+// 10: SHADOW filters (CL-C7/C8/C10): shadowChat.ts's response filter catches
+// more diagnostic and prescriptive phrasings, and an answer that passed no
+// longer asks for a review row. What goes into authorizedContext is
+// unchanged; bumped because a listed file moved. A v9 job still queued at
+// deploy is refused as STALE. (#1267 also claims 10; whichever merges second
+// re-bumps to 11.)
+// 11: owner role/read-scope rulings (#1267, re-bumped after #1288 took 10; OD-2026-10-05-024 ruling 3):
 // canReviewChatSafetyTelemetry is organization admins only, no longer
 // platform_owner. What goes into authorizedContext is unchanged; bumped
-// because a listed file moved. A v9 job still queued at deploy is refused as
+// because a listed file moved. A v10 job still queued at deploy is refused as
 // STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
@@ -121,7 +127,8 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 7, sha256: '89b51b15eaa9c8c93dad39df694b1fe55f312eea897964ba868a733f221fdfb2' },
   { version: 8, sha256: 'b85aec5f0ba1997dd8858b2dde3d9f9903f39a7c7e3fcccad5052616885fcb2b' },
   { version: 9, sha256: 'a212014dfeeced705d843be036e03384357cad75ee9bccea0ceaefb0a788dcf6' },
-  { version: 10, sha256: 'f772c9a6d32a9d39a704f28b25e69ad256b863e191a21039889b331620bd6358' },
+  { version: 10, sha256: '931ddb2d93063c18bade41f7035e4c085060f9464c04c2e8e63ec77540f1b2f0' },
+  { version: 11, sha256: '309eaf2f0b964f712ec52e3a86f2f68f239d71a3f79a2e2ba86f0e48f96482eb' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

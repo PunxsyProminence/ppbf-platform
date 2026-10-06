@@ -188,19 +188,23 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(mockQueueHumanReview).toHaveBeenCalled();
   });
 
-  test('an unfiltered answer that requires human review still queues a review ticket', async () => {
+  // Parity with the synchronous path is kept; what both paths do changed.
+  // CL-C7 (2026-10-05 audit): an unfiltered answer whose only flag is the
+  // deferral the doctrine requires no longer asks for a review row, on either
+  // path, because each row draws on the owner's 3-per-hour allowance
+  // (OD-2026-10-01-006) and routine deferrals were using it up.
+  test('an unfiltered routine deferral answer queues no review ticket, same as the synchronous path', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
     llmReply('A licensed physician should evaluate readiness before the next bout. RESEARCH NEEDED.');
 
     const result = await processNextShadowJob();
 
     expect(result.processed).toBe(true);
-    // Sync queues on requiresHumanReview even when not filtered; async
-    // queued only on filtered, so this answer displayed with no reviewer
-    // ever seeing it.
-    expect(mockQueueHumanReview).toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    // No row, so no "a human will review" handoff either: it would be false.
     expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({
-      handoff: expect.any(String),
+      responseState: 'ok',
+      handoff: undefined,
     }));
   });
 
