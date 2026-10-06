@@ -467,6 +467,7 @@
     "test:migrations:content-import-upload": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportUpload.pg.test.ts --testTimeout=300000",
     "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000",
     "test:migrations:intake-domain-upsert-atomic": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/intakeDomainUpsertAtomic.pg.test.ts --testTimeout=180000",
+    "test:migrations:consent-suppress-atomic": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentSuppressionAtomic.pg.test.ts --testTimeout=180000",
     "test:migrations:decision-outcome-observation-ids": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowDecisionOutcomes.pg.test.ts --testTimeout=300000",
     "test:migrations:shadow-rate-limit-refund": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowRateLimitRefund.pg.test.ts --testTimeout=180000",
     "test:migrations:rehome-test-login": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rehomeTestLogin.pg.test.ts --testTimeout=240000"
