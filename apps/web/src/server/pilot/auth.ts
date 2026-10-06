@@ -433,7 +433,9 @@ async function bindMicrosoftIdentity(
  * new holder forever and keep admitting the old one through any address of
  * theirs that is re-pointed here. A case-only change keeps the binding: the
  * sign-in lookup is case-insensitive, so it is the same login. Recorded as an
- * 'update' on the account, since the binding is part of the account row.
+ * 'update' on the account, since the binding is part of the account row. Ends
+ * the account's live sessions with it (owner ruling 2026-10-06, "sign out
+ * devices"): they belong to the directory user the binding named.
  */
 export async function clearMicrosoftIdentityOnLoginEmailChangeTx(
   client: PoolClient,
@@ -451,6 +453,7 @@ export async function clearMicrosoftIdentityOnLoginEmailChangeTx(
   );
   const row = cleared.rows[0];
   if (!row) return false;
+  await revokeAllSessionsForAccountTx(client, accountId);
   await writePilotAuditEvent({
     event_type: 'update',
     actor_account_id: null,

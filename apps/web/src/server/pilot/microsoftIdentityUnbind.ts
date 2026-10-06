@@ -34,9 +34,12 @@ interface UnbindTarget {
 }
 
 /**
- * Clears one account's pair inside the caller's transaction and records the
- * pair it held. Only the oid's last four characters are kept: enough to match
- * against the directory, not a full identifier copied into every audit read.
+ * Clears one account's pair inside the caller's transaction, ends every live
+ * session the account holds (owner ruling 2026-10-06: "Yes, sign out devices";
+ * those sessions were minted under the directory user being let go of), and
+ * records the pair it held. Only the oid's last four characters are kept:
+ * enough to match against the directory, not a full identifier copied into
+ * every audit read.
  */
 export async function clearMicrosoftIdentityTx(
   client: PoolClient,
@@ -51,6 +54,11 @@ export async function clearMicrosoftIdentityTx(
   if (!target.microsoft_oid) return false;
   await client.query(
     'update pilot.accounts set microsoft_oid = null, microsoft_tid = null where account_id = $1',
+    [target.account_id],
+  );
+  // Every organization, not the actor's: the binding is account-wide.
+  await client.query(
+    'update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null',
     [target.account_id],
   );
   await writePilotAuditEvent({

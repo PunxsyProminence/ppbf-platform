@@ -67,7 +67,11 @@ jest.mock('./db', () => {
   };
 });
 
-import { createOrUpdateMicrosoftPlatformOwnerAccount, loginWithMicrosoftEmail } from './auth';
+import {
+  clearMicrosoftIdentityOnLoginEmailChangeTx,
+  createOrUpdateMicrosoftPlatformOwnerAccount,
+  loginWithMicrosoftEmail,
+} from './auth';
 import { unbindMicrosoftIdentity } from './microsoftIdentityUnbind';
 import { createOrUpdateMicrosoftStaffAccount } from './staffProvisioning';
 
@@ -588,6 +592,21 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
     )).rows;
   }
 
+  async function seedSession(accountId: string, organizationId: string = ORG_ID): Promise<void> {
+    sequence += 1;
+    await client.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)`,
+      [`hash-${sequence}`, accountId, organizationId],
+    );
+  }
+
+  async function liveSessions(accountId: string): Promise<number> {
+    return (await client.query(
+      'select count(*)::int as n from pilot.session_tokens where account_id = $1 and revoked_at is null',
+      [accountId],
+    )).rows[0].n;
+  }
+
   async function unbind(actor: { accountId: string; role: string; organizationId: string }, target: string): Promise<string> {
     try {
       const result = await unbindMicrosoftIdentity(
@@ -625,6 +644,52 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
 
     expect(await signIn(coach.email, recreated)).toBe(coach.accountId);
     expect(await storedIdentity(coach.accountId)).toEqual({ microsoft_oid: recreated, microsoft_tid: TENANT });
+  });
+
+  // Owner ruling 2026-10-06 (relayed by overwatch): "Yes, sign out devices".
+  // Sessions minted under the old directory user end with the binding.
+  test('an unbind signs the target out everywhere, in the same transaction, and no one else', async () => {
+    const admin = await seedMember({ role: 'organization_admin' });
+    const coach = await seedMember();
+    const bystander = await seedMember();
+    await seedSession(coach.accountId);
+    await seedSession(coach.accountId, OTHER_ORG_ID);
+    await seedSession(admin.accountId);
+    await seedSession(bystander.accountId);
+
+    expect(await unbind({ accountId: admin.accountId, role: 'organization_admin', organizationId: ORG_ID }, coach.accountId)).toBe('cleared');
+
+    expect(await liveSessions(coach.accountId)).toBe(0);
+    expect(await liveSessions(admin.accountId)).toBe(1);
+    expect(await liveSessions(bystander.accountId)).toBe(1);
+  });
+
+  test('a refused or no-op unbind signs no one out', async () => {
+    const admin = await seedMember({ role: 'organization_admin' });
+    const elsewhere = await seedMember({ organizationId: OTHER_ORG_ID });
+    const unbound = await seedMember();
+    await client.query('update pilot.accounts set microsoft_oid = null, microsoft_tid = null where account_id = $1', [unbound.accountId]);
+    await seedSession(elsewhere.accountId, OTHER_ORG_ID);
+    await seedSession(unbound.accountId);
+    const actor = { accountId: admin.accountId, role: 'organization_admin', organizationId: ORG_ID };
+
+    expect(await unbind(actor, elsewhere.accountId)).toBe('THREW:Not found: account');
+    expect(await unbind(actor, unbound.accountId)).toBe('already-unbound');
+    expect(await liveSessions(elsewhere.accountId)).toBe(1);
+    expect(await liveSessions(unbound.accountId)).toBe(1);
+  });
+
+  test('the login-email-change clear signs the account out too', async () => {
+    const coach = await seedMember();
+    await seedSession(coach.accountId);
+
+    const db = jest.requireMock('./db') as { withTransaction: (fn: (c: unknown) => Promise<unknown>) => Promise<unknown> };
+    const cleared = await db.withTransaction((tx) =>
+      clearMicrosoftIdentityOnLoginEmailChangeTx(tx as Parameters<typeof clearMicrosoftIdentityOnLoginEmailChangeTx>[0], coach.accountId, `new-${coach.email}`),
+    );
+
+    expect(cleared).toBe(true);
+    expect(await liveSessions(coach.accountId)).toBe(0);
   });
 
   test('an organization admin cannot unbind outside their organization, an inactive member, the platform owner, or themselves', async () => {
@@ -690,6 +755,7 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
 
   test('the bootstrap-key path clears the platform owner\'s own binding, same email, and records it', async () => {
     const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+    await seedSession(owner.accountId);
 
     const result = await createOrUpdateMicrosoftPlatformOwnerAccount({
       loginEmail: owner.email,
@@ -706,6 +772,7 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
         details: expect.objectContaining({ reason: 'owner_bootstrap', previous_microsoft_oid_suffix: owner.oid.slice(-4) }),
       }),
     ]);
+    expect(await liveSessions(owner.accountId)).toBe(0);
   });
 
   test('a bootstrap that also changes the email clears once, reports it, and records one row', async () => {

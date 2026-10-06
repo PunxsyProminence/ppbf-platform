@@ -88,8 +88,12 @@ describe('unbindMicrosoftIdentity', () => {
 
     await expect(unbindMicrosoftIdentity(owner, 'target')).resolves.toEqual({ accountId: 'target', cleared: true });
 
-    const [update, audit] = writes();
+    const [update, revoke, audit] = writes();
     expect(update[0]).toMatch(/set microsoft_oid = null, microsoft_tid = null/);
+    // Owner ruling 2026-10-06: an unbind also signs the account out.
+    expect(revoke[0]).toMatch(/update pilot\.session_tokens set revoked_at = now\(\)/);
+    expect(revoke[0]).not.toMatch(/organization_id/);
+    expect(revoke[1]).toEqual(['target']);
     expect(audit[0]).toMatch(/insert into pilot\.audit_events/);
     expect(audit[1]).toEqual([
       'update',
@@ -116,7 +120,7 @@ describe('unbindMicrosoftIdentity', () => {
 
     await unbindMicrosoftIdentity(orgAdmin, 'target');
 
-    const audit = writes()[1];
+    const audit = writes()[2];
     expect(audit[1][3]).toBe('org-1');
   });
 
