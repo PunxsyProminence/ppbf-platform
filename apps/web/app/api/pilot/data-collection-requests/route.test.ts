@@ -346,3 +346,46 @@ describe('capture binds resulting_assessment_id to the request athlete (CL-A11)'
     expect(mockCapture).not.toHaveBeenCalled();
   });
 });
+
+test('an assessment id sent in upper case is matched as the lower-case uuid Postgres prints', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+  mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+
+  await PATCH(patchRequest({ request_id: 'req-1', resulting_assessment_id: ' AB12CD34-0000-4000-8000-00000000000A ' }));
+
+  expect(mockQueryOne).toHaveBeenCalledWith(
+    expect.stringContaining('pilot.assessments'),
+    ['org-1', 'ab12cd34-0000-4000-8000-00000000000a', 'ath-1'],
+  );
+});
+
+test('a non-string id is a 400, not a 500', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+  mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+
+  expect((await POST(postRequest({ ...REQUEST_BODY, person_account_id: 42 }))).status).toBe(400);
+  expect((await PATCH(patchRequest({ request_id: 'req-1', resulting_assessment_id: { id: 1 } }))).status).toBe(400);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockCapture).not.toHaveBeenCalled();
+});
+
+test('the person check requires a live, non-platform-owner account behind the membership', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'admin' }));
+  mockCreate.mockResolvedValue({ request_id: 'req-3', request_kind: 'photo', reason_code: 'x' });
+
+  await POST(postRequest({ ...REQUEST_BODY, person_account_id: 'acct-volunteer' }));
+
+  const sql = String(mockQueryOne.mock.calls[0][0]);
+  expect(sql).toContain('a.active_flag = true');
+  expect(sql).toContain('not a.is_platform_owner');
+});
+
+test('a coach naming a person on a request about their own athlete still gets the membership check', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockQueryOne.mockResolvedValueOnce(null);
+
+  const response = await POST(postRequest({ ...REQUEST_BODY, athlete_id: 'ath-1', person_account_id: 'acct-elsewhere' }));
+
+  expect(response.status).toBe(400);
+  expect(mockCreate).not.toHaveBeenCalled();
+});

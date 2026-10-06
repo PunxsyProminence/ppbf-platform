@@ -27,13 +27,25 @@ const PERSON_REQUEST_ROLES = ['organization_admin', 'admin'] as const;
 // calls this route today, so no coach workflow loses anything.
 async function assertPersonInOrganization(personAccountId: string, organizationId: string): Promise<void> {
   const member = await queryOne<{ found: number }>(
-    `select 1 as found from pilot.organization_memberships
-     where account_id = $1 and organization_id = $2 and active_flag = true`,
+    `select 1 as found
+     from pilot.organization_memberships m
+     join pilot.accounts a on a.account_id = m.account_id
+     where m.account_id = $1 and m.organization_id = $2 and m.active_flag = true
+       and a.active_flag = true and not a.is_platform_owner`,
     [personAccountId, organizationId],
   );
   if (!member) {
     throw new ValidationError('person_account_id must be an active account in this organization.');
   }
+}
+
+/** An optional id field: absent, or a non-blank string. Anything else is the caller's to fix, not a 500. */
+function optionalId(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new ValidationError(`${field} must be a string.`);
+  }
+  return value.trim() || undefined;
 }
 
 // The open-request queue this migration exists to surface: a specific
@@ -97,8 +109,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing request_kind, prompt_text, or reason_code');
     }
 
-    const athleteId = body.athlete_id?.trim() || undefined;
-    const personAccountId = body.person_account_id?.trim() || undefined;
+    const athleteId = optionalId(body.athlete_id, 'athlete_id');
+    const personAccountId = optionalId(body.person_account_id, 'person_account_id');
     if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
     if (!athleteId) requireRole(principal, [...PERSON_REQUEST_ROLES]);
     if (personAccountId) await assertPersonInOrganization(personAccountId, principal.organizationId);
@@ -174,7 +186,8 @@ export async function PATCH(request: NextRequest) {
     // used to be stored as sent, so a capture could record another child's
     // assessment, or another gym's, as this one's. A request about a person
     // account has no athlete for an assessment to be about.
-    const resultingAssessmentId = body.resulting_assessment_id?.trim() || undefined;
+    // Lowercased: Postgres prints a uuid in lowercase, and the comparison is on text.
+    const resultingAssessmentId = optionalId(body.resulting_assessment_id, 'resulting_assessment_id')?.toLowerCase();
     if (resultingAssessmentId) {
       if (!owner.athlete_id) {
         throw new ValidationError('A request about a person account takes no resulting_assessment_id.');
