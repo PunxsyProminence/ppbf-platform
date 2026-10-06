@@ -4,7 +4,7 @@ import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/sr
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
+import { parseLibraryShelf, resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   getShadowResearchRequirementById,
   mayReadSubjectlessResearchRow,
@@ -76,6 +76,7 @@ export const runtime = 'nodejs';
 async function mayReadRequirement(
   actor: { accountId: string; role: PilotRole; organizationId: string; athleteId: string | null },
   requirementId: number,
+  onPlatformShelf: boolean,
 ): Promise<boolean> {
   if (isOrganizationAdminRole(actor.role)) {
     return true;
@@ -88,7 +89,10 @@ async function mayReadRequirement(
 
   const subjectAthleteId = subjectAthleteIdOf(requirement);
   if (subjectAthleteId === null) {
-    return mayReadSubjectlessResearchRow(actor, requirement);
+    // The platform shelf is the platform owner's own Library, where it is the
+    // curator (OD-2026-10-02-015 D3); resolveLibraryShelf has already refused
+    // that shelf to everyone else, and no gym member's words are on it.
+    return onPlatformShelf || mayReadSubjectlessResearchRow(actor, requirement);
   }
 
   const reachable = await accessibleAthleteIds(actor, [subjectAthleteId]);
@@ -99,7 +103,9 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
-    const organizationId = resolveLibraryShelf(principal, request.nextUrl.searchParams.get('shelf'), 'read');
+    const shelfParam = request.nextUrl.searchParams.get('shelf');
+    const organizationId = resolveLibraryShelf(principal, shelfParam, 'read');
+    const onPlatformShelf = parseLibraryShelf(shelfParam) === 'platform';
     const actor = { ...principal, organizationId };
 
     // Batch mode: ?research_requirement_ids=1,2,3 answers only the computed
@@ -118,7 +124,7 @@ export async function GET(request: NextRequest) {
          if existence leaks. */
       const readable: number[] = [];
       for (const id of ids) {
-        if (await mayReadRequirement(actor, id)) {
+        if (await mayReadRequirement(actor, id, onPlatformShelf)) {
           readable.push(id);
         }
       }
@@ -138,7 +144,7 @@ export async function GET(request: NextRequest) {
     /* One refusal for "does not exist", "another organization" and "a child
        you may not reach". research_requirement_id is a bigserial, so telling
        those apart is exactly what an enumerating caller wants. */
-    if (!(await mayReadRequirement(actor, requirementId))) return hiddenNotFound();
+    if (!(await mayReadRequirement(actor, requirementId, onPlatformShelf))) return hiddenNotFound();
 
     const status = await getRequirementStatusInOrg(organizationId, requirementId);
     if (status === null) return hiddenNotFound();

@@ -1,7 +1,6 @@
 import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
-import { PLATFORM_LIBRARY_ORGANIZATION_ID } from './platformLibraryScope';
 import type { ShadowConfidenceTier } from './shadowAuthority';
 import type { ShadowSourceVerificationState } from './shadow';
 
@@ -194,15 +193,9 @@ export function isResearchStaff(role: PilotRole): boolean {
 
 export function mayReadSubjectlessResearchRow(
   actor: { accountId: string; role: PilotRole },
-  row: Pick<ShadowResearchRequirementRow, 'organization_id' | 'created_by_account_id'>,
+  row: Pick<ShadowResearchRequirementRow, 'created_by_account_id'>,
 ): boolean {
-  if (isResearchStaff(actor.role) || row.created_by_account_id === actor.accountId) {
-    return true;
-  }
-  // The platform shelf is the platform owner's own Library, where it is the
-  // curator (OD-2026-10-02-015 D3); no gym member's words are on it. A gym's
-  // rows stay out of its reach: it is not staff there.
-  return actor.role === 'platform_owner' && row.organization_id === PLATFORM_LIBRARY_ORGANIZATION_ID;
+  return isResearchStaff(actor.role) || row.created_by_account_id === actor.accountId;
 }
 
 export async function getShadowResearchRequirementById(
