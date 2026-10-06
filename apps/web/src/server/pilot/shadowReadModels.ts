@@ -558,6 +558,10 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
 
   return rows.map((row) => ({
     ...row,
+    // Same leak as listShadowEvents: /api/pilot/shadow/telemetry admits every
+    // organization member, and the dimensions sanitizer never touched the
+    // row's actor column.
+    actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
     dimensions: sanitizeDimensions((row.dimensions ?? {}) as Record<string, unknown>, context.actorRole),
   }));
 }
