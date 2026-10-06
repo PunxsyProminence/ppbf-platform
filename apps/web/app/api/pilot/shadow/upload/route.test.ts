@@ -28,8 +28,8 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { uploadPilotShadowFile } from '@/src/server/pilot/blob';
-import { query } from '@/src/server/pilot/db';
-import { createIntakeCase, createIntakeDocument } from '@/src/server/pilot/intake';
+import { query, queryOne } from '@/src/server/pilot/db';
+import { assertActorCanAccessIntakeCase, createIntakeCase, createIntakeDocument } from '@/src/server/pilot/intake';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
@@ -52,7 +52,12 @@ jest.mock('@/src/server/pilot/blob', () => ({ uploadPilotShadowFile: jest.fn() }
 jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
 jest.mock('@/src/server/pilot/intake', () => {
   const actual = jest.requireActual('@/src/server/pilot/intake');
-  return { ...actual, createIntakeCase: jest.fn(), createIntakeDocument: jest.fn() };
+  return {
+    ...actual,
+    assertActorCanAccessIntakeCase: jest.fn(),
+    createIntakeCase: jest.fn(),
+    createIntakeDocument: jest.fn(),
+  };
 });
 jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowTelemetry', () => ({ writeShadowTelemetryEvent: jest.fn() }));
@@ -61,6 +66,8 @@ jest.mock('@/src/server/pilot/shadowResearch', () => ({ createShadowResearchRequ
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 const mockQuery = query as jest.MockedFunction<typeof query>;
+const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
+const mockCaseGate = assertActorCanAccessIntakeCase as jest.MockedFunction<typeof assertActorCanAccessIntakeCase>;
 const mockCreateCase = createIntakeCase as jest.MockedFunction<typeof createIntakeCase>;
 const mockCreateDocument = createIntakeDocument as jest.MockedFunction<typeof createIntakeDocument>;
 const mockUpload = uploadPilotShadowFile as jest.MockedFunction<typeof uploadPilotShadowFile>;
@@ -124,6 +131,8 @@ beforeEach(() => {
   mockAudit.mockResolvedValue(undefined as never);
   mockTelemetry.mockResolvedValue(undefined as never);
   mockRequirement.mockResolvedValue(99 as never);
+  mockCaseGate.mockResolvedValue({ found: true, submittedByAccountId: 'acct-1', subjectAthleteIds: [] });
+  mockQueryOne.mockResolvedValue({ status: 'pending_review' } as never);
 });
 
 describe('POST /api/pilot/shadow/upload', () => {
@@ -202,5 +211,78 @@ describe('POST /api/pilot/shadow/upload', () => {
     expect(mockEmit).toHaveBeenCalledWith(
       expect.objectContaining({ eventName: 'SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED' }),
     );
+  });
+
+  // CL-A9 / CL-C18: a caller-supplied intake_case_id used to be inserted as
+  // is. Any coach could file a document onto any case in the gym -- another
+  // coach's athlete, or a case already approved or promoted -- and an id that
+  // named no case in this gym failed at the foreign key as a 500 AFTER the
+  // file was already in blob storage. The case is now checked first, with the
+  // same gate every intake-case read uses, and the blob is written only after.
+  describe('attaching to an existing intake case (CL-A9, CL-C18)', () => {
+    const CASE_ID = '11111111-1111-4111-8111-111111111111';
+
+    function attachUpload() {
+      const file = new File([pdfBytes()], FILE_NAME, { type: 'application/pdf' });
+      return uploadRequest({ file, intake_case_id: CASE_ID });
+    }
+
+    test('refuses a case about an athlete the coach cannot reach, before the blob is written', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+      mockCaseGate.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+
+      const response = await POST(attachUpload());
+
+      expect(response.status).toBe(403);
+      expect(mockCaseGate).toHaveBeenCalledWith(
+        expect.objectContaining({ accountId: 'acct-1', role: 'coach' }),
+        'org-real',
+        CASE_ID,
+      );
+      expect(mockUpload).not.toHaveBeenCalled();
+      expect(mockCreateDocument).not.toHaveBeenCalled();
+    });
+
+    test('a case id that names no case in this organization is a 404, before the blob is written', async () => {
+      mockCaseGate.mockResolvedValueOnce({ found: false, submittedByAccountId: null, subjectAthleteIds: [] });
+
+      const response = await POST(attachUpload());
+
+      expect(response.status).toBe(404);
+      expect(mockUpload).not.toHaveBeenCalled();
+      expect(mockCreateDocument).not.toHaveBeenCalled();
+    });
+
+    test.each(['approved', 'rejected', 'promoted'])(
+      'refuses a case already %s, before the blob is written',
+      async (status) => {
+        mockQueryOne.mockResolvedValueOnce({ status } as never);
+
+        const response = await POST(attachUpload());
+
+        expect(response.status).toBe(409);
+        expect(mockUpload).not.toHaveBeenCalled();
+        expect(mockCreateDocument).not.toHaveBeenCalled();
+      },
+    );
+
+    test('a reachable pending case takes the document and no new case is opened', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+      const response = await POST(attachUpload());
+
+      expect(response.status).toBe(202);
+      expect(mockUpload).toHaveBeenCalledTimes(1);
+      expect(mockCreateCase).not.toHaveBeenCalled();
+      expect(mockCreateDocument).toHaveBeenCalledWith(expect.objectContaining({ intakeCaseId: CASE_ID }));
+    });
+
+    test('an upload that names no case opens its own and runs no case gate', async () => {
+      const response = await POST(pdfUpload('general_intake'));
+
+      expect(response.status).toBe(202);
+      expect(mockCaseGate).not.toHaveBeenCalled();
+      expect(mockCreateCase).toHaveBeenCalledTimes(1);
+    });
   });
 });

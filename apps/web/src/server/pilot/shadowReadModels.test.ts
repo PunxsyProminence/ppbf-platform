@@ -256,10 +256,10 @@ describe('getShadowReviewProjection athlete scoping', () => {
     expect(totalParams[4]).toBe(false);
   });
 
-  test('a coach sees their own athletes cases plus the cases that have no athlete yet', async () => {
-    // Both halves matter. Scoping the coach without the second one would empty
-    // the intake review queue of every case filed before its athlete record
-    // exists -- which is most of what a review queue holds.
+  test('a coach is scoped to their roster, and to the unattributed cases they filed themselves', async () => {
+    // CL-A10: the unattributed half used to admit every coach to every case
+    // with no athlete yet. It is now the case gate's own rule: the coach who
+    // filed it, bound as the actor.
     answerCoachRoster(['ath-mine']);
     mockQuery.mockResolvedValueOnce([]); // items query
     mockQuery.mockResolvedValueOnce([{ count: '0' }]); // total query
@@ -270,8 +270,10 @@ describe('getShadowReviewProjection athlete scoping', () => {
     const totalParams = mockQuery.mock.calls[2][1];
     expect(itemsParams[5]).toEqual(['ath-mine']);
     expect(itemsParams[6]).toBe(true);
+    expect(itemsParams[7]).toBe('coach-1');
     expect(totalParams[3]).toEqual(['ath-mine']);
     expect(totalParams[4]).toBe(true);
+    expect(totalParams[5]).toBe('coach-1');
   });
 
   test('the items query and the count query carry the identical boundary', async () => {
@@ -283,12 +285,19 @@ describe('getShadowReviewProjection athlete scoping', () => {
 
     await getShadowReviewProjection(context({ actorRole: 'coach' }));
 
+    // CL-A10: every athlete the case names must be in reach (not just the
+    // column), and an unattributed case only reaches the account that filed it.
     expect(sqlOf(1)).toContain(
-      "$6::text[] is null or c.primary_athlete_id = any($6::text[]) or ($7::boolean and c.primary_athlete_id is null)",
+      "$6::text[] is null or ( cardinality(subj.athlete_ids) > 0 and subj.athlete_ids <@ $6::text[] ) or ( cardinality(subj.athlete_ids) = 0 and $7::boolean and c.submitted_by_account_id = $8::text )",
     );
     expect(sqlOf(2)).toContain(
-      "$4::text[] is null or c.primary_athlete_id = any($4::text[]) or ($5::boolean and c.primary_athlete_id is null)",
+      "$4::text[] is null or ( cardinality(subj.athlete_ids) > 0 and subj.athlete_ids <@ $4::text[] ) or ( cardinality(subj.athlete_ids) = 0 and $5::boolean and c.submitted_by_account_id = $6::text )",
     );
+    // Both read the document owners, not the column alone.
+    for (const call of [1, 2]) {
+      expect(sqlOf(call)).toContain("owner_doc.owner_entity_type = 'athlete'");
+      expect(sqlOf(call)).not.toContain('c.primary_athlete_id is null)');
+    }
   });
 
   test('an organization admin remains unrestricted across the whole organization', async () => {

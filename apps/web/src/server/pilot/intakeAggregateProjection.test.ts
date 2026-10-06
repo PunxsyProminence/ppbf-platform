@@ -310,3 +310,71 @@ describe('the aggregate readiness projection', () => {
     expect(selectListFor('from pilot.readiness')).not.toContain('recorded_by_account_id');
   });
 });
+
+/**
+ * CL-B7. The case row and its documents were the two reads left on
+ * `select *`, so an athlete or a guardian opening their own child's case got
+ * the staff writing on it: intake_cases.review_notes, the reviewer's and the
+ * filer's account ids, and every document's metadata -- the hint a coach typed
+ * at upload (up to 1000 characters) and the security reviewer's notes and id
+ * -- plus the storage path. Same reader split as the seven tables above.
+ */
+function caseSelectList(): string[] {
+  const call = mockQueryOne.mock.calls.find(([sql]) => String(sql).includes('from pilot.intake_cases'));
+  if (!call) {
+    throw new Error('the aggregate never read pilot.intake_cases');
+  }
+  const match = /select\s+([\s\S]*?)\s+from\s/i.exec(String(call[0]));
+  if (!match) {
+    throw new Error(`the intake_cases read has no parsable select list: ${String(call[0])}`);
+  }
+  return match[1].split(',').map((column) => column.trim()).filter(Boolean);
+}
+
+const CASE_STAFF_ONLY = ['review_notes', 'reviewed_by_account_id', 'submitted_by_account_id', 'payload', 'source_shadow_intake_id'];
+const DOCUMENT_STAFF_ONLY = ['metadata', 'blob_path', 'classification', 'shadow_intake_id'];
+
+describe('the aggregate intake case and document projection (CL-B7)', () => {
+  test.each(FAMILY_READERS)('THE DEFECT: %s receives no staff column of the case', async (role) => {
+    await run(role);
+
+    const columns = caseSelectList();
+    expect(columns).not.toContain('*');
+    for (const column of CASE_STAFF_ONLY) {
+      expect(columns).not.toContain(column);
+    }
+    // What the reader is reading about, and what later reads key on.
+    expect(columns).toEqual(expect.arrayContaining(['intake_case_id', 'status', 'primary_athlete_id', 'summary']));
+  });
+
+  test.each(FAMILY_READERS)('THE DEFECT: %s receives no staff column of the documents', async (role) => {
+    await run(role);
+
+    const columns = selectListFor('from pilot.intake_documents');
+    expect(columns).not.toContain('*');
+    for (const column of DOCUMENT_STAFF_ONLY) {
+      expect(columns).not.toContain(column);
+    }
+    expect(columns).toEqual(expect.arrayContaining(['intake_document_id', 'document_type', 'file_name', 'review_status']));
+  });
+
+  test.each(STAFF_READERS)('%s keeps every column of both', async (role) => {
+    await run(role);
+
+    expect(caseSelectList()).toEqual(expect.arrayContaining(CASE_STAFF_ONLY));
+    expect(selectListFor('from pilot.intake_documents')).toEqual(expect.arrayContaining(DOCUMENT_STAFF_ONLY));
+  });
+
+  test('a call with no reader named falls to the family columns', async () => {
+    await run();
+
+    expect(caseSelectList()).not.toContain('review_notes');
+    expect(selectListFor('from pilot.intake_documents')).not.toContain('metadata');
+  });
+
+  test('the later reads still key on the case athlete', async () => {
+    await run('parent');
+
+    expect(paramsFor('from pilot.medical_intake')).toEqual([ORG, ATHLETE]);
+  });
+});
