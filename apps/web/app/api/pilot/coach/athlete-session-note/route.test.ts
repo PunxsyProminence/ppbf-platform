@@ -28,18 +28,14 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * the statement asked for. So "which day did the route ask about" is
  * observable, and a read that reverted to the UTC day finds nothing.
  *
- * RELATIONSHIP STATE IS MODELLED ONLY TO PROVE IT IS NOT READ. The fake keeps
- * a pilot.coach_coverage table -- one grant on ath-marisol inside its window
+ * RELATIONSHIP STATE DECIDES (OD-2026-10-05-024 ruling 2, Jason 2026-10-05,
+ * superseding OD-2026-09-25-003 for this read). The fake keeps a
+ * pilot.coach_coverage table -- one grant on ath-marisol inside its window
  * and one that has lapsed -- and every athlete row carries a coach_id of
  * record. So the four coach callers below hold four genuinely different
  * relationships to the same child: coach of record, live grant, expired
- * grant, nothing whatever. All four read the note, because organization
- * membership is the only question this route asks, and the cases assert that
- * no coach_coverage statement was issued for any of them. Modelled states
- * treated identically is what proves the indifference; naming callers for
- * states the fixture never creates would be one test three times under three
- * names, and a suite that merely stopped mentioning coverage would not catch
- * a route that quietly started consulting it again.
+ * grant, nothing whatever. The first two read the note; the last two are
+ * refused before any session is read.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -70,9 +66,7 @@ const MARISOL_NOTE = 'Left knee is "tight" after sparring.\n\nStill want to do p
 interface FakeAthlete {
   organization_id: string;
   athlete_id: string;
-  /** The coach of record. No statement this route issues reads it, which is
-   *  exactly why it is here: the caller named "the coach of record" below has
-   *  to really be one for that name to mean anything. */
+  /** The coach of record, which the assignment lookup reads. */
   coach_id: string;
   deleted_at: string | null;
 }
@@ -229,6 +223,16 @@ beforeEach(() => {
       return grant ? { athlete_id: grant.athlete_id } : null;
     }
 
+    if (text.includes('from pilot.athletes') && text.includes('coach_id = $2')) {
+      // assertCoachAssignedToAthlete: (athlete_id, coach_id, organization_id).
+      const [athleteId, coachId, organizationId] = params as string[];
+      const hit = athletes.find((row) => row.athlete_id === athleteId
+        && row.coach_id === coachId
+        && row.organization_id === organizationId
+        && (!text.includes('deleted_at is null') || row.deleted_at === null));
+      return hit ? { athlete_id: hit.athlete_id } : null;
+    }
+
     if (text.includes('from pilot.athletes')) {
       const [athleteId, organizationId] = params as string[];
       const liveOnly = text.includes('deleted_at is null');
@@ -292,13 +296,10 @@ const sessionReads = () => statements.filter((sql) => sql.includes('pilot.sessio
 describe('who may read it', () => {
   /* Each coach row names the relationship that account actually holds to
      Marisol in the fixture: coach_id of record, a grant inside its window, a
-     grant outside it, and no row anywhere. They are listed because they used
-     to be four different answers, and under this permission they are one. */
+     grant outside it, and no row anywhere. */
   it.each([
     ['the coach of record', { accountId: 'coach-record', role: 'coach' }],
     ['a coach holding a live coverage grant', { accountId: 'coach-covering', role: 'coach' }],
-    ['a coach whose coverage grant has lapsed', { accountId: 'coach-lapsed', role: 'coach' }],
-    ['a same-organization coach with no relationship at all', { accountId: 'coach-stranger', role: 'coach' }],
     ['an organization admin', { accountId: 'admin-1', role: 'organization_admin' }],
     ['a legacy admin', { accountId: 'admin-legacy', role: 'admin' }],
   ])('%s reads the note', async (_label, caller) => {
@@ -307,27 +308,20 @@ describe('who may read it', () => {
     expect(body).toEqual({ today: { note: MARISOL_NOTE } });
   });
 
-  /* The widening is organization membership, NOT a looser relationship rule.
-     Grants on Marisol exist in the fake, so a lookup would have something to
-     find; the claim is that the route never asks. Said for every flavour of
-     caller, because "it stopped asking for the coach of record" was already
-     true before this slice. */
-  it('never asks about coverage, for any caller', async () => {
-    expect(coverage.filter((grant) => grant.athlete_id === 'ath-marisol')).not.toEqual([]);
+  it.each([
+    ['a coach whose coverage grant has lapsed', { accountId: 'coach-lapsed', role: 'coach' }],
+    ['a same-organization coach with no relationship at all', { accountId: 'coach-stranger', role: 'coach' }],
+  ])('%s is refused before any session is read', async (_label, caller) => {
+    const { status, body } = await readAs(caller as Partial<PilotPrincipal>);
+    expect(status).toBe(403);
+    expect(body.today).toBeUndefined();
+    expect(sessionReads()).toEqual([]);
+  });
 
-    for (const caller of [
-      { accountId: 'coach-record', role: 'coach' as const },
-      { accountId: 'coach-covering', role: 'coach' as const },
-      { accountId: 'coach-lapsed', role: 'coach' as const },
-      { accountId: 'coach-stranger', role: 'coach' as const },
-      { accountId: 'admin-1', role: 'organization_admin' as const },
-    ]) {
-      statements = [];
-      const { status } = await readAs(caller);
-
-      expect({ caller: caller.accountId, status, coverageReads: coverageReads() })
-        .toEqual({ caller: caller.accountId, status: 200, coverageReads: [] });
-    }
+  it('a covering coach is admitted through the windowed coverage lookup', async () => {
+    await readAs({ accountId: 'coach-covering', role: 'coach' });
+    expect(coverageReads()).toHaveLength(1);
+    expect(coverageReads()[0]).toContain('expires_at > now()');
   });
 });
 
@@ -349,8 +343,8 @@ describe('who may read it', () => {
    an invented symbol, sitting where a reader would look to check that the
    pasted SQL below still matches production. It was plausible because two
    real neighbours read like it: assertCoachAssignedToAthlete, which actually
-   issues this statement, and assertActorCanAccessAthlete at :374, which is
-   the gate this route deliberately does NOT use. A copied query is only as
+   issues this statement, and assertActorCanAccessAthlete, which is the
+   gate this route uses (OD-2026-10-05-024 ruling 2) and which calls it. A copied query is only as
    good as the pointer back to its original, so the pointer is the part that
    has to be right. */
 describe('the modelled coverage states', () => {

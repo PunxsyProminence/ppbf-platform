@@ -7,8 +7,10 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /**
- * A-FIN-03R1 -- any coach or admin in the athlete's own organization reads
- * that athlete's wellness check-in.
+ * OD-2026-10-05-024 ruling 2 (Jason 2026-10-05) -- only the athlete's assigned
+ * coach(es), coach of record or a live coverage grant, or an organization admin
+ * reads that athlete's wellness check-in. This supersedes A-FIN-03R1 (2026-09-22,
+ * any coach or admin in the organization) for this read.
  *
  * WHAT IS REAL AND WHAT IS FAKED. requirePrincipal is faked (there is no
  * session store here), and so is the database -- by a small in-memory table
@@ -19,14 +21,10 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * and "soft-deleted" are decided by the access query actually issued, not by a
  * stubbed gate told what to answer.
  *
- * COVERAGE IS STILL MODELLED HERE, ONLY TO PROVE IT IS NOT READ. The fake
- * keeps its coach_coverage table and the cases below still cast a covering
- * coach and a coach whose grant has lapsed -- but under this permission both
- * of them read the check-in because they are in the organization, and the
- * statements the route issued are asserted to contain no coach_coverage
- * lookup at all. A route that quietly started consulting coverage again is
- * caught by that assertion; a suite that simply stopped mentioning coverage
- * would not catch it.
+ * COVERAGE IS MODELLED HERE BECAUSE IT DECIDES. The fake keeps a
+ * coach_coverage table with one live grant and one lapsed grant on Marisol:
+ * the live one admits its coach, the lapsed one does not, and a coach with
+ * neither is refused.
  *
  * THE FAKE HONOURS A PREDICATE ONLY WHEN THE SQL CARRIES IT. A deleted athlete
  * is filtered out only if the statement says `deleted_at is null`, and a
@@ -280,7 +278,7 @@ async function readAs(caller: Partial<PilotPrincipal>, query?: string) {
   return { status: response.status, payload };
 }
 
-describe('any coach or admin in the organization reads today\'s check-in', () => {
+describe('the assigned coach(es) and an organization admin read today\'s check-in', () => {
   test('the coach of record reads it', async () => {
     const { status, payload } = await readAs({ accountId: 'coach-record' });
 
@@ -295,27 +293,22 @@ describe('any coach or admin in the organization reads today\'s check-in', () =>
     expect(payload).toEqual({ today: MARISOL_TODAY });
   });
 
-  test('a coach with no assignment and no coverage reads it -- the change A-FIN-03R1 makes', async () => {
-    /* THIS IS THE ONE THAT USED TO BE A 403. coach-unrelated is not Marisol's
-       coach_id of record and holds no grant on her, and under the old rule
-       that was the end of it. The owner's instruction was "any coach or admin
-       should be able to read it", so the only question this route now asks is
-       whether Marisol is a live athlete in the coach's own gym. */
+  test('a coach with no assignment and no coverage is refused, before any check-in is read', async () => {
+    /* A-FIN-03R1 let this coach read it; OD-2026-10-05-024 ruling 2 does not.
+       coach-unrelated is not Marisol's coach of record and holds no grant. */
     const { status, payload } = await readAs({ accountId: 'coach-unrelated' });
 
-    expect(status).toBe(200);
-    expect(payload).toEqual({ today: MARISOL_TODAY });
+    expect(status).toBe(403);
+    expect(payload.today).toBeUndefined();
+    expect(checkInReads()).toHaveLength(0);
   });
 
-  test('a coach whose coverage grant has lapsed reads it too -- coverage is irrelevant now', async () => {
-    /* coach-lapsed's grant on Marisol is outside its window (live: false), so
-       the old rule refused them. Under this permission an expired grant is not
-       a lesser relationship -- it is simply not consulted -- and this coach
-       reads exactly what a coach who never had a grant reads. */
+  test('a coach whose coverage grant has lapsed is refused, before any check-in is read', async () => {
     const { status, payload } = await readAs({ accountId: 'coach-lapsed' });
 
-    expect(status).toBe(200);
-    expect(payload).toEqual({ today: MARISOL_TODAY });
+    expect(status).toBe(403);
+    expect(payload.today).toBeUndefined();
+    expect(checkInReads()).toHaveLength(0);
   });
 
   test('an organization admin reads it, under both the current and the legacy role name', async () => {
@@ -325,30 +318,6 @@ describe('any coach or admin in the organization reads today\'s check-in', () =>
 
       expect({ role, status }).toEqual({ role, status: 200 });
       expect(payload).toEqual({ today: MARISOL_TODAY });
-    }
-  });
-
-  test('no wellness read looks at pilot.coach_coverage at all, for any caller', async () => {
-    /* The negative the order names. Grants for Marisol exist in the fake --
-       one live, one lapsed -- so a coverage lookup would find something to
-       find; the point is that the route never asks. Asserted over every
-       flavour of caller, because "it stopped querying for the coach of record"
-       was already true before this change. */
-    expect(coverage.length).toBeGreaterThan(0);
-
-    for (const caller of [
-      { accountId: 'coach-record' },
-      { accountId: 'coach-covering' },
-      { accountId: 'coach-unrelated' },
-      { accountId: 'coach-lapsed' },
-      { accountId: 'acct-admin', role: 'organization_admin' as const },
-    ]) {
-      statements = [];
-      const { status } = await readAs(caller);
-
-      expect({ caller: caller.accountId, status }).toEqual({ caller: caller.accountId, status: 200 });
-      expect({ caller: caller.accountId, coverageLookups: statements.filter((sql) => sql.includes('pilot.coach_coverage')) })
-        .toEqual({ caller: caller.accountId, coverageLookups: [] });
     }
   });
 });
@@ -399,12 +368,11 @@ describe('everyone else is refused, and refused before any check-in is read', ()
     expect(checkInReads()).toHaveLength(0);
   });
 
-  test('a soft-deleted athlete is refused even where a live coverage grant exists, and without reading one', async () => {
+  test('a soft-deleted athlete is refused even where a live coverage grant exists', async () => {
     /* Deleting an athlete ends none of their coverage grants, so this one is
-       inside its window. It changes nothing either way: the route does not
-       look at grants, and the organization check refuses the deleted athlete
-       on the one predicate it carries (`deleted_at is null`). Refused on the
-       FIRST statement -- the athletes lookup -- and nothing after it. */
+       inside its window. The coverage lookup joins the athlete and asks for a
+       live one (`deleted_at is null`), so the grant admits nothing, and every
+       statement before the refusal is an access lookup -- no check-in read. */
     coverage.push({ organization_id: 'org-1', athlete_id: 'ath-deleted', covering_coach_id: 'coach-covering', live: true });
 
     const covering = await readAs({ accountId: 'coach-covering' }, 'athlete_id=ath-deleted');
@@ -416,30 +384,34 @@ describe('everyone else is refused, and refused before any check-in is read', ()
     expect(covering.payload.today).toBeUndefined();
     expect(JSON.stringify(covering.payload)).not.toContain('deleted athlete note');
     expect(checkInReads()).toHaveLength(0);
-    expect(deletedRequestStatements).toHaveLength(1);
-    expect(deletedRequestStatements[0]).toContain('from pilot.athletes');
-    expect(deletedRequestStatements[0]).toContain('deleted_at is null');
+    expect(deletedRequestStatements.length).toBeGreaterThan(0);
+    for (const sql of deletedRequestStatements) {
+      expect(sql).toContain('pilot.athletes');
+      expect(sql).toContain('deleted_at is null');
+    }
     // And the refusal says nothing that the refusal for an id naming nobody
     // does not: a caller cannot learn from it that this child exists.
     expect(unknown.status).toBe(403);
     expect(covering.payload).toEqual(unknown.payload);
   });
 
-  test('authorization costs exactly one athletes lookup -- the shared helper\'s -- for coach and admin alike', async () => {
-    /* One gate, one query, the same one for both roles: the organization
-       membership check. Two lookups would mean the route had grown its own
-       copy of the live-athlete rule beside the helper's; a lookup carrying a
-       coach_id filter would mean the assignment rule had come back. */
+  test('the gate is the shared helper: a coach is checked by assignment, an admin by organization', async () => {
+    /* assertActorCanAccessAthlete, not a route-local copy. The coach of record
+       is answered by one athletes lookup carrying coach_id; the admin by one
+       organization lookup without it. Both carry the live-athlete predicate. */
     const athleteLookups = () => statements.filter((sql) => sql.includes('from pilot.athletes'));
 
-    for (const caller of [{ accountId: 'coach-unrelated' }, { accountId: 'acct-admin', role: 'organization_admin' as const }]) {
-      statements = [];
-      await readAs(caller);
+    statements = [];
+    await readAs({ accountId: 'coach-record' });
+    expect(athleteLookups()).toHaveLength(1);
+    expect(athleteLookups()[0]).toContain('coach_id = $2');
+    expect(athleteLookups()[0]).toContain('deleted_at is null');
 
-      expect({ caller: caller.accountId, lookups: athleteLookups().length }).toEqual({ caller: caller.accountId, lookups: 1 });
-      expect(athleteLookups()[0]).toContain('deleted_at is null');
-      expect(athleteLookups()[0]).not.toContain('coach_id');
-    }
+    statements = [];
+    await readAs({ accountId: 'acct-admin', role: 'organization_admin' });
+    expect(athleteLookups()).toHaveLength(1);
+    expect(athleteLookups()[0]).not.toContain('coach_id');
+    expect(athleteLookups()[0]).toContain('deleted_at is null');
   });
 
   test('a request with no athlete named is a 400 and reads nothing', async () => {
@@ -482,7 +454,7 @@ describe('what comes back is the stored row, unaltered', () => {
   });
 
   test('the read is scoped to the session\'s organization and the requested athlete, after the gate', async () => {
-    await readAs({ accountId: 'coach-unrelated' });
+    await readAs({ accountId: 'coach-record' });
 
     const readIndex = statements.findIndex((sql) => sql.includes('pilot.athlete_check_ins'));
     const gateIndex = statements.findIndex((sql) => sql.includes('from pilot.athletes'));

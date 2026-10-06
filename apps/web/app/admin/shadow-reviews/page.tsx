@@ -319,7 +319,7 @@ function ShadowReviewsConsole() {
 
 export default function ShadowReviewsPage() {
   return (
-    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
+    <RoleSessionGate allowedRoles={['admin']}>
       <ShadowReviewsConsole />
     </RoleSessionGate>
   );

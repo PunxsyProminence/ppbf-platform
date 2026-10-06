@@ -315,8 +315,8 @@ describe('athlete_injuries.staff_note stays with staff', () => {
 describe('check-in body mass is recorded at the tier the code enforces', () => {
   const entry = FIELD_TIERS['shadow_formula_observations.body_weight'];
 
-  it('is tiered at the adult rule, organization -- the widest gate that runs', () => {
-    expect(entry.tier).toBe('organization');
+  it('is tiered athlete_record: staff reads go through the relationship gate (OD-2026-10-05-024 ruling 2)', () => {
+    expect(entry.tier).toBe('athlete_record');
   });
 
   it('names the youth narrowing, both reads and the relationship gate it reuses', () => {
@@ -339,10 +339,9 @@ describe('sessions.notes is recorded as what it actually is', () => {
   const entry = FIELD_TIERS['sessions.notes'];
 
   it('is classified at the tier the code actually enforces', () => {
-    expect(entry.tier).toBe('organization');
-    // The narrower claim is the dangerous one: it would tell an auditor the
-    // per-relationship gate applies when organization membership is what runs.
-    expect(entry.tier).not.toBe('athlete_record');
+    // OD-2026-10-05-024 ruling 2: the staff read moved from organization
+    // membership to assertActorCanAccessAthlete.
+    expect(entry.tier).toBe('athlete_record');
   });
 
   it('names the dedicated staff read as an enforcer', () => {

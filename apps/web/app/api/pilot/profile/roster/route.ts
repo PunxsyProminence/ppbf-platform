@@ -44,9 +44,15 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     // Default to the coach's own athletes. `scope=organization` is available to
-    // an organization admin and to a coach who genuinely needs the whole list,
-    // and it changes WHICH ROWS come back -- never what may be seen on one.
+    // an organization admin only, and it changes WHICH ROWS come back -- never
+    // what may be seen on one.
     const wholeOrganization = url.searchParams.get('scope') === 'organization';
+    // OD-2026-10-05-024 ruling 2 (Jason 2026-10-05): a coach reads only the
+    // athletes they are assigned to, so the whole-organization list is an
+    // organization admin's alone. The coach screen asks without a scope.
+    if (wholeOrganization && !isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: the whole-organization roster is for organization admins');
+    }
 
     // `a.deleted_at is null` on both branches, and it is not a performance
     // filter. A withdrawn athlete is soft-deleted: the row stays for the
