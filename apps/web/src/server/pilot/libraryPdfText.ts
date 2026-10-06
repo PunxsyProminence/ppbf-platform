@@ -78,39 +78,52 @@ export async function extractLibraryPdfPages(bytes: Uint8Array): Promise<Library
     });
     // The parser's own error text can echo document content, so it is never
     // passed on: every failure becomes one fixed sentence.
-    const result = await Promise.race([parser.getText(), timeout]).catch((error: unknown) => {
-      if (error instanceof Error && error.message === 'PDF_PARSE_TIMEOUT') {
-        throw new PilotError(422, 'Reading that PDF took too long. Try a smaller file.', 'PDF_TIMEOUT');
-      }
-      throw new PilotError(422, 'That PDF could not be read. It may be damaged or password protected.', 'PDF_UNREADABLE');
-    });
+    const readPage = (pageNum: number) =>
+      Promise.race([parser.getText({ partial: [pageNum] }), timeout]).catch((error: unknown) => {
+        if (error instanceof Error && error.message === 'PDF_PARSE_TIMEOUT') {
+          throw new PilotError(422, 'Reading that PDF took too long. Try a smaller file.', 'PDF_TIMEOUT');
+        }
+        throw new PilotError(422, 'That PDF could not be read. It may be damaged or password protected.', 'PDF_UNREADABLE');
+      });
 
-    const parsedPages = Array.isArray(result.pages) ? result.pages : [];
-    if (parsedPages.length === 0) {
+    // One page per call, so the caps and the time budget are checked as the
+    // parse goes (audit CL-C20). Racing one whole-document getText() only
+    // stopped the wait: pdf-parse read on through every page after the
+    // request was refused, and a 5,000-page file was parsed in full before
+    // the page cap was looked at. Here the first call reports the page count
+    // and the cap is applied before any other page is read; the loop stops at
+    // the first page past a cap or the budget, and `finally` destroys the
+    // document, which fails the parser's in-flight page read.
+    const first = await readPage(1);
+    const pageTotal = typeof first.total === 'number' ? first.total : 0;
+    if (pageTotal === 0) {
       throw new PilotError(422, 'That PDF has no pages.', 'PDF_NO_PAGES');
     }
-    if (parsedPages.length > LIBRARY_PDF_MAX_PAGES) {
+    if (pageTotal > LIBRARY_PDF_MAX_PAGES) {
       throw new PilotError(
         413,
-        `That PDF has ${parsedPages.length} pages. The reader handles up to ${LIBRARY_PDF_MAX_PAGES}. Split the PDF and read the part you need.`,
+        `That PDF has ${pageTotal} pages. The reader handles up to ${LIBRARY_PDF_MAX_PAGES}. Split the PDF and read the part you need.`,
         'PDF_TOO_MANY_PAGES',
       );
     }
 
     let totalChars = 0;
     let emptyPageCount = 0;
-    const pages: LibraryPdfPage[] = parsedPages.map((page, index) => {
-      const text = cleanPageText(typeof page.text === 'string' ? page.text : '');
+    const pages: LibraryPdfPage[] = [];
+    for (let pageNum = 1; pageNum <= pageTotal; pageNum += 1) {
+      const result = pageNum === 1 ? first : await readPage(pageNum);
+      const parsed = Array.isArray(result.pages) ? result.pages[0] : undefined;
+      const text = cleanPageText(typeof parsed?.text === 'string' ? parsed.text : '');
       totalChars += text.length;
+      if (totalChars > LIBRARY_PDF_MAX_TOTAL_CHARS) {
+        throw new PilotError(
+          413,
+          'That PDF holds more text than the reader will send back. Split the PDF and read the part you need.',
+          'PDF_TOO_MUCH_TEXT',
+        );
+      }
       if (!text) emptyPageCount += 1;
-      return { num: typeof page.num === 'number' && page.num >= 1 ? page.num : index + 1, text };
-    });
-    if (totalChars > LIBRARY_PDF_MAX_TOTAL_CHARS) {
-      throw new PilotError(
-        413,
-        'That PDF holds more text than the reader will send back. Split the PDF and read the part you need.',
-        'PDF_TOO_MUCH_TEXT',
-      );
+      pages.push({ num: pageNum, text });
     }
 
     return { pages, emptyPageCount };
