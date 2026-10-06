@@ -121,11 +121,11 @@ export default function AthleteConsentAuditPage() {
       await load();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'That could not be recorded.');
-      // RE-READ EVEN ON FAILURE. A withdrawal whose suppression sweep failed
-      // answers 500 with the consent row ALREADY COMMITTED. Leaving the table
-      // as it was would show "Consent on file" on the row directly behind a
-      // message saying the withdrawal was recorded, and the two cannot both be
-      // true. The refusals that wrote nothing simply re-read the same state.
+      // RE-READ EVEN ON FAILURE. A consent change and its takedown of published
+      // video now commit together or not at all, so a 500 normally means
+      // nothing changed; re-reading anyway keeps the table on what the server
+      // holds rather than on what this screen assumed. The refusals that wrote
+      // nothing simply re-read the same state.
       await load();
     } finally {
       setIsSaving(false);

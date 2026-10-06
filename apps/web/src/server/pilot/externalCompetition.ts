@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import {
   BOARD_MINIMUM_COHORT_SIZE,
   boardCountMetric,
@@ -7,6 +9,11 @@ import {
   type BoardCountMetric,
 } from './boardSummary';
 import { query, queryOne } from './db';
+
+/** On the caller's transaction when given (the entry path's, under its safety lock), else the pool. */
+async function rowsOn<T extends QueryResultRow>(client: PoolClient | undefined, text: string, params: unknown[]): Promise<T[]> {
+  return client ? (await client.query<T>(text, params)).rows : query<T>(text, params);
+}
 
 // External competition minimal skeleton (owner decision 2026-08-15: build
 // both competition skeletons deliberately skeletal). A competition someone
@@ -152,32 +159,35 @@ export async function addCompetitionEntry(input: {
   competitionId: string;
   athleteId: string;
   createdByAccountId: string;
-}): Promise<CompetitionEntryRow | null> {
+}, client?: PoolClient): Promise<CompetitionEntryRow | null> {
   // The competition lookup doubles as the tenancy check: an id from another
   // organization reads as "no such competition" here, so the caller answers
   // with a hidden not-found rather than leaking that the id exists.
-  const competition = await queryOne<{ competition_id: string }>(
+  const competition = (await rowsOn<{ competition_id: string }>(
+    client,
     `select competition_id from pilot.external_competitions
      where organization_id = $1 and competition_id = $2`,
     [input.organizationId, input.competitionId],
-  );
+  ))[0] ?? null;
   if (!competition) return null;
 
-  const athlete = await queryOne<{ athlete_id: string }>(
+  const athlete = (await rowsOn<{ athlete_id: string }>(
+    client,
     `select athlete_id from pilot.athletes
      where organization_id = $1 and athlete_id = $2`,
     [input.organizationId, input.athleteId],
-  );
+  ))[0] ?? null;
   if (!athlete) return null;
 
   try {
-    const row = await queryOne<{ entry_id: string }>(
+    const row = (await rowsOn<{ entry_id: string }>(
+      client,
       `insert into pilot.external_competition_entries
          (organization_id, entry_id, competition_id, athlete_id, created_by_account_id)
        values ($1, $2, $3, $4, $5)
        returning entry_id`,
       [input.organizationId, randomUUID(), input.competitionId, input.athleteId, input.createdByAccountId],
-    );
+    ))[0] ?? null;
     if (!row) throw new Error('Unable to add the entry.');
   } catch (error) {
     if (error instanceof Error && /pilot_external_competition_entries_unique/.test(error.message)) {
@@ -186,7 +196,7 @@ export async function addCompetitionEntry(input: {
     throw error;
   }
 
-  const listed = await listCompetitionEntries(input.organizationId, input.competitionId);
+  const listed = await listCompetitionEntries(input.organizationId, input.competitionId, client);
   return listed.find((entry) => entry.athlete_id === input.athleteId) ?? null;
 }
 
@@ -241,8 +251,13 @@ export async function withdrawCompetitionEntry(input: {
 
 /** Entries with the athlete's name joined from the org-scoped athlete record
  * -- the name is read through its governed home, never copied. */
-export async function listCompetitionEntries(organizationId: string, competitionId: string): Promise<CompetitionEntryRow[]> {
-  return query<CompetitionEntryRow>(
+export async function listCompetitionEntries(
+  organizationId: string,
+  competitionId: string,
+  client?: PoolClient,
+): Promise<CompetitionEntryRow[]> {
+  return rowsOn<CompetitionEntryRow>(
+    client,
     `select e.organization_id, e.entry_id, e.competition_id, e.athlete_id, e.status,
             e.result, e.lesson_note, a.full_name as athlete_name, e.created_at
      from pilot.external_competition_entries e

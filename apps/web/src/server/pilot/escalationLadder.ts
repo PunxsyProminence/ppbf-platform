@@ -239,8 +239,12 @@ const INCIDENT_DEDUP_WINDOW_SECONDS = 30;
  * genuinely happened, not flagging a possibility.
  *
  * Idempotent within INCIDENT_DEDUP_WINDOW_SECONDS: the same org/athlete/
- * reporter/reason combination filed twice in quick succession returns the
- * FIRST report both times rather than inserting a duplicate. The check and
+ * reporter/reason/severity/occurred-at combination filed twice in quick
+ * succession returns the FIRST report both times rather than inserting a
+ * duplicate. Severity and occurred-at are part of the key because a report
+ * that changes either is not a resent request: a reporter correcting 'high'
+ * to 'critical', or filing the same wording for a second occurrence, must
+ * get a new row rather than the earlier one handed back (CX-2). The check and
  * the insert are one atomic statement (INSERT ... SELECT ... WHERE NOT
  * EXISTS), matching detectRepeatedPatternEscalations's own accepted
  * tradeoff elsewhere in this file: this is not a partial-unique-index-level
@@ -267,6 +271,7 @@ export async function fileIncidentReport(input: FileIncidentReportInput): Promis
   const escalationId = randomUUID();
   const escalatedToRole: SafetyEscalationTargetRole = 'organization_admin';
   const metadata = input.occurredAt ? { occurred_at: input.occurredAt } : {};
+  const occurredAtKey = input.occurredAt || null;
 
   const inserted = await queryOne<{ escalation_id: string }>(
     `insert into pilot.safety_escalations (
@@ -283,6 +288,8 @@ export async function fileIncidentReport(input: FileIncidentReportInput): Promis
          and athlete_id = $3
          and triggered_by_account_id = $7
          and reason = $5
+         and severity = $4
+         and metadata->>'occurred_at' is not distinct from $11::text
          and created_at > now() - ($10 * interval '1 second')
      )
      returning escalation_id`,
@@ -297,6 +304,7 @@ export async function fileIncidentReport(input: FileIncidentReportInput): Promis
       input.reportedByRole,
       JSON.stringify(metadata),
       INCIDENT_DEDUP_WINDOW_SECONDS,
+      occurredAtKey,
     ],
   );
 
@@ -338,10 +346,20 @@ export async function fileIncidentReport(input: FileIncidentReportInput): Promis
      from pilot.safety_escalations
      where organization_id = $1 and source_type = 'incident' and athlete_id = $2
        and triggered_by_account_id = $3 and reason = $4
+       and severity = $6
+       and metadata->>'occurred_at' is not distinct from $7::text
        and created_at > now() - ($5 * interval '1 second')
      order by created_at desc
      limit 1`,
-    [input.organizationId, input.athleteId, input.reportedByAccountId, input.reason, INCIDENT_DEDUP_WINDOW_SECONDS],
+    [
+      input.organizationId,
+      input.athleteId,
+      input.reportedByAccountId,
+      input.reason,
+      INCIDENT_DEDUP_WINDOW_SECONDS,
+      input.severity,
+      occurredAtKey,
+    ],
   );
   if (existing) return existing;
 

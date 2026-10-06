@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { deletePilotVideoFile, uploadPilotVideoFile } from '@/src/server/pilot/blob';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -24,6 +26,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 
 jest.mock('@/src/server/pilot/blob', () => ({
   uploadPilotVideoFile: jest.fn().mockResolvedValue(undefined),
+  deletePilotVideoFile: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/src/server/pilot/shadowEvents', () => ({
@@ -163,6 +166,66 @@ describe('POST /api/pilot/video/upload', () => {
     const res = await POST(uploadRequest({ file: videoFile() }));
     expect(res.status).toBe(202);
     expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Audit CL-B13. The bytes go to storage before the row is written. If the
+   * row then fails, the footage must not stay in the container with nothing
+   * naming it -- no review, export or deletion could ever find it again.
+   */
+  test('a failed row insert deletes the footage it just stored, and still fails', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockRejectedValueOnce(new Error('insert failed'));
+    mockQueryOne.mockResolvedValueOnce(null); // the database confirms: no row
+    const res = await POST(uploadRequest({ file: videoFile(), athlete_id: 'ath-1' }));
+    expect(res.status).toBe(500);
+    const uploadedPath = (uploadPilotVideoFile as jest.Mock).mock.calls[0][0];
+    expect(uploadedPath).toMatch(/^org-1\//);
+    expect(deletePilotVideoFile).toHaveBeenCalledTimes(1);
+    expect(deletePilotVideoFile).toHaveBeenCalledWith(uploadedPath);
+  });
+
+  test('a successful upload deletes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQuery.mockResolvedValueOnce([]);
+    const res = await POST(uploadRequest({ file: videoFile() }));
+    expect(res.status).toBe(202);
+    expect(deletePilotVideoFile).not.toHaveBeenCalled();
+  });
+
+  test('if the clean-up delete also fails, the insert error is what the caller gets', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    // A distinct status, so a storage error leaking out instead (a plain 500)
+    // would fail this test.
+    mockQuery.mockRejectedValueOnce(new ConflictError('insert conflict'));
+    mockQueryOne.mockResolvedValueOnce(null);
+    (deletePilotVideoFile as jest.Mock).mockRejectedValueOnce(new Error('storage down'));
+    const res = await POST(uploadRequest({ file: videoFile() }));
+    expect(res.status).toBe(409);
+    expect(deletePilotVideoFile).toHaveBeenCalledTimes(1);
+  });
+
+  test('an insert that reports failure but did commit keeps its footage', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQuery.mockRejectedValueOnce(new Error('connection lost after commit'));
+    mockQueryOne.mockResolvedValueOnce({ recorded: 1 });
+    const res = await POST(uploadRequest({ file: videoFile() }));
+    expect(res.status).toBe(500);
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('from pilot.video_sessions where video_session_id = $1'),
+      [expect.stringMatching(/^[0-9a-f-]{36}$/)],
+    );
+    expect(deletePilotVideoFile).not.toHaveBeenCalled();
+  });
+
+  test('if the row lookup fails too, the footage is kept: a row may still name it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQuery.mockRejectedValueOnce(new Error('insert failed'));
+    mockQueryOne.mockRejectedValueOnce(new Error('database gone'));
+    const res = await POST(uploadRequest({ file: videoFile() }));
+    expect(res.status).toBe(500);
+    expect(deletePilotVideoFile).not.toHaveBeenCalled();
   });
 
   test('403 when organization_admin uploads for an athlete outside their organization', async () => {

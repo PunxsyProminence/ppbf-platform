@@ -1,3 +1,5 @@
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import { query } from './db';
 
 /**
@@ -161,8 +163,12 @@ export async function getAthleteWaiverStatus(
   organizationId: string,
   athleteId: string,
   waiverType: TrackedWaiverType,
+  /** The caller's transaction, when the read must sit under its lock (competitionSafetyLock.ts). */
+  client?: PoolClient,
 ): Promise<WaiverStatus> {
-  const rows = await query<{ status: string }>(
+  const run = <R extends QueryResultRow>(text: string, values: unknown[]): Promise<R[]> =>
+    client ? client.query<R>(text, values).then((result) => result.rows) : query<R>(text, values);
+  const rows = await run<{ status: string }>(
     `select status
      from pilot.waivers
      where organization_id = $1

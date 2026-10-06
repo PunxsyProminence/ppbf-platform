@@ -128,13 +128,21 @@ export async function POST(request: NextRequest) {
 
     // If verification requested on the same write (coach only). assertActorCanAccessAthlete
     // above already confirmed this coach is assigned to body.athlete_id.
+    // The response is the row as it stands after verification, not the
+    // pending row the insert returned (CX-4). The completion was inserted a
+    // moment ago in this organization, so an update that matches nothing is
+    // a real fault, not a not-found to hide.
     if (body.verify && (principal.role === 'coach' || principal.role === 'admin' || principal.role === 'organization_admin')) {
-      await verifyCompletion(
+      const verified = await verifyCompletion(
         completion.completion_id,
         principal.accountId,
         body.verified || false,
         principal.organizationId,
       );
+      if (!verified) {
+        throw new Error('Completion was recorded but its verification could not be written');
+      }
+      return NextResponse.json(verified, { status: 201 });
     }
 
     return NextResponse.json(completion, { status: 201 });

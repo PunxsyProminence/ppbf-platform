@@ -1,16 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   isAnnouncementKind,
   isAnnouncementPlacement,
   listAnnouncements,
+  listAuthoredAnnouncementIds,
   listLiveAnnouncements,
   projectAnnouncementForBoard,
   type BoardVisibleAnnouncement,
   type PilotAnnouncement,
 } from '@/src/server/pilot/announcements';
+import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +44,18 @@ export async function POST(request: NextRequest) {
       requireRole(principal, ['platform_owner', 'organization_admin', 'admin', 'coach', 'board']);
 
       const announcements = await listAnnouncements(principal.organizationId, body.limit ?? 25);
+      const ids = announcements.map((item) => item.announcement_id);
+
+      // What this caller may DO with the list (CL-A8), so the page offers no
+      // seat the post route refuses and no Retire the update route refuses.
+      // Top-level arrays rather than row fields, so the board projection's
+      // allow-list is untouched. Each write route still decides for itself.
+      const editableIds = isOrganizationAdminRole(principal.role)
+        ? ids
+        : await listAuthoredAnnouncementIds(principal.organizationId, principal.accountId, ids);
+      const authorSeats = principal.role === 'board'
+        ? (await listSeatsForAccount(principal.organizationId, principal.accountId)).map((item) => `board-${item.seat}`)
+        : [];
 
       return NextResponse.json({
         ok: true,
@@ -50,6 +64,8 @@ export async function POST(request: NextRequest) {
         // in the allow-list one line above. The client-side omission this
         // replaces was a TypeScript interface, which is erased at runtime.
         announcements: projectForPrincipal(principal.role, announcements),
+        editable_announcement_ids: editableIds,
+        author_seats: authorSeats,
       });
     }
 
