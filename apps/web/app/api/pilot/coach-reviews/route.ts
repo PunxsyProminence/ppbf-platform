@@ -62,7 +62,18 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing session for existing coach review');
       }
       await assertActorCanAccessAthlete(principal, existingAthleteId);
-      await upsertCoachReview(principal.organizationId, payload, {
+      // Owner decision (Jason 2026-10-06, "Author + org admin"; audit CL-A14):
+      // reaching the athlete is not enough to edit a review. Only the coach
+      // who wrote it, or an organization admin, may. Another coach writes
+      // their own review instead.
+      if (principal.role === 'coach' && existing.coach_id !== principal.accountId) {
+        throw new Error('Forbidden: only the coach who wrote this review, or an organization admin, may edit it');
+      }
+      // The author never changes on an edit. The update writes coach_id from
+      // the payload, which is how a second coach used to become the author of
+      // a review they only edited; pin it to the stored author. An admin's
+      // edit is attributed to the admin by the audit row below.
+      await upsertCoachReview(principal.organizationId, { ...payload, coach_id: existing.coach_id }, {
         mode: 'update',
         expectedSessionId: existing.session_id,
       });
