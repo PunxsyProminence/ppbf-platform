@@ -499,4 +499,56 @@ describe('licensed-excerpt loader (real database)', () => {
     expect(replanned.result!.plan.files[0].status).toBe('conflict');
     expect(replanned.result!.plan.blocked).toBe(true);
   });
+
+  // CL-C2: the database-side budget refuses the excerpt that takes a licensed
+  // source past it, and an apply writes one excerpt at a time -- so the plan
+  // must refuse an over-budget source before the first write, or a rerun
+  // would stop at the same excerpt forever.
+  test('a file that would take a licensed source past its excerpt budget is blocked in the plan, and nothing is written', async () => {
+    const budgetSourceId = (await library.createShadowLibrarySource({
+      organizationId: GYM_ID,
+      actorAccountId: GYM_ADMIN_ACCOUNT,
+      actorRole: 'organization_admin',
+      title: 'Quokka Budget Paper',
+      sourceType: 'peer_reviewed',
+      authorityTier: 3,
+      status: 'active',
+    })).source_id;
+    await rawQuery(`update pilot.shadow_library_sources set rights_status = 'licensed_excerpt_only' where source_id = $1`, [budgetSourceId]);
+    const overBudget = Array.from({ length: library.MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE + 1 }, (_, index) => ({
+      locator: `p. ${index + 1}`,
+      text: `Budget passage ${index + 1}.`,
+    }));
+
+    // One file over the budget.
+    const single = await freshFolder({
+      'budget/whole-paper.json': excerptFile(budgetSourceId, { document_name: 'Whole paper', excerpts: overBudget }),
+    });
+    const before = await chunkCount();
+    const docsBefore = await documentCount();
+    const dry = await run({ dir: single });
+    expect(dry.result!.plan.blocked).toBe(true);
+    expect(dry.result!.plan.files[0].status).toBe('invalid');
+    expect(dry.result!.plan.files[0].problems.join(' ')).toMatch(/would hold \d+ excerpts/);
+    const refused = await run({ dir: single, apply: true, confirm: 'LOAD EXCERPTS', expectedFingerprint: dry.result!.plan.fingerprint });
+    expect(refused.error?.message).toMatch(/^PLAN_BLOCKED/);
+
+    // Two files, each within the budget, that together are not: both blocked.
+    const half = Math.ceil(overBudget.length / 2);
+    const split = await freshFolder({
+      'budget/part-1.json': excerptFile(budgetSourceId, { document_name: 'Part 1', excerpts: overBudget.slice(0, half) }),
+      'budget/part-2.json': excerptFile(budgetSourceId, { document_name: 'Part 2', excerpts: overBudget.slice(half) }),
+    });
+    const splitPlan = await run({ dir: split });
+    expect(splitPlan.result!.plan.files.map((file) => file.status)).toEqual(['invalid', 'invalid']);
+
+    // Within the budget (control): the first part alone loads.
+    const ok = await freshFolder({
+      'budget/part-1.json': excerptFile(budgetSourceId, { document_name: 'Part 1', excerpts: overBudget.slice(0, half) }),
+    });
+    const okPlan = await run({ dir: ok });
+    expect(okPlan.result!.plan.blocked).toBe(false);
+    expect(await chunkCount()).toBe(before);
+    expect(await documentCount()).toBe(docsBefore);
+  });
 });

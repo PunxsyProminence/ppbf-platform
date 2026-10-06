@@ -42,7 +42,10 @@ import {
   createShadowLibraryClaim,
   createShadowLibraryDocument,
   createShadowLibrarySource,
+  EXCERPT_BUDGET_EXCEEDED_CODE,
   listApprovedGlobalEvidenceForResearchBridge,
+  MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE,
+  MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
   listShadowCapabilityCoverage,
   normalizeSearchScope,
   recomputeShadowCapabilityCoverage,
@@ -230,12 +233,74 @@ describe('SHADOW library search scope', () => {
       .toEqual([['org-1', '__platform__'], 'subject', 'athlete-a']);
   });
 
+  // CL-C2: a source that is not owned or open-licence holds a bounded set of
+  // excerpts. sourceRights.pg.test.ts proves it end to end through the route.
+  function budgetClient(rightsStatus: string, held: { chunk_count: number; character_count: number }) {
+    const statements: string[] = [];
+    const clientQuery = jest.fn(async (text: string) => {
+      statements.push(text);
+      if (text.includes('for no key update of s')) {
+        return { rows: [{ source_id: 'source-a', rights_status: rightsStatus }] };
+      }
+      if (text.includes('update pilot.shadow_library_documents')) {
+        return { rows: [{ document_id: 'doc-a', source_id: 'source-a', subject_id: null }] };
+      }
+      if (text.includes('as chunk_count')) {
+        return { rows: [held] };
+      }
+      return { rows: [{ chunk_id: 'chunk-a', document_id: 'doc-a', source_id: 'source-a', organization_id: 'org-a', subject_id: null, ordinal: 0, text_content: 'x', metadata: {} }] };
+    });
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
+    return statements;
+  }
+  const excerptInput = {
+    organizationId: 'org-a',
+    actorAccountId: 'account-a',
+    actorRole: 'organization_admin',
+    documentId: 'doc-a',
+    ordinal: 0,
+    excerptLocator: 'p. 1',
+  };
+
+  it('refuses the excerpt that would pass the chunk budget of a licensed source, before inserting', async () => {
+    const statements = budgetClient('licensed_excerpt_only', {
+      chunk_count: MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
+      character_count: 10,
+    });
+
+    await expect(createShadowLibraryChunk({ ...excerptInput, textContent: 'One more page.' }))
+      .rejects.toMatchObject({ status: 422, code: EXCERPT_BUDGET_EXCEEDED_CODE });
+    // Counted by the document's source, and nothing was inserted.
+    expect(statements.find((text) => text.includes('as chunk_count'))).toContain('where d.source_id = $1');
+    expect(statements.some((text) => text.includes('insert into pilot.shadow_library_chunks'))).toBe(false);
+  });
+
+  it('refuses the excerpt that would pass the character budget of an unknown-rights source', async () => {
+    budgetClient('unknown', { chunk_count: 1, character_count: MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE - 3 });
+
+    await expect(createShadowLibraryChunk({ ...excerptInput, textContent: 'four' }))
+      .rejects.toMatchObject({ status: 422, code: EXCERPT_BUDGET_EXCEEDED_CODE });
+  });
+
+  it('accepts an excerpt that lands exactly on the budget', async () => {
+    const statements = budgetClient('licensed_excerpt_only', {
+      chunk_count: MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE - 1,
+      character_count: MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE - 4,
+    });
+
+    await createShadowLibraryChunk({ ...excerptInput, textContent: 'four' });
+    expect(statements.some((text) => text.includes('insert into pilot.shadow_library_chunks'))).toBe(true);
+  });
+
   it('does not mark a document indexed merely because one chunk was inserted', async () => {
     const statements: string[] = [];
     const clientQuery = jest.fn(async (text: string) => {
       statements.push(text);
       if (text.includes('update pilot.shadow_library_documents')) {
         return { rows: [{ document_id: 'doc-a', source_id: 'source-a', subject_id: null }] };
+      }
+      if (text.includes('for no key update of s')) {
+        return { rows: [{ source_id: 'source-a', rights_status: 'ppbf_owned' }] };
       }
       return {
         rows: [{
@@ -265,14 +330,17 @@ describe('SHADOW library search scope', () => {
       textContent: 'A bounded chunk',
     });
 
-    // The reset and the insert are one transaction, the reset first (CL-C3).
-    expect(statements).toHaveLength(2);
-    expect(statements[0]).toContain('update pilot.shadow_library_documents');
-    expect(statements[0]).toContain("ingest_state = 'chunking'");
-    expect(statements[0]).toContain('index_completed_at = null');
-    expect(statements[0]).toContain("approval_state = 'pending_review'");
-    expect(statements[0]).not.toContain("ingest_state = 'indexed'");
-    expect(statements[1]).toContain('insert into pilot.shadow_library_chunks');
+    // The source lock, the reset and the insert are one transaction, the
+    // reset before the insert (CL-C3). An owned source is not budgeted
+    // (CL-C2), so no count runs.
+    expect(statements).toHaveLength(3);
+    expect(statements[0]).toContain('for no key update of s');
+    expect(statements[1]).toContain('update pilot.shadow_library_documents');
+    expect(statements[1]).toContain("ingest_state = 'chunking'");
+    expect(statements[1]).toContain('index_completed_at = null');
+    expect(statements[1]).toContain("approval_state = 'pending_review'");
+    expect(statements[1]).not.toContain("ingest_state = 'indexed'");
+    expect(statements[2]).toContain('insert into pilot.shadow_library_chunks');
     expect(mockQuery.mock.calls.some((call) => String(call[0]).includes('update pilot.shadow_library_documents'))).toBe(false);
   });
 });

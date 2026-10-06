@@ -35,6 +35,10 @@ import { Client } from 'pg';
 
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
+import {
+  MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE,
+  MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
+} from './shadowLibrary';
 
 jest.mock('./http', () => {
   const actual = jest.requireActual('./http');
@@ -964,5 +968,87 @@ describe('the routes answer the rule in plain words', () => {
       source_id: 'source_any', rights_status: 'ppbf_owned',
     });
     expect(refused.status).toBe(403);
+  });
+
+  // CL-C2: a locator is a label, not a limit. Without a budget, a whole
+  // licensed paper loads as consecutive "p. 1", "p. 2" ... excerpts.
+  test('a source that is not owned or open-licence holds a bounded set of excerpts; an owned one does not, until it is marked down', async () => {
+    async function sourceWithDocument(title: string) {
+      const source = await call(routes.postSource, 'POST', '/api/pilot/shadow/library/sources', {
+        title, source_type: 'peer_reviewed',
+      });
+      const sourceId = (source.body.source as { source_id: string }).source_id;
+      const document = await call(routes.postDocument, 'POST', '/api/pilot/shadow/library/documents', {
+        source_id: sourceId, document_name: `${title} doc`,
+      });
+      return { sourceId, documentId: (document.body.document as { document_id: string }).document_id };
+    }
+    const excerpt = (documentId: string, ordinal: number, text: string) =>
+      call(routes.postChunk, 'POST', '/api/pilot/shadow/library/chunks', {
+        document_id: documentId, ordinal, text_content: text, excerpt_locator: `p. ${ordinal + 1}`,
+      });
+
+    // Chunk count: the budget's worth of short excerpts loads; one more is refused.
+    const counted = await sourceWithDocument('Budget Count Paper');
+    for (let ordinal = 0; ordinal < MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE; ordinal += 1) {
+      expect((await excerpt(counted.documentId, ordinal, `Passage ${ordinal}.`)).status).toBe(201);
+    }
+    const overCount = await excerpt(counted.documentId, MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE, 'One page too many.');
+    expect(overCount.status).toBe(422);
+    expect(overCount.body.code).toBe('SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED');
+    expect(overCount.body.error).toMatch(/limited set of excerpts/);
+
+    // The budget is per source, across its documents: a second document does not reset it.
+    const secondDocument = await call(routes.postDocument, 'POST', '/api/pilot/shadow/library/documents', {
+      source_id: counted.sourceId, document_name: 'Budget Count Paper, part 2',
+    });
+    const secondDocumentId = (secondDocument.body.document as { document_id: string }).document_id;
+    expect((await excerpt(secondDocumentId, 0, 'Another part.')).status).toBe(422);
+
+    // Characters: large excerpts up to the budget load; the one that crosses it is refused.
+    const sized = await sourceWithDocument('Budget Size Paper');
+    const big = 'x'.repeat(20_000);
+    let loaded = 0;
+    let ordinal = 0;
+    while (loaded + big.length <= MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE) {
+      expect((await excerpt(sized.documentId, ordinal, big)).status).toBe(201);
+      loaded += big.length;
+      ordinal += 1;
+    }
+    const overSize = await excerpt(sized.documentId, ordinal, big);
+    expect(overSize.status).toBe(422);
+    expect(overSize.body.code).toBe('SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED');
+
+    // A ppbf_owned source is not budgeted.
+    const owned = await sourceWithDocument('Budget Owned Manual');
+    expect((await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: owned.sourceId, rights_status: 'ppbf_owned',
+    })).status).toBe(200);
+    for (let index = 0; index <= MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE; index += 1) {
+      expect((await excerpt(owned.documentId, index, `Owned passage ${index}.`)).status).toBe(201);
+    }
+
+    // ...but it cannot then be marked down to excerpts-only while holding more
+    // than the budget: that would leave the whole paper in under a licensed
+    // source. The rights stay as they were.
+    const lowered = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: owned.sourceId, rights_status: 'licensed_excerpt_only',
+    });
+    expect(lowered.status).toBe(422);
+    expect(lowered.body.code).toBe('SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED');
+    const ownedRow = await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: owned.sourceId, rights_status: 'ppbf_owned',
+    });
+    expect((ownedRow.body.source as { rights_status: string }).rights_status).toBe('ppbf_owned');
+
+    // A source within the budget can be lowered (control).
+    const small = await sourceWithDocument('Budget Small Manual');
+    await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: small.sourceId, rights_status: 'ppbf_owned',
+    });
+    expect((await excerpt(small.documentId, 0, 'One passage.')).status).toBe(201);
+    expect((await call(routes.patchSource, 'PATCH', '/api/pilot/shadow/library/sources', {
+      source_id: small.sourceId, rights_status: 'licensed_excerpt_only',
+    })).status).toBe(200);
   });
 });

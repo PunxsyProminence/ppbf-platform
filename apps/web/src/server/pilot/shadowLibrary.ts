@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { ConflictError, ValidationError } from './errors';
+import { ConflictError, PilotError, ValidationError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
@@ -679,21 +681,43 @@ export async function updateShadowLibrarySourceRights(input: {
   rightsStatus: ShadowLibraryRightsStatus;
 }): Promise<ShadowLibrarySourceRow | null> {
   requireEvidenceReviewer(input.actorRole);
-  // One statement: the row is locked as it is read, so the recorded "before"
-  // is the value this update replaced, even when two reviewers race.
-  const row = await queryOne<ShadowLibrarySourceRow & { rights_status_before: ShadowLibraryRightsStatus }>(
-    `with before as (
-       select source_id, rights_status from pilot.shadow_library_sources
+  const row = await withTransaction(async (client) => {
+    // The row is locked before it is read, so the recorded "before" is the
+    // value this update replaced, even when two reviewers race, and no chunk
+    // write (which takes the same lock) can land between the budget count
+    // below and the update.
+    const before = await client.query<{ rights_status: ShadowLibraryRightsStatus }>(
+      `select rights_status from pilot.shadow_library_sources
         where organization_id = $1 and source_id = $2
-        for update
-     )
-     update pilot.shadow_library_sources s
-        set rights_status = $3, updated_at = now()
-       from before
-      where s.organization_id = $1 and s.source_id = before.source_id
-     returning s.*, before.rights_status as rights_status_before`,
-    [input.organizationId, input.sourceId, input.rightsStatus],
-  );
+        for update`,
+      [input.organizationId, input.sourceId],
+    );
+    if (!before.rows[0]) return null;
+    // Marking a source down to excerpts-only must not leave it holding more
+    // than the excerpt budget allows: otherwise a whole paper loaded while the
+    // source read ppbf_owned stays in the Library after it is lowered (CL-C2).
+    if (!FULL_TEXT_RIGHTS.includes(input.rightsStatus) && FULL_TEXT_RIGHTS.includes(before.rows[0].rights_status)) {
+      const held = await heldExcerptBudget(client, input.sourceId, input.organizationId);
+      if (
+        held.chunkCount > MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE
+        || held.characterCount > MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE
+      ) {
+        throw new PilotError(
+          422,
+          `This source holds ${held.chunkCount} passages and ${held.characterCount.toLocaleString('en-US')} characters, more than a source that is not PPBF-owned or open-licence may hold (${excerptBudgetSentence()}). Remove passages first, or keep its rights as they are.`,
+          EXCERPT_BUDGET_EXCEEDED_CODE,
+        );
+      }
+    }
+    const updated = await client.query<ShadowLibrarySourceRow & { rights_status_before: ShadowLibraryRightsStatus }>(
+      `update pilot.shadow_library_sources
+          set rights_status = $3, updated_at = now()
+        where organization_id = $1 and source_id = $2
+       returning *, $4::text as rights_status_before`,
+      [input.organizationId, input.sourceId, input.rightsStatus, before.rows[0].rights_status],
+    );
+    return updated.rows[0] ?? null;
+  });
   if (!row) return null;
   const { rights_status_before: rightsBefore, ...source } = row;
   if (rightsBefore === source.rights_status) return source;
@@ -983,6 +1007,63 @@ export async function createShadowLibraryDocument(input: {
   return row;
 }
 
+// EXCERPT BUDGET (CL-C2; OD-2026-10-02-013 answer 4A: "only excerpts a curator
+// chooses"). The rights trigger checks that each excerpt names where it comes
+// from, but a locator is a label, not a limit: a whole licensed paper loaded as
+// consecutive "p. 1", "p. 2" ... excerpts passes it. So a source that is not
+// ppbf_owned or open_licence may hold at most this many chunks and this many
+// characters in total, across all its documents.
+//
+// PLACEHOLDER NUMBERS, PENDING JASON'S APPROVAL. OD-2026-10-05-024 item 7:
+// "ChatGPT proposes a limit and Jason approves it. No number is decided yet."
+// These two values exist only so the mechanism can be built and tested; they
+// are not a decision, and the PR carrying them stays a draft until the
+// approved numbers replace them.
+export const MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE = 40;
+export const MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE = 60_000;
+
+export const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
+
+const FULL_TEXT_RIGHTS: readonly ShadowLibraryRightsStatus[] = ['ppbf_owned', 'open_licence'];
+
+/** Whether a source with these rights is held to the excerpt budget. */
+export function isExcerptBudgeted(rightsStatus: string): boolean {
+  return !(FULL_TEXT_RIGHTS as readonly string[]).includes(rightsStatus);
+}
+
+/**
+ * What a source holds ($1 source_id, $2 organization_id), counted by the
+ * DOCUMENT's source -- the one whose rights the database rule applies. A chunk
+ * may cite another paper in its own source_id (the seed's synthesis pattern),
+ * and that must not spend the cited paper's budget. Exported so the licensed
+ * excerpt loader's plan counts exactly what this function will.
+ */
+export const HELD_EXCERPT_BUDGET_SQL = `select count(*)::int as chunk_count,
+            coalesce(sum(char_length(c.text_content)), 0)::int as character_count
+       from pilot.shadow_library_chunks c
+       join pilot.shadow_library_documents d
+         on d.document_id = c.document_id and d.organization_id = c.organization_id
+      where d.source_id = $1 and d.organization_id = $2`;
+
+function excerptBudgetSentence(): string {
+  return `at most ${MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE} excerpts and ${MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE.toLocaleString('en-US')} characters in all`;
+}
+
+async function heldExcerptBudget(
+  client: PoolClient,
+  sourceId: string,
+  organizationId: string,
+): Promise<{ chunkCount: number; characterCount: number }> {
+  const held = await client.query<{ chunk_count: number; character_count: number }>(
+    HELD_EXCERPT_BUDGET_SQL,
+    [sourceId, organizationId],
+  );
+  return {
+    chunkCount: held.rows[0]?.chunk_count ?? 0,
+    characterCount: held.rows[0]?.character_count ?? 0,
+  };
+}
+
 export async function createShadowLibraryChunk(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1005,6 +1086,28 @@ export async function createShadowLibraryChunk(input: {
   // live under the approved document for that whole network round trip, and
   // for good if the process died inside it.
   const row = await withTransaction(async (client) => {
+    // The document's source row is locked first, so two writers to the same
+    // source take turns at the excerpt budget below: each counts what the
+    // other committed, and they cannot both pass it and together exceed it.
+    // Source before document is the order the research importer takes them
+    // in, so the two cannot deadlock. NO KEY UPDATE, not UPDATE, so creating
+    // a document or chunk that merely references this source is not blocked.
+    const locked = await client.query<{ source_id: string; rights_status: ShadowLibraryRightsStatus }>(
+      `select s.source_id, s.rights_status
+         from pilot.shadow_library_sources s
+        where s.organization_id = $2
+          and s.source_id = (
+            select d.source_id from pilot.shadow_library_documents d
+             where d.document_id = $1 and d.organization_id = $2
+          )
+        for no key update of s`,
+      [input.documentId, input.organizationId],
+    );
+    const source = locked.rows[0];
+    if (!source) {
+      throw new Error('Document does not exist in this organization.');
+    }
+
     const reset = await client.query<{ document_id: string; source_id: string; subject_id: string | null }>(
       `update pilot.shadow_library_documents
        set ingest_state = 'chunking',
@@ -1016,13 +1119,29 @@ export async function createShadowLibraryChunk(input: {
            verified_by_account_id = null,
            verified_at = null,
             updated_at = now()
-       where document_id = $1 and organization_id = $2
+       where document_id = $1 and organization_id = $2 and source_id = $3
        returning document_id, source_id, subject_id`,
-      [input.documentId, input.organizationId],
+      [input.documentId, input.organizationId, source.source_id],
     );
     const document = reset.rows[0];
     if (!document) {
-      throw new Error('Document does not exist in this organization.');
+      // Moved to another source between the lock and the reset.
+      throw new ConflictError('This document moved to another source while the text was being saved. Try again.');
+    }
+
+    if (!FULL_TEXT_RIGHTS.includes(source.rights_status)) {
+      const { chunkCount, characterCount } = await heldExcerptBudget(client, document.source_id, input.organizationId);
+      const newCharacters = Array.from(input.textContent.trim()).length;
+      if (
+        chunkCount + 1 > MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE
+        || characterCount + newCharacters > MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE
+      ) {
+        throw new PilotError(
+          422,
+          `This source is not marked PPBF-owned or open-licence, so the Library may hold only a limited set of excerpts of it: ${excerptBudgetSentence()}. It holds ${chunkCount} excerpts and ${characterCount.toLocaleString('en-US')} characters; this one adds ${newCharacters.toLocaleString('en-US')}.`,
+          EXCERPT_BUDGET_EXCEEDED_CODE,
+        );
+      }
     }
 
     const inserted = await client.query<ShadowLibraryChunkRow>(
