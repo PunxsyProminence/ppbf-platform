@@ -517,6 +517,10 @@ describe('sweepQuarantinedVideos', () => {
       await sweepQuarantinedVideos({ env: CONTENT_ON });
 
       expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      // Recorded as the withdrawal it is, not as missing paperwork: the
+      // coverage check runs even after the signed check refused.
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_withdrawn');
     });
 
     test('a consent status the platform cannot read is skipped, not guessed at', async () => {
