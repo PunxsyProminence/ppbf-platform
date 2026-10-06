@@ -258,6 +258,63 @@ describe('durable auth rate limiting against real Postgres', () => {
     expect((await rateLimit.checkDurableRateLimit(other)).isLimited).toBe(false);
   });
 
+  // CL-A4 (audit 2026-10-05). Ten replicas each reading the bucket before any
+  // of them records a failure all see it open: the read is not a reservation.
+  test('the old read-then-record pattern admits every concurrent guess', async () => {
+    const key = 'pin_account:burst-read-1';
+    const reads = await Promise.all(Array.from({ length: 10 }, () => rateLimit.checkDurableRateLimit(key)));
+    expect(reads.filter((read) => !read.isLimited)).toHaveLength(10);
+  });
+
+  test('a concurrent burst across replicas reserves exactly one attempt', async () => {
+    const key = 'pin_account:burst-reserve-1';
+    const results = await Promise.all(Array.from({ length: 10 }, () => rateLimit.reserveDurableAttempt(key)));
+    expect(results.filter((result) => result && !result.isLimited)).toHaveLength(1);
+    expect(results.filter((result) => result?.isLimited)).toHaveLength(9);
+
+    // Refused requests are not counted; the admitted one is.
+    const row = await db.queryOne<{ attempt_count: number }>(
+      `select attempt_count from pilot.auth_rate_limit_buckets where bucket_key = $1`,
+      [key],
+    );
+    expect(row?.attempt_count).toBe(1);
+  });
+
+  test('a fresh key races on INSERT too: one wins, the rest find it blocked', async () => {
+    const keys = Array.from({ length: 5 }, (_, i) => `pin_account:burst-fresh-${i}`);
+    for (const key of keys) {
+      const results = await Promise.all(Array.from({ length: 6 }, () => rateLimit.reserveDurableAttempt(key)));
+      expect(results.filter((result) => result && !result.isLimited)).toHaveLength(1);
+    }
+  });
+
+  test('a reserve keeps the same backoff as a recorded failure and restarts after the window', async () => {
+    const key = 'pin_account:reserve-backoff-1';
+    for (let i = 0; i < 7; i += 1) {
+      await db.query(`update pilot.auth_rate_limit_buckets set blocked_until = now() - interval '1 second' where bucket_key = $1`, [key]);
+      expect((await rateLimit.reserveDurableAttempt(key))?.isLimited).toBe(false);
+    }
+    // 7 attempts: 1000 * 2^(7-5) = 4000 ms, as backoffMsFor gives.
+    const blocked = await rateLimit.reserveDurableAttempt(key);
+    expect(blocked?.isLimited).toBe(true);
+    expect(blocked?.delayMs).toBeGreaterThan(3000);
+    expect(blocked?.delayMs).toBeLessThanOrEqual(4000);
+
+    // A bucket quiet for the whole window starts again at one attempt.
+    await db.query(
+      `update pilot.auth_rate_limit_buckets
+          set blocked_until = now() - interval '20 minutes', updated_at = now() - interval '20 minutes'
+        where bucket_key = $1`,
+      [key],
+    );
+    expect((await rateLimit.reserveDurableAttempt(key))?.isLimited).toBe(false);
+    const row = await db.queryOne<{ attempt_count: number }>(
+      `select attempt_count from pilot.auth_rate_limit_buckets where bucket_key = $1`,
+      [key],
+    );
+    expect(row?.attempt_count).toBe(1);
+  });
+
   test('it runs on the shared pool rather than opening its own connections', async () => {
     // The reason this moved off a per-call pg Client: login is a hot path, and
     // a fresh TCP+TLS handshake per attempt is not free. If the limiter were

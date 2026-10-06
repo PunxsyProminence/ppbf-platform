@@ -1,6 +1,7 @@
 import type { PoolClient, QueryResultRow } from 'pg';
 
 import type { AuthProvider } from './authProviders';
+import { lockConsentSet } from './consentSetLock';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
@@ -677,6 +678,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
            updated_at = now()`,
         [organizationId, parentId, accountId, guardian.fullName, loginEmail],
       );
+
+      // Exclusive consent-set lock before the link: this guardian joins the
+      // set every consent reader evaluates (consentSetLock.ts). Taken after the
+      // athlete row's FOR SHARE above; the consent readers lock no
+      // pilot.athletes row, so the two cannot meet in the opposite order.
+      await lockConsentSet(client, organizationId, guardian.athleteId, 'exclusive');
 
       await client.query(
         `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)

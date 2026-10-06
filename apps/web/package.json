@@ -140,6 +140,7 @@
     "test:migrations:waiver-compliance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverCompliance.pg.test.ts --testTimeout=180000",
     "test:migrations:waiver-status-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverStatusCensus.pg.test.ts --testTimeout=240000",
     "test:migrations:data-retention": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/dataRetentionDeletion.pg.test.ts --testTimeout=180000",
+    "test:migrations:retention-video-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/retentionVideoPurge.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-deletion-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDeletionRevokesAccess.pg.test.ts --testTimeout=180000",
     "test:migrations:deletion-scope-b": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/deletionScopeB.pg.test.ts --testTimeout=600000",
     "test:migrations:signin-refuses-deleted": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/signInRefusesDeletedAccount.pg.test.ts --testTimeout=180000",
@@ -175,6 +176,7 @@
     "test:migrations:scheduler-membership-flag": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerMembershipFlag.pg.test.ts --testTimeout=180000",
     "test:migrations:grant-obligations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/grantObligations.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-research-submissions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowResearchSubmissions.pg.test.ts --testTimeout=180000",
+    "test:migrations:shadow-event-athlete-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowEventAthleteScope.pg.test.ts --testTimeout=180000",
     "test:migrations:wrestling-league": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/wrestlingLeague.pg.test.ts --testTimeout=180000",
     "test:migrations:club-members": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/clubMembers.pg.test.ts --testTimeout=180000",
     "test:migrations:film-study-coach-reported": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyCoachReported.pg.test.ts --testTimeout=180000",
@@ -429,6 +431,7 @@
     "test:migrations:publications": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:publication-retraction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationRetraction.pg.test.ts --testTimeout=180000",
     "test:migrations:consent-withdrawal-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentWithdrawalRace.pg.test.ts --testTimeout=180000",
+    "test:migrations:consent-set-phantom": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentSetPhantom.pg.test.ts --testTimeout=180000",
     "test:migrations:film-study-consent-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyConsentRace.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-link-lock-order": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianLinkLockOrder.pg.test.ts --testTimeout=180000",
     "test:migrations:playback-consent-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/playbackConsentRace.pg.test.ts --testTimeout=180000",
@@ -466,6 +469,7 @@
     "test:migrations:rehome-test-login": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rehomeTestLogin.pg.test.ts --testTimeout=240000"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",

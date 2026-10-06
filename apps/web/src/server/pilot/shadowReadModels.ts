@@ -283,6 +283,108 @@ function toReviewState(eventName: string): ShadowReviewState {
   return 'unknown';
 }
 
+/**
+ * The athletes a shadow_events row names, read from anywhere in its payload.
+ *
+ * The events reader used to tie a row to an athlete only through entity_type
+ * 'athlete' or a TOP-LEVEL payload athlete_id / owner_entity_id, and treated
+ * every other row as athlete-free (audit CL-A1 = CL-C6, 2026-10-05). Two
+ * writers name the athlete elsewhere: writePilotAuditEvent mirrors every audit
+ * event as { event_type, details }, so a PIN sign-in or a film-study
+ * observation carries it at details.athlete_id; the Library emitters carry it
+ * as subject_id next to the question text. Those rows reached every coach,
+ * staff, volunteers and the platform owner -- the last refused athlete records
+ * outright by assertActorCanAccessAthlete.
+ *
+ * So the tie is computed over every object at every depth of the payload
+ * (jsonpath strict $.**), not over a list of known places:
+ *   - athlete_ids: the entity_id of an entity_type 'athlete' row; the athlete
+ *     behind the account an entity_type 'account' row is about (sign-out, PIN
+ *     change and reset name only the account) and behind an acting athlete's
+ *     account; the string value of any athlete_id / owner_entity_id /
+ *     subject_id key, or of any key ending athlete..._id / athlete...Id
+ *     (mentor_athlete_id, athleteId, ...); and the string elements of any
+ *     array under a key containing "athlete" (athlete_ids, ...).
+ *   - unresolved_athlete: an athlete account with no athlete id, or an object
+ *     or a non-string array element under an athlete key. Such a row names
+ *     someone this reader cannot identify, so only org-wide roles read it.
+ *   - mentions_athlete: some key containing "athlete" holds a non-null value.
+ *     A row that names an athlete without an id (athlete_name alone) is then
+ *     neither provably anyone's nor athlete-free, and fails closed to the roles
+ *     with organization-wide reach.
+ * owner_entity_id and subject_id are read as athlete ids whatever they hold, as
+ * the old predicate did for owner_entity_id; a non-athlete value there hides
+ * the row from restricted roles rather than showing it.
+ */
+const SHADOW_EVENT_ATHLETE_TIE_SQL = `cross join lateral (
+       select
+         array(
+           select distinct named.athlete_id
+           from (
+             select e.entity_id as athlete_id
+             where e.entity_type = 'athlete'
+             union all
+             -- The athlete behind an account: the account row an entity_type
+             -- 'account' event is about (sign-in, sign-out, PIN change or
+             -- reset), and the account of an athlete who acted.
+             select account.athlete_id
+             from pilot.accounts account
+             where account.organization_id = e.organization_id
+               and (
+                 (e.entity_type = 'account' and account.account_id = e.entity_id)
+                 or (e.actor_role = 'athlete' and account.account_id = e.actor_account_id)
+               )
+             union all
+             select pair.value #>> '{}'
+             from jsonb_path_query(coalesce(e.payload, '{}'::jsonb), 'strict $.**') as node(value)
+             cross join lateral jsonb_each(case when jsonb_typeof(node.value) = 'object' then node.value else '{}'::jsonb end) as pair
+             where jsonb_typeof(pair.value) = 'string'
+               and (pair.key in ('athlete_id', 'owner_entity_id', 'subject_id') or pair.key ~ '[Aa]thlete\\w*(_id|Id)$')
+             union all
+             select element.value #>> '{}'
+             from jsonb_path_query(coalesce(e.payload, '{}'::jsonb), 'strict $.**') as node(value)
+             cross join lateral jsonb_each(case when jsonb_typeof(node.value) = 'object' then node.value else '{}'::jsonb end) as pair
+             cross join lateral jsonb_array_elements(case when jsonb_typeof(pair.value) = 'array' then pair.value else '[]'::jsonb end) as element(value)
+             where pair.key ~* 'athlete'
+               and jsonb_typeof(element.value) = 'string'
+           ) as named
+           where named.athlete_id is not null and named.athlete_id <> ''
+         ) as athlete_ids,
+         exists (
+           select 1
+           from jsonb_path_query(coalesce(e.payload, '{}'::jsonb), 'strict $.**') as node(value)
+           cross join lateral jsonb_each(case when jsonb_typeof(node.value) = 'object' then node.value else '{}'::jsonb end) as pair
+           where pair.key ~* 'athlete'
+             and jsonb_typeof(pair.value) <> 'null'
+         ) as mentions_athlete,
+         (
+           -- An athlete account with no athlete id behind it.
+           exists (
+             select 1
+             from pilot.accounts account
+             where account.organization_id = e.organization_id
+               and account.role = 'athlete'
+               and account.athlete_id is null
+               and (
+                 (e.entity_type = 'account' and account.account_id = e.entity_id)
+                 or (e.actor_role = 'athlete' and account.account_id = e.actor_account_id)
+               )
+           )
+           -- Structured data under an athlete key (athletes: [{ id }]) whose
+           -- ids this reader cannot pick out.
+           or exists (
+             select 1
+             from jsonb_path_query(coalesce(e.payload, '{}'::jsonb), 'strict $.**') as node(value)
+             cross join lateral jsonb_each(case when jsonb_typeof(node.value) = 'object' then node.value else '{}'::jsonb end) as pair
+             where pair.key ~* 'athlete'
+               and (
+                 jsonb_typeof(pair.value) = 'object'
+                 or (jsonb_typeof(pair.value) = 'array' and jsonb_path_exists(pair.value, 'strict $[*] ? (@.type() != "string")'))
+               )
+           )
+         ) as unresolved_athlete
+     ) as tie`;
+
 export async function listShadowEvents(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowEventRow[]> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
@@ -299,7 +401,8 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
        actor_role,
        payload,
        created_at
-     from pilot.shadow_events
+     from pilot.shadow_events e
+     ${SHADOW_EVENT_ATHLETE_TIE_SQL}
      where organization_id = $1
        and ($2::text is null or entity_type = $2)
        and ($3::text is null or entity_id = $3)
@@ -321,14 +424,15 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
        -- which is most of it. Measured on a real Postgres over an
        -- eight-row fixture: five rows survive with this predicate, one
        -- without the second disjunct.
+       --
+       -- Which athletes a row names comes from tie (SHADOW_EVENT_ATHLETE_TIE_SQL),
+       -- not from a top-level key list: an athlete-tied row is shown only when
+       -- EVERY athlete it names is one this actor reaches, and a row that
+       -- mentions an athlete without an id is never athlete-free.
        and (
-         (
-           $9::text[] is null
-           or (entity_type = 'athlete' and entity_id = any($9::text[]))
-           or payload->>'athlete_id' = any($9::text[])
-           or payload->>'owner_entity_id' = any($9::text[])
-         )
-         or ($10::boolean and entity_type <> 'athlete' and payload->>'athlete_id' is null and payload->>'owner_entity_id' is null)
+         $9::text[] is null
+         or (cardinality(tie.athlete_ids) > 0 and tie.athlete_ids <@ $9::text[] and not tie.unresolved_athlete)
+         or ($10::boolean and cardinality(tie.athlete_ids) = 0 and not tie.mentions_athlete and not tie.unresolved_athlete)
        )
      order by created_at desc
      limit $7
