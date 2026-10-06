@@ -247,4 +247,58 @@ describe('shadow job queue claim cycle against the real migrated schema', () => 
     // A terminally failed job must not be claimable again.
     await expect(queue.claimNextJob()).resolves.toBeNull();
   });
+
+  // CL-C17: during a rollout the old revision's worker is still polling. A job
+  // stamped by the new revision must not be claimed by it at all -- claiming
+  // it failed the job as CONTRACT_AHEAD three times and the third failure
+  // wiped its payload, so the question could never be answered.
+  test('a job stamped by a newer context contract is left for a current worker', async () => {
+    const aheadId = await queue.enqueueJob({
+      jobType: 'heavy_bag_session',
+      organizationId: ORG_ID,
+      accountId: ACCOUNT_ID,
+      role: 'organization_admin',
+      inputPayload: {
+        message: 'from the newer revision',
+        contextContractVersion: queue.SHADOW_CONTEXT_CONTRACT_VERSION + 1,
+      },
+    });
+
+    for (let tick = 0; tick < 4; tick += 1) {
+      await expect(queue.claimNextJob()).resolves.toBeNull();
+    }
+
+    const afterTicks = await queue.getJobStatusForActor(aheadId, actor());
+    expect(afterTicks?.status).toBe('pending');
+
+    // Jobs at the worker's own version, and jobs that carry no stamp, are
+    // still claimed as before.
+    const currentId = await queue.enqueueJob({
+      jobType: 'heavy_bag_session',
+      organizationId: ORG_ID,
+      accountId: ACCOUNT_ID,
+      role: 'organization_admin',
+      inputPayload: {
+        message: 'from this revision',
+        contextContractVersion: queue.SHADOW_CONTEXT_CONTRACT_VERSION,
+      },
+    });
+    const current = await queue.claimNextJob();
+    expect(current?.jobId).toBe(currentId);
+    await queue.completeJob(current!, { response: 'done', responseState: 'ok' }, 'passed');
+
+    const unstampedId = await queue.enqueueJob({
+      jobType: 'board_summary',
+      organizationId: ORG_ID,
+      accountId: ACCOUNT_ID,
+      role: 'organization_admin',
+      inputPayload: { message: 'no stamp' },
+    });
+    const unstamped = await queue.claimNextJob();
+    expect(unstamped?.jobId).toBe(unstampedId);
+    await queue.completeJob(unstamped!, { response: 'done', responseState: 'ok' }, 'passed');
+
+    // Leave nothing claimable for later tests.
+    await expect(queue.cancelJobForActor(aheadId, actor())).resolves.toBe(true);
+  });
 });

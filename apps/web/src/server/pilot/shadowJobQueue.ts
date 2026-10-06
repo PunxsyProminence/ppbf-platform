@@ -479,6 +479,18 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
          AND expires_at > NOW()
          AND retry_count < max_retries
          AND ($1::text IS NULL OR job_type = $1)
+         -- A job stamped by a NEWER context contract is left for a worker
+         -- that runs it (audit CL-C17). During a rollout the old revision's
+         -- worker is still polling; claiming such a job made the processor
+         -- fail it as CONTRACT_AHEAD, each failure spent a retry, and the
+         -- third wiped input_payload, so the question was never answered.
+         -- CASE, not AND: Postgres does not promise to short-circuit AND, and
+         -- the cast must only see a JSON number. Unstamped jobs still claim.
+         AND CASE
+           WHEN jsonb_typeof(input_payload -> 'contextContractVersion') = 'number'
+             THEN (input_payload ->> 'contextContractVersion')::numeric <= $3
+           ELSE TRUE
+         END
        ORDER BY priority ASC, created_at ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED
@@ -517,7 +529,7 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
                jobs.priority, jobs.retry_count, jobs.max_retries, jobs.lease_token,
                jobs.lease_expires_at, jobs.created_at, jobs.started_at,
                jobs.completed_at, jobs.expires_at`,
-    [jobType ?? null, JOB_LEASE_SECONDS],
+    [jobType ?? null, JOB_LEASE_SECONDS, SHADOW_CONTEXT_CONTRACT_VERSION],
   );
 
   return row ? mapJobRow(row) : null;
@@ -646,6 +658,11 @@ export async function cancelJobForActor(jobId: string, actor: ActorIdentity): Pr
   return result !== null;
 }
 
+// Upper bound on rows one job listing reads while filling its page, and the
+// rows read per query, so a small page does not mean hundreds of round trips.
+export const JOB_LIST_MAX_SCANNED_ROWS = 500;
+export const JOB_LIST_BATCH_ROWS = 100;
+
 export async function getJobsForActor(
   actor: ActorIdentity,
   requestedLimit = 20,
@@ -653,35 +670,55 @@ export async function getJobsForActor(
   const limit = Number.isSafeInteger(requestedLimit)
     ? Math.max(1, Math.min(requestedLimit, 100))
     : 20;
-  const rows = await query<ShadowJobRow>(
-    `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
-            status, input_payload, output_payload, error_message, safety_status,
-            priority, retry_count, max_retries, lease_token, lease_expires_at,
-            created_at, started_at,
-            completed_at, expires_at
-     FROM pilot.shadow_jobs
-     WHERE organization_id = $1
-       AND (
-         account_id = $2
-         OR (
-           $3::boolean
-           AND job_type NOT IN ('heavy_bag_session', 'scout_report')
+  const canReadAllOrgJobs = actorCanReadAllOrgJobs(actor);
+  const results: JobStatusResult[] = [];
+  const seenJobIds = new Set<string>();
+
+  // The athlete-access filter runs here, after SQL, so a page cut at `limit`
+  // in SQL came back short whenever some of its rows were athletes this
+  // actor cannot reach (audit CL-C23). Read batch after batch until the page
+  // is full or the rows run out, capped so one listing cannot walk the
+  // whole table. job_id breaks created_at ties so the order is total; a job
+  // enqueued between batches shifts OFFSET by one and would repeat the last
+  // row read, so rows already seen are skipped.
+  for (let offset = 0; offset < JOB_LIST_MAX_SCANNED_ROWS; offset += JOB_LIST_BATCH_ROWS) {
+    const rows = await query<ShadowJobRow>(
+      `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
+              status, input_payload, output_payload, error_message, safety_status,
+              priority, retry_count, max_retries, lease_token, lease_expires_at,
+              created_at, started_at,
+              completed_at, expires_at
+       FROM pilot.shadow_jobs
+       WHERE organization_id = $1
+         AND (
+           account_id = $2
+           OR (
+             $3::boolean
+             AND job_type NOT IN ('heavy_bag_session', 'scout_report')
+           )
          )
-       )
-     ORDER BY created_at DESC
-     LIMIT $4`,
-    [actor.organizationId, actor.accountId, actorCanReadAllOrgJobs(actor), limit],
-  );
+       ORDER BY created_at DESC, job_id DESC
+       LIMIT $4 OFFSET $5`,
+      [actor.organizationId, actor.accountId, canReadAllOrgJobs, JOB_LIST_BATCH_ROWS, offset],
+    );
 
-  const subjectIds = rows
-    .map((row) => row.subject_id)
-    .filter((subjectId): subjectId is string => subjectId !== null);
-  const accessibleSubjectIds =
-    subjectIds.length > 0 ? await accessibleAthleteIds(actor, subjectIds) : new Set<string>();
+    const subjectIds = rows
+      .map((row) => row.subject_id)
+      .filter((subjectId): subjectId is string => subjectId !== null);
+    const accessibleSubjectIds =
+      subjectIds.length > 0 ? await accessibleAthleteIds(actor, subjectIds) : new Set<string>();
 
-  return rows
-    .filter((row) => actorCanAccessJobRow(actor, row, accessibleSubjectIds))
-    .map((row) => toStatusResult(mapJobRow(row)));
+    for (const row of rows) {
+      if (seenJobIds.has(row.job_id)) continue;
+      seenJobIds.add(row.job_id);
+      if (!actorCanAccessJobRow(actor, row, accessibleSubjectIds)) continue;
+      results.push(toStatusResult(mapJobRow(row)));
+      if (results.length === limit) return results;
+    }
+    if (rows.length < JOB_LIST_BATCH_ROWS) break;
+  }
+
+  return results;
 }
 
 function jobTypeToSessionType(jobType: JobType): ShadowSessionType {
