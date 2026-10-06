@@ -131,6 +131,21 @@ export async function upsertRememberedFact(
 
     if (!profile) return;
 
+    // A key the person corrected (forget or replace) is not learned again for
+    // this account in this gym: the learning loop's keys all come back on the
+    // next click, which made "SHADOW no longer remembers this" true only until
+    // then (overwatch ruling D1, 2026-10-06). Read under the lock above, and
+    // the correction commits its row while holding the same lock, so the two
+    // cannot interleave.
+    const corrected = await client.query(
+      `SELECT 1 FROM pilot.shadow_chat_memory_corrections
+       WHERE account_id = $1 AND organization_id = $2 AND fact_key = $3
+         AND status = 'applied' AND action IN ('forget', 'replace')
+       LIMIT 1`,
+      [accountId, organizationId, fact.key],
+    );
+    if (corrected.rows.length > 0) return;
+
     const existing = profile.remembered_facts || [];
     const idx = existing.findIndex(f => f.key === fact.key);
     const now = new Date().toISOString();

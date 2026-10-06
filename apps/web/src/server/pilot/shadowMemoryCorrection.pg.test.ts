@@ -306,4 +306,27 @@ describe('SHADOW memory corrections are applied, against real Postgres', () => {
       expect(keys).toEqual(expect.arrayContaining(['prefers_concise_answers', 'asks_follow_up_questions']));
     });
   });
+
+  // Overwatch ruling D1 (a), 2026-10-06: a forget or replace that the next
+  // matching signal undoes does not close CL-C10. The learning loop writes
+  // only a few keys (engaged_topic_*, prefers_deep_analysis,
+  // asks_follow_up_questions) and every one comes back on the next click, so
+  // a key the person corrected is not learned again for that account in that
+  // gym. Other keys, and other people, learn as before.
+  test('a corrected key is not learned again; other keys and other people still are', async () => {
+    await withDatabase('ppbf_test_memory_relearn', async (client) => {
+      await submitMemoryCorrection({ actor, factKey: 'stance', action: 'forget' });
+      await submitMemoryCorrection({ actor, factKey: 'prefers_concise_answers', correctedValue: 'false', action: 'replace' });
+
+      await upsertRememberedFact(ACCOUNT, ORG, { key: 'stance', value: 'orthodox', confidence: 0.6 });
+      await upsertRememberedFact(ACCOUNT, ORG, { key: 'prefers_concise_answers', value: 'true', confidence: 0.6 });
+      await upsertRememberedFact(ACCOUNT, ORG, { key: 'asks_follow_up_questions', value: 'true', confidence: 0.7 });
+      await upsertRememberedFact(OTHER_ACCOUNT, ORG, { key: 'stance', value: 'southpaw', confidence: 0.6 });
+      await upsertRememberedFact(ACCOUNT, OTHER_ORG, { key: 'stance', value: 'southpaw', confidence: 0.6 });
+
+      expect(await factKeys(client, ACCOUNT, ORG)).toEqual(['asks_follow_up_questions']);
+      expect(await factKeys(client, OTHER_ACCOUNT, ORG)).toContain('stance');
+      expect(await factKeys(client, ACCOUNT, OTHER_ORG)).toContain('stance');
+    });
+  });
 });
