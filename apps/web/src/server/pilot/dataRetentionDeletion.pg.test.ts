@@ -39,6 +39,7 @@ const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedd
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const TEST_DB_NAME = 'ppbf_test_data_retention';
 const MIGRATION_FILE = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
+const RETAINED_RESTRICTION_FILE = 'pilot_slice_postgres_retained_media_restriction_migration.sql';
 
 const ORG_ID = 'org-retention';
 const OTHER_ORG_ID = 'org-retention-other';
@@ -210,6 +211,7 @@ describe('the retention cleanup job refuses to be casually destructive', () => {
     // here too. It is idempotent by design, which is the property the rebuild
     // path depends on anyway.
     await client.query(await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8'));
+    await client.query(await fs.readFile(path.join(INFRA_DIR, RETAINED_RESTRICTION_FILE), 'utf8'));
     await seedAthlete(EXPIRED_ATHLETE_ID, ORG_ID);
     await client.query(
       `update pilot.athletes set deleted_at = now() - interval '3 years'
@@ -1058,6 +1060,9 @@ describe('a guardian who was actually recorded as one', () => {
     await guardianClient.query(
       await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_onboarding_migration.sql'), 'utf8'),
     );
+    // pilot.retained_media_consent_restrictions: the purge records a purged
+    // guardian's media choice there before it deletes their record.
+    await guardianClient.query(await fs.readFile(path.join(INFRA_DIR, RETAINED_RESTRICTION_FILE), 'utf8'));
     guardianEnv.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(GUARDIAN_DB);
 
     await guardianClient.query(

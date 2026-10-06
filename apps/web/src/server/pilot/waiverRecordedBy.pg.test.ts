@@ -129,6 +129,14 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  /* pilot.retained_media_consent_restrictions: the purge records a purged
+     guardian's media choice there before it deletes their record. */
+  await client.query(
+    await fs.readFile(
+      path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres_retained_media_restriction_migration.sql'),
+      'utf8',
+    ),
+  );
 
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(

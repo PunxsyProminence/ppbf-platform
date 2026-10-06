@@ -97,6 +97,7 @@ beforeEach(() => {
     guardianIds: ['p1', 'p2'],
     missingParentIds: ['p1', 'p2'],
     perGuardian: [],
+    retained: [],
   });
   mockGuardianName.mockResolvedValue('Dana Reyes');
   mockGrant.mockResolvedValue('wv-1');
@@ -112,7 +113,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
       {
         athleteId: 'ath-1',
         athleteName: 'Sample Athlete',
-        consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] },
+        consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] },
         guardians: [],
       },
       {
@@ -123,6 +124,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
           guardianIds: ['p1'],
           missingParentIds: [],
           perGuardian: [{ parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
+          retained: [],
         },
         guardians: [{ parentId: 'p1', fullName: 'Dana Reyes' }],
       },
@@ -282,6 +284,7 @@ describe('POST /api/pilot/admin/athlete-consent -- authorization', () => {
       guardianIds: ['someone-else'],
       missingParentIds: ['someone-else'],
       perGuardian: [],
+      retained: [],
     });
 
     const response = await POST(jsonRequest(GRANT_BODY));
@@ -350,6 +353,7 @@ describe('POST /api/pilot/admin/athlete-consent -- the write', () => {
       guardianIds: ['p1'],
       missingParentIds: ['p1'],
       perGuardian: [{ parentId: 'p1', status: 'withdrawn', coversVideo: false, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
+      retained: [],
     });
 
     const response = await POST(jsonRequest(GRANT_BODY));

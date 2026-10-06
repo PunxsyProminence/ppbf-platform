@@ -84,6 +84,7 @@ const NO_CONSENT_ON_FILE: ConsentCheckResult = {
   guardianIds: [],
   missingParentIds: [],
   perGuardian: [],
+  retained: [],
 };
 
 const consentResult = (perGuardian: ConsentCheckResult['perGuardian']): ConsentCheckResult => ({
@@ -91,6 +92,7 @@ const consentResult = (perGuardian: ConsentCheckResult['perGuardian']): ConsentC
   guardianIds: perGuardian.map((guardian) => guardian.parentId),
   missingParentIds: perGuardian.filter((g) => g.status !== 'signed').map((g) => g.parentId),
   perGuardian,
+  retained: [],
 });
 
 const guardian = (

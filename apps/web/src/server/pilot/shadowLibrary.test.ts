@@ -1,6 +1,7 @@
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
@@ -26,7 +27,7 @@ jest.mock('./shadowEmbeddings', () => ({
 }));
 
 import { assertActorCanAccessAthlete } from './access';
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
 import {
@@ -58,6 +59,7 @@ async function searchShadowLibraryRanked(input: Parameters<typeof searchShadowLi
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
 const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
+const mockWithTransaction = withTransaction as jest.MockedFunction<typeof withTransaction>;
 const mockAssertActorCanAccessAthlete = jest.mocked(assertActorCanAccessAthlete);
 const mockIsSemanticEnabled = jest.mocked(isSemanticLibrarySearchEnabled);
 const mockEmbedText = jest.mocked(embedText);
@@ -229,26 +231,30 @@ describe('SHADOW library search scope', () => {
   });
 
   it('does not mark a document indexed merely because one chunk was inserted', async () => {
-    mockQueryOne
-      .mockResolvedValueOnce({
-        document_id: 'doc-a',
-        source_id: 'source-a',
-        subject_id: null,
-      } as never)
-      .mockResolvedValueOnce({
-        chunk_id: 'chunk-a',
-        document_id: 'doc-a',
-        source_id: 'source-a',
-        organization_id: 'org-a',
-        subject_id: null,
-        ordinal: 0,
-        text_content: 'A bounded chunk',
-        metadata: {},
-        created_by_account_id: 'account-a',
-        created_by_role: 'organization_admin',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as never);
+    const statements: string[] = [];
+    const clientQuery = jest.fn(async (text: string) => {
+      statements.push(text);
+      if (text.includes('update pilot.shadow_library_documents')) {
+        return { rows: [{ document_id: 'doc-a', source_id: 'source-a', subject_id: null }] };
+      }
+      return {
+        rows: [{
+          chunk_id: 'chunk-a',
+          document_id: 'doc-a',
+          source_id: 'source-a',
+          organization_id: 'org-a',
+          subject_id: null,
+          ordinal: 0,
+          text_content: 'A bounded chunk',
+          metadata: {},
+          created_by_account_id: 'account-a',
+          created_by_role: 'organization_admin',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+      };
+    });
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
 
     await createShadowLibraryChunk({
       organizationId: 'org-a',
@@ -259,12 +265,15 @@ describe('SHADOW library search scope', () => {
       textContent: 'A bounded chunk',
     });
 
-    const stateUpdate = mockQuery.mock.calls.find((call) => (
-      String(call[0]).includes('update pilot.shadow_library_documents')
-    ));
-    expect(String(stateUpdate?.[0])).toContain("ingest_state = 'chunking'");
-    expect(String(stateUpdate?.[0])).toContain('index_completed_at = null');
-    expect(String(stateUpdate?.[0])).not.toContain("ingest_state = 'indexed'");
+    // The reset and the insert are one transaction, the reset first (CL-C3).
+    expect(statements).toHaveLength(2);
+    expect(statements[0]).toContain('update pilot.shadow_library_documents');
+    expect(statements[0]).toContain("ingest_state = 'chunking'");
+    expect(statements[0]).toContain('index_completed_at = null');
+    expect(statements[0]).toContain("approval_state = 'pending_review'");
+    expect(statements[0]).not.toContain("ingest_state = 'indexed'");
+    expect(statements[1]).toContain('insert into pilot.shadow_library_chunks');
+    expect(mockQuery.mock.calls.some((call) => String(call[0]).includes('update pilot.shadow_library_documents'))).toBe(false);
   });
 });
 

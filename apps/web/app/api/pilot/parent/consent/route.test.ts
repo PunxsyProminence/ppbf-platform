@@ -121,6 +121,7 @@ describe('GET /api/pilot/parent/consent', () => {
           guardianIds: ['p1'],
           missingParentIds: [],
           perGuardian: [{ parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
+          retained: [],
         },
       },
     ]);
@@ -163,6 +164,7 @@ describe('GET /api/pilot/parent/consent', () => {
             { parentId: 'p2', status: null, coversVideo: null, publicUseAllowed: null, signedAt: null },
             { parentId: 'p3', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' },
           ],
+          retained: [],
         },
       },
     ]);

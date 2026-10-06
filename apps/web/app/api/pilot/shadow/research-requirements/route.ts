@@ -13,6 +13,8 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   createShadowResearchRequirement,
+  CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+  CAPABILITY_GAP_SOURCE_EVENT_NAME,
   getShadowResearchRequirementById,
   listShadowResearchRequirements,
   namedAthleteId,
@@ -22,6 +24,13 @@ import {
   SUBJECT_NAMING_METADATA_KEYS,
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
+
+// Requirement kinds only the server writes: the capability-coverage check's gap
+// tickets and the Library claim path's. The research-bridge export reads the
+// first, so a caller who could file one could send their own text out of the
+// platform under it (CL-C5).
+const SERVER_WRITTEN_EVENT_NAMES = new Set([CAPABILITY_GAP_SOURCE_EVENT_NAME, 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED']);
+const SERVER_WRITTEN_ENTITY_TYPES = new Set([CAPABILITY_GAP_SOURCE_ENTITY_TYPE, 'shadow_library_claim']);
 import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
@@ -330,6 +339,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.source_event_name && body.source_entity_type && body.source_entity_id && body.research_requirement && body.knowledge_gap) {
+      if (SERVER_WRITTEN_EVENT_NAMES.has(body.source_event_name) || SERVER_WRITTEN_ENTITY_TYPES.has(body.source_entity_type)) {
+        return NextResponse.json(
+          { ok: false, error: 'this kind of research requirement is written only by SHADOW itself' },
+          { status: 400 },
+        );
+      }
+
       // A subject_id makes this requirement athlete-scoped -- the same
       // write-time boundary /shadow/library/documents already enforces for
       // subject-scoped evidence. A blank string is treated as absent rather
