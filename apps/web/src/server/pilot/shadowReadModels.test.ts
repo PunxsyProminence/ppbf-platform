@@ -379,6 +379,99 @@ describe('sanitizeEventPayload', () => {
   });
 });
 
+describe('actor_account_id in the events feed (staff only)', () => {
+  // The payload sanitizer never touched the row's own columns, so every
+  // non-staff caller of listShadowEvents received the staff account id that
+  // wrote the event (intake lane review, 2026-10-06). The account id is the
+  // actor identifier; actor_role is a label, not an identity, and the SQL
+  // tie relies on it, so it stays.
+  function staffWrittenRow() {
+    return {
+      shadow_event_id: 7,
+      organization_id: 'org-1',
+      event_name: 'SHADOW_INTAKE_DOCUMENT_ROUTED',
+      entity_type: 'intake_case',
+      entity_id: 'case-1',
+      actor_account_id: 'coach-acct-secret',
+      actor_role: 'coach',
+      payload: { intake_case_id: 'case-1', routed_queue: 'coach_review' },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test.each<PilotRole>(['parent', 'athlete', 'volunteer'])('%s gets null actor_account_id', async (actorRole) => {
+    if (actorRole === 'athlete') {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    }
+    if (actorRole === 'parent') {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]); // guardian_links
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole, athleteId: actorRole === 'athlete' ? 'ath-1' : null }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_account_id).toBeNull();
+    expect(rows[0].actor_role).toBe('coach');
+    expect(rows[0].payload).toEqual({ intake_case_id: 'case-1', routed_queue: 'coach_review' });
+  });
+
+  test.each<PilotRole>(['coach', 'organization_admin'])('%s still gets actor_account_id', async (actorRole) => {
+    if (actorRole === 'coach') {
+      answerCoachRoster([]);
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole }));
+
+    expect(rows[0].actor_account_id).toBe('coach-acct-secret');
+  });
+});
+
+describe('actor_account_id in the telemetry feed (staff only)', () => {
+  // /api/pilot/shadow/telemetry admits SHADOW_PROJECTION_READ_ROLES (every
+  // organization member), so the same redaction applies. listShadowAuthorityChecks
+  // is left alone: its only route admits staff roles only.
+  function staffWrittenTelemetryRow() {
+    return {
+      shadow_telemetry_event_id: 3,
+      organization_id: 'org-1',
+      metric_name: 'intake.document.routed',
+      actor_account_id: 'coach-acct-secret',
+      actor_role: 'coach',
+      dimensions: { routed_queue: 'coach_review' },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test.each<PilotRole>(['parent', 'athlete', 'volunteer'])('%s gets null actor_account_id', async (actorRole) => {
+    if (actorRole === 'athlete') {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    }
+    if (actorRole === 'parent') {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]); // guardian_links
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenTelemetryRow()]);
+
+    const rows = await listShadowTelemetry(context({ actorRole, athleteId: actorRole === 'athlete' ? 'ath-1' : null }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_account_id).toBeNull();
+    expect(rows[0].actor_role).toBe('coach');
+  });
+
+  test.each<PilotRole>(['coach', 'organization_admin'])('%s still gets actor_account_id', async (actorRole) => {
+    if (actorRole === 'coach') {
+      answerCoachRoster([]);
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenTelemetryRow()]);
+
+    const rows = await listShadowTelemetry(context({ actorRole }));
+
+    expect(rows[0].actor_account_id).toBe('coach-acct-secret');
+  });
+});
+
 describe('Library question text in the events feed (CL-A3, staff only)', () => {
   // Jason 2026-10-06, CL-A3 "Staff only": Library research questions are for
   // coaches and org admins. platform_owner is not staff and gets no

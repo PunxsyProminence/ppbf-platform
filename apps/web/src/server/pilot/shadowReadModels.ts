@@ -487,6 +487,11 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
 
   return rows.map((row) => ({
     ...row,
+    // The row's own actor column is the identifier of whoever wrote the event,
+    // usually staff. The payload sanitizer never touched it, so every
+    // non-staff caller received staff account ids (intake lane review,
+    // 2026-10-06). actor_role stays: it is a label, not an identity.
+    actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
     payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole, row.event_name),
   }));
 }
@@ -553,6 +558,10 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
 
   return rows.map((row) => ({
     ...row,
+    // Same leak as listShadowEvents: /api/pilot/shadow/telemetry admits every
+    // organization member, and the dimensions sanitizer never touched the
+    // row's actor column.
+    actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
     dimensions: sanitizeDimensions((row.dimensions ?? {}) as Record<string, unknown>, context.actorRole),
   }));
 }
