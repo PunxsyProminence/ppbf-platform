@@ -180,11 +180,20 @@ export const MEDIA_CONSENT_WAIVER_TYPE = 'photo_media';
  * it to say which refusal this was. Status and message are what they were.
  */
 export class GuardianConsentMissingError extends ConflictError {
-  constructor(readonly athleteId: string, readonly missingParentIds: string[]) {
+  constructor(
+    readonly athleteId: string,
+    readonly missingParentIds: string[],
+    // Former guardians whose retained choice still refuses (see
+    // readRetainedRestrictions). Not parent ids a caller can look up: those
+    // records are gone.
+    readonly retainedRestrictionCount = 0,
+  ) {
     super(
       missingParentIds.length > 0
         ? `Blocked: guardian media consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Every guardian must have a current, signed photo/video consent on file before this can be approved.`
-        : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
+        : retainedRestrictionCount > 0
+          ? 'Blocked: a former guardian of this athlete, whose account has since been deleted, did not consent to media of this athlete. That decision stands until a current guardian records a new photo/video consent.'
+          : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
       'GUARDIAN_CONSENT_MISSING',
     );
     this.name = 'GuardianConsentMissingError';
@@ -237,6 +246,90 @@ export interface ConsentCheckResult {
   guardianIds: string[];
   missingParentIds: string[];
   perGuardian: GuardianConsentStatus[];
+  /** Purged former guardians whose choice still stands; parentId is the former id. */
+  retained: GuardianConsentStatus[];
+}
+
+interface RetainedRestrictionRow {
+  former_parent_key: string;
+  status: string;
+  covers_video: boolean;
+  public_use_allowed: boolean;
+  created_at: string;
+  grants_since: Array<{ status: string; covers_video: boolean }>;
+}
+
+/*
+ * A PURGED GUARDIAN'S CHOICE STILL COUNTS. Owner ruling, Jason 2026-10-05
+ * ("Keep the 'no' (Recommended)"): a guardian's withdrawal or photo-only media
+ * choice outlives the guardian's account deletion, and the child's media stays
+ * restricted until a remaining guardian grants it.
+ *
+ * The retention purge deletes the guardian's record, which cascades their
+ * guardian_links and so drops them from the set this module asks. Before it
+ * does, it records their current waiver against each child they were still
+ * linked to (pilot.retained_media_consent_restrictions, written by
+ * scripts/pilot-cleanup-deleted-data.mjs and dataDeletion.ts). Each such row
+ * is read here as that guardian's current consent, by the same rules a linked
+ * guardian's is: a withdrawal fails ok (every media gate), a photo-only choice
+ * fails the video-coverage gate (videoPlaybackConsent.ts). parentId on what
+ * this returns is the row's hashed key, not a parent id anyone can look up.
+ *
+ * LIFTED when a guardian still linked has a CURRENT waiver that was recorded
+ * after the purge, is signed, and covers video (grants_since: each linked
+ * guardian's latest waiver, where it is later than retained_at). A grant from
+ * before the purge does not lift it: at that moment the purged guardian's no
+ * was still on file and outranked it. The lift is decided from this one
+ * statement, so the linked guardians and their current waivers are read from
+ * a single snapshot rather than paired with an earlier read.
+ *
+ * Read after the guardian links are locked, as a separate statement, so under
+ * READ COMMITTED a purge that held those links and committed is seen whole:
+ * its links gone and its retained rows present.
+ */
+async function readRetainedRestrictions(
+  client: QueryExecutor | undefined,
+  organizationId: string,
+  athleteId: string,
+  waiverType: string,
+): Promise<GuardianConsentStatus[]> {
+  const rows = await readRows<RetainedRestrictionRow>(
+    client,
+    `select r.former_parent_key, w.status, w.covers_video, w.public_use_allowed, w.created_at,
+            coalesce((
+              select json_agg(json_build_object('status', cur.status, 'covers_video', cur.covers_video))
+                from pilot.guardian_links gl
+                cross join lateral (
+                  select g.status, g.covers_video, g.created_at
+                    from pilot.waivers g
+                   where g.organization_id = gl.organization_id and g.athlete_id = gl.athlete_id
+                     and g.parent_id = gl.parent_id and g.waiver_type = w.waiver_type
+                   order by g.created_at desc
+                   limit 1
+                ) cur
+               where gl.organization_id = r.organization_id and gl.athlete_id = r.athlete_id
+                 and cur.created_at > r.retained_at
+            ), '[]'::json) as grants_since
+       from pilot.retained_media_consent_restrictions r
+       join pilot.waivers w on w.organization_id = r.organization_id and w.waiver_id = r.waiver_id
+      where r.organization_id = $1 and r.athlete_id = $2 and w.waiver_type = $3
+      order by r.former_parent_key`,
+    [organizationId, athleteId, waiverType],
+  );
+  return rows
+    .filter((row) => !row.grants_since.some((grant) =>
+      normalizeWaiverStatusText(grant.status) === 'signed' && grant.covers_video !== false))
+    .map((row) => ({
+      parentId: row.former_parent_key,
+      status: row.status,
+      coversVideo: row.covers_video,
+      publicUseAllowed: row.public_use_allowed,
+      signedAt: row.created_at,
+    }));
+}
+
+function retainedRefusesConsent(retained: GuardianConsentStatus[]): number {
+  return retained.filter((g) => normalizeWaiverStatusText(g.status) !== 'signed').length;
 }
 
 // A PoolClient's query() returns { rows }; db.ts's module-level query()
@@ -296,11 +389,14 @@ async function checkGuardianConsentOfType(
     )).map((row) => row.parent_id);
 
   if (guardianIds.length === 0) {
-    return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
+    // No guardian left can lift a retained restriction, but the video gate
+    // reads an empty set as "nobody excluded video", so it is still returned.
+    const retained = await readRetainedRestrictions(client, organizationId, athleteId, waiverType);
+    return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained };
   }
 
   const current = await currentConsentByGuardian(organizationId, athleteId, waiverType, client);
-  const perGuardian = guardianIds.map((parentId) => {
+  const perGuardian: GuardianConsentStatus[] = guardianIds.map((parentId) => {
     const row = current.get(parentId);
     return {
       parentId,
@@ -340,7 +436,15 @@ async function checkGuardianConsentOfType(
     .filter((g) => normalizeWaiverStatusText(g.status) !== 'signed')
     .map((g) => g.parentId);
 
-  return { ok: missingParentIds.length === 0, guardianIds, missingParentIds, perGuardian };
+  const retained = await readRetainedRestrictions(client, organizationId, athleteId, waiverType);
+
+  return {
+    ok: missingParentIds.length === 0 && retainedRefusesConsent(retained) === 0,
+    guardianIds,
+    missingParentIds,
+    perGuardian,
+    retained,
+  };
 }
 
 export async function assertGuardianMediaConsent(
@@ -350,7 +454,10 @@ export async function assertGuardianMediaConsent(
 ): Promise<void> {
   const result = await checkGuardianMediaConsent(organizationId, athleteId, ...(client ? [client] : []));
   if (!result.ok) {
-    throw new GuardianConsentMissingError(athleteId, result.missingParentIds);
+    // With nobody linked, the no-guardians message is the one that says what to
+    // do (link a guardian), as the transactional variant below answers.
+    const retainedRefusals = result.guardianIds.length === 0 ? 0 : retainedRefusesConsent(result.retained);
+    throw new GuardianConsentMissingError(athleteId, result.missingParentIds, retainedRefusals);
   }
 }
 
@@ -399,6 +506,13 @@ export async function assertGuardianMediaConsentWithClient(
   );
   if (missingParentIds.length > 0) {
     throw new GuardianConsentMissingError(athleteId, missingParentIds);
+  }
+  // And a purged guardian's retained choice, by the same rule as
+  // checkGuardianMediaConsent, read after the lock above.
+  const retained = await readRetainedRestrictions(client, organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE);
+  const retainedRefusals = retainedRefusesConsent(retained);
+  if (retainedRefusals > 0) {
+    throw new GuardianConsentMissingError(athleteId, [], retainedRefusals);
   }
 }
 

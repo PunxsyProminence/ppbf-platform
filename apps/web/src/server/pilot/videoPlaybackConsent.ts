@@ -252,6 +252,41 @@ export async function assertConsentCoversVideo(
       'GUARDIAN_CONSENT_UNREADABLE',
     );
   }
+
+  /*
+   * A PURGED GUARDIAN'S CHOICE, which checkGuardianMediaConsent returns in
+   * `retained` until a remaining guardian grants video after the purge (owner
+   * ruling, Jason 2026-10-05: "Keep the 'no' (Recommended)"). Same three
+   * refusals and codes as a linked guardian's, after theirs so a live
+   * guardian's message still comes first. Worded for who can lift it: that
+   * guardian is gone, so it is a current guardian who has to consent.
+   */
+  for (const former of consent.retained) {
+    const status = normalizeWaiverStatusText(former.status);
+    if (status === 'signed' && former.coversVideo !== false) continue;
+    if (status === 'withdrawn') {
+      throw new ConflictError(
+        'Blocked: a former guardian of this athlete, whose account has since been deleted, withdrew media '
+        + 'consent. Video of this athlete cannot be played back until a current guardian records a new consent '
+        + 'that covers video.',
+        'GUARDIAN_CONSENT_WITHDRAWN',
+      );
+    }
+    if (status === 'signed') {
+      throw new ConflictError(
+        'Blocked: a former guardian of this athlete, whose account has since been deleted, signed a photo-only '
+        + 'media consent. Video of this athlete cannot be played back until a current guardian records a new consent '
+        + 'that covers video.',
+        'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+      );
+    }
+    throw new ConflictError(
+      'Blocked: a former guardian of this athlete, whose account has since been deleted, has a media consent '
+      + 'recorded with a status this platform cannot read. Video of this athlete cannot be played back until a '
+      + 'current guardian records a new consent that covers video.',
+      'GUARDIAN_CONSENT_UNREADABLE',
+    );
+  }
 }
 
 /*

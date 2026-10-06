@@ -729,9 +729,11 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       // coverage check is what refuses.
       const client = {
         query: jest.fn(async (text: string) => ({
-          rows: /guardian_links/.test(text)
-            ? [{ parent_id: 'parent-1' }]
-            : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+          rows: /retained_media_consent_restrictions/.test(text)
+            ? [] // no purged guardian's choice retained
+            : /guardian_links/.test(text)
+              ? [{ parent_id: 'parent-1' }]
+              : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
         })),
       } as never;
       mockCoversVideo.mockClear();

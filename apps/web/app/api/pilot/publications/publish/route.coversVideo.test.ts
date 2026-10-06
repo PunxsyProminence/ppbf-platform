@@ -56,12 +56,16 @@ interface ConsentRow {
 
 type State = (sql: string, params?: unknown[]) => unknown[];
 
+const isLinkRead = (sql: string) => /^\s*select parent_id from pilot\.guardian_links\b/.test(sql);
+
 // One athlete's consent state as the two tables hold it. Rows answer only for
 // org-1 / ath-1 / photo_media, and the waivers read returns the latest row per
 // guardian, as the real DISTINCT ON (parent_id) ... created_at desc does.
 function consentState(rows: ConsentRow[], links = [...new Set(rows.map((row) => row.parent_id))]): State {
   return (sql, params = []) => {
     const ours = params[0] === 'org-1' && params[1] === 'ath-1';
+    // No purged guardian's choice is retained in these states.
+    if (sql.includes('retained_media_consent_restrictions')) return [];
     if (sql.includes('from pilot.guardian_links')) {
       return ours ? [...links].sort().map((parent_id) => ({ parent_id })) : [];
     }
@@ -98,7 +102,9 @@ function claimClient(...states: State[]) {
     statements,
     async query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> {
       statements.push(text);
-      if (text.includes('from pilot.guardian_links')) {
+      // A read OF the links (the lock helper's), not a statement that only
+      // joins them, such as the retained-restriction read.
+      if (isLinkRead(text)) {
         current = states[Math.min(linkReads, states.length - 1)];
         linkReads += 1;
       }
@@ -262,7 +268,7 @@ describe('publish refuses video a guardian has not consented to', () => {
     // Every consent read inside the claim ran on the claim's client, through
     // the shared lock helper (FOR SHARE) -- none as a pooled read beside it.
     expect(arranged.pooledInClaim).toBe(0);
-    const linkLocks = arranged.client.statements.filter((sql) => sql.includes('from pilot.guardian_links'));
+    const linkLocks = arranged.client.statements.filter(isLinkRead);
     expect(linkLocks).toHaveLength(2);
     expect(linkLocks.every((sql) => sql.includes('for share'))).toBe(true);
     expect(auditedReasons()).toEqual(['GUARDIAN_CONSENT_EXCLUDES_VIDEO']);
