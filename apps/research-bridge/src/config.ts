@@ -19,6 +19,8 @@ const configSchema = z.object({
   RESEARCH_INDEX_BOOTSTRAP: z.enum(['true', 'false']).default('false'),
   MCP_REQUIRE_PLATFORM_AUTH: z.enum(['true', 'false']).default('true'),
   MCP_ALLOWED_HOSTS: z.string().min(1).default('localhost,127.0.0.1,[::1]'),
+  // How long evidence stays servable after the last sync that confirmed it.
+  RESEARCH_EVIDENCE_MAX_AGE_HOURS: z.coerce.number().positive().max(24 * 30).default(48),
 });
 
 export type BridgeConfig = {
@@ -35,6 +37,7 @@ export type BridgeConfig = {
   applicationInsightsConnectionString?: string;
   requirePlatformAuth: boolean;
   allowedHosts: string[];
+  evidenceMaxAgeHours?: number;
 };
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): BridgeConfig {
@@ -52,6 +55,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Bridge
     managedIdentityClientId: parsed.AZURE_CLIENT_ID,
     applicationInsightsConnectionString: parsed.APPLICATIONINSIGHTS_CONNECTION_STRING,
     requirePlatformAuth: parsed.MCP_REQUIRE_PLATFORM_AUTH === 'true',
+    evidenceMaxAgeHours: parsed.RESEARCH_EVIDENCE_MAX_AGE_HOURS,
     allowedHosts: [...new Set(parsed.MCP_ALLOWED_HOSTS.split(',').map((host) => host.trim().toLowerCase()).filter(Boolean))],
   };
 }

@@ -1,6 +1,7 @@
 import type { BridgeCredential } from './azureClients.js';
 import type { BridgeConfig } from './config.js';
-import { researchExportSchema, type ResearchExport } from './schemas.js';
+import { parseResearchExport, type ResearchExport } from './schemas.js';
+import { trackSafeEvent } from './telemetry.js';
 
 export class PpbfResearchClient {
   constructor(
@@ -32,6 +33,10 @@ export class PpbfResearchClient {
       throw new Error(`StagingExportHttp${response.status}`);
     }
 
-    return researchExportSchema.parse(await response.json());
+    const { snapshot, dropped } = parseResearchExport(await response.json());
+    if (dropped.research_needs > 0 || dropped.approved_evidence > 0) {
+      trackSafeEvent('research.export.items-dropped', dropped);
+    }
+    return snapshot;
   }
 }

@@ -11,7 +11,7 @@ const credential = createCredential(config);
 const clients = createAzureClients(config, credential);
 const app = createBridgeApp(config, {
   research: new PpbfResearchClient(config, credential),
-  evidence: new EvidenceSearchService(clients.searchClient),
+  evidence: new EvidenceSearchService(clients.searchClient, { maxAgeHours: config.evidenceMaxAgeHours }),
 });
 
 const httpServer = app.listen(config.port, '0.0.0.0', () => {

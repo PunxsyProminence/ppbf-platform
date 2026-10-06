@@ -118,6 +118,25 @@ describe('POST /api/pilot/shadow/research-requirements (create)', () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ subjectId: null }));
   });
 
+  // CL-C5. These kinds are written only by the server (the capability
+  // coverage check and the Library claim path). The research-bridge export
+  // reads the capability kind, so a caller who could file one could put their
+  // own text in front of it.
+  test.each([
+    ['the capability-gap entity type', { source_entity_type: 'shadow_library_capability_map' }],
+    ['the Library-claim entity type', { source_entity_type: 'shadow_library_claim' }],
+    ['the capability-gap event name', { source_event_name: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED' }],
+    ['the Library-claim event name', { source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED' }],
+  ])('refuses %s from a caller, whatever their role', async (_label, overrides) => {
+    for (const role of ['organization_admin', 'coach', 'athlete'] as const) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+      const response = await POST(postRequest({ ...validBody, ...overrides }));
+
+      expect(response.status).toBe(400);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   test('treats a blank subject_id as absent rather than as a subject', async () => {
     await POST(postRequest({ ...validBody, subject_id: '   ' }));
 

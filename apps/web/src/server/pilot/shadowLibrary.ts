@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
@@ -11,6 +11,7 @@ import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibr
 import { emitShadowEvent } from './shadowEvents';
 import { reservedProvenanceKey, reservedProvenanceMessage, type ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
+  buildCapabilityGapResearchFields,
   CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
   CAPABILITY_GAP_SOURCE_EVENT_NAME,
   createShadowResearchRequirement,
@@ -491,21 +492,6 @@ async function ensureClaimResearchRequirement(input: {
   return { id, researchRequirement, knowledgeGap };
 }
 
-function buildCoverageGapResearchFields(row: ShadowCoverageComputationRow, coverageState: ShadowCoverageState) {
-  const requiredTypes = row.required_source_types.length > 0 ? row.required_source_types.join(', ') : 'any verified source type';
-  const requirement = `Close SHADOW Library coverage gap for capability ${row.capability_key}`;
-  const knowledgeGap =
-    coverageState === 'uncovered'
-      ? `No qualifying SHADOW Library sources currently support capability ${row.capability_key}. Required source types: ${requiredTypes}. Minimum authority tier: ${row.minimum_authority_tier}. Minimum source count: ${row.minimum_source_count}.`
-      : `Capability ${row.capability_key} has only ${row.matched_sources} qualifying sources and requires ${row.minimum_source_count}. Required source types: ${requiredTypes}. Minimum authority tier: ${row.minimum_authority_tier}.`;
-
-  return {
-    requirement,
-    knowledgeGap,
-    sourceStatus: coverageState === 'uncovered' ? 'missing' : 'weak',
-  } as const;
-}
-
 async function ensureCoverageGapResearchRequirement(input: {
   organizationId: string;
   actorAccountId: string;
@@ -517,7 +503,14 @@ async function ensureCoverageGapResearchRequirement(input: {
     return;
   }
 
-  const fields = buildCoverageGapResearchFields(input.row, input.coverageState);
+  const fields = buildCapabilityGapResearchFields({
+    capabilityKey: input.row.capability_key,
+    coverageState: input.coverageState,
+    requiredSourceTypes: input.row.required_source_types,
+    minimumAuthorityTier: input.row.minimum_authority_tier,
+    minimumSourceCount: input.row.minimum_source_count,
+    matchedSources: input.row.matched_sources,
+  });
   const metadata = {
     capability_key: input.row.capability_key,
     coverage_state: input.coverageState,
@@ -749,9 +742,13 @@ export async function listShadowLibrarySources(input: {
   );
 }
 
+// Rights statuses whose text may leave the database for the research bridge.
+export const RESEARCH_BRIDGE_EXPORTABLE_RIGHTS: readonly ShadowLibraryRightsStatus[] = ['ppbf_owned', 'open_licence'];
+
 // Dedicated export boundary for the read-only research bridge. It deliberately
-// excludes subject-scoped chunks and all observational/self-report source types,
-// then reapplies the same source + document approval gate used by Library search.
+// excludes subject-scoped chunks, all observational/self-report source types and
+// every source not PPBF-owned or open-licence, then reapplies the same source +
+// document approval gate used by Library search.
 export async function listApprovedGlobalEvidenceForResearchBridge(input: {
   organizationId: string;
   limit?: number;
@@ -776,6 +773,11 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
      join pilot.shadow_library_sources s
        on s.source_id = c.source_id
       and s.organization_id = c.organization_id
+     -- The source whose document the text was cut from. A chunk may cite a
+     -- different source; the text's rights are its document's, which is what
+     -- the database's own full-text guard reads too.
+     join pilot.shadow_library_sources ds
+       on ds.source_id = d.source_id
      where c.organization_id = $1
        and c.subject_id is null
        and d.subject_id is null
@@ -791,9 +793,14 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
        and d.approval_state = 'approved'
        and d.verification_state = 'verified'
        and s.source_type = any($2::text[])
+       -- Licensed excerpts live in the database only (OD-2026-10-02-013
+       -- answer 2A); only text the gym may hold in full -- PPBF-owned or
+       -- open-licence (answer 4A, shadowLibraryRights.ts) -- may leave it.
+       and s.rights_status = any($4::text[])
+       and ds.rights_status = any($4::text[])
      order by s.authority_tier asc, s.title asc, c.ordinal asc
      limit $3`,
-    [input.organizationId, allowedSourceTypes, limit],
+    [input.organizationId, allowedSourceTypes, limit, RESEARCH_BRIDGE_EXPORTABLE_RIGHTS],
   );
 }
 
@@ -987,54 +994,69 @@ export async function createShadowLibraryChunk(input: {
   excerptLocator?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryChunkRow> {
-  const document = await queryOne<{
-    document_id: string;
-    source_id: string;
-    subject_id: string | null;
-  }>(
-    `select document_id, source_id, subject_id
-     from pilot.shadow_library_documents
-     where document_id = $1 and organization_id = $2`,
-    [input.documentId, input.organizationId],
-  );
-
-  if (!document) {
-    throw new Error('Document does not exist in this organization.');
-  }
-
   const excerptLocator = input.excerptLocator?.trim() || null;
   const chunkId = `chunk_${randomUUID()}`;
-  const row = await queryOne<ShadowLibraryChunkRow>(
-    `insert into pilot.shadow_library_chunks
-      (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, metadata, created_by_account_id, created_by_role, text_kind, excerpt_locator)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
-     returning *`,
-    [
-      chunkId,
-      document.document_id,
-      document.source_id,
-      input.organizationId,
-      document.subject_id,
-      Math.max(0, Math.trunc(input.ordinal)),
-      input.textContent.trim(),
-      JSON.stringify(input.metadata ?? {}),
-      input.actorAccountId,
-      input.actorRole,
-      excerptLocator ? 'excerpt' : 'full_text',
-      excerptLocator,
-    ],
-  );
 
-  if (!row) {
-    throw new Error('Unable to create SHADOW Library chunk.');
-  }
+  // The document goes back to review and the chunk is written in ONE
+  // transaction, the reset first. Search serves a chunk only under an
+  // approved, indexed document, so no reader ever sees the new text under the
+  // approval of the text a reviewer saw before it (CL-C3). These used to be
+  // separate statements with the embedding call between them: the chunk was
+  // live under the approved document for that whole network round trip, and
+  // for good if the process died inside it.
+  const row = await withTransaction(async (client) => {
+    const reset = await client.query<{ document_id: string; source_id: string; subject_id: string | null }>(
+      `update pilot.shadow_library_documents
+       set ingest_state = 'chunking',
+           index_completed_at = null,
+           approval_state = 'pending_review',
+           verification_state = 'unverified',
+           approved_by_account_id = null,
+           approved_at = null,
+           verified_by_account_id = null,
+           verified_at = null,
+            updated_at = now()
+       where document_id = $1 and organization_id = $2
+       returning document_id, source_id, subject_id`,
+      [input.documentId, input.organizationId],
+    );
+    const document = reset.rows[0];
+    if (!document) {
+      throw new Error('Document does not exist in this organization.');
+    }
 
-  // Best-effort embedding at write time: when the embedding deployment is
-  // configured, the chunk becomes semantically searchable immediately. A
-  // failed or disabled embedding leaves the column NULL and the chunk still
-  // fully usable through keyword search; the backfill script picks up NULLs
-  // later. Never lets an embedding problem fail the registration the curator
-  // just performed.
+    const inserted = await client.query<ShadowLibraryChunkRow>(
+      `insert into pilot.shadow_library_chunks
+        (chunk_id, document_id, source_id, organization_id, subject_id, ordinal, text_content, metadata, created_by_account_id, created_by_role, text_kind, excerpt_locator)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
+       returning *`,
+      [
+        chunkId,
+        document.document_id,
+        document.source_id,
+        input.organizationId,
+        document.subject_id,
+        Math.max(0, Math.trunc(input.ordinal)),
+        input.textContent.trim(),
+        JSON.stringify(input.metadata ?? {}),
+        input.actorAccountId,
+        input.actorRole,
+        excerptLocator ? 'excerpt' : 'full_text',
+        excerptLocator,
+      ],
+    );
+    if (!inserted.rows[0]) {
+      throw new Error('Unable to create SHADOW Library chunk.');
+    }
+    return inserted.rows[0];
+  });
+
+  // Best-effort embedding, after the commit: when the embedding deployment is
+  // configured, the chunk becomes semantically searchable once its document is
+  // approved again. A failed or disabled embedding leaves the column NULL and
+  // the chunk still fully usable through keyword search; the backfill script
+  // picks up NULLs later. Never lets an embedding problem fail the
+  // registration the curator just performed.
   try {
     const embedding = await embedText(row.text_content);
     if (embedding) {
@@ -1050,21 +1072,6 @@ export async function createShadowLibraryChunk(input: {
       errorClass: error instanceof Error ? error.name : typeof error,
     });
   }
-
-  await query(
-    `update pilot.shadow_library_documents
-     set ingest_state = 'chunking',
-         index_completed_at = null,
-         approval_state = 'pending_review',
-         verification_state = 'unverified',
-         approved_by_account_id = null,
-         approved_at = null,
-         verified_by_account_id = null,
-         verified_at = null,
-          updated_at = now()
-     where document_id = $1 and organization_id = $2`,
-    [document.document_id, input.organizationId],
-  );
 
   await emitShadowEvent({
     organizationId: input.organizationId,
