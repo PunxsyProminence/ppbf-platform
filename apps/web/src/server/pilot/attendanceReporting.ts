@@ -238,9 +238,13 @@ interface WeeklyTrendSummaryRow {
  */
 export async function getWeeklyAttendanceTrend(
   organizationId: string,
-  options: { coachAccountId?: string | null; weeks?: number } = {},
+  // athleteIds: when set, only these athletes' marks count. Class ownership is
+  // self-grantable (cover_class), so a coach's trend is also narrowed to the
+  // athletes they reach. An empty array counts nothing; omit for no narrowing.
+  options: { coachAccountId?: string | null; athleteIds?: readonly string[]; weeks?: number } = {},
 ): Promise<WeeklyAttendanceTrendRow[]> {
   const coachAccountId = options.coachAccountId ?? null;
+  const athleteIds = options.athleteIds ? [...options.athleteIds] : null;
   const weeks = Math.min(52, Math.max(1, Math.trunc(options.weeks ?? 8)));
 
   const rows = await query<WeeklyTrendSummaryRow>(
@@ -270,9 +274,10 @@ export async function getWeeklyAttendanceTrend(
          or c.scheduled_by_account_id = $3
          or c.covering_coach_account_id = $3
        )
+       and ($4::text[] is null or a.athlete_id = any($4::text[]))
      group by date_trunc('week', c.start_at)
      order by week_start asc`,
-    [organizationId, weeks, coachAccountId],
+    [organizationId, weeks, coachAccountId, athleteIds],
   );
 
   return rows.map((row) => ({

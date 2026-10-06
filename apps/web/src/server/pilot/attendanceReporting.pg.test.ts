@@ -289,4 +289,30 @@ describe('getWeeklyAttendanceTrend against real Postgres', () => {
       await client.end();
     }
   });
+
+  // CL-A2: the route narrows a coach's trend to athletes they reach. This pins
+  // the athleteIds predicate against real Postgres (array binding and the
+  // null/empty distinction), which a mocked query cannot.
+  test('athleteIds narrows the counts; an empty list counts nothing; omitted counts everyone', async () => {
+    const client = await freshDatabase('ppbf_test_attendance_trend_athlete_scope');
+    activeClient = client;
+    try {
+      await seedWeek(client, 'w1', "now() - interval '1 week'");
+
+      const mine = await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, athleteIds: [ATHLETE_ID] });
+      expect(mine).toHaveLength(1);
+      expect(mine[0].present_count).toBe(1);
+
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, athleteIds: ['ATH-SOMEONE-ELSE'] })).toEqual([]);
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, athleteIds: [] })).toEqual([]);
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1 })).toHaveLength(1);
+      // Both scopes together are an AND: the class's coach with the athlete in
+      // reach counts; another coach with the same athlete list does not.
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, coachAccountId: COACH_ID, athleteIds: [ATHLETE_ID] })).toHaveLength(1);
+      expect(await getWeeklyAttendanceTrend(ORG_ID, { weeks: 1, coachAccountId: 'acct-not-this-class', athleteIds: [ATHLETE_ID] })).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });
