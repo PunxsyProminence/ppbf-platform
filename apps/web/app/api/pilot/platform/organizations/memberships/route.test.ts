@@ -61,3 +61,22 @@ test('allows the platform-authorized membership path to assign Board', async () 
     active_flag: true,
   });
 });
+
+test('refuses to assign the athlete role (audit CL-A5)', async () => {
+  const response = await POST(new NextRequest(
+    'http://localhost/api/pilot/platform/organizations/memberships',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organization_id: 'org-1',
+        account_id: 'coach-account',
+        role: 'athlete',
+        active_flag: true,
+      }),
+    },
+  ));
+
+  expect(response.status).toBe(400);
+  expect(mockUpsertMembership).not.toHaveBeenCalled();
+});

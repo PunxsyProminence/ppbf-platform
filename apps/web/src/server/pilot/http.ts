@@ -83,10 +83,12 @@ export async function requireStaffSessionPrincipal(request: NextRequest): Promis
 // attested: resolvePrincipal sets pinAuthPermitted only after pinLoginPermitted
 // admitted the session, so this reads that decision and never re-derives it.
 // Strict `=== true` -- absence, false and a truthy string all refuse. This is
-// credential only; the caller still applies its own role gate.
+// credential only; the caller still applies its own role gate. The Microsoft
+// branch reads the session's recorded sign-in method, as
+// requireMicrosoftAuthenticatedPrincipal does (audit CL-A7).
 export async function requireMicrosoftOrAttestedLocalPinPrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await requirePrincipal(request);
-  if (principal.authProvider === 'microsoft') {
+  if (principal.authProvider === 'microsoft' && principal.signInMethod === 'microsoft') {
     return principal;
   }
   if (principal.authProvider === 'ppbf_local' && principal.pinAuthPermitted === true) {
