@@ -18,6 +18,7 @@ import {
 } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 export const runtime = 'nodejs';
 
@@ -36,6 +37,82 @@ async function auditConsentEvent(event: Parameters<typeof writePilotAuditEvent>[
       ...(code ? { code } : {}),
     });
   }
+}
+
+/*
+ * THE SUPPRESSION SWEEP, for both consent changes that take published video
+ * down: a withdrawal (owner decision 2026-08-14) and a grant that leaves this
+ * guardian photo-only (Jason, 2026-10-05: "A: Retract (Recommended)"; every
+ * publication is video). The guardian's own console (parent/consent) runs the same sweep.
+ *
+ * Unlike an audit row, a failed sweep is a SAFETY action that did not happen:
+ * it is logged and durably audited here (without that row an auditor cannot
+ * tell a failed sweep from an athlete with no published media), and null
+ * tells the caller to answer with a loud 500. The consent write itself is
+ * already committed either way; repeating it re-runs the sweep, and the
+ * compliance console's manual Retract lever is the operator fallback.
+ * Returns the retracted publication ids, each audited on its own.
+ */
+const SWEEPS = {
+  withdrawn: {
+    reason: 'guardian_consent_withdrawn',
+    failedEvent: 'consent-withdrawal-suppression-failed',
+    failedAction: 'consent_withdrawal_suppression_failed',
+    retractedAction: 'publication_retracted_on_consent_withdrawal',
+  },
+  photo_only: {
+    reason: 'guardian_consent_photo_only',
+    failedEvent: 'consent-photo-only-suppression-failed',
+    failedAction: 'consent_photo_only_suppression_failed',
+    retractedAction: 'publication_retracted_on_consent_photo_only',
+  },
+} as const;
+
+async function sweepPublishedMedia(
+  principal: PilotPrincipal,
+  athleteId: string,
+  parentId: string,
+  cause: keyof typeof SWEEPS,
+): Promise<string[] | null> {
+  const sweep = SWEEPS[cause];
+  let publicationIds: string[];
+  try {
+    publicationIds = await suppressPublishedMediaForAthlete({
+      organizationId: principal.organizationId,
+      athleteId,
+      suppressedByAccountId: principal.accountId,
+      reason: sweep.reason,
+    });
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({ event: sweep.failedEvent, athlete_id: athleteId, ...(code ? { code } : {}) });
+    await auditConsentEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'guardian_media_consent',
+      entity_id: athleteId,
+      details: { action: sweep.failedAction, parent_id: parentId, ...(code ? { code } : {}) },
+      shadow_mirror: false,
+    });
+    return null;
+  }
+
+  for (const publicationId of publicationIds) {
+    await auditConsentEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'video_publication',
+      entity_id: publicationId,
+      details: { action: sweep.retractedAction, athlete_id: athleteId, parent_id: parentId },
+      shadow_mirror: false,
+    });
+  }
+  return publicationIds;
 }
 
 type ConsentDecision = 'grant' | 'withdraw';
@@ -261,6 +338,34 @@ export async function POST(request: NextRequest) {
         shadow_mirror: false,
       });
 
+      // Staff recording a photo-only consent does exactly what the guardian
+      // recording it does: already-published video comes down now.
+      if (coversVideo === false) {
+        const retracted = await sweepPublishedMedia(principal, athleteId, parentId, 'photo_only');
+        if (retracted === null) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error:
+                'The photo-only consent was recorded, but taking down already-published video failed. Record it again to retry, or contact your organization admin.',
+              athlete_id: athleteId,
+              parent_id: parentId,
+              decision,
+              waiver_id: waiverId,
+            },
+            { status: 500 },
+          );
+        }
+        return NextResponse.json({
+          ok: true,
+          athlete_id: athleteId,
+          parent_id: parentId,
+          decision,
+          waiver_id: waiverId,
+          retracted_publication_ids: retracted,
+        });
+      }
+
       return NextResponse.json({
         ok: true,
         athlete_id: athleteId,
@@ -298,32 +403,8 @@ export async function POST(request: NextRequest) {
     // route: a failed sweep is a safety action that did not happen and must
     // surface loudly, never be swallowed. The withdrawal itself is already
     // committed either way; withdrawing again re-runs the sweep.
-    let suppressedPublicationIds: string[];
-    try {
-      suppressedPublicationIds = await suppressPublishedMediaForAthlete({
-        organizationId: principal.organizationId,
-        athleteId,
-        suppressedByAccountId: principal.accountId,
-        reason: 'guardian_consent_withdrawn',
-      });
-    } catch (error) {
-      const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
-      const code = sanitizedSqlState(rawCode);
-      console.error({ event: 'consent-withdrawal-suppression-failed', athlete_id: athleteId, ...(code ? { code } : {}) });
-      await auditConsentEvent({
-        event_type: 'update',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'guardian_media_consent',
-        entity_id: athleteId,
-        details: {
-          action: 'consent_withdrawal_suppression_failed',
-          parent_id: parentId,
-          ...(code ? { code } : {}),
-        },
-        shadow_mirror: false,
-      });
+    const suppressedPublicationIds = await sweepPublishedMedia(principal, athleteId, parentId, 'withdrawn');
+    if (suppressedPublicationIds === null) {
       return NextResponse.json(
         {
           ok: false,
@@ -336,23 +417,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 500 },
       );
-    }
-
-    for (const publicationId of suppressedPublicationIds) {
-      await auditConsentEvent({
-        event_type: 'update',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'video_publication',
-        entity_id: publicationId,
-        details: {
-          action: 'publication_retracted_on_consent_withdrawal',
-          athlete_id: athleteId,
-          parent_id: parentId,
-        },
-        shadow_mirror: false,
-      });
     }
 
     return NextResponse.json({

@@ -287,7 +287,7 @@ describe('POST /api/pilot/parent/consent', () => {
     );
   });
 
-  test('granting consent sweeps nothing -- re-consent alone republishes nothing', async () => {
+  test('granting VIDEO consent sweeps nothing -- re-consent alone republishes nothing', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockGrant.mockResolvedValueOnce('waiver-1');
 
@@ -458,5 +458,62 @@ describe('POST /api/pilot/parent/consent -- the scope flags must be real boolean
 
     expect(response.status).toBe(200);
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+ * A GRANT THAT LEAVES THIS GUARDIAN PHOTO-ONLY TAKES PUBLISHED VIDEO DOWN.
+ * Owner ruling (Jason, 2026-10-05, "A: Retract (Recommended)"): a guardian
+ * moving from photos-and-video to photos-only retracts the athlete's
+ * published publications, as withdrawal does -- every publication is video.
+ */
+describe('POST /api/pilot/parent/consent -- photo-only grant', () => {
+  test('a photo-only grant sweeps the athlete\'s published media with its own reason and audits each retraction', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGrant.mockResolvedValueOnce('waiver-3');
+    mockSuppress.mockReset();
+    mockSuppress.mockResolvedValueOnce(['pub-1']);
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: false }));
+
+    expect(response.status).toBe(200);
+    // The consent itself was recorded first, then the sweep ran.
+    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }));
+    expect(mockSuppress).toHaveBeenCalledWith({
+      organizationId: 'org-a',
+      athleteId: 'ath-1',
+      suppressedByAccountId: 'acct-parent',
+      reason: 'guardian_consent_photo_only',
+    });
+    const body = (await response.json()) as { retracted_publication_ids?: string[] };
+    expect(body.retracted_publication_ids).toEqual(['pub-1']);
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'video_publication',
+        entity_id: 'pub-1',
+        details: expect.objectContaining({ action: 'publication_retracted_on_consent_photo_only', parent_id: 'p1' }),
+      }),
+    );
+  });
+
+  test('a failed photo-only sweep surfaces loudly and is audited', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGrant.mockResolvedValueOnce('waiver-3');
+    mockSuppress.mockReset();
+    mockSuppress.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: false }));
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { ok?: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/photos only was recorded, but taking down already-published video failed/);
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'guardian_media_consent',
+        entity_id: 'ath-1',
+        details: expect.objectContaining({ action: 'consent_photo_only_suppression_failed' }),
+      }),
+    );
   });
 });
