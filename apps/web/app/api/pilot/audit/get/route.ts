@@ -76,6 +76,32 @@ function optionalFilter(value: unknown, field: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+// Every athlete a details blob names, under ANY athlete-named key, at any
+// depth. Reading details.athlete_id alone let mentorship rows -- which carry
+// mentor_athlete_id / mentee_athlete_id and no athlete_id -- count as naming
+// nobody and reach every coach (CL-A13). The key test is the one the SHADOW
+// read models use (shadowReadModels.ts): athlete_id, or any key matching
+// athlete...(_id|Id); plus athlete...(_ids|Ids) arrays of ids.
+const ATHLETE_ID_KEY = /[Aa]thlete\w*(_id|Id)$/;
+const ATHLETE_IDS_KEY = /[Aa]thlete\w*(_ids|Ids)$/;
+
+function athleteIdsNamedIn(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) athleteIdsNamedIn(item, found);
+  } else if (value !== null && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      if (typeof child === 'string' && child !== '' && ATHLETE_ID_KEY.test(key)) {
+        found.push(child);
+      } else if (Array.isArray(child) && ATHLETE_IDS_KEY.test(key)) {
+        for (const id of child) if (typeof id === 'string' && id !== '') found.push(id);
+      } else {
+        athleteIdsNamedIn(child, found);
+      }
+    }
+  }
+  return found;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -123,19 +149,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, events: rows });
     }
 
-    // Athlete-scope: a row that names an athlete in details.athlete_id is
-    // visible only if the coach can reach that athlete; a row that names no
-    // athlete is org-wide operational data and is kept. accessibleAthleteIds
-    // is the same central relationship gate assertActorCanAccessAthlete uses.
-    const namedAthleteIds = rows
-      .map((row) => row.details?.athlete_id)
-      .filter((id): id is string => typeof id === 'string');
-    const reachable = await accessibleAthleteIds(principal, namedAthleteIds);
+    // Athlete-scope: a row that names athletes is visible only if the coach can
+    // reach EVERY athlete it names; a row that names none is org-wide
+    // operational data and is kept. accessibleAthleteIds is the same central
+    // relationship gate assertActorCanAccessAthlete uses.
+    const namedByRow = rows.map((row) => athleteIdsNamedIn(row.details));
+    const reachable = await accessibleAthleteIds(principal, [...new Set(namedByRow.flat())]);
     const scoped = rows
-      .filter((row) => {
-        const athleteId = row.details?.athlete_id;
-        return typeof athleteId !== 'string' || reachable.has(athleteId);
-      })
+      .filter((_, index) => namedByRow[index].every((id) => reachable.has(id)))
       .slice(0, limit);
 
     return NextResponse.json({ ok: true, events: scoped });

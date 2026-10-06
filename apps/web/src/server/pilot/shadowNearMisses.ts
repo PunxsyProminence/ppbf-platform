@@ -1,4 +1,5 @@
 import { query, withTransaction } from './db';
+import { NotFoundError } from './errors';
 import { fileEscalation, shouldAutoEscalateNearMiss } from './escalationLadder';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
@@ -43,6 +44,22 @@ export async function flagNearMiss(input: {
   metadata?: Record<string, unknown>;
 }): Promise<ShadowNearMissRow> {
   return withTransaction(async (client) => {
+    // A cited decision must be about the same athlete, in the same gym. The
+    // column's foreign key is on decision_id alone, and the route clears only
+    // the athlete in the body, so nothing else stopped a near miss about one
+    // child from pointing at another child's decision (CL-A16). Missing,
+    // another athlete's and another gym's all answer the same 404.
+    if (input.decisionId) {
+      const decision = await client.query(
+        `select 1 from pilot.shadow_decisions
+         where organization_id = $1 and decision_id::text = $2 and athlete_id = $3`,
+        [input.organizationId, input.decisionId, input.athleteId],
+      );
+      if (decision.rows.length === 0) {
+        throw new NotFoundError('Decision not found for this athlete.', 'SHADOW_NEAR_MISS_DECISION_NOT_FOUND');
+      }
+    }
+
     const result = await client.query<ShadowNearMissRow>(
       `insert into pilot.shadow_near_misses
        (organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata)
