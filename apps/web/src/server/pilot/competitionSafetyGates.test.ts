@@ -1,5 +1,7 @@
 import { assertActorCanAccessAthlete } from './access';
-import { assertAthleteMayBeEnteredInCompetition } from './competitionSafetyGates';
+import { assertAthleteMayBeEnteredInCompetition, runCompetitionEntryUnderSafetyLock } from './competitionSafetyGates';
+import { lockCompetitionSafety } from './competitionSafetyLock';
+import { withTransaction } from './db';
 import { ConflictError, ForbiddenError } from './errors';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
 import { findContactEventBlockingHold } from './trainingHolds';
@@ -12,6 +14,8 @@ jest.mock('./safetyGateMatrix', () => ({
 }));
 jest.mock('./trainingHolds', () => ({ findContactEventBlockingHold: jest.fn() }));
 jest.mock('./waiverCompliance', () => ({ getAthleteWaiverStatus: jest.fn() }));
+jest.mock('./competitionSafetyLock', () => ({ lockCompetitionSafety: jest.fn() }));
+jest.mock('./db', () => ({ withTransaction: jest.fn() }));
 
 const mockAssertAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockFindHold = findContactEventBlockingHold as jest.Mock;
@@ -70,8 +74,8 @@ describe('the still-works case', () => {
     await expect(gates()).resolves.toBeUndefined();
 
     expect(mockAssertAccess).toHaveBeenCalledWith(ADMIN, 'ath-1');
-    expect(mockFindHold).toHaveBeenCalledWith('org-1', 'ath-1');
-    expect(mockWaiverStatus).toHaveBeenCalledWith('org-1', 'ath-1', 'travel');
+    expect(mockFindHold).toHaveBeenCalledWith('org-1', 'ath-1', undefined);
+    expect(mockWaiverStatus).toHaveBeenCalledWith('org-1', 'ath-1', 'travel', undefined);
   });
 
   test('a conditioning-only hold does not reach this function, so entry proceeds', async () => {
@@ -293,5 +297,79 @@ describe('gate 3 -- travel waiver', () => {
 
     // Fail closed: a consent question nobody could answer is not a yes.
     await expect(gates()).rejects.toThrow(/does not exist/);
+  });
+});
+
+// Codex CX-1 review: the entry transaction holds a pool connection, so nothing
+// inside it may wait for a second one (pool max 10, no acquire timeout -- ten
+// concurrent entries would hang the process). Gate 1 reads through the pool,
+// so it runs before the transaction; the hold gate's evaluation rows are
+// written through the pool, so they are written after it ends.
+describe('runCompetitionEntryUnderSafetyLock keeps pool reads and writes outside its transaction', () => {
+  const mockWithTransaction = withTransaction as jest.Mock;
+  const mockLock = lockCompetitionSafety as jest.Mock;
+  let events: string[];
+  const TX = { query: jest.fn() };
+
+  beforeEach(() => {
+    events = [];
+    mockAssertAccess.mockImplementation(async () => { events.push('gate1'); });
+    mockLock.mockImplementation(async () => { events.push('lock'); });
+    mockFindHold.mockImplementation(async () => { events.push('hold-read'); return null; });
+    mockWaiverStatus.mockImplementation(async () => { events.push('travel-read'); return 'signed'; });
+    mockRecordEvaluation.mockImplementation(async () => { events.push('record'); });
+    mockWithTransaction.mockImplementation(async (fn: (c: unknown) => Promise<unknown>) => {
+      events.push('begin');
+      try {
+        const out = await fn(TX);
+        events.push('commit');
+        return out;
+      } catch (error) {
+        events.push('rollback');
+        throw error;
+      }
+    });
+  });
+
+  const run = (write = async () => { events.push('insert'); return 'entry'; }) =>
+    runCompetitionEntryUnderSafetyLock(
+      { actor: ADMIN, athleteId: 'ath-1', kind: 'external_competition', contextId: 'comp-1', at: '2026-08-17T12:00:00.000Z' },
+      write,
+    );
+
+  test('entered: gate 1 before begin, reads on the transaction, evaluation after commit', async () => {
+    await expect(run()).resolves.toBe('entry');
+    expect(events).toEqual(['gate1', 'begin', 'lock', 'hold-read', 'travel-read', 'insert', 'commit', 'record']);
+    expect(mockFindHold).toHaveBeenCalledWith('org-1', 'ath-1', TX);
+    expect(mockWaiverStatus).toHaveBeenCalledWith('org-1', 'ath-1', 'travel', TX);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'passed' }));
+  });
+
+  test('refused by a hold: the blocked row is written after the rollback and the refusal still surfaces', async () => {
+    mockFindHold.mockImplementation(async () => {
+      events.push('hold-read');
+      return { hold_id: 'hold-1', scope: 'contact_only', athlete_explanation: '', lift_condition_text: '' };
+    });
+
+    await expect(run()).rejects.toBeInstanceOf(ForbiddenError);
+    expect(events).toEqual(['gate1', 'begin', 'lock', 'hold-read', 'rollback', 'record']);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'blocked' }));
+  });
+
+  test('a gate-1 refusal opens no transaction at all', async () => {
+    mockAssertAccess.mockRejectedValue(new ForbiddenError('not your athlete'));
+
+    await expect(run()).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  test('a failed evaluation write after a refusal does not replace the refusal', async () => {
+    mockWaiverStatus.mockImplementation(async () => { events.push('travel-read'); return 'missing'; });
+    mockRecordEvaluation.mockRejectedValue(new Error('db down'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(run()).rejects.toBeInstanceOf(ConflictError);
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
   });
 });

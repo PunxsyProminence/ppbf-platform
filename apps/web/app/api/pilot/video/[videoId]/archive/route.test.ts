@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -14,6 +15,12 @@ jest.mock('@/src/server/pilot/http', () => {
 
 // requireRole and isOrganizationAdminRole stay REAL, so the authority rules
 // under test are the shipped ones rather than a doubled approximation.
+// Only the athlete-reach check is doubled, because its real form reads the
+// assignment tables.
+jest.mock('@/src/server/pilot/access', () => ({
+  ...jest.requireActual('@/src/server/pilot/access'),
+  assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -34,6 +41,7 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockArchive = setVideoArchiveState as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 
 afterEach(() => { jest.clearAllMocks(); });
 
@@ -125,12 +133,66 @@ describe('POST /api/pilot/video/[videoId]/archive', () => {
     expect(mockArchive).not.toHaveBeenCalled();
   });
 
+  // CL-A21: uploading footage is not a standing claim on the athlete in it. A
+  // coach who has since lost the assignment no longer reaches that athlete,
+  // so they may neither restore nor archive the footage -- the same rule
+  // videoScanReview.ts applies to reviewing it.
+  test.each(['archive', 'restore'] as const)(
+    'the uploading coach who no longer reaches the athlete cannot %s, and is not told it exists',
+    async (action) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      mockQueryOne.mockResolvedValueOnce(videoRow({
+        athlete_id: 'ath-1',
+        capture_take_id: null,
+        status: action === 'archive' ? 'ready' : 'archived',
+      }));
+      mockAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+
+      const res = await call({ action });
+
+      expect(res.status).toBe(404);
+      expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), 'ath-1');
+      expect(mockArchive).not.toHaveBeenCalled();
+    },
+  );
+
+  test('the uploading coach who still reaches the athlete may archive athlete footage', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null }));
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: 'ath-1', capture_take_id: null }), status: 'archived' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), 'ath-1');
+  });
+
+  test('teaching footage names nobody, so the uploader rule alone applies', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockArchive.mockResolvedValueOnce({ ...videoRow(), status: 'archived' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalled();
+  });
+
   test('an organization admin may archive anyone\'s footage', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
     mockQueryOne.mockResolvedValueOnce(videoRow({ uploaded_by_account_id: 'coach-2' }));
     mockArchive.mockResolvedValueOnce({ ...videoRow(), status: 'archived' });
 
     expect((await call()).status).toBe(200);
+  });
+
+  test('an organization admin is not put through the coach assignment check', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null, uploaded_by_account_id: 'coach-2' }));
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: 'ath-1', capture_take_id: null }), status: 'archived' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockAccess).not.toHaveBeenCalled();
   });
 
   test('a video in another organization is not found', async () => {

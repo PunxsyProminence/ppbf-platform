@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { assertAthleteMayBeEnteredInCompetition } from '@/src/server/pilot/competitionSafetyGates';
+import { runCompetitionEntryUnderSafetyLock } from '@/src/server/pilot/competitionSafetyGates';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -73,19 +73,26 @@ export async function POST(request: NextRequest) {
     // typed PilotError, so jsonError surfaces it verbatim with its own status
     // and this handler needs no extra catch arm -- see
     // competitionSafetyGates.ts for why all three refuse rather than warn.
-    await assertAthleteMayBeEnteredInCompetition({
-      actor: principal,
-      athleteId,
-      kind: 'external_competition',
-      contextId: competitionId,
-    });
-
-    const item = await addCompetitionEntry({
-      organizationId: principal.organizationId,
-      competitionId,
-      athleteId,
-      createdByAccountId: principal.accountId,
-    });
+    //
+    // Gates and insert are ONE transaction under the per-athlete
+    // competition-safety lock, which placeTrainingHold and every travel-waiver
+    // write also take: a hold or consent withdrawal can no longer commit
+    // between the gate's read and the insert (Codex CX-1;
+    // competitionSafetyLock.ts).
+    const item = await runCompetitionEntryUnderSafetyLock(
+      {
+        actor: principal,
+        athleteId,
+        kind: 'external_competition',
+        contextId: competitionId,
+      },
+      (client) => addCompetitionEntry({
+        organizationId: principal.organizationId,
+        competitionId,
+        athleteId,
+        createdByAccountId: principal.accountId,
+      }, client),
+    );
 
     if (!item) return hiddenNotFound();
     return NextResponse.json({ item });

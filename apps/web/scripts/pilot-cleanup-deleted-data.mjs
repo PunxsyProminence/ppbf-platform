@@ -24,7 +24,10 @@
  *   BLAST RADIUS    Refuses to proceed if the purge would remove more than
  *                   PPBF_RETENTION_MAX_ROWS rows (default 50). The windows are
  *                   two years and one year, so a correct run in a pilot this
- *                   size removes a handful of rows. A run that suddenly wants
+ *                   size removes a handful of rows. Interest-form inquiries
+ *                   (12 months) never trigger the refusal: they take whatever
+ *                   room the families leave under the cap, oldest first, and
+ *                   the rest wait for the next run (see INQUIRY_RETENTION). A run that suddenly wants
  *                   hundreds means something upstream is wrong -- a bad
  *                   deleted_at backfill, a clock problem, a cascade that fired
  *                   too widely -- and the right response is to stop and let a
@@ -46,6 +49,23 @@ import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mj
 
 const ATHLETE_RETENTION = "interval '2 years'";
 const ACCOUNT_RETENTION = "interval '1 year'";
+/* PUBLIC INTEREST-FORM INQUIRIES. /privacy promises everyone who sends the
+   interest form: "We keep it for 12 months, then delete it, unless you join."
+   Jason, 2026-10-06: "Delete all after 12 mo" -- every inquiry older than 12
+   months, whatever its review state and whether or not the person joined
+   (nothing links an inquiry to a member, and a member's records are not the
+   inquiry). Measured from created_at, the moment it was sent; there is no
+   soft-delete step, because nobody withdraws an inquiry.
+
+   THE CAP IS SHARED, BUT INQUIRIES CANNOT TRIP IT. The form is public and
+   unauthenticated, so a backlog of due inquiries can be far larger than the
+   families a run removes. Counting them toward the refusal would let that
+   backlog stop every family's purge, and past the 200 ceiling stop inquiry
+   retention too, for good. So families are measured against the cap exactly
+   as before, and inquiries are deleted oldest first into whatever room is
+   left; any still due are reported as `inquiries_deferred` and go on the next
+   run. Every applied run makes progress; none is refused because of them. */
+const INQUIRY_RETENTION = "interval '12 months'";
 
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
 if (!connectionString) {
@@ -670,9 +690,16 @@ async function main() {
       `select to_regclass('pilot.video_sessions') is not null as videos,
               to_regclass('pilot.compliance_violations') is not null as violations,
               to_regclass('pilot.account_profiles') is not null as profiles,
-              to_regclass('pilot.shadow_chat_memory_corrections') is not null as corrections`,
+              to_regclass('pilot.shadow_chat_memory_corrections') is not null as corrections,
+              to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
+    const expiredInquiries = tables.inquiries
+      ? await client.query(
+        `select count(*)::int as n from pilot.public_interest_submissions
+          where created_at < (now() - ${INQUIRY_RETENTION})`,
+      )
+      : { rows: [{ n: 0 }] };
     // Reported, NOT counted against the blast radius. The cap measures how
     // many people a run removes; a child's videos go only with that child. One
     // athlete with years of footage counted here would refuse the WHOLE run --
@@ -688,9 +715,13 @@ async function main() {
     const athletes = expiredAthletes.rows.length;
     const accounts = expiredAccounts.rows.length;
     const videos = expiredVideos.rows[0].n;
-    const total = athletes + accounts;
+    const inquiries = expiredInquiries.rows[0].n;
+    // Only families can trip the cap (INQUIRY_RETENTION, above).
+    const families = athletes + accounts;
+    const inquiryRoom = Math.max(0, maxRows - families);
+    const total = families + inquiries;
 
-    if (total > maxRows) {
+    if (families > maxRows) {
       await client.query('rollback');
       console.error(JSON.stringify({
         event: 'retention.cleanup.refused',
@@ -698,6 +729,7 @@ async function main() {
         athletes,
         accounts,
         videos,
+        inquiries,
         total,
         max_rows: maxRows,
       }));
@@ -706,12 +738,39 @@ async function main() {
     }
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
-    const outcome = total === 0
+    const outcome = families === 0
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, blocked: {}, guardianLinkLock: 'none',
       }
       : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });
+
+    // Run in both modes, like the family purge: the dry run rolls it back, so
+    // its count is one the DELETE actually earned. Its own savepoint, so a
+    // refused delete is reported by name and does not take the families'
+    // purge or the audit row with it. Counts only ever leave this block.
+    let inquiriesDeleted = 0;
+    if (inquiries > 0 && inquiryRoom > 0) {
+      await client.query('savepoint purge_inquiries');
+      try {
+        const deleted = await client.query(
+          `delete from pilot.public_interest_submissions
+            where submission_id in (
+              select submission_id from pilot.public_interest_submissions
+               where created_at < (now() - ${INQUIRY_RETENTION})
+               order by created_at, submission_id
+               limit $1)`,
+          [inquiryRoom],
+        );
+        await client.query('release savepoint purge_inquiries');
+        inquiriesDeleted = deleted.rowCount ?? 0;
+      } catch (error) {
+        await client.query('rollback to savepoint purge_inquiries');
+        const by = blockedBy(error);
+        outcome.blocked[by] = (outcome.blocked[by] ?? 0) + 1;
+      }
+    }
+    const inquiriesDeferred = Math.max(0, inquiries - inquiriesDeleted);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
     if (!apply) {
@@ -721,10 +780,13 @@ async function main() {
         athletes,
         accounts,
         videos,
+        inquiries,
         total,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
         would_delete_videos: outcome.videosDeleted,
+        would_delete_inquiries: inquiriesDeleted,
+        inquiries_deferred: inquiriesDeferred,
         would_delete_files: outcome.filesDeleted,
         files_missing: outcome.filesMissing,
         would_unlink_athlete_logins: outcome.loginsUnlinked,
@@ -744,7 +806,9 @@ async function main() {
 
     if (total === 0) {
       await client.query('rollback');
-      console.log(JSON.stringify({ event: 'retention.cleanup.completed', athletes: 0, accounts: 0, total: 0 }));
+      console.log(JSON.stringify({
+        event: 'retention.cleanup.completed', athletes: 0, accounts: 0, inquiries: 0, total: 0,
+      }));
       return;
     }
 
@@ -759,10 +823,13 @@ async function main() {
           athlete_logins_unlinked: outcome.loginsUnlinked,
           live_athlete_logins_retired: outcome.loginsRetired,
           videos_deleted: outcome.videosDeleted,
+          inquiries_deleted: inquiriesDeleted,
+          inquiries_deferred: inquiriesDeferred,
           files_deleted: outcome.filesDeleted,
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
-          total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted + outcome.videosDeleted,
+          total_rows_deleted:
+            outcome.athletesDeleted + outcome.accountsDeleted + outcome.videosDeleted + inquiriesDeleted,
           blocked: blockedCount,
           blocked_by: outcome.blocked,
         }),
@@ -778,10 +845,12 @@ async function main() {
       athlete_logins_unlinked: outcome.loginsUnlinked,
       live_athlete_logins_retired: outcome.loginsRetired,
       videos: outcome.videosDeleted,
+      inquiries: inquiriesDeleted,
+      inquiries_deferred: inquiriesDeferred,
       files_deleted: outcome.filesDeleted,
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,
-      total: outcome.athletesDeleted + outcome.accountsDeleted,
+      total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,
       guardian_link_lock: outcome.guardianLinkLock,
