@@ -175,6 +175,7 @@
     "test:migrations:scheduler-membership-flag": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerMembershipFlag.pg.test.ts --testTimeout=180000",
     "test:migrations:grant-obligations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/grantObligations.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-research-submissions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowResearchSubmissions.pg.test.ts --testTimeout=180000",
+    "test:migrations:shadow-event-athlete-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowEventAthleteScope.pg.test.ts --testTimeout=180000",
     "test:migrations:wrestling-league": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/wrestlingLeague.pg.test.ts --testTimeout=180000",
     "test:migrations:club-members": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/clubMembers.pg.test.ts --testTimeout=180000",
     "test:migrations:film-study-coach-reported": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyCoachReported.pg.test.ts --testTimeout=180000",

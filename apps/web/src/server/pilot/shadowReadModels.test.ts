@@ -184,12 +184,16 @@ describe('listShadowEvents athlete scoping', () => {
     mockQuery.mockResolvedValueOnce([]);
     await listShadowEvents(context({ actorRole: 'coach' }));
 
+    // Which athletes a row names is computed over the whole payload (audit
+    // CL-A1/CL-C6); shadowEventAthleteScope.pg.test.ts proves the rows each
+    // role reads on a real Postgres. Pinned here: both disjuncts survive, the
+    // athlete-tied one demands EVERY named athlete, and the athlete-free one
+    // refuses a row that merely mentions an athlete.
     const sql = sqlOf(1);
-    expect(sql).toContain("$9::text[] is null or (entity_type = 'athlete' and entity_id = any($9::text[]))");
-    expect(sql).toContain("payload->>'athlete_id' = any($9::text[])");
-    expect(sql).toContain("payload->>'owner_entity_id' = any($9::text[])");
+    expect(sql).toContain("strict $.**");
+    expect(sql).toContain("e.payload");
     expect(sql).toContain(
-      "or ($10::boolean and entity_type <> 'athlete' and payload->>'athlete_id' is null and payload->>'owner_entity_id' is null)",
+      '$9::text[] is null or (cardinality(tie.athlete_ids) > 0 and tie.athlete_ids <@ $9::text[] and not tie.unresolved_athlete) or ($10::boolean and cardinality(tie.athlete_ids) = 0 and not tie.mentions_athlete and not tie.unresolved_athlete)',
     );
   });
 });
