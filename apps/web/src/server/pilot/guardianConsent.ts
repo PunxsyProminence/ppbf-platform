@@ -161,8 +161,10 @@ export async function lockGuardianLink(
  * WHAT THIS DELIBERATELY DOES NOT DO (see the migration's header and the
  * T-008 ticket delivery note for the full reasoning):
  *   - Does not match consent scope (covers_video / public_use_allowed)
- *     against a specific publication's media type or visibility. Recorded,
- *     not yet enforced -- a documented MVP cut, not an oversight.
+ *     itself. covers_video IS enforced, by videoPlaybackConsent.ts
+ *     assertConsentCoversVideo, which playback, the compliance queue and
+ *     publications/publish call beside this check. public_use_allowed is
+ *     recorded, not yet enforced.
  *   - Withdrawal DOES retract already-published media: the parent consent
  *     route sweeps the athlete's published publications into 'retracted'
  *     and suppresses their research-library rows in the same request
