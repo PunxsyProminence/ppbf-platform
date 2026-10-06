@@ -41,14 +41,39 @@ export async function requirePrincipalAllowingPinChange(request: NextRequest): P
   return principal;
 }
 
-// Microsoft-authenticated principal requirement for privileged operations.
+// Microsoft-authenticated SESSION requirement for privileged operations.
 // PIN/local sessions are explicitly restricted to athlete self-service and
 // cannot be used for user management, role management, or other privileged
 // actions.
+//
+// Reads how the session was signed in (pilot.session_tokens.sign_in_method),
+// not only the account's provider: staff provisioning gives coaches, staff,
+// volunteers and parents auth_provider 'microsoft' while they sign in by
+// emailed link or password, and those sessions used to pass here (audit
+// CL-A7). A session with no recorded method predates the Microsoft insert
+// recording it and is refused; signing in again records it.
 export async function requireMicrosoftAuthenticatedPrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await requirePrincipal(request);
-  if (principal.authProvider !== 'microsoft') {
+  if (principal.authProvider !== 'microsoft' || principal.signInMethod !== 'microsoft') {
     throw new Error('Forbidden: Microsoft-authenticated session required');
+  }
+  return principal;
+}
+
+// Any adult (non-PIN) session: Microsoft, emailed link or password. For the
+// routes coaches author on -- announcements and rabbit holes -- which used to
+// sit behind requireMicrosoftAuthenticatedPrincipal and admitted coaches only
+// because that gate read the account's provider. Coaches sign in by emailed
+// link (credentialPolicy MAGIC_LINK_ROLES), so a true Microsoft gate would
+// shut them out. Credential only; the route still applies its role gate.
+export async function requireStaffSessionPrincipal(request: NextRequest): Promise<PilotPrincipal> {
+  const principal = await requirePrincipal(request);
+  const method = principal.signInMethod;
+  if (
+    principal.authProvider === 'ppbf_local'
+    || (method !== 'microsoft' && method !== 'magic_link' && method !== 'password')
+  ) {
+    throw new Error('Forbidden: an adult (non-PIN) session is required');
   }
   return principal;
 }

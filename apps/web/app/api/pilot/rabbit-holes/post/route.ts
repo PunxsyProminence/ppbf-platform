@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireStaffSessionPrincipal } from '@/src/server/pilot/http';
 import { assertCanAuthorRabbitHoles, createRabbitHole } from '@/src/server/pilot/rabbitHoles';
 
 export const runtime = 'nodejs';
@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireStaffSessionPrincipal(request);
     assertCanAuthorRabbitHoles(principal);
 
     const body = (await request.json()) as {

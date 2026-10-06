@@ -67,6 +67,19 @@ describe('transferOrganizationAdmin', () => {
     expect(demoteSql).toContain('where account_id = $1 and organization_id = $2');
     expect(demoteParams).toEqual(['old-admin-1', 'org-1', 'coach']);
   });
+
+  test('the demote never matches the platform owner, so cannot strip platform ownership', async () => {
+    // Audit CL-A6: the owner named as from_account_id in its own organization
+    // used to be demoted with is_platform_owner = false.
+    await transferOrganizationAdmin('owner-1', 'new-admin-1', 'org-1', 'coach');
+
+    const [demoteSql] = accountUpdates()[1];
+    const where = demoteSql.slice(demoteSql.indexOf('where'));
+    const setClause = demoteSql.slice(demoteSql.indexOf('set'), demoteSql.indexOf('where'));
+    expect(where).toContain('is_platform_owner = false');
+    expect(where).toContain("role <> 'platform_owner'");
+    expect(setClause).not.toContain('is_platform_owner');
+  });
 });
 
 // The assign-admin promotion carries the same structural refusals as the

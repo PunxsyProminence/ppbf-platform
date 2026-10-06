@@ -26,6 +26,7 @@ function principal(overrides: Record<string, unknown> = {}) {
     athleteId: null,
     sessionToken: 'token',
     authProvider: 'microsoft',
+    signInMethod: 'microsoft',
     mustChangePin: false,
     ...overrides,
   } as never;

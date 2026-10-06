@@ -8,7 +8,7 @@ import {
   type AnnouncementAuthorRole,
 } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireStaffSessionPrincipal } from '@/src/server/pilot/http';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
 export const runtime = 'nodejs';
@@ -56,7 +56,7 @@ function parseScheduleBound(raw: unknown, field: string): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireStaffSessionPrincipal(request);
     const body = (await request.json()) as {
       message?: string;
       author_name?: string;
