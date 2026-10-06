@@ -326,6 +326,43 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
   };
 }
 
+// CL-C9 (2026-10-05 audit, measured by Codex at 6736bac7). The educational
+// shortcut in validateShadowRequest returns for any educationally framed
+// message with no first-person word, BEFORE the emergency check, so "What
+// does it mean when he passed out and can't breathe?" reached the model with
+// no emergency line while "I cannot breathe after that hit" got one.
+// OD-2026-10-01-008 section 2 (Jason, option A): the line appears when a
+// message says a real emergency happened to a specific person, even without
+// "I" or "my"; unclear wording counts; a general question does not.
+//
+// So a specific someone else -- a third-person pronoun, "the athlete", or a
+// name followed by what happened to them -- makes an ACUTE message personal.
+// Only an acute one: a third-person subject on a non-acute question ("what
+// does it mean when he has a sore shoulder?") is untouched. A general
+// question names nobody ("what can cause shortness of breath?") and still
+// takes the shortcut.
+//
+// "They" is the one subject that is often general ("what do athletes show
+// when their vision is blurry?"), so it counts only when the message names no
+// general subject; with none, it is unclear wording, which the ruling puts on
+// the emergency side.
+//
+// A separate function so that validateShadowRequest differs from the frozen
+// reference in shadowChatSensitivity.test.ts by one statement and two
+// conditions, each named there. `text` is the folded message.
+function isAcuteAboutSomeoneElse(text: string, acuteSigns: boolean, topic: HighRiskTopic): boolean {
+  const acute = acuteSigns
+    || topic === 'chest_pain'
+    || topic === 'fainting'
+    || topic === 'loss_of_consciousness';
+  if (!acute) return false;
+  return /\b(?:he|she|him|her|his|hers|the\s+(?:athlete|boxer|fighter|wrestler|kid|child|student|player|teen|boy|girl))\b/i.test(text)
+    || (/\b(?:they|them|their)\b/i.test(text)
+      && !/\b(?:athletes|boxers|fighters|wrestlers|kids|children|people|players|students|teens|someone|somebody|anyone|anybody|an?\s+(?:athlete|boxer|fighter|wrestler|kid|child|person|player|student|teen))\b/i.test(text))
+    || /\b(?:when|if|and|but|that|after|because|since|so|while)\s+[A-Z][a-z]+\s+(?:just\s+)?(?:passed|fainted|collapsed|is|was|has|had|got|can't|cannot|keeps|started|went|seems)\b/.test(text)
+    || /\b[A-Z][a-z]+'s\s+(?:neck|head|vision|eyes?|pupils?|chest|heart|speech|breathing|nose)\b/.test(text);
+}
+
 // Validate that the request aligns with SHADOW's doctrine
 export function validateShadowRequest(
   message: string,
@@ -370,8 +407,12 @@ export function validateShadowRequest(
     };
   }
 
-  // Educational queries are allowed
-  if (classification.educationalApproach) {
+  const someoneElseAcute = isAcuteAboutSomeoneElse(text, hasUrgentSymptom || hasAcuteImpactConcern, classification.topic);
+
+  // Educational queries are allowed -- unless they name someone else in an
+  // acute state, which go on to the emergency checks below exactly as a
+  // first-person report does. The checks below keep main's classifications.
+  if (classification.educationalApproach && !someoneElseAcute) {
     return {
       valid: true,
       highRisk: classification.isHighRisk,
@@ -380,7 +421,7 @@ export function validateShadowRequest(
     };
   }
 
-  if (hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern)) {
+  if ((hasPersonalContext || someoneElseAcute) && (hasUrgentSymptom || hasAcuteImpactConcern)) {
     return {
       valid: false,
       error: 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.',

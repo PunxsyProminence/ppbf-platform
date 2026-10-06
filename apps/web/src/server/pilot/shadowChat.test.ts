@@ -1265,3 +1265,61 @@ describe('typographic normalisation before matching', () => {
     });
   });
 });
+
+// CL-C9 (2026-10-05 audit; measured by Codex at 6736bac7): the educational
+// shortcut returned before the emergency checks whenever a message had no
+// first-person word, so an emergency described about someone else -- "What
+// does it mean when he passed out and can't breathe?" -- reached the model
+// with no emergency line. OD-2026-10-01-008 section 2 (Jason, option A): the
+// line appears when a message says a real emergency happened to a specific
+// person, even without "I" or "my"; unclear wording counts; a general
+// question does not. The second list is that last clause, and the third is
+// the boundary of this change: a third-person subject makes only an ACUTE
+// message personal, so a non-acute question about someone else gains no new
+// refusal.
+describe('CL-C9: an emergency about someone else gets the emergency line', () => {
+  const EMERGENCY = 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.';
+
+  test.each([
+    // Codex's two, verbatim.
+    "What does it mean when he passed out and can't breathe?",
+    'What causes it when she is vomiting blood?',
+    // The same shape with other subjects and acute signs.
+    'What does it mean when he can’t breathe after a body shot?',
+    'What causes it when they have slurred speech after sparring?',
+    'What is it when the athlete has blurry vision after that hit?',
+    'What does it mean when my athlete is seeing stars?',
+    'What does it mean when Jake passed out after the round?',
+    'What causes it when his neck went numb after the fall?',
+    'What does it mean when her pupils look unequal? She has unequal pupils.',
+    'What does it mean when the boxer had a seizure?',
+  ])('%s', (message) => {
+    const result = validateShadowRequest(message, 'coach', 'org-1');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe(EMERGENCY);
+    expect(result.highRisk).toBe(true);
+  });
+
+  test.each([
+    'What can cause shortness of breath?',
+    'What are general warning signs after a head impact?',
+    'What causes fainting?',
+    'What is loss of consciousness?',
+    'What is a seizure?',
+    'What causes vomiting blood in athletes?',
+    'What are the signs athletes show when their vision is blurry?',
+    'How do coaches respond when a boxer collapses?',
+  ])('a general question still gets an answer: %s', (message) => {
+    const result = validateShadowRequest(message, 'coach', 'org-1');
+    expect(result.valid).toBe(true);
+  });
+
+  test.each([
+    'What does it mean when he has a sore shoulder?',
+    'What is it when she has wrist pain after bag work?',
+    'What does it mean when they feel stiff the next day?',
+  ])('a non-acute question about someone else is not newly refused: %s', (message) => {
+    const result = validateShadowRequest(message, 'coach', 'org-1');
+    expect(result.valid).toBe(true);
+  });
+});

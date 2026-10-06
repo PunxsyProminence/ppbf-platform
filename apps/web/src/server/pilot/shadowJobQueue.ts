@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 9;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 10;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -54,6 +54,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 9;
 // reads source rights. What goes into authorizedContext is unchanged; bumped
 // because a listed file moved. A v8 job still queued at deploy is refused as
 // STALE.
+// 10 (DRAFT, CL-C9): shadowChat.ts's request validator gives the emergency
+// line to an acute message about someone else. What goes into
+// authorizedContext is unchanged; bumped because a listed file moved. #1267
+// and #1288 also claim 10, and this PR merges after #1036 pieces 3+4, so it
+// re-merges main and re-bumps then.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -116,6 +121,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 7, sha256: '89b51b15eaa9c8c93dad39df694b1fe55f312eea897964ba868a733f221fdfb2' },
   { version: 8, sha256: 'b85aec5f0ba1997dd8858b2dde3d9f9903f39a7c7e3fcccad5052616885fcb2b' },
   { version: 9, sha256: 'a212014dfeeced705d843be036e03384357cad75ee9bccea0ceaefb0a788dcf6' },
+  { version: 10, sha256: '2c0f01133c9b6967faff958e6d0ea75acdb4389ab76c2543a05aa1d902d9ec7d' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

@@ -250,6 +250,32 @@ const critical = (v: Verdict): boolean => CRITICAL.includes(v.classification ?? 
 /** Field-for-field equality; a property that is `undefined` equals one that is absent. */
 const same = (a: Verdict, b: Verdict): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+// THE ONE DECLARED CHANGE BEYOND THE FOLD: CL-C9 (2026-10-05 audit; Jason,
+// OD-2026-10-01-008 section 2, option A). A message that says a real
+// emergency happened to a specific person gets the emergency text even
+// without "I" or "my". Of the seeds below, exactly one is such a message,
+// "he had a seizure", and main answered it with R8's generic high-risk text
+// (topic urgent_symptom). The current code answers it with R3's emergency
+// text. This is a move toward MORE sensitivity -- withheld before and after,
+// and now critical -- so properties 1-3 above still hold for it, and every
+// one-way check in this file still runs on it unchanged. What it is excused
+// from is only the "same as main, field for field" checks, and only into that
+// one exact result. Any other difference, on any seed, still fails.
+const CL_C9_SEEDS: ReadonlySet<string> = new Set(['he had a seizure']);
+function sameOrClC9(seed: string, expected: Verdict, actual: Verdict): boolean {
+  if (same(expected, actual)) return true;
+  return CL_C9_SEEDS.has(seed)
+    && returnOf(expected) === 'R8 high-risk fallback'
+    && expected.topic === 'urgent_symptom'
+    && same({
+      valid: false,
+      error: EMERGENCY_TEXT,
+      highRisk: true,
+      topic: expected.topic,
+      classification: 'urgent_personal_symptom',
+    }, actual);
+}
+
 /** Which of main's nine returns produced this result, in source order. */
 function returnOf(v: Verdict): string {
   if (v.valid) return 'classification' in v ? 'R2 educational, allowed' : 'R9 nothing matched, allowed';
@@ -688,6 +714,11 @@ describe('the premises of the argument, read from source', () => {
     validate = drop(validate, 'const text = normaliseForMatching(message);');
     validate = undo(validate, 'text.toLowerCase()', 'message.toLowerCase()', 1);
     validate = undo(validate, '.test(text)', '.test(message)', 17);
+    // CL-C9 (see CL_C9_SEEDS): one added statement, which calls a separate
+    // function, and the two conditions that read it.
+    validate = drop(validate, 'const someoneElseAcute = isAcuteAboutSomeoneElse(text, hasUrgentSymptom || hasAcuteImpactConcern, classification.topic);');
+    validate = undo(validate, 'classification.educationalApproach && !someoneElseAcute', 'classification.educationalApproach', 1);
+    validate = undo(validate, '(hasPersonalContext || someoneElseAcute) && (hasUrgentSymptom', 'hasPersonalContext && (hasUrgentSymptom', 1);
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -961,7 +992,7 @@ describe('what the fold does to every UTF-16 code unit', () => {
       if (message.toLowerCase().charCodeAt(at) !== 0x03c2 || normaliseForMatching(message).toLowerCase().charCodeAt(at) !== 0x03c3) {
         wrong.push('no sigma difference: ' + seed);
       }
-      if (!same(now(message), main(normaliseForMatching(message)))) wrong.push('not main of fold: ' + seed);
+      if (!sameOrClC9(seed, main(normaliseForMatching(message)), now(message))) wrong.push('not main of fold: ' + seed);
       if (withheld(main(message)) && !withheld(now(message))) wrong.push('released: ' + seed);
       if (emergency(main(message)) && !emergency(now(message))) wrong.push('emergency lost: ' + seed);
       if (critical(main(message)) && !critical(now(message))) wrong.push('downgraded: ' + seed);
@@ -1266,7 +1297,9 @@ describe('main against the current code: every look-alike at every position of e
       'R9 nothing matched, allowed',
     ]);
     // And with no look-alike in them, the current code treats every seed as main does.
-    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+    // (but for the one CL-C9 seed, into exactly its declared result).
+    expect(SEEDS.filter(([, seed]) => !sameOrClC9(seed, main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual([...CL_C9_SEEDS]);
   });
 
   // Each of the eighteen look-alikes, substituted for each character of each
@@ -1285,6 +1318,8 @@ describe('main against the current code: every look-alike at every position of e
     let newlyWithheldWithoutEmergencyText = 0;
     let newlyEmergency = 0;
     let anyFieldDiffers = 0;
+    // Differences from main that come from the CL-C9 seed, and of what kind.
+    const clC9Moves: Record<string, number> = {};
 
     for (const [, seed] of SEEDS) {
       for (const source of SOURCES) {
@@ -1299,7 +1334,7 @@ describe('main against the current code: every look-alike at every position of e
           if (critical(was) && !critical(is)) downgraded.push(show(message));
           // Step 1 of the argument, run: the current code is main applied to
           // the folded message, in every field.
-          if (!same(is, main(normaliseForMatching(message)))) notMainOfFold.push(show(message));
+          if (!sameOrClC9(seed, main(normaliseForMatching(message)), is)) notMainOfFold.push(show(message));
 
           if (!withheld(was) && withheld(is)) newlyWithheld += 1;
           if (!withheld(was) && withheld(is) && !emergency(is)) newlyWithheldWithoutEmergencyText += 1;
@@ -1312,6 +1347,7 @@ describe('main against the current code: every look-alike at every position of e
               ? `${returnOf(was)}, topic ${was.topic} -> ${is.topic}`
               : `${returnOf(was)} -> ${returnOf(is)}`;
             moves[move] = (moves[move] ?? 0) + 1;
+            if (CL_C9_SEEDS.has(seed)) clC9Moves[move] = (clC9Moves[move] ?? 0) + 1;
           }
         }
       }
@@ -1329,6 +1365,10 @@ describe('main against the current code: every look-alike at every position of e
     expect({ compared, byMainReturn, newlyWithheld, newlyEmergency, anyFieldDiffers, moves }).toEqual(SEED_DIFFERENTIAL_COUNTS);
     // Every message main allowed that is now withheld carries the emergency text.
     expect(newlyWithheldWithoutEmergencyText).toBe(0);
+    // Every difference the CL-C9 change adds is on its one seed and of its
+    // one kind, R8 to R3: the counts below rose by exactly this, and by
+    // nothing else.
+    expect(clC9Moves).toEqual({ 'R8 high-risk fallback -> R3 urgent': CL_C9_R8_TO_R3 });
   });
 
   // THE DEFECT ITSELF, BY NAME, FOR EVERY APOSTROPHE LOOK-ALIKE. The counts
@@ -1359,7 +1399,7 @@ describe('main against the current code: every look-alike at every position of e
     for (const [, seed] of SEEDS) {
       for (const message of variantsOf(seed, '\uFEFF')) {
         compared += 1;
-        if (!same(main(message), now(message))) different.push(show(message));
+        if (!sameOrClC9(seed, main(message), now(message))) different.push(show(message));
       }
     }
     expect(different.slice(0, 20)).toEqual([]);
@@ -1724,6 +1764,9 @@ const RANDOM_STRINGS_TOUCHED = 19565;
 const CARRIER_COMPARISONS_FOLDED = 162;
 // The sum over the 52 seeds of (2 x length + 1).
 const SEED_FEFF_COMPARISONS = 3210;
+// Look-alike variants of the CL-C9 seed that main answered with R8 and the
+// current code answers with R3 (see CL_C9_SEEDS).
+const CL_C9_R8_TO_R3 = 306;
 const SEED_DIFFERENTIAL_COUNTS = {
   // 18 x 3,210.
   compared: 57780,
@@ -1746,9 +1789,11 @@ const SEED_DIFFERENTIAL_COUNTS = {
   newlyWithheld: 83,
   // Those 83, and 48 that main withheld without the emergency text and that
   // now get it: 12 from each of R4, R5, R6 and R7.
-  newlyEmergency: 131,
+  // Plus CL_C9_R8_TO_R3 (306) from CL-C9: 131 + 306.
+  newlyEmergency: 437,
   // Messages where any field differs from main's.
-  anyFieldDiffers: 211,
+  // 211 from the fold, plus the 306 CL-C9 moves.
+  anyFieldDiffers: 517,
   // Those 211, by what changed: the return, or the topic under an unchanged
   // return. These thirteen are the kinds this seed set produces, and they
   // sum to 211. Each is of a kind Step 5 of the argument allows -- a return
@@ -1767,7 +1812,9 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R6 clearance -> R3 urgent': 12,
     'R6 clearance, topic return_to_play -> loss_of_consciousness': 11,
     'R7 medication -> R3 urgent': 12,
-    'R8 high-risk fallback -> R3 urgent': 12,
+    // 12 from the fold, plus 306 from CL-C9 (the variants of "he had a
+    // seizure" in which "he" and "seizure" both survive).
+    'R8 high-risk fallback -> R3 urgent': 318,
     'R8 high-risk fallback, topic chest_pain -> loss_of_consciousness': 11,
     'R9 nothing matched, allowed -> R3 urgent': 72,
     'R9 nothing matched, allowed -> R8 high-risk fallback': 11,
