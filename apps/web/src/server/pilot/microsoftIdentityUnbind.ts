@@ -91,14 +91,20 @@ export async function unbindMicrosoftIdentity(
     // wholly before this clear or wholly after it.
     const found = isPlatformOwner
       ? await client.query<UnbindTarget>(
-        `select a.account_id, a.organization_id, a.is_platform_owner, a.microsoft_oid, a.microsoft_tid
+        `select a.account_id, a.organization_id,
+                (a.is_platform_owner or a.role = 'platform_owner') as is_platform_owner,
+                a.microsoft_oid, a.microsoft_tid
            from pilot.accounts a
           where a.account_id = $1
           for update of a`,
         [accountId],
       )
       : await client.query<UnbindTarget>(
-        `select a.account_id, a.organization_id, a.is_platform_owner, a.microsoft_oid, a.microsoft_tid
+        // The owner is recognised the way sign-in recognises it (flag, home
+        // role, or membership role): the schema does not tie the three together.
+        `select a.account_id, a.organization_id,
+                (a.is_platform_owner or a.role = 'platform_owner' or om.role = 'platform_owner') as is_platform_owner,
+                a.microsoft_oid, a.microsoft_tid
            from pilot.accounts a
            join pilot.organization_memberships om on om.account_id = a.account_id
           where a.account_id = $1 and om.organization_id = $2 and om.active_flag = true

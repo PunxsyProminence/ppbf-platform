@@ -56,7 +56,9 @@ describe('unbindMicrosoftIdentity', () => {
     await expect(unbindMicrosoftIdentity(orgAdmin, 'target')).rejects.toThrow('Not found: account');
     const [sql, params] = currentClient.query.mock.calls[0];
     expect(sql).toMatch(/pilot\.organization_memberships/);
+    expect(sql).toMatch(/om\.organization_id = \$2/);
     expect(sql).toMatch(/active_flag = true/);
+    expect(sql).toMatch(/a\.role = 'platform_owner' or om\.role = 'platform_owner'/);
     expect(sql).toMatch(/for update/i);
     expect(params).toEqual(['target', 'org-1']);
     expect(writes()).toHaveLength(0);

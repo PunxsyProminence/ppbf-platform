@@ -633,14 +633,18 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
     const elsewhere = await seedMember({ organizationId: OTHER_ORG_ID });
     const inactive = await seedMember({ membershipActive: false });
     const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+    // A legacy owner row: role says owner, the flag was never set. Sign-in
+    // treats it as the owner, so this must too.
+    const legacyOwner = await seedMember({ role: 'platform_owner', platformOwner: false });
 
+    expect(await unbind(actor, legacyOwner.accountId)).toBe('THREW:Not found: account');
     expect(await unbind(actor, elsewhere.accountId)).toBe('THREW:Not found: account');
     expect(await unbind(actor, inactive.accountId)).toBe('THREW:Not found: account');
     expect(await unbind(actor, owner.accountId)).toBe('THREW:Not found: account');
     expect(await unbind(actor, 'no-such-account')).toBe('THREW:Not found: account');
     expect(await unbind(actor, admin.accountId)).toBe('THREW:Forbidden: an account cannot unbind its own Microsoft identity');
 
-    for (const target of [elsewhere, inactive, owner, admin]) {
+    for (const target of [elsewhere, inactive, owner, legacyOwner, admin]) {
       expect(await storedIdentity(target.accountId)).toEqual({ microsoft_oid: target.oid, microsoft_tid: TENANT });
       expect(await unbindAuditRows(target.accountId)).toHaveLength(0);
     }
@@ -668,6 +672,10 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
 
     expect(await unbind(actor, owner.accountId)).toBe('THREW:Forbidden: an account cannot unbind its own Microsoft identity');
     expect(await storedIdentity(owner.accountId)).toEqual({ microsoft_oid: owner.oid, microsoft_tid: TENANT });
+
+    // "Anyone but self" includes another owner-flagged account.
+    const secondOwner = await seedMember({ role: 'platform_owner', platformOwner: true, organizationId: OTHER_ORG_ID });
+    expect(await unbind(actor, secondOwner.accountId)).toBe('cleared');
   });
 
   test('an account that is not bound is reported as such and records nothing', async () => {
@@ -697,6 +705,23 @@ describe('unbinding a Microsoft identity so the next sign-in re-binds', () => {
         actor_account_id: null,
         details: expect.objectContaining({ reason: 'owner_bootstrap', previous_microsoft_oid_suffix: owner.oid.slice(-4) }),
       }),
+    ]);
+  });
+
+  test('a bootstrap that also changes the email clears once, reports it, and records one row', async () => {
+    const owner = await seedMember({ role: 'platform_owner', platformOwner: true });
+
+    const result = await createOrUpdateMicrosoftPlatformOwnerAccount({
+      loginEmail: `new-${owner.email}`,
+      organizationId: ORG_ID,
+      accountIdHint: owner.accountId,
+      rebindMicrosoftIdentity: true,
+    });
+
+    expect(result.microsoftIdentityCleared).toBe(true);
+    expect(await storedIdentity(owner.accountId)).toEqual({ microsoft_oid: null, microsoft_tid: null });
+    expect(await unbindAuditRows(owner.accountId)).toEqual([
+      expect.objectContaining({ details: expect.objectContaining({ reason: 'login_email_changed' }) }),
     ]);
   });
 
