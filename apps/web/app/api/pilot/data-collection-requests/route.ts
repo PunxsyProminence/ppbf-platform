@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   captureDataCollectionRequest,
   createDataCollectionRequest,
@@ -10,11 +10,31 @@ import {
   type DataCollectionRequestKind,
 } from '@/src/server/pilot/assessmentProtocols';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { queryOne } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
 const QUEUE_ROLES = ['organization_admin', 'admin', 'coach'] as const;
+const PERSON_REQUEST_ROLES = ['organization_admin', 'admin'] as const;
+
+// A request that names only a person account -- no athlete -- is organization
+// admin business (CL-A11, overwatch ruling A11 = a). Until this, every coach
+// could list, capture and decline them, and the account was never checked
+// against the organization: it can be a parent's or an athlete's login, so
+// "not athlete-scoped" meant "open to every coach in the gym". No screen
+// calls this route today, so no coach workflow loses anything.
+async function assertPersonInOrganization(personAccountId: string, organizationId: string): Promise<void> {
+  const member = await queryOne<{ found: number }>(
+    `select 1 as found from pilot.organization_memberships
+     where account_id = $1 and organization_id = $2 and active_flag = true`,
+    [personAccountId, organizationId],
+  );
+  if (!member) {
+    throw new ValidationError('person_account_id must be an active account in this organization.');
+  }
+}
 
 // The open-request queue this migration exists to surface: a specific
 // person, a specific thing to capture, and the capture mode. GET is the
@@ -25,8 +45,7 @@ const QUEUE_ROLES = ['organization_admin', 'admin', 'coach'] as const;
 // A request names a child and says what to capture about them, so the
 // athlete_id on it is authorized per athlete (assertActorCanAccessAthlete),
 // and the unfiltered queue is scoped to the athletes the caller may reach.
-// Requests addressed to a non-athlete person carry no child and are not
-// athlete-scoped.
+// Requests addressed only to a person account are for organization admins.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -34,18 +53,21 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const athleteId = searchParams.get('athlete_id')?.trim() || undefined;
+    const personAccountId = searchParams.get('person_account_id')?.trim() || undefined;
     if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+    if (personAccountId) requireRole(principal, [...PERSON_REQUEST_ROLES]);
+    const seesPersonRequests = isOrganizationAdminRole(principal.role);
 
     let requests = await listOpenDataCollectionRequests(principal.organizationId, {
       athleteId,
-      personAccountId: searchParams.get('person_account_id') ?? undefined,
+      personAccountId,
     });
     if (!athleteId) {
       const named = requests
         .map((row) => row.athlete_id)
         .filter((id): id is string => id !== null);
       const allowed = await accessibleAthleteIds(principal, named);
-      requests = requests.filter((row) => row.athlete_id === null || allowed.has(row.athlete_id));
+      requests = requests.filter((row) => (row.athlete_id === null ? seesPersonRequests : allowed.has(row.athlete_id)));
     }
     return NextResponse.json({ requests });
   } catch (error) {
@@ -76,12 +98,15 @@ export async function POST(request: NextRequest) {
     }
 
     const athleteId = body.athlete_id?.trim() || undefined;
+    const personAccountId = body.person_account_id?.trim() || undefined;
     if (athleteId) await assertActorCanAccessAthlete(principal, athleteId);
+    if (!athleteId) requireRole(principal, [...PERSON_REQUEST_ROLES]);
+    if (personAccountId) await assertPersonInOrganization(personAccountId, principal.organizationId);
 
     const created = await createDataCollectionRequest({
       organizationId: principal.organizationId,
       athleteId,
-      personAccountId: body.person_account_id,
+      personAccountId,
       requestKind: body.request_kind,
       protocolId: body.protocol_id,
       protocolVersion: body.protocol_version,
@@ -133,14 +158,35 @@ export async function PATCH(request: NextRequest) {
     // gate per athlete; PATCH (capture) and DELETE (decline) act on a
     // client-supplied request_id and did not, so a coach could capture or
     // decline a data-collection request for a minor outside their care. A
-    // request with a null athlete_id is a non-athlete person request and skips
-    // the athlete gate, exactly like the GET/POST person path.
+    // request with a null athlete_id names only a person account and is for
+    // organization admins (CL-A11).
     const owner = await getDataCollectionRequestAthleteId(principal.organizationId, requestId);
     if (!owner) {
       throw new Error('Not found');
     }
     if (owner.athlete_id) {
       await assertActorCanAccessAthlete(principal, owner.athlete_id);
+    } else {
+      requireRole(principal, [...PERSON_REQUEST_ROLES]);
+    }
+
+    // The evidence must be about the request's own athlete (CL-A11). The id
+    // used to be stored as sent, so a capture could record another child's
+    // assessment, or another gym's, as this one's. A request about a person
+    // account has no athlete for an assessment to be about.
+    const resultingAssessmentId = body.resulting_assessment_id?.trim() || undefined;
+    if (resultingAssessmentId) {
+      if (!owner.athlete_id) {
+        throw new ValidationError('A request about a person account takes no resulting_assessment_id.');
+      }
+      const assessment = await queryOne<{ found: number }>(
+        `select 1 as found from pilot.assessments
+         where organization_id = $1 and assessment_id::text = $2 and athlete_id = $3`,
+        [principal.organizationId, resultingAssessmentId, owner.athlete_id],
+      );
+      if (!assessment) {
+        throw new ValidationError("resulting_assessment_id must be an assessment of this request's athlete.");
+      }
     }
 
     const captured = await captureDataCollectionRequest({
@@ -148,7 +194,7 @@ export async function PATCH(request: NextRequest) {
       requestId,
       capturedByAccountId: principal.accountId,
       mediaRef: body.media_ref,
-      resultingAssessmentId: body.resulting_assessment_id,
+      resultingAssessmentId,
     });
 
     await writePilotAuditEvent({
@@ -186,14 +232,16 @@ export async function DELETE(request: NextRequest) {
     // gate per athlete; PATCH (capture) and DELETE (decline) act on a
     // client-supplied request_id and did not, so a coach could capture or
     // decline a data-collection request for a minor outside their care. A
-    // request with a null athlete_id is a non-athlete person request and skips
-    // the athlete gate, exactly like the GET/POST person path.
+    // request with a null athlete_id names only a person account and is for
+    // organization admins (CL-A11).
     const owner = await getDataCollectionRequestAthleteId(principal.organizationId, requestId);
     if (!owner) {
       throw new Error('Not found');
     }
     if (owner.athlete_id) {
       await assertActorCanAccessAthlete(principal, owner.athlete_id);
+    } else {
+      requireRole(principal, [...PERSON_REQUEST_ROLES]);
     }
 
     const declined = await declineDataCollectionRequest({

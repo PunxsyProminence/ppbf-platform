@@ -9,6 +9,7 @@ import {
   getDataCollectionRequestAthleteId,
   listOpenDataCollectionRequests,
 } from '@/src/server/pilot/assessmentProtocols';
+import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -28,6 +29,10 @@ jest.mock('@/src/server/pilot/access', () => {
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 
+// The route's two lookups of its own: the person's membership in this gym
+// (create) and the assessment's athlete (capture).
+jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
+
 jest.mock('@/src/server/pilot/assessmentProtocols', () => ({
   listOpenDataCollectionRequests: jest.fn().mockResolvedValue([]),
   createDataCollectionRequest: jest.fn(),
@@ -44,6 +49,7 @@ const mockCreate = createDataCollectionRequest as jest.Mock;
 const mockCapture = captureDataCollectionRequest as jest.Mock;
 const mockDecline = declineDataCollectionRequest as jest.Mock;
 const mockGetOwner = getDataCollectionRequestAthleteId as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 // The athlete gate is permissive by default so each test states its own
 // access decision rather than inheriting the previous test's --
@@ -55,6 +61,7 @@ beforeEach(() => {
   mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
   mockCapture.mockResolvedValue({ request_id: 'req-1', status: 'captured' });
   mockDecline.mockResolvedValue({ request_id: 'req-1', status: 'declined' });
+  mockQueryOne.mockResolvedValue({ found: 1 });
 });
 
 afterEach(() => {
@@ -127,7 +134,9 @@ test('a filtered read passes the gated athlete straight through to the queue', a
   expect(mockAccessible).not.toHaveBeenCalled();
 });
 
-test('an unfiltered queue is scoped to the caller\'s reachable children, keeping non-athlete requests', async () => {
+// CL-A11 (overwatch ruling A11 = a): a request that names only a person
+// account is organization-admin business. It used to be listed to every coach.
+test('an unfiltered coach queue is scoped to the caller\'s reachable children, and drops person-only requests', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   mockList.mockResolvedValueOnce([
     { request_id: 'req-mine', athlete_id: 'ath-mine' },
@@ -144,7 +153,29 @@ test('an unfiltered queue is scoped to the caller\'s reachable children, keeping
     ['ath-mine', 'ath-theirs'],
   );
   const payload = (await response.json()) as { requests: Array<{ request_id: string }> };
-  expect(payload.requests.map((row) => row.request_id)).toEqual(['req-mine', 'req-person']);
+  expect(payload.requests.map((row) => row.request_id)).toEqual(['req-mine']);
+});
+
+test('a coach cannot filter the queue by person account (CL-A11)', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+
+  const response = await GET(getRequest('?person_account_id=acct-9'));
+
+  expect(response.status).toBe(403);
+  expect(mockList).not.toHaveBeenCalled();
+});
+
+test('an organization admin still sees person-only requests (CL-A11)', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+  mockList.mockResolvedValueOnce([
+    { request_id: 'req-kid', athlete_id: 'ath-1' },
+    { request_id: 'req-person', athlete_id: null, person_account_id: 'acct-9' },
+  ]);
+  mockAccessible.mockResolvedValueOnce(new Set(['ath-1']));
+
+  const payload = (await (await GET(getRequest())).json()) as { requests: Array<{ request_id: string }> };
+
+  expect(payload.requests.map((row) => row.request_id)).toEqual(['req-kid', 'req-person']);
 });
 
 test('an organization admin keeps organization-wide reach -- the route defers to the central contract', async () => {
@@ -165,8 +196,28 @@ test('an organization admin keeps organization-wide reach -- the route defers to
   expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ath-nobody-coaches' }));
 });
 
-test('a request about a non-athlete person needs no athlete gate', async () => {
+test('a coach cannot file a person-only request (CL-A11)', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
+
+  const response = await POST(postRequest({ ...REQUEST_BODY, person_account_id: 'acct-volunteer' }));
+
+  expect(response.status).toBe(403);
+  expect(mockCreate).not.toHaveBeenCalled();
+});
+
+test('a person account outside this organization is refused before anything is written (CL-A11)', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+  mockQueryOne.mockResolvedValueOnce(null); // no active membership in org-1
+
+  const response = await POST(postRequest({ ...REQUEST_BODY, person_account_id: 'acct-other-gym' }));
+
+  expect(response.status).toBe(400);
+  expect(mockQueryOne).toHaveBeenCalledWith(expect.stringContaining('organization_memberships'), ['acct-other-gym', 'org-1']);
+  expect(mockCreate).not.toHaveBeenCalled();
+});
+
+test('an organization admin files a request about a non-athlete person in this gym, with no athlete gate', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
   mockCreate.mockResolvedValue({ request_id: 'req-2', request_kind: 'document', reason_code: 'waiver_missing' });
 
   const response = await POST(postRequest({
@@ -224,8 +275,18 @@ describe('capture (PATCH) and decline (DELETE) authorize the request athlete bef
     expect(mockCapture).not.toHaveBeenCalled();
   });
 
-  test('a non-athlete person request needs no athlete gate', async () => {
+  test('a coach cannot capture or decline a person-only request (CL-A11)', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: null });
+
+    expect((await PATCH(patchRequest({ request_id: 'req-1', media_ref: 'blob://x' }))).status).toBe(403);
+    expect(mockCapture).not.toHaveBeenCalled();
+    expect((await DELETE(deleteRequest({ request_id: 'req-1', declined_reason: 'n/a' }))).status).toBe(403);
+    expect(mockDecline).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin captures a person-only request with no athlete gate', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
     mockGetOwner.mockResolvedValue({ athlete_id: null });
 
     expect((await PATCH(patchRequest({ request_id: 'req-1', media_ref: 'blob://x' }))).status).toBe(200);
@@ -242,5 +303,46 @@ describe('capture (PATCH) and decline (DELETE) authorize the request athlete bef
 
     expect((await DELETE(deleteRequest({ request_id: 'req-1', declined_reason: 'blurry' }))).status).toBe(200);
     expect(mockDecline).toHaveBeenCalledTimes(1);
+  });
+});
+
+// CL-A11, second half (the audit's LIKELY finding, proved here):
+// resulting_assessment_id was stored as sent. A coach capturing a request
+// about their own athlete could record another child's assessment -- or one
+// from another gym -- as the evidence for it.
+describe('capture binds resulting_assessment_id to the request athlete (CL-A11)', () => {
+  test("an assessment that is not this athlete's, in this gym, is refused and nothing is captured", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+    mockQueryOne.mockResolvedValueOnce(null); // no such assessment for ath-1 in org-1
+
+    const response = await PATCH(patchRequest({ request_id: 'req-1', resulting_assessment_id: 'asmt-other-child' }));
+
+    expect(response.status).toBe(400);
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('pilot.assessments'),
+      ['org-1', 'asmt-other-child', 'ath-1'],
+    );
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  test("the athlete's own assessment is accepted", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-coach' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: 'ath-1' });
+
+    const response = await PATCH(patchRequest({ request_id: 'req-1', resulting_assessment_id: 'asmt-mine' }));
+
+    expect(response.status).toBe(200);
+    expect(mockCapture).toHaveBeenCalledWith(expect.objectContaining({ resultingAssessmentId: 'asmt-mine' }));
+  });
+
+  test('a person-only request takes no assessment at all', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    mockGetOwner.mockResolvedValue({ athlete_id: null });
+
+    const response = await PATCH(patchRequest({ request_id: 'req-1', resulting_assessment_id: 'asmt-any' }));
+
+    expect(response.status).toBe(400);
+    expect(mockCapture).not.toHaveBeenCalled();
   });
 });
