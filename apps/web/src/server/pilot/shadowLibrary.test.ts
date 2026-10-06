@@ -47,6 +47,7 @@ import {
   normalizeSearchScope,
   recomputeShadowCapabilityCoverage,
   confidenceLevelForScore,
+  SEMANTIC_CANDIDATE_BATCH_SIZE,
   searchShadowLibrary,
   type ShadowLibrarySearchDetail,
 } from './shadowLibrary';
@@ -330,6 +331,50 @@ describe('SHADOW library semantic search', () => {
     // One db call: the candidate load. The keyword statement never ran.
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(String(mockQuery.mock.calls[0][0])).toContain('c.embedding is not null');
+  });
+
+  // CL-C13: the candidate set used to be the first 200 rows by tier and age.
+  // Every candidate is now read, in keyset batches, and the best one wins
+  // wherever it sits.
+  it('pages through every candidate and finds the best match in a later batch', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    const firstBatch = Array.from({ length: SEMANTIC_CANDIDATE_BATCH_SIZE }, (_, index) =>
+      candidate(`chunk_a${String(index).padStart(4, '0')}`, [0.1, 0.99], 1));
+    mockQuery
+      .mockResolvedValueOnce(firstBatch as never)
+      .mockResolvedValueOnce([candidate('chunk_b_best', [0.99, 0.01], 3)] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_b_best']);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [firstSql, firstParams] = mockQuery.mock.calls[0];
+    expect(String(firstSql)).not.toContain('limit 200');
+    expect(String(firstSql)).not.toContain('c.created_at asc');
+    expect(String(firstSql)).toContain('order by c.chunk_id asc');
+    expect(firstParams?.[4]).toBe('');
+    expect(firstParams?.[5]).toBe(SEMANTIC_CANDIDATE_BATCH_SIZE);
+    // The second batch starts after the last chunk of the first.
+    expect(mockQuery.mock.calls[1][1]?.[4]).toBe(firstBatch[firstBatch.length - 1].chunk_id);
+  });
+
+  it('stops after a short batch, without an extra round trip', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([candidate('chunk_only', [0.98, 0.05])] as never);
+
+    await searchShadowLibrary(searchInput);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('scores an embedding that is not an array of numbers as no match, not as a number', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([
+      candidate('chunk_strings', ['1', '0'] as unknown as number[]),
+      candidate('chunk_good', [0.9, 0.1]),
+    ] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_good']);
   });
 
   it('restricts semantic candidates to the current embedding deployment', async () => {

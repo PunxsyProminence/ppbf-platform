@@ -43,6 +43,14 @@ export const SEMANTIC_HIGH_CONFIDENCE = 0.5;
 export const KEYWORD_RELEVANCE_BAR = 0.6;
 export const KEYWORD_HIGH_CONFIDENCE = 0.8;
 
+// Semantic search reads every candidate in keyset batches of this many rows
+// (CL-C13), so memory holds one batch of vectors at a time, not the Library.
+export const SEMANTIC_CANDIDATE_BATCH_SIZE = 500;
+
+function isNumericVector(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((element) => typeof element === 'number' && Number.isFinite(element));
+}
+
 export type ShadowLibraryConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
 
 export type ShadowLibrarySourceType =
@@ -1315,14 +1323,20 @@ export async function searchShadowLibrary(
     }, normalized.effectiveSubjectId);
   }
 
-  // Semantic path, when the embedding deployment is live: rank a bounded
-  // candidate set (same approval/verification/scope filters as the keyword
-  // query, restricted to chunks that HAVE an embedding) by cosine similarity
-  // computed in-process. No pgvector, no index: at this library's scale the
-  // candidate set is small, and keeping ranking in the application means the
-  // keyword path below remains byte-for-byte the shipped behavior whenever
-  // semantics is disabled, errors, or finds nothing relevant -- an embedding
-  // outage degrades search, never breaks it.
+  // Semantic path, when the embedding deployment is live: rank EVERY candidate
+  // (same approval/verification/scope filters as the keyword query, restricted
+  // to chunks that HAVE an embedding) by cosine similarity computed
+  // in-process. It used to load at most 200 candidates ordered by tier and
+  // age and rank only those, so past 200 embedded chunks the best match could
+  // sit outside the window and never be found (CL-C13). Now every candidate
+  // is read, in keyset batches so memory holds one batch at a time, and only
+  // the running top `limit` is kept. Scoring stays in the application because
+  // Postgres arithmetic over jsonb measured about ten times slower than
+  // reading the vectors out (pgvector is not enabled on the managed server;
+  // enabling it is the path if the Library outgrows this). The keyword path
+  // below remains byte-for-byte the shipped behavior whenever semantics is
+  // disabled, errors, or finds nothing relevant -- an embedding outage
+  // degrades search, never breaks it.
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
     if (queryEmbedding) {
@@ -1335,68 +1349,77 @@ export async function searchShadowLibrary(
       // degrade those rows to the keyword path, same as never having been
       // embedded, until the backfill catches up.
       const currentEmbeddingModel = getEmbeddingDeploymentName();
-      const candidates = await query<ShadowLibrarySearchResult & { embedding: number[] }>(
-        `select
-           c.chunk_id, c.document_id, c.source_id, c.subject_id, c.ordinal,
-           d.document_name,
-           s.title as source_title, s.publisher as source_publisher,
-           s.source_type, s.authority_tier, s.status as source_status,
-           s.publication_date::text as publication_date,
-           c.text_content, c.embedding,
-           c.metadata->>'evidence_class' as evidence_class,
-           c.metadata->>'boxing_specificity' as boxing_specificity,
-           0::float as score
-         from pilot.shadow_library_chunks c
-         join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
-         join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-         where c.organization_id = any($1::text[])
-           and s.status = 'active'
-           and s.approval_state = 'approved'
-           and s.verification_state = 'verified'
-           and not coalesce(s.retrieval_suppressed, false)
-           and d.ingest_state = 'indexed'
-           and d.index_completed_at is not null
-           and d.approval_state = 'approved'
-           and d.verification_state = 'verified'
-           and c.embedding is not null
-           and c.embedding_model = $4
-           and (
-             ($2::text = 'scoped' and c.subject_id is null)
-             or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
-           )
-         order by s.authority_tier asc, c.created_at asc
-         limit 200`,
-        [
-          libraryRetrievalOrganizationIds(input.organizationId),
-          normalized.scope,
-          normalized.effectiveSubjectId,
-          currentEmbeddingModel,
-        ],
-      );
-
-      const ranked = candidates
-        .map((candidate) => ({
-          ...candidate,
-          score: Array.isArray(candidate.embedding)
-            ? cosineSimilarity(queryEmbedding, candidate.embedding)
-            : 0,
-        }))
-        // Below the floor, "closest" is noise, not relevance. It is dropped,
-        // and it does NOT fall back to loose keywords: that fallback is how a
-        // nonsense question used to get an unrelated passage.
-        .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR)
-        .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal)
-        .slice(0, limit)
-        .map((candidate) => {
-          const { embedding, ...result } = candidate;
-          void embedding;
-          return result;
-        });
+      let candidateCount = 0;
+      let afterChunkId = '';
+      let ranked: ShadowLibrarySearchResult[] = [];
+      for (;;) {
+        const batch = await query<ShadowLibrarySearchResult & { embedding: unknown }>(
+          `select
+             c.chunk_id, c.document_id, c.source_id, c.subject_id, c.ordinal,
+             d.document_name,
+             s.title as source_title, s.publisher as source_publisher,
+             s.source_type, s.authority_tier, s.status as source_status,
+             s.publication_date::text as publication_date,
+             c.text_content, c.embedding,
+             c.metadata->>'evidence_class' as evidence_class,
+             c.metadata->>'boxing_specificity' as boxing_specificity,
+             0::float as score
+           from pilot.shadow_library_chunks c
+           join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
+           join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
+           where c.organization_id = any($1::text[])
+             and s.status = 'active'
+             and s.approval_state = 'approved'
+             and s.verification_state = 'verified'
+             and not coalesce(s.retrieval_suppressed, false)
+             and d.ingest_state = 'indexed'
+             and d.index_completed_at is not null
+             and d.approval_state = 'approved'
+             and d.verification_state = 'verified'
+             and c.embedding is not null
+             and c.embedding_model = $4
+             and (
+               ($2::text = 'scoped' and c.subject_id is null)
+               or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
+             )
+             and c.chunk_id > $5
+           order by c.chunk_id asc
+           limit $6`,
+          [
+            libraryRetrievalOrganizationIds(input.organizationId),
+            normalized.scope,
+            normalized.effectiveSubjectId,
+            currentEmbeddingModel,
+            afterChunkId,
+            SEMANTIC_CANDIDATE_BATCH_SIZE,
+          ],
+        );
+        candidateCount += batch.length;
+        const scored = batch
+          .map(({ embedding, ...candidate }) => ({
+            ...candidate,
+            // An embedding that is not an array of finite numbers scores 0
+            // and drops below the floor: one bad row never fails search, and
+            // a string "1" is not read as the number 1.
+            score: isNumericVector(embedding) ? cosineSimilarity(queryEmbedding, embedding) : 0,
+          }))
+          // Below the floor, "closest" is noise, not relevance. It is dropped,
+          // and it does NOT fall back to loose keywords: that fallback is how a
+          // nonsense question used to get an unrelated passage.
+          .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
+        ranked = [...ranked, ...scored]
+          // chunk_id last, so the order does not depend on which batch a tie arrived in.
+          .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal
+            || (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0))
+          .slice(0, limit);
+        if (batch.length < SEMANTIC_CANDIDATE_BATCH_SIZE) break;
+        afterChunkId = batch[batch.length - 1].chunk_id;
+      }
 
       // Candidates exist (embedded chunks are in the library), so this answer
       // is final even when empty. Only "no embedded chunks yet" or an embedding
       // outage degrades to the keyword path below.
-      if (candidates.length > 0) {
+      if (candidateCount > 0) {
         const relevant = ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR);
         const nearest = ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR);
         await writeShadowTelemetryEvent({
