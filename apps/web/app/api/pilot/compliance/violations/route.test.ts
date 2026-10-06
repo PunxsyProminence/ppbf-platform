@@ -645,6 +645,7 @@ describe('PATCH /api/pilot/compliance/violations', () => {
           note: 'Coach retrained; footage reviewed.',
         }),
       }),
+      expect.objectContaining({ query: mockTxQuery }),
     );
   });
 
@@ -660,7 +661,50 @@ describe('PATCH /api/pilot/compliance/violations', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
-  test('a failed audit write does not fail a transition that already committed', async () => {
+  // CX-3: the stated reason for closing a violation lives only in its audit
+  // row. That row is written on the transition's own transaction client, so
+  // a failed write rolls the closure back instead of leaving a closed
+  // violation with no reason anywhere.
+  test.each([
+    ['resolve', 'resolved'],
+    ['dismiss', 'dismissed'],
+  ] as const)('%s writes its reason on the transition transaction', async (action, newStatus) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(violationRow({ status: 'acknowledged' }));
+    mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', status: newStatus }] });
+
+    const res = await PATCH(patchRequest({ violation_id: 'v1', action, note: 'Reviewed with the coach.' }));
+
+    expect(res.status).toBe(200);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    const [event, client] = mockAudit.mock.calls[0];
+    expect(event).toEqual(expect.objectContaining({
+      entity_id: 'v1',
+      details: expect.objectContaining({
+        action: `violation_${action}`,
+        prior_status: 'acknowledged',
+        new_status: newStatus,
+        note: 'Reviewed with the coach.',
+      }),
+    }));
+    expect(client).toEqual(expect.objectContaining({ query: mockTxQuery }));
+  });
+
+  test.each(['resolve', 'dismiss'] as const)(
+    'a %s whose reason cannot be recorded is not reported as done',
+    async (action) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQueryOne.mockResolvedValueOnce(violationRow({ status: 'acknowledged' }));
+      mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', status: 'resolved' }] });
+      mockAudit.mockRejectedValueOnce(new Error('audit table unavailable'));
+
+      const res = await PATCH(patchRequest({ violation_id: 'v1', action, note: 'Reviewed with the coach.' }));
+
+      expect(res.status).toBe(500);
+    },
+  );
+
+  test('a failed audit write does not fail an acknowledgement that already committed', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
     mockQueryOne.mockResolvedValueOnce(violationRow());
     mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', status: 'acknowledged' }] });
