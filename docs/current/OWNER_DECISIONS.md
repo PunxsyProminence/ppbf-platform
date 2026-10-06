@@ -164,6 +164,175 @@ and should not try to.
 
 ---
 
+## OD-2026-10-06-015 -- Release 11: "looks good lets deploy" and "staging OK"; production deployed from main `42b6025d`
+
+**Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script from that transcript (records pass, 2026-10-06, second batch). Timestamps as stored (UTC). New; edits no earlier entry.
+
+Jason, line 3516, 2026-10-06T18:01:44.611Z: *"looks good lets deploy"* (after overwatch listed the release's contents, the migrations it needs, and the staging links; overwatch then queued the staging deploy for main `42b6025d`, which overwatch deploys without asking under OD-2026-09-30-003).
+
+Overwatch then put five signed-in staging checks to him (line 3564: Microsoft sign-in as ppbf@, coach dashboard scope, consent screen save, notice board-seat picker, parent sign-in link). Jason, line 3568, 2026-10-06T18:39:00.555Z: *"staging OK"*. Jason, line 3595, 2026-10-06T18:42:41.772Z: *"ran all 3"* (the production SHADOW queue check and the two production workflow commands overwatch had handed him; the safety check had refused overwatch's own dispatch).
+
+**Ruling: Release 11 went to production from main `42b6025d4ae4ca9fd59779148c2189737e35f7b5` on Jason's "looks good lets deploy" and "staging OK".** The GitHub approval clicks for production were his (below).
+
+**Facts (OBSERVED by this records lane, 2026-10-06, read-only `gh run view`, `gh api .../approvals`, `az containerapp revision show`):**
+- Staging migrations: run 37506715521, `apply-migrations`, success, head `42b6025d`.
+- Staging deploy: run 37511583532, `deploy-staging`, success, head `42b6025d` (overwatch reported revision `app-ppbf-staging--0000258`; not re-checked here).
+- Production SHADOW queue: `SHADOW queue: EMPTY` (REPORTED by overwatch from Jason's terminal output, line 3613).
+- Production migrations: run 37513437787, `apply-migrations`, success, head `42b6025d`; approved for environment `production` by GitHub user `PunxsyProminence`.
+- Production deploy: run 37519630249, `deploy-production`, success, head `42b6025d`, 2026-10-06T19:31:37Z to 19:42:45Z; approved for `production` by `PunxsyProminence`.
+- Production revision `app-ppbf-production--0000169`: created 2026-10-06T19:42:11Z, active, Healthy, image `acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:be932504b5aafee607427c60b70d681ef1c2e8011e16240d90252a61b11a3c28` (the staging artifact digest overwatch handed to the deploy command, line 3591).
+- Release note carried from #1284: users signed in with Microsoft sign in once more after this deploy. #1294 (CL-A19) was held out of this release.
+
+---
+
+## OD-2026-10-06-014 -- Gym TV: coach switch per session; sound from the TV; round timer with bells and wood knocks after the session display; a coach-dashboard capability; pairing lasts "Until disconnected"; TV tied to the coach; any coach may use any gym TV ("A")
+
+**Provenance: PRIMARY.** Jason's answers in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`): three AskUserQuestion tool uses and two typed messages, read by script (records pass, 2026-10-06, second batch). Question and option text is as stored. New; edits no earlier entry.
+
+**(a) Tool use `toolu_01TT8o6BH6hP7vbRiyoY8Ckd`** (asked line 1549, 2026-10-06T14:05:55.139Z; answered line 1552, 2026-10-06T14:09:44.491Z). Four questions; Jason's answers:
+- "Gym TV Q1: what should the TV show for workouts? ..." (options "Follow live session (Recommended)", "Posted plan, no live", "Auto from schedule", "Rotate screens") -- typed instead of choosing: *"Explain the what it will do currently in layman terms"*
+- "Gym TV Q2: should every live session go to the TV automatically, or only when the coach turns on 'Show on TV'? ..." (options "Automatic (Recommended)" -- "Any live session shows on the TV."; "Coach switch" -- "Per-session 'Show on TV' toggle; small database change.") -- *"Coach switch"*
+- "Gym TV Q3: the TV page has no login ... OK, or lock it with a TV key? ..." (options "OK public, plan only (Recommended)", "Add a TV key") -- typed instead of choosing: *"1 basically the work out walk through we had talked about timers. Bells wood knocking ect"*
+- "Gym TV Q5: do you want an in-app round timer on the TV (rounds, work and rest set by the coach from a phone)? ..." (options "Not now (Recommended)" -- "Use the gym's wall timer; revisit after the session display ships."; "Yes, after session display" -- "Two more build steps after the TV session mode.") -- *"Yes, after session display"*
+
+**(b) Tool use `toolu_01RYa66cZzjwJxzRLiysjEjn`** (asked line 1749, 2026-10-06T14:13:59.763Z; answered line 1752, 2026-10-06T14:18:27.463Z):
+- "Gym TV Q3: the TV page has no login, so anyone with its web address could see the workout (drill names and times; no kids' info, no coach notes). Public, or locked with a TV key? ..." (options "Public, plan only (Recommended)", "Add a TV key") -- typed instead of choosing: *"it should be a capability in the coaches dashboard"*
+- "Gym TV Q7: which device should play the bell and wood-knock sounds? ..." (options "The TV (Recommended)", "Coach's phone", "Both") -- *"The TV (Recommended)"*
+
+**(c) Tool use `toolu_014tyXwUrJtwxvq4vC5pidLt`** (asked line 2240, 2026-10-06T14:34:55.652Z; answered line 2241, 2026-10-06T14:48:00.167Z):
+- "Gym TV access, from the coach dashboard: (A) PAIR the TV ... or (B) a coach SIGNS IN on the TV itself. ..." -- typed instead of choosing: *"how does the tv know"* (overwatch explained the pairing code at line 2267; the A/B choice stayed open).
+- "How long should a paired TV stay paired? ..." (options "Until disconnected or 30 days unused (Recommended)", "Until disconnected" -- "Never expires on its own.", "Re-pair weekly") -- *"Until disconnected"*
+
+**(d) Typed**, line 2805, 2026-10-06T15:18:34.323Z: *"TV session should be tied to coach, there may be two coachs running sessions at the same time"*
+
+**(e)** Overwatch then asked (line 2815, 2026-10-06T15:18:46.885Z, as written):
+
+> **One small follow-up:** if a coach is out, should another coach be able to send their session to that coach's TV?
+> - **(A)** Yes, any coach can choose any gym TV when starting a session. The TV still shows one session at a time. I recommend this, so a TV is never stuck on an absent coach.
+> - **(B)** No, only the coach who paired it.
+>
+> *Plain English: are TVs personal to a coach, or shared gym TVs that whichever coach is running a session can grab?*
+
+Jason, line 2838 (queued), 2026-10-06T15:19:13.967Z: *"A"*
+
+**Rulings:**
+1. A live session shows on a TV only when the coach turns on a per-session "Show on TV" switch (Q2, "Coach switch").
+2. The workout display on TV is a capability in the coach dashboard; it is not left open to anyone with the TV page's web address (Q3, "it should be a capability in the coaches dashboard"). The workout is the session walk-through with timers, bells and wood knocking (his Q1/Q3 text in (a)).
+3. An in-app round timer comes after the session display ships (Q5, "Yes, after session display"); the bell and wood-knock sounds play from the TV (Q7).
+4. A paired TV stays paired until a coach disconnects it; no time-based expiry ("Until disconnected").
+5. A TV session is tied to the coach running it, and two coaches may run sessions at the same time (d).
+6. Any coach may send their session to any gym TV when starting it; a TV shows one session at a time ("A", (e)).
+
+**Not ruled:** pairing (A) versus a coach signing in on the TV (B) -- he asked "how does the tv know" and the choice stayed open (handoff file, top block). His later questions *"oh so could this work at remote location at the house"* (line 2757) and *"can we pair multiple tvs"* (line 2766) are questions, not rulings. The working plan is `Documents\PPBF-overwatch\lane-inbox\GYM-TV-WORKOUT-plan-2026-10-06.md` (evidence, not a ruling).
+
+---
+
+## OD-2026-10-06-013 -- Close-out: "lets focus on getting lanes closed" so another account can pick up where this one leaves off
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 1996, 2026-10-06T14:27:35.762Z). Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked just before (line 1992, 2026-10-06T14:26:12.052Z, as written): "**Usage:** say "yes" to save usage until the 5-hour reset at 17:20 UTC (currently 67% used)." (after his *"doe this account a have a usage reset"*, line 1960).
+
+Jason: *"yes but lets focus on getting lanes closed that way i can use another account to pick up where we leave off"*
+
+**Ruling: open lanes are driven to close (each gets its own PR green and merged, then is archived) ahead of new work, and the state is written down so a session on another account can resume it.** Overwatch acted on it as: lanes with open PRs fix only their own CI and report GREEN; unfinished lanes stop at a clean point and write a RESUME HERE note; a handover block with a restart prompt went to the top of `Documents\PPBF-overwatch\OVERWATCH-HANDOFF-LIVE.md` (line 2084). The "yes" also accepted saving usage until the 17:20 UTC reset.
+
+---
+
+## OD-2026-10-06-012 -- AI data at deletion: delete anything that personally identifies the person; keep data that makes the AI and ML better
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_01XWFHfXsquMwhnofBNp7ykZ` in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 1827, 2026-10-06T14:21:12.086Z; answered line 1829, 2026-10-06T14:22:14.518Z). Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked (official, then plain, as written): "When a person's data is deleted (after the grace period), what happens to their SHADOW AI chats and remembered facts? Today chats, remembered facts and related records survive the purge. (Plain: when a kid or parent is deleted from the app, their conversations with the AI assistant and what it remembered about them are still kept. Should those go too, or be kept in case they're needed as a safety record?)" Options: "Delete all, keep flagged (Recommended)" -- "Delete their chats, remembered facts and AI records at purge, EXCEPT any chat flagged into a safeguarding review, which is kept as a safety record."; "Delete everything" -- "Purge removes all of it, flagged safety reviews included."; "Keep everything" -- "Leave AI chats and memory in place after deletion, as today."
+
+Jason typed instead of choosing: *"delete any thing that personally Identifys the person but we keep data that male the Ai and ML bette3r"*
+
+**Ruling: at the final purge of a person's data, everything in the SHADOW AI records that personally identifies the person is deleted; data that improves the AI and ML is kept, de-identified.** None of the three offered options was chosen. What counts as identifying, how flagged safeguarding chats are treated, and the existing Blob archives are not ruled here: the G1 plan (`Documents\PPBF-overwatch\lane-inbox\SHADOW-DEIDENTIFY-plan-2026-10-06.md`) lists five questions for Jason (handoff file, top block).
+
+---
+
+## OD-2026-10-06-011 -- Overwatch checks every PR's scope and archives each lane when its scope is met
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 1623, 2026-10-06T14:11:35.674Z). Read by script (records pass, 2026-10-06, second batch). Unprompted (it followed a "Check lanes" status report). New; edits no earlier entry.
+
+Jason: *"Make sure you are checking scope and and archiving when met to prevent over reach and drift"*
+
+**Ruling: before every merge, overwatch checks the PR's changed files against the lane's approved scope, and archives each lane once its scope is met (its PR merged), to prevent overreach and drift.** This restates as a standing instruction what OD-2026-09-30-003 (merges after a scope check) and OD-2026-10-01-001 (lanes finish and close; closed lanes are archived) already required. Overwatch's stated practice (line 1696): compare each PR's files with the lane's allowlist before merge; tell overlapping pairs to update from main and keep both changes; archive each lane as soon as its PR merges.
+
+---
+
+## OD-2026-10-06-010 -- Library questions about a specific child: the athlete and their parents may read them; only coaches and org admins may close them (option "Family reads, staff closes")
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_01LQNQjAQT7WzAUN7hPdNHce` in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 1316, 2026-10-06T13:49:26.499Z; answered line 1324, 2026-10-06T13:50:02.993Z). Read by script (records pass, 2026-10-06, second batch). Follows OD-2026-10-06-003. New; edits no earlier entry.
+
+Asked (official, then plain, as written): "CL-A3 follow-up: for Library research questions ABOUT a specific child, may that athlete and their parents keep reading and closing them, including text a coach wrote? (Plain: you made general Library questions staff-only. Some questions are about one kid. Today the kid and their parents can still see and close those, even the coach's notes. Keep that, or make those staff-only too?)" Options: "Family reads, staff closes (Recommended)" -- "The athlete and parents can read questions about their own child, but only coaches and org admins can close them."; "Keep as is" -- "The family can read and close questions about their own child."; "Staff only" -- "Questions about a child are staff-only too; the family sees none of them."
+
+Jason: *"Family reads, staff closes (Recommended)"*
+
+**Ruling: a Library research question about a specific child may be read by that athlete and their parents, including text a coach wrote; only coaches and organization admins may close it.** Qualifies OD-2026-10-06-003 for questions about a specific child.
+
+---
+
+## OD-2026-10-06-009 -- Auto-fix is authorized for lanes
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 1034, 2026-10-06T13:38:01.086Z). Read by script (records pass, 2026-10-06, second batch). Unprompted. New; edits no earlier entry.
+
+Jason: *"Also update lanes auto fix is authrized"*
+
+**Ruling: lanes may auto-fix their own PRs.** Overwatch passed it to 16 lanes as (line 1088, 2026-10-06T13:38:52.129Z): "Each lane can fix failing checks and reviewer findings on its own PR without asking me, as long as it stays inside its approved file list and your rulings. Lanes still ask me before adding files, making product choices, changing the database, or touching production." That reading is overwatch's; Jason's words do not state its limits. Changes no merge, migration or production rule.
+
+---
+
+## OD-2026-10-06-008 -- Production sign-in address: PPBF_APP_ORIGIN set to https://www.punxsyprominence.org in GitHub and the running app ("A", "Approve the production changes"); Jason ran the app change in Cloud Shell
+
+**Provenance: PRIMARY.** Jason's messages in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked (line 952, 2026-10-06T13:34:42.490Z, as written): "**Question:** may I change `PPBF_APP_ORIGIN` to `https://www.punxsyprominence.org` in both places? That means the GitHub production variable, and the running app `app-ppbf-production`, which then restarts on a new version. **(A) Yes, both.** Recommended. Sign-in links work right away and stay fixed after future deploys. **(B) Not now.**" Plain, as written: "the address in sign-in emails is missing its "https://www." part, so the links lead nowhere." Overwatch had observed production set to `punxsyprominence.org` (no scheme, not www), so every emailed sign-in link went nowhere.
+
+Jason, line 1001 (queued), 2026-10-06T13:37:02.565Z: *"A"*. The safety check then refused overwatch's change, and overwatch handed him the two steps (line 1018). Jason, line 1435, 2026-10-06T13:56:32.333Z: *"Approve the production changes"*. Overwatch then set the GitHub production environment variable (OBSERVED by overwatch at 13:57 UTC, line 1449); the safety check refused its `az containerapp update`. Jason's first `az containerapp update` was refused by Azure for lack of MFA (his paste, line 1798). Jason then pasted Cloud Shell output (line 2734, 2026-10-06T15:13:58.125Z) showing `app-ppbf-production--0000168  Succeeded` for `az containerapp update -n app-ppbf-production -g rg-ppbf-enterprise-staging --set-env-vars PPBF_APP_ORIGIN=https://www.punxsyprominence.org`.
+
+**Ruling: `PPBF_APP_ORIGIN` for production is `https://www.punxsyprominence.org`, both in the GitHub `production` environment variable and in the running container app.** "Approve the production changes" approved this change; it was not a release approval (Release 11 is OD-2026-10-06-015). The app change was run by Jason, not by an AI session.
+
+**OBSERVED by this records lane (2026-10-06, read-only `az containerapp show`):** production's `PPBF_APP_ORIGIN` reads `https://www.punxsyprominence.org` (now on revision `--0000169`, OD-2026-10-06-015). Revision `--0000168` running healthy with 100% traffic is REPORTED by overwatch (line 2753), not re-checked here. A fresh sign-in link test by Jason was still pending at handover.
+
+---
+
+## OD-2026-10-06-007 -- "Approve merges": overwatch may merge #1275 (main's red-check fix) when its checks pass
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 897 (queued), 2026-10-06T13:30:24.067Z). Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked (line 882, 2026-10-06T13:29:34.904Z, as written): "**#1275:** your yes (A) to let me merge it once its checks pass, or (B) merge it yourself in GitHub. It's one added line in a test file that unblocks every lane."
+
+Jason: *"Approve merges"*
+
+**Ruling: overwatch merges #1275 once its checks pass.** Overwatch also applied it to #1276 and #1274 after #1275 if their checks passed (line 952); lane merges by overwatch after CI and a scope check were already its standing role (OD-2026-09-30-003). #1275 merged as `82fc02f2` (handoff, REPORTED).
+
+---
+
+## OD-2026-10-06-006 -- CL-A21: a child whose parent chose photo-only or withdrew consent: no one watches the quarantined flagged video, reviewers included (option "No one watches it")
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_01GRThNKgb92o3cA7CEv8mkc` in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 595, 2026-10-06T12:58:31.119Z; answered line 603, 2026-10-06T13:00:06.195Z); the second of its two questions. Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked (official, then plain, as written): "CL-A21: when a parent chose photo-only (or withdrew consent), may a safeguarding reviewer still watch that child's QUARANTINED, flagged video to check it for harm? (Plain: the video is already locked away and can't be used. The question is whether a reviewer may look at it to judge whether it's harmful, or whether nobody may watch it at all.)" Options: "No one watches it (Recommended)" -- "Photo-only or withdrawn means no viewing, even for review. It stays quarantined, and a reviewer can still Block it without watching."; "Reviewer may look" -- "A safeguarding look isn't 'use'. Reviewers can open the 15-minute review link for flagged footage only. Nothing else changes."
+
+Jason: *"No one watches it (Recommended)"*
+
+**Ruling: when a parent chose photo-only or withdrew consent, no one may view that child's quarantined, flagged video, safeguarding reviewers included. It stays quarantined, and a reviewer may still Block it without watching.**
+
+---
+
+## OD-2026-10-06-005 -- CL-A20: staff may approve or block their own staff portrait photo; no change (option "Leave as is")
+
+**Provenance: PRIMARY.** Same AskUserQuestion as OD-2026-10-06-006 (tool use `toolu_01GRThNKgb92o3cA7CEv8mkc`, answered line 603, 2026-10-06T13:00:06.195Z); the first of its two questions. Read by script (records pass, 2026-10-06, second batch). New; edits no earlier entry.
+
+Asked (official, then plain, as written): "CL-A20: may a staff member approve or block their OWN staff portrait photo? (Plain: today a coach or admin can approve their own profile photo, which skips the 'someone else checks it' step. Should someone else always decide?)" Options: "Someone else decides (Recommended)" -- "No self-approval and no self-block; another admin reviews it. Matches the 2026-08-29 decision that photo review is admin-only."; "No self-approve, self-block OK" -- "You can't approve your own photo, but you can still pull (block) your own photo."; "Leave as is" -- "Adult staff photos, low risk; staff may approve their own."
+
+Jason: *"Leave as is"*
+
+**Ruling: CL-A20 is closed with no change: a staff member may approve or block their own staff portrait photo.** The recommended option was not chosen. The 2026-08-29 decision that portrait review is admin-only is not changed by this entry.
+
+---
+
 ## OD-2026-10-06-004 -- Public inquiry retention: every public inquiry older than 12 months is deleted, joined or not (option "Delete all after 12 mo")
 
 **Provenance: PRIMARY.** Jason's answer to an AskUserQuestion asked in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, tool use `toolu_01RiCLxyqvxK9Ha3Do5ifuPM`; asked 2026-10-06T12:54:45.823Z, line 520; answered 2026-10-06T12:55:48.480Z, line 521). Read by script from that transcript (records pass, 2026-10-06); question and option text below is as printed by the script. The one tool call carried three questions and Jason answered all three together; this is the third. See OD-2026-10-06-002 and -003. New; edits no earlier entry.
