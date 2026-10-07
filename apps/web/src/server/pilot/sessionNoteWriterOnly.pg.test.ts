@@ -70,6 +70,9 @@ const MIGRATIONS = [
   'pilot_slice_postgres_data_retention_deletion_migration.sql',
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_duration_migration.sql',
+  // upsertSession writes the close record on every update (session-close
+  // migration), so the writer under test needs those columns too.
+  'pilot_slice_postgres_session_close_migration.sql',
 ];
 
 const ORG_ID = 'org-note-writer';

@@ -446,6 +446,31 @@ describe('session duration_minutes is optional, whole and bounded', () => {
   );
 });
 
+// pilot.sessions close record (pilot_slice_postgres_session_close_migration.sql):
+// checked_out_at, close_method, last_activity_at, inactivity_minutes are
+// server-owned. upsertSession stamps them on the completed_flag transition;
+// a body carrying any of them is refused, so a client cannot claim a
+// check-out time, a close method or an inactivity record it did not have.
+describe('the session close record cannot be written from a request body', () => {
+  test.each([
+    ['checked_out_at', '2026-10-07T01:00:00Z'],
+    ['close_method', 'athlete_check_out'],
+    ['last_activity_at', '2026-10-07T00:40:00Z'],
+    ['inactivity_minutes', 20],
+  ])('%s in the body is refused with a 400 naming it', async (field, value) => {
+    let refusal: unknown;
+    try {
+      validateSessionPayload(sessionPayload({ completed_flag: true, [field]: value }));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(Error);
+    const response = jsonError(refusal);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain(field);
+  });
+});
+
 describe('only an athlete may write duration_minutes', () => {
   const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
 
