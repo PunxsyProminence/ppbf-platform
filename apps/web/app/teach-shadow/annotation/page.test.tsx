@@ -1281,6 +1281,96 @@ describe('body-point marking', () => {
     expect(write?.body).toMatchObject({ stance: '', peak_ms: '', contact_ms: '' });
   });
 
+  test('the contact rule holds both ways: a time on a miss or an uncertain punch is refused, a time on a contact is sent', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    // The event starts at the playhead (12.000) and runs 500 ms; "Mark
+    // contact at playhead" lands inside the event.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark contact at playhead' }));
+    });
+    expect((screen.getByLabelText(/^Contact \(ms, video time\)/) as HTMLInputElement).value).toBe('12000');
+
+    for (const result of ['no_contact', 'uncertain_contact']) {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: result } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+      });
+      expect(screen.getByRole('alert').textContent).toContain('carries no contact time');
+      expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+    }
+
+    // Every contact result accepts the time and sends it.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'non_target_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.body).toMatchObject({ contact_result: 'non_target_contact', contact_ms: '12000' });
+
+    // An uncertain punch with the field cleared is sent without a time.
+    calls.length = 0;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'uncertain_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    expect(calls.find((call) => call.url.includes('/calibration/events'))?.body).toMatchObject({ contact_ms: '' });
+  });
+
+  test('"Mark contact at playhead" stays inside the event, not just the clip', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [] });
+
+    await openClip();
+    // Move the playhead to 14.000, then start an event there (14.000 to
+    // 14.500), then move the playhead on by a second: the contact mark must
+    // be pulled back to the event's end, 14.500.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Seek within the clip'), { target: { value: '14000' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+1000ms' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark contact at playhead' }));
+    });
+    expect((screen.getByLabelText(/^Contact \(ms, video time\)/) as HTMLInputElement).value).toBe('14500');
+  });
+
+  test('editing an event on a body-point set never sends a stance or a peak', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [{ ...PUNCH_EVENT, event_id: 'evt-2', stance: 'orthodox', peak_ms: 12_600, contact_ms: null, contact_result: 'no_contact' }],
+      bodyData: { ...BODY_DATA, moments: [], missing: [] },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save replacement' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.method).toBe('PUT');
+    expect(write?.body).toMatchObject({ stance: '', peak_ms: '' });
+  });
+
   test('a 0.1 set\'s event form still has its stance and peak fields', async () => {
     global.fetch = mockFetch({ events: [] });
 

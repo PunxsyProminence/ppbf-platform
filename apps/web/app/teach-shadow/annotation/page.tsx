@@ -773,14 +773,20 @@ export default function CoachCalibrationPage() {
        time: the middle moment is marked AT contact (OD-2026-10-02-011 3a)
        and the database refuses the event without it. Told here, with the
        form still on screen; the server refuses the same thing. */
-    if (
-      isBodyPointSet
-      && draft.eventClass === 'punch'
-      && isInVocabulary(CONTACT_RESULTS_WITH_CONTACT, draft.contactResult)
-      && draft.contactMs.trim() === ''
-    ) {
-      setRefusal('A punch that made contact needs its contact time (ms, video time): the middle moment is marked at contact.');
-      return;
+    if (isBodyPointSet && draft.eventClass === 'punch') {
+      const madeContact = isInVocabulary(CONTACT_RESULTS_WITH_CONTACT, draft.contactResult);
+      const hasContactTime = draft.contactMs.trim() !== '';
+      if (madeContact && !hasContactTime) {
+        setRefusal(`A punch marked "${label(draft.contactResult)}" needs its contact time (ms, video time): the middle moment is marked at contact.`);
+        return;
+      }
+      // The same rule the other way (the database holds both directions): a
+      // miss, or a punch the coach cannot tell landed, is marked at full
+      // extension and carries no contact time.
+      if (!madeContact && hasContactTime && draft.contactResult !== '') {
+        setRefusal(`A punch marked "${label(draft.contactResult)}" carries no contact time: clear the contact field, or change the result.`);
+        return;
+      }
     }
 
     const body = {
@@ -1930,7 +1936,7 @@ export default function CoachCalibrationPage() {
               {isBodyPointSet && draft.eventClass === 'punch' ? (
                 <div className="field mt-[var(--s3)] md:max-w-[50%]">
                   <label htmlFor="draft-contact-ms" className="t-label">
-                    Contact (ms, video time) — required when the punch made contact
+                    Contact (ms, video time) — required for any result except no contact and uncertain contact, and must be empty for those
                   </label>
                   <input
                     id="draft-contact-ms"
@@ -1944,7 +1950,9 @@ export default function CoachCalibrationPage() {
                     className="btn btn--ghost mt-[var(--s2)]"
                     onClick={() => setDraft({
                       ...draft,
-                      contactMs: String(clampMsToClip(currentMs, clip.start_ms, clip.end_ms)),
+                      // Inside the EVENT, not just the clip: the server
+                      // refuses a contact time outside the event's span.
+                      contactMs: String(clampMsToClip(currentMs, draft.startMs, draft.endMs)),
                     })}
                   >
                     Mark contact at playhead
