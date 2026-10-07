@@ -240,6 +240,57 @@ export async function openAnnotationSet(
   return row;
 }
 
+/**
+ * Opens the same annotator's NEXT pass over a clip they have already
+ * labelled and submitted, or answers null.
+ *
+ * ONE STATEMENT DECIDES AND WRITES. The pass number is the latest pass plus
+ * one, and the row is inserted only if that latest pass is submitted, so
+ * there is no gap between "is the last one finished" and the insert for a
+ * second tab to fall into. Null covers every case in which nothing was
+ * opened: no earlier pass, an earlier pass still in progress, or another
+ * request opening the same pass first (`on conflict do nothing` rather than a
+ * key violation). The caller re-reads to tell which.
+ *
+ * The database holds the same rule in pilot_calibration_sets_pass_guard, for
+ * writes that do not come through here.
+ *
+ * WHAT IT DOES NOT DO: it copies nothing from the earlier pass. A repeat
+ * reading starts empty and is made without the first -- annotatorGate.ts and
+ * blinding.ts stop the earlier pass being read back from the moment this
+ * returns a row.
+ */
+export async function openNextAnnotationPass(
+  input: OpenAnnotationSetInput,
+): Promise<AnnotationSetRow | null> {
+  return queryOne<AnnotationSetRow>(
+    `insert into pilot.calibration_annotation_sets
+       (organization_id, annotation_set_id, calibration_clip_id, annotator_account_id,
+        ontology_version, status, submitted_at, pass_number)
+     select $1, $2, $3, $4, $5, 'in_progress', null, latest.pass_number + 1
+       from (
+         select pass_number, status
+           from pilot.calibration_annotation_sets
+          where organization_id = $1
+            and calibration_clip_id = $3
+            and annotator_account_id = $4
+          order by pass_number desc
+          limit 1
+       ) latest
+      where latest.status = 'submitted'
+     on conflict (organization_id, calibration_clip_id, annotator_account_id, pass_number)
+       do nothing
+     returning ${SET_COLUMNS}`,
+    [
+      input.organizationId,
+      requireNonEmpty(input.annotationSetId, 'annotation_set_id'),
+      requireNonEmpty(input.calibrationClipId, 'calibration_clip_id'),
+      requireNonEmpty(input.annotatorAccountId, 'annotator_account_id'),
+      requireNonEmpty(input.ontologyVersion, 'ontology_version'),
+    ],
+  );
+}
+
 /** A set read by id, and whether its annotator has since opened a later pass
  *  on the same clip. */
 export interface AnnotationSetLookupRow extends AnnotationSetRow {

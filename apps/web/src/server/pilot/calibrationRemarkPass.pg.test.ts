@@ -14,9 +14,9 @@
 //   * the runners: the annotations runner still passes after this migration,
 //     in either order and repeatedly, and the three-column key stays gone
 //
-// A later pass is opened here by a direct row write. This slice adds no way
-// to open one through the application, on purpose: every reader is made
-// pass-aware before a second pass can exist.
+// Most cases open a later pass by a direct row write, so that only the
+// database judges it. The application's own way in, openNextAnnotationPass,
+// has its own section at the end.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -929,5 +929,84 @@ describe('organization isolation is unchanged', () => {
       orgId: OTHER_ORG_ID, videoId: OTHER_VIDEO_ID, projectId: OTHER_PROJECT_ID, creator: OTHER_A,
     });
     await expect(insertPass(OTHER_A, foreignClip, 2, { orgId: OTHER_ORG_ID })).rejects.toThrow(NOT_SUBMITTED);
+  });
+});
+
+describe('opening the next pass through the application', () => {
+  const open = (annotator: string, clipId: string, version: string = V01, orgId: string = ORG_ID) =>
+    annotations.openNextAnnotationPass({
+      organizationId: orgId,
+      annotationSetId: crypto.randomUUID(),
+      calibrationClipId: clipId,
+      annotatorAccountId: annotator,
+      ontologyVersion: version,
+    });
+
+  test('opens nothing with no earlier pass, or while the earlier pass is in progress', async () => {
+    const clipId = await newClip();
+    expect(await open(A, clipId)).toBeNull();
+    await firstPass(A, clipId);
+    expect(await open(A, clipId)).toBeNull();
+    expect(await passNumbers(clipId, A)).toEqual([1]);
+  });
+
+  test('opens pass 2 once pass 1 is submitted, then pass 3 only once pass 2 is', async () => {
+    const clipId = await newClip();
+    await submit(await firstPass(A, clipId));
+
+    const second = await open(A, clipId);
+    expect(second).toMatchObject({
+      organization_id: ORG_ID,
+      calibration_clip_id: clipId,
+      annotator_account_id: A,
+      ontology_version: V01,
+      status: 'in_progress',
+      pass_number: 2,
+      submitted_at: null,
+    });
+    expect(await open(A, clipId)).toBeNull();
+    expect(await passNumbers(clipId, A)).toEqual([1, 2]);
+
+    expect(await annotations.submitAnnotationSet(ORG_ID, second!.annotation_set_id)).not.toBeNull();
+    expect((await open(A, clipId))?.pass_number).toBe(3);
+    expect(await passNumbers(clipId, A)).toEqual([1, 2, 3]);
+  });
+
+  test('two requests at once open one pass between them', async () => {
+    const clipId = await newClip();
+    await submit(await firstPass(A, clipId));
+
+    const results = await Promise.all([open(A, clipId), open(A, clipId), open(A, clipId)]);
+
+    expect(results.filter((row) => row !== null)).toHaveLength(1);
+    expect(await passNumbers(clipId, A)).toEqual([1, 2]);
+  });
+
+  test('another annotator\'s submitted pass, or another organization, opens nothing', async () => {
+    const clipId = await newClip();
+    await submit(await firstPass(B, clipId));
+    expect(await open(A, clipId)).toBeNull();
+    expect(await open(B, clipId, V01, OTHER_ORG_ID)).toBeNull();
+    expect(await passNumbers(clipId, A)).toEqual([]);
+    expect(await passNumbers(clipId, B)).toEqual([1]);
+  });
+
+  test('the new pass starts empty, and from that moment the earlier pass is out of its annotator\'s reach', async () => {
+    const clipId = await newClip();
+    const pass1 = await firstPass(A, clipId, V04);
+    await completeEvent(pass1, await punch(pass1));
+    await submit(pass1);
+    expect((await gate.loadOwnAnnotationSet(principal(A), pass1.setId)).annotation_set_id).toBe(pass1.setId);
+
+    const second = await open(A, clipId, V04);
+
+    expect(await annotations.listAnnotationEvents(ORG_ID, second!.annotation_set_id)).toEqual([]);
+    const body = await bodyPoints.listBodyDataForSet(ORG_ID, second!.annotation_set_id);
+    expect([body.moments, body.stance_labels]).toEqual([[], []]);
+    await expect(gate.loadOwnAnnotationSet(principal(A), pass1.setId)).rejects.toThrow(NOT_FOUND);
+    expect((await gate.findOwnAnnotationSetForClip(principal(A), clipId))?.annotation_set_id)
+      .toBe(second!.annotation_set_id);
+    // Pass 1's own rows are untouched.
+    expect((await bodyPoints.listBodyDataForSet(ORG_ID, pass1.setId)).moments).toHaveLength(3);
   });
 });
