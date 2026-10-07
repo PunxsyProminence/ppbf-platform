@@ -677,7 +677,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole citation-checks/route.ts:30 via http.ts:102 alias-aware version. Read-only research source citation status/queue; no athlete data.",
+    "notes": "requireRole citation-checks/route.ts:30 via http.ts requireRole (alias-aware version). Read-only research source citation status/queue; no athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2192,7 +2192,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates a gym announcement. Session gate http.ts:69-79 (adult non-PIN session); role decided inline by resolveAuthorRole: coach, platform_owner, org admin/admin, board only when posting as a seat they hold; all other roles get null then Forbidden. No athlete data. Writes announcement + audit.",
+    "notes": "Creates a gym announcement. Session gate http.ts requireStaffSessionPrincipal (adult non-PIN session); role decided inline by resolveAuthorRole: coach, platform_owner, org admin/admin, board only when posting as a seat they hold; all other roles get null then Forbidden. No athlete data. Writes announcement + audit.",
     "mechanical": {
       "sessionGates": [
         "requireStaffSessionPrincipal"
@@ -5511,7 +5511,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Without athlete_id returns the gym competence ladder and cohort rules (policy, no athlete data) to any signed-in role (route.ts:54-61). With athlete_id returns one athlete report, restricted to coach/admin and reach-checked. Header comment (line 14) says requireRole does not alias admin; http.ts:102 now does alias, so that comment is stale.",
+    "notes": "Without athlete_id returns the gym competence ladder and cohort rules (policy, no athlete data) to any signed-in role (route.ts:54-61). With athlete_id returns one athlete report, restricted to coach/admin and reach-checked. Header comment (line 14) says requireRole does not alias admin; http.ts requireRole now does alias, so that comment is stale.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

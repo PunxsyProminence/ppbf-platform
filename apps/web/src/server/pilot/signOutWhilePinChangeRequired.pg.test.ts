@@ -306,7 +306,8 @@ describe('a session that still owes a PIN change', () => {
     const tablet = await mintSession(accountId);
     const phone = await mintSession(accountId);
     // Somebody else's session in the same gym must be left alone.
-    const bystander = await mintSession(await seedAthlete({ mustChangePin: false }));
+    const bystanderId = await seedAthlete({ mustChangePin: false });
+    const bystander = await mintSession(bystanderId);
 
     const response = await logoutAllPost(requestWith(tablet, 'http://localhost/api/pilot/auth/logout-all'));
 
@@ -318,7 +319,8 @@ describe('a session that still owes a PIN change', () => {
     expect(await revokedAt(bystander)).toBeNull();
     expect(await resolvePrincipal(requestWith(tablet))).toBeNull();
     expect(await resolvePrincipal(requestWith(phone))).toBeNull();
-    expect((await resolvePrincipal(requestWith(bystander)))?.accountId).not.toBe(accountId);
+    // Still a working session, not merely un-revoked: it resolves to its owner.
+    expect((await resolvePrincipal(requestWith(bystander)))?.accountId).toBe(bystanderId);
 
     expect(await auditRows(accountId)).toEqual([
       { event_type: 'update', details: { action: 'session_revoke_all_self' } },

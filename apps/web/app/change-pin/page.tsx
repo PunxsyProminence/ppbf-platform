@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
+import { requiresDocumentLoad } from '@/components/cameraDocuments';
+import { clearRoleSession } from '@/components/roleSession';
+import { CONTROL_EXIT } from '@/components/sessionBarControls';
 import { DEFAULT_PIN_LENGTH, PIN_RULE_SUMMARY } from '@/src/server/pilot/pinPolicy';
 
 const PIN_PATTERN = /^\d{6}$/;
@@ -13,9 +16,21 @@ const PIN_PATTERN = /^\d{6}$/;
  * PIN the gym gave them. The server refuses every other route until this is
  * done (see requirePrincipal), so there is deliberately no way to skip it and
  * no navigation off this page other than completing it or signing out.
+ *
+ * SIGNING OUT HAS TO BE ON THIS PAGE. The session bar (GlobalRoleHeader)
+ * carries the app's Logout everywhere else, but it draws its signed-in
+ * controls from the role-session cache, and a session that still owes a PIN
+ * change is never written to that cache (roleSession.ts: must_change_pin
+ * resolves to pin_change_required, not ok). So here the bar is the signed-out
+ * mark alone, and until this control existed the only way off a shared gym
+ * tablet was to choose a PIN or walk away signed in. The control below is the
+ * bar's own: same label, same classes, same signOut sequence
+ * (GlobalRoleHeader.tsx), against POST /api/pilot/auth/logout, whose session
+ * reader admits a session owing a PIN change (http.ts, the sign-out reader).
  */
 export default function ChangePinPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -63,6 +78,18 @@ export default function ChangePinPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function signOut() {
+    // The session bar's signOut, verbatim (GlobalRoleHeader.tsx): credentials
+    // so the cross-origin fetch carries the cookie there is to revoke;
+    // keepalive so a document load below cannot cancel the request and leave
+    // the session alive on the tablet; then the cache cleared and the same
+    // landing as every other sign-out.
+    void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include', keepalive: true });
+    clearRoleSession();
+    if (requiresDocumentLoad(pathname, '/login')) window.location.replace('/login');
+    else router.replace('/login');
   }
 
   if (done) {
@@ -191,6 +218,16 @@ export default function ChangePinPage() {
                 {busy ? 'Saving...' : 'Save My PIN'}
               </button>
             </form>
+
+            {/* Outside the form so it can never be the form's submit, and
+                after it so Save My PIN stays the first control in tab order:
+                the person who should be here is the one choosing a PIN; the
+                one who should not is the next athlete at the tablet. */}
+            <div className="mt-[var(--s5)] flex justify-end">
+              <button type="button" onClick={signOut} className={CONTROL_EXIT}>
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>

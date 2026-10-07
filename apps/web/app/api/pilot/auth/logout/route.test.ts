@@ -72,8 +72,10 @@ describe('POST /api/pilot/auth/logout', () => {
 
   test('the same session is still refused by every data-serving gate', async () => {
     // This is what keeps the fix narrow: the bootstrap-PIN stop is skipped
-    // for signing out and nowhere else. Every gate a data route can use is
-    // built on requirePrincipal and still refuses this session.
+    // for signing out and nowhere else. Every requirePrincipal-derived gate
+    // still refuses this session. (resolvePrincipal itself is a reader too;
+    // signOutGate.convention.test.ts accounts for it, and its one route
+    // caller, auth/session, exists to answer {authenticated: false}.)
     const gates = [
       requirePrincipal,
       requireStaffSessionPrincipal,

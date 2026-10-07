@@ -18,13 +18,24 @@
 //   1. Per HANDLER, through the same walker the gate-declaration test uses:
 //      the set of handlers reaching each exempt reader is EXACTLY the pinned
 //      set. Catches a route that starts calling the reader, directly or through
-//      a same-file helper. Blind to code outside app/api.
+//      a same-file helper. Blind to code outside app/api, and blind to an
+//      import alias (`import { x as requirePrincipal }`), because it sees the
+//      name at the call site.
 //   2. Per FILE, by a plain text scan of every non-test source under apps/web:
 //      the files that so much as mention each reader are exactly its
 //      definition, its pinned callers, and the files that describe it. Catches
 //      a server module (not a route) that imports the reader, which the walker
-//      never sees. Blind to nothing in the tree, but it is a substring match,
-//      which is why it is the second check and not the only one.
+//      never sees, and catches the alias. Blind to code outside apps/web
+//      (packages/, repo scripts/), to a name assembled from strings at run
+//      time, and to a symlinked file; and it is a substring match, which is
+//      why it is the second check and not the only one.
+//
+// Two smaller checks close the gaps a reviewer found in the pair above: an
+// allowed caller FILE may not grow a handler the walker cannot see (an arrow
+// function or a re-export as GET/POST/...), and the gates every other route
+// is built on must still derive from requirePrincipal rather than from one of
+// the exempt readers (http.ts is an allowed file, so the scan alone would not
+// notice that swap).
 //
 // The pins are equalities, not floors. Adding a legitimate caller means
 // editing this file, which is the point: a reviewer sees the exemption widen.
@@ -32,9 +43,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { API_ROOT, WEB_ROOT, walkApiRoutes } from './routeGateWalk';
+import {
+  API_ROOT,
+  HTTP_METHODS,
+  WEB_ROOT,
+  blankLiterals,
+  calledNames,
+  collectFunctionBodies,
+  walkApiRoutes,
+} from './routeGateWalk';
 
-/** Handlers (route file + method) that may reach each exempt session reader. */
+/**
+ * Handlers (route file + method) that may reach each exempt session reader.
+ *
+ * resolvePrincipal is the raw reader every gate is built on; it applies no
+ * stop at all. Its one route caller is the "who am I" endpoint, which exists
+ * to answer {authenticated: false} and so cannot throw Unauthorized. It is
+ * pinned by handler only: 17 non-test server files mention the name (every
+ * gate in http.ts, pageGuard.ts, ...), so a file pin would say nothing.
+ */
 const EXEMPT_READER_HANDLERS: Record<string, string[]> = {
   requirePrincipalForSignOut: [
     'app/api/pilot/auth/logout-all/route.ts#POST',
@@ -43,7 +70,20 @@ const EXEMPT_READER_HANDLERS: Record<string, string[]> = {
   requirePrincipalAllowingPinChange: [
     'app/api/pilot/auth/change-pin/route.ts#POST',
   ],
+  resolvePrincipal: [
+    'app/api/pilot/auth/session/route.ts#POST',
+  ],
 };
+
+/**
+ * The gates every other route reaches through. Each must call requirePrincipal
+ * and none of the exempt readers; see the "derive from requirePrincipal" test.
+ */
+const REQUIRE_PRINCIPAL_DERIVED_GATES = [
+  'requireMicrosoftAuthenticatedPrincipal',
+  'requireMicrosoftOrAttestedLocalPinPrincipal',
+  'requireStaffSessionPrincipal',
+];
 
 /**
  * Files (relative to apps/web, forward slashes) allowed to contain each
@@ -67,7 +107,11 @@ const EXEMPT_READER_FILES: Record<string, string[]> = {
   ],
 };
 
-const SKIPPED_DIRECTORIES = new Set(['node_modules', '.next', 'coverage', 'playwright-report', 'test-results']);
+// Build output and tool output, none of it source. .next-offline and the
+// dot-prefixed skip below cover the offline build; out/ is a static export.
+const SKIPPED_DIRECTORIES = new Set([
+  'node_modules', '.next', 'out', 'build', 'dist', 'coverage', 'playwright-report', 'test-results', 'page-shots',
+]);
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mjs', '.cjs', '.js', '.json']);
 
 function isTestFile(rel: string): boolean {
@@ -144,10 +188,12 @@ describe('the session readers that skip the bootstrap-PIN stop are called only w
   }
 
   // The two pins must agree with each other: every handler pinned above lives
-  // in a file allowed below. Otherwise one list could be edited without the
-  // other and the suite would still be green on one of them.
+  // in a file allowed below (for the readers that carry a file pin).
+  // Otherwise one list could be edited without the other and the suite would
+  // still be green on one of them.
   test('every pinned handler is in a file the scan allows', () => {
     for (const [reader, handlers] of Object.entries(EXEMPT_READER_HANDLERS)) {
+      if (!(reader in EXEMPT_READER_FILES)) continue;
       const allowed = new Set(EXEMPT_READER_FILES[reader]);
       for (const id of handlers) {
         expect(allowed.has(id.split('#')[0])).toBe(true);
@@ -155,26 +201,77 @@ describe('the session readers that skip the bootstrap-PIN stop are called only w
     }
   });
 
-  // requirePrincipal itself must still be what every other route reaches
-  // through. If a reader were added to http.ts and to SESSION_GATES without a
-  // pin here, it would pass the gate-declaration test silently; this says the
-  // recogniser set and the pins above name the same exemptions.
-  test('every session gate the walker recognises is either requirePrincipal-derived or pinned here', () => {
+  // The walker finds `export (async) function METHOD(` and nothing else. An
+  // allowed caller file could grow `export const GET = async (req) => ...` or
+  // `export { helper as GET }` and the handler pin would never see it, while
+  // the file pin permits the whole file. So in each allowed file the exported
+  // HTTP methods, found by every spelling, must be exactly the pinned ones.
+  test('an allowed caller file exports exactly its pinned handlers, by any spelling', () => {
+    const methods = HTTP_METHODS.join('|');
+    const declared = new RegExp(`export\\s+(?:const|let|var|async\\s+function|function)\\s+(${methods})\\b`, 'g');
+    const reExported = new RegExp(`export\\s*\\{([^}]*)\\}`, 'g');
+
+    for (const [reader, handlers] of Object.entries(EXEMPT_READER_HANDLERS)) {
+      const byFile = new Map<string, Set<string>>();
+      for (const id of handlers) {
+        const [file, method] = id.split('#');
+        if (!byFile.has(file)) byFile.set(file, new Set());
+        byFile.get(file)!.add(method);
+      }
+      for (const [file, pinnedMethods] of byFile) {
+        const source = blankLiterals(fs.readFileSync(path.join(WEB_ROOT, file), 'utf8'));
+        const exported = new Set<string>();
+        for (const match of source.matchAll(declared)) exported.add(match[1]);
+        for (const match of source.matchAll(reExported)) {
+          for (const piece of match[1].split(',')) {
+            const name = piece.trim().split(/\s+as\s+/).pop() ?? '';
+            if (new RegExp(`^(${methods})$`).test(name)) exported.add(name);
+          }
+        }
+        expect({ reader, file, exported: [...exported].sort() })
+          .toEqual({ reader, file, exported: [...pinnedMethods].sort() });
+      }
+    }
+  });
+
+  // http.ts is an allowed file, so the scan would not notice one of the gates
+  // every other route is built on being re-pointed at an exempt reader -- and
+  // every route using that gate would lose the PIN stop at once. Read http.ts
+  // the way the walker reads a route: each derived gate's body must call
+  // requirePrincipal and none of the exempt readers.
+  test('the gates every other route is built on still derive from requirePrincipal', () => {
+    const source = blankLiterals(fs.readFileSync(path.join(WEB_ROOT, 'src/server/pilot/http.ts'), 'utf8'));
+    const bodies = collectFunctionBodies(source);
+    const exempt = new Set(Object.keys(EXEMPT_READER_HANDLERS));
+
+    for (const gate of REQUIRE_PRINCIPAL_DERIVED_GATES) {
+      const body = bodies.get(gate);
+      expect({ gate, defined: body !== undefined }).toEqual({ gate, defined: true });
+      const calls = new Set(calledNames(source, body!));
+      expect({ gate, callsRequirePrincipal: calls.has('requirePrincipal') })
+        .toEqual({ gate, callsRequirePrincipal: true });
+      expect({ gate, callsExemptReader: [...calls].filter((name) => exempt.has(name)) })
+        .toEqual({ gate, callsExemptReader: [] });
+    }
+
+    // And requirePrincipal itself still applies the stop: its body reaches the
+    // flag by name. A rename of the field would fail here on purpose.
+    const requirePrincipalBody = bodies.get('requirePrincipal');
+    expect(requirePrincipalBody).toBeDefined();
+    expect(source.slice(...requirePrincipalBody!)).toContain('mustChangePin');
+  });
+
+  // If a reader were added to http.ts and to SESSION_GATES without a pin here,
+  // it would pass the gate-declaration test silently; this says the recogniser
+  // set, as handlers actually reach it, and the pins above name the same
+  // exemptions.
+  test('every session gate a handler reaches is either requirePrincipal-derived or pinned here', () => {
     const recognised = new Set(walked.flatMap((handler) => handler.sessionGates));
-    const derivedFromRequirePrincipal = new Set([
-      'requirePrincipal',
-      'requireMicrosoftAuthenticatedPrincipal',
-      'requireMicrosoftOrAttestedLocalPinPrincipal',
-      'requireStaffSessionPrincipal',
-    ]);
-    // resolvePrincipal is the raw reader behind every gate; auth/session POST
-    // uses it on purpose to answer {authenticated: false}, and the
-    // gate-declaration test's allowlist records that. It is not a stop-skipping
-    // GATE, so it is listed here as known rather than pinned as exempt.
-    const known = new Set(['resolvePrincipal', ...Object.keys(EXEMPT_READER_HANDLERS)]);
+    const derivedFromRequirePrincipal = new Set(['requirePrincipal', ...REQUIRE_PRINCIPAL_DERIVED_GATES]);
+    const pinned = new Set(Object.keys(EXEMPT_READER_HANDLERS));
 
     const unaccounted = [...recognised].filter(
-      (gate) => !derivedFromRequirePrincipal.has(gate) && !known.has(gate),
+      (gate) => !derivedFromRequirePrincipal.has(gate) && !pinned.has(gate),
     );
     expect(unaccounted).toEqual([]);
   });
