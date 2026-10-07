@@ -268,6 +268,49 @@ describe('relabelling a moment', () => {
     });
   });
 
+  test('footage that has left ready refuses the relabel before the module is called', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockGetSet.mockResolvedValue(OPEN_SET);
+    mockGetClip.mockResolvedValue(CLIP);
+    mockClippable.mockRejectedValue(new VideoNotClippableError('Forbidden: video is not ready for clipping'));
+
+    const response = await PUT(request('PUT', { annotation_set_id: 'set-1', body_moment_id: 'm-1', lead_side: 'southpaw' }));
+
+    expect(response.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a relabel that changes nothing is a 400, not a no-op write', async () => {
+    openSetReady();
+
+    const response = await PUT(request('PUT', { annotation_set_id: 'set-1', body_moment_id: 'm-1' }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a moment cannot be moved by PUT: event_id or moment_slot in the body is a 400', async () => {
+    openSetReady();
+
+    const response = await PUT(request('PUT', { annotation_set_id: 'set-1', body_moment_id: 'm-1', moment_slot: 'end' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain('moment_slot');
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a JSON null body, or an id that is not a string, is a 400 naming the field', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+
+    expect((await PUT(request('PUT', null))).status).toBe(400);
+    const response = await PUT(request('PUT', { annotation_set_id: 123, body_moment_id: 'm-1' }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('annotation_set_id');
+    expect(mockGetSet).not.toHaveBeenCalled();
+  });
+
   test('a time sent for a derived moment is the module\'s 400', async () => {
     openSetReady();
     mockUpdate.mockRejectedValueOnce(new Error('Missing observation_ms: the start moment sits on the event\'s start; do not send a time'));

@@ -49,17 +49,19 @@ interface MomentBody {
   source_frame_height_px?: unknown;
 }
 
-/** A whole-number pixel count over the wire, or null; anything else is left
- * for the module to refuse by name. */
-function optionalPixels(value: unknown): unknown {
-  if (value === '' || value === null || value === undefined) return null;
-  if (typeof value === 'string' && /^[0-9]+$/.test(value)) return Number(value);
-  return value;
+/** A whole-number pixel count over the wire, or null: the same rule as a
+ * millisecond field (digits-only string -> number, blank -> null, anything
+ * else left for the module to refuse by name), so optionalMs serves. */
+const optionalPixels = optionalMs;
+
+/** A wire id: a trimmed string, or '' for anything that is not one. */
+function wireId(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 async function readBody(request: NextRequest): Promise<{ body: MomentBody; annotationSetId: string }> {
-  const body = (await request.json().catch(() => ({}))) as MomentBody;
-  const annotationSetId = body.annotation_set_id?.trim() ?? '';
+  const body = ((await request.json().catch(() => null)) ?? {}) as MomentBody;
+  const annotationSetId = wireId(body.annotation_set_id);
   if (!annotationSetId) {
     throw new Error('Missing annotation_set_id');
   }
@@ -118,7 +120,7 @@ export async function PUT(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireAnnotator(principal);
     const { body, annotationSetId } = await readBody(request);
-    const bodyMomentId = body.body_moment_id?.trim() ?? '';
+    const bodyMomentId = wireId(body.body_moment_id);
     if (!bodyMomentId) {
       throw new Error('Missing body_moment_id');
     }
@@ -127,14 +129,23 @@ export async function PUT(request: NextRequest) {
     assertSetInProgress(set);
     await loadPlayableClip(principal.organizationId, set.calibration_clip_id);
 
-    // undefined = leave alone; '' or null = clear. Only the keys the client
-    // sent reach the module, so a partial PUT cannot wipe the other fields.
+    // Only the keys the client sent reach the module, so a partial PUT cannot
+    // wipe the other fields. For lead_side, guard_type and the picture size
+    // '' or null clears; for observation_ms a blank is "no time", which the
+    // module refuses on a free middle (it needs one) and on any other moment
+    // (it has one). No key at all is a 400, not a no-op write.
+    if ('event_id' in body || 'moment_slot' in body) {
+      throw new Error("Unsupported moment_slot: a moment's event and slot are fixed; delete it and open another");
+    }
     const changes: Record<string, unknown> = {};
     if ('observation_ms' in body) changes.observationMs = optionalMs(body.observation_ms);
     if ('lead_side' in body) changes.leadSide = blankToNull(body.lead_side);
     if ('guard_type' in body) changes.guardType = blankToNull(body.guard_type);
     if ('source_frame_width_px' in body) changes.sourceFrameWidthPx = optionalPixels(body.source_frame_width_px);
     if ('source_frame_height_px' in body) changes.sourceFrameHeightPx = optionalPixels(body.source_frame_height_px);
+    if (Object.keys(changes).length === 0) {
+      throw new Error('Missing fields: send at least one of observation_ms, lead_side, guard_type, source_frame_width_px, source_frame_height_px');
+    }
 
     const moment = await updateBodyMoment({
       organizationId: principal.organizationId,
@@ -172,7 +183,7 @@ export async function DELETE(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireAnnotator(principal);
     const { body, annotationSetId } = await readBody(request);
-    const bodyMomentId = body.body_moment_id?.trim() ?? '';
+    const bodyMomentId = wireId(body.body_moment_id);
     if (!bodyMomentId) {
       throw new Error('Missing body_moment_id');
     }

@@ -3338,7 +3338,7 @@
     "id": "app/api/pilot/calibration/annotation-set/submit/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/calibration/annotation-set/submit",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:20-22 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -3350,7 +3350,7 @@
     "missingGate": false,
     "looksWrong": "Coach reach rule is not run; access is limited to the caller's own annotation set (annotatorGate.ts loadOwnAnnotationSet), so reach is by ownership, not athlete assignment.",
     "confidence": "medium",
-    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:20-22; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id.",
+    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:57-61; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id. A body-point set (0.2+) the database refuses as incomplete (CALIBRATION_BODY_POINTS_INCOMPLETE) returns a 400 carrying the trigger's missing list; other failures stay opaque 500s.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

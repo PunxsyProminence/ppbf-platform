@@ -155,6 +155,16 @@ describe('marking points', () => {
     expect((await response.json()).error).toContain('boxing-ontology-0.1');
   });
 
+  test('an entry that is not an object reaches the module as it is, for its own refusal', async () => {
+    openSetReady();
+    mockMark.mockRejectedValueOnce(new Error('Missing points: each point is an object with point_code and state'));
+
+    const response = await PUT(request('PUT', { ...MARK_BODY, points: [null, 'nose'] }));
+
+    expect(mockMark.mock.calls[0][0].points).toEqual([null, 'nose']);
+    expect(response.status).toBe(400);
+  });
+
   test('points that are not a list is a 400 before any lookup', async () => {
     mockPrincipal.mockResolvedValue(COACH);
 
@@ -201,7 +211,7 @@ describe('unmarking a point', () => {
     expect(response.status).toBe(200);
     expect(mockClippable).not.toHaveBeenCalled();
     expect(mockDelete).toHaveBeenCalledWith('org-1', 'set-1', 'm-1', 'nose');
-    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'unmark', annotation_set_id: 'set-1', point_code: 'nose' });
+    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'unmark', annotation_set_id: 'set-1' });
   });
 
   test('a point that is not there is a 404; a missing code is a 400', async () => {

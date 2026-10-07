@@ -32,12 +32,12 @@ interface StanceBody {
 }
 
 async function readBody(request: NextRequest): Promise<{ body: StanceBody; annotationSetId: string; eventId: string }> {
-  const body = (await request.json().catch(() => ({}))) as StanceBody;
-  const annotationSetId = body.annotation_set_id?.trim() ?? '';
+  const body = ((await request.json().catch(() => null)) ?? {}) as StanceBody;
+  const annotationSetId = typeof body.annotation_set_id === 'string' ? body.annotation_set_id.trim() : '';
   if (!annotationSetId) {
     throw new Error('Missing annotation_set_id');
   }
-  const eventId = body.event_id?.trim() ?? '';
+  const eventId = typeof body.event_id === 'string' ? body.event_id.trim() : '';
   if (!eventId) {
     throw new Error('Missing event_id');
   }

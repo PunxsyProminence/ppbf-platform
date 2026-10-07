@@ -2,14 +2,16 @@ import type { NextRequest } from 'next/server';
 
 import { getAnnotationSet } from '@/src/server/pilot/calibration/annotations';
 import { listBodyDataForSet, listMissingBodyData } from '@/src/server/pilot/calibration/bodyPoints';
+import { VideoNotClippableError, assertVideoClippable, getCalibrationClip } from '@/src/server/pilot/calibration/projects';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 import { GET } from './route';
 
 /**
- * The read of one annotator's own marks. The one thing that matters here is
- * that the set reaching the module is the CALLER'S: another annotator's set is
- * reported absent and the module is never asked about it.
+ * The read of one annotator's own marks. Two things matter here: the set
+ * reaching the module is the CALLER'S (another annotator's set is reported
+ * absent and the module is never asked about it), and footage the platform
+ * has withdrawn stops the read, as it stops the workspace GET.
  */
 
 jest.mock('@/src/server/pilot/calibration/annotations', () => ({
@@ -22,6 +24,11 @@ jest.mock('@/src/server/pilot/calibration/bodyPoints', () => ({
   listMissingBodyData: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/calibration/projects', () => {
+  const actual = jest.requireActual('@/src/server/pilot/calibration/projects');
+  return { ...actual, getCalibrationClip: jest.fn(), assertVideoClippable: jest.fn() };
+});
+
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -31,6 +38,8 @@ const mockPrincipal = requirePrincipal as jest.Mock;
 const mockGetSet = getAnnotationSet as jest.Mock;
 const mockList = listBodyDataForSet as jest.Mock;
 const mockMissing = listMissingBodyData as jest.Mock;
+const mockGetClip = getCalibrationClip as jest.Mock;
+const mockClippable = assertVideoClippable as jest.Mock;
 
 const COACH = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1' };
 const OWN_SET = {
@@ -54,21 +63,37 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockList.mockResolvedValue({ expected_points: ['nose'], moments: [{ body_moment_id: 'm1', points: [] }], stance_labels: [] });
   mockMissing.mockResolvedValue(['evt-1: stance type']);
+  mockGetClip.mockResolvedValue({ organization_id: 'org-1', calibration_clip_id: 'clip-1', video_session_id: 'vid-1' });
+  mockClippable.mockResolvedValue({ videoSessionId: 'vid-1', athleteId: null });
 });
 
-test('the caller\'s own set, submitted or not, reads with its marks and what is still missing', async () => {
+test.each(['in_progress', 'submitted'])('the caller\'s own %s set reads with its marks and what is still missing', async (status) => {
   mockPrincipal.mockResolvedValue(COACH);
-  mockGetSet.mockResolvedValue({ ...OWN_SET, status: 'submitted' });
+  mockGetSet.mockResolvedValue({ ...OWN_SET, status });
 
   const response = await GET(get('set-1'));
   const body = await response.json();
 
   expect(response.status).toBe(200);
+  expect(body.set.status).toBe(status);
   expect(body.expected_points).toEqual(['nose']);
   expect(body.moments).toHaveLength(1);
   expect(body.missing).toEqual(['evt-1: stance type']);
   expect(mockList).toHaveBeenCalledWith('org-1', 'set-1');
+  expect(mockClippable).toHaveBeenCalledWith('org-1', 'vid-1');
   expect(response.headers.get('cache-control')).toContain('no-store');
+});
+
+test('footage that has left ready stops the read before the module is asked', async () => {
+  mockPrincipal.mockResolvedValue(COACH);
+  mockGetSet.mockResolvedValue(OWN_SET);
+  mockClippable.mockRejectedValue(new VideoNotClippableError('Forbidden: video is not ready for clipping'));
+
+  const response = await GET(get('set-1'));
+
+  expect(response.status).toBe(403);
+  expect(mockList).not.toHaveBeenCalled();
+  expect(mockMissing).not.toHaveBeenCalled();
 });
 
 test('another annotator\'s set is absent, and the module is never asked', async () => {

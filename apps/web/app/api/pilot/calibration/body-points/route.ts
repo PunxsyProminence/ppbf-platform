@@ -6,7 +6,7 @@ import {
 } from '@/src/server/pilot/calibration/bodyPoints';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
-import { loadOwnAnnotationSet, requireAnnotator } from '../annotatorGate';
+import { loadOwnAnnotationSet, loadPlayableClip, requireAnnotator } from '../annotatorGate';
 
 export const runtime = 'nodejs';
 
@@ -16,9 +16,11 @@ export const runtime = 'nodejs';
  *
  * Refuses in the order every route in this directory does: the caller is an
  * annotator; the set is THEIRS (another annotator's set is reported as absent,
- * never as forbidden). No clippability check on a read of marks already made:
- * the marks are not the footage, and a submitted set stays readable so the
- * page can show it read-only.
+ * never as forbidden); the footage behind the set may still be watched
+ * (loadPlayableClip, re-checked on EVERY read as annotatorGate.ts requires:
+ * the marks are where a person's body was on footage the platform may since
+ * have withdrawn, and the workspace GET refuses on the same condition). A
+ * submitted set is readable, which is how the page shows it read-only.
  *
  * The writes live under body-points/moments, body-points/points and
  * body-points/stance; this file only reads.
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
     }
 
     const set = await loadOwnAnnotationSet(principal, annotationSetId);
+    await loadPlayableClip(principal.organizationId, set.calibration_clip_id);
     const data = await listBodyDataForSet(principal.organizationId, set.annotation_set_id);
     const missing = await listMissingBodyData(principal.organizationId, set.annotation_set_id);
 

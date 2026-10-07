@@ -17,6 +17,35 @@ import {
 export const runtime = 'nodejs';
 
 /**
+ * A body-point set (0.2 and later) cannot be submitted incomplete: the
+ * database refuses with CALIBRATION_BODY_POINTS_INCOMPLETE and names every
+ * missing item in the error detail (calibration-body-point-rules migration,
+ * "<event_id>: <item>" joined by "; "). That list is for the annotator, so it
+ * comes back as a 400 whose body carries it as `missing[]`, with a short
+ * message rather than the list in prose (a bare set of twenty events is eighty
+ * items). The body-points GET route reads the same list ahead of time, which
+ * is what the page should gate Submit on. Anything else is rethrown as it
+ * came, for jsonError to hide.
+ */
+class BodyPointsIncompleteError extends ValidationError {
+  constructor(readonly missing: string[]) {
+    super(
+      `Missing body points: ${missing.length} item${missing.length === 1 ? '' : 's'} still to mark before this set can be submitted`,
+      'CALIBRATION_BODY_POINTS_INCOMPLETE',
+    );
+  }
+}
+
+function translateIncompleteBodyPoints(error: unknown): never {
+  const dbError = (error ?? {}) as { message?: unknown; detail?: unknown };
+  if (dbError.message === 'CALIBRATION_BODY_POINTS_INCOMPLETE') {
+    const detail = typeof dbError.detail === 'string' ? dbError.detail.trim() : '';
+    throw new BodyPointsIncompleteError(detail ? detail.split('; ') : []);
+  }
+  throw error;
+}
+
+/**
  * THE ONE-WAY DOOR.
  *
  * Submission is the only irreversible act on this surface. After it the set
@@ -39,27 +68,6 @@ export const runtime = 'nodejs';
  * the count is returned so the page can ASK the annotator to confirm an empty
  * pass, which is a prompt, not a refusal.
  */
-/**
- * A body-point set (0.2 and later) cannot be submitted incomplete: the
- * database refuses with CALIBRATION_BODY_POINTS_INCOMPLETE and names every
- * missing item in the error detail (calibration-body-point-rules migration).
- * That list is for the annotator, so it comes back as a 400 that carries it;
- * the body-points GET route reads the same list ahead of time. Anything else
- * is rethrown as it came.
- */
-function translateIncompleteBodyPoints(error: unknown): never {
-  const dbError = (error ?? {}) as { message?: unknown; detail?: unknown };
-  if (dbError.message === 'CALIBRATION_BODY_POINTS_INCOMPLETE') {
-    const missing = typeof dbError.detail === 'string' ? dbError.detail : '';
-    throw new ValidationError(
-      `Missing body points: this set cannot be submitted until every event has its stance type, `
-      + `three moments, a lead side and guard at each, and every point marked. Still missing: ${missing}`,
-      'CALIBRATION_BODY_POINTS_INCOMPLETE',
-    );
-  }
-  throw error;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -109,6 +117,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, set: submitted, event_count: events.length });
   } catch (error) {
+    if (error instanceof BodyPointsIncompleteError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, missing: error.missing },
+        { status: error.status },
+      );
+    }
     return jsonError(error);
   }
 }
