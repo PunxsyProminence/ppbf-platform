@@ -28,6 +28,7 @@ function makeSet(overrides: Partial<AnnotationSetRow> = {}): AnnotationSetRow {
     calibration_clip_id: CLIP,
     annotator_account_id: 'acct-a',
     ontology_version: 'boxing-ontology-0.1',
+    pass_number: 1,
     status: 'submitted',
     created_at: '2026-08-27T00:00:00.000Z',
     submitted_at: '2026-08-27T01:00:00.000Z',

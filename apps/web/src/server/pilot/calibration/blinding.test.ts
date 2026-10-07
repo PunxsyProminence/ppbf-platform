@@ -43,6 +43,7 @@ function setOf(
     calibration_clip_id: CLIP,
     annotator_account_id: annotatorAccountId,
     status,
+    pass_number: 1,
     ...overrides,
   };
 }
@@ -465,5 +466,84 @@ describe('resolveAdjudicationEligibility', () => {
         sets: bothSubmitted,
       }),
     ).toEqual({ outcome: 'eligible', submittedSetCount: 2 });
+  });
+});
+
+// One annotator labelling the same clip again. A repeat pass is only a
+// measurement if it is made without the first, and it is never a second
+// person's reading.
+describe('repeat passes by one annotator', () => {
+  const first = setOf(A, 'submitted', { annotation_set_id: 'set-a-1' });
+  const second = (status: string) => setOf(A, status, { annotation_set_id: 'set-a-2', pass_number: 2 });
+  const visibility = (actorAccountId: string, requestedSet: BlindingSubjectSet, siblingSets: BlindingSubjectSet[]) =>
+    resolveAnnotationSetVisibility({
+      actorAccountId,
+      actorOrganizationId: ORG,
+      actorRole: 'coach',
+      requestedSet,
+      siblingSets,
+    });
+
+  test.each(['in_progress', 'submitted'])(
+    'an earlier pass is blinded from its own annotator once a later pass is %s',
+    (status) => {
+      const later = second(status);
+      expect(visibility(A, first, [first, later]))
+        .toEqual({ outcome: 'blinded', reason: 'superseded_by_own_later_pass' });
+      expect(visibility(A, later, [first, later])).toEqual({ outcome: 'visible', reason: 'own_set' });
+    },
+  );
+
+  test('a later pass on another clip, by another annotator, or in another organization supersedes nothing', () => {
+    const elsewhere = [
+      setOf(A, 'in_progress', { annotation_set_id: 'x-1', pass_number: 2, calibration_clip_id: OTHER_CLIP }),
+      setOf(B, 'in_progress', { annotation_set_id: 'x-2', pass_number: 2 }),
+      setOf(A, 'in_progress', { annotation_set_id: 'x-3', pass_number: 2, organization_id: OTHER_ORG }),
+    ];
+    expect(visibility(A, first, [first, ...elsewhere])).toEqual({ outcome: 'visible', reason: 'own_set' });
+  });
+
+  test("an annotator part-way through a repeat pass cannot read another annotator's finished set", () => {
+    const theirs = setOf(B, 'submitted');
+    expect(visibility(A, theirs, [first, second('in_progress'), theirs]))
+      .toEqual({ outcome: 'blinded', reason: 'reader_not_submitted' });
+    expect(visibility(A, theirs, [first, second('submitted'), theirs]))
+      .toEqual({ outcome: 'visible', reason: 'mutually_submitted' });
+  });
+
+  test("another annotator's repeat pass is never shared, however finished everyone is", () => {
+    const theirs = setOf(B, 'submitted');
+    const later = second('submitted');
+    expect(visibility(B, later, [first, later, theirs]))
+      .toEqual({ outcome: 'blinded', reason: 'sibling_not_a_first_pass' });
+    expect(visibility(B, first, [first, later, theirs]))
+      .toEqual({ outcome: 'visible', reason: 'mutually_submitted' });
+  });
+
+  const eligibility = (sets: BlindingSubjectSet[], actorAccountId: string = ADJUDICATOR) =>
+    resolveAdjudicationEligibility({ actorRole: 'organization_admin', actorAccountId, sets });
+
+  test('two passes by one person are one reading, not a pair', () => {
+    expect(eligibility([first, second('submitted')]))
+      .toEqual({ outcome: 'refused', reason: 'insufficient_sets_for_comparison' });
+  });
+
+  test('an unfinished repeat pass blocks the clip, as any unfinished set does', () => {
+    expect(eligibility([first, setOf(B, 'submitted'), second('in_progress')]))
+      .toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
+  });
+
+  test('the count is of first passes', () => {
+    expect(eligibility([first, setOf(B, 'submitted'), second('submitted')]))
+      .toEqual({ outcome: 'eligible', submittedSetCount: 2 });
+  });
+
+  test('a clip holding only repeat passes has no reading to adjudicate', () => {
+    expect(eligibility([second('submitted')])).toEqual({ outcome: 'refused', reason: 'no_sets_on_clip' });
+  });
+
+  test('the person who re-marked is still refused as an annotator of the clip', () => {
+    expect(eligibility([first, setOf(B, 'submitted'), second('submitted')], A))
+      .toEqual({ outcome: 'refused', reason: 'adjudicator_annotated_this_clip' });
   });
 });

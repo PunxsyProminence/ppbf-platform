@@ -171,6 +171,12 @@ const TEACHING_SOURCE_JOIN = (alias: string) => `
    and cv.capture_take_id is not null
    and cv.status <> 'archived'`;
 
+/*
+ * FIRST PASSES ONLY, here and in the two set counts below. A coach labelling
+ * a clip again is the same person twice: counted, it would report one coach
+ * as "two coaches have both finished" and double a punch's evidence without
+ * anybody having seen more of it.
+ */
 const SUBMITTED_EVENTS_FROM = `
   from pilot.calibration_annotation_events e
   join pilot.calibration_annotation_sets s
@@ -179,6 +185,7 @@ const SUBMITTED_EVENTS_FROM = `
   ${TEACHING_SOURCE_JOIN('e')}
  where e.organization_id = $1
    and s.status = 'submitted'
+   and s.pass_number = 1
    and s.ontology_version = $2`;
 
 export async function readTeachShadowCoverage(organizationId: string): Promise<TeachShadowCoverage> {
@@ -237,13 +244,15 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            as clips_cut,
          (select count(*)::int from pilot.calibration_annotation_sets s
             ${TEACHING_SOURCE_JOIN('s')}
-           where s.organization_id = $1 and s.status = 'submitted' and s.ontology_version = $2)
+           where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
+             and s.ontology_version = $2)
            as submitted_sets,
          (select count(*)::int from (
             select s.calibration_clip_id
               from pilot.calibration_annotation_sets s
               ${TEACHING_SOURCE_JOIN('s')}
-             where s.organization_id = $1 and s.status = 'submitted' and s.ontology_version = $2
+             where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
+               and s.ontology_version = $2
              group by s.calibration_clip_id
             having count(*) >= 2
           ) c)

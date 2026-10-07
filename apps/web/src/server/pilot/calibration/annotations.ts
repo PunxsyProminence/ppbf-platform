@@ -50,6 +50,9 @@ export interface AnnotationSetRow {
   annotator_account_id: string;
   ontology_version: string;
   status: string;
+  /** 1 for a first reading; 2 and up for the same annotator labelling the
+   *  clip again. Every inter-annotator reader takes first passes only. */
+  pass_number: number;
   // TYPED AS THE REST OF pilot/* TYPES ITS TIMESTAMPS, AND THE SAME WAY WRONG.
   // db.ts overrides the type parser for OID 1082 (DATE) only, so a timestamptz
   // arrives as a JS Date, not a string -- here and in every other row
@@ -95,7 +98,7 @@ export interface AnnotationEventRow {
 
 const SET_COLUMNS = `
   organization_id, annotation_set_id, calibration_clip_id, annotator_account_id,
-  ontology_version, status, created_at, submitted_at
+  ontology_version, status, pass_number, created_at, submitted_at
 `;
 
 const EVENT_COLUMNS = `
@@ -209,8 +212,9 @@ export interface OpenAnnotationSetInput {
  * account of when it was finished, and the ordering of two submissions is
  * exactly what a blinding audit needs to read.
  *
- * A second set for the same annotator and clip is refused by
- * pilot_calibration_sets_one_per_annotator_uq. That is the unit of
+ * Always a FIRST pass, by the column default. A second first pass for the
+ * same annotator and clip is refused by
+ * pilot_calibration_sets_one_per_annotator_pass_uq. That is the unit of
  * measurement, so it is a database constraint rather than a convention.
  */
 export async function openAnnotationSet(
@@ -236,20 +240,42 @@ export async function openAnnotationSet(
   return row;
 }
 
+/** A set read by id, and whether its annotator has since opened a later pass
+ *  on the same clip. */
+export interface AnnotationSetLookupRow extends AnnotationSetRow {
+  superseded_by_later_pass: boolean;
+}
+
+/**
+ * One set by id.
+ *
+ * `superseded_by_later_pass` comes back in the same statement as the row, so
+ * the annotator gate decides on one read: an earlier pass must stop being
+ * served the moment a later one exists, and a second query would leave a gap
+ * between the two.
+ */
 export async function getAnnotationSet(
   organizationId: string,
   annotationSetId: string,
-): Promise<AnnotationSetRow | null> {
-  return queryOne<AnnotationSetRow>(
-    `select ${SET_COLUMNS}
-       from pilot.calibration_annotation_sets
-      where organization_id = $1 and annotation_set_id = $2`,
+): Promise<AnnotationSetLookupRow | null> {
+  return queryOne<AnnotationSetLookupRow>(
+    `select ${SET_COLUMNS},
+            exists (
+              select 1
+                from pilot.calibration_annotation_sets later
+               where later.organization_id = s.organization_id
+                 and later.calibration_clip_id = s.calibration_clip_id
+                 and later.annotator_account_id = s.annotator_account_id
+                 and later.pass_number > s.pass_number
+            ) as superseded_by_later_pass
+       from pilot.calibration_annotation_sets s
+      where s.organization_id = $1 and s.annotation_set_id = $2`,
     [organizationId, annotationSetId],
   );
 }
 
 /**
- * Every set for one clip, both annotators' included.
+ * Every set for one clip, every annotator's and every pass included.
  *
  * ORGANIZATION-SCOPED ONLY. This function applies NO blinding, and callers
  * must not treat it as if it did: it is the adjudicator's and the QA

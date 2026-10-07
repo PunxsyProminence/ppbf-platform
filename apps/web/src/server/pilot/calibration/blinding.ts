@@ -31,11 +31,14 @@ import {
 // ---------------------------------------------------------------------------
 // THE RULE, in full.
 //
-//   1. An annotator may always read their OWN set, in any state.
+//   1. An annotator may always read their OWN set, in any state -- their
+//      LATEST pass on the clip. Once they open a later pass, an earlier one
+//      is blinded from them like anybody else's and stays so: a repeat
+//      reading is only a measurement if it is made without the first.
 //   2. An annotator may read ANOTHER annotator's set on the same clip only
-//      when that set AND the reader's own set on that clip are both
-//      submitted. A reader with no set on the clip is not an annotator of it
-//      and reads nothing here.
+//      when that set is a first pass AND it and the reader's own latest pass
+//      on that clip are both submitted. A reader with no set on the clip is
+//      not an annotator of it and reads nothing here.
 //   3. Rule 2 applies REGARDLESS OF ROLE, organization administrators
 //      included. An admin who wanders onto the annotator surface must not
 //      break blinding by accident.
@@ -82,6 +85,20 @@ export interface BlindingSubjectSet {
   readonly calibration_clip_id: string;
   readonly annotator_account_id: string;
   readonly status: string;
+  readonly pass_number: number;
+}
+
+/**
+ * A FIRST PASS: the one reading per annotator per clip that comparison,
+ * adjudication, agreement and coverage are built from. A later pass is the
+ * same person against themselves and is never one side of an inter-annotator
+ * pair.
+ *
+ * Lives here rather than in annotations.ts because it is part of the rule,
+ * and so that it is the real function under a test that mocks the data module.
+ */
+export function isFirstPass(set: Pick<BlindingSubjectSet, 'pass_number'>): boolean {
+  return set.pass_number === 1;
 }
 
 export type AnnotationSetVisibilityReason =
@@ -100,7 +117,11 @@ export type AnnotationSetBlindedReason =
    *  the anchoring being prevented. */
   | 'reader_not_submitted'
   /** The other annotator is still working. */
-  | 'sibling_not_submitted';
+  | 'sibling_not_submitted'
+  /** The reader's own earlier pass, after they opened a later one. */
+  | 'superseded_by_own_later_pass'
+  /** Another annotator's repeat pass. Only first passes are shared. */
+  | 'sibling_not_a_first_pass';
 
 /**
  * The answer, and WHY.
@@ -171,22 +192,32 @@ export function resolveAnnotationSetVisibility(
     return { outcome: 'blinded', reason: 'different_organization' };
   }
 
-  // Rule 1. Unconditional, and above every state check on purpose: an
-  // annotator locked out of their own in-progress work cannot do the task.
-  if (requestedSet.annotator_account_id === actorAccountId) {
-    return { outcome: 'visible', reason: 'own_set' };
-  }
-
-  // Rule 2. "The reader's own set" means: same tenant, same clip, same
-  // account. All three predicates matter. Same-tenant keeps another gym's row
-  // from conferring standing; same-clip keeps submitting on clip 2 from
-  // unlocking clip 1, because independence is a property of one clip at a
-  // time.
-  const readerOwnSet = siblingSets.find(
+  // "The reader's own sets" means: same tenant, same clip, same account. All
+  // three predicates matter. Same-tenant keeps another gym's row from
+  // conferring standing; same-clip keeps submitting on clip 2 from unlocking
+  // clip 1, because independence is a property of one clip at a time.
+  const readerOwnSets = siblingSets.filter(
     (set) =>
       set.organization_id === actorOrganizationId
       && set.calibration_clip_id === requestedSet.calibration_clip_id
       && set.annotator_account_id === actorAccountId,
+  );
+
+  // Rule 1. Above every state check on purpose: an annotator locked out of
+  // their own in-progress work cannot do the task. The one thing that
+  // withholds an own set is a later pass by the same person on the same clip.
+  if (requestedSet.annotator_account_id === actorAccountId) {
+    if (readerOwnSets.some((set) => set.pass_number > requestedSet.pass_number)) {
+      return { outcome: 'blinded', reason: 'superseded_by_own_later_pass' };
+    }
+    return { outcome: 'visible', reason: 'own_set' };
+  }
+
+  // Rule 2. The reader's standing is their LATEST pass, so somebody part-way
+  // through a repeat reading sees nobody else's work either.
+  const readerOwnSet = readerOwnSets.reduce<BlindingSubjectSet | undefined>(
+    (latest, set) => (latest === undefined || set.pass_number > latest.pass_number ? set : latest),
+    undefined,
   );
 
   if (!readerOwnSet) {
@@ -198,6 +229,10 @@ export function resolveAnnotationSetVisibility(
   // answer they are entitled to know.
   if (!isSubmitted(readerOwnSet)) {
     return { outcome: 'blinded', reason: 'reader_not_submitted' };
+  }
+
+  if (!isFirstPass(requestedSet)) {
+    return { outcome: 'blinded', reason: 'sibling_not_a_first_pass' };
   }
 
   if (!isSubmitted(requestedSet)) {
@@ -258,7 +293,8 @@ export interface AdjudicationEligibilityInput {
   readonly actorRole: PilotRole;
   /** The person asking. Compared against every annotator on the clip. */
   readonly actorAccountId: string;
-  /** Every set on the clip, already organization-scoped by the caller. */
+  /** Every set on the clip, every pass included, already organization-scoped
+   *  by the caller. */
   readonly sets: readonly BlindingSubjectSet[];
 }
 
@@ -290,6 +326,13 @@ export interface AdjudicationEligibilityInput {
  * The count is part of the state condition, not a caller's problem. Zero
  * sets and one set both satisfy "every set is submitted" without there
  * being a pair to read, and this function promises its caller a pair.
+ *
+ * WHICH SETS EACH CONDITION READS. Identity and "nothing in progress" read
+ * EVERY pass: a person who has re-marked is still an annotator of the clip,
+ * and an adjudicator reading first passes while one of their authors is
+ * part-way through a repeat reading is the same channel as above. The COUNT
+ * reads first passes only, because two passes by one person are not two
+ * independent readings.
  */
 export function resolveAdjudicationEligibility(
   input: AdjudicationEligibilityInput,
@@ -305,7 +348,9 @@ export function resolveAdjudicationEligibility(
     return { outcome: 'refused', reason: 'adjudicator_annotated_this_clip' };
   }
 
-  if (input.sets.length === 0) {
+  const firstPasses = input.sets.filter(isFirstPass);
+
+  if (firstPasses.length === 0) {
     return { outcome: 'refused', reason: 'no_sets_on_clip' };
   }
 
@@ -316,11 +361,11 @@ export function resolveAdjudicationEligibility(
   // Submission is checked before the count so that a lone UNSUBMITTED set is
   // reported as work in progress, which is both true and the more useful
   // thing to tell an adjudicator: a second reading may yet arrive.
-  if (input.sets.length < 2) {
+  if (firstPasses.length < 2) {
     return { outcome: 'refused', reason: 'insufficient_sets_for_comparison' };
   }
 
-  return { outcome: 'eligible', submittedSetCount: input.sets.length };
+  return { outcome: 'eligible', submittedSetCount: firstPasses.length };
 }
 
 /** Raised when the adjudication surface refuses.
@@ -477,6 +522,11 @@ export interface AdjudicationReadContext {
  * NO COMPARISON, NO SCORING, NO ADJUDICATION RECORD. This function hands back
  * two raw readings. What is done with them is a later slice's concern and
  * must not be smuggled in here.
+ *
+ * FIRST PASSES ONLY. Eligibility is decided on every pass; what comes back is
+ * one reading per annotator, so no caller can pair a person with themselves
+ * and a repeat pass's events cannot be asked for through
+ * listAnnotationEventsForAdjudication.
  */
 export async function listAnnotationSetsForAdjudication(
   context: AdjudicationReadContext,
@@ -494,7 +544,7 @@ export async function listAnnotationSetsForAdjudication(
     throw new AdjudicationNotPermittedError(eligibility.reason);
   }
 
-  return sets;
+  return sets.filter(isFirstPass);
 }
 
 /**

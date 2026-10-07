@@ -279,6 +279,7 @@ beforeAll(async () => {
   await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(PROJECTS_SQL));
   await migrateClient.query(await readMigration(ANNOTATIONS_SQL));
+  await migrateClient.query(await readMigration('pilot_slice_postgres_calibration_remark_pass_migration.sql'));
   await seedTenancy(migrateClient);
   await migrateClient.end();
 
@@ -336,7 +337,7 @@ describe('one annotator, one clip, one set', () => {
     const clipId = await newClip('C-DUP');
     await newSetFor(ANNOTATOR_A, clipId);
     await expect(newSetFor(ANNOTATOR_A, clipId)).rejects.toThrow(
-      /pilot_calibration_sets_one_per_annotator_uq/,
+      /pilot_calibration_sets_one_per_annotator_pass_uq/,
     );
   });
 

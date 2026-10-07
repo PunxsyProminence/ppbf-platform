@@ -58,6 +58,7 @@ function makeSet(
     annotator_account_id: ACCOUNTS[suffix],
     ontology_version: ONTOLOGY,
     status: 'submitted',
+    pass_number: 1,
     created_at: '2026-08-27T00:00:00.000Z',
     submitted_at: '2026-08-27T01:00:00.000Z',
     ...overrides,
@@ -511,5 +512,28 @@ describe('loadCalibrationQaReport', () => {
     }
     expect(serialized.toLowerCase()).not.toContain('account');
     expect(serialized.toLowerCase()).not.toContain('athlete');
+  });
+});
+
+describe('a clip one annotator has labelled twice', () => {
+  const remark = (clipId: string) => makeSet(clipId, 'b', { annotator_account_id: ACCOUNTS.a, pass_number: 2 });
+
+  test('is not compared with itself: the repeat pass is not a second reading', async () => {
+    stage({ c1: { sets: [makeSet('c1', 'a'), remark('c1')] } });
+
+    const result = await loadCalibrationQaReport(ORG, PROJECT);
+
+    expect(result?.report.comparisonCount).toBe(0);
+    expect(result?.report.clipProgress).toMatchObject({ clipsAwaitingSecondAnnotator: 1, clipsReadyToCompare: 0 });
+    expect(eventReads()).toEqual([]);
+  });
+
+  test('still pairs the two first passes, and never reads the repeat pass', async () => {
+    stage({ c1: { sets: [makeSet('c1', 'a'), makeSet('c1', 'b'), makeSet('c1', 'c', { annotator_account_id: ACCOUNTS.a, pass_number: 2 })] } });
+
+    const result = await loadCalibrationQaReport(ORG, PROJECT);
+
+    expect(result?.report.comparisonCount).toBe(1);
+    expect(eventReads().sort()).toEqual(['c1-set-a', 'c1-set-b']);
   });
 });

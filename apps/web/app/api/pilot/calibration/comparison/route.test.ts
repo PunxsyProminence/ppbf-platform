@@ -90,6 +90,7 @@ function setOf(overrides: Record<string, unknown> = {}) {
     annotator_account_id: 'coach-a',
     ontology_version: 'boxing-ontology-0.1',
     status: 'submitted',
+    pass_number: 1,
     created_at: '2026-08-01T00:00:00.000Z',
     submitted_at: '2026-08-02T00:00:00.000Z',
     ...overrides,

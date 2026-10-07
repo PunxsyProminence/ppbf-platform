@@ -73,6 +73,7 @@ function set(clip: string, who: 'a' | 'b', status = 'submitted') {
     annotator_account_id: `acct-coach-${who}`,
     ontology_version: ONTOLOGY,
     status,
+    pass_number: 1,
     created_at: '2026-08-27T00:00:00.000Z',
     submitted_at: status === 'submitted' ? '2026-08-27T01:00:00.000Z' : null,
   };

@@ -5,6 +5,7 @@ import {
   type AnnotationEventRow,
   type AnnotationSetRow,
 } from './annotations';
+import { isFirstPass } from './blinding';
 import { compareAnnotationSets, type AnnotationSetComparison } from './comparison';
 import { getCalibrationProject, listCalibrationClips } from './projects';
 import { buildCalibrationQaReport, type CalibrationQaReport } from './qaReadModel';
@@ -149,9 +150,12 @@ export async function loadCalibrationQaReport(
   };
 
   for (const clip of clips) {
-    const clipSets = await listAnnotationSetsForClip(organizationId, clip.calibration_clip_id);
-    // Every set, in any state: clip progress is counted from these and reads
-    // nothing but their status.
+    // First passes only: a repeat pass by the same annotator is not a second
+    // reading, for clip progress or for the pair.
+    const clipSets = (await listAnnotationSetsForClip(organizationId, clip.calibration_clip_id))
+      .filter(isFirstPass);
+    // Every such set, in any state: clip progress is counted from these and
+    // reads nothing but their status.
     sets.push(...clipSets);
 
     if (clipSets.filter(isSubmitted).length < 2) continue;

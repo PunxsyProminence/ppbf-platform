@@ -81,10 +81,17 @@ const READINESS_QUERY = `
       where conrelid = to_regclass('pilot.calibration_clips')
         and conname = 'pilot_calibration_clips_bounds_key'
     ) as clip_bounds_key_ready,
+    -- Either name. The calibration-remark-pass migration replaces the
+    -- three-column key with one that also carries the pass number, and the
+    -- "all" sequence re-runs this runner afterwards; a database with neither
+    -- is still refused.
     exists (
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.calibration_annotation_sets')
-        and conname = 'pilot_calibration_sets_one_per_annotator_uq'
+        and conname in (
+          'pilot_calibration_sets_one_per_annotator_uq',
+          'pilot_calibration_sets_one_per_annotator_pass_uq'
+        )
     ) as one_set_per_annotator_ready,
     exists (
       select 1 from pg_constraint
