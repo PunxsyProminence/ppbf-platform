@@ -527,6 +527,114 @@ export async function findContactEventBlockingHold(
   }
 }
 
+/**
+ * What staff are shown beside an action when the athlete is on an active hold
+ * (OD-2026-10-06-024 ruling 1, "Warn only, both places": attendance check-in
+ * and drill assignment warn; nothing is blocked there).
+ *
+ * The same fields the Progression screen's hold banner already reads, and the
+ * same rule the training-holds route applies to its staff read -- NEVER
+ * reason_text, which is staff free text that can carry medical detail (staff
+ * still read it on Sports Medicine). reason_category is the broad label the
+ * existing banner prints.
+ */
+export interface StaffHoldWarning {
+  hold_id: string;
+  scope: TrainingHoldScope;
+  reason_category: TrainingHoldReasonCategory;
+  athlete_explanation: string;
+  lift_condition_text: string;
+  expires_at: string | null;
+}
+
+/**
+ * Three answers, kept apart: a warning, `null` (looked, no active hold) and
+ * 'unreadable' (nobody could look). A failed read must never read as "no
+ * hold" -- the Progression screen says the same of its own hold read.
+ */
+export type StaffHoldWarningRead = StaffHoldWarning | null | 'unreadable';
+
+const HOLD_WARNING_ROLES: readonly string[] = ['coach', 'organization_admin', 'admin'];
+
+/**
+ * The warning for ONE athlete, for the caller's role. Built on
+ * getActiveTrainingHold -- the existing read path -- and adds no new query.
+ *
+ * ROLE RULE: only a coach or organization admin gets anything, the same staff
+ * set the training-holds route admits. Every other role (athlete, parent,
+ * board, platform_owner) gets `null` here and never reaches the read, so a
+ * response built from this can carry nothing a hold's athlete or guardian
+ * could not already see. The CALLER must already have passed its athlete gate
+ * (assertActorCanAccessAthlete / assertCoachAssignedToAthlete): this decides
+ * what is shown, not who may act on the athlete.
+ *
+ * NEVER THROWS. The action it rides on (a check-in, a drill assignment) has
+ * its own outcome and a hold read that fails must not turn a successful write
+ * into a 500 -- or, for a write that already committed, tell the coach it
+ * failed. A failed read answers 'unreadable' and is logged without the row.
+ */
+export async function readStaffHoldWarning(
+  role: string,
+  organizationId: string,
+  athleteId: string,
+): Promise<StaffHoldWarningRead> {
+  if (!HOLD_WARNING_ROLES.includes(role)) return null;
+  try {
+    const hold = await getActiveTrainingHold(organizationId, athleteId);
+    if (!hold) return null;
+    return {
+      hold_id: hold.hold_id,
+      scope: hold.scope,
+      reason_category: hold.reason_category,
+      athlete_explanation: hold.athlete_explanation,
+      lift_condition_text: hold.lift_condition_text,
+      expires_at: hold.expires_at,
+    };
+  } catch (error) {
+    console.error({
+      event: 'staff-hold-warning-read-failed',
+      errorClass: error instanceof Error ? error.name : typeof error,
+    });
+    return 'unreadable';
+  }
+}
+
+/**
+ * Many athletes at once (a bulk check-in), through the existing org-wide
+ * active list -- one sweep and one select, not two statements per athlete.
+ * Only the athletes asked about come back; same role rule and same
+ * never-throws rule as readStaffHoldWarning. 'unreadable' covers the whole
+ * batch: a list that failed says nothing about any one athlete.
+ */
+export async function readStaffHoldWarnings(
+  role: string,
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<Array<StaffHoldWarning & { athlete_id: string }> | 'unreadable'> {
+  if (!HOLD_WARNING_ROLES.includes(role) || athleteIds.length === 0) return [];
+  try {
+    const asked = new Set(athleteIds);
+    const holds = await listTrainingHolds(organizationId, { status: 'active' });
+    return holds
+      .filter((hold) => asked.has(hold.athlete_id))
+      .map((hold) => ({
+        athlete_id: hold.athlete_id,
+        hold_id: hold.hold_id,
+        scope: hold.scope,
+        reason_category: hold.reason_category,
+        athlete_explanation: hold.athlete_explanation,
+        lift_condition_text: hold.lift_condition_text,
+        expires_at: hold.expires_at,
+      }));
+  } catch (error) {
+    console.error({
+      event: 'staff-hold-warning-read-failed',
+      errorClass: error instanceof Error ? error.name : typeof error,
+    });
+    return 'unreadable';
+  }
+}
+
 const HOLD_CONTACT_TRIGGER = 'contact_observation_during_training_hold';
 
 export interface HoldContactOutcome {

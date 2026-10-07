@@ -60,6 +60,8 @@ night has 3 and fills an of3.
 | `plate-05-file-01.jpg` | `.room--file` -- one plate, see the contrast note below | 1280×720 | 78,933 |
 | `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only -- T7) | 1280×720 | 39,150 |
 | `plate-08-bell-gym-portrait-01.jpg` | `.ge-bell.on-canvas::after`, `@media (orientation: portrait)` | 810×1440 | 99,891 |
+| `plate-01-office-portrait-01.jpg` | `.room--office`, `@media (orientation: portrait)` | 810×1440 | 186,248 |
+| `plate-06-night-portrait-01.jpg` | `.room--night`, `@media (orientation: portrait)` | 810×1440 | 80,048 |
 
 **Board and file deliberately stay on one plate.** Both set
 `color: var(--hide-900)` -- dark ink on a light wall -- so a dark plate behind
@@ -186,18 +188,16 @@ orientation block, per "Adding a variant" below.
 
 | File | Dimensions | Bytes | What it would replace or add |
 |---|---|---|---|
-| `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
 | `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | **Do not bind:** a chalk wall covered in invented words, judged 2026-10-01 |
-| `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
+| `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today. **Measured 2026-10-07: 2.09:1** against the light ink clinic writes in, under the 4.5:1 bar — not bound for that reason |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
 | `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
 | `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | **Do not bind:** an invented crest with invented lettering in the ring-canvas roundel, judged 2026-10-01 |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
 | `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond. **Do not bind:** invented banner lettering and an invented apron crest, judged 2026-10-01 |
-| `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
-| `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
-| `plate-06-night-portrait-01.jpg` | 810×1440 | 80,048 | a portrait crop the night room does not have today |
+| `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today. **Measured 2026-10-07: 1.02:1** against `--hide-900`, the near-black ink board writes in. Binding it would be WORSE than the 1.05:1 board has now |
+| `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today. **Measured 2026-10-07: 1.01:1** against `--hide-900`. Binding it would be WORSE than the 2.19:1 file has now |
 
 ## Requirements — enforced by `apps/web/src/design/plateBinaries.test.ts`
 

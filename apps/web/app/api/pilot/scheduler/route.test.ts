@@ -9,6 +9,7 @@ import {
   athleteIdsForCoach,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { query, queryOne } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -374,6 +375,159 @@ describe('attendance_checkin method attribution', () => {
 
     const [, record] = mockUpsertAttendance.mock.calls[0];
     expect(record.method).toBe('self');
+  });
+});
+
+// OD-2026-10-06-024 ruling 1, "Warn only, both places": an active training hold
+// never stops a check-in. The coach or admin marking the athlete is told in the
+// answer; an athlete's own or a parent's check-in gets nothing new. The hold
+// reader here is the real one, over the faked database.
+describe('attendance check-in warns on an active training hold and does not block', () => {
+  const mockQueryOne = queryOne as jest.Mock;
+  const mockQuery = query as jest.Mock;
+  afterEach(() => {
+    mockQueryOne.mockReset();
+    mockQuery.mockReset();
+  });
+
+  const HOLD_ROW = {
+    hold_id: 'hold-1',
+    athlete_id: 'ATH-1',
+    scope: 'all_training',
+    reason_category: 'administrative',
+    reason_text: 'STAFF-ONLY DETAIL: PAYMENT DISPUTE',
+    athlete_explanation: 'Training is paused while we sort out paperwork.',
+    lift_condition_text: 'Bring the signed waiver.',
+    placed_by_account_id: 'acct-coach-1',
+    placed_by_role: 'coach',
+    placed_at: '2026-10-01 10:00:00+00',
+    expires_at: null,
+    status: 'active',
+  };
+  const checkIn = (athleteId = 'ATH-1') =>
+    jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: athleteId, status: 'present' });
+
+  test.each(['coach', 'organization_admin', 'admin'])(
+    '%s: the mark is stored (200) and the answer carries the hold facts',
+    async (role) => {
+      // A coach writes attendance only into a class they own (acct-coach-1 owns class-1).
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role, { accountId: role === 'coach' ? 'acct-coach-1' : 'acct-caller' }));
+      mockQueryOne.mockResolvedValueOnce(HOLD_ROW);
+
+      const response = await POST(checkIn());
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAttendance).toHaveBeenCalledTimes(1);
+      const body = await response.json();
+      expect(body).toMatchObject({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1' });
+      expect(body.hold_warning).toEqual({
+        hold_id: 'hold-1',
+        scope: 'all_training',
+        reason_category: 'administrative',
+        athlete_explanation: 'Training is paused while we sort out paperwork.',
+        lift_condition_text: 'Bring the signed waiver.',
+        expires_at: null,
+      });
+      expect(JSON.stringify(body)).not.toContain('PAYMENT DISPUTE');
+    },
+  );
+
+  test('no hold: the answer is exactly what it was before, with no hold_warning key', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    const response = await POST(checkIn());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1' });
+  });
+
+  test('a failed hold read never fails the check-in; it is "unreadable", not "no hold"', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQueryOne.mockRejectedValueOnce(new Error('connection reset'));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await POST(checkIn());
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAttendance).toHaveBeenCalledTimes(1);
+    expect((await response.json()).hold_warning).toBe('unreadable');
+    errors.mockRestore();
+  });
+
+  test('an athlete checking themself in, and a parent checking in their child, get nothing new', async () => {
+    // The hold is there and would be returned if the reader ran -- so what is
+    // asserted is that it never reads for these roles, not that it found none.
+    mockQueryOne.mockResolvedValue(HOLD_ROW);
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    const own = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present' }));
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent', { accountId: 'acct-parent-1' }));
+    const parent = await POST(checkIn());
+
+    for (const response of [own, parent]) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1' });
+    }
+    expect(mockUpsertAttendance).toHaveBeenCalledTimes(2);
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('bulk: a coach marking a roster is told which athletes are held; every mark is still stored', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQuery
+      .mockResolvedValueOnce([]) // sweepExpiredHolds
+      .mockResolvedValueOnce([HOLD_ROW, { ...HOLD_ROW, hold_id: 'hold-9', athlete_id: 'ATH-NOT-IN-BATCH' }]);
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-2', status: 'present' },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockBulkUpsertAttendance.mock.calls[0][1]).toHaveLength(2);
+    const body = await response.json();
+    expect(body.marked_count).toBe(2);
+    // Only the held athlete who was in the batch, and no staff-only text.
+    expect(body.hold_warnings).toEqual([
+      {
+        athlete_id: 'ATH-1',
+        hold_id: 'hold-1',
+        scope: 'all_training',
+        reason_category: 'administrative',
+        athlete_explanation: 'Training is paused while we sort out paperwork.',
+        lift_condition_text: 'Bring the signed waiver.',
+        expires_at: null,
+      },
+    ]);
+    expect(JSON.stringify(body)).not.toContain('PAYMENT DISPUTE');
+  });
+
+  test('bulk: nobody held means no hold key; a failed list says so rather than saying "none"', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const clean = await POST(
+      jsonRequest({ action: 'bulk_attendance_checkin', class_id: 'class-1', entries: [{ athlete_id: 'ATH-1', status: 'present' }] }),
+    );
+    expect(await clean.json()).toEqual({ ok: true, class_id: 'class-1', marked_count: 1, athlete_ids: ['ATH-1'] });
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQuery.mockRejectedValueOnce(new Error('connection reset'));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failed = await POST(
+      jsonRequest({ action: 'bulk_attendance_checkin', class_id: 'class-1', entries: [{ athlete_id: 'ATH-1', status: 'present' }] }),
+    );
+    expect(failed.status).toBe(200);
+    expect(await failed.json()).toMatchObject({ marked_count: 1, hold_warnings_unreadable: true });
+    errors.mockRestore();
   });
 });
 

@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { getTodayCheckIn } from '@/src/server/pilot/athleteCheckIns';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -66,7 +67,14 @@ export async function GET(request: NextRequest) {
     // today" -- not a missing resource. The coach screen relies on that to
     // keep "no check-in" and "could not read" apart.
     const today = await getTodayCheckIn(principal.organizationId, athleteId);
-    return NextResponse.json({ today });
+
+    // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active
+    // training hold changes nothing about this read -- the check-in goes out as
+    // it always did -- but the staff member reading it is told the athlete is
+    // held. Only the gate above's three roles reach here, and the read never
+    // throws. The key is absent when the athlete is not held.
+    const holdWarning = await readStaffHoldWarning(principal.role, principal.organizationId, athleteId);
+    return NextResponse.json(holdWarning ? { today, hold_warning: holdWarning } : { today });
   } catch (error) {
     return jsonError(error);
   }
