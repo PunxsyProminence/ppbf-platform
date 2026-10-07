@@ -97,6 +97,9 @@ function angleStatusLabel(status: string): string {
   return status;
 }
 
+// How long the reload lookup may take before the page stops waiting for it.
+const RESUME_LOOKUP_MS = 6000;
+
 export default function TeachShadowCapturePage() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [trainingContext, setTrainingContext] = useState('shadowboxing');
@@ -191,27 +194,50 @@ export default function TeachShadowCapturePage() {
    * coach's most recent open session, or none.
    */
   useEffect(() => {
-    let cancelled = false;
+    /*
+     * BOUNDED. On gym wifi this request can hang, and Start and Join wait on it,
+     * so without a bound a coach could be unable to record at all. When the
+     * bound passes the lookup is given up on: the controls come back, the page
+     * says it could not check, and `gaveUp` makes any late answer count for
+     * nothing -- a reply must never replace a session the coach has since
+     * started or joined.
+     */
+    let gaveUp = false;
+    const controller = new AbortController();
+    const giveUp = () => {
+      if (gaveUp) return;
+      gaveUp = true;
+      controller.abort();
+      setErrorMessage('Could not check whether you already have a session open. If you do, starting a new one will split your angles from it.');
+      setResuming(false);
+    };
+    const timer = setTimeout(giveUp, RESUME_LOOKUP_MS);
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/video/capture-session?mine=1`, {
           credentials: 'include',
+          signal: controller.signal,
         });
         const payload = (await response.json().catch(() => ({}))) as { session?: SessionState | null };
         if (!response.ok) throw new Error('lookup refused');
-        if (!cancelled && payload.session) {
-          setSession((current) => current ?? payload.session ?? null);
+        if (gaveUp) return;
+        clearTimeout(timer);
+        gaveUp = true;
+        if (payload.session) {
+          setSession(payload.session);
           setResumedFrom(payload.session.created_at ?? 'earlier');
         }
+        setResuming(false);
       } catch {
-        if (!cancelled) {
-          setErrorMessage('Could not check whether you already have a session open. If you do, starting a new one will split your angles from it.');
-        }
-      } finally {
-        if (!cancelled) setResuming(false);
+        clearTimeout(timer);
+        giveUp();
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      gaveUp = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [setErrorMessage]);
 
   /*

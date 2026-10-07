@@ -566,6 +566,68 @@ describe('a reload goes back into the coach own open session (TEACH-04)', () => 
     expect(await screen.findByText('H7K2QP')).toBeInTheDocument();
   });
 
+  describe('a lookup that never answers cannot lock the coach out', () => {
+    let lateAnswer!: (response: Response) => void;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      const base = mockFetch();
+      // Ignores the abort signal on purpose: a hung network call may answer
+      // long after the page gave up, and that late answer must count for nothing.
+      global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('mine=1')) return new Promise<Response>((resolve) => { lateAnswer = resolve; });
+        return base(input, init);
+      }) as unknown as typeof fetch;
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('Start and Join come back after the bound, and the page says it could not check', async () => {
+      await act(async () => {
+        render(<TeachShadowCapturePage />);
+      });
+      expect(screen.getByRole('button', { name: 'Start recording session' })).toBeDisabled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+      });
+      // Still inside the bound.
+      expect(screen.getByRole('button', { name: 'Start recording session' })).toBeDisabled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(screen.getByRole('button', { name: 'Start recording session' })).toBeEnabled();
+      expect(screen.getByRole('alert')).toHaveTextContent(/Could not check whether you already have a session open/);
+    });
+
+    test('a late reply does not replace a session the coach has since started', async () => {
+      await act(async () => {
+        render(<TeachShadowCapturePage />);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(7000);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+      });
+      expect(await screen.findByText('H7K2QP')).toBeInTheDocument();
+
+      await act(async () => {
+        lateAnswer({
+          ok: true,
+          status: 200,
+          json: async () => ({ session: { ...SESSION, recording_session_id: 'rs-late', join_code: 'LATE99' } }),
+        } as Response);
+      });
+
+      expect(screen.getByText('H7K2QP')).toBeInTheDocument();
+      expect(screen.queryByText('LATE99')).toBeNull();
+      expect(screen.queryByTestId('session-resumed')).toBeNull();
+    });
+  });
+
   test('a lookup that fails says so rather than quietly offering a second session', async () => {
     const base = mockFetch();
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
