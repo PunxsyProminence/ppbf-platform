@@ -462,6 +462,31 @@ export default function SessionScriptLiveDelivery({
         </button>
       </div>
 
+      {/* The coach's "Show on TV" switch. Off by default on every run: a private
+          lesson stays off the gym wall unless the coach puts it up. The button
+          sends the value it wants, not "toggle", so a retried tap cannot flip it
+          back. The state shown is the server's, from the response. */}
+      <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+        {run.show_on_wall ? (
+          <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
+        ) : (
+          <span className="badge badge--filed"><i aria-hidden="true">—</i>NOT ON THE TV</span>
+        )}
+        <button
+          type="button"
+          onClick={() => void mutateRun({ action: 'show_on_wall', show: !run.show_on_wall }, 'show-on-wall')}
+          disabled={actionBusy !== null}
+          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {run.show_on_wall ? 'Take off the TV' : 'Show on TV'}
+        </button>
+        {/* Honest until the wall reads this switch (the next slice of the gym
+            TV work). Remove this line in the slice that makes the TV show it. */}
+        <p className="t-data text-[color:var(--bone-400)]">
+          The gym TV does not show sessions yet. This switch is saved now and takes effect when it does.
+        </p>
+      </div>
+
       {actionError && (
         <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
           {actionError}

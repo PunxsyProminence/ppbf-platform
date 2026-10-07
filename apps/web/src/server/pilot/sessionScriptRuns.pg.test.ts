@@ -42,6 +42,7 @@ import {
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
+  setSessionScriptRunShowOnWall,
   startSessionScriptRun,
 } from './sessionScriptRuns';
 
@@ -87,6 +88,17 @@ const RUN_STATE_RUNNER_PATH = path.resolve(
 );
 let runStateMigrationSql: string;
 let applyRunStateMigration: (c: Client, sql: string) => Promise<void>;
+// The coach's "Show on TV" switch. Applied THIRD: it alters the same table and its check reads
+// run_state, so it needs the run-state migration first.
+const SHOW_ON_WALL_MIGRATION_FILE = 'pilot_slice_postgres_session_run_show_on_wall_migration.sql';
+const SHOW_ON_WALL_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-session-run-show-on-wall-migration.mjs',
+);
+let showOnWallMigrationSql: string;
+let applyShowOnWallMigration: (c: Client, sql: string) => Promise<void>;
+// Read in beforeAll, right after the migration: beforeEach clears the runs table before any test.
+let preMigrationRunShowOnWall: unknown;
 
 const ORG_A = 'org-ss-a';
 const ORG_B = 'org-ss-b';
@@ -172,6 +184,7 @@ beforeAll(async () => {
   );
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
   runStateMigrationSql = await fs.readFile(path.join(INFRA_DIR, RUN_STATE_MIGRATION_FILE), 'utf8');
+  showOnWallMigrationSql = await fs.readFile(path.join(INFRA_DIR, SHOW_ON_WALL_MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -207,6 +220,52 @@ beforeAll(async () => {
   // Applied through its own runner, so the runner's readiness gate is exercised too: if the gate
   // is wrong about what the migration produces, this throws.
   await applyRunStateMigration(client, runStateMigrationSql);
+
+  // A live run written BEFORE the show-on-wall migration, so the suite proves the migration lands
+  // an existing row off the TV rather than relying only on rows created after the default exists.
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ('org-ss-premigration','org-ss-premigration','active')`,
+  );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ('acct-pre','coach','org-ss-premigration','microsoft')`,
+  );
+  await client.query(
+    `insert into pilot.session_scripts
+       (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+     values ('org-ss-premigration','scr-pre','scr-pre',1,'scr-pre','acct-pre')`,
+  );
+  await client.query(
+    `insert into pilot.session_script_blocks
+       (organization_id, block_id, script_id, block_order,
+        start_offset_min, end_offset_min, block_label, what_to_say)
+     values ('org-ss-premigration','blk-pre','scr-pre',1,0,10,'block 1','cue')`,
+  );
+  await client.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id,
+        delivered_on, run_state, started_at, current_block_id, paused_seconds)
+     values ('org-ss-premigration','run-pre','scr-pre',1,'acct-pre',current_date,
+             'in_progress', now(), 'blk-pre', 0)`,
+  );
+
+  // NEGATIVE CONTROL for the show-on-wall migration: the column does not exist before it.
+  await expect(
+    client.query('select show_on_wall from pilot.session_script_runs'),
+  ).rejects.toThrow(/show_on_wall/);
+
+  const showOnWallRunner = await nativeDynamicImport(pathToFileURL(SHOW_ON_WALL_RUNNER_PATH).href);
+  applyShowOnWallMigration = showOnWallRunner.applyMigrationTransaction as (
+    c: Client,
+    sql: string,
+  ) => Promise<void>;
+  await applyShowOnWallMigration(client, showOnWallMigrationSql);
+  preMigrationRunShowOnWall = (
+    await client.query(`select show_on_wall from pilot.session_script_runs where run_id = 'run-pre'`)
+  ).rows[0]?.show_on_wall;
+  // Idempotent: a second application (a rebuild, or a re-dispatched `all`) passes its own gate.
+  await applyShowOnWallMigration(client, showOnWallMigrationSql);
 
   for (const [org, coach] of [[ORG_A, COACH_A], [ORG_B, COACH_B]]) {
     await client.query(
@@ -763,5 +822,138 @@ describe('resume', () => {
     await seedScript(ORG_A, COACH_A, 'scr-scope', ['blk-s1']);
     await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-scope' });
     expect(await getLiveRunForCoach(ORG_B, COACH_A)).toBeNull();
+  });
+});
+
+describe('the Show on TV switch (show-on-wall migration)', () => {
+  it('landed every row that existed before it OFF the TV, including a live one', async () => {
+    expect(preMigrationRunShowOnWall).toBe(false);
+  });
+
+  it('a newly started run is off the TV until the coach turns it on', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-new', ['blk-w1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-new' });
+    expect(started.show_on_wall).toBe(false);
+  });
+
+  it('the delivering coach turns it on and off, and repeating a value succeeds', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-flip', ['blk-wf1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-flip' });
+
+    const on = await setSessionScriptRunShowOnWall(ORG_A, COACH_A, started.run_id, true);
+    expect(on.show_on_wall).toBe(true);
+    // Still a live run on the same block: the switch changes nothing else.
+    expect(on.run_state).toBe('in_progress');
+    expect(on.current_block_id).toBe('blk-wf1');
+
+    const onAgain = await setSessionScriptRunShowOnWall(ORG_A, COACH_A, started.run_id, true);
+    expect(onAgain.show_on_wall).toBe(true);
+
+    const off = await setSessionScriptRunShowOnWall(ORG_A, COACH_A, started.run_id, false);
+    expect(off.show_on_wall).toBe(false);
+    const stored = await client.query(
+      'select show_on_wall from pilot.session_script_runs where run_id = $1',
+      [started.run_id],
+    );
+    expect(stored.rows[0].show_on_wall).toBe(false);
+  });
+
+  it('another coach, in the same gym or another gym, gets not-found and the switch does not move', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-own', ['blk-wo1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-own' });
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-ss-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+
+    for (const [org, coach] of [[ORG_A, 'acct-ss-coach-a2'], [ORG_B, COACH_B]] as const) {
+      await expect(
+        setSessionScriptRunShowOnWall(org, coach, started.run_id, true),
+      ).rejects.toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    }
+    const stored = await client.query(
+      'select show_on_wall from pilot.session_script_runs where run_id = $1',
+      [started.run_id],
+    );
+    expect(stored.rows[0].show_on_wall).toBe(false);
+  });
+
+  it('finishing a run takes it off the TV in the same update', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-finish', ['blk-wfin1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-finish' });
+    await setSessionScriptRunShowOnWall(ORG_A, COACH_A, started.run_id, true);
+
+    const settled = await finishSessionScriptRun(ORG_A, COACH_A, started.run_id, {
+      runState: 'abandoned',
+    });
+    expect(settled.run_state).toBe('abandoned');
+    expect(settled.show_on_wall).toBe(false);
+  });
+
+  it('a settled run cannot be put on the TV, through the module or past it', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-settled', ['blk-ws1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-settled' });
+    await finishSessionScriptRun(ORG_A, COACH_A, started.run_id, { runState: 'completed' });
+
+    await expect(
+      setSessionScriptRunShowOnWall(ORG_A, COACH_A, started.run_id, true),
+    ).rejects.toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+
+    // pilot_ssrun_wall_only_live: a direct write cannot do it either.
+    await expect(
+      client.query(
+        'update pilot.session_script_runs set show_on_wall = true where run_id = $1',
+        [started.run_id],
+      ),
+    ).rejects.toThrow(/pilot_ssrun_wall_only_live/);
+  });
+
+  it('a legacy row with no run_state cannot be put on the TV', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-legacy', ['blk-wl1']);
+    await seedLegacyRun(ORG_A, COACH_A, 'scr-wall-legacy', 'run-wall-legacy');
+    await expect(
+      client.query(
+        `update pilot.session_script_runs set show_on_wall = true where run_id = 'run-wall-legacy'`,
+      ),
+    ).rejects.toThrow(/pilot_ssrun_wall_only_live/);
+  });
+
+  it('the column cannot be null', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-wall-null', ['blk-wn1']);
+    const started = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-wall-null' });
+    await expect(
+      client.query(
+        'update pilot.session_script_runs set show_on_wall = null where run_id = $1',
+        [started.run_id],
+      ),
+    ).rejects.toThrow(/null value/);
+  });
+
+  // The runner opens its own transaction and rolls back on a failed gate, so feeding it SQL that
+  // removes the check proves the gate notices -- and that the rollback puts the check back.
+  it("the runner's readiness gate refuses a database without the only-live check", async () => {
+    await expect(
+      applyShowOnWallMigration(
+        client,
+        'alter table pilot.session_script_runs drop constraint if exists pilot_ssrun_wall_only_live;',
+      ),
+    ).rejects.toThrow('SESSION_RUN_SHOW_ON_WALL_NOT_READY');
+
+    const check = await client.query(
+      `select 1 from pg_constraint
+        where conrelid = to_regclass('pilot.session_script_runs')
+          and conname = 'pilot_ssrun_wall_only_live'`,
+    );
+    expect(check.rowCount).toBe(1);
+  });
+
+  it("the runner's readiness gate refuses a default that would put every new run on the TV", async () => {
+    await expect(
+      applyShowOnWallMigration(
+        client,
+        'alter table pilot.session_script_runs alter column show_on_wall set default true;',
+      ),
+    ).rejects.toThrow('SESSION_RUN_SHOW_ON_WALL_NOT_READY');
   });
 });
