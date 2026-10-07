@@ -235,14 +235,14 @@ export default function ParentVideoPage() {
                   <section aria-labelledby="coach-notes-heading" className="mt-[var(--s4)]">
                     <h3 id="coach-notes-heading" className="t-label m-0">Coach notes</h3>
                     {activeVideo.coachNotes.length === 0 ? (
-                      <p className="t-muted mt-[var(--s2)]">No coach notes on this round yet.</p>
+                      <p className="t-muted mt-[var(--s2)]">No coach notes on this round.</p>
                     ) : (
                       <ul className="mt-[var(--s2)] list-none space-y-[var(--s3)] p-0">
                         {activeVideo.coachNotes.map((note, index) => (
                           <li key={index} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
                             <p className="t-body whitespace-pre-wrap">{note.text}</p>
                             <p className="t-muted mt-[var(--s2)]">
-                              {note.coach_name} · {formatGymStamp(note.noted_at) ?? ''}
+                              {[note.coach_name, formatGymStamp(note.noted_at)].filter(Boolean).join(' · ')}
                             </p>
                           </li>
                         ))}
