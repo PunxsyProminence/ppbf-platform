@@ -150,9 +150,9 @@
     "writes": true,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Authorizes only the mentor side of the pairing (:122-126), not the mentee, unlike POST which checks both.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "requireRole :109; resolves mentor_athlete_id via getMentorshipMentorAthleteId then assertActorCanAccessAthlete :126 before endMentorship (sets end date).",
+    "notes": "requireRole :109; resolves both athlete ids via getMentorshipAthleteIds then assertActorCanAccessAthlete on the mentor AND the mentee before endMentorship (sets end date). Route survey 2026-10-07 B1: previously the mentor only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -772,11 +772,11 @@
     ],
     "athleteData": true,
     "writes": false,
-    "coachReachRule": "not-applied",
+    "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Any coach can read community-service entries for any person_account_id in the gym (including athletes, possibly minors) with no coach-reach check; no person filter is required, so it returns everyone.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "requireRole community-service/route.ts:20; getCommunityServiceTotals (communityService.ts:52) lists pilot.activity_log community_service rows per person_account_id for the org with no per-athlete authorization. Person set may include non-athletes.",
+    "notes": "requireRole community-service/route.ts:20; getCommunityServiceTotals(principal) (communityService.ts) lists pilot.activity_log community_service rows per person_account_id, then for every role except organization admin keeps only people whose athlete ids (activity_log.athlete_id and accounts.athlete_id) all pass access.ts accessibleAthleteIds; a person with no athlete record is shown to organization admin only. Route survey 2026-10-07 B1.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3338,7 +3338,7 @@
     "id": "app/api/pilot/calibration/annotation-set/submit/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/calibration/annotation-set/submit",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:20-22 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -3350,7 +3350,223 @@
     "missingGate": false,
     "looksWrong": "Coach reach rule is not run; access is limited to the caller's own annotation set (annotatorGate.ts loadOwnAnnotationSet), so reach is by ownership, not athlete assignment.",
     "confidence": "medium",
-    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:20-22; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id.",
+    "notes": "One-way submit of the caller's own annotation set (submit/route.ts POST) and writes an audit event. Gate via annotatorGate.ts:57-61; the set belongs to a calibration clip of Teach Shadow footage which carries athlete_id. A body-point set (0.2+) the database refuses as incomplete (CALIBRATION_BODY_POINTS_INCOMPLETE) returns a 400 carrying the trigger's missing list; other failures stay opaque 500s.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/calibration/body-points",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Reads the caller's own set's body moments, points, stance labels and the submission's missing list (body-points/route.ts GET; bodyPoints.ts listBodyDataForSet/listMissingBodyData). Teaching footage clip; clip rows carry a nullable athlete_id. No clippability check on a read of marks; private no-store.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/moments/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/calibration/body-points/moments",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Opens one moment of one event in the caller's own in-progress set (moments/route.ts POST); loadPlayableClip re-checks the footage; the module derives the moment's time from the event. Writes moment + audit (event and slot only, no label).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/moments/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/calibration/body-points/moments",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Relabels a moment (lead side, guard, picture size, free-middle time) in the caller's own in-progress set (moments/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (field names only).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/moments/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/calibration/body-points/moments",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Removes a moment and its points from the caller's own in-progress set (moments/route.ts DELETE); no clippability check, as events DELETE. Writes + audit.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/points/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/calibration/body-points/points",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Marks one or more points at a moment in the caller's own in-progress set (points/route.ts PUT); loadPlayableClip re-checks the footage; the module holds the version's point list and the [0,1] range. Writes + audit (counts only, no coordinate).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/points/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/calibration/body-points/points",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Removes one point's mark in the caller's own in-progress set (points/route.ts DELETE); no clippability check. Writes + audit.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/stance/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/calibration/body-points/stance",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Sets or changes the stance type of one event in the caller's own in-progress set (stance/route.ts PUT); loadPlayableClip re-checks the footage. Writes + audit (event only, no stance).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/body-points/stance/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/calibration/body-points/stance",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts:57-61 -> requireRole coach, organization_admin) + loadOwnAnnotationSet (annotator must own the set)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only (loadOwnAnnotationSet); no coach-athlete assignment check, as for every calibration annotation route.",
+    "confidence": "high",
+    "notes": "Clears the stance type of one event in the caller's own in-progress set (stance/route.ts DELETE); no clippability check. Writes + audit.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -5872,6 +6088,32 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Version history of one drill lineage, org-scoped (getDrillLineage). Drill content only. Role gate line 38.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/drills/floor-tested/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/drills/floor-tested",
+    "gate": "requirePrincipal + requireRole(FLOOR_VALIDATOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records that a coach of the session's gym floor-tested a draft reference drill (markDrillFloorTested, append-only pilot.drill_floor_validations) and writes an audit event; adopts nothing and changes no drill_library row; no athlete data. Role gate is the first statement after requirePrincipal in POST. OD-2026-10-06-026 ruling 3.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11889,7 +12131,7 @@
     "id": "app/api/pilot/video/[videoId]/release/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/video/[videoId]/release",
-    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + uploader-ownership for non-admins + assertActorCanAccessAthlete(video.athlete_id) + assertActorHoldsCurrentReviewLink + assertConsentCoversVideo",
+    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + uploader-ownership for non-admins + assertActorCanAccessAthlete(video.athlete_id) + accessibleAthleteIds (tagged clip: coach must reach at least one athlete in it) + assertActorHoldsCurrentReviewLink + assertConsentCoversVideo",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -11901,14 +12143,15 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Releases quarantined video to ready (release/route.ts:36-204). Non-admin must be uploader plus athlete reach; requires a current review link and guardian media consent for the athlete.",
+    "notes": "Releases quarantined video to ready (release/route.ts). Non-admin must be uploader plus athlete reach; on a tagged clip the coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided with the other entitlement refusals, before the consent gate, so an out-of-reach caller gets hiddenNotFound and never the consent 409; requires a current review link and guardian media consent for the clip's own athlete and every tagged athlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": []
     }
@@ -12174,7 +12417,7 @@
     "id": "app/api/pilot/video/review-link/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/video/review-link",
-    "gate": "requirePrincipal + requireRole(VIDEO_REVIEW_VIEW_ROLES) + authorizeVideoScanReview",
+    "gate": "requirePrincipal + requireRole(VIDEO_REVIEW_VIEW_ROLES) + authorizeVideoScanReview + accessibleAthleteIds (tagged clip: coach must reach at least one athlete in it)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -12186,13 +12429,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "VIDEO_REVIEW_VIEW_ROLES = organization_admin, coach (videoScanReview.ts:33). authorizeVideoScanReview (videoScanReview.ts:93) 404s unless caller is org admin or the uploader, then runs assertActorCanAccessAthlete on the video's athlete (L110). Mints a 15-minute read SAS under consent check and writes an audit event; video must be quarantined.",
+    "notes": "VIDEO_REVIEW_VIEW_ROLES = organization_admin, coach (videoScanReview.ts). authorizeVideoScanReview 404s unless caller is org admin or the uploader, then runs assertActorCanAccessAthlete on the video's athlete. On a tagged clip a coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided before the consent gate with the same 404. Mints a 15-minute read SAS under the consent check for the clip's own athlete and every tagged athlete, and writes an audit event; video must be quarantined.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
+        "accessibleAthleteIds",
         "authorizeVideoScanReview"
       ],
       "roleLiterals": []

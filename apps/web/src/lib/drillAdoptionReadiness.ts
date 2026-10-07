@@ -13,21 +13,31 @@
 // those. Guessing them from prose is ruled out, so they are reported as a
 // VERIFIED_MODEL_GAP instead of being approximated here.
 //
-// Two rules the corpus could support were left out on purpose, because they
-// are owner decisions, not facts: "at least one cue" (34 of the 119 seeded
-// drills have none, including 23 of the 25 conditioning drills) and "the
-// provenance must be validated" (114 of 119 are marked REQUIRES FLOOR
-// VALIDATION and nothing records a validation).
+// "At least one cue" is a rule now (OD-2026-10-06-026 ruling 2: required except
+// for conditioning drills; see drillCueRule.ts). Of the 119 seeded drills, 34
+// have no cue; 23 of those are conditioning and exempt, so 11 are not ready.
+//
+// "The provenance must be validated" is a rule now too (same ruling, ruling 3:
+// "They stay drafts until a coach marks them floor-tested"). A draft -- one of
+// the two REQUIRES FLOOR VALIDATION provenance values -- is ready for a gym
+// only once a coach of THAT gym has marked it floor-tested
+// (pilot.drill_floor_validations; see drillFloorValidation.ts). 114 of the 119
+// seeded drills are drafts, so until coaches mark them none is adoptable.
 //
 // PURE and client-safe: the promote route enforces it on the server, so a
 // direct API call cannot skip it, and the coach page runs the same function to
 // show the result before anyone presses Promote.
+
+import { NO_CUE_READINESS_MESSAGE, breaksCueRule, isConditioningLabel } from './drillCueRule';
+import { NOT_FLOOR_TESTED_READINESS_MESSAGE, requiresFloorValidation } from './drillFloorValidation';
 
 export interface AdoptionReadinessInput {
   active: boolean;
   superseded_at: string | null;
   name: string;
   purpose: string;
+  /** 'conditioning' exempts the drill from the cue rule. */
+  discipline: string;
   category: string;
   difficulty: string;
   standard_setup: string;
@@ -41,6 +51,12 @@ export interface AdoptionReadinessInput {
    * the safety rule below.
    */
   stop_rules: unknown[];
+  /** The drill's cues (pilot.drill_cues rows); blank text does not count. */
+  cues: { cue_text: string }[];
+  /** A pilot_drill_library_field_provenance_check literal; the two DRAFT values need a floor test. */
+  field_provenance: string;
+  /** Whether a coach of the ADOPTING gym has marked this version floor-tested. */
+  floor_tested_by_this_gym: boolean;
 }
 
 export interface AdoptionReadiness {
@@ -89,6 +105,17 @@ export function adoptionReadiness(drill: AdoptionReadinessInput): AdoptionReadin
   // the drill's own, and they are what keeps today's 119 seeded drills
   // adoptable. contentImport/warnings.ts judges new drills the same way.
   if (drill.stop_rules.length === 0) missing.push('It has no stop rules.');
+
+  // Coaching: a technique drill needs at least one cue; conditioning does not.
+  if (breaksCueRule({ conditioning: isConditioningLabel(drill.discipline), cues: drill.cues })) {
+    missing.push(NO_CUE_READINESS_MESSAGE);
+  }
+
+  // Provenance: a draft stays a draft for this gym until one of its coaches
+  // has tried it on the floor and said so.
+  if (requiresFloorValidation(drill.field_provenance) && !drill.floor_tested_by_this_gym) {
+    missing.push(NOT_FLOOR_TESTED_READINESS_MESSAGE);
+  }
 
   return { ready: missing.length === 0, missing };
 }

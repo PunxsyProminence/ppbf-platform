@@ -13,6 +13,7 @@ import {
   listDrillLibrary,
   listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
+import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 import type { ReferenceLifecycle } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -43,6 +44,10 @@ jest.mock('@/src/server/pilot/http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/drillFloorValidations', () => ({
+  listFloorValidations: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/drillLibraryV3', () => {
   const actual = jest.requireActual('@/src/server/pilot/drillLibraryV3');
   return {
@@ -61,6 +66,7 @@ const mockDetail = getDrillWithDetail as jest.Mock;
 const mockAthleteList = listAthleteDrillLibrary as jest.Mock;
 const mockAthleteDetail = getAthleteDrillDetail as jest.Mock;
 const mockLifecycles = listReferenceLifecycles as jest.Mock;
+const mockFloorTested = listFloorValidations as jest.Mock;
 
 beforeEach(() => {
   // W-D4C. Every AUTHOR read (coach, organization_admin, admin) now also asks
@@ -70,6 +76,8 @@ beforeEach(() => {
   // map left over from one case would otherwise be the answer the next case
   // silently reads.
   mockLifecycles.mockResolvedValue({});
+  // Same for this gym's floor-tested marks (OD-2026-10-06-026 ruling 3).
+  mockFloorTested.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -270,7 +278,7 @@ describe('the reads it performs are organization-scoped', () => {
     // W-D4C put `lifecycle` beside `drills`; the rows themselves are untouched,
     // which is what this equality still pins. The lifecycle content is asserted
     // in its own block below.
-    expect(await response.json()).toEqual({ drills: [{ drill_id: 'drl-1' }], lifecycle: {} });
+    expect(await response.json()).toEqual({ drills: [{ drill_id: 'drl-1' }], lifecycle: {}, floor_tested: {} });
     expect(mockList).toHaveBeenCalledWith('org-1', {
       discipline: 'boxing',
       category: 'defense',
@@ -568,6 +576,7 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
     expect(await response.json()).toEqual({
       drills: [{ drill_id: 'drl-9' }, { drill_id: 'drl-4' }],
       lifecycle: { 'drl-9': OPERATIONAL, 'drl-4': RETIRED, 'drl-1': AVAILABLE },
+      floor_tested: {},
     });
   });
 
@@ -601,6 +610,7 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
     expect(await response.json()).toEqual({
       drill: { drill_id: 'drl-9', name: 'Catch and Return' },
       lifecycle: OPERATIONAL,
+      floor_tested: null,
     });
     expect(mockLifecycles.mock.calls).toEqual([['org-1', ['drl-9']]]);
   });
@@ -625,6 +635,20 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
     expect((await response.json()).lifecycle).toEqual(lifecycle);
   });
 
+  it("answers staff detail with this gym's floor-tested mark for the drill, read for this drill id only (ruling 3)", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockDetail.mockResolvedValue({ drill_id: 'drl-9', name: 'Catch and Return' });
+    mockLifecycles.mockResolvedValue({ 'drl-9': AVAILABLE });
+    const mark = { validation_id: 'dfv-1', drill_id: 'drl-9', validated_by_account_id: 'coach-1', validated_at: '2026-10-07T00:00:00.000Z' };
+    mockFloorTested.mockResolvedValue({ 'drl-4': { ...mark, drill_id: 'drl-4' }, 'drl-9': mark });
+
+    const response = await GET(getRequest('drill_id=drl-9'));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).floor_tested).toEqual(mark);
+    expect(mockFloorTested.mock.calls).toEqual([['org-1', ['drl-9']]]);
+  });
+
   it('answers a detail whose lifecycle was not found with an explicit null, not a missing key', async () => {
     // The page reads a null lifecycle as "status could not be read" and offers
     // no action. An omitted key would be indistinguishable, over JSON, from a
@@ -637,8 +661,9 @@ describe('staff reads carry where each reference stands in this gym (W-D4C)', ()
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(['drill', 'lifecycle']);
+    expect(Object.keys(body).sort()).toEqual(['drill', 'floor_tested', 'lifecycle']);
     expect(body.lifecycle).toBeNull();
+    expect(body.floor_tested).toBeNull();
   });
 });
 
@@ -698,8 +723,9 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(Object.keys(body)).toEqual(['drills', 'lifecycle']);
-      expect(body).toEqual({ drills: [{ drill_id: 'drl-9' }], lifecycle: MAP });
+      expect(Object.keys(body)).toEqual(['drills', 'lifecycle', 'floor_tested']);
+      expect(body).toEqual({ drills: [{ drill_id: 'drl-9' }], lifecycle: MAP, floor_tested: {} });
+      expect(mockFloorTested.mock.calls).toEqual([['org-session-7']]);
       expect(mockLifecycles.mock.calls).toEqual([['org-session-7']]);
     });
 
@@ -710,8 +736,9 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(Object.keys(body)).toEqual(['drill', 'lifecycle']);
-      expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' }, lifecycle: OPERATIONAL });
+      expect(Object.keys(body)).toEqual(['drill', 'lifecycle', 'floor_tested']);
+      expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' }, lifecycle: OPERATIONAL, floor_tested: null });
+      expect(mockFloorTested.mock.calls).toEqual([['org-session-7', ['drl-9']]]);
       expect(mockDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
       expect(mockLifecycles.mock.calls).toEqual([['org-session-7', ['drl-9']]]);
     });
@@ -728,6 +755,7 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(Object.keys(body)).toEqual(['drills']);
       expect(body).toEqual({ drills: [{ drill_id: 'drl-9' }] });
       expect(mockLifecycles).not.toHaveBeenCalled();
+      expect(mockFloorTested).not.toHaveBeenCalled();
       // Still the read this role always reached -- the repair moved the
       // lifecycle, not the library.
       if (role === 'athlete') {
@@ -749,6 +777,7 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
       expect(Object.keys(body)).toEqual(['drill']);
       expect(body).toEqual({ drill: { drill_id: 'drl-9', name: 'Catch and Return' } });
       expect(mockLifecycles).not.toHaveBeenCalled();
+      expect(mockFloorTested).not.toHaveBeenCalled();
       if (role === 'athlete') {
         expect(mockAthleteDetail).toHaveBeenCalledWith('org-session-7', 'drl-9');
         expect(mockDetail).not.toHaveBeenCalled();

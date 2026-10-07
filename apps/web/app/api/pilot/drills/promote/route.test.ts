@@ -13,6 +13,7 @@ import {
 } from '@/src/server/pilot/drills';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 // Promotion is the only bridge between the two drill models, so the cases that
@@ -46,14 +47,22 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/src/server/pilot/drillFloorValidations', () => ({
+  listFloorValidations: jest.fn(),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetReference = getDrillWithDetail as jest.Mock;
 const mockLifecycles = listReferenceLifecycles as jest.Mock;
 const mockOtherVersion = getOtherVersionAdoption as jest.Mock;
 const mockPromote = promoteReferenceDrill as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockFloorTested = listFloorValidations as jest.Mock;
 
 const REFERENCE_ID = 'drl_reference_1';
+const LITERATURE_DRAFT =
+  'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION';
+const CRAFT_DRAFT = 'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION';
 
 // The route's refusals, word for word. Asserted exactly rather than by pattern
 // because each one names a different remedy for the coach.
@@ -154,6 +163,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetReference.mockResolvedValue(referenceDrill());
+  // No floor-tested mark in this gym unless a case says so; the fixture's
+  // provenance is the source manual, which needs none.
+  mockFloorTested.mockResolvedValue({});
   // An already-promoted conflict in a live gym means the reference is adopted:
   // operational unless the coach retired it. Tests that need another answer
   // say so.
@@ -458,15 +470,89 @@ describe('adoption readiness', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('does not require cues or validated provenance, which are owner decisions and not readiness', async () => {
+  // OD-2026-10-06-026 ruling 2: a technique drill needs at least one cue
+  // before it can be adopted; a conditioning drill does not. (Ruling 3, the
+  // floor-tested mark for drafts, has its own cases below.)
+  it('refuses a technique drill with no cue, naming the missing cue', async () => {
     mockGetReference.mockResolvedValue(
-      referenceDrill({ cues: [], field_provenance: 'REQUIRES FLOOR VALIDATION' }),
+      referenceDrill({ cues: [], field_provenance: 'PPBF source manual v3' }),
+    );
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: NOT_READY_MESSAGE,
+      code: 'NOT_READY_TO_ADOPT',
+      missing: ['It has no coaching cue. A technique drill needs at least one; a conditioning drill does not.'],
+    });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('adopts a conditioning drill with no cue (the exemption)', async () => {
+    mockGetReference.mockResolvedValue(
+      referenceDrill({ discipline: 'conditioning', category: 'strength', cues: [], field_provenance: 'PPBF source manual v3' }),
     );
 
     const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
 
     expect(response.status).toBe(201);
     expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ cues: [] }));
+  });
+
+  // OD-2026-10-06-026 ruling 3: a draft stays a draft for this gym until one
+  // of its coaches marks it floor-tested. The mark is read on the server.
+  it('refuses a draft this gym has not floor-tested, naming the missing floor test', async () => {
+    mockGetReference.mockResolvedValue(referenceDrill({ field_provenance: LITERATURE_DRAFT }));
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: NOT_READY_MESSAGE,
+      code: 'NOT_READY_TO_ADOPT',
+      missing: ['It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.'],
+    });
+    expect(mockFloorTested).toHaveBeenCalledWith('org-1', [REFERENCE_ID]);
+    expect(mockPromote).not.toHaveBeenCalled();
+  });
+
+  it('adopts a draft once a coach of this gym has marked it floor-tested', async () => {
+    mockGetReference.mockResolvedValue(referenceDrill({ field_provenance: CRAFT_DRAFT }));
+    mockFloorTested.mockResolvedValue({
+      [REFERENCE_ID]: { validation_id: 'dfv-1', drill_id: REFERENCE_ID, validated_by_account_id: 'coach-2', validated_at: '2026-10-07T00:00:00.000Z' },
+    });
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(201);
+    expect(mockPromote).toHaveBeenCalled();
+  });
+
+  it("another gym's mark does not count: the read is for the session organization", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-2' }));
+    mockGetReference.mockResolvedValue(referenceDrill({ organization_id: 'org-2', field_provenance: LITERATURE_DRAFT }));
+    // org-1 has marked this version; org-2 has not. The read answers by the
+    // organization it is asked for, as the real query does.
+    const mark = { validation_id: 'dfv-1', drill_id: REFERENCE_ID, validated_by_account_id: 'coach-1', validated_at: '2026-10-07T00:00:00.000Z' };
+    mockFloorTested.mockImplementation(async (organizationId: string, ids: string[]) =>
+      organizationId === 'org-1' && ids.includes(REFERENCE_ID) ? { [REFERENCE_ID]: mark } : {});
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(mockFloorTested).toHaveBeenCalledWith('org-2', [REFERENCE_ID]);
+    expect(mockPromote).not.toHaveBeenCalled();
+  });
+
+  it('a cue of only whitespace does not count as a cue', async () => {
+    mockGetReference.mockResolvedValue(referenceDrill({ cues: [{ cue_text: '   ' }] }));
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(mockPromote).not.toHaveBeenCalled();
   });
 });
 

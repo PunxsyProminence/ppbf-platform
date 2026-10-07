@@ -51,9 +51,19 @@
 // watch a clip showing a tagged child whose guardian had withdrawn. Same
 // subject set as GET /api/pilot/video/[videoId] now, and a tag naming a
 // deleted athlete reads as not found, as it does there.
+//
+// AND A COACH MUST REACH AT LEAST ONE OF THEM. authorizeVideoScanReview
+// entitles a non-admin on being the uploader and reaching the clip's OWN
+// athlete; it cannot see the tags. A coach who uploaded untagged team footage
+// that another coach then tagged with a child the uploader does not coach was
+// entitled on the upload alone, and the consent 409 below would have told
+// them that child's guardian's decision. Playback's rule for a tagged clip
+// (video/[videoId]/route.ts, accessibleAthleteIds: the coach reaches at least
+// one athlete in it) is applied here too, before any consent is asked, with
+// the same refusal every other not-entitled caller gets.
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { ConflictError } from '@/src/server/pilot/errors';
@@ -93,6 +103,20 @@ export async function POST(request: NextRequest) {
       ...(video.athlete_id ? [video.athlete_id] : []),
       ...tagged.map((subject) => subject.athlete_id),
     ])];
+
+    // A coach acts on a tagged clip only if they reach at least one athlete
+    // in it -- playback's rule, decided here before the consent gate so an
+    // out-of-reach caller gets the entitlement refusal and never the 409 that
+    // would tell them about a child they cannot see. Same 404 as
+    // authorizeVideoScanReview. An organization admin reaches every athlete
+    // in the organization and is not asked, as on playback. An untagged clip
+    // was fully decided by authorizeVideoScanReview and is not asked either.
+    if (tagged.length > 0 && !isOrganizationAdminRole(principal.role)) {
+      const reach = await accessibleAthleteIds(principal, consentSubjects);
+      if (reach.size === 0) {
+        throw new VideoScanReviewRefused('VIDEO_SESSION_NOT_FOUND', 'Not found', 404);
+      }
+    }
 
     let url: string;
     try {

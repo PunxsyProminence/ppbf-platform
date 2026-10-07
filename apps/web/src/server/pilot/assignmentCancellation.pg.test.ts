@@ -192,8 +192,8 @@ async function seededDatabase(): Promise<Client> {
     [ORG_ID, ATHLETE_ID, COACH_ID],
   );
   await client.query(
-    `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active)
-     values ($1, $2, $3, $4, $5, 'intermediate', true)`,
+    `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active, cues)
+     values ($1, $2, $3, $4, $5, 'intermediate', true, '{"Fixture cue"}')`,
     [ORG_ID, DRILL_ID, DRILL_NAME, DRILL_CATEGORY, DRILL_FOCUS],
   );
 

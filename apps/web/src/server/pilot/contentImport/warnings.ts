@@ -149,11 +149,13 @@ function readinessInput(unit: UnitContent) {
   const root = (unit.root ?? {}) as Record<string, string>;
   const scale = (unit.children['seed_drill_scale_levels.csv'] ?? []) as Record<string, string>[];
   const stops = unit.children['seed_drill_stop_rules.csv'] ?? [];
+  const cues = (unit.children['seed_drill_cues.csv'] ?? []) as Record<string, string>[];
   return {
     active: true,
     superseded_at: null,
     name: root.name ?? '',
     purpose: root.purpose ?? '',
+    discipline: root.discipline ?? '',
     category: root.category ?? '',
     difficulty: root.difficulty ?? '',
     standard_setup: root.standard_setup ?? '',
@@ -164,6 +166,13 @@ function readinessInput(unit: UnitContent) {
     // ones included (R3: treated as the drill's own). Gym-wide rules from the
     // universal file do NOT make a drill ready on their own.
     stop_rules: [...stops],
+    // The cue rule (OD-2026-10-06-026): a technique drill needs one, a
+    // conditioning drill (by discipline) does not.
+    cues: cues.map((row) => ({ cue_text: row.cue_text ?? '' })),
+    // A package is judged before any gym has marked anything: a draft in it
+    // will need a coach's floor test before that gym can adopt it.
+    field_provenance: root.field_provenance ?? '',
+    floor_tested_by_this_gym: false,
   };
 }
 

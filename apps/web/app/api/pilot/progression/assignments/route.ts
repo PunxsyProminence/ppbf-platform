@@ -12,6 +12,7 @@ import {
   toFamilyAssignments,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -154,7 +155,14 @@ export async function POST(request: NextRequest) {
       dueDate: body.due_date,
     });
 
-    return NextResponse.json(assignment, { status: 201 });
+    // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active training
+    // hold does NOT stop an assignment. The staff caller is told, in the answer
+    // to the write that already succeeded, so the screen can show it beside the
+    // action. Read AFTER the write and never able to fail it
+    // (readStaffHoldWarning does not throw). The key is absent when the athlete
+    // is not held, so an unheld athlete's answer is exactly what it was before.
+    const holdWarning = await readStaffHoldWarning(principal.role, principal.organizationId, body.athlete_id);
+    return NextResponse.json(holdWarning ? { ...assignment, hold_warning: holdWarning } : assignment, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }

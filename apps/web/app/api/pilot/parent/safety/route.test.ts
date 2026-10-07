@@ -209,6 +209,35 @@ test('never leaks reason_text or reason_category from the hold row', async () =>
   expect(body).not.toContain('behavioral');
 });
 
+test("the placer name falls back to the existing phrase, never the account id, when the placer resolves to nobody (a deleted login included)", async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockGetActiveTrainingHold.mockResolvedValueOnce({
+    hold_id: 'hold-1',
+    athlete_id: 'ath-1',
+    scope: 'all_training',
+    reason_category: 'medical',
+    reason_text: 'staff only',
+    athlete_explanation: 'Rest this week.',
+    lift_condition_text: '',
+    placed_by_account_id: 'jane.okafor@example.org',
+    placed_by_role: 'coach',
+    placed_at: '2026-08-01T00:00:00.000Z',
+    expires_at: null,
+    lifted_by_account_id: null,
+    lifted_at: null,
+    lift_note: '',
+    status: 'active',
+  } as never);
+  mockGetSubjectIdentity.mockResolvedValueOnce(null);
+
+  const response = await get();
+  const payload = await response.json();
+
+  expect(payload.items[0].hold.placed_by_name).toBe('Your coach');
+  expect(JSON.stringify(payload)).not.toContain('jane.okafor');
+});
+
 test('no active hold reads as hold: null, not omitted', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);

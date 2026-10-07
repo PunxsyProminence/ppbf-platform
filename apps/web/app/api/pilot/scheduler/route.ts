@@ -36,6 +36,7 @@ import {
   type SchedulerStore,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
+import { readStaffHoldWarning, readStaffHoldWarnings } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -932,7 +933,19 @@ export async function POST(request: NextRequest) {
 
       await upsertSchedulerAttendance(actor.organizationId, attendanceRecord);
 
-      return NextResponse.json({ ok: true, class_id: classId, athlete_id: athleteId });
+      // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active
+      // training hold does NOT stop a check-in -- a held athlete may still
+      // come in -- but the coach or admin marking them is told. Staff roles
+      // only (readStaffHoldWarning returns nothing for an athlete's own
+      // check-in or a parent's), read after the mark is stored and never able
+      // to fail it. The key is absent when the athlete is not held.
+      const holdWarning = await readStaffHoldWarning(actor.role, actor.organizationId, athleteId);
+      return NextResponse.json({
+        ok: true,
+        class_id: classId,
+        athlete_id: athleteId,
+        ...(holdWarning ? { hold_warning: holdWarning } : {}),
+      });
     }
 
     if (action === 'bulk_attendance_checkin') {
@@ -1005,11 +1018,24 @@ export async function POST(request: NextRequest) {
 
       await bulkUpsertSchedulerAttendance(actor.organizationId, records);
 
+      // Same ruling as the single check-in above: warn, never block. Staff
+      // only by the gate at the top of this action; one list read for the
+      // batch (readStaffHoldWarnings), absent keys when nobody is held.
+      const holdWarnings = await readStaffHoldWarnings(
+        actor.role,
+        actor.organizationId,
+        records.map((record) => record.athlete_id),
+      );
       return NextResponse.json({
         ok: true,
         class_id: classId,
         marked_count: records.length,
         athlete_ids: records.map((record) => record.athlete_id),
+        ...(holdWarnings === 'unreadable'
+          ? { hold_warnings_unreadable: true }
+          : holdWarnings.length > 0
+            ? { hold_warnings: holdWarnings }
+            : {}),
       });
     }
 

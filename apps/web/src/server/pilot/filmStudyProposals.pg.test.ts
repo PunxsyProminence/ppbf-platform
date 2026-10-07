@@ -372,11 +372,13 @@ describe('film study proposals against the real schema', () => {
     ).rejects.toThrow(/review_state_check|violates check constraint/);
   });
 
-  test('the athlete foreign key is real: an unknown athlete cannot be proposed about', async () => {
-    await expect(
-      newProposal({ athleteId: 'ATH-DOES-NOT-EXIST' }),
-    ).rejects.toThrow(/pilot_film_study_proposals_athlete_fk|foreign key/);
-  });
+  // There is no longer a test that an unknown athlete cannot be proposed
+  // about: production has no such key. The shadow-deidentify-keys migration
+  // drops pilot_film_study_proposals_athlete_fk so the purge can keep a
+  // purged child's proposals de-identified (Jason 2026-10-06, Q5 "Keep
+  // coaching, delete medical"); this suite's hand-picked schema predates it,
+  // so a key check here would pass on a database production never runs.
+  // What replaces the cascade is pinned by shadowDeidentifyKeysMigration.pg.test.ts.
 });
 
 // The executor's source-of-truth read. pilot.video_sessions has TWO competing

@@ -1279,7 +1279,9 @@ test.describe('Coach journey', () => {
     const ROPE = reference({
       drill_id: 'ref-rope',
       name: 'Rope skip',
-      discipline: 'general',
+      // A conditioning drill by discipline: the cue rule (OD-2026-10-06-026
+      // ruling 2) exempts it, so with no cues it is still ready to adopt.
+      discipline: 'conditioning',
       category: 'conditioning',
       difficulty: 'beginner',
       // "slip" in the purpose, never in the name: see the note above.

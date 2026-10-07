@@ -17,6 +17,8 @@
 // content_class) are present exactly as they are in production.
 
 import { adoptionReadiness } from './drillAdoptionReadiness';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from './drillFloorValidation';
+import { VOCABULARIES } from '../server/pilot/contentImport/vocabularies';
 import type { DrillWithDetail } from '../server/pilot/drillLibraryV3';
 
 const WITHDRAWN = 'The reference drill has been withdrawn.';
@@ -86,7 +88,9 @@ function universalRule(ordinal: number) {
 }
 
 /** A drill that meets every rule. Each test breaks exactly what it names. */
-function readyDrill(overrides: Partial<DrillWithDetail> = {}): DrillWithDetail {
+type ReadinessFixture = DrillWithDetail & { floor_tested_by_this_gym: boolean };
+
+function readyDrill(overrides: Partial<ReadinessFixture> = {}): ReadinessFixture {
   return {
     organization_id: ORG,
     drill_id: DRILL,
@@ -136,6 +140,9 @@ function readyDrill(overrides: Partial<DrillWithDetail> = {}): DrillWithDetail {
       },
     ],
     secondary_skills: [],
+    // Not a draft (source manual), so no floor test is needed; the draft cases
+    // below set both.
+    floor_tested_by_this_gym: false,
     ...overrides,
   };
 }
@@ -322,25 +329,83 @@ describe('adoptionReadiness: the missing list has a fixed order', () => {
   });
 });
 
-describe('adoptionReadiness: cues and provenance are NOT rules', () => {
-  test('a drill with no cues is ready', () => {
-    expect(adoptionReadiness(readyDrill({ cues: [] }))).toEqual({ ready: true, missing: [] });
+const NO_CUE = 'It has no coaching cue. A technique drill needs at least one; a conditioning drill does not.';
+
+// OD-2026-10-06-026 ruling 2: "Required except conditioning".
+describe('adoptionReadiness: the cue rule', () => {
+  test('a technique drill with no cues is NOT ready, and the line names the cue', () => {
+    expect(adoptionReadiness(readyDrill({ cues: [] }))).toEqual({ ready: false, missing: [NO_CUE] });
   });
 
+  test('a conditioning drill with no cues is ready (the exemption)', () => {
+    expect(adoptionReadiness(readyDrill({ discipline: 'conditioning', category: 'strength', cues: [] })))
+      .toEqual({ ready: true, missing: [] });
+  });
+
+  test('the exemption reads the discipline, not the category word', () => {
+    // 'conditioning' as a boxing drill's category does not exempt it; the
+    // ruling counted conditioning drills by discipline (25), not category (8).
+    expect(adoptionReadiness(readyDrill({ discipline: 'boxing', category: 'conditioning', cues: [] })).ready).toBe(false);
+    expect(adoptionReadiness(readyDrill({ discipline: 'Conditioning ', category: 'warmup', cues: [] })).ready).toBe(true);
+  });
+
+  test('a blank cue does not count', () => {
+    const blank = { ...readyDrill().cues[0], cue_text: '  ' };
+    expect(adoptionReadiness(readyDrill({ cues: [blank] })).missing).toEqual([NO_CUE]);
+  });
+
+  test('the cue line comes last, after the stop-rule line', () => {
+    expect(adoptionReadiness(readyDrill({ cues: [], stop_rules: [] })).missing).toEqual([NO_STOP_RULES, NO_CUE]);
+  });
+});
+
+const NOT_FLOOR_TESTED =
+  'It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.';
+
+// OD-2026-10-06-026 ruling 3: "They stay drafts until a coach marks them floor-tested."
+describe('adoptionReadiness: the floor-test rule', () => {
   test.each([LITERATURE_DRAFT, CRAFT_DRAFT])(
-    'a drill whose provenance REQUIRES FLOOR VALIDATION is ready (%s)',
+    'a draft this gym has not floor-tested is NOT ready, and the line says so (%s)',
     (field_provenance) => {
-      expect(adoptionReadiness(readyDrill({ field_provenance }))).toEqual({ ready: true, missing: [] });
+      expect(adoptionReadiness(readyDrill({ field_provenance, floor_tested_by_this_gym: false })))
+        .toEqual({ ready: false, missing: [NOT_FLOOR_TESTED] });
     },
   );
 
-  test('a drill with no cues AND an unvalidated provenance is ready', () => {
-    const drill = readyDrill({
-      cues: [],
-      field_provenance: CRAFT_DRAFT,
-      grounding_claim_ids: [],
-      source_ref: null,
-    });
-    expect(adoptionReadiness(drill)).toEqual({ ready: true, missing: [] });
+  test.each([LITERATURE_DRAFT, CRAFT_DRAFT])(
+    'a draft a coach of this gym marked floor-tested is ready (%s)',
+    (field_provenance) => {
+      expect(adoptionReadiness(readyDrill({ field_provenance, floor_tested_by_this_gym: true })))
+        .toEqual({ ready: true, missing: [] });
+    },
+  );
+
+  // 'PPBF owner-authored' is the label #1322 adds to the CHECK; the rule reads
+  // it as a non-draft either way, so it is pinned here ahead of that merge.
+  test.each(['PPBF source manual v3', 'PPBF owner-authored'])(
+    'a drill that is not a draft needs no floor test (%s)',
+    (field_provenance) => {
+      expect(adoptionReadiness(readyDrill({ field_provenance, floor_tested_by_this_gym: false })))
+        .toEqual({ ready: true, missing: [] });
+    },
+  );
+
+  test('every REQUIRES FLOOR VALIDATION value the vocabulary allows is a draft here', () => {
+    // The draft literals are copied from the CHECK (through vocabularies.ts,
+    // whose pg mirror test holds it equal to the live constraint). A reworded
+    // or added draft label that reached the vocabulary without reaching this
+    // list would make those drafts adoptable with no floor test.
+    const drafts = VOCABULARIES.field_provenance.values.filter((value) => value.includes('REQUIRES FLOOR VALIDATION'));
+    expect([...REQUIRES_FLOOR_VALIDATION_PROVENANCE].sort()).toEqual([...drafts].sort());
+    expect(drafts.length).toBeGreaterThan(0);
+  });
+
+  test('the mark is read exactly: a paraphrase of the draft label is not a draft', () => {
+    expect(adoptionReadiness(readyDrill({ field_provenance: 'literature-grounded draft; requires floor validation' })).ready).toBe(true);
+  });
+
+  test('the floor-test line comes last, after the cue line', () => {
+    const drill = readyDrill({ field_provenance: CRAFT_DRAFT, cues: [], stop_rules: [] });
+    expect(adoptionReadiness(drill).missing).toEqual([NO_STOP_RULES, NO_CUE, NOT_FLOOR_TESTED]);
   });
 });
