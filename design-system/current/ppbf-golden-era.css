@@ -1416,6 +1416,52 @@
 .ge-scripts article > div:first-child { flex-wrap: wrap; }
 .ge-scripts article h3 { min-width: 0; overflow-wrap: anywhere; }
 
+/* THE LIVE RUN (screen 3b). The console a coach runs a session from stays a
+   dark leather panel -- it carries the failure panels, and its ground does
+   not flip -- and takes the same stitched edge as the board it sits on.
+   Sizes come from data-surface="kiosk" on its wrapper; what is stated here is
+   only what that device does not get right on this console:
+   - a sentence in the data voice takes the floor's 24px with a 1.15 leading
+     set for single figures, so it gets a sentence's leading;
+   - the foundation gives every input the 55px tap floor as a MINIMUM BLOCK
+     SIZE, which turns a checkbox into a 55px box. The settle form's checkbox
+     is a checkbox again, at a size a thumb can hit, and its label row is the
+     55px target (a class on the label);
+   - "Current" on the lit row is the metal voice; the label lift above would
+     have made it bone. */
+.ge-scripts section[aria-label="Live session delivery"] {
+  outline: 2px dashed rgba(231,200,138,.42);
+  outline-offset: -8px;
+}
+.ge-scripts section[aria-label="Live session delivery"] .t-data {
+  line-height: 1.35;
+}
+.ge-scripts section[aria-label="Live session delivery"] input[type="checkbox"] {
+  min-block-size: 0;
+  inline-size: 28px;
+  block-size: 28px;
+  flex: none;
+}
+.ge-scripts [aria-current="step"] .t-label {
+  color: var(--brass-200);
+}
+/* Two things the rendered run showed at 390 wide and in the settle form:
+   - a script name with one long word ("FUNDAMENTALS,") at the title size is
+     wider than a phone's column, and a flex item will not shrink below its
+     content unless told it may, so the title pushed its row 41px past the
+     panel. The title's box may shrink and the word may break.
+   - the settle form's two number fields carry no type attribute, so the
+     surface's `input[type="text"]` tap rule does not reach them: 53px. */
+.ge-scripts section[aria-label="Live session delivery"] > div:first-child > div {
+  min-width: 0;
+}
+.ge-scripts section[aria-label="Live session delivery"] h2 {
+  overflow-wrap: anywhere;
+}
+.ge-scripts section[aria-label="Live session delivery"] .input {
+  min-height: var(--tap);
+}
+
 /* THE STRIPS. A block in the plan is a slip clipped to the board: paper from
    the seam above, a bronze rule down the leading edge where the reference
    shows the strip's metal binding, and enough lift to read as a separate piece
