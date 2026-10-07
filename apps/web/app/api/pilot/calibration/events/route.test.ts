@@ -8,6 +8,7 @@ import {
   recordAnnotationEvent,
   updateAnnotationEvent,
 } from '@/src/server/pilot/calibration/annotations';
+import { eventHoldsBodyMarks } from '@/src/server/pilot/calibration/bodyPoints';
 import {
   VideoNotClippableError,
   assertVideoClippable,
@@ -36,12 +37,18 @@ import { DELETE, PATCH, POST, PUT } from './route';
  */
 
 jest.mock('@/src/server/pilot/calibration/annotations', () => ({
+  // The real class: the route throws it, and jsonError reads its status.
+  EventHoldsBodyMarksError: jest.requireActual('@/src/server/pilot/calibration/annotations').EventHoldsBodyMarksError,
   getAnnotationSet: jest.fn(),
   listAnnotationSetsForClip: jest.fn(),
   listAnnotationEvents: jest.fn(),
   recordAnnotationEvent: jest.fn(),
   deleteAnnotationEvent: jest.fn(),
   updateAnnotationEvent: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/calibration/bodyPoints', () => ({
+  eventHoldsBodyMarks: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/calibration/projects', () => {
@@ -68,6 +75,7 @@ const mockListEvents = listAnnotationEvents as jest.Mock;
 const mockRecord = recordAnnotationEvent as jest.Mock;
 const mockDelete = deleteAnnotationEvent as jest.Mock;
 const mockUpdate = updateAnnotationEvent as jest.Mock;
+const mockHoldsMarks = eventHoldsBodyMarks as jest.Mock;
 const mockGetClip = getCalibrationClip as jest.Mock;
 const mockClippable = assertVideoClippable as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -556,6 +564,100 @@ describe('editing an event', () => {
     expect(order).toEqual(['record', 'delete']);
     expect(body.replaced_event_id).toBe('evt-1');
     expect(mockDelete).toHaveBeenCalledWith('org-1', 'set-1', 'evt-1');
+  });
+
+  test('a 0.1 set can hold no marks, so its replace never asks about them', async () => {
+    openSetReady();
+    mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
+    mockRecord.mockResolvedValueOnce(storedEvent());
+    mockDelete.mockResolvedValueOnce(true);
+
+    const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockHoldsMarks).not.toHaveBeenCalled();
+    expect(mockDelete.mock.calls[0]).toHaveLength(3);
+  });
+
+  describe.each(['boxing-ontology-0.2', 'boxing-ontology-0.3', 'boxing-ontology-0.4'])('on a %s set', (version) => {
+    function bodyPointSetReady() {
+      openSetReady();
+      mockGetSet.mockResolvedValue({ ...OPEN_SET, ontology_version: version });
+      mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
+    }
+
+    test('an event that holds body marks is not replaced: 409 before anything is written', async () => {
+      bodyPointSetReady();
+      mockHoldsMarks.mockResolvedValueOnce(true);
+
+      const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body.code).toBe('CALIBRATION_EVENT_HAS_BODY_MARKS');
+      expect(body.error).toContain('replacing it would remove them');
+      // Asked of the caller's organization, this set and this event.
+      expect(mockHoldsMarks).toHaveBeenCalledWith('org-1', 'set-1', 'evt-1', undefined);
+      expect(mockRecord).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('an event without marks is replaced, and the delete is told to ask again under its own lock', async () => {
+      bodyPointSetReady();
+      mockHoldsMarks.mockResolvedValue(false);
+      mockRecord.mockResolvedValueOnce(storedEvent());
+      mockDelete.mockResolvedValueOnce(true);
+
+      const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+
+      expect(response.status).toBe(200);
+      expect(mockDelete).toHaveBeenCalledWith('org-1', 'set-1', 'evt-1', { keepIf: expect.any(Function) });
+      // The question the delete asks is the same one, on the delete's own
+      // connection.
+      const client = { query: jest.fn() };
+      mockHoldsMarks.mockClear();
+      mockHoldsMarks.mockResolvedValueOnce(true);
+      await expect(mockDelete.mock.calls[0][3].keepIf(client)).resolves.toBe(true);
+      expect(mockHoldsMarks).toHaveBeenCalledWith('org-1', 'set-1', 'evt-1', client);
+    });
+
+    test('a mark that lands mid-replace keeps the old event, and the response says so', async () => {
+      bodyPointSetReady();
+      mockHoldsMarks.mockResolvedValue(false);
+      mockRecord.mockResolvedValueOnce(storedEvent());
+      mockDelete.mockResolvedValueOnce(false);
+
+      const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.replaced_event_removed).toBe(false);
+      expect(mockAudit.mock.calls[0][0].details).toMatchObject({ replaced_event_removed: false });
+    });
+  });
+
+  test.each([
+    'Missing stance: boxing-ontology-0.2 records the lead side at each marked moment, not a stance on the event',
+    'Missing peak_ms: boxing-ontology-0.2 has no peak time',
+    'Missing contact_ms: in boxing-ontology-0.2 a punch carries a contact time exactly when its result made contact',
+  ])('a version rule the module refuses is a 400 with its own words, on a new event and on a replace: %s', async (message) => {
+    openSetReady();
+    mockGetSet.mockResolvedValue({ ...OPEN_SET, ontology_version: 'boxing-ontology-0.2' });
+    mockHoldsMarks.mockResolvedValue(false);
+    mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
+    mockRecord.mockRejectedValueOnce(new Error(message)).mockRejectedValueOnce(new Error(message));
+
+    const created = await POST(post(PUNCH_BODY));
+    expect(created.status).toBe(400);
+    expect((await created.json()).error).toBe(message);
+
+    const replaced = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+    expect(replaced.status).toBe(400);
+    expect((await replaced.json()).error).toBe(message);
+    // A refused replacement leaves the original where it was.
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('a rejected correction leaves the original untouched', async () => {
