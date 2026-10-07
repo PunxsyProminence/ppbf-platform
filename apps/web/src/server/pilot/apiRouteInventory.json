@@ -4234,6 +4234,60 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-minor-limits/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-minor-limits",
+    "gate": "requirePrincipal + requireRole(MINOR_LIMIT_ROLES) + assertLimitAccess in readAthleteMinorLimits",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads a minor's coach-set limits (heat minutes, max % body-weight cut, supervision), whether the athlete is a minor by dob, and the history; reach enforced in athleteMinorLimits.ts assertLimitAccess via membership role + assertActorCanAccessAthlete. OD-2026-10-06-024 ruling 2.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-minor-limits/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/athlete-minor-limits",
+    "gate": "requirePrincipal + requireRole(MINOR_LIMIT_ROLES) + assertLimitAccess in setMinorLimit; minorLimitAccessibleAthleteIds for roster action",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Sets or clears one limit type for an athlete (append-only, audit row in the same transaction), or filters accessible ids (athlete-minor-limits/route.ts POST); setMinorLimit runs assertLimitAccess.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-session-note/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-session-note",
