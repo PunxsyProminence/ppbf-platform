@@ -292,3 +292,88 @@ export function formatGymNumber(
   }
   return new Intl.NumberFormat(GYM_LOCALE, options).format(value);
 }
+
+/* ------------------------------------------------- typed wall-clock -> instant -- */
+
+/**
+ * A date-time as a person types it into a `datetime-local` field:
+ * 'YYYY-MM-DDTHH:mm', optionally with seconds and fractions, 'T' or a space.
+ * Nothing after the time, so no 'Z' and no offset.
+ */
+const ZONELESS_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+
+/** The gym zone's wall-clock fields for an instant, as UTC-style numbers. */
+function gymWallFields(instant: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: GYM_TIME_ZONE,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+  const at = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  // Date.UTC treats the wall-clock numbers as if they were UTC, which makes
+  // (this - instant) the zone's offset at that instant.
+  return Date.UTC(at('year'), at('month') - 1, at('day'), at('hour') % 24, at('minute'), at('second'));
+}
+
+/**
+ * The instant at which the gym's wall clock reads the given wall-clock time.
+ *
+ * Solved twice, the same way zonedMidnightUtc in src/server/pilot/wallDisplay.ts
+ * solves local midnight: the offset that applies at the answer is the offset
+ * needed to find it, so one pass lands an hour out on the two days a year the
+ * clocks move. That fixes the two awkward cases:
+ *   - a time that exists twice (clocks fall back, 1:30 am on the first Sunday
+ *     of November) resolves to the FIRST one, the daylight-time instant;
+ *   - a time that does not exist (clocks spring forward, 2:30 am on the second
+ *     Sunday of March) resolves to the same wall time on the standard-time
+ *     side, i.e. 1:30 am EST, one hour earlier than the gap.
+ * Both are what zonedMidnightUtc would return for the same input; the gym does
+ * not hold classes in either window.
+ */
+function gymWallClockToUtc(naiveUtc: number): Date {
+  let guess = new Date(naiveUtc);
+  for (let i = 0; i < 2; i += 1) {
+    guess = new Date(naiveUtc - (gymWallFields(guess) - guess.getTime()));
+  }
+  return guess;
+}
+
+/**
+ * Reads a date-time string as the instant it means AT THE GYM.
+ *
+ * `new Date('2026-09-01T18:00')` reads a zone-less string in the zone of
+ * whatever process runs it. On a UTC server that stores 6:00 pm as 18:00Z,
+ * which the gym then displays as 2:00 pm. A coach typing a class time means the
+ * gym's clock, so a string with no zone is read as gym time.
+ *
+ * A string that carries its own zone ('Z' or an offset) is honoured as sent.
+ * Returns null when the text is not a date-time at all (including impossible
+ * ones such as February 30), so callers keep their own error message.
+ * Anything that is not an ISO date-time with a time part (a bare 'YYYY-MM-DD',
+ * free text) is left to `new Date`, as before.
+ */
+export function parseInstantAsGymTime(value: string): Date | null {
+  const text = value.trim();
+  const match = ZONELESS_DATE_TIME.exec(text);
+  if (!match) {
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const [, y, mo, d, h, mi, s, frac] = match;
+  const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, s ?? '0'].map(Number);
+  const millis = frac ? Number(frac.padEnd(3, '0')) : 0;
+  const naive = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millis));
+  // Date.UTC rolls an impossible field over (Feb 30 -> Mar 2); reject it.
+  if (
+    naive.getUTCFullYear() !== year || naive.getUTCMonth() !== month - 1 || naive.getUTCDate() !== day ||
+    hour > 23 || minute > 59 || second > 59
+  ) {
+    return null;
+  }
+  return gymWallClockToUtc(naive.getTime());
+}

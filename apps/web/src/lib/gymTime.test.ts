@@ -12,6 +12,7 @@ import {
   formatGymTimeOfDay,
   formatGymWeekday,
   GYM_TIME_ZONE,
+  parseInstantAsGymTime,
 } from './gymTime';
 
 /**
@@ -121,5 +122,57 @@ describe('gym-local date formatting', () => {
       expect(formatGymMonthDay(input)).toBeNull();
       expect(formatGymStamp(input)).toBeNull();
     }
+  });
+});
+
+/**
+ * A class time typed on the schedule screen has no zone and means the gym's
+ * clock. The documented way the repo resolves the two daylight-saving edge
+ * cases is zonedMidnightUtc in src/server/pilot/wallDisplay.ts (two-pass
+ * solve); parseInstantAsGymTime uses the same solve.
+ */
+describe('parseInstantAsGymTime', () => {
+  const iso = (value: string) => parseInstantAsGymTime(value)?.toISOString();
+
+  test('6:00 pm is 22:00Z in summer (EDT) and 23:00Z in winter (EST)', () => {
+    expect(iso('2026-07-15T18:00')).toBe('2026-07-15T22:00:00.000Z');
+    expect(iso('2026-01-15T18:00')).toBe('2026-01-15T23:00:00.000Z');
+  });
+
+  test('accepts seconds, fractions and a space separator', () => {
+    expect(iso('2026-07-15 18:00')).toBe('2026-07-15T22:00:00.000Z');
+    expect(iso('2026-07-15T18:00:30')).toBe('2026-07-15T22:00:30.000Z');
+    expect(iso('2026-07-15T18:00:30.5')).toBe('2026-07-15T22:00:30.500Z');
+  });
+
+  test('a value with Z or an offset is honoured as sent', () => {
+    expect(iso('2026-07-15T18:00:00Z')).toBe('2026-07-15T18:00:00.000Z');
+    expect(iso('2026-07-15T18:00:00-04:00')).toBe('2026-07-15T22:00:00.000Z');
+    expect(iso('2026-07-15T18:00:00+09:00')).toBe('2026-07-15T09:00:00.000Z');
+  });
+
+  test('a time that exists twice (clocks fall back) is the first one, EDT', () => {
+    // 2026-11-01: 1:30 am happens at 05:30Z (EDT) and again at 06:30Z (EST).
+    expect(iso('2026-11-01T01:30')).toBe('2026-11-01T05:30:00.000Z');
+    expect(formatGymTimeOfDay('2026-11-01T05:30:00Z')).toBe('1:30 AM');
+    // Either side of the repeated hour is unambiguous.
+    expect(iso('2026-11-01T00:30')).toBe('2026-11-01T04:30:00.000Z');
+    expect(iso('2026-11-01T02:30')).toBe('2026-11-01T07:30:00.000Z');
+  });
+
+  test('a time that does not exist (clocks spring forward) lands on 1:30 am EST', () => {
+    // 2026-03-08: 2:00 am jumps to 3:00 am, so 2:30 am never happens. The
+    // two-pass solve returns 06:30Z, which reads 1:30 AM at the gym.
+    expect(iso('2026-03-08T02:30')).toBe('2026-03-08T06:30:00.000Z');
+    expect(formatGymTimeOfDay('2026-03-08T06:30:00Z')).toBe('1:30 AM');
+    expect(iso('2026-03-08T03:30')).toBe('2026-03-08T07:30:00.000Z');
+    expect(iso('2026-03-08T01:30')).toBe('2026-03-08T06:30:00.000Z');
+  });
+
+  test('impossible or unreadable values return null', () => {
+    expect(parseInstantAsGymTime('2026-02-30T18:00')).toBeNull();
+    expect(parseInstantAsGymTime('2026-07-15T25:00')).toBeNull();
+    expect(parseInstantAsGymTime('2026-07-15T18:61')).toBeNull();
+    expect(parseInstantAsGymTime('not a date')).toBeNull();
   });
 });
