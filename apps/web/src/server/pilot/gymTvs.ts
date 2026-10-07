@@ -427,10 +427,15 @@ export async function sendRunToGymTv(
       throw new GymTvError(409, 'TV_NOT_PAIRED');
     }
 
+    // The run row is locked too, so a finish or a "Show on TV" off that lands between this read
+    // and the UPDATE below waits for this transaction instead of slipping past it (Codex review:
+    // the earlier version could store a run that had just settled and answer success for a blank
+    // TV). Lock order is TV then run, the same in takeRunOffGymTv, which never locks a run.
     const run = await client.query<{ delivered_by_account_id: string; run_state: string | null; show_on_wall: boolean; started_at: string | null }>(
       `select delivered_by_account_id, run_state, show_on_wall, started_at
          from pilot.session_script_runs
-        where organization_id = $1 and run_id = $2`,
+        where organization_id = $1 and run_id = $2
+          for update`,
       [organizationId, runId],
     );
     const runRow = run.rows[0];
@@ -451,16 +456,24 @@ export async function sendRunToGymTv(
       }
     }
 
+    // The write re-states every condition it depends on, so it cannot store a pointer the reads
+    // above would not have allowed, whatever happened in between.
     const updated = await client.query(
       `update pilot.gym_tvs
           set current_run_id = $3,
               current_run_set_by_account_id = $4
         where organization_id = $1 and tv_id = $2
-          and device_key_hash is not null and revoked_at is null`,
+          and device_key_hash is not null and revoked_at is null
+          and exists (
+            select 1 from pilot.session_script_runs r
+             where r.organization_id = $1 and r.run_id = $3
+               and r.delivered_by_account_id = $4
+               and r.run_state = 'in_progress' and r.show_on_wall = true and r.started_at is not null
+          )`,
       [organizationId, tvId, runId, accountId],
     );
     if (updated.rowCount !== 1) {
-      throw new GymTvError(409, 'TV_NOT_PAIRED');
+      throw new GymTvError(409, 'SESSION_RUN_NOT_LIVE');
     }
     return toListItem(client, organizationId, tvId);
   });

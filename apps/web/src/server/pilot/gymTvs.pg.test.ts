@@ -708,6 +708,25 @@ describe('sending a session to a TV (S2b, coach side)', () => {
     expect(cleared.current_run_set_by_account_id).toBeNull();
   });
 
+  it('a run that settles while the send is in flight is refused, never stored (run row lock + atomic re-check)', async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    // The finishing coach holds the run row, the way finishSessionScriptRun's UPDATE would, while
+    // the send arrives. The send must wait on that lock and then see the settled row.
+    await client.query('begin');
+    await client.query(`select 1 from pilot.session_script_runs where run_id = 'run-1' for update`);
+    const sending = sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.query(
+      `update pilot.session_script_runs
+          set run_state = 'completed', ended_at = now(), current_block_id = null, show_on_wall = false
+        where run_id = 'run-1'`,
+    );
+    await client.query('commit');
+    await expect(sending).rejects.toMatchObject({ status: 409, code: 'SESSION_RUN_NOT_LIVE' });
+    expect((await readTv(minted.tv_id)).current_run_id).toBeNull();
+  });
+
   it('two coaches sending to the same TV at once: exactly one wins (row lock)', async () => {
     const { minted } = await pairedTv();
     await client.query(
