@@ -5,6 +5,7 @@ import {
   assertCoachAssignedToAthlete,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
+import { deriveCoachDisplayName } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -68,7 +69,10 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     lift_condition_text: hold.lift_condition_text,
     placed_at: hold.placed_at,
     expires_at: hold.expires_at,
-    placed_by_name: placer?.fullName ?? hold.placed_by_account_id,
+    // A placer who resolves to nobody (a login deleted since, or unknown) is
+    // named by the existing phrase, never by the account id: a staff id is
+    // often the login email (OD-2026-10-06 Q6: a display name, never the id).
+    placed_by_name: placer?.fullName ?? deriveCoachDisplayName(null),
   };
 }
 

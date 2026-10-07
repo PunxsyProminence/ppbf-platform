@@ -171,9 +171,17 @@ export async function getSubjectIdentity(
     login_email: string | null;
     created_at: string;
   }>(
-    `select account_id, athlete_id, login_email, created_at
-     from pilot.accounts
-     where organization_id = $1 and account_id = $2`,
+    `select a.account_id, a.athlete_id, a.login_email, a.created_at
+     from pilot.accounts a
+     where a.organization_id = $1 and a.account_id = $2
+       -- Scope B: a deleted person is nobody here. The same predicate the
+       -- portrait review queue reads (listPendingReviewPortraits): the login
+       -- is not marked deleted, and neither is the athlete record it holds,
+       -- so a deleted athlete whose login was left open does not fall
+       -- through to the staff branch and come back as their account id.
+       -- The athlete read below needs no filter of its own: this one already
+       -- refused the account whose athlete row is marked.
+       and ${accountNotDeletedSql('a')}`,
     [organizationId, accountId],
   );
   if (!account) return null;
@@ -287,7 +295,11 @@ export async function resolveRelationship(
   if (viewer.role === 'athlete' && viewer.athleteId) {
     const mine = await queryOne<{ athlete_id: string }>(
       `select athlete_id from pilot.athletes
-       where organization_id = $1 and athlete_id = $2 and coach_id = $3`,
+       where organization_id = $1 and athlete_id = $2 and coach_id = $3
+         -- Scope B: a deleted athlete's surviving session is admitted on its
+         -- own athlete id alone nowhere (OD-2026-09-29-002 item 10); the
+         -- live row decides, as in the parent arm below.
+         and deleted_at is null`,
       [subjectOrganizationId, viewer.athleteId, subject.accountId],
     );
     return mine ? 'subject_is_my_staff' : 'none';

@@ -434,6 +434,61 @@ describe('adoptDrillChangeProposal', () => {
     ).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
   });
 
+  // OD-2026-10-06-026 ruling 2, on a new version: a change that blanks the
+  // cues of a technique drill is refused before anything is written.
+  test('refuses a change that leaves a technique drill with no cue, and writes nothing', async () => {
+    const proposal = proposalRow({ proposed_change: { cues: [] } });
+    const client = fakeClient([proposal], [drillRow()]);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', status: 409 });
+
+    // Only the two reads ran: v1 was not deactivated and no v2 was inserted.
+    expect(client.query).toHaveBeenCalledTimes(2);
+  });
+
+  test('a conditioning drill may lose its cues (the exemption)', async () => {
+    const proposal = proposalRow({ proposed_change: { cues: [] } });
+    const current = drillRow({ category: 'conditioning', cues: ['Breathe'] });
+    const newVersion = drillRow({ drill_id: 'drill-2', version: 2, category: 'conditioning', cues: [] });
+    const client = fakeClient([proposal], [current], [], [newVersion], [], [proposalRow({ review_state: 'adopted' })]);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    const result = await adoptDrillChangeProposal({
+      organizationId: 'org-1',
+      proposalId: 'propchg-1',
+      reviewedByAccountId: 'acct-admin-1',
+      reviewedByRole: 'organization_admin',
+    });
+
+    expect(result.newDrillVersion.cues).toEqual([]);
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('a change that touches neither cues nor category never consults the rule', async () => {
+    const proposal = proposalRow({ proposed_change: { focus: 'Sharper return' } });
+    const current = drillRow({ cues: [] });
+    const newVersion = drillRow({ drill_id: 'drill-2', version: 2, cues: [], focus: 'Sharper return' });
+    const client = fakeClient([proposal], [current], [], [newVersion], [], [proposalRow({ review_state: 'adopted' })]);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).resolves.toBeDefined();
+  });
+
   test('proposed_change keys outside the editable set are silently ignored', async () => {
     const proposal = proposalRow({ proposed_change: { name: 'New Name', active: false, version: 99 } });
     const current = drillRow();
