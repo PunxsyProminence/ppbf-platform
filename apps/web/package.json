@@ -381,6 +381,7 @@
     "seed:disciplines": "tsx scripts/pilot-content-import.ts apply --dataset disciplines",
     "pilot:apply-session-scripts": "node scripts/pilot-apply-session-scripts-migration.mjs",
     "pilot:apply-session-run-state": "node scripts/pilot-apply-session-run-state-migration.mjs",
+    "pilot:apply-session-run-show-on-wall": "node scripts/pilot-apply-session-run-show-on-wall-migration.mjs",
     "pilot:apply-transfer-claims": "node scripts/pilot-apply-transfer-claims-migration.mjs",
     "seed:session-scripts": "tsx scripts/pilot-content-import.ts apply --dataset session-scripts",
     "seed:transfer-claims": "tsx scripts/pilot-content-import.ts apply --dataset transfer-claims",
