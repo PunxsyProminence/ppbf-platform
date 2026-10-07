@@ -17,11 +17,25 @@ import { createOpaqueToken, hashToken } from './security';
 // stays for the Paired TVs list, the key is refused from then on.
 //
 // WHAT THE KEY IS NOT. It is not a session and it is not an account. It opens exactly the TV read
-// (S2b) and nothing else in the app, so a remote in the wrong hands reaches no athlete record.
+// (readGymTvSession, below) and nothing else in the app, so a remote in the wrong hands reaches no
+// athlete record.
 //
 // ONLY HASHES ARE STORED. A database read yields neither a code nor a key. The code's space is
 // 32^6 (about a billion): small enough to brute force offline against a leaked hash, which is why
 // it lives five minutes and is single use, and why the TV endpoint sits behind a per-IP budget.
+//
+// WHAT A TV SHOWS (S2b). A coach running a live session with "Show on TV" on sends it to a paired
+// TV: current_run_id. Jason (OD-2026-10-06-014, rulings 5-6): "TV session should be tied to coach,
+// there may be two coachs running sessions at the same time", and any coach may choose any gym TV,
+// one session per TV. So the run must be the caller's own, and a TV already showing ANOTHER coach's
+// live session is refused (TV_IN_USE) rather than taken over -- replace-vs-refuse is not ruled,
+// and the refusal is the one that cannot lose a class mid-round.
+//
+// "ON THE TV" IS DERIVED, NEVER TRUSTED FROM THE POINTER ALONE. current_run_id is only honoured
+// while that run is in_progress AND show_on_wall. Finishing a run or switching it off the TV does
+// not write to this table on purpose: a coach ending a class must never depend on the TV table
+// existing in that environment. The TV read, the Paired TVs list and the in-use check all apply
+// the same liveness condition (LIVE_SHOWN_RUN), so a stale pointer reads as "nothing on this TV".
 
 export const PAIR_CODE_LENGTH = 6;
 export const PAIR_CODE_LIFETIME_MS = 5 * 60 * 1000;
@@ -38,6 +52,13 @@ export const TV_NAME_MAX_LENGTH = 60;
 // presses Disconnect or the browser clears its cookies, and then it simply re-pairs.
 export const GYM_TV_DEVICE_COOKIE = 'ppbf_gym_tv';
 export const GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
+// The TV read's per-address budget: a fixed window with no backoff (rateLimit.ts escalates on
+// every call, which would black out a screen that is supposed to ask every few seconds forever).
+// A TV in session mode polls every 3 s = 20 a minute; the gym's TVs share one address, so 120
+// covers six of them with margin. The budget protects the database from load; the key protects
+// the content.
+export const GYM_TV_READ_WINDOW_MS = 60_000;
+export const GYM_TV_READ_MAX_PER_WINDOW = 120;
 
 export class GymTvError extends PilotError {
   constructor(status: number, code: string) {
@@ -175,11 +196,26 @@ export async function mintGymTvPairCode(
   });
 }
 
+// The condition under which a run pointed at by current_run_id is actually on the TV. Used, as the
+// same text, by the list, the in-use check and the TV read, so the three cannot disagree. `r` is
+// the run row, `t` the TV row.
+const LIVE_SHOWN_RUN = `r.organization_id = t.organization_id and r.run_id = t.current_run_id
+  and r.run_state = 'in_progress' and r.show_on_wall = true and r.started_at is not null`;
+
+// The Paired TVs list reports a run on a TV only while it is live and shown (LIVE_SHOWN_RUN): a
+// pointer left behind by a finished session reads as null, and so does its set_by.
 export async function listGymTvs(organizationId: string): Promise<GymTvListItem[]> {
   const rows = await query<GymTvListItem & { code_expired: boolean }>(
-    `select ${LIST_COLUMNS} from pilot.gym_tvs
-      where organization_id = $1
-      order by (revoked_at is not null), coalesce(paired_at, created_at) desc, tv_id`,
+    `select t.tv_id, t.tv_name, t.created_by_account_id, t.created_at, t.pair_code_expires_at,
+            t.paired_at, t.last_seen_at, t.revoked_at,
+            r.run_id as current_run_id,
+            case when r.run_id is null then null else t.current_run_set_by_account_id end
+              as current_run_set_by_account_id,
+            (t.pair_code_expires_at is not null and t.pair_code_expires_at <= now()) as code_expired
+       from pilot.gym_tvs t
+       left join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
+      where t.organization_id = $1
+      order by (t.revoked_at is not null), coalesce(t.paired_at, t.created_at) desc, t.tv_id`,
     [organizationId],
   );
   return rows.map(({ code_expired, ...row }) => ({ ...row, status: statusOf({ ...row, code_expired }) }));
@@ -220,7 +256,16 @@ export interface RedeemedPairCode {
 // returns nothing. Wrong, expired, used and disconnected codes all return null -- the caller
 // reports one failure for all of them, because telling them apart would tell a guesser which codes
 // are live.
-export async function redeemGymTvPairCode(rawCode: string): Promise<RedeemedPairCode | null> {
+//
+// RE-PAIRING REVOKES THE OLD ROW. A TV that already holds a key and types a new code (it was
+// renamed, or moved to another gym) gets a new row and a new key; the row its old key named is
+// revoked in the same transaction, so one device never holds two live rows and the old key, which
+// the TV is about to overwrite in its cookie, cannot be replayed. `previousDeviceKey` is whatever
+// the TV presented; an unknown or already-revoked one revokes nothing and pairing still succeeds.
+export async function redeemGymTvPairCode(
+  rawCode: string,
+  previousDeviceKey: string | null = null,
+): Promise<RedeemedPairCode | null> {
   const code = normalizePairCode(rawCode);
   if (!isWellFormedPairCode(code)) return null;
   const codeHash = hashToken(code);
@@ -253,6 +298,17 @@ export async function redeemGymTvPairCode(rawCode: string): Promise<RedeemedPair
       [organization_id, tv_id, deviceKeyHash, codeHash],
     );
     if (updated.rows.length !== 1) return null;
+
+    if (typeof previousDeviceKey === 'string' && previousDeviceKey.length > 0) {
+      await client.query(
+        `update pilot.gym_tvs
+            set revoked_at = coalesce(revoked_at, now()),
+                current_run_id = null,
+                current_run_set_by_account_id = null
+          where device_key_hash = $1 and not (organization_id = $2 and tv_id = $3)`,
+        [hashToken(previousDeviceKey), organization_id, tv_id],
+      );
+    }
     return { device_key: deviceKey, ...updated.rows[0] };
   });
 }
@@ -265,9 +321,9 @@ export interface PairedGymTv {
   current_run_set_by_account_id: string | null;
 }
 
-// Resolve a TV from its device key (S2b's reader). A disconnected TV resolves to null exactly like
-// an unknown key. Touches last_seen_at in the same statement, so "when did this TV last ask" is
-// never a separate write that can be forgotten.
+// Resolve a TV from its device key (the TV read's first step). A disconnected TV resolves to null
+// exactly like an unknown key. Touches last_seen_at in the same statement, so "when did this TV
+// last ask" is never a separate write that can be forgotten.
 export async function resolveGymTvByDeviceKey(deviceKey: string): Promise<PairedGymTv | null> {
   if (typeof deviceKey !== 'string' || deviceKey.length === 0) return null;
   return queryOne<PairedGymTv>(
@@ -277,4 +333,325 @@ export async function resolveGymTvByDeviceKey(deviceKey: string): Promise<Paired
       returning organization_id, tv_id, tv_name, current_run_id, current_run_set_by_account_id`,
     [hashToken(deviceKey)],
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The coach side: send a live session to a TV, take it off.
+// ---------------------------------------------------------------------------------------------
+
+interface LockedTv {
+  tv_id: string;
+  paired: boolean;
+  revoked: boolean;
+  current_run_id: string | null;
+}
+
+type PoolLike = Parameters<Parameters<typeof withTransaction>[0]>[0];
+
+async function lockGymTv(client: PoolLike, organizationId: string, tvId: string): Promise<LockedTv> {
+  const locked = await client.query<LockedTv>(
+    `select tv_id,
+            (device_key_hash is not null) as paired,
+            (revoked_at is not null) as revoked,
+            current_run_id
+       from pilot.gym_tvs
+      where organization_id = $1 and tv_id = $2
+        for update`,
+    [organizationId, tvId],
+  );
+  if (locked.rows.length !== 1) {
+    throw new GymTvError(404, 'TV_NOT_FOUND');
+  }
+  return locked.rows[0];
+}
+
+// Who is on this TV right now, by the same liveness condition the list and the TV read use. Null
+// when the pointer is null or names a run that has ended or been switched off.
+async function liveRunOnTv(
+  client: PoolLike,
+  organizationId: string,
+  tvId: string,
+): Promise<{ run_id: string; delivered_by_account_id: string } | null> {
+  const live = await client.query<{ run_id: string; delivered_by_account_id: string }>(
+    `select r.run_id, r.delivered_by_account_id
+       from pilot.gym_tvs t
+       join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
+      where t.organization_id = $1 and t.tv_id = $2`,
+    [organizationId, tvId],
+  );
+  return live.rows[0] ?? null;
+}
+
+async function toListItem(client: PoolLike, organizationId: string, tvId: string): Promise<GymTvListItem> {
+  const rows = await client.query<GymTvListItem & { code_expired: boolean }>(
+    `select ${LIST_COLUMNS} from pilot.gym_tvs where organization_id = $1 and tv_id = $2`,
+    [organizationId, tvId],
+  );
+  const { code_expired, ...rest } = rows.rows[0];
+  return { ...rest, status: statusOf({ ...rest, code_expired }) };
+}
+
+// Send the caller's live session to a TV.
+//
+// The run must be the CALLER'S OWN (delivered_by_account_id), live, and switched on with "Show on
+// TV": another coach's run id gets the same 404 as a missing one, exactly as sessionScriptRuns.ts
+// requireOwnLiveRun answers, so this route cannot be used to discover other coaches' run ids. The
+// TV must be paired and not disconnected (pilot_gym_tvs_run_only_when_paired would refuse the
+// write anyway; this names the reason). A TV already showing ANOTHER coach's live session is
+// refused with TV_IN_USE; a coach may always re-send or replace their own, and a TV whose run has
+// ended or been switched off is free. The TV row is locked first so two coaches sending to the
+// same TV in the same instant are serialised: the second sees the first's run and is refused.
+export async function sendRunToGymTv(
+  organizationId: string,
+  accountId: string,
+  tvId: string,
+  runId: string,
+): Promise<GymTvListItem> {
+  return withTransaction(async (client) => {
+    const tv = await lockGymTv(client, organizationId, tvId);
+    if (!tv.paired || tv.revoked) {
+      throw new GymTvError(409, 'TV_NOT_PAIRED');
+    }
+
+    const run = await client.query<{ delivered_by_account_id: string; run_state: string | null; show_on_wall: boolean; started_at: string | null }>(
+      `select delivered_by_account_id, run_state, show_on_wall, started_at
+         from pilot.session_script_runs
+        where organization_id = $1 and run_id = $2`,
+      [organizationId, runId],
+    );
+    const runRow = run.rows[0];
+    if (!runRow || runRow.delivered_by_account_id !== accountId) {
+      throw new GymTvError(404, 'SESSION_RUN_NOT_FOUND');
+    }
+    if (runRow.run_state !== 'in_progress' || !runRow.started_at) {
+      throw new GymTvError(409, 'SESSION_RUN_NOT_LIVE');
+    }
+    if (!runRow.show_on_wall) {
+      throw new GymTvError(409, 'SESSION_RUN_NOT_ON_TV');
+    }
+
+    if (tv.current_run_id && tv.current_run_id !== runId) {
+      const occupant = await liveRunOnTv(client, organizationId, tvId);
+      if (occupant && occupant.delivered_by_account_id !== accountId) {
+        throw new GymTvError(409, 'TV_IN_USE');
+      }
+    }
+
+    const updated = await client.query(
+      `update pilot.gym_tvs
+          set current_run_id = $3,
+              current_run_set_by_account_id = $4
+        where organization_id = $1 and tv_id = $2
+          and device_key_hash is not null and revoked_at is null`,
+      [organizationId, tvId, runId, accountId],
+    );
+    if (updated.rowCount !== 1) {
+      throw new GymTvError(409, 'TV_NOT_PAIRED');
+    }
+    return toListItem(client, organizationId, tvId);
+  });
+}
+
+// Take the session off a TV. Idempotent on a TV showing nothing. The same in-use rule as sending:
+// only the coach whose live session is on the TV may clear it; once that run has ended or been
+// switched off, any staff member may clear the leftover pointer. Both columns are cleared together
+// -- set_by means nothing without a run.
+export async function takeRunOffGymTv(
+  organizationId: string,
+  accountId: string,
+  tvId: string,
+): Promise<GymTvListItem> {
+  return withTransaction(async (client) => {
+    const tv = await lockGymTv(client, organizationId, tvId);
+    if (tv.current_run_id) {
+      const occupant = await liveRunOnTv(client, organizationId, tvId);
+      if (occupant && occupant.delivered_by_account_id !== accountId) {
+        throw new GymTvError(409, 'TV_IN_USE');
+      }
+      await client.query(
+        `update pilot.gym_tvs
+            set current_run_id = null,
+                current_run_set_by_account_id = null
+          where organization_id = $1 and tv_id = $2`,
+        [organizationId, tvId],
+      );
+    }
+    return toListItem(client, organizationId, tvId);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The TV side: what a paired TV may read.
+// ---------------------------------------------------------------------------------------------
+
+// THE ALLOWLIST. Every field a TV can ever receive is named here, and the projection functions
+// below build the payload by picking these names one by one -- a column added to a SELECT never
+// reaches the screen by accident. The tests assert the whole serialized body against these lists.
+// Nothing here identifies a person: no coach, no athlete, no account id, no roster, no notes
+// (what_to_say / explain / watch / fix are the coach's script and stay on the coach's phone).
+export const GYM_TV_BLOCK_FIELDS = [
+  'block_id',
+  'block_order',
+  'block_label',
+  'block_kind',
+  'drill_name',
+  'scale_level',
+  'start_offset_min',
+  'end_offset_min',
+] as const;
+
+export const GYM_TV_SESSION_FIELDS = [
+  'run_id',
+  'script_name',
+  'total_minutes',
+  'started_at',
+  'server_time',
+  'elapsed_seconds',
+  'is_paused',
+  'current_block',
+  'next_block',
+  'blocks',
+] as const;
+
+export interface GymTvSessionBlock {
+  block_id: string;
+  block_order: number;
+  block_label: string;
+  block_kind: string;
+  drill_name: string | null;
+  scale_level: string | null;
+  start_offset_min: number;
+  end_offset_min: number;
+}
+
+export interface GymTvSession {
+  run_id: string;
+  script_name: string;
+  total_minutes: number | null;
+  started_at: string;
+  /** The database clock at the time of the read, so the TV can schedule against server time. */
+  server_time: string;
+  elapsed_seconds: number;
+  is_paused: boolean;
+  current_block: (GymTvSessionBlock & { seconds_left: number }) | null;
+  next_block: GymTvSessionBlock | null;
+  blocks: GymTvSessionBlock[];
+}
+
+export interface GymTvRead {
+  tv: { tv_name: string };
+  /** Null is "nothing on this TV": unassigned, or the run has ended or been switched off. */
+  session: GymTvSession | null;
+}
+
+function pickBlock(row: Record<string, unknown>): GymTvSessionBlock {
+  return {
+    block_id: String(row.block_id),
+    block_order: Number(row.block_order),
+    block_label: String(row.block_label),
+    block_kind: String(row.block_kind),
+    drill_name: row.drill_name == null ? null : String(row.drill_name),
+    scale_level: row.scale_level == null ? null : String(row.scale_level),
+    start_offset_min: Number(row.start_offset_min),
+    end_offset_min: Number(row.end_offset_min),
+  };
+}
+
+function isoOf(value: unknown): string {
+  return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
+}
+
+// What the TV holding this key may see. Null when the key opens nothing (unknown or disconnected:
+// the caller tells the TV to pair again). Otherwise the TV's name and, only while the run pointed
+// at is live and shown (LIVE_SHOWN_RUN), the session: the plan's blocks with times and drill
+// names, where the coach is in it, and the server clock. The clock arithmetic is the same as
+// sessionScriptRuns.ts computeElapsedSeconds but done in SQL, so the TV's reading and the coach's
+// phone are off the same clock.
+export async function readGymTvSession(deviceKey: string): Promise<GymTvRead | null> {
+  const tv = await resolveGymTvByDeviceKey(deviceKey);
+  if (!tv) return null;
+  const empty: GymTvRead = { tv: { tv_name: tv.tv_name }, session: null };
+  if (!tv.current_run_id) return empty;
+
+  const run = await queryOne<Record<string, unknown>>(
+    `select r.run_id, s.name as script_name, s.total_minutes, r.started_at, now() as server_time,
+            r.current_block_id, r.script_id,
+            (r.paused_at is not null) as is_paused,
+            greatest(0,
+              floor(extract(epoch from (coalesce(r.paused_at, now()) - r.started_at)))::int
+              - coalesce(r.paused_seconds, 0)) as elapsed_seconds
+       from pilot.gym_tvs t
+       join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
+       join pilot.session_scripts s on s.organization_id = r.organization_id and s.script_id = r.script_id
+      where t.organization_id = $1 and t.tv_id = $2`,
+    [tv.organization_id, tv.tv_id],
+  );
+  if (!run) return empty;
+
+  const blockRows = await query<Record<string, unknown>>(
+    `select b.block_id, b.block_order, b.block_label, b.block_kind, d.name as drill_name,
+            b.scale_level, b.start_offset_min, b.end_offset_min
+       from pilot.session_script_blocks b
+       left join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
+      where b.organization_id = $1 and b.script_id = $2
+      order by b.block_order asc`,
+    [tv.organization_id, String(run.script_id)],
+  );
+  const blocks = blockRows.map(pickBlock);
+  const elapsed = Number(run.elapsed_seconds);
+  const currentIndex = blocks.findIndex((b) => b.block_id === run.current_block_id);
+  const current = currentIndex >= 0 ? blocks[currentIndex] : null;
+  const next = currentIndex >= 0 ? blocks[currentIndex + 1] ?? null : null;
+
+  return {
+    tv: { tv_name: tv.tv_name },
+    session: {
+      run_id: String(run.run_id),
+      script_name: String(run.script_name),
+      total_minutes: run.total_minutes == null ? null : Number(run.total_minutes),
+      started_at: isoOf(run.started_at),
+      server_time: isoOf(run.server_time),
+      elapsed_seconds: elapsed,
+      is_paused: run.is_paused === true,
+      current_block: current
+        ? { ...current, seconds_left: Math.max(0, current.end_offset_min * 60 - elapsed) }
+        : null,
+      next_block: next,
+      blocks,
+    },
+  };
+}
+
+// The TV read's budget: fixed window per key, no memory of failure, no escalation. In-memory and
+// per instance, like wallRateLimit.ts, and for the same reason: it protects the database from
+// load, not the content from disclosure -- the device key does that.
+interface ReadBucket {
+  windowStart: number;
+  count: number;
+}
+const readBuckets = new Map<string, ReadBucket>();
+
+export function consumeGymTvReadBudget(
+  key: string,
+  nowMs: number = Date.now(),
+): { allowed: boolean; retryAfterSeconds: number } {
+  for (const [existing, bucket] of readBuckets) {
+    if (nowMs - bucket.windowStart >= GYM_TV_READ_WINDOW_MS) readBuckets.delete(existing);
+  }
+  const bucket = readBuckets.get(key);
+  if (!bucket) {
+    readBuckets.set(key, { windowStart: nowMs, count: 1 });
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  bucket.count += 1;
+  if (bucket.count > GYM_TV_READ_MAX_PER_WINDOW) {
+    const remaining = GYM_TV_READ_WINDOW_MS - (nowMs - bucket.windowStart);
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(remaining / 1000)) };
+  }
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+/** Test seam. Never called in a request path. */
+export function resetGymTvReadBudget(): void {
+  readBuckets.clear();
 }

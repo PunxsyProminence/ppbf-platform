@@ -48,9 +48,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'TV_PAIR_CODE_INVALID' }, { status: 400 });
   }
 
+  // A TV that already holds a key and pairs again: the row that key names is revoked in the same
+  // transaction (gymTvs.ts redeemGymTvPairCode), so one device never holds two live rows.
+  const previousKey = request.cookies.get(GYM_TV_DEVICE_COOKIE)?.value ?? null;
+
   let redeemed: Awaited<ReturnType<typeof redeemGymTvPairCode>>;
   try {
-    redeemed = await redeemGymTvPairCode(code);
+    redeemed = await redeemGymTvPairCode(code, previousKey || null);
   } catch (error) {
     // Class and driver code only. A pg error's message can carry the host name or SQL text, and
     // this log line is reachable by an unauthenticated caller. The constructor name, not

@@ -6579,6 +6579,60 @@
     }
   },
   {
+    "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/gym-tvs/[tvId]/session",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); run must be the caller's own live show_on_wall run and the TV in principal.organizationId, both checked in sendRunToGymTv",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV (S2b). Sends the caller's live session to a paired TV: gymTvs.ts sendRunToGymTv refuses another coach's run id with the same 404 as a missing one, a run not live or not switched on with Show on TV (409), an unpaired or disconnected TV (409), and a TV already showing another coach's live session (409 TV_IN_USE; one session per TV, Jason 'A'). No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/gym-tvs/[tvId]/session/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/gym-tvs/[tvId]/session",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId and another coach's live session refused in takeRunOffGymTv",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV (S2b). Takes the session off a TV: gymTvs.ts takeRunOffGymTv clears current_run_id and set_by together; only the coach whose live session is on the TV may clear it while it is live (409 TV_IN_USE otherwise); once the run has ended or been switched off, any staff member may clear the leftover pointer. Idempotent on an empty TV. No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/gym-tvs/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/gym-tvs",
@@ -11850,7 +11904,26 @@
     "missingGate": true,
     "looksWrong": "Unauthenticated by design: a television cannot sign in. The credential is the one-time code minted by staff on the coach dashboard, and every attempt is counted against the caller's IP on both limiters before it is checked. By the literal definition it has no session gate.",
     "confidence": "high",
-    "notes": "Gym TV pairing (S2a-1). The TV redeems the code: gymTvs.ts redeemGymTvPairCode (row lock, single use, 5-minute life). Every failed lookup (wrong, expired, used or disconnected code) returns the same 404. Success sets the device key in an httpOnly cookie ppbf_gym_tv; body carries only the TV name. The key opens only the TV read (S2b), never an account. No athlete data.",
+    "notes": "Gym TV pairing (S2a-1). The TV redeems the code: gymTvs.ts redeemGymTvPairCode (row lock, single use, 5-minute life). Every failed lookup (wrong, expired, used or disconnected code) returns the same 404. Success sets the device key in an httpOnly cookie ppbf_gym_tv; body carries only the TV name. The key opens only the TV read (tv/session), never an account. A TV that already holds a key and pairs again has the old row revoked in the same transaction (S2b). No athlete data.",
+    "mechanical": {
+      "sessionGates": [],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/tv/session/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/tv/session",
+    "gate": "none by construction (the TV has no session); the device key in the httpOnly cookie ppbf_gym_tv is the credential, resolved by hash in readGymTvSession, behind a fixed-window per-IP budget (consumeGymTvReadBudget)",
+    "rolesAdmitted": [],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": true,
+    "looksWrong": "Unauthenticated by design: a television cannot sign in. The credential is the device key the TV received at pairing, which opens only this read. The payload is a fixed allowlist (GYM_TV_SESSION_FIELDS, GYM_TV_BLOCK_FIELDS in gymTvs.ts) with no coach notes, no names, no account ids and no athlete data; the pg suite asserts the whole serialized body. By the literal definition it has no session gate.",
+    "confidence": "high",
+    "notes": "Gym TV (S2b). What the paired TV shows: the one live, show_on_wall session a coach sent to it (plan blocks with times and drill names, current and next block, server clock), or session: null when nothing is on it. 401 and the cookie cleared for no, unknown or disconnected key. Each keyed read re-sets the cookie's Max-Age (the 'until disconnected' slide) and touches last_seen_at. No athlete data.",
     "mechanical": {
       "sessionGates": [],
       "authorizationGates": [],

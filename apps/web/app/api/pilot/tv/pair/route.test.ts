@@ -33,11 +33,13 @@ const mockDurableClear = jest.mocked(clearDurableRateLimit);
 const IP = '10.0.0.7';
 const KEY = `tv_pair_ip:${IP}`;
 
-function pair(body: unknown, ip = IP) {
+function pair(body: unknown, ip = IP, existingKey: string | null = null) {
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-real-ip': ip };
+  if (existingKey !== null) headers.cookie = `${GYM_TV_DEVICE_COOKIE}=${existingKey}`;
   return POST(
     new NextRequest('http://localhost/api/pilot/tv/pair', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-real-ip': ip },
+      headers,
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
   );
@@ -56,7 +58,8 @@ it('a good code pairs the TV: key in an httpOnly cookie, never in the body', asy
   paired();
   const response = await pair({ code: 'abc-234' });
   expect(response.status).toBe(200);
-  expect(mockRedeem).toHaveBeenCalledWith('ABC234');
+  // No cookie on the request: nothing to revoke.
+  expect(mockRedeem).toHaveBeenCalledWith('ABC234', null);
   expect(await response.json()).toEqual({ ok: true, tv_name: 'Gym main' });
   const cookie = response.cookies.get(GYM_TV_DEVICE_COOKIE);
   expect(cookie?.value).toBe('k'.repeat(64));
@@ -69,6 +72,14 @@ it('a good code pairs the TV: key in an httpOnly cookie, never in the body', asy
   // The attempt was reserved before anything else, and success cleared the buckets on both halves.
   expect(mockReserve).toHaveBeenCalledWith([KEY]);
   expect(mockDurableClear).toHaveBeenCalledWith(KEY);
+});
+
+it('a TV that already holds a key hands it to the redeem, so its old row is revoked; the new key replaces it', async () => {
+  paired();
+  const response = await pair({ code: 'ABC234' }, IP, 'old'.repeat(20));
+  expect(response.status).toBe(200);
+  expect(mockRedeem).toHaveBeenCalledWith('ABC234', 'old'.repeat(20));
+  expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.value).toBe('k'.repeat(64));
 });
 
 it('under NODE_ENV=production the cookie is Secure', async () => {
