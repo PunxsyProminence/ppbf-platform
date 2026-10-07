@@ -160,7 +160,8 @@ test("the child's real gap, drill, and verified work render read-only", async ()
 });
 
 test('a drill with no name from the server shows no "Assigned by" line, not a blank one', async () => {
-  const { assigned_by_name: _omitted, ...unnamed } = ASSIGNMENT;
+  const unnamed: Partial<typeof ASSIGNMENT> = { ...ASSIGNMENT };
+  delete unnamed.assigned_by_name;
   global.fetch = mockFetch({
     '/progression/assignments': async () => jsonOk({ items: [unnamed] }),
   }) as unknown as typeof fetch;
