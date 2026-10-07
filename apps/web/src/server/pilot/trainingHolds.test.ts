@@ -10,6 +10,8 @@ import {
   liftTrainingHold,
   listTrainingHolds,
   placeTrainingHold,
+  readStaffHoldWarning,
+  readStaffHoldWarnings,
 } from './trainingHolds';
 
 jest.mock('./db', () => ({
@@ -534,5 +536,101 @@ describe('module boundary', () => {
     const path = jest.requireActual<typeof import('node:path')>('node:path');
     const source = fs.readFileSync(path.join(__dirname, 'trainingHolds.ts'), 'utf8');
     expect(source).not.toContain('gym_status');
+  });
+});
+
+// OD-2026-10-06-024 ruling 1, "Warn only, both places": the staff warning the
+// check-in and drill-assignment answers carry.
+describe('readStaffHoldWarning / readStaffHoldWarnings', () => {
+  const HOLD = {
+    hold_id: 'hold-1',
+    athlete_id: 'ATH-1',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    reason_text: 'STAFF-ONLY: SUSPECTED CONCUSSION, DAY 2',
+    athlete_explanation: 'We want your head to rest.',
+    lift_condition_text: 'Cleared by the doctor.',
+    placed_by_account_id: 'coach-1',
+    placed_by_role: 'coach',
+    placed_at: '2026-10-01 10:00:00+00',
+    expires_at: '2026-11-01T00:00:00.000Z',
+    status: 'active',
+  };
+
+  test.each(['coach', 'organization_admin', 'admin'])('%s gets the hold facts, never reason_text', async (role) => {
+    mockQuery.mockResolvedValueOnce([]); // sweep
+    mockQueryOne.mockResolvedValueOnce(HOLD);
+
+    const warning = await readStaffHoldWarning(role, 'org-1', 'ATH-1');
+
+    expect(warning).toEqual({
+      hold_id: 'hold-1',
+      scope: 'contact_only',
+      reason_category: 'medical',
+      athlete_explanation: 'We want your head to rest.',
+      lift_condition_text: 'Cleared by the doctor.',
+      expires_at: '2026-11-01T00:00:00.000Z',
+    });
+    expect(JSON.stringify(warning)).not.toContain('CONCUSSION');
+  });
+
+  // The role rule: nobody but staff reaches the read. The hold row is there and
+  // WOULD come back if the reader ran, so null here is the role rule and not an
+  // empty fixture.
+  test.each(['athlete', 'parent', 'board', 'platform_owner', 'someone_new', ''])(
+    '%s gets nothing and the database is never asked',
+    async (role) => {
+      mockQueryOne.mockResolvedValue(HOLD);
+
+      await expect(readStaffHoldWarning(role, 'org-1', 'ATH-1')).resolves.toBeNull();
+      await expect(readStaffHoldWarnings(role, 'org-1', ['ATH-1'])).resolves.toEqual([]);
+
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockQueryOne).not.toHaveBeenCalled();
+      mockQueryOne.mockReset();
+    },
+  );
+
+  test('no active hold is null; a lapsed table is null; neither throws', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(readStaffHoldWarning('coach', 'org-1', 'ATH-1')).resolves.toBeNull();
+
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error('relation does not exist'), { code: '42P01' }));
+    await expect(readStaffHoldWarning('coach', 'org-1', 'ATH-1')).resolves.toBeNull();
+  });
+
+  test('a read that fails is "unreadable" -- never null, never a throw -- and is logged without the row', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockQuery.mockRejectedValueOnce(new Error('connection reset: ' + HOLD.reason_text));
+
+    await expect(readStaffHoldWarning('coach', 'org-1', 'ATH-1')).resolves.toBe('unreadable');
+
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('CONCUSSION');
+    errors.mockRestore();
+  });
+
+  test('batch: one sweep and one list for the organization, narrowed to the athletes asked about', async () => {
+    mockQuery
+      .mockResolvedValueOnce([]) // sweep
+      .mockResolvedValueOnce([HOLD, { ...HOLD, hold_id: 'hold-2', athlete_id: 'ATH-ELSEWHERE' }]);
+
+    const warnings = await readStaffHoldWarnings('coach', 'org-1', ['ATH-1', 'ATH-2']);
+
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    expect(warnings).toEqual([expect.objectContaining({ athlete_id: 'ATH-1', hold_id: 'hold-1' })]);
+    expect(JSON.stringify(warnings)).not.toContain('CONCUSSION');
+    expect(String(mockQuery.mock.calls[1][0])).toContain('pilot.training_holds');
+    expect(mockQuery.mock.calls[1][1]).toEqual(['org-1', null, 'active']);
+  });
+
+  test('batch: an empty batch asks nothing; a failed list is "unreadable"', async () => {
+    await expect(readStaffHoldWarnings('coach', 'org-1', [])).resolves.toEqual([]);
+    expect(mockQuery).not.toHaveBeenCalled();
+
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockQuery.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(readStaffHoldWarnings('coach', 'org-1', ['ATH-1'])).resolves.toBe('unreadable');
+    errors.mockRestore();
   });
 });

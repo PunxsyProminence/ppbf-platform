@@ -102,6 +102,44 @@ function holdRefusalDetailFrom(result: { athlete_explanation?: unknown; lift_con
   };
 }
 
+// OD-2026-10-06-024 ruling 1 ("Warn only, both places"): a staff check-in whose
+// athlete is on an active training hold still succeeds, and its answer carries
+// the hold facts for the screen to show beside the action. The scheduler route
+// sends this to a coach or organization admin only, so an athlete's or a
+// parent's own check-in never gets one. 'unreadable' means the hold could not
+// be read -- which is not "no hold".
+type CheckInHoldWarning = {
+  scope: 'all_training' | 'contact_only' | 'conditioning_only';
+  reason_category: string;
+  athlete_explanation: string;
+  lift_condition_text: string;
+};
+
+const HOLD_SCOPE_LABEL: Record<CheckInHoldWarning['scope'], string> = {
+  all_training: 'ALL TRAINING',
+  contact_only: 'CONTACT WORK',
+  conditioning_only: 'CONDITIONING',
+};
+
+function checkInHoldWarningFrom(value: unknown): CheckInHoldWarning | 'unreadable' | null {
+  if (value === 'unreadable') return 'unreadable';
+  if (!value || typeof value !== 'object') return null;
+  const hold = value as Record<string, unknown>;
+  if (
+    typeof hold.scope !== 'string' || !Object.hasOwn(HOLD_SCOPE_LABEL, hold.scope)
+    || typeof hold.reason_category !== 'string'
+    || typeof hold.athlete_explanation !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    scope: hold.scope as CheckInHoldWarning['scope'],
+    reason_category: hold.reason_category,
+    athlete_explanation: hold.athlete_explanation,
+    lift_condition_text: typeof hold.lift_condition_text === 'string' ? hold.lift_condition_text.trim() : '',
+  };
+}
+
 const allowedRoles: ClubRole[] = ['athlete', 'coach', 'parent', 'admin'];
 
 function roleCanManageClasses(role: SchedulerRole | null): boolean {
@@ -142,6 +180,9 @@ export default function SchedulerPage() {
   // An action error or a failed athlete list leaves this false.
   const [schedulerFailed, setSchedulerFailed] = useState(false);
   const [errorDetail, setErrorDetail] = useState<HoldRefusalDetail | null>(null);
+  // Set by a check-in that went through for an athlete on an active hold.
+  // Cleared with every new action, like the messages beside it.
+  const [checkInHold, setCheckInHold] = useState<CheckInHoldWarning | 'unreadable' | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
 
   // Every error write on this page goes through here, so a hold's detail is
@@ -253,6 +294,7 @@ export default function SchedulerPage() {
 
     setActionInFlight(true);
     setActionMessage('');
+    setCheckInHold(null);
     showError('');
 
     try {
@@ -270,6 +312,7 @@ export default function SchedulerPage() {
         athlete_explanation?: unknown;
         lift_condition?: unknown;
         status?: string;
+        hold_warning?: unknown;
       };
       if (!response.ok || !result.ok) {
         showError(result.error || 'Action failed', holdRefusalDetailFrom(result));
@@ -287,6 +330,9 @@ export default function SchedulerPage() {
       const message = payload.action === 'register_class' && result.status === 'waitlisted'
         ? 'The class is full, so this athlete was added to the waitlist.'
         : successMessage;
+      if (payload.action === 'attendance_checkin') {
+        setCheckInHold(checkInHoldWarningFrom(result.hold_warning));
+      }
       if (result.membership_flags && result.membership_flags.length > 0) {
         const summary = result.membership_flags
           .map((flag) => `${flag.program_name} (${flag.status})`)
@@ -674,6 +720,29 @@ export default function SchedulerPage() {
                   >
                     {role === 'athlete' ? 'Check In' : 'Update Attendance'}
                   </button>
+
+                  {/* Beside the action it belongs to (OD-2026-10-06-024 ruling 1). */}
+                  {checkInHold && checkInHold !== 'unreadable' ? (
+                    <div className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]" role="status">
+                      <p className="t-eyebrow">Active Training Hold</p>
+                      <p className="t-body mt-[var(--s3)] font-semibold">
+                        {HOLD_SCOPE_LABEL[checkInHold.scope]} is currently paused for this athlete ({checkInHold.reason_category}).
+                        The check-in was NOT blocked.
+                      </p>
+                      <p className="t-body mt-[var(--s3)]">{checkInHold.athlete_explanation}</p>
+                      <p className="t-body mt-[var(--s3)]">
+                        To lift it: {checkInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
+                      </p>
+                    </div>
+                  ) : null}
+                  {checkInHold === 'unreadable' ? (
+                    <div className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s4)]" role="status">
+                      <p className="t-eyebrow">Training hold: could not be read</p>
+                      <p className="t-body mt-[var(--s3)] font-semibold">
+                        The check-in was saved, but whether this athlete is under a training hold is UNKNOWN. Do not read this as &quot;no hold&quot;.
+                      </p>
+                    </div>
+                  ) : null}
                 </article>
 
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
