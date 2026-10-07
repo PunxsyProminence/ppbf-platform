@@ -38,8 +38,12 @@ import {
 // the moment's time and kind from the event, so the client never says when
 // "start" is; it refuses bad input with a 400 that names the field before any
 // write; and it turns the database's refusals into the repo's shapes. Where
-// the two disagree the database wins, and calibrationBodyPointsModule.pg.test.ts
-// asserts both refuse the same rows.
+// the two disagree the database wins. calibrationBodyPointsModule.pg.test.ts
+// writes a sample of the rows this module refuses straight to the tables and
+// shows the database refuses them too (a time off the event, a position off
+// the picture, a point outside the version, a lead side outside the list, any
+// write on a 0.1 or a submitted set); bodyPoints.test.ts covers every branch
+// of translateDatabaseRefusal.
 //
 // EVERY VOCABULARY IS REJECTED, NEVER COERCED, as in annotations.ts: an
 // unknown guard is "Missing guard_type", never 'unknown' -- which is a recorded
@@ -149,9 +153,13 @@ function optionalVocabulary<T extends string>(vocabulary: readonly T[], value: u
   return requireVocabulary(vocabulary, value, field);
 }
 
+/** The column is a Postgres integer; past its range the database would raise
+ * out-of-range (22003), a 500 for what is bad input. */
+const MAX_PIXELS = 2_147_483_647;
+
 function optionalPositiveInteger(value: unknown, field: string): number | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > MAX_PIXELS) {
     throw new Error(`Missing ${field}: expected a whole number of pixels, greater than zero`);
   }
   return value;
@@ -312,14 +320,27 @@ interface DatabaseError {
   constraint?: unknown;
 }
 
+/** The links a write can lose in a race with a delete: the event under a
+ * moment or a stance label, the moment under a point. */
+const PARENT_GONE_CONSTRAINTS = new Set([
+  'pilot_calibration_body_moments_event_fk',
+  'pilot_calibration_event_stance_labels_event_fk',
+  'pilot_calibration_body_points_moment_fk',
+]);
+
 /**
  * Turns the triggers' and constraints' refusals into the shapes jsonError
  * maps, for the cases the pre-checks above cannot close: a race with a
- * submission, two tabs opening the same slot, a point list that changed
- * under a long-open screen. Anything not recognised is rethrown as it came,
- * which jsonError reports as a 500 without its text.
+ * submission, two tabs opening the same slot, an event replaced (events
+ * PUT deletes the old row) while a mark was in flight, a point list that
+ * changed under a long-open screen. Anything not recognised is rethrown as it
+ * came, which jsonError reports as a 500 without its text.
+ *
+ * Exported for bodyPoints.test.ts, which drives every branch with the shape
+ * pg raises (message = the trigger's text; code and constraint from the
+ * server); the pg suite reaches only the branches a test can race.
  */
-function translateDatabaseRefusal(error: unknown): never {
+export function translateDatabaseRefusal(error: unknown): never {
   const dbError = (error ?? {}) as DatabaseError;
   const message = typeof dbError.message === 'string' ? dbError.message : '';
   const constraint = typeof dbError.constraint === 'string' ? dbError.constraint : '';
@@ -334,13 +355,18 @@ function translateDatabaseRefusal(error: unknown): never {
     throw new Error('Missing point_code: not a point in this annotation set\'s vocabulary');
   }
   if (message === 'CALIBRATION_BODY_MOMENT_KIND_NOT_THIS_EVENT') {
-    throw new Error('Missing observation_ms: the event changed under this moment; reload and mark it again');
+    throw new PilotError(409, 'Conflict: the event changed under this moment; reload and mark it again');
   }
   if (dbError.code === '23505' && constraint === 'pilot_calibration_body_moments_one_per_slot') {
     throw new PilotError(409, 'Conflict: this event already has a moment in that slot');
   }
-  if (dbError.code === '23505' && constraint === 'pilot_calibration_event_stance_labels_pkey') {
-    throw new PilotError(409, 'Conflict: this event already has a stance type');
+  if (dbError.code === '23503' && PARENT_GONE_CONSTRAINTS.has(constraint)) {
+    throw new Error('Not found: the event or moment this mark belongs to is gone; reload');
+  }
+  // Two writers on one moment: Postgres aborted one of them. Nothing of its
+  // batch is kept (withTransaction rolled it back); the client retries.
+  if (dbError.code === '40P01' || dbError.code === '40001') {
+    throw new PilotError(409, 'Conflict: another write on this moment got there first; try again');
   }
   throw error;
 }
@@ -352,7 +378,6 @@ function translateDatabaseRefusal(error: unknown): never {
 export interface OpenBodyMomentInput {
   organizationId: string;
   annotationSetId: string;
-  bodyMomentId: string;
   eventId: string;
   momentSlot: MomentSlot;
   /** Only for a middle moment of an event with no contact time. */
@@ -371,9 +396,13 @@ export interface OpenBodyMomentInput {
  * pattern), so the on-edge CHECKs cannot be met by a lie about the event. An
  * occupied slot is a 409, never a silent overwrite: changing a moment's
  * labels is updateBodyMoment, and moving it is delete then open.
+ *
+ * The id is minted here. The key is (organization, body_moment_id), so a
+ * caller-chosen id could collide with a moment in any set of the
+ * organization -- and whether it collides would say that moment exists.
  */
 export async function openBodyMoment(input: OpenBodyMomentInput): Promise<BodyMomentRow> {
-  const bodyMomentId = requireNonEmpty(input.bodyMomentId, 'body_moment_id');
+  const bodyMomentId = randomUUID();
   const momentSlot = requireVocabulary(MOMENT_SLOTS, input.momentSlot, 'moment_slot');
   const leadSide = optionalVocabulary(LEAD_SIDES, input.leadSide, 'lead_side');
   const guardType = optionalVocabulary(GUARD_TYPES, input.guardType, 'guard_type');
@@ -530,6 +559,9 @@ interface ResolvedMark {
  * than dropped, for the same reason as a time sent for a derived moment.
  */
 function resolveMark(mark: BodyPointMark, pointList: readonly BodyPoint[], ontologyVersion: string): ResolvedMark {
+  if (mark === null || typeof mark !== 'object') {
+    throw new Error('Missing points: each point is an object with point_code and state');
+  }
   if (!isInVocabulary(pointList, mark.pointCode)) {
     throw new Error(`Missing point_code: not a point in ${ontologyVersion}`);
   }
@@ -568,6 +600,11 @@ export async function markBodyPoints(input: MarkBodyPointsInput): Promise<BodyPo
     }
     seen.add(mark.pointCode);
   }
+  // Written in the version's marking order whatever order they arrived in, so
+  // two tabs marking the same moment take their row locks in the same order
+  // and one waits for the other instead of both deadlocking.
+  const order = new Map<string, number>(pointList.map((code, index) => [code, index]));
+  marks.sort((a, b) => (order.get(a.pointCode) ?? 0) - (order.get(b.pointCode) ?? 0));
   const moment = await loadMomentInSet(input.organizationId, set.annotation_set_id, input.bodyMomentId);
 
   return withTransaction(async (client) => {
@@ -681,42 +718,59 @@ export interface BodyDataForSet {
 /**
  * Everything marked on one set. Scoped to that set and nothing else; a
  * submitted set reads the same way, which is how the page shows it read-only.
+ *
+ * NOT BLINDED, as listAnnotationSetsForClip in annotations.ts warns of
+ * itself: this returns whatever set it is given. A route must resolve the set
+ * through annotatorGate.loadOwnAnnotationSet first, so an annotator never
+ * reads another's unsubmitted marks (OD-2026-08-29-002/-003). The same holds
+ * for listMissingBodyData, which is a set's progress.
+ *
+ * One transaction, so a mark landing between the three reads cannot show a
+ * moment with half its points.
  */
 export async function listBodyDataForSet(
   organizationId: string,
   annotationSetId: string,
 ): Promise<BodyDataForSet> {
-  const set = await queryOne<{ ontology_version: string }>(
-    `select ontology_version from pilot.calibration_annotation_sets
-      where organization_id = $1 and annotation_set_id = $2`,
-    [organizationId, requireNonEmpty(annotationSetId, 'annotation_set_id')],
-  );
+  const setId = requireNonEmpty(annotationSetId, 'annotation_set_id');
+  const { set, moments, points, stanceLabels } = await withTransaction(async (client) => {
+    const setResult = await client.query<{ ontology_version: string }>(
+      `select ontology_version from pilot.calibration_annotation_sets
+        where organization_id = $1 and annotation_set_id = $2`,
+      [organizationId, setId],
+    );
+    const found = setResult.rows[0];
+    if (!found) {
+      return { set: null, moments: [], points: [], stanceLabels: [] };
+    }
+    const [momentResult, pointResult, stanceResult] = await Promise.all([
+      client.query<BodyMomentRow>(
+        `select ${MOMENT_COLUMNS} from pilot.calibration_body_moments
+          where organization_id = $1 and annotation_set_id = $2
+          order by event_id asc, observation_ms asc,
+            case moment_slot when 'start' then 0 when 'middle' then 1 else 2 end asc`,
+        [organizationId, setId],
+      ),
+      client.query<BodyPointRow>(
+        `select ${POINT_COLUMNS} from pilot.calibration_body_points
+          where organization_id = $1 and annotation_set_id = $2`,
+        [organizationId, setId],
+      ),
+      client.query<EventStanceLabelRow>(
+        `select ${STANCE_COLUMNS} from pilot.calibration_event_stance_labels
+          where organization_id = $1 and annotation_set_id = $2
+          order by event_id asc`,
+        [organizationId, setId],
+      ),
+    ]);
+    return { set: found, moments: momentResult.rows, points: pointResult.rows, stanceLabels: stanceResult.rows };
+  });
   if (!set) {
     throw new Error('Not found: no such annotation set in this organization');
   }
   const pointList = isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)
     ? BODY_POINTS_BY_VERSION[set.ontology_version]
     : null;
-
-  const [moments, points, stanceLabels] = await Promise.all([
-    query<BodyMomentRow>(
-      `select ${MOMENT_COLUMNS} from pilot.calibration_body_moments
-        where organization_id = $1 and annotation_set_id = $2
-        order by event_id asc, observation_ms asc, moment_slot asc`,
-      [organizationId, annotationSetId],
-    ),
-    query<BodyPointRow>(
-      `select ${POINT_COLUMNS} from pilot.calibration_body_points
-        where organization_id = $1 and annotation_set_id = $2`,
-      [organizationId, annotationSetId],
-    ),
-    query<EventStanceLabelRow>(
-      `select ${STANCE_COLUMNS} from pilot.calibration_event_stance_labels
-        where organization_id = $1 and annotation_set_id = $2
-        order by event_id asc`,
-      [organizationId, annotationSetId],
-    ),
-  ]);
 
   const byMoment = new Map<string, BodyPointRow[]>();
   for (const point of points) {
@@ -745,10 +799,11 @@ export async function listMissingBodyData(
   organizationId: string,
   annotationSetId: string,
 ): Promise<string[]> {
+  const setId = requireNonEmpty(annotationSetId, 'annotation_set_id');
   const set = await queryOne<{ ontology_version: string }>(
     `select ontology_version from pilot.calibration_annotation_sets
       where organization_id = $1 and annotation_set_id = $2`,
-    [organizationId, requireNonEmpty(annotationSetId, 'annotation_set_id')],
+    [organizationId, setId],
   );
   if (!set) {
     throw new Error('Not found: no such annotation set in this organization');
@@ -795,7 +850,7 @@ export async function listMissingBodyData(
        having count(p.point_code) <> $3::integer
      ) as missing_items
      order by item`,
-    [organizationId, annotationSetId, expected],
+    [organizationId, setId, expected],
   );
   return rows.map((row) => row.item);
 }

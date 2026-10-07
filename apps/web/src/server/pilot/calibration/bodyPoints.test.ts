@@ -7,7 +7,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { resolveMomentTiming } from './bodyPoints';
+import { AnnotationSetSubmittedError } from './annotations';
+import { resolveMomentTiming, translateDatabaseRefusal } from './bodyPoints';
 
 const PUNCH_WITH_CONTACT = { event_class: 'punch', start_ms: 1_000, end_ms: 1_400, contact_ms: 1_250 };
 const MISSED_PUNCH = { event_class: 'punch', start_ms: 1_000, end_ms: 1_400, contact_ms: null };
@@ -46,40 +47,111 @@ describe('resolveMomentTiming: the server says when a moment is', () => {
   });
 });
 
-describe('only bodyPoints.ts reads the body-point tables', () => {
-  // Migrations, their runners and their tests may name the tables; runtime
-  // code may not, so body points cannot become an input to gold.ts, an
-  // export or a model without a change that shows up here.
+describe('the database\'s refusals come back in the repo\'s shapes', () => {
+  // The shape pg raises: message = the trigger's text, code = the SQLSTATE,
+  // constraint = the constraint's name. Each branch is driven here because
+  // the pg suite can reach only the ones a test can race.
+  function pgError(message: string, code?: string, constraint?: string) {
+    return Object.assign(new Error(message), { code, constraint });
+  }
+  function translated(error: unknown): { name: string; message: string; status?: number } {
+    try {
+      translateDatabaseRefusal(error);
+    } catch (thrown) {
+      const e = thrown as { name: string; message: string; status?: number };
+      return { name: e.name, message: e.message, status: e.status };
+    }
+    throw new Error('did not throw');
+  }
+
+  test('a submission that won the race is the submitted refusal', () => {
+    expect(translated(pgError('CALIBRATION_ANNOTATION_SET_SUBMITTED', 'P0001'))).toMatchObject({ name: AnnotationSetSubmittedError.name });
+  });
+
+  test('the version gate and the version\'s point list', () => {
+    expect(translated(pgError('CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION', '23514'))).toMatchObject({ status: 403, message: expect.stringMatching(/^Forbidden/) });
+    expect(translated(pgError('CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION', '23514'))).toMatchObject({ message: expect.stringMatching(/^Missing point_code/) });
+  });
+
+  test('an event changed under a moment, an occupied slot, a deadlock: 409', () => {
+    expect(translated(pgError('CALIBRATION_BODY_MOMENT_KIND_NOT_THIS_EVENT', '23514'))).toMatchObject({ status: 409 });
+    expect(translated(pgError('duplicate key value', '23505', 'pilot_calibration_body_moments_one_per_slot'))).toMatchObject({ status: 409 });
+    expect(translated(pgError('deadlock detected', '40P01'))).toMatchObject({ status: 409 });
+    expect(translated(pgError('could not serialize access', '40001'))).toMatchObject({ status: 409 });
+  });
+
+  test('a parent deleted under a write is Not found', () => {
+    for (const constraint of [
+      'pilot_calibration_body_moments_event_fk',
+      'pilot_calibration_event_stance_labels_event_fk',
+      'pilot_calibration_body_points_moment_fk',
+    ]) {
+      expect(translated(pgError('violates foreign key', '23503', constraint))).toMatchObject({ message: expect.stringMatching(/^Not found/) });
+    }
+  });
+
+  test('anything else is rethrown as it came, for jsonError to hide', () => {
+    const raw = pgError('connection to server at 10.0.0.1 lost', '08006');
+    expect(() => translateDatabaseRefusal(raw)).toThrow(raw);
+    const otherKey = pgError('duplicate key value', '23505', 'pilot_calibration_body_moments_pkey');
+    expect(() => translateDatabaseRefusal(otherKey)).toThrow(otherKey);
+    const otherFk = pgError('violates foreign key', '23503', 'pilot_calibration_body_moments_set_fk');
+    expect(() => translateDatabaseRefusal(otherFk)).toThrow(otherFk);
+  });
+});
+
+describe('only bodyPoints.ts reads the body-point tables, and only its routes read bodyPoints.ts', () => {
+  // Two lines, so body points cannot become an input to gold.ts, an export or
+  // a model without a change that shows up here: no runtime file but this
+  // module names the three tables (migrations, their runners and tests may),
+  // and no runtime file but the body-points routes imports the module.
   const TABLES = ['calibration_body_moments', 'calibration_body_points', 'calibration_event_stance_labels'];
-  const ALLOWED = new Set([
-    'src/server/pilot/calibration/bodyPoints.ts',
-    'src/server/pilot/calibration/ontology.ts',
-    'scripts/pilot-apply-calibration-body-points-migration.mjs',
-    'scripts/pilot-apply-calibration-body-point-rules-migration.mjs',
+  const MAY_NAME_TABLES = new Set([
+    'apps/web/src/server/pilot/calibration/bodyPoints.ts',
+    // A comment naming the stance-label table; it holds no SQL.
+    'apps/web/src/server/pilot/calibration/ontology.ts',
+    'apps/web/scripts/pilot-apply-calibration-body-points-migration.mjs',
+    'apps/web/scripts/pilot-apply-calibration-body-point-rules-migration.mjs',
   ]);
+  const MAY_IMPORT_MODULE = /^apps\/web\/app\/api\/pilot\/calibration\/body-points\//;
+  const IMPORTS_MODULE = /from\s+['"](?:@\/src\/server\/pilot\/calibration\/bodyPoints|\.{1,2}\/(?:calibration\/)?bodyPoints)['"]/;
 
   function walk(dir: string, out: string[]): void {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.next') continue;
+      if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === '.git') continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full, out);
-      else if (/\.(ts|tsx|mjs|js)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(full);
+      else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(entry.name) && !/\.test\.[cm]?[jt]sx?$/.test(entry.name)) out.push(full);
     }
   }
 
-  test('no other runtime file names them', () => {
-    const webRoot = path.resolve(__dirname, '../../../..');
-    const files: string[] = [];
-    walk(path.join(webRoot, 'src'), files);
-    walk(path.join(webRoot, 'app'), files);
-    walk(path.join(webRoot, 'scripts'), files);
+  const repoRoot = path.resolve(__dirname, '../../../../../..');
+  const files: string[] = [];
+  walk(path.join(repoRoot, 'apps', 'web'), files);
+  walk(path.join(repoRoot, 'packages'), files);
+  const relative = (file: string) => path.relative(repoRoot, file).replaceAll('\\', '/');
+
+  test('the walk covers the app', () => {
+    expect(files.length).toBeGreaterThan(500);
+    expect(files.map(relative)).toContain('apps/web/src/server/pilot/calibration/gold.ts');
+  });
+
+  test('no other runtime file names the tables', () => {
     const offenders = files
       .filter((file) => {
         const text = fs.readFileSync(file, 'utf8');
         return TABLES.some((table) => text.includes(table));
       })
-      .map((file) => path.relative(webRoot, file).replaceAll('\\', '/'))
-      .filter((file) => !ALLOWED.has(file));
+      .map(relative)
+      .filter((file) => !MAY_NAME_TABLES.has(file));
+    expect(offenders).toEqual([]);
+  });
+
+  test('no runtime file outside the body-points routes imports the module', () => {
+    const offenders = files
+      .filter((file) => IMPORTS_MODULE.test(fs.readFileSync(file, 'utf8')))
+      .map(relative)
+      .filter((file) => !MAY_IMPORT_MODULE.test(file));
     expect(offenders).toEqual([]);
   });
 });

@@ -160,7 +160,7 @@ interface SetRef {
 }
 
 /** A fresh clip and an in-progress set on it, under the given vocabulary. */
-async function newSet(version: string = V02, orgId: string = ORG_ID): Promise<SetRef> {
+async function newSet(version: string = V02, orgId: string = ORG_ID, setId: string = crypto.randomUUID()): Promise<SetRef> {
   const clipId = crypto.randomUUID();
   await projects.createCalibrationClip({
     organizationId: orgId,
@@ -173,7 +173,6 @@ async function newSet(version: string = V02, orgId: string = ORG_ID): Promise<Se
     primarySamplingReason: 'isolated_punch',
     createdByAccountId: `${ANNOTATOR}-${orgId}`,
   });
-  const setId = crypto.randomUUID();
   await annotations.openAnnotationSet({
     organizationId: orgId,
     annotationSetId: setId,
@@ -239,7 +238,6 @@ async function open(
   return bodyPoints.openBodyMoment({
     organizationId: set.orgId,
     annotationSetId: set.setId,
-    bodyMomentId: crypto.randomUUID(),
     eventId,
     momentSlot,
     leadSide: 'orthodox',
@@ -449,11 +447,18 @@ describe('the server says when a moment is', () => {
 });
 
 describe('what the coach records at a moment', () => {
-  test('lead side and guard come from their lists or wait as null', async () => {
+  test('lead side and guard come from their lists or wait as null; the database holds the same lists', async () => {
     const set = await newSet();
     const eventId = await punch(set);
     await expect(open(set, eventId, 'start', { leadSide: 'switching' as never })).rejects.toThrow('Missing lead_side');
     await expect(open(set, eventId, 'start', { guardType: 'high_guard' as never })).rejects.toThrow('Missing guard_type');
+    await expect(insertMomentDirect(set, eventId, { lead_side: 'switching' })).rejects.toThrow('pilot_calibration_body_moments_lead_side_vocab');
+    await expect(insertMomentDirect(set, eventId, { guard_type: 'high_guard' })).rejects.toThrow('pilot_calibration_body_moments_guard_vocab');
+    await expect(db.query(
+      `insert into pilot.calibration_event_stance_labels (organization_id, annotation_set_id, event_id, stance_type)
+       values ($1, $2, $3, 'usa_boxing__basic_stance')`,
+      [set.orgId, set.setId, eventId],
+    )).rejects.toThrow('pilot_calibration_event_stance_labels_stance_type_vocab');
     const waiting = await open(set, eventId, 'start', { leadSide: null, guardType: null });
     expect([waiting.lead_side, waiting.guard_type]).toEqual([null, null]);
   });
@@ -463,6 +468,7 @@ describe('what the coach records at a moment', () => {
     const eventId = await punch(set);
     await expect(open(set, eventId, 'start', { sourceFrameWidthPx: 1920 })).rejects.toThrow('both sides, or neither');
     await expect(open(set, eventId, 'start', { sourceFrameWidthPx: 0, sourceFrameHeightPx: 1080 })).rejects.toThrow('Missing source_frame_width_px');
+    await expect(open(set, eventId, 'start', { sourceFrameWidthPx: 3_000_000_000, sourceFrameHeightPx: 1080 })).rejects.toThrow('Missing source_frame_width_px');
     const sized = await open(set, eventId, 'start', { sourceFrameWidthPx: 1920, sourceFrameHeightPx: 1080 });
     expect([sized.source_frame_width_px, sized.source_frame_height_px]).toEqual([1920, 1080]);
   });
@@ -514,7 +520,7 @@ describe('a point is on the picture or not visible', () => {
     const moment = await open(set, await punch(set), 'start');
     const first = await bodyPoints.markBodyPoints({
       organizationId: set.orgId, annotationSetId: set.setId, bodyMomentId: moment.body_moment_id,
-      points: [notVisible('chin'), placed('nose', 0, 1), placed('left_glove', 0.25, 0.75)],
+      points: [placed('left_glove', 0.25, 0.75), notVisible('chin'), placed('nose', 0, 1)],
     });
     expect(first.map((p) => [p.point_code, p.state, p.x_norm, p.y_norm])).toEqual([
       ['nose', 'placed', 0, 1],
@@ -540,6 +546,7 @@ describe('a point is on the picture or not visible', () => {
     ['y missing', { pointCode: 'nose', state: 'placed', xNorm: 0.5 }, 'Missing y_norm'],
     ['not visible with a position', { pointCode: 'nose', state: 'not_visible', xNorm: 0.5, yNorm: 0.5 }, 'has no position'],
     ['a third state', { pointCode: 'nose', state: 'occluded' }, 'Missing state'],
+    ['an entry that is not an object', null, 'Missing points'],
   ] as Array<[string, import('./calibration/bodyPoints').BodyPointMark, string]>)('%s is refused, and the batch writes nothing', async (_label, bad, message) => {
     const set = await newSet();
     const moment = await open(set, await punch(set), 'start');
@@ -686,24 +693,36 @@ describe('the gates', () => {
     expect(await bodyPoints.listMissingBodyData(set.orgId, set.setId)).toEqual([]);
   });
 
-  test('nothing is reachable across an organization', async () => {
+  test('nothing is reachable across an organization, even when the other organization has a set with the same id', async () => {
     const set = await newSet();
+    // The same set id exists in the other organization, so a lookup that
+    // forgot the organization would find a set, and only the statements
+    // under it decide what is reached.
+    const twin = await newSet(V02, OTHER_ORG_ID, set.setId);
+    expect(twin.setId).toBe(set.setId);
     const eventId = await punch(set);
     const moment = await open(set, eventId, 'start');
     await markAll(set, moment.body_moment_id);
+    await bodyPoints.setEventStanceType({ organizationId: set.orgId, annotationSetId: set.setId, eventId, stanceType: 'usa_boxing__classic' });
     const notFound = /^Not found/;
     const foreign = { organizationId: OTHER_ORG_ID, annotationSetId: set.setId };
-    await expect(bodyPoints.openBodyMoment({ ...foreign, bodyMomentId: crypto.randomUUID(), eventId, momentSlot: 'end' })).rejects.toThrow(notFound);
+    await expect(bodyPoints.openBodyMoment({ ...foreign, eventId, momentSlot: 'end' })).rejects.toThrow(notFound);
     await expect(bodyPoints.updateBodyMoment({ ...foreign, bodyMomentId: moment.body_moment_id, leadSide: 'southpaw' })).rejects.toThrow(notFound);
-    await expect(bodyPoints.deleteBodyMoment(OTHER_ORG_ID, set.setId, moment.body_moment_id)).rejects.toThrow(notFound);
+    // The twin set exists, so a delete finds nothing to remove (false) rather
+    // than refusing the set; what matters is that nothing of ORG's is touched.
+    expect(await bodyPoints.deleteBodyMoment(OTHER_ORG_ID, set.setId, moment.body_moment_id)).toBe(false);
     await expect(bodyPoints.markBodyPoints({ ...foreign, bodyMomentId: moment.body_moment_id, points: [placed('nose')] })).rejects.toThrow(notFound);
-    await expect(bodyPoints.deleteBodyPoint(OTHER_ORG_ID, set.setId, moment.body_moment_id, 'nose')).rejects.toThrow(notFound);
+    expect(await bodyPoints.deleteBodyPoint(OTHER_ORG_ID, set.setId, moment.body_moment_id, 'nose')).toBe(false);
     await expect(bodyPoints.setEventStanceType({ ...foreign, eventId, stanceType: 'usa_boxing__classic' })).rejects.toThrow(notFound);
-    await expect(bodyPoints.clearEventStanceType(OTHER_ORG_ID, set.setId, eventId)).rejects.toThrow(notFound);
-    await expect(bodyPoints.listBodyDataForSet(OTHER_ORG_ID, set.setId)).rejects.toThrow(notFound);
-    await expect(bodyPoints.listMissingBodyData(OTHER_ORG_ID, set.setId)).rejects.toThrow(notFound);
+    expect(await bodyPoints.clearEventStanceType(OTHER_ORG_ID, set.setId, eventId)).toBe(false);
+    const twinData = await bodyPoints.listBodyDataForSet(OTHER_ORG_ID, set.setId);
+    expect([twinData.moments, twinData.stance_labels]).toEqual([[], []]);
+    expect(await bodyPoints.listMissingBodyData(OTHER_ORG_ID, set.setId)).toEqual([]);
+    await expect(bodyPoints.listBodyDataForSet(OTHER_ORG_ID, crypto.randomUUID())).rejects.toThrow(notFound);
     expect(await countFor('calibration_body_points', set)).toBe(24);
     expect(await countFor('calibration_body_moments', set)).toBe(1);
+    expect(await countFor('calibration_event_stance_labels', set)).toBe(1);
+    expect(await countFor('calibration_body_moments', twin)).toBe(0);
   });
 
   test('a moment in another set of the same organization is not found, and its points are untouched', async () => {
