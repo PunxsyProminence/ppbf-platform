@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import {
+  accessibleAthleteIds,
+  assertActorCanAccessAthlete,
+  isOrganizationAdminRole,
+  requireRole,
+} from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
@@ -98,6 +103,34 @@ export async function POST(
       return hiddenNotFound();
     }
 
+    // The clip's own athlete plus every tagged athlete: who must be reached
+    // (next) and whose guardians are asked (the write below).
+    const consentSubjects = [...new Set([
+      ...(row.athlete_id ? [row.athlete_id] : []),
+      ...tagged.map((subject) => subject.athlete_id),
+    ])];
+
+    // AND A COACH MUST REACH AT LEAST ONE OF THEM. The uploader rule above
+    // cannot see the tags: a coach who uploaded untagged team footage that
+    // another coach then tagged with a child the uploader does not coach was
+    // entitled on the upload alone, and the consent 409 below would have told
+    // them that child's guardian's decision. Playback's rule for a tagged clip
+    // (video/[videoId]/route.ts, accessibleAthleteIds: the coach reaches at
+    // least one athlete in it), decided here before the consent gate, with
+    // the same hiddenNotFound every other not-entitled caller gets. It also
+    // sits before the state refusals, for consistency with the other
+    // entitlement refusals rather than to hide the state: the coach list
+    // already shows status and scan_state for team footage. An organization
+    // admin reaches every athlete in the organization and is not asked, as
+    // on playback; an untagged clip was fully decided above and is not asked
+    // either.
+    if (tagged.length > 0 && !isOrganizationAdminRole(principal.role)) {
+      const reach = await accessibleAthleteIds(principal, consentSubjects);
+      if (reach.size === 0) {
+        return hiddenNotFound();
+      }
+    }
+
     if (row.status !== 'quarantined') {
       return NextResponse.json(
         {
@@ -163,13 +196,10 @@ export async function POST(
     // the guardian links FOR SHARE until the update below has run, so a
     // withdrawal either lands first and is read, or waits for the release.
     //
-    // The clip's own athlete plus every tagged athlete, each checked inside
-    // that same transaction. A tag added after the read above is not asked;
-    // the playback route carries the same window.
-    const consentSubjects = [...new Set([
-      ...(row.athlete_id ? [row.athlete_id] : []),
-      ...tagged.map((subject) => subject.athlete_id),
-    ])];
+    // The clip's own athlete plus every tagged athlete (consentSubjects,
+    // built above), each checked inside that same transaction. A tag added
+    // after the read above is not asked; the playback route carries the same
+    // window.
 
     /*
      * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
