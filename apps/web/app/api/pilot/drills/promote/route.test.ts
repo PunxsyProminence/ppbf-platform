@@ -458,15 +458,44 @@ describe('adoption readiness', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('does not require cues or validated provenance, which are owner decisions and not readiness', async () => {
+  // OD-2026-10-06-026 ruling 2: a technique drill needs at least one cue
+  // before it can be adopted; a conditioning drill does not. Provenance is
+  // still not a readiness rule here (ruling 3's floor-tested mark is separate).
+  it('refuses a technique drill with no cue, naming the missing cue', async () => {
     mockGetReference.mockResolvedValue(
       referenceDrill({ cues: [], field_provenance: 'REQUIRES FLOOR VALIDATION' }),
     );
 
     const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
 
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: NOT_READY_MESSAGE,
+      code: 'NOT_READY_TO_ADOPT',
+      missing: ['It has no coaching cue. A technique drill needs at least one; a conditioning drill does not.'],
+    });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('adopts a conditioning drill with no cue (the exemption), whatever its provenance', async () => {
+    mockGetReference.mockResolvedValue(
+      referenceDrill({ discipline: 'conditioning', category: 'strength', cues: [], field_provenance: 'REQUIRES FLOOR VALIDATION' }),
+    );
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
     expect(response.status).toBe(201);
     expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ cues: [] }));
+  });
+
+  it('a cue of only whitespace does not count as a cue', async () => {
+    mockGetReference.mockResolvedValue(referenceDrill({ cues: [{ cue_text: '   ' }] }));
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(mockPromote).not.toHaveBeenCalled();
   });
 });
 
