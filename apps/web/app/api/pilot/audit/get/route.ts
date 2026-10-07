@@ -66,6 +66,20 @@ const COACH_ALLOWED_ENTITY_TYPES = new Set([
   'wrestling_league_roster_entry',
 ]);
 
+// Calibration audit rows are served to NOBODY here, organization admins
+// included. Calibration labelling is blinded -- two annotators, or one
+// annotator's two passes, must not see each other's work -- and its audit
+// rows say what was marked and when: an event's class and time span, which
+// moment of it holds body marks, how many events a set was submitted with.
+// An organization admin may also be an annotator, so "admins see everything"
+// made this reader a way around the blinding. The calibration routes are the
+// only surfaces that decide who may read that work.
+//
+// Withheld in the SQL, for every caller, so a page still fills to its limit
+// and a filter that names such a type (or one of its entity ids) answers
+// exactly as a type with no rows does. The rows themselves are untouched.
+const WITHHELD_ENTITY_TYPE_PREFIX = 'calibration_';
+
 /**
  * A present-but-non-string filter is a bad request, not a server fault:
  * body.x?.trim() throws a TypeError on a number/object and jsonError would
@@ -154,6 +168,7 @@ export async function POST(request: NextRequest) {
          and ($2::text is null or entity_type = $2)
          and ($3::text is null or entity_id = $3)
          and ($5::boolean is not true or entity_type = any($4::text[]))
+         and left(entity_type, length($7::text)) <> $7::text
        order by created_at desc
        limit $6`,
       [
@@ -163,6 +178,7 @@ export async function POST(request: NextRequest) {
         [...COACH_ALLOWED_ENTITY_TYPES],
         isCoach,
         fetchLimit,
+        WITHHELD_ENTITY_TYPE_PREFIX,
       ],
     );
 

@@ -433,3 +433,40 @@ describe('POST /api/pilot/audit/get — the owner of an athlete-owned row is res
     expect(mockAccessible).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /api/pilot/audit/get — calibration rows are withheld from every role', () => {
+  test.each(['organization_admin', 'coach'])('the %s query withholds the calibration_ prefix in SQL', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+    const response = await POST(request({}));
+
+    expect(response.status).toBe(200);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('and left(entity_type, length($7::text)) <> $7::text');
+    expect(params[6]).toBe('calibration_');
+  });
+
+  test('an admin naming a calibration type is answered like any type with no rows, not refused', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+
+    const named = await POST(request({ entity_type: 'calibration_annotation_event' }));
+    const absent = await POST(request({ entity_type: 'no_such_type' }));
+
+    expect([named.status, await named.json()]).toEqual([absent.status, await absent.json()]);
+    expect(named.status).toBe(200);
+  });
+
+  test('no calibration type is on the coach allow-list', () => {
+    // The allow-list is not exported; a coach naming one is refused before
+    // any query, as every type outside the list is.
+    return Promise.all([
+      'calibration_project', 'calibration_clip', 'calibration_annotation_set',
+      'calibration_annotation_event', 'calibration_adjudication', 'calibration_body_moment',
+      'calibration_body_point', 'calibration_event_stance_label',
+    ].map(async (entityType) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+      const response = await POST(request({ entity_type: entityType }));
+      expect(response.status).toBe(403);
+    })).then(() => expect(mockQuery).not.toHaveBeenCalled());
+  });
+});
