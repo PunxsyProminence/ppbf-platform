@@ -1159,6 +1159,42 @@ describe('opening the next pass through the application', () => {
     expect(await passNumbers(clipId, A)).toEqual([1, 2]);
   });
 
+  test('a request that loses the insert to another answers null instead of failing or overwriting', async () => {
+    const clipId = await newClip();
+    await submit(await firstPass(A, clipId));
+
+    // A rival transaction has inserted pass 2 and not committed. This request
+    // still sees pass 1 as the latest, so it tries the same pass number and
+    // waits on the key; when the rival commits it must come back empty-handed.
+    const rival = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await rival.connect();
+    const rivalSetId = crypto.randomUUID();
+    try {
+      await rival.query('begin');
+      await rival.query(
+        `insert into pilot.calibration_annotation_sets
+           (organization_id, annotation_set_id, calibration_clip_id, annotator_account_id,
+            ontology_version, pass_number)
+         values ($1, $2, $3, $4, $5, 2)`,
+        [ORG_ID, rivalSetId, clipId, A, V04],
+      );
+      let settled = false;
+      const pending = open(A, clipId).finally(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(settled).toBe(false);
+      await rival.query('commit');
+      expect(await pending).toBeNull();
+    } finally {
+      await rival.query('rollback').catch(() => {});
+      await rival.end();
+    }
+
+    // One pass 2, the rival's, exactly as it wrote it.
+    const rows = await annotations.listAnnotationSetsForClip(ORG_ID, clipId);
+    expect(rows.filter((row) => row.pass_number === 2).map((row) => [row.annotation_set_id, row.ontology_version]))
+      .toEqual([[rivalSetId, V04]]);
+  });
+
   test('another annotator\'s submitted pass, or another organization, opens nothing', async () => {
     const clipId = await newClip();
     await submit(await firstPass(B, clipId));
