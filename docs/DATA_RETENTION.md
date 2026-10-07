@@ -83,7 +83,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, which needs the review-queue and chat-session foreign keys relaxed (migration) and a de-identification sweep; the athlete's coincide with the 2-year athlete purge. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` holds the date (shadow-deidentify-keys migration); the de-identification sweep is not yet built; the athlete's coincide with the 2-year athlete purge. |
 
 ### Public interest-form inquiries
 
@@ -386,7 +386,7 @@ blanked to `[name]` in every turn of that gym, other children's kept AI text inc
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
 read-only production count); the token can still be matched to the retired login through its
 chat sessions and messages until those are de-identified too (**not yet built**: the sessions /
-messages / evidence / feedback / review-queue de-identification needs a migration first). A
+messages / evidence / feedback / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
 `shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by
