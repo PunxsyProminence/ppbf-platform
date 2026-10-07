@@ -42,12 +42,23 @@
 // The check runs AFTER authorizeVideoScanReview, so its specific 409 reaches
 // only someone already entitled to know the video exists. Teaching footage
 // (athlete_id null) names nobody and has no guardian to ask.
+//
+// EVERY CHILD THE CLIP SHOWS, NOT ONLY THE ONE IT IS FILED UNDER. A sparring
+// clip is tagged to the athletes in it (videoClipTags.ts; owner, Jason
+// 2026-10-03: any tagged athlete's consent block blocks the whole clip, for
+// everyone). Playback and the scan sweep ask the clip's own athlete AND every
+// live tag subject; this route asked only the first, so a reviewer could
+// watch a clip showing a tagged child whose guardian had withdrawn. Same
+// subject set as GET /api/pilot/video/[videoId] now, and a tag naming a
+// deleted athlete reads as not found, as it does there.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import {
   authorizeVideoScanReview,
@@ -71,11 +82,39 @@ export async function POST(request: NextRequest) {
     }
 
     const video = await authorizeVideoScanReview(principal, videoSessionId);
-    const url = await mintUnderPlaybackConsent(
-      principal.organizationId,
-      video.athlete_id ? [video.athlete_id] : [],
-      () => getPilotVideoSasUrl(video.blob_path, LINK_EXPIRY_MINUTES),
-    );
+
+    // Read after the entitlement check, so a tag's not-found never confirms
+    // a video exists to someone the check already refused.
+    const tagged = await listLiveTagSubjects(principal.organizationId, videoSessionId);
+    if (tagged.some((subject) => subject.athlete_deleted)) {
+      throw new VideoScanReviewRefused('VIDEO_SESSION_NOT_FOUND', 'Not found', 404);
+    }
+    const consentSubjects = [...new Set([
+      ...(video.athlete_id ? [video.athlete_id] : []),
+      ...tagged.map((subject) => subject.athlete_id),
+    ])];
+
+    let url: string;
+    try {
+      url = await mintUnderPlaybackConsent(
+        principal.organizationId,
+        consentSubjects,
+        () => getPilotVideoSasUrl(video.blob_path, LINK_EXPIRY_MINUTES),
+      );
+    } catch (error) {
+      // The gate's message says "this athlete's guardians" and names nobody.
+      // On a tagged clip it may be a partner's guardian who refused -- a
+      // child this coach may not reach -- so the refusal is reworded to say
+      // the whole clip is blocked while ANY athlete in it is, without saying
+      // which. Same wording as playback.
+      if (tagged.length > 0 && error instanceof ConflictError) {
+        throw new ConflictError(
+          `This clip shows more than one athlete, and it is blocked for everyone while any of them is. ${error.message}`,
+          error.code,
+        );
+      }
+      throw error;
+    }
 
     await writePilotAuditEvent({
       event_type: 'update',
