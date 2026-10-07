@@ -126,6 +126,8 @@ const DEVON_TODAY = {
 let athletes: FakeAthlete[];
 let coverage: FakeCoverage[];
 let checkInsToday: Array<Record<string, unknown>>;
+/** Training-hold rows. Empty unless a test places one: most of this suite is about the check-in. */
+let holdRows: Array<Record<string, unknown>>;
 /** Every statement the route caused, in order -- so the tests can say what
  *  was read, in what order, and that nothing was written. */
 let statements: string[];
@@ -153,6 +155,7 @@ beforeEach(() => {
     // makes the soft-delete refusal a real test: there is data to leak.
     { ...MARISOL_TODAY, check_in_id: 'ci-deleted', athlete_id: 'ath-deleted', note: 'deleted athlete note' },
   ];
+  holdRows = [];
   statements = [];
 
   mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
@@ -207,6 +210,19 @@ beforeEach(() => {
         && row.checked_in_on === day) ?? null;
     }
 
+    // getActiveTrainingHold, the existing hold reader (OD-2026-10-06-024 ruling
+    // 1). The fake honours the athlete, the organization and the active status
+    // only when the statement carries them, like the tables above.
+    if (text.includes('from pilot.training_holds')) {
+      if (!text.includes("status = 'active'")) {
+        throw new Error(`hold read without the active predicate: ${text}`);
+      }
+      const [organizationId, athleteId] = params as string[];
+      return holdRows.find((row) => row.organization_id === organizationId
+        && row.athlete_id === athleteId
+        && row.status === 'active') ?? null;
+    }
+
     if (text.includes('from pilot.athletes')) {
       const liveOnly = text.includes('deleted_at is null');
       /* Both predicates come out of the statement, and the organization one by
@@ -240,10 +256,15 @@ beforeEach(() => {
     throw new Error(`unexpected SQL in this test: ${text}`);
   });
 
-  // This route has no list read. A call here means it grew one.
+  // This route has no list read. A call here means it grew one -- except the
+  // hold reader's own expiry sweep (sweepExpiredHolds), the one statement the
+  // existing reader issues that is not a select. Named here, and refused for
+  // anything else on pilot.training_holds, so it cannot quietly widen.
   mockQuery.mockImplementation(async (sql: string) => {
-    statements.push(normalize(sql));
-    throw new Error(`unexpected list query: ${normalize(sql)}`);
+    const text = normalize(sql);
+    statements.push(text);
+    if (/^update pilot\.training_holds set status = 'expired'/.test(text)) return [];
+    throw new Error(`unexpected list query: ${text}`);
   });
 });
 
@@ -546,9 +567,109 @@ describe('read only', () => {
     await readAs({ accountId: 'acct-admin', role: 'organization_admin' }, 'athlete_id=ath-rosa');
 
     expect(statements.length).toBeGreaterThan(0);
-    for (const sql of statements) {
-      expect(sql).toMatch(/^select\b/i);
+    // The only non-select is the hold reader's expiry sweep, which marks a hold
+    // whose own clock ran out as expired -- housekeeping the existing reader
+    // does on every hold read, on no athlete data.
+    const writes = statements.filter((sql) => !/^select\b/i.test(sql));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const sql of writes) {
+      expect(sql).toMatch(/^update pilot\.training_holds set status = 'expired'/);
     }
-    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledTimes(writes.length);
+  });
+});
+
+// OD-2026-10-06-024 ruling 1, "Warn only, both places": an active training hold
+// changes nothing about this read; the staff reader is told the athlete is held.
+describe('an active training hold is shown to the staff reader and blocks nothing', () => {
+  const HOLD = {
+    organization_id: 'org-1',
+    hold_id: 'hold-1',
+    athlete_id: 'ath-marisol',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    reason_text: 'LEFT KNEE: SUSPECTED MENISCUS TEAR',
+    athlete_explanation: 'Your knee needs a rest from contact.',
+    lift_condition_text: 'Cleared by the doctor.',
+    placed_by_account_id: 'coach-record',
+    placed_by_role: 'coach',
+    placed_at: '2026-09-20 10:00:00+00',
+    expires_at: null,
+    status: 'active',
+  };
+
+  test.each([
+    ['the coach of record', { accountId: 'coach-record' }],
+    ['a covering coach', { accountId: 'coach-covering' }],
+    ['an organization admin', { accountId: 'acct-admin', role: 'organization_admin' as const }],
+    ['an admin (legacy role name)', { accountId: 'acct-admin', role: 'admin' as const }],
+  ])('%s gets the check-in unchanged, plus the hold facts', async (_who, caller) => {
+    holdRows = [HOLD];
+
+    const { status, payload } = await readAs(caller);
+
+    expect(status).toBe(200);
+    expect(payload.today).toEqual(MARISOL_TODAY);
+    expect(payload.hold_warning).toEqual({
+      hold_id: 'hold-1',
+      scope: 'contact_only',
+      reason_category: 'medical',
+      athlete_explanation: 'Your knee needs a rest from contact.',
+      lift_condition_text: 'Cleared by the doctor.',
+      expires_at: null,
+    });
+    expect(JSON.stringify(payload)).not.toContain('MENISCUS');
+  });
+
+  test('the warning shows even when there is no check-in today: held is not the same as checked in', async () => {
+    holdRows = [{ ...HOLD, athlete_id: 'ath-rosa' }];
+
+    const { status, payload } = await readAs({ accountId: 'coach-record' }, 'athlete_id=ath-rosa');
+
+    expect(status).toBe(200);
+    expect(payload.today).toBeNull();
+    expect(payload.hold_warning).toMatchObject({ hold_id: 'hold-1' });
+  });
+
+  test('no hold: the body is exactly { today }, with no hold key', async () => {
+    const { payload } = await readAs({ accountId: 'coach-record' });
+    expect(Object.keys(payload)).toEqual(['today']);
+  });
+
+  test('a lifted hold, and another athlete\'s hold, show nothing', async () => {
+    holdRows = [{ ...HOLD, status: 'lifted' }, { ...HOLD, hold_id: 'hold-2', athlete_id: 'ath-devon' }];
+
+    const { payload } = await readAs({ accountId: 'coach-record' });
+
+    expect(Object.keys(payload)).toEqual(['today']);
+  });
+
+  test('a hold that cannot be read does not fail the check-in read and does not read as "no hold"', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const original = mockQueryOne.getMockImplementation()!;
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (normalize(sql).includes('from pilot.training_holds')) throw new Error('connection reset');
+      return original(sql, params);
+    });
+
+    const { status, payload } = await readAs({ accountId: 'coach-record' });
+
+    expect(status).toBe(200);
+    expect(payload.today).toEqual(MARISOL_TODAY);
+    expect(payload.hold_warning).toBe('unreadable');
+    errors.mockRestore();
+  });
+
+  test('a caller refused at the gate gets no hold fact either', async () => {
+    holdRows = [HOLD];
+
+    const unrelated = await readAs({ accountId: 'coach-unrelated' });
+    const athlete = await readAs({ accountId: 'acct-1', role: 'athlete', athleteId: 'ath-marisol' });
+
+    for (const refused of [unrelated, athlete]) {
+      expect(refused.status).toBe(403);
+      expect(JSON.stringify(refused.payload)).not.toMatch(/hold/i);
+    }
+    expect(statements.some((sql) => sql.includes('pilot.training_holds'))).toBe(false);
   });
 });
