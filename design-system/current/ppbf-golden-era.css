@@ -1101,6 +1101,29 @@
    unreadable page; the boundary above is drawn so that it cannot happen again,
    and every ratio quoted below is measured rather than assumed.
 
+   2026-10-07, SCREEN 3a (UI build lane). Jason's look for the coach and
+   athlete screens -- "cotton old brown leather cartoonist gages and buttons"
+   (2026-10-03) -- brought to this page WITHOUT moving any ground's polarity:
+   the board's dark face is old brown leather where it was stained wood, and
+   the three light regions (header, script cards, plan strips) are tan cotton
+   canvas where they were aged paper, each with a stitched edge. Dark stays
+   dark and light stays light, so the boundary in the paragraph above holds
+   exactly as written and no locked panel changes ground. Where the notes
+   below say "wood" or "paper" they describe the 004A pass; the rules are the
+   same rules with new materials. Inks on canvas are measured against the
+   darkest pixel the canvas can paint: its darkest stop (#BCA279) where both
+   weave threads cross, which composites to #B39972. There: display 6.3, body
+   5.4, eyebrow 5.0, label 5.0 to 1. The first cut quoted a single-thread
+   pixel and left label and eyebrow at 4.3 and 4.0 on the crossing (Codex
+   review, #1331); the weave was thinned and both inks darkened for it.
+   Type and tap floors come from data-surface="kiosk" (the app's one-attribute
+   device for a gym-floor surface) on this page's own parts -- header, notices,
+   script list, plan -- and not on the live run, which shares the <main>; the
+   plaque is raised here because that device does not hold it. The "paper"
+   ratios quoted further down are the 004A pass's; the canvas ratios above
+   replace them. Markup touched in this pass: that attribute and size classes
+   on lines that carried no floored voice. Still no control or word changed.
+
    LOCKED RED: nothing below names --locked, --stamp-red or #A81E22.
    FUNCTIONAL_CHANGES: NONE. One class on the page wrapper is the only markup
    touched; no control is added, removed, renamed or re-labelled. The controls
@@ -1151,7 +1174,7 @@
   position: relative;
   padding: var(--s5);
   border-radius: var(--r-lg);
-  background-color: var(--wood-900);
+  background-color: #3A2313;
   background-image:
     /* four rivets, one per corner plate */
     radial-gradient(circle at 13px 13px, var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
@@ -1168,9 +1191,11 @@
     linear-gradient(315deg, var(--brass-600) 0 34px, transparent 34px),
     /* the lamp landing on the top of the board, then the stained face */
     radial-gradient(78% 34% at 50% -4%, rgba(255,226,168,.16), transparent 72%),
-    repeating-linear-gradient(92deg,
-      rgba(0,0,0,.20) 0 2px, transparent 2px 8px, rgba(0,0,0,.11) 8px 10px),
-    linear-gradient(172deg, #3A2415 0%, #2A1A0E 54%, #1B1108 100%);
+    repeating-radial-gradient(circle at 30% 30%, rgba(0,0,0,.06) 0 2px, transparent 2px 5px),
+    /* Old brown leather, kept as dark as the stained face it replaces: the
+       failure panels that sit straight on the board frame themselves in a red
+       keyline, and a lighter hide took that keyline from about 2.3:1 to 1.4. */
+    linear-gradient(170deg, #4A2D19 0%, #3A2313 55%, #2C1A0E 100%);
   background-repeat: no-repeat;
   background-size:
     34px 34px, 34px 34px, 34px 34px, 34px 34px,
@@ -1185,6 +1210,9 @@
     inset 0 1px 0 rgba(231,200,138,.20),
     inset 0 -3px 10px rgba(0,0,0,.62),
     0 14px 34px rgba(0,0,0,.62);
+  /* the stitch line of a leather panel, inside the bronze rim */
+  outline: 2px dashed rgba(231,200,138,.42);
+  outline-offset: -11px;
 }
 
 /* The clip, straddling the top edge. It is the one element that makes this
@@ -1258,15 +1286,17 @@
 .ge-scripts article,
 .ge-scripts ol[aria-label="Session blocks, in the order they run"] > li {
   color: #33260F;
-  background-color: #E4CFA2;
+  background-color: #C4AB81;
   background-image:
-    /* the fibre and the foxing of a sheet that has lived in a gym bag */
-    repeating-linear-gradient(97deg, rgba(120,88,40,.05) 0 2px, transparent 2px 6px),
-    radial-gradient(72% 60% at 18% 8%, rgba(255,247,224,.55), transparent 66%),
-    radial-gradient(60% 70% at 92% 96%, rgba(126,92,44,.20), transparent 70%),
-    linear-gradient(168deg, #EBDAB4 0%, #E2CDA0 58%, #D8C094 100%);
+    /* the weave of cotton duck: warp and weft, one thread in three */
+    repeating-linear-gradient(0deg, rgba(60,40,20,.04) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(60,40,20,.035) 0 1px, transparent 1px 3px),
+    linear-gradient(168deg, #CDB58D 0%, #C4AB81 58%, #BCA279 100%);
   border: 1px solid var(--brass-700);
   border-radius: var(--r-md);
+  /* a stitched patch, not a loose sheet */
+  outline: 2px dashed rgba(70,45,22,.5);
+  outline-offset: -5px;
   box-shadow:
     inset 0 1px 0 rgba(255,250,232,.7),
     inset 0 -2px 6px rgba(122,88,42,.18),
@@ -1304,7 +1334,21 @@
 .ge-scripts > div > header .t-muted,
 .ge-scripts article .t-muted,
 .ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-muted {
-  color: #52401F;
+  color: #3A2C14;
+}
+
+/* THE LABEL VOICE ON THE DARK PLAN SECTION. .t-label is --bone-400 by
+   default, which the leather's lit corner takes under 4.5:1 ("Priorities, in
+   order", the delivery-history labels). Two rungs up, the same lift the file
+   and board rooms already give this voice. One class lighter than the canvas
+   rules above, so a strip inside the section keeps its dark ink. */
+.ge-scripts .mat-leather .t-label {
+  color: var(--bone-200);
+}
+/* A sentence in the data voice (the delivery summary) takes the floor's 24px
+   with the voice's tight 1.15 leading, which is set for single figures. */
+.ge-scripts .mat-leather ul .t-data {
+  line-height: 1.35;
 }
 
 /* .t-eyebrow is the metal voice rather than an ink one -- it pins
@@ -1312,7 +1356,7 @@
    dark end of the same metal, so it still reads as the metal voice rather than
    collapsing into body copy. 5.7:1 on the darkest stop of the paper. */
 .ge-scripts > div > header .t-eyebrow {
-  color: #4A3410;
+  color: #3D2A0C;
   text-shadow: 0 1px 0 rgba(255,250,232,.5);
 }
 
@@ -1359,7 +1403,18 @@
   box-shadow:
     inset 0 1px 0 rgba(255,250,232,.6),
     0 1px 2px rgba(0,0,0,.4);
+  /* 13px in the legacy sheet; a plate read at arm's length takes the floor. */
+  font-size: var(--t-md);
 }
+
+/* A CARD NEVER OUTGROWS ITS COLUMN. With the plaque at the type floor, a
+   card's title-and-plate row is wider than a 390px phone's column, and a grid
+   item will not shrink below its content unless told it may: the card spilled
+   11px past the board. The card may shrink, the row may wrap, and a long
+   script name breaks rather than pushing the plate out. */
+.ge-scripts article { min-width: 0; }
+.ge-scripts article > div:first-child { flex-wrap: wrap; }
+.ge-scripts article h3 { min-width: 0; overflow-wrap: anywhere; }
 
 /* THE STRIPS. A block in the plan is a slip clipped to the board: paper from
    the seam above, a bronze rule down the leading edge where the reference
@@ -1435,8 +1490,10 @@
    2.4.7. */
 .ge-scripts > div > header .btn--ghost:focus-visible,
 .ge-scripts article .btn--ghost:focus-visible {
+  /* A dark ring, not var(--focus): the brass ring is 1.1-1.2:1 against the
+     canvas these plates sit on (it was 1.28 on paper). 7:1 here. */
   box-shadow:
-    var(--focus),
+    0 0 0 3px #241A0B,
     inset 0 1px 0 rgba(255,250,232,.7),
     inset 0 -2px 4px rgba(122,88,42,.22);
 }
