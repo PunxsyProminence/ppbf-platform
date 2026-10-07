@@ -44,7 +44,6 @@ interface VideoSessionSource {
   athlete_id: string | null;
   uploaded_by_account_id: string;
   created_at: string;
-  updated_at?: string;
   scan_state?: string;
 }
 
@@ -123,11 +122,14 @@ export async function toFamilyVideoPlayback(
   streamUrl: string,
 ): Promise<FamilyVideoPlayback> {
   const text = row.notes.trim();
+  // created_at, not updated_at: the note is written once, at upload, and
+  // updated_at moves on every status change afterwards (scan, release,
+  // archive), which would date Monday's note to Tuesday's release.
   const coachNotes: FamilyCoachNote[] = text
     ? [{
         text,
         coach_name: await familyCoachName(organizationId, row.uploaded_by_account_id),
-        noted_at: row.updated_at ?? row.created_at,
+        noted_at: row.created_at,
       }]
     : [];
   return {

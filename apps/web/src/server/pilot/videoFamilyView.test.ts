@@ -87,7 +87,7 @@ describe('the family playback', () => {
 
     expect(playback.stream_url).toBe('https://blob.example/sas');
     expect(playback.coach_notes).toEqual([
-      { text: 'Keep the guard up on the way out.', coach_name: 'Coach Jane', noted_at: '2026-07-31T00:00:00.000Z' },
+      { text: 'Keep the guard up on the way out.', coach_name: 'Coach Jane', noted_at: '2026-07-30T00:00:00.000Z' },
     ]);
     expect(mockCoachName).toHaveBeenCalledWith('org-1', 'coach-acct-1');
     expect(JSON.stringify(playback)).not.toContain('coach-acct-1');
@@ -102,10 +102,10 @@ describe('the family playback', () => {
     expect(mockCoachName).not.toHaveBeenCalled();
   });
 
-  test('a row without updated_at dates the note from created_at', async () => {
+  test('the note is dated from created_at, not updated_at, which moves on every status change', async () => {
     mockQueryOne.mockResolvedValueOnce({ deleted_at: null });
     mockCoachName.mockResolvedValueOnce('Coach Jane');
-    const playback = await toFamilyVideoPlayback('org-1', row({ updated_at: undefined }), 'u');
+    const playback = await toFamilyVideoPlayback('org-1', row({ updated_at: '2026-09-01T00:00:00.000Z' }), 'u');
     expect(playback.coach_notes[0]!.noted_at).toBe('2026-07-30T00:00:00.000Z');
   });
 });
