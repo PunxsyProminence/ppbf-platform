@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { DrillDifficulty } from './drills';
+import { assertDrillMeetsCueRule, type DrillDifficulty } from './drills';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { requireEvidenceReviewer } from './shadowLibrary';
@@ -365,6 +365,21 @@ export async function adoptDrillChangeProposal(input: {
     }
 
     const merged = applyProposedChange(current, proposal.proposed_change);
+
+    // THE CUE RULE ON A NEW VERSION (OD-2026-10-06-026). A change that touches
+    // the cues or the category must not leave a technique drill without a cue.
+    // A change that touches neither keeps whatever the drill already had, so an
+    // existing cue-less drill is not blocked from an unrelated revision.
+    const changes = proposal.proposed_change as Record<string, unknown>;
+    if (Object.hasOwn(changes, 'cues') || Object.hasOwn(changes, 'category')) {
+      await assertDrillMeetsCueRule({
+        organizationId: input.organizationId,
+        name: merged.name,
+        category: merged.category,
+        cues: Array.isArray(merged.cues) ? merged.cues.filter((cue) => typeof cue === 'string') : [],
+        referenceDrillId: current.reference_drill_id,
+      });
+    }
     // Generated here, client-side, rather than read back after the INSERT --
     // this lets the old row be deactivated FIRST and still name its successor.
     const newDrillId = randomUUID();

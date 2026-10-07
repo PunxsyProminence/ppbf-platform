@@ -4,13 +4,16 @@ import { GET, PATCH, POST } from './route';
 import {
   DrillNameTakenError,
   DrillRestoreRefusedError,
+  assertDrillMeetsCueRule,
   createDrill,
+  getDrill,
   listDrills,
   updateDrill,
 } from '@/src/server/pilot/drills';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { queryOne } from '@/src/server/pilot/db';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -23,9 +26,19 @@ jest.mock('@/src/server/pilot/drills', () => {
     ...actual,
     listDrills: jest.fn(),
     createDrill: jest.fn(),
+    getDrill: jest.fn(),
     updateDrill: jest.fn(),
+    // The rule itself runs for real (it is pure until it needs the reference
+    // drill); only the reference read behind it is stubbed.
+    assertDrillMeetsCueRule: jest.fn(actual.assertDrillMeetsCueRule),
   };
 });
+
+jest.mock('@/src/server/pilot/db', () => ({
+  query: jest.fn(async () => []),
+  queryOne: jest.fn(async () => null),
+  withTransaction: jest.fn(),
+}));
 
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
@@ -35,6 +48,8 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockListDrills = listDrills as jest.Mock;
 const mockCreateDrill = createDrill as jest.Mock;
 const mockUpdateDrill = updateDrill as jest.Mock;
+const mockGetDrill = getDrill as jest.Mock;
+const mockCueRule = assertDrillMeetsCueRule as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -82,6 +97,8 @@ beforeEach(() => {
   mockListDrills.mockResolvedValue([drill()]);
   mockCreateDrill.mockResolvedValue(drill());
   mockUpdateDrill.mockResolvedValue(drill({ active: false }));
+  // What the edit route finds before writing: a retired drill that carries a cue.
+  mockGetDrill.mockResolvedValue(drill({ active: false }));
 });
 
 afterEach(() => {
@@ -336,11 +353,129 @@ describe('POST /api/pilot/drills', () => {
     mockCreateDrill.mockRejectedValueOnce(new DrillNameTakenError('Straight Jab Retraction Snap'));
 
     const res = await POST(bodyRequest('POST', {
-      name: 'Straight Jab Retraction Snap', category: 'Striking', focus: 'x',
+      name: 'Straight Jab Retraction Snap', category: 'Striking', focus: 'x', cues: ['Elbow tucked'],
     }));
 
     expect(res.status).toBe(409);
+    expect(mockCreateDrill).toHaveBeenCalled();
     expect((await res.json()).error).toContain('Straight Jab Retraction Snap');
+  });
+});
+
+// OD-2026-10-06-026 ruling 2: a technique drill needs at least one coaching
+// cue before it can be used; a conditioning drill does not.
+describe('the cue rule on a new drill', () => {
+  test('refuses a technique drill with no cues, naming the missing cue, and writes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(bodyRequest('POST', {
+      name: 'Double Jab Entry',
+      category: 'technical',
+      focus: 'Close distance behind the jab.',
+      cues: ['   '],
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: '"Double Jab Entry" has no coaching cue. A technique drill needs at least one coaching cue before it can be used; only a conditioning drill may go without. Add a cue first.',
+      code: 'DRILL_CUE_REQUIRED',
+    });
+    expect(mockCreateDrill).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a conditioning drill with no cues is created (the exemption)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(bodyRequest('POST', {
+      name: 'Rope 3 x 3',
+      category: 'Conditioning',
+      focus: 'Three rounds on the rope.',
+    }));
+
+    expect(res.status).toBe(201);
+    expect(mockCreateDrill).toHaveBeenCalledWith(expect.objectContaining({ category: 'Conditioning', cues: undefined }));
+  });
+
+  test('a technique drill with one cue is created', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(bodyRequest('POST', {
+      name: 'Double Jab Entry',
+      category: 'technical',
+      focus: 'Close distance behind the jab.',
+      cues: ['Second jab lands as the foot does'],
+    }));
+
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('the cue rule on an edit', () => {
+  test('refuses blanking the cues of a technique drill in use, and writes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', cues: [] }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('DRILL_CUE_REQUIRED');
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test('refuses restoring a retired technique drill that has no cue', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: false, cues: [] }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('DRILL_CUE_REQUIRED');
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test('restoring a retired conditioning drill with no cue is allowed (the exemption)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: false, cues: [], category: 'conditioning' }));
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'conditioning' }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+    expect(res.status).toBe(200);
+  });
+
+  test('retiring a cue-less technique drill is allowed: the rule governs use, not history', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: false, cues: [] }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: false }));
+
+    expect(res.status).toBe(200);
+    expect(mockGetDrill).not.toHaveBeenCalled();
+    expect(mockCueRule).not.toHaveBeenCalled();
+  });
+
+  test('an edit that touches neither cues nor category leaves an existing cue-less drill alone', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockUpdateDrill.mockResolvedValueOnce(drill({ cues: [], focus: 'Reworded.' }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', focus: 'Reworded.' }));
+
+    expect(res.status).toBe(200);
+    expect(mockGetDrill).not.toHaveBeenCalled();
+    expect(mockCueRule).not.toHaveBeenCalled();
+  });
+
+  test('a drill adopted from a conditioning reference drill is exempt by that discipline', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'strength', reference_drill_id: 'drl_ref' }));
+    (queryOne as jest.Mock).mockResolvedValueOnce({ discipline: 'conditioning' });
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'strength', reference_drill_id: 'drl_ref' }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', cues: [] }));
+
+    expect(res.status).toBe(200);
+    expect(queryOne).toHaveBeenCalledWith(expect.stringContaining('from pilot.drill_library'), ['org-1', 'drl_ref']);
   });
 });
 

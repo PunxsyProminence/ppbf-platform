@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { assertDrillMeetsCueRule } from './drills';
 import { ConflictError, ValidationError } from './errors';
 import { randomUUID } from 'node:crypto';
 
@@ -218,6 +219,43 @@ export function drillNotAssignable(): ValidationError {
 }
 
 /**
+ * The cue rule on a NEW assignment (OD-2026-10-06-026 ruling 2: a technique
+ * drill needs at least one coaching cue before it can be used; conditioning
+ * does not). An active drill of this gym with no cue cannot be newly assigned
+ * unless it is conditioning. Nothing already assigned is touched, and the
+ * drill itself is not edited: the coach is told to add a cue.
+ *
+ * Read before the write rather than folded into the insert. The insert still
+ * decides whether the drill is assignable at all (same gym, active); a drill
+ * this read does not find is left to the insert to refuse as before. The
+ * drills route refuses blanking the cues of an active technique drill, so the
+ * state read here still holds when the insert runs.
+ *
+ * reference_drill_id is read through to_jsonb(d) rather than named, so this
+ * read also works on a pilot.drills built without the drill-reference-
+ * provenance migration (the fixture firewall on assignableDrillPredicate):
+ * there it reads null and the category decides, as for a hand-authored drill.
+ */
+export async function assertNewAssignmentMeetsCueRule(organizationId: string, drillId: string): Promise<void> {
+  const drill = await queryOne<{ name: string; category: string; cues: string[] | null; reference_drill_id: string | null }>(
+    `select d.name, d.category, d.cues, to_jsonb(d) ->> 'reference_drill_id' as reference_drill_id
+     from pilot.drills d
+     where ${assignableDrillPredicate('$1', '$2')}`,
+    [organizationId, drillId],
+  );
+  if (!drill) {
+    return;
+  }
+  await assertDrillMeetsCueRule({
+    organizationId,
+    name: drill.name,
+    category: drill.category,
+    cues: drill.cues ?? [],
+    referenceDrillId: drill.reference_drill_id,
+  });
+}
+
+/**
  * Records a drill assignment against a gap.
  *
  * drillId is REQUIRED and must name an active operational drill in this
@@ -241,6 +279,7 @@ export async function assignDrill(params: {
   dueDate?: string;
 }): Promise<DrillAssignment> {
   const drillId = requireAssignableDrillId(params.drillId);
+  await assertNewAssignmentMeetsCueRule(params.organizationId, drillId);
 
   // Using crypto.randomUUID for secure randomness
   const assignmentId = `assignment_${Date.now()}_${randomUUID().substring(0, 8)}`;

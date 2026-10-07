@@ -7,7 +7,9 @@ import {
   DRILL_DIFFICULTIES,
   DrillNameTakenError,
   DrillRestoreRefusedError,
+  assertDrillMeetsCueRule,
   createDrill,
+  getDrill,
   isDrillDifficulty,
   listDrills,
   updateDrill,
@@ -175,13 +177,29 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
+    const name = requireText(body.name, 'name');
+    const category = requireText(body.category, 'category');
+    const focus = requireText(body.focus, 'focus');
+    const cues = parseCues(body.cues);
+    const difficulty = parseDifficulty(body.difficulty);
+
+    // A technique drill is refused here, before anything is written, until it
+    // carries a coaching cue (OD-2026-10-06-026); conditioning is exempt.
+    await assertDrillMeetsCueRule({
+      organizationId: principal.organizationId,
+      name,
+      category,
+      cues: cues ?? [],
+      referenceDrillId: null,
+    });
+
     const drill = await createDrill({
       organizationId: principal.organizationId,
-      name: requireText(body.name, 'name'),
-      category: requireText(body.category, 'category'),
-      focus: requireText(body.focus, 'focus'),
-      cues: parseCues(body.cues),
-      difficulty: parseDifficulty(body.difficulty),
+      name,
+      category,
+      focus,
+      cues,
+      difficulty,
     });
 
     await writePilotAuditEvent({
@@ -221,15 +239,38 @@ export async function PATCH(request: NextRequest) {
       throw new Error('Unsupported active');
     }
 
+    const name = optionalText(body.name, 'name');
+    const category = optionalText(body.category, 'category');
+    const cues = parseCues(body.cues);
+    const active = body.active as boolean | undefined;
+
+    // THE CUE RULE ON AN EDIT (OD-2026-10-06-026). An edit that touches the cues
+    // or the category, or that brings a drill back, must leave a drill that is
+    // in use carrying a cue (conditioning excepted). Retiring never needs one,
+    // and an edit that touches none of those leaves an existing cue-less drill
+    // exactly as it was: nothing is deleted or rewritten behind the coach.
+    if (cues !== undefined || category !== undefined || active === true) {
+      const existing = await getDrill(principal.organizationId, drillId);
+      if (existing && (active ?? existing.active)) {
+        await assertDrillMeetsCueRule({
+          organizationId: principal.organizationId,
+          name: name ?? existing.name,
+          category: category ?? existing.category,
+          cues: cues ?? existing.cues,
+          referenceDrillId: existing.reference_drill_id,
+        });
+      }
+    }
+
     const drill = await updateDrill({
       organizationId: principal.organizationId,
       drillId,
-      name: optionalText(body.name, 'name'),
-      category: optionalText(body.category, 'category'),
+      name,
+      category,
       focus: optionalText(body.focus, 'focus'),
-      cues: parseCues(body.cues),
+      cues,
       difficulty: parseDifficulty(body.difficulty),
-      active: body.active as boolean | undefined,
+      active,
     });
 
     // An update that matched no row must not read as a successful edit, or the

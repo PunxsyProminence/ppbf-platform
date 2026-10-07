@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { cueRequiredMessage, hasCoachingCue, isConditioningLabel } from '../../lib/drillCueRule';
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 
 // pilot.drills is owned by
 // infra/azure/pilot_slice_postgres_drills_migration.sql, applied through the
@@ -182,6 +184,43 @@ export async function getDrill(organizationId: string, drillId: string): Promise
      where organization_id = $1 and drill_id = $2`,
     [organizationId, drillId],
   );
+}
+
+/**
+ * The cue rule at the server (OD-2026-10-06-026 ruling 2): a technique drill
+ * needs at least one coaching cue before it can be used; conditioning does not.
+ * Refuses with a 409 that names the missing cue. Writes nothing.
+ *
+ * Callers pass the state the drill WOULD have after the write, so a create, an
+ * edit and a restore are all judged on the result. A drill the gym already holds
+ * that breaks the rule is not touched; it is refused only when a write would
+ * make it usable (or keep it usable) while still breaking the rule.
+ *
+ * "Conditioning" is the category word for a drill the gym wrote, and the
+ * reference drill's discipline for an adopted one -- pilot.drills has no
+ * discipline of its own. The reference is read only when the cheaper tests
+ * (cues present, category says conditioning) have not already settled it.
+ */
+export async function assertDrillMeetsCueRule(drill: {
+  organizationId: string;
+  name: string;
+  category: string;
+  cues: readonly string[];
+  referenceDrillId: string | null;
+}): Promise<void> {
+  if (hasCoachingCue(drill.cues) || isConditioningLabel(drill.category)) {
+    return;
+  }
+  if (drill.referenceDrillId) {
+    const reference = await queryOne<{ discipline: string }>(
+      `select discipline from pilot.drill_library where organization_id = $1 and drill_id = $2`,
+      [drill.organizationId, drill.referenceDrillId],
+    );
+    if (reference && isConditioningLabel(reference.discipline)) {
+      return;
+    }
+  }
+  throw new ConflictError(cueRequiredMessage(drill.name), 'DRILL_CUE_REQUIRED');
 }
 
 export async function createDrill(params: {
