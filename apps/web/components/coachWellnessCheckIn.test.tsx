@@ -1303,3 +1303,86 @@ describe('the athlete\'s own coach can correct a mistyped weight (Jason 2026-10-
     expect((within(after).getByLabelText('Correct weight') as HTMLInputElement).value).toBe('131');
   });
 });
+
+// OD-2026-10-06-024 ruling 1, "Warn only, both places": a staff member reading an
+// athlete's wellness check-in is told when that athlete is under an active
+// training hold. The check-in reads exactly as before and nothing is blocked.
+// Pinned on the rendered DOM (jsdom); how it looks has not been checked.
+describe('an active training hold is shown beside the wellness check-in and blocks nothing', () => {
+  const HOLD_WARNING = {
+    hold_id: 'hold-1',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    athlete_explanation: 'Your knee needs a rest from contact.',
+    lift_condition_text: 'Cleared by the doctor.',
+    expires_at: null,
+  };
+
+  function holdNotice(): HTMLElement | undefined {
+    return within(panel()).queryAllByRole('status').find((element) => element.textContent?.includes('Active Training Hold'));
+  }
+
+  it('shows the hold facts above a check-in that still reads exactly as stored', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1', { note: JORDAN_NOTE }), hold_warning: HOLD_WARNING }));
+    await pickAthlete('Jordan P.');
+
+    const notice = holdNotice();
+    expect(notice).toBeDefined();
+    expect(notice?.textContent).toContain('CONTACT WORK is currently paused for this athlete (medical).');
+    expect(notice?.textContent).toContain('Your knee needs a rest from contact.');
+    expect(notice?.textContent).toContain('To lift it: Cleared by the doctor.');
+    // The check-in is untouched by the warning.
+    expect(measure('Energy')).not.toBe('');
+    expect(panel().textContent).toContain('Left knee is "tight" after sparring.');
+  });
+
+  it('shows the hold even when there is no check-in today', async () => {
+    await renderWorkspace(() => jsonResponse({ today: null, hold_warning: HOLD_WARNING }));
+    await pickAthlete('Jordan P.');
+
+    expect(holdNotice()).toBeDefined();
+    expect(within(panel()).getByText(NO_CHECK_IN_TODAY)).not.toBeNull();
+  });
+
+  it('a hold written without a lift condition says so rather than inventing one', async () => {
+    await renderWorkspace(() => jsonResponse({ today: null, hold_warning: { ...HOLD_WARNING, lift_condition_text: '' } }));
+    await pickAthlete('Jordan P.');
+
+    expect(holdNotice()?.textContent).toContain('To lift it: not written down — ask whoever placed the hold.');
+  });
+
+  it('no hold: nothing about a hold appears', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    expect(panel().textContent).not.toMatch(/training hold/i);
+  });
+
+  it('a hold the server could not read is said to be unknown, never "no hold"', async () => {
+    await renderWorkspace(() => jsonResponse({ today: null, hold_warning: 'unreadable' }));
+    await pickAthlete('Jordan P.');
+
+    expect(panel().textContent).toContain('Training hold: could not be read');
+    expect(panel().textContent).toContain('UNKNOWN');
+    expect(holdNotice()).toBeUndefined();
+  });
+
+  it('a malformed hold_warning is ignored rather than drawn', async () => {
+    await renderWorkspace(() => jsonResponse({ today: null, hold_warning: { scope: 'made_up', reason_category: 'x', athlete_explanation: 'y' } }));
+    await pickAthlete('Jordan P.');
+
+    expect(panel().textContent).not.toMatch(/training hold/i);
+  });
+
+  it('the hold does not follow the coach to the next athlete', async () => {
+    await renderWorkspace((athleteId) => jsonResponse(
+      athleteId === 'ath_1' ? { today: null, hold_warning: HOLD_WARNING } : { today: null },
+    ));
+    await pickAthlete('Jordan P.');
+    expect(holdNotice()).toBeDefined();
+
+    await pickAthlete('Sam R.');
+    await within(panel()).findByText(NO_CHECK_IN_TODAY);
+    expect(holdNotice()).toBeUndefined();
+  });
+});
