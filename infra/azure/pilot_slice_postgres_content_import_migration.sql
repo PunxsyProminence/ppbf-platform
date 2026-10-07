@@ -88,7 +88,8 @@
 --     migration re-applies its comment whenever it runs, so this migration
 --     sits after it in the `all` list and restates the corrected one.
 --
--- NOT HERE: field_provenance is untouched (awaiting the owner's label), and
+-- NOT HERE: field_provenance is untouched (the owner's label landed later, in
+-- drill_owner_authored_label_migration.sql), and
 -- no table is named pilot.skills (dead_schema_removal_migration.sql:53 drops
 -- that name on every `all` run).
 --

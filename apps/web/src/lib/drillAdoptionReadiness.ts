@@ -13,21 +13,28 @@
 // those. Guessing them from prose is ruled out, so they are reported as a
 // VERIFIED_MODEL_GAP instead of being approximated here.
 //
-// Two rules the corpus could support were left out on purpose, because they
-// are owner decisions, not facts: "at least one cue" (34 of the 119 seeded
-// drills have none, including 23 of the 25 conditioning drills) and "the
-// provenance must be validated" (114 of 119 are marked REQUIRES FLOOR
-// VALIDATION and nothing records a validation).
+// "At least one cue" is a rule now (OD-2026-10-06-026 ruling 2: required except
+// for conditioning drills; see drillCueRule.ts). Of the 119 seeded drills, 34
+// have no cue; 23 of those are conditioning and exempt, so 11 are not ready.
+//
+// One rule is still left out: "the provenance must be validated" (114 of 119
+// are marked REQUIRES FLOOR VALIDATION and nothing records a validation). The
+// owner ruled that a coach marks each one floor-tested first (same ruling,
+// ruling 3); the mark does not exist yet, so nothing here can test it.
 //
 // PURE and client-safe: the promote route enforces it on the server, so a
 // direct API call cannot skip it, and the coach page runs the same function to
 // show the result before anyone presses Promote.
+
+import { NO_CUE_READINESS_MESSAGE, breaksCueRule, isConditioningLabel } from './drillCueRule';
 
 export interface AdoptionReadinessInput {
   active: boolean;
   superseded_at: string | null;
   name: string;
   purpose: string;
+  /** 'conditioning' exempts the drill from the cue rule. */
+  discipline: string;
   category: string;
   difficulty: string;
   standard_setup: string;
@@ -41,6 +48,8 @@ export interface AdoptionReadinessInput {
    * the safety rule below.
    */
   stop_rules: unknown[];
+  /** The drill's cues (pilot.drill_cues rows); blank text does not count. */
+  cues: { cue_text: string }[];
 }
 
 export interface AdoptionReadiness {
@@ -89,6 +98,11 @@ export function adoptionReadiness(drill: AdoptionReadinessInput): AdoptionReadin
   // the drill's own, and they are what keeps today's 119 seeded drills
   // adoptable. contentImport/warnings.ts judges new drills the same way.
   if (drill.stop_rules.length === 0) missing.push('It has no stop rules.');
+
+  // Coaching: a technique drill needs at least one cue; conditioning does not.
+  if (breaksCueRule({ conditioning: isConditioningLabel(drill.discipline), cues: drill.cues })) {
+    missing.push(NO_CUE_READINESS_MESSAGE);
+  }
 
   return { ready: missing.length === 0, missing };
 }
