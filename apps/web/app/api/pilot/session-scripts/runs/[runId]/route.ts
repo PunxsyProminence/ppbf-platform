@@ -7,6 +7,7 @@ import {
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
+  setSessionScriptRunShowOnWall,
 } from '@/src/server/pilot/sessionScriptRuns';
 
 export const runtime = 'nodejs';
@@ -15,7 +16,7 @@ interface RouteContext {
   params: Promise<{ runId: string }>;
 }
 
-// Moving a live run: cursor, pause, resume, finish.
+// Moving a live run: cursor, pause, resume, finish, and the coach's "Show on TV" switch.
 //
 // ONE ACTION PER REQUEST, NAMED EXPLICITLY. The alternative -- a PATCH that accepts current_block_id
 // or run_state directly -- would let a client set run_state to 'completed' while leaving ended_at
@@ -24,7 +25,7 @@ interface RouteContext {
 //
 // The module underneath returns 404 for a run belonging to another coach, identical to a run that
 // does not exist, so this route cannot be used to discover other coaches' run ids.
-const ACTIONS = ['advance', 'pause', 'resume', 'finish'] as const;
+const ACTIONS = ['advance', 'pause', 'resume', 'finish', 'show_on_wall'] as const;
 type RunAction = (typeof ACTIONS)[number];
 
 const FINISH_OPTIONAL_FIELDS = [
@@ -107,6 +108,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           action === 'pause'
             ? await pauseSessionScriptRun(organizationId, accountId, runId)
             : await resumeSessionScriptRun(organizationId, accountId, runId);
+        return NextResponse.json({ run });
+      }
+
+      case 'show_on_wall': {
+        // An explicit target value, not a toggle: a retried "turn it off" must never turn it back
+        // on. Only a real boolean is accepted -- "false" as a string would be truthy somewhere.
+        if (typeof record.show !== 'boolean') {
+          return badRequest('show:expected true|false');
+        }
+        const extras = Object.keys(record).filter((k) => !['action', 'show'].includes(k));
+        if (extras.length > 0) {
+          return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+        }
+        const run = await setSessionScriptRunShowOnWall(organizationId, accountId, runId, record.show);
         return NextResponse.json({ run });
       }
 
