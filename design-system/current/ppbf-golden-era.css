@@ -3777,6 +3777,105 @@
   color: #1d150b;
 }
 
+/* THE FAMILY HUB (components/ParentHub.tsx), screen 4a of the UI build lane.
+   Jason's look for these screens -- "cotton old brown leather cartoonist gages
+   and buttons" (2026-10-03) -- brought to the guardian's hub WITHOUT moving
+   any ground's polarity. The hub was already a light surface (.on-canvas with
+   .mat-paper panels) and stays one: the canvas gains its weave and a stitched
+   edge, each paper panel becomes a stitched patch, the page's name becomes a
+   brass plate, and the tab rail becomes a brown leather strap. Every voice on
+   this page was written for a light ground and keeps the ground it was
+   written for; the strap is the only dark region and carries no text of its
+   own -- each tab on it is a plate with its own face and ink.
+
+   All CSS, no images; scoped to .ge-family; no plate lines. No status token
+   here (the locked, restricted, monitor, cleared rungs or their inks): nothing
+   below is a state.
+
+   TYPE SIZE IS NOT RAISED HERE. A guardian reads this on their own phone, held
+   close; the 19.1px gym-floor size and data-surface="kiosk" are for a tablet
+   at arm's length (see app/parent/consent/page.tsx), and whether family
+   screens should take it is Jason's open question. What IS held: every tap
+   target at --tap (55px), and a focus ring that can be seen. */
+.ge-family {
+  position: relative;
+  background-image:
+    /* cotton duck: warp and weft, faint enough that the cream stays the ground
+       every ink on it was measured against (4% and 3.5% of a dark thread) */
+    repeating-linear-gradient(0deg, rgba(60,40,20,.04) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(60,40,20,.035) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% -10%, rgba(120,90,50,.08), transparent 62%);
+  background-blend-mode: normal;
+  /* the hem of the canvas */
+  outline: 2px dashed rgba(70,45,22,.45);
+  outline-offset: -7px;
+}
+
+/* A stitched patch, not a loose sheet. An outline takes no room, so no panel
+   on any tab changes size or moves. */
+.ge-family .mat-paper {
+  outline: 2px dashed rgba(70,45,22,.38);
+  outline-offset: -5px;
+}
+
+/* THE NAMEPLATE. The <h1> already is the page's name, so it becomes the plate
+   rather than a plate being built around it. Dark ink on brass, 9:1 or better
+   down the whole gradient. */
+.ge-family h1.t-command {
+  display: block;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--brass-800);
+  border-radius: var(--r-sm);
+  color: #241A0B;
+  background-image: linear-gradient(180deg, var(--brass-200) 0%, var(--brass-300) 52%, var(--brass-400) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,250,232,.72),
+    inset 0 -2px 5px rgba(78,56,20,.34),
+    0 2px 5px rgba(0,0,0,.42);
+  text-shadow: 0 1px 0 rgba(255,250,232,.5);
+  overflow-wrap: anywhere;
+}
+
+/* THE STRAP. The tab rail is old brown leather with a stitch line. It holds
+   no text of its own: every tab is a plate with its own face (paper, or brass
+   when open) and its own dark ink, set in the component. */
+.ge-family .ge-family__rail {
+  background-color: #4A2D19;
+  background-image:
+    radial-gradient(ellipse at 20% 15%, rgba(255,220,170,.08), rgba(0,0,0,0) 45%),
+    repeating-radial-gradient(circle at 30% 30%, rgba(0,0,0,.05) 0 2px, rgba(0,0,0,0) 2px 5px),
+    linear-gradient(170deg, #5A3820 0%, #4A2D19 55%, #3A2313 100%);
+  background-blend-mode: normal;
+  border: 1px solid #2C1A0D;
+  outline-color: rgba(231,200,138,.5);
+  box-shadow: inset 0 1px 0 rgba(255,220,170,.18), inset 0 -2px 6px rgba(0,0,0,.4), 0 4px 10px rgba(40,20,5,.45);
+}
+
+/* THE TAP FLOOR. The component sets its tabs at --tap; the button component
+   is 44px in the legacy sheet. Height only -- no size is set here. */
+.ge-family .btn {
+  min-height: var(--tap);
+}
+/* Two shared controls on this hub (the Help toggle and the SHADOW Chat link)
+   set their own height with a 44px utility. Matched on that utility, which is
+   the only handle they offer, so anything else in the hub that carries it is
+   raised with them. */
+.ge-family :is(a, button)[class~="min-h-[44px]"] {
+  min-height: var(--tap);
+}
+
+/* FOCUS THAT SHOWS. The app's ring is brass at 55%: about 1.2:1 against this
+   cream and its paper. A dark ring on the light ground, a bone ring on the
+   strap. The tab classes turn the outline off with a utility; this sheet is
+   unlayered, so it wins. */
+.ge-family :is(a, button, select, input, textarea, summary):focus-visible {
+  outline: 3px solid #241B12;
+  outline-offset: 2px;
+}
+.ge-family .ge-family__rail :is(a, button):focus-visible {
+  outline-color: var(--bone-100);
+}
+
 /* ==========================================================================
    GOLDEN ERA 010 — THE FILE (Research Inbox)
    ==========================================================================
