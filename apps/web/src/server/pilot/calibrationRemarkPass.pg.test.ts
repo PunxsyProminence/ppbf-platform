@@ -1185,6 +1185,8 @@ describe('opening the next pass through the application', () => {
       .toBe(second!.annotation_set_id);
     // Pass 1's own rows are untouched.
     expect((await bodyPoints.listBodyDataForSet(ORG_ID, pass1.setId)).moments).toHaveLength(3);
+  });
+});
 
 describe('the routes themselves, signed in as the annotator, against the database', () => {
   const request = (path: string, init?: { method: string; body: unknown }) =>
@@ -1251,6 +1253,59 @@ describe('the routes themselves, signed in as the annotator, against the databas
       body: { calibration_clip_id: clipId },
     }));
     expect((await reopened.json()).set.annotation_set_id).toBe(pass2.setId);
+  });
+
+  test('the whole re-mark journey through the routes: refused, opened, served empty, pressed twice', async () => {
+    const clipId = await newClip();
+    const remark = async () => {
+      const response = await workspaceRoute.POST(request('annotation-set', {
+        method: 'POST',
+        body: { calibration_clip_id: clipId, remark: true },
+      }));
+      return { status: response.status, body: await response.json() };
+    };
+    const auditRows = async () => (await db.query<{ entity_id: string; details: { pass_number: number } }>(
+      `select entity_id, details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'calibration_annotation_set'
+          and event_type = 'create' and details->>'calibration_clip_id' = $2
+        order by audit_id`,
+      [ORG_ID, clipId],
+    )).rows;
+    signIn(A);
+
+    // Nothing labelled, then a first pass still open: nothing to repeat.
+    expect((await remark()).status).toBe(403);
+    const pass1 = await firstPass(A, clipId);
+    const event1 = await punch(pass1);
+    expect((await remark()).status).toBe(403);
+    expect(await passNumbers(clipId, A)).toEqual([1]);
+
+    // Submitted: the next pass opens, empty, and is what the workspace serves.
+    await submit(pass1);
+    const opened = await remark();
+    expect(opened.status).toBe(200);
+    expect(opened.body).toMatchObject({ created: true, set: { pass_number: 2, status: 'in_progress' } });
+    const pass2Id = opened.body.set.annotation_set_id as string;
+
+    const workspace = await workspaceRoute.GET(request(`annotation-set?calibration_clip_id=${clipId}`));
+    const workspaceText = await workspace.text();
+    expect(JSON.parse(workspaceText)).toMatchObject({ set: { annotation_set_id: pass2Id }, events: [] });
+    expect(workspaceText).not.toContain(pass1.setId);
+    expect(workspaceText).not.toContain(event1);
+    expect((await bodyPointsRoute.GET(request(`body-points?annotation_set_id=${pass1.setId}`))).status).toBe(404);
+
+    // Pressed again: the same open pass, and no third.
+    const again = await remark();
+    expect(again.body).toMatchObject({ created: false, set: { annotation_set_id: pass2Id } });
+    expect(await passNumbers(clipId, A)).toEqual([1, 2]);
+
+    // One audit row for the pass that was opened, carrying its number; the
+    // refusals and the second press wrote none.
+    expect(await auditRows()).toEqual([{ entity_id: pass2Id, details: expect.objectContaining({ pass_number: 2 }) }]);
+
+    // Another annotator asking to re-mark the same clip has nothing to repeat.
+    signIn(B);
+    expect((await remark()).status).toBe(403);
   });
 
   test('with a single pass the same routes serve it as before', async () => {
