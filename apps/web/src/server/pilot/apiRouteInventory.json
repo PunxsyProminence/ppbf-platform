@@ -150,9 +150,9 @@
     "writes": true,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Authorizes only the mentor side of the pairing (:122-126), not the mentee, unlike POST which checks both.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "requireRole :109; resolves mentor_athlete_id via getMentorshipMentorAthleteId then assertActorCanAccessAthlete :126 before endMentorship (sets end date).",
+    "notes": "requireRole :109; resolves both athlete ids via getMentorshipAthleteIds then assertActorCanAccessAthlete on the mentor AND the mentee before endMentorship (sets end date). Route survey 2026-10-07 B1: previously the mentor only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -772,11 +772,11 @@
     ],
     "athleteData": true,
     "writes": false,
-    "coachReachRule": "not-applied",
+    "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Any coach can read community-service entries for any person_account_id in the gym (including athletes, possibly minors) with no coach-reach check; no person filter is required, so it returns everyone.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "requireRole community-service/route.ts:20; getCommunityServiceTotals (communityService.ts:52) lists pilot.activity_log community_service rows per person_account_id for the org with no per-athlete authorization. Person set may include non-athletes.",
+    "notes": "requireRole community-service/route.ts:20; getCommunityServiceTotals(principal) (communityService.ts) lists pilot.activity_log community_service rows per person_account_id, then for every role except organization admin keeps only people whose athlete ids (activity_log.athlete_id and accounts.athlete_id) all pass access.ts accessibleAthleteIds; a person with no athlete record is shown to organization admin only. Route survey 2026-10-07 B1.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
