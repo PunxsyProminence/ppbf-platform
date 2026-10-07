@@ -97,6 +97,9 @@ function makeRequest(): NextRequest {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks keeps implementations; dbWithCoach's must not leak from
+  // one case into the next.
+  mockQueryOne.mockReset();
   mockGetAthletesByOrganization.mockResolvedValue([]);
   mockGetAthletesForCoach.mockResolvedValue([]);
   mockGetAthleteById.mockResolvedValue(null);

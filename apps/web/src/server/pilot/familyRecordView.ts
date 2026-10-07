@@ -4,11 +4,14 @@ import type { PilotAthlete, PilotCoachReview, PilotRole } from './contracts';
 /*
  * WHAT A FAMILY RECEIVES ABOUT AN ATHLETE RECORD AND A COACH REVIEW.
  *
- * An athlete and a linked guardian read the same routes a coach does
- * (athletes/list, athletes/get, coach-reviews/list), and until this file each
- * route handed them the storage row -- `select *` -- which carries coach_id,
- * the coach's internal account id. Owner ruling OD-2026-10-06-025 ruling 2:
- * families see a coach's display name, never the internal account id.
+ * An athlete reads the same three routes a coach does (athletes/list,
+ * athletes/get, coach-reviews/list) and a linked guardian reads athletes/list;
+ * until this file each route handed them the storage row -- `select *` --
+ * which carries coach_id, the coach's internal account id. Owner ruling
+ * OD-2026-10-06-025 ruling 2: families see a coach's display name, never the
+ * internal account id. isFamilyRecordCaller admits both roles everywhere so
+ * a route that later admits guardians projects for them without a new
+ * decision here.
  *
  * Named fields, never a spread: a spread would carry every column a later
  * change adds to the row to a family without anyone deciding it should (same

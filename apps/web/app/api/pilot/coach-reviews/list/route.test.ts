@@ -45,6 +45,9 @@ const REVIEW = {
 
 afterEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks keeps implementations; dbWithCoach's must not leak from
+  // one case into the next.
+  mockQueryOne.mockReset();
 });
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
