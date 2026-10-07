@@ -46,37 +46,63 @@
 -- applied before the de-identifying purge is deployed -- which is the normal
 -- order here, because the deploy gate (pilot-verify-schema) requires every
 -- migration applied first. So this migration also installs two BEFORE
--- DELETE row triggers, on pilot.accounts and pilot.athletes, that delete
--- exactly the rows the dropped cascades deleted, from the same tables, with
--- the same downstream cascades (messages follow their session, outcomes
--- their decision, items and claims and citations their bundle and message).
+-- DELETE row triggers, on pilot.accounts and pilot.athletes, that delete the
+-- rows that STILL NAME the person, from the same tables, with the same
+-- downstream cascades (messages follow their session, outcomes their
+-- decision, items and claims and citations their bundle and message).
+--
 -- A delete that has NOT de-identified first behaves as it did before this
--- migration: nothing identified survives. The de-identifying purge, and only
--- it, declares itself with `set local ppbf.shadow_purge = 'deidentify'` in
--- the transaction that first re-keys the rows to tokens; the triggers then
--- yield, so the tokened rows and the rows Q7 holds back stay. A setting made
--- with `set local` dies with its transaction, so the declaration cannot leak.
+-- migration: nothing the dropped keys used to delete survives. (What
+-- survived before survives still: a retired athlete login's own rows,
+-- shadow_feedback, which has never had an account key, and review entries
+-- whose conversation was set null. PR C takes those.) The de-identifying
+-- purge needs no switch and declares nothing: it re-keys the rows to tokens
+-- first, in the same transaction, and a row that no longer names the person
+-- is not a row the trigger touches. The one exception is explicit data, not
+-- a setting: a session or review entry with subject_deleted_at set is held
+-- for Q7 and stays identified, with the messages of that session and the
+-- evidence those messages cite. A purge that forgets a table therefore fails
+-- SAFE -- that table's rows are deleted as they are today, never kept with
+-- the person's name on them -- and there is nothing that could leak across
+-- transactions or connections to switch the deletes off.
 --
 -- WHAT IS ADDED. On shadow_chat_sessions and shadow_human_review_queue:
 -- deidentified_at (the purge stamps it; readers and the Q7 sweep key on it;
 -- it is how a row says it no longer names anyone) and subject_deleted_at
--- (when the person the row names was deleted: a guardian's account row, and
--- the deleted_at on it, is purged a year after deletion, and the Q7 sweep two
--- years after needs the date it would otherwise have lost). A check on each
--- table ties the stamp to the token: deidentified_at is set exactly when
--- account_id is an anon_ token (and, on sessions, athlete_id is null or a
--- token), so a half-written purge cannot report a row de-identified.
+-- (when the person the row names was deleted, copied from their deleted_at:
+-- a guardian's account row, and the deleted_at on it, is purged a year after
+-- deletion, and the Q7 sweep two years after needs the date it would
+-- otherwise have lost; the trigger spares a row only while this is set). A
+-- check on each table ties the stamp to the token: deidentified_at is set
+-- exactly when account_id is an anon_<uuid> token (and, on sessions,
+-- athlete_id is null or a token). It guards the keys only: a stamped row's
+-- title, summary or metadata is the purge's scrub to get right, and nothing
+-- here checks it. Token and stamp must land in one UPDATE: a check is never
+-- deferrable.
 --
 -- Found by shape, not by name: the original keys were auto-named by
 -- Postgres. The account keys are matched by their column (conkey), not by
 -- the text of pg_get_constraintdef, which drops the `pilot.` qualifier when
 -- pilot is on the role's search_path and would then match nothing.
 -- Idempotent: a re-run finds nothing to drop and every named object present.
--- No begin;/commit; here, matching the runner-opens-the-transaction
--- convention; the runner is
+-- Every table this touches is locked up front in one statement, so the
+-- runner's lock_timeout is one wait, not a chain of them. No begin;/commit;
+-- here, matching the runner-opens-the-transaction convention; the runner is
 -- apps/web/scripts/pilot-apply-shadow-deidentify-keys-migration.mjs, whose
--- readiness query refuses if any of the dropped shapes remains, any of the
--- six deferrable keys, two triggers, four columns or two checks is missing.
+-- readiness query refuses if any of the dropped shapes remains, or any of
+-- the six deferrable keys, two enabled BEFORE ROW DELETE triggers, four
+-- columns or two checks is missing.
+
+lock table
+  pilot.accounts, pilot.athletes,
+  pilot.shadow_chat_sessions, pilot.shadow_chat_messages,
+  pilot.shadow_evidence_bundles, pilot.shadow_evidence_items,
+  pilot.shadow_evidence_claims, pilot.shadow_message_citations,
+  pilot.shadow_learning_events, pilot.shadow_recommendation_effectiveness,
+  pilot.shadow_human_review_queue, pilot.shadow_data_deletion_requests,
+  pilot.shadow_decisions, pilot.shadow_recommendations,
+  pilot.shadow_film_study_proposals
+  in access exclusive mode;
 
 do $shadow_deidentify_keys$
 declare
@@ -96,10 +122,11 @@ begin
          to_regclass('pilot.shadow_data_deletion_requests')
        )
        and c.confrelid = to_regclass('pilot.accounts')
-       and c.conkey = array(
-             select a.attnum from pg_attribute a
+       and exists (
+             select 1 from pg_attribute a
               where a.attrelid = c.conrelid and a.attname = 'account_id'
-           )::int2[]
+                and a.attnum = any(c.conkey)
+           )
   loop
     execute format('alter table %s drop constraint %I', stale.rel, stale.conname);
   end loop;
@@ -194,22 +221,28 @@ alter table pilot.shadow_human_review_queue
   add column if not exists deidentified_at timestamptz null,
   add column if not exists subject_deleted_at timestamptz null;
 
--- The stamp means the token, and the token means the stamp. `anon\_`: the
--- underscore is literal, not LIKE's any-one-character.
+-- The stamp means the token, and the token means the stamp. The token's exact
+-- shape, anon_<uuid>: a login such as anon_smith@example.test is a real
+-- person and must neither be refused nor read as de-identified.
 do $shadow_deidentify_checks$
 begin
   if not exists (select 1 from pg_constraint where conname = 'pilot_shadow_chat_sessions_deidentified_check') then
     alter table pilot.shadow_chat_sessions
       add constraint pilot_shadow_chat_sessions_deidentified_check
       check (
-        (deidentified_at is not null) = (account_id like 'anon\_%')
-        and (deidentified_at is null or athlete_id is null or athlete_id like 'anon\_%')
+        (deidentified_at is not null)
+          = (account_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        and (deidentified_at is null or athlete_id is null
+             or athlete_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
       );
   end if;
   if not exists (select 1 from pg_constraint where conname = 'pilot_shadow_human_review_queue_deidentified_check') then
     alter table pilot.shadow_human_review_queue
       add constraint pilot_shadow_human_review_queue_deidentified_check
-      check ((deidentified_at is not null) = (account_id like 'anon\_%'));
+      check (
+        (deidentified_at is not null)
+          = (account_id ~ '^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      );
   end if;
 end
 $shadow_deidentify_checks$;
@@ -218,31 +251,49 @@ comment on column pilot.shadow_chat_sessions.deidentified_at is
   'Set by the retention purge when this conversation stopped naming anyone: account_id and athlete_id are then a per-person anon_<uuid> token, never a login or an athlete record.';
 
 comment on column pilot.shadow_chat_sessions.subject_deleted_at is
-  'When the person this conversation names was deleted (their deleted_at, copied before their account row is purged): a flagged conversation is de-identified two years after this (Jason 2026-10-07).';
+  'When the person this conversation names was deleted (their deleted_at, copied before their account or athlete row is purged). While set, the purge of that person leaves this conversation, its messages and the evidence they cite identified; a flagged conversation is de-identified two years after this (Jason 2026-10-07).';
 
 comment on column pilot.shadow_human_review_queue.deidentified_at is
-  'Set when this review entry stopped naming anyone (two years after the person''s deletion, Jason 2026-10-07): account_id is then a per-person anon_<uuid> token, and summary/metadata hold no name.';
+  'Set when this review entry stopped naming anyone (two years after the person''s deletion, Jason 2026-10-07): account_id is then a per-person anon_<uuid> token; the purge that stamps it scrubs summary and metadata, which nothing here checks.';
 
 comment on column pilot.shadow_human_review_queue.subject_deleted_at is
-  'When the person this review entry names was deleted (their deleted_at, copied before their account row is purged): the entry is de-identified two years after this (Jason 2026-10-07).';
+  'When the person this review entry names was deleted (their deleted_at, copied before their account row is purged). While set, the purge of that person leaves this entry identified; it is de-identified two years after this (Jason 2026-10-07).';
 
--- The cascades, continued by hand until the purge declares that it has
--- de-identified first. Same tables, same rows, same downstream cascades as
--- the keys this migration drops: nothing a delete used to take is left.
+-- The cascades, continued by hand for every row that still names the person.
+-- A row the purge has re-keyed to a token no longer matches; a session or
+-- review entry held for Q7 (subject_deleted_at set) is spared, with the
+-- session's messages and the evidence those messages cite. Order: sessions
+-- first (their messages, claims and citations follow by cascade), then
+-- bundles (items follow), so what remains with the person's key is held.
 create or replace function pilot.shadow_rows_follow_account()
 returns trigger
 language plpgsql
 as $pilot_shadow_rows_follow_account$
 begin
-  if current_setting('ppbf.shadow_purge', true) = 'deidentify' then
-    return old;
-  end if;
-  delete from pilot.shadow_chat_sessions where account_id = old.account_id;
-  delete from pilot.shadow_chat_messages where account_id = old.account_id;
-  delete from pilot.shadow_evidence_bundles where account_id = old.account_id;
+  delete from pilot.shadow_chat_sessions
+   where account_id = old.account_id and subject_deleted_at is null;
+  delete from pilot.shadow_chat_messages m
+   where m.account_id = old.account_id
+     and not exists (
+           select 1 from pilot.shadow_chat_sessions s
+            where s.conversation_id = m.conversation_id and s.subject_deleted_at is not null);
+  delete from pilot.shadow_evidence_bundles b
+   where b.account_id = old.account_id
+     and not exists (
+           select 1 from pilot.shadow_evidence_claims c
+             join pilot.shadow_chat_sessions s on s.conversation_id = c.conversation_id
+            where c.bundle_id = b.bundle_id and c.account_id = b.account_id
+              and s.subject_deleted_at is not null)
+     and not exists (
+           select 1 from pilot.shadow_message_citations c
+             join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+             join pilot.shadow_chat_sessions s on s.conversation_id = m.conversation_id
+            where c.bundle_id = b.bundle_id and c.account_id = b.account_id
+              and s.subject_deleted_at is not null);
   delete from pilot.shadow_learning_events where account_id = old.account_id;
   delete from pilot.shadow_recommendation_effectiveness where account_id = old.account_id;
-  delete from pilot.shadow_human_review_queue where account_id = old.account_id;
+  delete from pilot.shadow_human_review_queue
+   where account_id = old.account_id and subject_deleted_at is null;
   delete from pilot.shadow_data_deletion_requests where account_id = old.account_id;
   return old;
 end;
@@ -254,18 +305,29 @@ create trigger pilot_shadow_rows_follow_account
   for each row
   execute function pilot.shadow_rows_follow_account();
 
+-- Decisions, recommendations and proposals have no hold: Q5 keeps them
+-- de-identified at purge, so one that still names the child is deleted.
 create or replace function pilot.shadow_rows_follow_athlete()
 returns trigger
 language plpgsql
 as $pilot_shadow_rows_follow_athlete$
 begin
-  if current_setting('ppbf.shadow_purge', true) = 'deidentify' then
-    return old;
-  end if;
   delete from pilot.shadow_chat_sessions
-   where organization_id = old.organization_id and athlete_id = old.athlete_id;
-  delete from pilot.shadow_evidence_bundles
-   where organization_id = old.organization_id and subject_id = old.athlete_id;
+   where organization_id = old.organization_id and athlete_id = old.athlete_id
+     and subject_deleted_at is null;
+  delete from pilot.shadow_evidence_bundles b
+   where b.organization_id = old.organization_id and b.subject_id = old.athlete_id
+     and not exists (
+           select 1 from pilot.shadow_evidence_claims c
+             join pilot.shadow_chat_sessions s on s.conversation_id = c.conversation_id
+            where c.bundle_id = b.bundle_id and c.organization_id = b.organization_id
+              and s.subject_deleted_at is not null)
+     and not exists (
+           select 1 from pilot.shadow_message_citations c
+             join pilot.shadow_chat_messages m on m.message_id = c.assistant_message_id
+             join pilot.shadow_chat_sessions s on s.conversation_id = m.conversation_id
+            where c.bundle_id = b.bundle_id and c.organization_id = b.organization_id
+              and s.subject_deleted_at is not null);
   delete from pilot.shadow_decisions
    where organization_id = old.organization_id and athlete_id = old.athlete_id;
   delete from pilot.shadow_recommendations

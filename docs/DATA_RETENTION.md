@@ -83,7 +83,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` holds the date (shadow-deidentify-keys migration); the de-identification sweep is not yet built; the athlete's coincide with the 2-year athlete purge. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` exists to hold the date (shadow-deidentify-keys migration); nothing writes it yet, so today a guardian's flagged chats are still deleted at the 1-year purge; the purge-time hold and the 2-year sweep are not yet built; the athlete's coincide with the 2-year athlete purge. |
 
 ### Public interest-form inquiries
 
@@ -199,9 +199,10 @@ most of these rows with it. Five SHADOW tables (chat sessions, evidence bundles,
 recommendations, film-study proposals) no longer have that key: the shadow-deidentify-keys
 migration dropped it so the purge can keep those rows de-identified (Jason 2026-10-06: "delete
 any thing that personally Identifys the person but we keep data that [makes] the Ai and ML
-better"), and until a purge declares that it has de-identified them first (`set local
-ppbf.shadow_purge = 'deidentify'` in its transaction), the trigger `pilot_shadow_rows_follow_athlete`
-deletes them with the athlete row exactly as the key did. The same holds for the seven
+better"); the trigger `pilot_shadow_rows_follow_athlete` deletes every such row that still
+names the athlete with the athlete row, exactly as the key did (a row the purge has re-keyed to a
+token no longer names them; a conversation with `subject_deleted_at` set is held for the flagged-chat
+window, with its messages and the evidence they cite). The same holds for the seven
 account-keyed SHADOW tables (chat sessions and messages, evidence bundles, learning events,
 recommendation effectiveness, the human review queue, data-deletion requests) and
 `pilot_shadow_rows_follow_account` when a guardian's account row is purged. Pinned by
@@ -386,7 +387,7 @@ blanked to `[name]` in every turn of that gym, other children's kept AI text inc
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
 read-only production count); the token can still be matched to the retired login through its
 chat sessions and messages until those are de-identified too (**not yet built**: the sessions /
-messages / evidence / feedback / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code). A
+messages / evidence / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code; `shadow_feedback` has never had an account key and needs no migration). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
 `shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by

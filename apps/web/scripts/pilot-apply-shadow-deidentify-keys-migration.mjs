@@ -19,10 +19,10 @@ function sslConfig() {
 // The postcondition, not the statement. A remaining account or athlete key on
 // the de-identified tables would make the purge's token update fail (23503)
 // for every person; a composite evidence key left non-deferrable would fail
-// it at the first statement; a missing column would fail the stamp; a missing
-// or disabled trigger would let a delete that has not de-identified leave
-// identified rows behind; a missing check would let a half-written purge
-// report a row de-identified.
+// it at the first statement; a missing column would fail the stamp; a missing,
+// disabled, replica-only or wrongly timed trigger would let a delete that has
+// not de-identified leave identified rows behind; a missing check would let a
+// half-written purge report a row de-identified.
 //
 // The account keys are matched by their column (conkey = the attnum of
 // account_id), never by the text of pg_get_constraintdef: that text drops
@@ -39,9 +39,10 @@ export const READINESS_QUERY = `
           to_regclass('pilot.shadow_recommendation_effectiveness'), to_regclass('pilot.shadow_human_review_queue'),
           to_regclass('pilot.shadow_data_deletion_requests'))
         and c.confrelid = to_regclass('pilot.accounts')
-        and c.conkey = array(
-              select a.attnum from pg_attribute a
-               where a.attrelid = c.conrelid and a.attname = 'account_id')::int2[]) as account_keys_left,
+        and exists (
+              select 1 from pg_attribute a
+               where a.attrelid = c.conrelid and a.attname = 'account_id'
+                 and a.attnum = any(c.conkey))) as account_keys_left,
     (select count(*)::int from pg_constraint c
       where c.contype = 'f'
         and c.conrelid in (
@@ -69,7 +70,9 @@ export const READINESS_QUERY = `
       where c.contype = 'c' and c.convalidated
         and c.conname in ('pilot_shadow_chat_sessions_deidentified_check', 'pilot_shadow_human_review_queue_deidentified_check')) as stamp_checks,
     (select count(*)::int from pg_trigger t
-      where not t.tgisinternal and t.tgenabled <> 'D'
+      where not t.tgisinternal
+        and t.tgenabled in ('O', 'A')
+        and t.tgtype = 11 /* ROW (1) + BEFORE (2) + DELETE (8) */
         and ((t.tgname = 'pilot_shadow_rows_follow_account' and t.tgrelid = to_regclass('pilot.accounts'))
           or (t.tgname = 'pilot_shadow_rows_follow_athlete' and t.tgrelid = to_regclass('pilot.athletes')))) as cascade_triggers
 `;
@@ -86,9 +89,9 @@ export const READY = Object.freeze({
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
-    // Dropping a key onto pilot.accounts or pilot.athletes locks that table
-    // too; rather than queue sign-in behind a long reader, give up and let
-    // the operator re-run in a quieter moment.
+    // The migration locks every table it touches in one statement first;
+    // rather than queue sign-in behind a long reader, give up and let the
+    // operator re-run in a quieter moment.
     await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const ready = (await client.query(READINESS_QUERY)).rows[0];

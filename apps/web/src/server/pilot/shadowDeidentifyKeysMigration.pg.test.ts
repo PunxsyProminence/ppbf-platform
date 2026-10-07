@@ -12,9 +12,12 @@
  * and NO de-identifying code anywhere, the purge as deployed today (a plain
  * delete of the account or the athlete, which is all either purge path does
  * for these tables) still leaves zero rows that name the person, exactly as
- * the dropped cascades did; only a transaction that declares
- * `set local ppbf.shadow_purge = 'deidentify'` keeps them. Owner rulings:
- * Jason 2026-10-06 (de-identify, keep ML data), Q5, 2026-10-07 Q7.
+ * the dropped cascades did; a purge that re-keys the rows to tokens first
+ * keeps them (a tokened row no longer names anyone), a row held for Q7
+ * (subject_deleted_at set) is spared with the messages and evidence under
+ * it, and a table the purge forgot fails safe (deleted, never kept with the
+ * name on it). Owner rulings: Jason 2026-10-06 (de-identify, keep ML data),
+ * Q5, 2026-10-07 Q7.
  *
  * Spins up the same disposable, local-only embedded Postgres the other
  * migration suites use. It NEVER connects to production or staging.
@@ -498,60 +501,85 @@ describe('shadow-deidentify-keys migration', () => {
     expect((await client.query('select 1 from pilot.accounts where account_id = $1', [COACH])).rowCount).toBe(1);
   });
 
-  test('ORDERING: the purge as deployed in this tree, on the migrated schema, leaves no row that names a purged guardian or child', async () => {
+  test('ORDERING: the function-path purge in this tree (the same deletes as the job), on the migrated schema, leaves none of these rows naming a purged guardian or child', async () => {
     const person = await seedPerson({ deleted: true });
     expect(await identifiedRows(person)).toEqual(SEEDED);
     await dataDeletion.purgeExpiredDeletedData();
     expect(await identifiedRows(person)).toEqual({ byAccount: 0, byAthlete: 0 });
+    // PRE-EXISTING GAP, unchanged by this migration and pinned so it is not
+    // mistaken for covered: shadow_feedback has never had an account key and
+    // neither purge path touches it, so the guardian's feedback row (their
+    // email, their own comment) survives. PR C tokens it.
+    expect((await client.query('select 1 from pilot.shadow_feedback where account_id = $1', [person.guardian])).rowCount).toBe(1);
     expect((await client.query('select 1 from pilot.accounts where account_id = $1', [person.guardian])).rowCount).toBe(0);
     expect((await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, person.athleteId])).rowCount).toBe(0);
   });
 
-  test("only a transaction that declares itself the de-identifying purge keeps the rows, and its declaration dies with it", async () => {
-    const person = await seedPerson();
+  test('a purge that re-keys first keeps the rows; a Q7 hold is spared with what hangs under it; a table the purge forgot fails safe', async () => {
+    const person = await seedPerson({ deleted: true });
 
     // NEGATIVE CONTROL: re-keying one table alone, with the keys checked at
     // once, is refused -- the children still name the old key.
     await expect(
       client.query('update pilot.shadow_evidence_bundles set account_id = $1 where bundle_id = $2', ['anon_probe', person.bundleId]),
     ).rejects.toMatchObject({ code: '23503' });
-    // NEGATIVE CONTROL: the stamp without the token, and the token without the stamp, are refused.
+    // NEGATIVE CONTROL: the stamp without the token, and the token without
+    // the stamp, are refused; a login that merely starts with anon_ is neither.
     await expect(
       client.query('update pilot.shadow_chat_sessions set deidentified_at = now() where conversation_id = $1', [person.guardianConversationId]),
     ).rejects.toMatchObject({ code: '23514' });
     await expect(
-      client.query(`update pilot.shadow_human_review_queue set account_id = 'anon_probe' where account_id = $1`, [person.guardian]),
+      client.query(`update pilot.shadow_human_review_queue set account_id = 'anon_22222222-2222-4222-8222-222222222222' where account_id = $1`, [person.guardian]),
     ).rejects.toMatchObject({ code: '23514' });
+    await client.query(
+      `insert into pilot.shadow_human_review_queue (review_id, organization_id, account_id, category, severity, summary)
+       values (gen_random_uuid(), $1, 'anon_smith@example.test', 'safeguarding', 'high', 'a login that starts with anon_')`,
+      [ORG],
+    );
 
-    // The purge's shape: declare, re-key every table in one transaction with
-    // the keys checked at commit, stamp, hold back what Q7 holds back, delete
-    // the person.
+    // The purge's shape, with no switch to set: re-key every table in one
+    // transaction with the keys checked at commit (token and stamp in ONE
+    // update, a check is never deferrable), hold what Q7 holds with the
+    // person's deleted_at, forget one table on purpose, delete the person.
     const token = 'anon_00000000-0000-4000-8000-000000000000';
+    const guardianToken = 'anon_11111111-1111-4111-8111-111111111111';
     await client.query('begin');
-    await client.query("set local ppbf.shadow_purge = 'deidentify'");
     await client.query('set constraints all deferred');
-    for (const table of ['shadow_chat_sessions', 'shadow_chat_messages', 'shadow_evidence_bundles', 'shadow_evidence_items', 'shadow_evidence_claims', 'shadow_message_citations']) {
+    for (const table of ['shadow_chat_messages', 'shadow_evidence_bundles', 'shadow_evidence_items', 'shadow_evidence_claims', 'shadow_message_citations']) {
       await client.query(`update pilot.${table} set account_id = $1 where organization_id = $2 and account_id = $3`, [token, ORG, person.athleteLogin]);
     }
-    await client.query(`update pilot.shadow_chat_sessions set athlete_id = $1, deidentified_at = now(), subject_deleted_at = now() where conversation_id = $2`, [token, person.conversationId]);
+    await client.query(
+      `update pilot.shadow_chat_sessions
+          set account_id = $1, athlete_id = $1, deidentified_at = now(),
+              subject_deleted_at = (select deleted_at from pilot.athletes where organization_id = $2 and athlete_id = $3)
+        where conversation_id = $4`,
+      [token, ORG, person.athleteId, person.conversationId],
+    );
     await client.query(`update pilot.shadow_evidence_bundles set subject_id = $1 where bundle_id = $2`, [token, person.bundleId]);
     for (const table of ['shadow_decisions', 'shadow_recommendations', 'shadow_film_study_proposals']) {
       await client.query(`update pilot.${table} set athlete_id = $1 where organization_id = $2 and athlete_id = $3`, [token, ORG, person.athleteId]);
     }
-    // The guardian's flagged conversation and its review entry stay identified (Q7); the rest of their rows are tokened.
-    const guardianToken = 'anon_11111111-1111-4111-8111-111111111111';
-    for (const table of ['shadow_chat_messages', 'shadow_evidence_bundles', 'shadow_learning_events', 'shadow_recommendation_effectiveness', 'shadow_data_deletion_requests']) {
+    // The guardian: the flagged conversation and its review entry are held
+    // (Q7) with their message; the bundle, effectiveness row and deletion
+    // request are tokened; the learning event is FORGOTTEN on purpose.
+    await client.query(
+      `update pilot.shadow_chat_sessions set subject_deleted_at = (select deleted_at from pilot.accounts where account_id = $1) where conversation_id = $2`,
+      [person.guardian, person.guardianConversationId],
+    );
+    await client.query(
+      `update pilot.shadow_human_review_queue set subject_deleted_at = (select deleted_at from pilot.accounts where account_id = $1) where account_id = $1`,
+      [person.guardian],
+    );
+    for (const table of ['shadow_evidence_bundles', 'shadow_recommendation_effectiveness', 'shadow_data_deletion_requests']) {
       await client.query(`update pilot.${table} set account_id = $1 where organization_id = $2 and account_id = $3`, [guardianToken, ORG, person.guardian]);
     }
-    await client.query(`update pilot.shadow_chat_sessions set subject_deleted_at = now() where conversation_id = $1`, [person.guardianConversationId]);
-    await client.query(`update pilot.shadow_human_review_queue set subject_deleted_at = now() where account_id = $1`, [person.guardian]);
     await client.query('delete from pilot.accounts where account_id = $1', [person.guardian]);
     await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, person.athleteId]);
     await client.query('commit');
 
-    // The tokened rows and the held-back rows outlived the person.
+    // The tokened rows outlived the person.
     const kept = await client.query<{ n: string }>(
-      `select (select count(*) from pilot.shadow_chat_sessions where account_id = $1 and athlete_id = $1 and deidentified_at is not null)
+      `select (select count(*) from pilot.shadow_chat_sessions where account_id = $1 and athlete_id = $1 and deidentified_at is not null and subject_deleted_at is not null)
             + (select count(*) from pilot.shadow_chat_messages where account_id = $1)
             + (select count(*) from pilot.shadow_evidence_bundles where account_id = $1 and subject_id = $1)
             + (select count(*) from pilot.shadow_evidence_items where account_id = $1)
@@ -565,23 +593,32 @@ describe('shadow-deidentify-keys migration', () => {
     );
     expect(Number(kept.rows[0].n)).toBe(10);
     expect(Number((await client.query<{ n: string }>(
-      `select (select count(*) from pilot.shadow_chat_messages where account_id = $1)
-            + (select count(*) from pilot.shadow_evidence_bundles where account_id = $1)
-            + (select count(*) from pilot.shadow_learning_events where account_id = $1)
+      `select (select count(*) from pilot.shadow_evidence_bundles where account_id = $1)
             + (select count(*) from pilot.shadow_recommendation_effectiveness where account_id = $1)
             + (select count(*) from pilot.shadow_data_deletion_requests where account_id = $1) as n`,
       [guardianToken],
-    )).rows[0].n)).toBe(5);
-    // Still identified, on purpose, with the deadline recorded.
-    expect((await identifiedRows(person)).byAccount).toBe(2);
+    )).rows[0].n)).toBe(3);
+    // Held, on purpose: the flagged conversation, its message and the review
+    // entry, each carrying the deadline's start (the guardian was deleted
+    // 18 months ago; the account row that said so is gone now).
+    expect(await identifiedRows(person)).toEqual({ byAccount: 3, byAthlete: 0 });
+    expect((await client.query(
+      `select 1 from pilot.shadow_chat_sessions s
+        where s.conversation_id = $1 and s.account_id = $2 and s.deidentified_at is null
+          and s.subject_deleted_at between now() - interval '18 months' - interval '1 minute'
+                                      and now() - interval '18 months' + interval '1 minute'`,
+      [person.guardianConversationId, person.guardian],
+    )).rowCount).toBe(1);
     expect((await client.query(
       'select 1 from pilot.shadow_human_review_queue where account_id = $1 and deidentified_at is null and subject_deleted_at is not null',
       [person.guardian],
     )).rowCount).toBe(1);
+    // FAIL SAFE: the forgotten table's row was deleted, not kept with the name on it.
+    expect((await client.query('select 1 from pilot.shadow_learning_events where account_id = any($1::text[])', [[person.guardian, guardianToken]])).rowCount).toBe(0);
+    // The real login that merely starts with anon_ was neither refused nor touched.
+    expect((await client.query(`select 1 from pilot.shadow_human_review_queue where account_id = 'anon_smith@example.test' and deidentified_at is null`)).rowCount).toBe(1);
 
-    // The declaration was `set local`: gone with the transaction, so the
-    // next plain delete cascades again.
-    expect((await client.query<{ v: string | null }>(`select current_setting('ppbf.shadow_purge', true) as v`)).rows[0].v ?? '').toBe('');
+    // Nothing was switched: the next plain delete cascades as before.
     const another = await seedPerson();
     await client.query('delete from pilot.accounts where account_id = $1', [another.guardian]);
     await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, another.athleteId]);
