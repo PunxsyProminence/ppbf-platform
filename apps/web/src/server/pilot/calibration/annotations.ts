@@ -687,22 +687,15 @@ export async function updateAnnotationEvent(
     }
     assertVersionEventRules(context.ontology_version, fields);
 
-    // A relationship stays inside this set (the composite foreign keys hold
-    // that too) and never points at the event itself.
+    // A relationship never points at the event itself. That it stays inside
+    // this set is the composite foreign keys' to hold; their refusal is
+    // translated below.
     for (const [field, target] of [
       ['counter_against_event_id', fields.shape.counterAgainstEventId],
       ['defends_against_event_id', fields.shape.defendsAgainstEventId],
     ] as const) {
-      if (target === null) continue;
-      if (requireNonEmpty(target, field) === eventId) {
+      if (target !== null && requireNonEmpty(target, field) === eventId) {
         throw new Error(`Missing ${field}: an event cannot point at itself`);
-      }
-      const found = await client.query(
-        `select 1 from pilot.calibration_annotation_events ${where}`,
-        [input.organizationId, annotationSetId, target],
-      );
-      if (found.rows.length === 0) {
-        throw new Error(`Missing ${field}: no such event in this annotation set`);
       }
     }
 

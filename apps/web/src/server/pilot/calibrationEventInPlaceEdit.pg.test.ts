@@ -535,6 +535,27 @@ describe('an edit in place keeps the event and everything marked on it', () => {
     expect((await eventRow(set, counter)).counter_against_event_id).toBe(eventId);
   });
 
+  test('two edits of one event at once both land: the second merges over the first, not over the row it started from', async () => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    // Hold the row so both edits are in flight together, then let them go.
+    await db.query('begin');
+    try {
+      await db.query(
+        'select 1 from pilot.calibration_annotation_events where organization_id = $1 and event_id = $2 for update',
+        [set.orgId, eventId],
+      );
+      const first = edit(set, eventId, { punchType: 'rear_hook' });
+      const second = edit(set, eventId, { certainty: 'uncertain' });
+      await sleep(500);
+      await db.query('commit');
+      await Promise.all([first, second]);
+    } finally {
+      await db.query('rollback').catch(() => {});
+    }
+    expect(await eventRow(set, eventId)).toMatchObject({ punch_type: 'rear_hook', certainty: 'uncertain' });
+  });
+
   test('a field left out stays as stored; null clears an optional one', async () => {
     const set = await newSet();
     const eventId = await punch(set, { contactZone: 'head', combinationGroup: 'c', sequenceOrder: 1 });
