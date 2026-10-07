@@ -43,7 +43,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 
-import { normaliseForMatching, validateShadowRequest } from './shadowChat';
+import { classifyHighRiskTopic, normaliseForMatching, validateShadowRequest } from './shadowChat';
 
 // ---------------------------------------------------------------------------
 // FROZEN REFERENCE -- main's classifier.
@@ -596,6 +596,42 @@ function explainedByAddition(message: string, was: Verdict, is: Verdict): boolea
   return !(withheld(was) && !withheld(is)) && !(emergency(was) && !emergency(is)) && !(critical(was) && !critical(is));
 }
 
+// ---------------------------------------------------------------------------
+// NAMED REORDERING (2026-10-06, #1036 ordering lane). The emergency return
+// now comes BEFORE every one of main's returns: validateShadowRequest gains
+// one statement pair, `const emergency = emergencyReport(...)` and
+// `if (emergency) return emergency;`, undone by S1d. emergencyReport lives
+// outside the two guarded functions; it reads main's own R3 condition
+// (personal context with an urgent symptom or an acute impact concern),
+// the folded text against the true emergency signs and main's emergency
+// topic rows (shadowChat.test.ts pins those copies to the rows), and
+// answers with main's R3, field for field: the emergency text, the topic
+// classifyHighRiskTopic chose (urgent_symptom when none), the
+// urgent_personal_symptom classification.
+//
+// So a message can now part from main(f(m)) in exactly one more way: by
+// leaving through R3 where main left through R1, R2, R6 or R8 (or R3 with
+// another topic). Properties 1-3 hold against main as before: R3 withholds,
+// carries the emergency text and is critical, so nothing is released, no
+// emergency text is lost and nothing critical is downgraded. The one-way
+// checks below still run on every message; this excuse covers only the
+// "same as main, field for field" checks, and only into main's R3 shape.
+// ---------------------------------------------------------------------------
+function emergencyFirstShape(message: string): Verdict {
+  const topic = classifyHighRiskTopic(message).topic;
+  return {
+    valid: false,
+    error: EMERGENCY_TEXT,
+    highRisk: true,
+    topic: topic === 'none' ? 'urgent_symptom' : topic,
+    classification: 'urgent_personal_symptom',
+  };
+}
+function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): boolean {
+  if (!same(is, emergencyFirstShape(message))) return false;
+  return !(withheld(was) && !withheld(is)) && !(emergency(was) && !emergency(is)) && !(critical(was) && !critical(is));
+}
+
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
 
@@ -759,6 +795,10 @@ describe('the premises of the argument, read from source', () => {
     validate = undo(validate, '.test(text)', '.test(message)', 17);
     validate = undo(validate, ADDED_CANT + '|' + ADDED_EMERGENCY, '', 1);
     validate = undo(validate, ADDED_ACUTE_CANT, '', 1);
+    // The named reordering (see NAMED REORDERING above): the emergency
+    // return, placed before main's first return.
+    validate = drop(validate, 'const emergency = emergencyReport(text, hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern), classification);');
+    validate = drop(validate, 'if (emergency) return emergency;');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -1048,7 +1088,7 @@ describe('what the fold does to every UTF-16 code unit', () => {
       if (message.toLowerCase().charCodeAt(at) !== 0x03c2 || normaliseForMatching(message).toLowerCase().charCodeAt(at) !== 0x03c3) {
         wrong.push('no sigma difference: ' + seed);
       }
-      if (!same(now(message), main(normaliseForMatching(message)))) wrong.push('not main of fold: ' + seed);
+      if (!same(now(message), main(normaliseForMatching(message))) && !explainedByEmergencyFirst(message, main(message), now(message))) wrong.push('not main of fold: ' + seed);
       if (withheld(main(message)) && !withheld(now(message))) wrong.push('released: ' + seed);
       if (emergency(main(message)) && !emergency(now(message))) wrong.push('emergency lost: ' + seed);
       if (critical(main(message)) && !critical(now(message))) wrong.push('downgraded: ' + seed);
@@ -1352,8 +1392,12 @@ describe('main against the current code: every look-alike at every position of e
       'R8 high-risk fallback',
       'R9 nothing matched, allowed',
     ]);
-    // And with no look-alike in them, the current code treats every seed as main does.
-    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+    // And with no look-alike in them, the current code treats every seed as
+    // main does, but for the seeds the named reordering moves to R3: each
+    // of those is an emergency report, in main's own words, that main
+    // answered from a return above its emergency one.
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed)) && !explainedByEmergencyFirst(seed, main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual(SEEDS_MOVED_TO_R3_BY_ORDERING);
   });
 
   // Each of the eighteen look-alikes, substituted for each character of each
@@ -1386,7 +1430,7 @@ describe('main against the current code: every look-alike at every position of e
           if (critical(was) && !critical(is)) downgraded.push(show(message));
           // Step 1 of the argument, run: the current code is main applied to
           // the folded message, in every field.
-          if (!same(is, main(normaliseForMatching(message))) && !explainedByAddition(message, was, is)) notMainOfFold.push(show(message));
+          if (!same(is, main(normaliseForMatching(message))) && !explainedByAddition(message, was, is) && !explainedByEmergencyFirst(message, was, is)) notMainOfFold.push(show(message));
 
           if (!withheld(was) && withheld(is)) newlyWithheld += 1;
           if (!withheld(was) && withheld(is) && !emergency(is)) newlyWithheldWithoutEmergencyText += 1;
@@ -1446,7 +1490,7 @@ describe('main against the current code: every look-alike at every position of e
     for (const [, seed] of SEEDS) {
       for (const message of variantsOf(seed, '\uFEFF')) {
         compared += 1;
-        if (!same(main(message), now(message)) && !explainedByAddition(message, main(message), now(message))) different.push(show(message));
+        if (!same(main(message), now(message)) && !explainedByAddition(message, main(message), now(message)) && !explainedByEmergencyFirst(message, main(message), now(message))) different.push(show(message));
       }
     }
     expect(different.slice(0, 20)).toEqual([]);
@@ -1459,9 +1503,16 @@ describe('main against the current code: every look-alike at every position of e
     'He got knocked out and has to cut\uFEFFweight for my weight class',
     'chest pain just\uFEFFhappened',
     'cut weight\uFEFFfor my weight class',
-  ])('the messages the U+FEFF fold changed keep main\'s answer: %j', (message) => {
-    expect(now(message)).toEqual(main(message));
+  ])('the messages the U+FEFF fold changed keep main\'s answer, or the named reordering\'s R3: %j', (message) => {
     expect(withheld(main(message))).toBe(true);
+    // Four of the five are emergency reports; the named reordering answers
+    // them from R3 (same text, same topic, classification
+    // urgent_personal_symptom in place of the topic; the first was main's
+    // R1 and now gets the emergency text). The fifth has no acute sign and
+    // keeps main's answer.
+    if (same(now(message), main(message))) return;
+    expect(now(message)).toEqual(emergencyFirstShape(message));
+    expect(emergency(now(message)) && critical(now(message))).toBe(true);
   });
 
   // The fifth is withheld on main without the emergency text; what the
@@ -1544,19 +1595,17 @@ describe('main against the current code: every look-alike at every position of e
     }
   });
 
-  // KNOWN GAP, ON MAIN AND HERE, MOVED TO #1036. Main's first return sits
-  // above its emergency return, so an emergency report that also contains a
-  // weight-cut phrase gets the medication text and no critical
-  // classification -- with an ordinary space, on main, today. This change
-  // neither causes nor fixes that. Asserted on both sides so that it is
-  // visible, and so that it flips when #1036 reorders the returns.
-  test('KNOWN GAP, moved to #1036 -- an emergency report containing a weight-cut phrase gets the medication text, on main and here', () => {
+  // KNOWN GAP ON MAIN, CLOSED BY THE NAMED REORDERING (#1036, 2026-10-06).
+  // Main's first return sits above its emergency return, so an emergency
+  // report that also contains a weight-cut phrase got the medication text
+  // and no critical classification. The emergency return now comes first.
+  test('an emergency report containing a weight-cut phrase got the medication text on main; it gets the emergency response here', () => {
     const message = "I can't breathe and I need to lose weight quickly";
-    for (const verdict of [main(message), now(message)]) {
-      expect(withheld(verdict)).toBe(true);
-      expect(emergency(verdict)).toBe(false);
-      expect(critical(verdict)).toBe(false);
-    }
+    expect(withheld(main(message))).toBe(true);
+    expect(emergency(main(message))).toBe(false);
+    expect(critical(main(message))).toBe(false);
+    expect(now(message)).toEqual(emergencyFirstShape(message));
+    expect(emergency(now(message)) && critical(now(message))).toBe(true);
   });
 });
 
@@ -1811,6 +1860,21 @@ const RANDOM_STRINGS_TOUCHED = 19565;
 const CARRIER_COMPARISONS_FOLDED = 162;
 // The sum over the 52 seeds of (2 x length + 1).
 const SEED_FEFF_COMPARISONS = 3210;
+// The seeds that, with no look-alike in them, the named reordering answers
+// from R3 where main did not: each an emergency report in main's own
+// vocabulary (a faint, a knockout, a seizure, chest pain, "can't breathe")
+// that main answered from R1, R6 or R8 because that return came first.
+const SEEDS_MOVED_TO_R3_BY_ORDERING: readonly string[] = [
+  "I can't breathe and I need to lose weight quickly",
+  'I fainted and I can t breathe',
+  'chest pain and she got ko d',
+  "is he cleared to spar after he got ko'd",
+  'he fainted at the gym',
+  'she got knocked out',
+  "she got KO'd last round",
+  'he had a seizure',
+  'chest pain during the run',
+];
 const SEED_DIFFERENTIAL_COUNTS = {
   // 18 x 3,210.
   compared: 57780,
@@ -1836,32 +1900,40 @@ const SEED_DIFFERENTIAL_COUNTS = {
   // catches; every one is a move of a kind already listed below (R9 -> R3,
   // or topic none -> urgent_symptom under R1/R2), only more of them.
   newlyWithheld: 155,
-  // Those 83, and 48 that main withheld without the emergency text and that
-  // now get it: 12 from each of R4, R5, R6 and R7.
-  newlyEmergency: 203,
+  // Before the named reordering: those 83, and 48 that main withheld
+  // without the emergency text and that now get it, 12 from each of R4, R5,
+  // R6 and R7 -- 203. The named reordering (2026-10-06, #1036) adds every
+  // variant of the nine SEEDS_MOVED_TO_R3_BY_ORDERING in which main's
+  // true emergency sign survives the look-alike, from R1, R6 and R8: 2,364 more.
+  // newlyWithheld is UNCHANGED by it: the reordering withholds nothing in
+  // this seed set that main allowed (the educational seeds name no specific
+  // person), and the one-way checks above hold on every message.
+  newlyEmergency: 2567,
   // Messages where any field differs from main's.
-  anyFieldDiffers: 355,
-  // Those 211, by what changed: the return, or the topic under an unchanged
-  // return. These thirteen are the kinds this seed set produces, and they
-  // sum to 211. Each is of a kind Step 5 of the argument allows -- a return
-  // changes only to R3, or from R9 to R8; a topic changes only to
-  // urgent_symptom from none, or to loss_of_consciousness -- and anything
-  // of another kind would appear here as a fourteenth. Step 5 allows more
-  // combinations than these seeds produce: a topic change under R4, R5 or
-  // R7, for one, is allowed and not seeded.
+  anyFieldDiffers: 7084,
+  // By what changed: the return, or the topic under an unchanged return.
+  // These nine are the kinds this seed set produces, and they sum to
+  // anyFieldDiffers. Each is of a kind Step 5 of the argument allows, or
+  // the one kind the named reordering adds -- a return changes only to R3;
+  // a topic changes only to urgent_symptom from none, or to
+  // loss_of_consciousness -- and anything of another kind would appear
+  // here as a tenth. Before the reordering there were thirteen kinds; the
+  // reordering turned every "R6 clearance, topic -> loss_of_consciousness",
+  // "R8 ..., topic chest_pain -> loss_of_consciousness" and "R9 -> R8" move
+  // into a move to R3, and "R1, topic none -> urgent_symptom" likewise,
+  // since each of those messages carries an acute sign and no educational
+  // framing. R2's 48 topic-only moves stay: "What does can't breathe mean"
+  // names nobody, so it is a general question and still allowed.
   moves: {
-    'R1 prescription or weight cut, topic none -> urgent_symptom': 48,
+    'R1 prescription or weight cut -> R3 urgent': 714,
     'R2 educational, allowed, topic none -> urgent_symptom': 48,
     'R2 educational, allowed, topic return_to_play -> loss_of_consciousness': 11,
     'R3 urgent, topic urgent_symptom -> loss_of_consciousness': 11,
     'R4 personal health -> R3 urgent': 12,
     'R5 diagnosis -> R3 urgent': 12,
-    'R6 clearance -> R3 urgent': 12,
-    'R6 clearance, topic return_to_play -> loss_of_consciousness': 11,
+    'R6 clearance -> R3 urgent': 996,
     'R7 medication -> R3 urgent': 12,
-    'R8 high-risk fallback -> R3 urgent': 12,
-    'R8 high-risk fallback, topic chest_pain -> loss_of_consciousness': 11,
-    'R9 nothing matched, allowed -> R3 urgent': 144,
-    'R9 nothing matched, allowed -> R8 high-risk fallback': 11,
+    'R8 high-risk fallback -> R3 urgent': 5113,
+    'R9 nothing matched, allowed -> R3 urgent': 155,
   },
 };

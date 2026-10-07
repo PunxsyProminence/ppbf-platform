@@ -319,9 +319,28 @@ export async function mintUnderPlaybackConsent<T>(
   athleteIds: readonly string[],
   mint: () => T | Promise<T>,
 ): Promise<T> {
+  return writeUnderPlaybackConsent(organizationId, athleteIds, () => mint());
+}
+
+/*
+ * THE SAME CONTRACT FOR A DATABASE WRITE. The release route and the
+ * scan-review approve both set status='ready' -- the act that puts a minor's
+ * footage into circulation -- and both used to check consent on the pool and
+ * then write on the pool (audit, from #1286). A withdrawal landing between
+ * the two committed, and the release still went through on a consent that
+ * no longer stood. Here the write is handed THIS transaction's client, so it
+ * runs while the guardian links are still held FOR SHARE and withdrawMediaConsent's
+ * FOR UPDATE must wait for it. Unattributed footage names nobody, so the
+ * write runs on the pool exactly as before: `client` is then null.
+ */
+export async function writeUnderPlaybackConsent<T>(
+  organizationId: string,
+  athleteIds: readonly string[],
+  write: (client: QueryExecutor | null) => T | Promise<T>,
+): Promise<T> {
   const subjects = [...new Set(athleteIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (subjects.length === 0) {
-    return mint();
+    return write(null);
   }
   return withTransaction(async (client) => {
     // Every athlete's consent-set lock before any athlete's link rows
@@ -331,6 +350,6 @@ export async function mintUnderPlaybackConsent<T>(
     for (const athleteId of subjects) {
       await assertConsentCoversVideo(organizationId, athleteId, client);
     }
-    return mint();
+    return write(client);
   });
 }

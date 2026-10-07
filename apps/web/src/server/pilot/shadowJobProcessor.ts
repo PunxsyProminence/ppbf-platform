@@ -40,6 +40,7 @@ import {
 import type { PilotRole } from './contracts';
 import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
+import { getVideoSessionForFilmStudyJob } from './videoSessions';
 import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
@@ -424,6 +425,10 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     if (
       errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN'
       || errorCode === 'SHADOW_JOB_CONTEXT_CONTRACT_STALE'
+      // The video is no longer the one the coach asked about (archived,
+      // re-quarantined, reassigned, deleted): a person's change, not a blip.
+      || errorCode === 'SHADOW_FILM_VIDEO_NOT_FOUND'
+      || errorCode === 'SHADOW_FILM_VIDEO_NOT_READY'
       || (FILM_STUDY_CONSENT_FAILURE_CODES as readonly string[]).includes(errorCode)
     ) {
       await failJob(job, errorCode, { retryable: false });
@@ -1043,6 +1048,27 @@ async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Re
     throw new Error('SHADOW_JOB_CONTEXT_INVALID');
   }
 
+  // THE VIDEO ROW IS READ AGAIN HERE TOO (audit CL-B6). The enqueue payload
+  // froze blobPath and the video's state as they were when the coach asked;
+  // a job can wait in the queue past an archive, a re-quarantine or a
+  // reassignment. So the row is the authority at run time: it must still be
+  // this athlete's, still 'ready' (the only state Film Study reads), still
+  // Film Study media (capture_take_id null, the boundary assertVideoIsFilmStudyMedia
+  // holds at request time), and the blob read is the row's, not the payload's.
+  // A deleted athlete's footage reads as not found. Each refusal is a state a
+  // person changed on purpose, not a blip, so the job fails without retrying.
+  const requireFilmStudyVideo = async () => {
+    const row = await getVideoSessionForFilmStudyJob(organizationId, context.videoSessionId);
+    if (!row || row.athlete_id !== context.athleteId) {
+      throw new Error('SHADOW_FILM_VIDEO_NOT_FOUND');
+    }
+    if (row.status !== 'ready' || row.capture_take_id !== null) {
+      throw new Error('SHADOW_FILM_VIDEO_NOT_READY');
+    }
+    return row;
+  };
+  const video = await requireFilmStudyVideo();
+
   // Consent is read again HERE, not trusted from the request: a guardian can
   // withdraw, or narrow to photo-only, while the job waits in the queue.
   // Checked before the blob is read, so refused footage is never downloaded.
@@ -1052,13 +1078,28 @@ async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Re
 
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-film-job-'));
   try {
-    const videoBytes = await downloadPilotVideoFile(context.blobPath);
+    const videoBytes = await downloadPilotVideoFile(video.blob_path);
     const clipPath = path.join(workDir, 'source-clip');
     await fs.writeFile(clipPath, videoBytes);
 
     const extraction = await extractFrames({ clipPath, directory: workDir });
     const frames = await Promise.all(
       extraction.framePaths.map((framePath) => fs.readFile(framePath)),
+    );
+
+    // AND ONCE MORE RIGHT BEFORE THE FRAMES LEAVE (audit CL-B6). The download
+    // and extraction above take real time on a large clip, and a withdrawal
+    // that lands during them used to be caught only at the proposal write --
+    // after the child's frames had already gone to the external model. The
+    // external call cannot sit under the row lock, so this is the narrowest
+    // window the design allows: the check runs, then the call, with nothing
+    // between them but the request itself. The write-time check below still
+    // closes the rest. The row is asked again too: an archive or a
+    // re-quarantine during the download is a person's decision about this
+    // footage, and it holds here as it did before the download.
+    await requireFilmStudyVideo();
+    await asFilmStudyConsentFailure(() =>
+      assertFilmStudyConsent(organizationId, context.videoSessionId, context.athleteId),
     );
 
     const analysis = await analyzeFramesWithVision({

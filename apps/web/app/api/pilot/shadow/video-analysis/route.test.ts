@@ -44,6 +44,13 @@ jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
 jest.mock('@/src/server/pilot/shadowFilmStudy', () => ({
   isFilmStudyVisionConfigured: jest.fn(),
 }));
+// assertFilmStudyConsent reads the video's own athlete from the row (so a
+// caller naming a tag subject still asks the child the clip is filed under).
+// Here the route already passes that athlete, so the read adds nobody new.
+jest.mock('@/src/server/pilot/db', () => ({
+  ...jest.requireActual('@/src/server/pilot/db'),
+  queryOne: jest.fn(async () => ({ athlete_id: 'ATH-1' })),
+}));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionById: jest.fn(),
 }));

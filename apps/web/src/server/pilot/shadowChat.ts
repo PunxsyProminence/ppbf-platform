@@ -334,6 +334,154 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
   };
 }
 
+// THE EMERGENCY RETURN COMES FIRST (#1036 ordering, 2026-10-06).
+//
+// Three ways a real emergency missed the emergency response on main, all
+// from the ORDER of validateShadowRequest's returns, none from vocabulary:
+//
+//   1. The educational shortcut returned before the emergency check, so
+//      "What can coach do, the kid is not breathing" was allowed through to
+//      the model with no emergency line (CL-C9: "What does it mean when he
+//      passed out and can't breathe?").
+//   2. The emergency check wanted first-person context, so "he can't
+//      breathe" fell to the high-risk fallback, and urgent_symptom is not
+//      one of that fallback's three emergency topics: handoff text, no
+//      act-now line.
+//   3. The fallback read the FIRST matching topic row, so "he got dizzy and
+//      passed out" was dizziness, not loss_of_consciousness; and a clearance
+//      question above the fallback won over a faint ("he fainted, is he
+//      cleared to spar?").
+//
+// OD-2026-10-01-008 section 2 (Jason, option A): the line appears when a
+// message says a real acute event happened to a specific person, even
+// without "I" or "my"; unclear wording counts as acute; a purely general or
+// hypothetical question does not. So:
+//
+//   emergency  =  acute signs  AND NOT  (general question)
+//   acute signs = an urgent symptom, an acute impact concern, or any of the
+//                 emergency topic rows -- each tested directly, so an earlier
+//                 row (concussion, dizziness, dehydration...) cannot hide it
+//   general question = educational framing with no personal framing (the
+//                 classifier's educationalApproach) AND no specific someone
+//                 else named
+//
+// and it is checked before every other return, so neither the educational
+// shortcut, nor the prescription-or-weight-cut return ("I can't breathe and
+// I need to lose weight quickly"), nor clearance can take it. The response
+// is main's own R3: the same text, the same 'urgent_personal_symptom'
+// classification the route queues at severity critical. Nothing main
+// withheld is released by this, and nothing main sent to the emergency line
+// loses it; shadowChatSensitivity.test.ts holds that against the frozen
+// reference and names this return as its one added statement pair.
+//
+// WHICH SIGNS (overwatch, 2026-10-06, on "educate, don't restrict"): the
+// early return fires for the TRUE emergency set only -- loss of
+// consciousness, not breathing / can't breathe, chest pain, a faint,
+// unresponsive / won't wake, a collapse, a seizure -- and for anything that
+// was already an emergency on main (main's own R3 condition: personal
+// context with an urgent symptom or an acute impact concern), which now
+// merely moves above the returns that used to take it. Vomiting blood,
+// slurred speech and unequal pupils joined the set on 2026-10-07. Plain
+// urgent-symptom words with no personal context -- headache, nausea,
+// dizziness, blurry vision -- stay on their current paths: a coach writing "he has a headache"
+// gets the high-risk handoff, not the act-now line. ("after sparring" is
+// personal context on main, so "he has a headache after sparring" was
+// main's R3 already and still is.)
+
+// Main's three emergency topic rows and the 2026-10-06 row, by source,
+// so that an acute sign is seen whichever row classifyHighRiskTopic chose.
+// shadowChat.test.ts pins each to the row it copies.
+const EMERGENCY_TOPIC_PATTERNS: readonly RegExp[] = [
+  /(loss|loss\s+of|lack)\s+of\s+consciousness|unconscious|passed\s+out|knocked\s+out|\bko['’]?d\b|blacked\s+out/i,
+  /(chest|heart)\s+pain|cardiac/i,
+  /faint|syncope/i,
+  /(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope|conditioning|cardio|gas\s+tank|tank|wind|energy|pace|output|timing|rhythm|game|confidence|focus|offen[cs]e|attack|game\s?plan)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive(?!\s+to\s+(?:feedback|coaching|instructions?|corrections?|criticism|advice)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b)/i,
+];
+
+// The true emergency signs that are not topic rows: the breathing, seizure,
+// vomiting-blood, slurred-speech and unequal-pupil alternatives of main's
+// urgent_symptom vocabulary (overwatch 2026-10-07: the last three are
+// head-injury and bleed red flags, the same class as loss of
+// consciousness), with the plain-speech forms a coach types for the last
+// two. Collapse, unresponsive, won't wake and not breathing are in the last
+// topic row above; chest pain, a faint and loss of consciousness are rows
+// of their own.
+const TRUE_EMERGENCY_SIGNS = /(?:can(?:not|'t)|\bcant)\s+breath(?:e)?\b|trouble\s+breathing|seizure|convulsion|vomit(?:ing|ed|s)?\s+(?:up\s+)?blood|slurred\s+speech|speech\s+is\s+slurred|slurring\s+(?:his|her|their|the)?\s*(?:words|speech)|unequal\s+pupils?|pupils?\s+(?:are|is|look|looks)\s+(?:unequal|uneven|different\s+sizes?)|one\s+pupil\s+is\s+(?:bigger|larger|smaller)/i;
+
+// A specific someone else, as against a general subject. Carried over from
+// DRAFT #1292 (CL-C9) with its reviewer's corrections: a third-person
+// pronoun counts only when the message names no general subject ("what
+// causes a boxer to faint after his weigh-in?" is general); "the athlete",
+// "the kid", "this boxer", "the 12 year old" count only before what happened
+// to them, not as the subject of advice ("what headache signs should the
+// athlete watch for?"); a capitalised name counts before an event verb or
+// before a body part. Only read for an educationally framed message: with no
+// such framing an acute message is a report, or unclear, and both are acute
+// under the ruling.
+// Reviewer A on this PR (2026-10-06) added: coaches, parents, the corner
+// and the referee as general subjects; "they" counts only before an event
+// verb ("when they faint after weigh-ins" is general); "when he gets hit"
+// is a hypothetical; and "ours", "one of ours" and "a kid fainted" are
+// reports tacked onto a general question.
+const GENERAL_SUBJECT = /\b(?:athletes|boxers|fighters|wrestlers|kids|children|people|players|students|teens|coach(?:es)?|parents?|corner|referees?|refs?|someone|somebody|anyone|anybody|he\s+or\s+she|his\s+or\s+her|him\s+or\s+her|an?\s+(?:athlete|boxer|fighter|wrestler|kid|child|person|player|student|teen))\b/i;
+const THIRD_PERSON_PRONOUN = /\b(?:he|she|him|her|his|hers|hes|shes)\b/i;
+const HYPOTHETICAL_PRONOUN = /\b(?:when|if)\s+(?:he|she|they)\s+(?:gets?|takes?)\s+(?:hit|punched|caught|dropped|knocked)\b/i;
+const EVENT_VERB = String.raw`(?:just\s+)?(?:passed|fainted|collapsed|is|was|has|had|got|can't|cannot|cant|keeps|started|went|seems|stopped|isn't|isnt|won't|wont)`;
+const THEY_EVENT = new RegExp(String.raw`\bthey\s+${EVENT_VERB}\b`, 'i');
+const NAMED_PERSON_EVENT = new RegExp(String.raw`\b(?:the|this|that)\s+(?:(?:other|little|young)\s+|\d+\s*(?:year|yr)s?\s*old\s+)?(?:athlete|boxer|fighter|wrestler|kid|kiddo|child|student|player|teen|boy|girl|son|daughter|guy|\d+\s*(?:year|yr)s?\s*old)\s+${EVENT_VERB}\b`, 'i');
+const INDEFINITE_PERSON_EVENT = /\b(?:an?|one\s+of\s+(?:the|our|my))\s+(?:\w+\s+)?(?:athlete|boxer|fighter|wrestler|kid|kiddo|child|student|player|teen|boy|girl)\s+(?:just\s+)?(?:fainted|collapsed|passed\s+out|got\s+knocked\s+out|stopped\s+breathing|had\s+a\s+seizure)\b/i;
+const OURS = /\bours\b/i;
+// Reviewer B on this PR (2026-10-06): "someone is not breathing" is a
+// report, and a name at the start of a sentence counts as one before a
+// conjunction does ("Mike collapsed, what is happening?"); question words
+// and determiners are not names.
+const SOMEONE_EVENT = new RegExp(String.raw`\b(?:someone|somebody)\s+${EVENT_VERB}\b`, 'i');
+const CAPITALISED_NAME_EVENT = new RegExp(String.raw`(?:\b(?:when|if|and|but|that|after|because|since|so|while)\s+|(?:^|[.?!,;]\s*)(?!(?:What|When|Why|How|Is|Are|Was|Does|Did|Do|Can|Could|Should|Would|Will|Who|Where|Which|My|Our|The|This|That|If|And|But|So|He|She|It|They|Coach)\b))[A-Z][a-z]+\s+${EVENT_VERB}\b`);
+const CAPITALISED_NAME_BODY = /\b[A-Z][a-z]+'s\s+(?:neck|head|vision|eyes?|pupils?|chest|heart|speech|breathing|nose|legs?|arms?)\b/;
+
+function namesSomeoneElse(text: string): boolean {
+  return (THIRD_PERSON_PRONOUN.test(text) && !GENERAL_SUBJECT.test(text) && !HYPOTHETICAL_PRONOUN.test(text))
+    || (THEY_EVENT.test(text) && !GENERAL_SUBJECT.test(text))
+    || NAMED_PERSON_EVENT.test(text)
+    || INDEFINITE_PERSON_EVENT.test(text)
+    || SOMEONE_EVENT.test(text)
+    || OURS.test(text)
+    || CAPITALISED_NAME_EVENT.test(text)
+    || CAPITALISED_NAME_BODY.test(text);
+}
+
+// A general question that has none of the classifier's educational framing
+// words in it: a hypothetical about a general subject ("what would you do
+// if a fighter can't breathe"), an instruction to explain, "signs of",
+// "tips", "why do", "is it normal", "can X cause". With no specific person
+// named it is a general question, and keeps main's path (the high-risk
+// handoff or the fallback), not the act-now line. Reviewers A and B on this
+// PR, 2026-10-06.
+const GENERAL_FRAMING = /\b(?:what\s+(?:if|would|should)|would\s+you|should\s+(?:a|the)\s+(?:coach|corner|referee|ref)|explain|tips?|signs\s+of|symptoms\s+of|how\s+(?:common|often)|why\s+do|is\s+it\s+normal|(?:can|does|do)\s+\w+(?:\s+\w+)?\s+cause)\b/i;
+
+/**
+ * Main's R3 for a message that reports an emergency, or null. `text` is the
+ * folded message; `emergencyOnMain` is main's own R3 condition, computed by
+ * validateShadowRequest from its own predicates (personal context with an
+ * urgent symptom or an acute impact concern), so that no pattern of main's
+ * is written twice.
+ */
+function emergencyReport(text: string, emergencyOnMain: boolean, classification: HighRiskClassification): ShadowValidationResult | null {
+  if (!emergencyOnMain) {
+    const signs = TRUE_EMERGENCY_SIGNS.test(text) || EMERGENCY_TOPIC_PATTERNS.some((pattern) => pattern.test(text));
+    if (!signs) return null;
+    const generalQuestion = (classification.educationalApproach || GENERAL_FRAMING.test(text)) && !namesSomeoneElse(text);
+    if (generalQuestion) return null;
+  }
+  return {
+    valid: false,
+    error: 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.',
+    highRisk: true,
+    topic: classification.topic === 'none' ? 'urgent_symptom' : classification.topic,
+    classification: 'urgent_personal_symptom',
+  };
+}
+
 // Validate that the request aligns with SHADOW's doctrine
 export function validateShadowRequest(
   message: string,
@@ -367,6 +515,11 @@ export function validateShadowRequest(
   const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness|\bcant\s+(?:breathe|see|move)|(?:can(?:not|'t)|\bcant)\s+breath\b|(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope|conditioning|cardio|gas\s+tank|tank|wind|energy|pace|output|timing|rhythm|game|confidence|focus|offen[cs]e|attack|game\s?plan)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive(?!\s+to\s+(?:feedback|coaching|instructions?|corrections?|criticism|advice)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b))/i.test(text);
   const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t)|\bcant\s+(?:breathe|see|move|feel))/i.test(text);
   const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
+
+  // An emergency is answered before anything else can take it -- see
+  // emergencyReport above. The returns below are main's, in main's order.
+  const emergency = emergencyReport(text, hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern), classification);
+  if (emergency) return emergency;
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
   if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
