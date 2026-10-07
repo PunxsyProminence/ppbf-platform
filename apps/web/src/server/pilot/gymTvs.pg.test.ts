@@ -14,6 +14,13 @@
 //      SET NULL (column) on a composite key).
 //   6. The mint budget is counted in the database; the list never carries a hash and is scoped to
 //      the organization.
+//   7. (S2b) Sending a session to a TV: only the caller's own live, shown run; one session per TV;
+//      another coach's live session on the TV is refused; a TV in another gym is a 404.
+//   8. (S2b) The TV read: a revoked or disconnected TV gets nothing; a TV in another organization
+//      gets nothing; the serialized body never carries a field outside the allowlist -- in
+//      particular the coach's notes (what_to_say and friends), seeded on every block here so a leak
+//      would show; nothing on the TV once the run has ended or been switched off.
+//   9. (S2b) Re-pairing revokes the row the TV's previous key named.
 //
 // Spins up the same disposable, local-only embedded Postgres the other migration suites use. It
 // NEVER connects to production or staging.
@@ -29,13 +36,18 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import {
+  GYM_TV_BLOCK_FIELDS,
+  GYM_TV_SESSION_FIELDS,
   GymTvError,
   PAIR_CODE_MINT_LIMIT,
   disconnectGymTv,
   listGymTvs,
   mintGymTvPairCode,
+  readGymTvSession,
   redeemGymTvPairCode,
   resolveGymTvByDeviceKey,
+  sendRunToGymTv,
+  takeRunOffGymTv,
 } from './gymTvs';
 import { hashToken } from './security';
 
@@ -106,6 +118,8 @@ const PREREQUISITES = [
   'pilot_slice_postgres_drill_library_v3_migration.sql',
   'pilot_slice_postgres_session_scripts_migration.sql',
   'pilot_slice_postgres_session_run_state_migration.sql',
+  // show_on_wall: the TV read and the in-use check read it (S2b).
+  'pilot_slice_postgres_session_run_show_on_wall_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_gym_tvs_migration.sql';
 const RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-gym-tvs-migration.mjs');
@@ -243,6 +257,7 @@ beforeEach(async () => {
   await client.query('delete from pilot.session_script_runs');
   await client.query('delete from pilot.session_script_blocks');
   await client.query('delete from pilot.session_scripts');
+  await client.query('delete from pilot.drill_library');
 });
 
 async function readTv(tvId: string) {
@@ -253,24 +268,66 @@ async function readTv(tvId: string) {
   return r.rows[0];
 }
 
-async function seedLiveRun(org: string, coach: string, runId: string): Promise<void> {
+// Every seeded block carries the coach's four notes, each a distinct marker string, so a leak of
+// any of them into the TV payload is caught by the serialized-body assertions below.
+const COACH_NOTE_MARKERS = ['SAY-MARKER', 'EXPLAIN-MARKER', 'WATCH-MARKER', 'FIX-MARKER'] as const;
+
+async function seedLiveRun(
+  org: string,
+  coach: string,
+  runId: string,
+  options: { showOnWall?: boolean; blocks?: number } = {},
+): Promise<void> {
+  const showOnWall = options.showOnWall ?? false;
+  const blockCount = options.blocks ?? 1;
   await client.query(
-    `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
-     values ($1,$2,$2,1,$2,$3)`,
-    [org, `scr-${runId}`, coach],
+    `insert into pilot.drill_library
+       (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+        standard_setup, execution, what_good_looks_like, what_bad_looks_like)
+     values ($1,$2,$2,$3,'defence','slip','p','s','e','g','b')
+     on conflict do nothing`,
+    [org, `drl-${runId}`, `Drill for ${runId}`],
   );
   await client.query(
-    `insert into pilot.session_script_blocks
-       (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
-     values ($1,$2,$3,1,0,10,'block 1','cue')`,
-    [org, `blk-${runId}`, `scr-${runId}`],
+    `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, total_minutes, created_by_account_id)
+     values ($1,$2,$2,1,$3,$4,$5)`,
+    [org, `scr-${runId}`, `Script ${runId}`, blockCount * 10, coach],
   );
+  for (let i = 1; i <= blockCount; i += 1) {
+    await client.query(
+      `insert into pilot.session_script_blocks
+         (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label,
+          what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'drill_round',$12,'B')`,
+      [
+        org,
+        i === 1 ? `blk-${runId}` : `blk-${runId}-${i}`,
+        `scr-${runId}`,
+        i,
+        (i - 1) * 10,
+        i * 10,
+        `Block ${i} of ${runId}`,
+        ...COACH_NOTE_MARKERS,
+        `drl-${runId}`,
+      ],
+    );
+  }
   await client.query(
     `insert into pilot.session_script_runs
        (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
-        run_state, started_at, current_block_id, paused_seconds)
-     values ($1,$2,$3,1,$4,current_date,'in_progress',now(),$5,0)`,
-    [org, runId, `scr-${runId}`, coach, `blk-${runId}`],
+        run_state, started_at, current_block_id, paused_seconds, show_on_wall)
+     values ($1,$2,$3,1,$4,current_date,'in_progress',now(),$5,0,$6)`,
+    [org, runId, `scr-${runId}`, coach, `blk-${runId}`, showOnWall],
+  );
+}
+
+async function settleRun(runId: string): Promise<void> {
+  // The same shape finishSessionScriptRun writes: settled, off the TV, cursor cleared.
+  await client.query(
+    `update pilot.session_script_runs
+        set run_state = 'completed', ended_at = now(), current_block_id = null, show_on_wall = false
+      where run_id = $1`,
+    [runId],
   );
 }
 
@@ -571,6 +628,324 @@ describe('the checks and the run FK', () => {
     const row = await readTv(minted.tv_id);
     expect(row.created_by_account_id).toBeNull();
     expect(await resolveGymTvByDeviceKey(redeemed.device_key)).not.toBeNull();
+  });
+});
+
+describe('sending a session to a TV (S2b, coach side)', () => {
+  it("sends the caller's own live, shown run; the pointer and set_by are written together", async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    const tv = await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    expect(tv.current_run_id).toBe('run-1');
+    expect(tv.current_run_set_by_account_id).toBe(COACH_A);
+    expect(tv.status).toBe('paired');
+    const row = await readTv(minted.tv_id);
+    expect(row.current_run_id).toBe('run-1');
+    expect(row.current_run_set_by_account_id).toBe(COACH_A);
+    // Re-sending the same run is a no-op success.
+    expect((await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1')).current_run_id).toBe('run-1');
+  });
+
+  it("another coach's run is the same 404 as a missing one, and nothing is written", async () => {
+    const { minted } = await pairedTv();
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    await seedLiveRun(ORG_A, 'acct-tv-coach-a2', 'run-other', { showOnWall: true });
+    await expect(sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-other')).rejects.toMatchObject({ status: 404, code: 'SESSION_RUN_NOT_FOUND' });
+    await expect(sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-missing')).rejects.toMatchObject({ status: 404, code: 'SESSION_RUN_NOT_FOUND' });
+    expect((await readTv(minted.tv_id)).current_run_id).toBeNull();
+  });
+
+  it('a run that is not live, or not switched on with Show on TV, is refused', async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-off', { showOnWall: false });
+    await expect(sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-off')).rejects.toMatchObject({ status: 409, code: 'SESSION_RUN_NOT_ON_TV' });
+    await settleRun('run-off');
+    await expect(sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-off')).rejects.toMatchObject({ status: 409, code: 'SESSION_RUN_NOT_LIVE' });
+    expect((await readTv(minted.tv_id)).current_run_id).toBeNull();
+  });
+
+  it('a pending or disconnected TV is refused, and a TV in another organization is a 404', async () => {
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    const pending = await mintGymTvPairCode(ORG_A, COACH_A, 'Pending');
+    await expect(sendRunToGymTv(ORG_A, COACH_A, pending.tv_id, 'run-1')).rejects.toMatchObject({ status: 409, code: 'TV_NOT_PAIRED' });
+    const { minted } = await pairedTv();
+    await disconnectGymTv(ORG_A, minted.tv_id);
+    await expect(sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1')).rejects.toMatchObject({ status: 409, code: 'TV_NOT_PAIRED' });
+    const other = await pairedTv(ORG_B, COACH_B, 'Other gym');
+    await expect(sendRunToGymTv(ORG_A, COACH_A, other.minted.tv_id, 'run-1')).rejects.toMatchObject({ status: 404, code: 'TV_NOT_FOUND' });
+    expect((await readTv(other.minted.tv_id)).current_run_id).toBeNull();
+  });
+
+  it("one session per TV: a TV showing another coach's live session is TV_IN_USE until that run ends or is switched off", async () => {
+    const { minted } = await pairedTv();
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    await seedLiveRun(ORG_A, COACH_A, 'run-a', { showOnWall: true });
+    await seedLiveRun(ORG_A, 'acct-tv-coach-a2', 'run-a2', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-a');
+
+    await expect(sendRunToGymTv(ORG_A, 'acct-tv-coach-a2', minted.tv_id, 'run-a2')).rejects.toMatchObject({ status: 409, code: 'TV_IN_USE' });
+    await expect(takeRunOffGymTv(ORG_A, 'acct-tv-coach-a2', minted.tv_id)).rejects.toMatchObject({ status: 409, code: 'TV_IN_USE' });
+    expect((await readTv(minted.tv_id)).current_run_id).toBe('run-a');
+
+    // Coach A switches it off the TV: the TV is free, and the stale pointer is replaced.
+    await client.query(`update pilot.session_script_runs set show_on_wall = false where run_id = 'run-a'`);
+    const taken = await sendRunToGymTv(ORG_A, 'acct-tv-coach-a2', minted.tv_id, 'run-a2');
+    expect(taken.current_run_id).toBe('run-a2');
+    expect(taken.current_run_set_by_account_id).toBe('acct-tv-coach-a2');
+
+    // And once that run ends, anyone on staff may clear the leftover pointer.
+    await settleRun('run-a2');
+    const cleared = await takeRunOffGymTv(ORG_A, COACH_A, minted.tv_id);
+    expect(cleared.current_run_id).toBeNull();
+    expect(cleared.current_run_set_by_account_id).toBeNull();
+  });
+
+  it('a run that settles while the send is in flight is refused, never stored (run row lock + atomic re-check)', async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    // The finishing coach holds the run row, the way finishSessionScriptRun's UPDATE would, while
+    // the send arrives. The send must wait on that lock and then see the settled row.
+    await client.query('begin');
+    await client.query(`select 1 from pilot.session_script_runs where run_id = 'run-1' for update`);
+    const sending = sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.query(
+      `update pilot.session_script_runs
+          set run_state = 'completed', ended_at = now(), current_block_id = null, show_on_wall = false
+        where run_id = 'run-1'`,
+    );
+    await client.query('commit');
+    await expect(sending).rejects.toMatchObject({ status: 409, code: 'SESSION_RUN_NOT_LIVE' });
+    expect((await readTv(minted.tv_id)).current_run_id).toBeNull();
+  });
+
+  it('two coaches sending to the same TV at once: exactly one wins (row lock)', async () => {
+    const { minted } = await pairedTv();
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    await seedLiveRun(ORG_A, COACH_A, 'run-a', { showOnWall: true });
+    await seedLiveRun(ORG_A, 'acct-tv-coach-a2', 'run-a2', { showOnWall: true });
+    const results = await Promise.allSettled([
+      sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-a'),
+      sendRunToGymTv(ORG_A, 'acct-tv-coach-a2', minted.tv_id, 'run-a2'),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(refused.reason).toMatchObject({ status: 409, code: 'TV_IN_USE' });
+  });
+
+  it('the owner takes their session off; clearing an empty TV is a no-op; set_by never outlives the run', async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    const off = await takeRunOffGymTv(ORG_A, COACH_A, minted.tv_id);
+    expect(off.current_run_id).toBeNull();
+    expect(off.current_run_set_by_account_id).toBeNull();
+    const row = await readTv(minted.tv_id);
+    expect(row.current_run_id).toBeNull();
+    expect(row.current_run_set_by_account_id).toBeNull();
+    expect((await takeRunOffGymTv(ORG_A, COACH_A, minted.tv_id)).current_run_id).toBeNull();
+    await expect(takeRunOffGymTv(ORG_B, COACH_B, minted.tv_id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('the Paired TVs list reports a run only while it is live and shown', async () => {
+    const { minted } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    expect((await listGymTvs(ORG_A))[0]).toMatchObject({ current_run_id: 'run-1', current_run_set_by_account_id: COACH_A });
+    await settleRun('run-1');
+    expect((await listGymTvs(ORG_A))[0]).toMatchObject({ current_run_id: null, current_run_set_by_account_id: null });
+  });
+});
+
+describe('the TV read (S2b, TV side)', () => {
+  it('a paired TV with nothing sent to it gets the empty shape, and its name only', async () => {
+    const { redeemed } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    expect(await readGymTvSession(redeemed.device_key)).toEqual({ tv: { tv_name: 'Gym main' }, session: null });
+  });
+
+  it('a live, shown session on the TV: exactly the allowlisted fields, and nothing of the coach or anyone else', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true, blocks: 3 });
+    await client.query(
+      `update pilot.session_script_runs set started_at = now() - interval '12 minutes', current_block_id = 'blk-run-1-2' where run_id = 'run-1'`,
+    );
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+
+    const read = await readGymTvSession(redeemed.device_key);
+    expect(read).not.toBeNull();
+    expect(Object.keys(read!).sort()).toEqual(['session', 'tv']);
+    expect(Object.keys(read!.tv)).toEqual(['tv_name']);
+    const session = read!.session!;
+    // SPELLED OUT, not read from the module's own constant: a field added to the constant and the
+    // projection together must still fail here (reviewer B). The constant is then checked against
+    // this list, so the two cannot drift apart silently either.
+    const SESSION_FIELDS = [
+      'blocks', 'current_block', 'elapsed_seconds', 'is_paused', 'next_block', 'run_id',
+      'script_name', 'server_time', 'started_at', 'total_minutes',
+    ];
+    const BLOCK_FIELDS = [
+      'block_id', 'block_kind', 'block_label', 'block_order', 'drill_name', 'end_offset_min',
+      'scale_level', 'start_offset_min',
+    ];
+    expect([...GYM_TV_SESSION_FIELDS].sort()).toEqual(SESSION_FIELDS);
+    expect([...GYM_TV_BLOCK_FIELDS].sort()).toEqual(BLOCK_FIELDS);
+    expect(Object.keys(session).sort()).toEqual(SESSION_FIELDS);
+    expect(session.blocks).toHaveLength(3);
+    for (const block of session.blocks) {
+      expect(Object.keys(block).sort()).toEqual(BLOCK_FIELDS);
+    }
+    expect(Object.keys(session.current_block!).sort()).toEqual([...BLOCK_FIELDS, 'seconds_to_scheduled_end'].sort());
+    expect(Object.keys(session.next_block!).sort()).toEqual(BLOCK_FIELDS);
+
+    expect(session).toMatchObject({
+      run_id: 'run-1',
+      script_name: 'Script run-1',
+      total_minutes: 30,
+      is_paused: false,
+      current_block: { block_id: 'blk-run-1-2', block_order: 2, block_kind: 'drill_round', drill_name: 'Drill for run-1', scale_level: 'B', start_offset_min: 10, end_offset_min: 20 },
+      next_block: { block_id: 'blk-run-1-3', block_order: 3 },
+    });
+    // 12 minutes in, block 2 ends at 20: about 8 minutes to its scheduled end, off the database
+    // clock. The window is wide because the seed and the read are separate statements on a loaded
+    // machine.
+    expect(session.elapsed_seconds).toBeGreaterThanOrEqual(720);
+    expect(session.elapsed_seconds).toBeLessThan(750);
+    expect(session.current_block!.seconds_to_scheduled_end).toBe(20 * 60 - session.elapsed_seconds);
+    expect(new Date(session.server_time).getTime()).toBeGreaterThan(new Date(session.started_at).getTime());
+
+    // THE WHOLE SERIALIZED BODY: no coach note, no note of any kind, no account, no athlete, no
+    // hash, no organization (name or id), no key, no TV id.
+    const serialized = JSON.stringify(read);
+    for (const marker of COACH_NOTE_MARKERS) expect(serialized).not.toContain(marker);
+    for (const forbidden of [
+      'what_to', 'note', 'account', 'athlete', 'coach', 'delivered_by', 'hash', 'organization',
+      ORG_A, COACH_A, redeemed.device_key, minted.tv_id,
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
+
+  it('the clock is frozen while paused', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await client.query(
+      `update pilot.session_script_runs
+          set started_at = now() - interval '10 minutes', paused_at = now() - interval '4 minutes', paused_seconds = 60
+        where run_id = 'run-1'`,
+    );
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    const session = (await readGymTvSession(redeemed.device_key))!.session!;
+    expect(session.is_paused).toBe(true);
+    // 10 minutes gross, frozen 4 minutes ago, 1 minute already banked: 5 minutes.
+    expect(session.elapsed_seconds).toBe(300);
+    expect(session.current_block!.seconds_to_scheduled_end).toBe(300);
+  });
+
+  it('nothing once the run has ended or been switched off the TV, though the pointer remains', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    expect((await readGymTvSession(redeemed.device_key))!.session).not.toBeNull();
+
+    await client.query(`update pilot.session_script_runs set show_on_wall = false where run_id = 'run-1'`);
+    expect((await readGymTvSession(redeemed.device_key))!.session).toBeNull();
+
+    await client.query(`update pilot.session_script_runs set show_on_wall = true where run_id = 'run-1'`);
+    await settleRun('run-1');
+    expect((await readGymTvSession(redeemed.device_key))!.session).toBeNull();
+    expect((await readTv(minted.tv_id)).current_run_id).toBe('run-1');
+  });
+
+  it('a disconnected TV, a revoked key and an unknown key all get null -- not the empty shape, nothing', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    expect((await readGymTvSession(redeemed.device_key))!.session!.run_id).toBe('run-1');
+
+    await disconnectGymTv(ORG_A, minted.tv_id);
+    expect(await readGymTvSession(redeemed.device_key)).toBeNull();
+    expect(await readGymTvSession('not-a-key')).toBeNull();
+    expect(await readGymTvSession('')).toBeNull();
+
+    // revoked_at alone, with the key still in place (synthetic: Disconnect also clears the session;
+    // the table itself refuses a revoked row that still points at a run,
+    // pilot_gym_tvs_run_only_when_paired), so revoked_at is the only thing standing between the
+    // key and the TV's name.
+    const again = await pairedTv(ORG_A, COACH_A, 'Again');
+    await client.query(`update pilot.gym_tvs set revoked_at = now() where tv_id = $1`, [again.minted.tv_id]);
+    expect((await readTv(again.minted.tv_id)).device_key_hash).not.toBeNull();
+    expect(await readGymTvSession(again.redeemed.device_key)).toBeNull();
+  });
+
+  it("a TV in another organization gets nothing of this gym's session, and cannot be pointed at it", async () => {
+    const { minted } = await pairedTv();
+    const other = await pairedTv(ORG_B, COACH_B, 'Other gym');
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-1');
+    expect(await readGymTvSession(other.redeemed.device_key)).toEqual({ tv: { tv_name: 'Other gym' }, session: null });
+    await expect(
+      client.query(`update pilot.gym_tvs set current_run_id = 'run-1' where tv_id = $1`, [other.minted.tv_id]),
+    ).rejects.toThrow(/pilot_gym_tvs_current_run_fk/);
+    expect(await readGymTvSession(other.redeemed.device_key)).toEqual({ tv: { tv_name: 'Other gym' }, session: null });
+  });
+
+  it('the read touches last_seen_at', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await client.query(`update pilot.gym_tvs set last_seen_at = now() - interval '1 day' where tv_id = $1`, [minted.tv_id]);
+    const before = (await readTv(minted.tv_id)).last_seen_at as Date;
+    await readGymTvSession(redeemed.device_key);
+    const after = (await readTv(minted.tv_id)).last_seen_at as Date;
+    expect(after.getTime()).toBeGreaterThan(before.getTime());
+  });
+});
+
+describe('re-pairing (S2b)', () => {
+  it("revokes the row the TV's previous key named, clears the session on it, and the old key is refused", async () => {
+    const first = await pairedTv(ORG_A, COACH_A, 'Gym main');
+    await seedLiveRun(ORG_A, COACH_A, 'run-1', { showOnWall: true });
+    await sendRunToGymTv(ORG_A, COACH_A, first.minted.tv_id, 'run-1');
+
+    const minted = await mintGymTvPairCode(ORG_A, COACH_A, 'Gym main (renamed)');
+    const second = await redeemGymTvPairCode(minted.code, first.redeemed.device_key);
+    expect(second).not.toBeNull();
+    expect(second!.tv_id).not.toBe(first.minted.tv_id);
+
+    const old = await readTv(first.minted.tv_id);
+    expect(old.revoked_at).not.toBeNull();
+    expect(old.current_run_id).toBeNull();
+    expect(old.current_run_set_by_account_id).toBeNull();
+    expect(await resolveGymTvByDeviceKey(first.redeemed.device_key)).toBeNull();
+    expect(await resolveGymTvByDeviceKey(second!.device_key)).toMatchObject({ tv_id: second!.tv_id, tv_name: 'Gym main (renamed)' });
+    expect((await readTv(second!.tv_id)).revoked_at).toBeNull();
+  });
+
+  it('an unknown, already-revoked or absent previous key revokes nothing and pairing still succeeds', async () => {
+    const bystander = await pairedTv(ORG_A, COACH_A, 'Bystander');
+    const a = await mintGymTvPairCode(ORG_A, COACH_A, 'A');
+    expect(await redeemGymTvPairCode(a.code, 'not-a-key')).not.toBeNull();
+    const b = await mintGymTvPairCode(ORG_A, COACH_A, 'B');
+    expect(await redeemGymTvPairCode(b.code, null)).not.toBeNull();
+    expect((await readTv(bystander.minted.tv_id)).revoked_at).toBeNull();
+    expect(await resolveGymTvByDeviceKey(bystander.redeemed.device_key)).not.toBeNull();
+  });
+
+  it('a wrong code revokes nothing, even with a valid previous key presented', async () => {
+    const first = await pairedTv(ORG_A, COACH_A, 'Gym main');
+    expect(await redeemGymTvPairCode('AAAAAA', first.redeemed.device_key)).toBeNull();
+    expect((await readTv(first.minted.tv_id)).revoked_at).toBeNull();
   });
 });
 

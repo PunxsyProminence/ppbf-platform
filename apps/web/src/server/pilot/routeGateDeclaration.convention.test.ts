@@ -228,6 +228,20 @@ const NO_SESSION_GATE_ALLOWLIST = new Map<string, string>([
       + 'disconnected code) returns the same 404.',
   ],
   [
+    'app/api/pilot/tv/session/route.ts#GET',
+    'What the paired gym television shows, so there is no session by '
+      + 'construction: the client is the TV, which never signs in. The '
+      + 'credential is the device key in the httpOnly cookie that tv/pair set, '
+      + 'resolved by hash in gymTvs.ts readGymTvSession, where a disconnected '
+      + 'TV answers exactly like an unknown key (401). The key opens only this '
+      + 'read, and the read is a fixed allowlist (GYM_TV_SESSION_FIELDS / '
+      + 'GYM_TV_BLOCK_FIELDS): the plan blocks, times and drill names of the '
+      + 'one live session a coach sent to that TV, with no person field (no '
+      + 'coach notes, no names, no account ids, no athlete data); the pg suite '
+      + 'asserts the whole serialized body. Budgeted per address and per key on '
+      + 'fixed windows (consumeGymTvReadBudget), sized for several TVs polling.',
+  ],
+  [
     'app/api/pilot/wall/route.ts#GET',
     'Unauthenticated by product decision: the client is a browser on the gym\'s '
       + 'television that nobody signs into, and a 24-hour session token would '
