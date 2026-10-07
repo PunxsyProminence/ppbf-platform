@@ -31,7 +31,9 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-const NOW = new Date('2026-08-03T00:00:00Z');
+// 2:30pm in America/New_York on Aug 3. Midday on purpose: age is read on the
+// gym's calendar day, and 00:00Z is still Aug 2 in Punxsutawney.
+const NOW = new Date('2026-08-03T18:30:00Z');
 
 function subject(overrides: Partial<ProfileSubject> = {}): ProfileSubject {
   return {
