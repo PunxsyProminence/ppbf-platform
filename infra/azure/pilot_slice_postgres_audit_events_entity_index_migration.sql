@@ -34,7 +34,9 @@
 do $pilot_audit_events_entity_index$
 begin
   if to_regclass('pilot.audit_events') is null then
-    raise exception 'AUDIT_EVENTS_ENTITY_INDEX_NOT_READY: pilot.audit_events does not exist -- apply the base schema first';
+    -- No "--" inside the string: pilot-verify-schema.mjs strips comments
+    -- without regard to quotes and would eat the closing quote.
+    raise exception 'AUDIT_EVENTS_ENTITY_INDEX_NOT_READY: pilot.audit_events does not exist; apply the base schema first';
   end if;
 end
 $pilot_audit_events_entity_index$;

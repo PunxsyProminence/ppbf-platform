@@ -80,6 +80,11 @@ const READINESS_QUERY = `
       and c.relname = 'idx_pilot_audit_events_org_entity'
       and i.indrelid = to_regclass('pilot.audit_events')
       and i.indisvalid
+      -- A same-named partial, unique or non-btree index would also satisfy
+      -- "if not exists"; it is not the index this migration promises.
+      and i.indpred is null
+      and not i.indisunique
+      and c.relam = (select oid from pg_am where amname = 'btree')
       and (
         select array_agg(a.attname::text order by k.ord)
           from unnest(i.indkey) with ordinality as k(attnum, ord)

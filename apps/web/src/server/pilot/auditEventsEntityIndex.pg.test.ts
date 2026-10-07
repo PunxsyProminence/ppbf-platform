@@ -303,11 +303,14 @@ describe('audit_events entity index migration', () => {
 
       // A few hundred rows across two organizations and several entity
       // types, so the statistics are real rather than empty-table guesses.
+      // Organization (g % 7) and type (g % 4) are decoupled so every type
+      // has rows in BOTH gyms; a shared modulus once sent every announcement
+      // row to the other gym and the authorship query below matched nothing.
       await client.query(
         `insert into pilot.audit_events (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
          select case when g % 3 = 0 then 'create' else 'update' end,
                 $1, 'organization_admin',
-                case when g % 4 = 0 then $3 else $2 end,
+                case when g % 7 = 0 then $3 else $2 end,
                 (array['announcement', 'goal', 'session', 'coach_review'])[1 + (g % 4)],
                 'entity-' || (g % 50)::text,
                 '{}'::jsonb
@@ -315,6 +318,15 @@ describe('audit_events entity index migration', () => {
         [ACCOUNT_ID, ORG_ID, OTHER_ORG_ID],
       );
       await client.query('analyze pilot.audit_events');
+      const authored = await client.query<{ n: string }>(
+        `select count(*)::text as n from pilot.audit_events
+         where organization_id = $1 and entity_type = 'announcement' and event_type = 'create'
+           and actor_account_id = $2 and entity_id = any($3::text[])`,
+        [ORG_ID, ACCOUNT_ID, ['entity-4', 'entity-8']],
+      );
+      // The query under test must match real rows, or "the plan uses the
+      // index" proves only that an empty result can be planned.
+      expect(Number(authored.rows[0].n)).toBeGreaterThan(0);
 
       // announcements.ts listAuthoredAnnouncementIds, verbatim shape.
       const authorship = `select distinct entity_id
