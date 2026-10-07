@@ -20,6 +20,7 @@ jest.mock('@/src/server/pilot/magicLinkStore', () => ({
 }));
 
 import { issueMagicLink } from '@/src/server/pilot/magicLink';
+import { magicLinkDependencies } from '@/src/server/pilot/magicLinkStore';
 import {
   checkDurableRateLimit,
   checkRateLimit,
@@ -39,6 +40,7 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: false });
     (checkDurableRateLimit as jest.Mock).mockResolvedValue({ isLimited: false });
     (issueMagicLink as jest.Mock).mockResolvedValue(undefined);
+    (magicLinkDependencies as jest.Mock).mockImplementation(() => ({}));
   });
 
   test('issues a link with the normalized address', async () => {
@@ -201,5 +203,66 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     const byIp = await (await post({ email: 'coach@example.com' })).json();
 
     expect(byEmail).toEqual(byIp);
+  });
+
+  /**
+   * THE ONE FAULT THAT IS NOT SWALLOWED. A site address no link can be built
+   * on is a configuration fault, not a fact about any address: it is read
+   * before the body and answered 503 for every caller alike. Everything
+   * per-address stays swallowed and 202, as above.
+   */
+  describe('a site address that cannot carry a link', () => {
+    const ADDRESSES: Array<[string, string]> = [
+      ['an existing address', 'coach@example.com'],
+      ['an address nobody has', 'nobody-at-all@example.com'],
+      ['a malformed address', 'not-an-address'],
+    ];
+
+    test.each(ADDRESSES)('%s: answers 503, issues nothing, records no attempt', async (_label, email) => {
+      const logged: string[] = [];
+      const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
+      (magicLinkDependencies as jest.Mock).mockImplementation(() => {
+        throw new Error('INVALID_PPBF_APP_ORIGIN:not_absolute_url');
+      });
+
+      const response = await post({ email });
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'Sign-in links are not available right now.' });
+      expect(issueMagicLink).not.toHaveBeenCalled();
+      expect(recordDurableFailedAttempt).not.toHaveBeenCalled();
+      expect(JSON.parse(logged[0])).toEqual({
+        event: 'magic_link.config_invalid',
+        error_type: 'Error',
+        error_code: 'INVALID_PPBF_APP_ORIGIN:not_absolute_url',
+      });
+      expect(logged.join('\n')).not.toContain(email);
+      spy.mockRestore();
+    });
+
+    test('the three answers are byte-equal: the fault says nothing about any address', async () => {
+      (magicLinkDependencies as jest.Mock).mockImplementation(() => {
+        throw new Error('MISSING_PPBF_APP_ORIGIN');
+      });
+      const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const bodies = await Promise.all(ADDRESSES.map(async ([, email]) => {
+        const response = await post({ email });
+        return `${response.status} ${JSON.stringify(await response.json())}`;
+      }));
+
+      expect(new Set(bodies).size).toBe(1);
+      spy.mockRestore();
+    });
+
+    test('with a usable site address the route answers as it always did', async () => {
+      (magicLinkDependencies as jest.Mock).mockImplementation(() => ({}));
+
+      expect((await post({ email: 'coach@example.com' })).status).toBe(202);
+      expect((await post({ email: 'nobody-at-all@example.com' })).status).toBe(202);
+      // The address shape check is the route's own and unchanged: 400.
+      expect((await post({ email: 'not-an-address' })).status).toBe(400);
+      expect(issueMagicLink).toHaveBeenCalledTimes(2);
+    });
   });
 });

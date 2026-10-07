@@ -413,7 +413,10 @@ describe('email, with a password or with a link', () => {
    * existed, to a parent who then waited for it.
    */
   describe('the Email Link door says "sent" only for the answer that means sent', () => {
-    const NOT_SENT = /No link was sent: the gym could not be reached/i;
+    // The sentence the password door already uses for the gym not answering.
+    // It claims nothing about sending: a gateway's 502 can arrive after the
+    // server sent the link, so "not sent" would sometimes be false.
+    const NOT_SENT = /Could not reach the gym right now/i;
     const ON_ITS_WAY = /a sign-in link is on its way/i;
 
     async function askForLink(container: HTMLElement) {
@@ -485,9 +488,9 @@ describe('email, with a password or with a link', () => {
       expect(container.textContent).toMatch(NOT_SENT);
     });
 
-    test('the words reveal nothing about whether the address has an account', async () => {
+    test('the sentence does not depend on the typed address', async () => {
       // The same status gets the same sentence whatever was typed: the panel
-      // has no other input to go by, and must not pretend to.
+      // has no other input to go by, and must not echo the address into it.
       const seen = new Set<string>();
       for (const email of ['known@example.com', 'nobody-at-all@example.com']) {
         const { container, unmount } = await renderPanel();

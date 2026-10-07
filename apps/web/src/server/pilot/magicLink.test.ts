@@ -179,13 +179,41 @@ describe('issuing a magic link', () => {
             sendMail: async () => {
               throw new Error('GRAPH_SEND_FAILED');
             },
-            discardToken: async () => {
+            discardToken: async (tokenHash) => {
+              recorded.discarded.push(tokenHash);
               throw new Error('DB_DOWN');
             },
           }),
         ),
       ).rejects.toThrow('GRAPH_SEND_FAILED');
+      expect(recorded.discarded).toEqual([hashToken('test-token-value')]);
       expect(recorded.invalidated).toEqual([]);
+    });
+
+    test('a retire step that fails after the send is logged, not reported as a failed issue', async () => {
+      // The link went out. Telling the caller the issue failed would be
+      // false; the cost is the older link living on until its own expiry.
+      const recorded = fresh();
+      const logged: string[] = [];
+      const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
+      await expect(
+        issueMagicLink(
+          'coach@example.com',
+          issueDeps(account(), recorded, {
+            invalidateLiveTokens: async () => {
+              throw new Error('DB_DOWN');
+            },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(recorded.sent).toHaveLength(1);
+      expect(JSON.parse(logged[0])).toEqual({
+        event: 'magic_link.retire_older_failed',
+        error_type: 'Error',
+        error_code: 'DB_DOWN',
+      });
+      expect(logged.join('\n')).not.toContain('coach@example.com');
+      spy.mockRestore();
     });
   });
 
@@ -211,6 +239,7 @@ describe('issuing a magic link', () => {
       ['a scheme that is not http(s)', 'ftp://www.punxsyprominence.org'],
       ['a scheme with no host', 'https://'],
       ['a mailto', 'mailto:admin@punxsyprominence.org'],
+      ['a trailing dot on the host, which a cookie jar treats as another site', 'https://www.punxsyprominence.org.'],
     ];
 
     test.each(bad)('%s: looks nobody up, stores nothing, mails nothing, and throws', async (_label, appOrigin) => {

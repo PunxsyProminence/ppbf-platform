@@ -265,7 +265,79 @@ describe('asking for a second link', () => {
     expect(redeemed.principal).toMatchObject({ accountId: 'mlr-parent-ok' });
   });
 
-  test('a link retired by a later one cannot be revived by a send that fails after it', async () => {
+  test('two requests whose sends overlap: the newer link survives, whichever send finishes first', async () => {
+    // A phone and the gym tablet, or a reload while the first request is
+    // slow. Driven deterministically: the first request's send asks for the
+    // second link before it returns, so the SECOND request finishes first
+    // and retires the first link; then the first request's own retire step
+    // runs and must not touch the newer link. Retiring "every other link"
+    // instead of "every older link" left both dead here.
+    await seedParent('mlr-parent-overlap', 'parent.overlap@mlr.test');
+    const sent: string[] = [];
+    const inner = dependenciesWith(sent, 'delivers');
+    const outer = {
+      ...magicLinkDependencies(),
+      sendMail: async (message: { body: string }) => {
+        await issueMagicLink('parent.overlap@mlr.test', inner);
+        sent.push(message.body);
+      },
+    };
+
+    await issueMagicLink('parent.overlap@mlr.test', outer);
+
+    // sent[0] is the inner (newer) link, sent[1] the outer (older) one.
+    expect(sent).toHaveLength(2);
+    const live = await client.query(
+      `select 1 from pilot.magic_link_tokens where account_id = 'mlr-parent-overlap' and invalidated_at is null`,
+    );
+    expect(live.rowCount).toBe(1);
+    expect(await redeemMagicLink(linkTokenFrom(sent[1]))).toEqual({ ok: false, reason: 'TOKEN_INVALIDATED' });
+    expect((await redeemMagicLink(linkTokenFrom(sent[0]))).ok).toBe(true);
+  });
+
+  test('two overlapping requests the other way round: the first to finish is the older, and still loses', async () => {
+    // Store both before either sends, then let the OLDER request finish
+    // first. Its retire step must find nothing older; the newer one's must
+    // retire it.
+    await seedParent('mlr-parent-overlap2', 'parent.overlap2@mlr.test');
+    const base = magicLinkDependencies();
+    let releaseSecondStore!: () => void;
+    const secondStored = new Promise<void>((resolve) => { releaseSecondStore = resolve; });
+    let releaseFirstSend!: () => void;
+    const firstMaySend = new Promise<void>((resolve) => { releaseFirstSend = resolve; });
+    const sent: string[] = [];
+
+    const first = issueMagicLink('parent.overlap2@mlr.test', {
+      ...base,
+      sendMail: async (message: { body: string }) => {
+        // Wait until the second request has stored its (newer) row.
+        await secondStored;
+        sent.push(message.body);
+      },
+    });
+    const second = issueMagicLink('parent.overlap2@mlr.test', {
+      ...base,
+      storeToken: async (row) => {
+        await base.storeToken(row);
+        releaseSecondStore();
+      },
+      sendMail: async (message: { body: string }) => {
+        // Do not finish until the first request has completed entirely.
+        await firstMaySend;
+        sent.push(message.body);
+      },
+    });
+    await first;
+    releaseFirstSend();
+    await second;
+
+    // sent[0] is the first (older) link, sent[1] the second (newer).
+    expect(sent).toHaveLength(2);
+    expect(await redeemMagicLink(linkTokenFrom(sent[0]))).toEqual({ ok: false, reason: 'TOKEN_INVALIDATED' });
+    expect((await redeemMagicLink(linkTokenFrom(sent[1]))).ok).toBe(true);
+  });
+
+  test('a failed third send leaves the second link, the one in the inbox, working', async () => {
     // First sent, second sent (retires the first), third fails: the second
     // link, the one in the inbox, is the one that must still work.
     await seedParent('mlr-parent-three', 'parent.three@mlr.test');
@@ -292,6 +364,7 @@ describe('asking for a second link', () => {
     ).rejects.toThrow('GRAPH_SEND_FAILED');
 
     const rows = await tokenRows('mlr-parent-audit');
+    expect(rows.map((row) => row.invalidated_at !== null)).toEqual([true, false, true]);
     expect(rows.every((row) => row.consumed_at === null)).toBe(true);
   });
 });
@@ -302,18 +375,17 @@ describe('a site address that cannot carry a link', () => {
     ['http on a public host', 'http://www.punxsyprominence.org'],
     ['a path after the host', 'https://www.punxsyprominence.org/app'],
     ['whitespace only', '   '],
-  ])('%s: the real store refuses at construction, before any lookup', async (_label, value) => {
+  ])('%s: the real store refuses at construction', async (_label, value) => {
     process.env.PPBF_APP_ORIGIN = value;
 
-    // The request route builds its dependencies inside the same call that
-    // issues the link (route.ts), so a throw here is address-independent:
-    // it happens before any lookup, for every caller alike.
+    // The request route builds its dependencies before reading the body
+    // (route.ts) and answers 503 on this throw, for every caller alike.
     expect(() => magicLinkDependencies()).toThrow(
       value.trim() ? /^INVALID_PPBF_APP_ORIGIN:/ : /^MISSING_PPBF_APP_ORIGIN$/,
     );
   });
 
-  test('a link that was never stored cannot be redeemed, whatever the mailer would have done', async () => {
+  test('a bad address injected past the store check: no row is written and nothing is mailed', async () => {
     await seedParent('mlr-parent-dead', 'parent.dead@mlr.test');
     const sent: string[] = [];
     // A bad address injected past the store's own check: issueMagicLink

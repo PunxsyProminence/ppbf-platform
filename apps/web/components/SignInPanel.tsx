@@ -113,11 +113,16 @@ const UNKNOWN_AUTH_ERROR_REFUSAL: {
 
 /**
  * What the Email Link door says when the request did not get a 202: the
- * link was not sent, and the reason is the gym, not the address. One string
- * for the fetch failing and for every non-accepted status, because to the
- * person at the form those are the same event.
+ * sentence the password door and the link page already use for the gym not
+ * answering. The browser knows only that no "accepted" came back: a 500 means
+ * nothing was sent, but a dropped connection or a gateway's 502 can arrive
+ * after the server already sent the link, so a flat "not sent" would
+ * sometimes be false. This sentence claims nothing about sending, and above
+ * all it is not "on its way". One string for the fetch failing and for every
+ * non-accepted status, because to the person at the form those are the same
+ * event.
  */
-const MAGIC_LINK_NOT_SENT = 'No link was sent: the gym could not be reached. Try again in a moment.';
+const MAGIC_LINK_NOT_SENT = 'Could not reach the gym right now. Try again in a moment.';
 
 /**
  * THE BELL -- the platform's one sign-in flow, in one place.
@@ -270,9 +275,9 @@ export default function SignInPanel({
       // distinction the server refused to make would put the enumeration leak
       // back in the client. Anything else (a 500 from a rate-limit store that
       // could not be reached, a 503, a proxy's page) is the gym not answering,
-      // and this used to show it as "on its way" -- a link that never existed.
-      // Those answers are the same for every address, so naming them reveals
-      // nothing the route does not.
+      // and this used to show it as "on its way" -- a link that may never have
+      // existed. Those answers are the same for every address, so naming them
+      // reveals nothing the route does not.
       if (response.status !== 202) {
         setMagicLinkError(MAGIC_LINK_NOT_SENT);
         return;

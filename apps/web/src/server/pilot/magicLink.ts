@@ -44,9 +44,11 @@ export interface MagicLinkDependencies {
   /** Looks up an account by email. Returns null when there is no such account. */
   findAccountByEmail: (email: string) => Promise<MagicLinkAccount | null>;
   /**
-   * Invalidates every live token for an account EXCEPT the one named. Called
-   * after the new link has been sent, so the link the person already holds
-   * outlives a send that fails (see issueMagicLink).
+   * Invalidates every live token for an account issued BEFORE the one named
+   * (never the named one, never a newer one). Called after the new link has
+   * been sent, so the link the person already holds outlives a send that
+   * fails, and two overlapping requests cannot retire each other (see
+   * issueMagicLink).
    */
   invalidateLiveTokens: (accountId: string, keepTokenHash: string) => Promise<void>;
   /** Invalidates one token by hash: the new link, when its send failed. */
@@ -93,6 +95,9 @@ export function magicLinkOrigin(value: string): string {
 
   const host = url.hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
   if (!host) throw new Error('INVALID_PPBF_APP_ORIGIN:no_host');
+  // A trailing dot is a different host to a browser's cookie jar: the link
+  // would open, and the session cookie would not stick.
+  if (host.endsWith('.')) throw new Error('INVALID_PPBF_APP_ORIGIN:trailing_dot_host');
 
   if (url.protocol === 'http:') {
     if (!isLoopbackHost(host)) throw new Error('INVALID_PPBF_APP_ORIGIN:http_not_loopback');
@@ -215,16 +220,22 @@ export async function issueMagicLink(
   // their inbox, while the page told them a new one was coming.
   //
   // The rule now: store the new link; send it; only on a successful send
-  // invalidate every OTHER live link for the account. A failed send discards
-  // the new link (nobody ever received it) and leaves the old one untouched,
-  // then rethrows so the caller sees the fault.
+  // invalidate every live link for the account issued BEFORE this one. A
+  // failed send discards the new link (not known to have been delivered) and
+  // leaves the old one untouched, then rethrows so the caller sees the fault.
   //
-  // Two links are valid together only while the send is in flight. Should the
+  // "Before this one", not "every other one": two overlapping requests -- a
+  // phone and the gym tablet, or a reload while the first is slow -- that
+  // each retired everything but their own would retire each other, leaving
+  // two emails and no working link. Retiring only older links means the
+  // newest always survives, whichever send finishes first.
+  //
+  // Two links are valid together only while a send is in flight. Should the
   // process die between the send and the invalidation, both stay valid, each
   // until its own fifteen-minute expiry and no longer: the expiry rule above
-  // is the ceiling, as it always was. Issuing still ends with one live link
-  // per account, so a parent who requests three links because the first was
-  // slow is not left with three working credentials in an inbox.
+  // is the ceiling, as it always was. Serial requests still end with one live
+  // link per account, so a parent who requests three links because the first
+  // was slow is not left with three working credentials in an inbox.
   try {
     await dependencies.sendMail({
       to: email,
@@ -240,13 +251,25 @@ export async function issueMagicLink(
       ].join('\n'),
     });
   } catch (sendError) {
-    // Best effort: an unsent link is unreachable by anyone, so a failure here
-    // changes nothing about who can sign in. The send fault is the one to report.
+    // Best effort: a link not known to have been delivered is discarded, and
+    // a failure to discard it changes nothing about who can sign in. The send
+    // fault is the one to report.
     await dependencies.discardToken(tokenHash).catch(() => undefined);
     throw sendError;
   }
 
-  await dependencies.invalidateLiveTokens(account.account_id, tokenHash);
+  try {
+    await dependencies.invalidateLiveTokens(account.account_id, tokenHash);
+  } catch (retireError) {
+    // The link went out, so this is not a failed issue and must not be
+    // reported as one. The cost is the older link staying valid until its own
+    // expiry -- inside the ceiling above. Shape only; this line reaches logs.
+    console.error(JSON.stringify({
+      event: 'magic_link.retire_older_failed',
+      error_type: retireError instanceof Error ? retireError.name : typeof retireError,
+      error_code: retireError instanceof Error ? retireError.message : 'unknown',
+    }));
+  }
 }
 
 /** Generates a token without issuing one. Exposed for callers that need the
