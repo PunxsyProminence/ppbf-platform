@@ -54,12 +54,12 @@ describe('the database\'s refusals come back in the repo\'s shapes', () => {
   function pgError(message: string, code?: string, constraint?: string) {
     return Object.assign(new Error(message), { code, constraint });
   }
-  function translated(error: unknown): { name: string; message: string; status?: number } {
+  function translated(error: unknown): { name: string; message: string; status?: number; code?: string } {
     try {
       translateDatabaseRefusal(error);
     } catch (thrown) {
-      const e = thrown as { name: string; message: string; status?: number };
-      return { name: e.name, message: e.message, status: e.status };
+      const e = thrown as { name: string; message: string; status?: number; code?: string };
+      return { name: e.name, message: e.message, status: e.status, code: e.code };
     }
     throw new Error('did not throw');
   }
@@ -74,10 +74,10 @@ describe('the database\'s refusals come back in the repo\'s shapes', () => {
   });
 
   test('an event changed under a moment, an occupied slot, a deadlock: 409', () => {
-    expect(translated(pgError('CALIBRATION_BODY_MOMENT_KIND_NOT_THIS_EVENT', '23514'))).toMatchObject({ status: 409 });
-    expect(translated(pgError('duplicate key value', '23505', 'pilot_calibration_body_moments_one_per_slot'))).toMatchObject({ status: 409 });
-    expect(translated(pgError('deadlock detected', '40P01'))).toMatchObject({ status: 409 });
-    expect(translated(pgError('could not serialize access', '40001'))).toMatchObject({ status: 409 });
+    expect(translated(pgError('CALIBRATION_BODY_MOMENT_KIND_NOT_THIS_EVENT', '23514'))).toMatchObject({ status: 409, code: 'CALIBRATION_BODY_MOMENT_EVENT_CHANGED' });
+    expect(translated(pgError('duplicate key value', '23505', 'pilot_calibration_body_moments_one_per_slot'))).toMatchObject({ status: 409, code: 'CALIBRATION_BODY_MOMENT_SLOT_TAKEN' });
+    expect(translated(pgError('deadlock detected', '40P01'))).toMatchObject({ status: 409, code: 'CALIBRATION_BODY_POINTS_WRITE_RACE' });
+    expect(translated(pgError('could not serialize access', '40001'))).toMatchObject({ status: 409, code: 'CALIBRATION_BODY_POINTS_WRITE_RACE' });
   });
 
   test('a parent deleted under a write is Not found', () => {
