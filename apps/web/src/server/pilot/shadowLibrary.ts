@@ -723,7 +723,7 @@ export async function updateShadowLibrarySourceRights(input: {
       ) {
         throw new PilotError(
           422,
-          `This source holds ${held.chunkCount} passages and ${held.characterCount.toLocaleString('en-US')} characters, more than a source that is not PPBF-owned or open-licence may hold (${excerptBudgetSentence()}). Remove passages first, or keep its rights as they are.`,
+          `This source holds ${held.chunkCount} passages and ${new Intl.NumberFormat('en-US').format(held.characterCount)} characters, more than a source that is not PPBF-owned or open-licence may hold (${excerptBudgetSentence()}). Remove passages first, or keep its rights as they are.`,
           EXCERPT_BUDGET_EXCEEDED_CODE,
         );
       }
@@ -1065,7 +1065,7 @@ export const HELD_EXCERPT_BUDGET_SQL = `select count(*)::int as chunk_count,
       where d.source_id = $1 and d.organization_id = $2`;
 
 function excerptBudgetSentence(): string {
-  return `at most ${MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE} excerpts and ${MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE.toLocaleString('en-US')} characters in all`;
+  return `at most ${MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE} excerpts and ${new Intl.NumberFormat('en-US').format(MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE)} characters in all`;
 }
 
 async function heldExcerptBudget(
@@ -1157,7 +1157,7 @@ export async function createShadowLibraryChunk(input: {
       ) {
         throw new PilotError(
           422,
-          `This source is not marked PPBF-owned or open-licence, so the Library may hold only a limited set of excerpts of it: ${excerptBudgetSentence()}. It holds ${chunkCount} excerpts and ${characterCount.toLocaleString('en-US')} characters; this one adds ${newCharacters.toLocaleString('en-US')}.`,
+          `This source is not marked PPBF-owned or open-licence, so the Library may hold only a limited set of excerpts of it: ${excerptBudgetSentence()}. It holds ${chunkCount} excerpts and ${new Intl.NumberFormat('en-US').format(characterCount)} characters; this one adds ${new Intl.NumberFormat('en-US').format(newCharacters)}.`,
           EXCERPT_BUDGET_EXCEEDED_CODE,
         );
       }
