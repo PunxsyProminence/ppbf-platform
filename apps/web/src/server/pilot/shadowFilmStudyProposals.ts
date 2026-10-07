@@ -170,13 +170,21 @@ export async function createCoachReportedObservation(input: {
   videoSessionId: string;
   observationText: string;
   reportedByAccountId: string;
-}): Promise<FilmStudyProposalRow> {
+}, client?: QueryExecutor): Promise<FilmStudyProposalRow> {
   const observationText = input.observationText.trim();
   if (!observationText) {
     throw new Error('Missing observation_text');
   }
 
-  const row = await queryOne<FilmStudyProposalRow>(
+  // With a client, the insert joins that client's transaction: the route
+  // writes it under writeUnderFilmStudyConsent, the same consent-held write
+  // the model path uses, so a coach-reported row never lands after a
+  // withdrawal the check missed.
+  const insertOne = client
+    ? async (text: string, params: unknown[]) => (await client.query<FilmStudyProposalRow>(text, params)).rows[0] ?? null
+    : queryOne<FilmStudyProposalRow>;
+
+  const row = await insertOne(
     `insert into pilot.shadow_film_study_proposals
        (proposal_id, organization_id, athlete_id, video_session_id,
         origin, observation_text, evidence_id, reported_by_account_id)

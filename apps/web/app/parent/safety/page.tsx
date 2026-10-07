@@ -54,7 +54,10 @@ const WAIVER_TYPE_LABEL: Record<TrackedWaiverType, string> = {
   travel: 'Travel',
 };
 
-const WAIVER_STATUSES = ['signed', 'declined', 'withdrawn', 'missing'] as const;
+// Plus 'photo_only', which the route reports for photo_media alone: every
+// guardian signed and at least one excluded video, so the video gates refuse
+// (the ruling's own words, "Photos only", as the compliance queue shows it).
+const WAIVER_STATUSES = ['signed', 'photo_only', 'declined', 'withdrawn', 'missing'] as const;
 type WaiverStatus = (typeof WAIVER_STATUSES)[number];
 
 interface WaiverStatusDisplay {
@@ -69,6 +72,7 @@ interface WaiverStatusDisplay {
    mark other pages use for an unknown state. */
 const WAIVER_STATUS_DISPLAY: Record<WaiverStatus, WaiverStatusDisplay> = {
   signed: { label: 'Signed', glyph: '✓', badge: 'badge--cleared' },
+  photo_only: { label: 'Photos only', glyph: '▲', badge: 'badge--restricted' },
   declined: { label: 'Declined', glyph: '▲', badge: 'badge--restricted' },
   withdrawn: { label: 'Withdrawn', glyph: '▲', badge: 'badge--restricted' },
   missing: { label: 'Missing', glyph: '▲', badge: 'badge--restricted' },
@@ -179,8 +183,10 @@ export default function GuardianSafetyPage() {
             <p className="t-body mt-[var(--s2)] max-w-3xl">
               Below that, the status of the four waivers the gym tracks: general, medical release, photo
               &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
-              your child has signed it; the Photo &amp; Video Consent page below is where you sign or
-              withdraw yours. Missing means the gym has not recorded that waiver yet.
+              your child has signed it with video included. Photos only means a guardian&rsquo;s consent on file,
+              including a former guardian&rsquo;s, covers photos but not video, so the gym cannot use video.
+              The Photo &amp; Video Consent page below is where you sign or withdraw yours. Missing means
+              the gym has no signed waiver of that kind on file.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--critical mt-[var(--s3)]">

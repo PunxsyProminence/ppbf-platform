@@ -1,5 +1,6 @@
 import { sweepQuarantinedVideos } from './videoScanSweep';
 import { scanVideoSession } from './videoScan';
+import { listLiveTagSubjects } from './videoClipTags';
 import {
   claimNextVideoSessionForScan,
   markVideoSessionsUnconfigured,
@@ -56,6 +57,9 @@ jest.mock('./videoSessions', () => {
   };
 });
 jest.mock('./shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
+// CL-B5: the sweep asks every live tag subject's consent too. Doubled so the
+// suite drives the sweep; the tag read has its own database-backed coverage.
+jest.mock('./videoClipTags', () => ({ listLiveTagSubjects: jest.fn(async () => []) }));
 jest.mock('./escalationLadder', () => ({ fileEscalation: jest.fn() }));
 
 const mockedScan = scanVideoSession as jest.MockedFunction<typeof scanVideoSession>;
@@ -66,6 +70,7 @@ const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEs
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
 const mockedCheckConsent = checkGuardianMediaConsent as jest.MockedFunction<typeof checkGuardianMediaConsent>;
 const mockedResolveSubject = resolveScanSubject as jest.MockedFunction<typeof resolveScanSubject>;
+const mockedTagSubjects = listLiveTagSubjects as jest.MockedFunction<typeof listLiveTagSubjects>;
 const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
 const mockedRearm = rearmUnconfiguredVideoSessions as jest.MockedFunction<typeof rearmUnconfiguredVideoSessions>;
 
@@ -125,6 +130,8 @@ beforeEach(() => {
   mockedAssertConsent.mockResolvedValue(undefined);
   mockedCheckConsent.mockReset();
   mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: true }));
+  mockedTagSubjects.mockReset();
+  mockedTagSubjects.mockResolvedValue([]);
   mockedMarkUnconfigured.mockReset();
   mockedRearm.mockReset();
   mockedMarkUnconfigured.mockResolvedValue(0);
@@ -553,6 +560,83 @@ describe('sweepQuarantinedVideos', () => {
 
       expect(mockedCheckConsent).not.toHaveBeenCalled();
       expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: false }));
+    });
+  });
+
+  /*
+   * CL-B5: every child the clip shows, not only the one it is filed under.
+   * Tags can be added while a video is still quarantined, and a sparring
+   * clip tagged with a second child went to the vision screen on the first
+   * child's consent alone. Same subjects as Film Study (filmStudyConsent.ts).
+   */
+  describe("every live tag subject is asked, not only the video's own athlete", () => {
+    test('a tagged child whose guardian withdrew skips the screen even though the owner consented', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedTagSubjects.mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+      mockedCheckConsent.mockImplementation(async (_org, id) => (
+        id === 'ath-2'
+          ? consentOf({ status: 'withdrawn', coversVideo: false })
+          : consentOf({ status: 'signed', coversVideo: true })
+      ));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedTagSubjects).toHaveBeenCalledWith('org-1', 'vs-1');
+      expect(mockedAssertConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+      expect(mockedAssertConsent).toHaveBeenCalledWith('org-1', 'ath-2');
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('guardian_consent_withdrawn');
+    });
+
+    test('a tagged child with no consent on file skips the screen', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedTagSubjects.mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+      mockedAssertConsent.mockImplementation(async (_org, id) => {
+        if (id === 'ath-2') throw new GuardianConsentMissingError('ath-2', ['parent-9']);
+      });
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+    });
+
+    test('a tag naming a deleted athlete skips the screen, as Film Study refuses it', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedTagSubjects.mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: true }]);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+      const detail = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(detail.content_skipped_reason).toBe('tagged_athlete_deleted');
+    });
+
+    test('a tagged child on an unattributed clip is still asked', async () => {
+      mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: false, athleteIds: [] });
+      mockedTagSubjects.mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+      mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: false }));
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedAssertConsent).toHaveBeenCalledWith('org-1', 'ath-2');
+      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
+    });
+
+    test('tags on teaching footage are not asked either', async () => {
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: [] });
+      mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedTagSubjects).not.toHaveBeenCalled();
+      expect(mockedAssertConsent).not.toHaveBeenCalled();
     });
   });
 

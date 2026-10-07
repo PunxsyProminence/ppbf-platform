@@ -23,6 +23,7 @@ import {
   lockGuardianLinksForAthletes,
 } from './guardianConsent';
 import { listLiveTagSubjects } from './videoClipTags';
+import { getVideoSessionForFilmStudyJob } from './videoSessions';
 
 jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
@@ -39,7 +40,7 @@ jest.mock('./shadowJobQueue', () => ({
 // and the proposal insert it is passed to are mocked below, so the client is
 // only carried, never queried. The real lock is proven against Postgres in
 // filmStudyConsentRace.pg.test.ts.
-const TX_CLIENT = { query: jest.fn() };
+const TX_CLIENT = { query: jest.fn(async () => ({ rows: [] })) };
 jest.mock('./db', () => ({
   queryOne: jest.fn(),
   withTransaction: jest.fn(),
@@ -67,6 +68,9 @@ jest.mock('./guardianConsent', () => ({
   lockGuardianLinksForAthletes: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('./videoClipTags', () => ({ listLiveTagSubjects: jest.fn() }));
+// The video row is re-read when the job runs (audit CL-B6): status, athlete,
+// destination and blob path come from the row, never from the payload.
+jest.mock('./videoSessions', () => ({ getVideoSessionForFilmStudyJob: jest.fn() }));
 
 const mockClaim = jest.mocked(claimNextJob);
 const mockComplete = jest.mocked(completeJob);
@@ -80,6 +84,16 @@ const mockCreateProposal = jest.mocked(createFilmStudyProposal);
 const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
 const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
 const mockTagSubjects = jest.mocked(listLiveTagSubjects);
+const mockVideoRow = jest.mocked(getVideoSessionForFilmStudyJob);
+
+const VIDEO_ROW = {
+  video_session_id: 'vs-1',
+  organization_id: 'org-1',
+  athlete_id: 'ATH-1',
+  blob_path: 'org-1/vs-1-current.mp4',
+  status: 'ready',
+  capture_take_id: null,
+};
 
 function consent(coversVideo: boolean, status = 'signed') {
   return {
@@ -147,6 +161,7 @@ beforeEach(() => {
   mockAssertConsent.mockResolvedValue(undefined);
   mockCheckConsent.mockImplementation(async () => consent(true));
   mockTagSubjects.mockResolvedValue([]);
+  mockVideoRow.mockResolvedValue(VIDEO_ROW);
   mockQueryOne.mockResolvedValue({
     role: 'coach',
     athlete_id: null,
@@ -324,6 +339,61 @@ describe('film study executor', () => {
  * while it waits. The worker asks again before reading the blob, and again
  * before persisting a proposal.
  */
+/*
+ * audit CL-B6: the enqueue payload froze the video's state and blob path as
+ * they were when the coach asked. A job can wait past an archive, a
+ * re-quarantine or a reassignment, so the row is re-read when the job runs.
+ */
+describe('film study executor re-reads the video row when the job runs', () => {
+  test('the blob is read from the row, not from the payload', async () => {
+    await processNextShadowJob();
+
+    expect(mockVideoRow).toHaveBeenCalledWith('org-1', 'vs-1');
+    expect(mockDownload).toHaveBeenCalledWith('org-1/vs-1-current.mp4');
+    expect(mockDownload).not.toHaveBeenCalledWith('org-1/vs-1.mp4');
+  });
+
+  test.each([
+    ['archived', { ...VIDEO_ROW, status: 'archived' }, 'SHADOW_FILM_VIDEO_NOT_READY'],
+    ['back in quarantine', { ...VIDEO_ROW, status: 'quarantined' }, 'SHADOW_FILM_VIDEO_NOT_READY'],
+    ['teaching footage now', { ...VIDEO_ROW, capture_take_id: 'take-1' }, 'SHADOW_FILM_VIDEO_NOT_READY'],
+    ['reassigned to another athlete', { ...VIDEO_ROW, athlete_id: 'ATH-2' }, 'SHADOW_FILM_VIDEO_NOT_FOUND'],
+    ['gone, or of a deleted athlete', null, 'SHADOW_FILM_VIDEO_NOT_FOUND'],
+  ])('a video that is %s refuses before any download, without retrying', async (_label, row, code) => {
+    mockVideoRow.mockResolvedValue(row);
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe(code);
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(mockAnalyze).not.toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    expect(mockFail).toHaveBeenCalledWith(expect.anything(), code, { retryable: false });
+  });
+
+  test('a video archived during the download is refused before the frames reach the model', async () => {
+    mockVideoRow
+      .mockResolvedValueOnce(VIDEO_ROW)
+      .mockResolvedValueOnce({ ...VIDEO_ROW, status: 'archived' });
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_VIDEO_NOT_READY');
+    expect(mockDownload).toHaveBeenCalled();
+    expect(mockAnalyze).not.toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    expect(await tempDirsCreated()).toEqual([]);
+  });
+
+  test('the row is read before consent is asked, so a refused video never reaches the consent reads', async () => {
+    mockVideoRow.mockResolvedValue(null);
+
+    await processNextShadowJob();
+
+    expect(mockCheckConsent).not.toHaveBeenCalled();
+  });
+});
+
 describe('film study executor re-checks consent when the job runs', () => {
   test.each([
     ['withdrawn', consent(false, 'withdrawn'), 'SHADOW_FILM_CONSENT_WITHDRAWN'],
@@ -377,14 +447,33 @@ describe('film study executor re-checks consent when the job runs', () => {
   });
 
   test('a withdrawal landing during inference stops the proposal being written', async () => {
+    // Three reads now: before the download, before the vision call, and at
+    // the write. This one lands between the second and the third.
     let reads = 0;
-    mockCheckConsent.mockImplementation(async () => (++reads === 1 ? consent(true) : consent(false, 'withdrawn')));
+    mockCheckConsent.mockImplementation(async () => (++reads <= 2 ? consent(true) : consent(false, 'withdrawn')));
 
     const run = await processNextShadowJob();
 
     expect(run.error).toBe('SHADOW_FILM_CONSENT_WITHDRAWN');
     expect(mockFail).toHaveBeenCalledWith(expect.anything(), 'SHADOW_FILM_CONSENT_WITHDRAWN', { retryable: false });
     expect(mockAnalyze).toHaveBeenCalled();
+    expect(mockCreateProposal).not.toHaveBeenCalled();
+    expect(await tempDirsCreated()).toEqual([]);
+  });
+
+  test('a withdrawal landing during frame extraction stops the frames reaching the model', async () => {
+    // audit CL-B6: the download and extraction take real time, and a
+    // withdrawal in that window used to be caught only at the write -- after
+    // the child's frames had gone to the external model. Consent is read
+    // again right before the vision call.
+    let reads = 0;
+    mockCheckConsent.mockImplementation(async () => (++reads === 1 ? consent(true) : consent(false, 'withdrawn')));
+
+    const run = await processNextShadowJob();
+
+    expect(run.error).toBe('SHADOW_FILM_CONSENT_WITHDRAWN');
+    expect(mockDownload).toHaveBeenCalled();
+    expect(mockAnalyze).not.toHaveBeenCalled();
     expect(mockCreateProposal).not.toHaveBeenCalled();
     expect(await tempDirsCreated()).toEqual([]);
   });

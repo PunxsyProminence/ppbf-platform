@@ -16,6 +16,11 @@ import {
 
 export const runtime = 'nodejs';
 
+/** photo_media's vocabulary is the waiver one plus 'photo_only': every
+ *  guardian signed, and at least one drew the line at video. It is a reading
+ *  of the consent rows, not a stored status, so it is not in WAIVER_STATUSES. */
+type PhotoMediaStatus = WaiverStatus | 'photo_only';
+
 /**
  * Capability #84: THE GUARDIAN'S SAFETY ROLLUP.
  *
@@ -59,7 +64,7 @@ export const runtime = 'nodejs';
  * the entry.
  *
  * What is disclosed is a status from waiverCompliance's four-value vocabulary
- * and nothing else -- no signer name, no signed_at, no consent_version, and
+ * (photo_media adds 'photo_only', see PhotoMediaStatus) and nothing else -- no signer name, no signed_at, no consent_version, and
  * above all no `notes`, which is the staff column #793 removed from the
  * guardian projection of pilot.waivers for the reason recorded there. A
  * guardian learns which of their own forms are outstanding; they learn nothing
@@ -113,9 +118,28 @@ async function photoMediaStatusFor(
   organizationId: string,
   athleteId: string,
   ownParentIds: Set<string>,
-): Promise<WaiverStatus> {
+): Promise<PhotoMediaStatus> {
   const consent = await checkGuardianMediaConsent(organizationId, athleteId);
-  if (consent.ok) return 'signed';
+  if (consent.ok) {
+    // Signed by everyone, but not for video (audit CL-B11): a guardian who
+    // ticked photos only, or a purged guardian whose photo-only choice still
+    // stands, means the video gate refuses -- the same test
+    // assertConsentCoversVideo makes (coversVideo === false on a signed row;
+    // covers_video is NOT NULL, so within ok that is the only refusal).
+    // Reporting that as plain "signed" told a family video was cleared when
+    // it was not.
+    const excludesVideo = [...consent.perGuardian, ...consent.retained]
+      .some((guardian) => guardian.coversVideo === false);
+    return excludesVideo ? 'photo_only' : 'signed';
+  }
+
+  // A purged former guardian's withdrawal still refuses (owner, 2026-10-05:
+  // the "no" is kept), and no current guardian can be shown as its author.
+  // Read as withdrawn, since that is what every media gate reads; "missing"
+  // would tell the family the gym has no form on file when it has a refusal.
+  if (consent.retained.some((guardian) => normalizeWaiverStatusText(guardian.status) === 'withdrawn')) {
+    return 'withdrawn';
+  }
 
   const own = consent.perGuardian
     .filter((guardian) => ownParentIds.has(guardian.parentId))
@@ -136,7 +160,7 @@ async function waiverStatusesFor(
   organizationId: string,
   athleteId: string,
   ownParentIds: Set<string>,
-): Promise<Record<string, WaiverStatus>> {
+): Promise<Record<string, WaiverStatus | PhotoMediaStatus>> {
   const entries = await Promise.all(
     TRACKED_WAIVER_TYPES.map(async (waiverType) => [
       waiverType,
