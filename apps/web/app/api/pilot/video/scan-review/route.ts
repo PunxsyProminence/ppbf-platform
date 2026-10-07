@@ -26,7 +26,8 @@ import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import type { QueryExecutor } from '@/src/server/pilot/guardianConsent';
+import { writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { reviewVideoSessionScan, type VideoScanReviewDecision } from '@/src/server/pilot/videoSessions';
 import {
   assertActorHoldsCurrentReviewLink,
@@ -86,16 +87,9 @@ export async function POST(request: NextRequest) {
      */
     if (decision === 'approve') {
       await assertActorHoldsCurrentReviewLink(principal, videoSessionId, video.scan_state);
-      // AND CONSENT STILL COVERS VIDEO (CL-A21). A link minted before the
-      // guardian went photo-only or withdrew still satisfies the check above
-      // for 15 minutes; approve must not put the footage into circulation
-      // after the guardian said no. Block narrows access and is not asked.
-      if (video.athlete_id) {
-        await assertConsentCoversVideo(principal.organizationId, video.athlete_id);
-      }
     }
 
-    const updated = await reviewVideoSessionScan({
+    const review = (client: QueryExecutor | null) => reviewVideoSessionScan({
       organizationId: principal.organizationId,
       videoSessionId,
       decision,
@@ -105,7 +99,22 @@ export async function POST(request: NextRequest) {
       reviewedByAccountId: principal.accountId,
       reviewedByRole: principal.role,
       notes,
-    });
+    }, client);
+
+    // AND CONSENT STILL COVERS VIDEO (CL-A21). A link minted before the
+    // guardian went photo-only or withdrew still satisfies the check above
+    // for 15 minutes; approve must not put the footage into circulation
+    // after the guardian said no. Block narrows access and is not asked.
+    //
+    // CHECKED AND WRITTEN AS ONE TRANSACTION (from #1286). Checked on the
+    // pool and then written on the pool, a withdrawal could commit between
+    // the two and the approve still landed. writeUnderPlaybackConsent holds
+    // the athlete's guardian links FOR SHARE across the write, the same way
+    // review-link mints under it. Teaching and unattributed footage name
+    // nobody, so the write runs as before.
+    const updated = decision === 'approve'
+      ? await writeUnderPlaybackConsent(principal.organizationId, video.athlete_id ? [video.athlete_id] : [], review)
+      : await review(null);
 
     if (!updated) {
       // The row stopped being quarantined between the authorization read and

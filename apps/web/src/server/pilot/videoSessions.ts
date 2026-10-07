@@ -1,5 +1,6 @@
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import type { QueryExecutor } from './guardianConsent';
 import type { VideoScanDecision } from './videoScanPolicy';
 
 export interface VideoSessionRecord {
@@ -32,6 +33,24 @@ export async function getVideoSessionById(
 ): Promise<VideoSessionRecord | null> {
   return queryOne<VideoSessionRecord>(
     `select video_session_id, organization_id, athlete_id, blob_path, status
+     from pilot.video_sessions
+     where organization_id = $1 and video_session_id = $2
+       and ${athleteNotDeletedSql('pilot.video_sessions')}`,
+    [organizationId, videoSessionId],
+  );
+}
+
+/**
+ * The video as the Film Study worker needs it at run time (audit CL-B6): the
+ * same deleted-athlete rule as getVideoSessionById, plus capture_take_id, the
+ * column the Film Study / Teach Shadow boundary is decided on.
+ */
+export async function getVideoSessionForFilmStudyJob(
+  organizationId: string,
+  videoSessionId: string,
+): Promise<(VideoSessionRecord & { capture_take_id: string | null }) | null> {
+  return queryOne<VideoSessionRecord & { capture_take_id: string | null }>(
+    `select video_session_id, organization_id, athlete_id, blob_path, status, capture_take_id
      from pilot.video_sessions
      where organization_id = $1 and video_session_id = $2
        and ${athleteNotDeletedSql('pilot.video_sessions')}`,
@@ -101,10 +120,17 @@ export async function reviewVideoSessionScan(params: {
   reviewedByAccountId: string;
   reviewedByRole: string;
   notes?: string;
-}): Promise<VideoSessionReviewRecord | null> {
+}, client?: QueryExecutor | null): Promise<VideoSessionReviewRecord | null> {
   const approved = params.decision === 'approve';
 
-  return queryOne<VideoSessionReviewRecord>(
+  // With a client, the write joins that client's transaction: the approve
+  // path runs it under writeUnderPlaybackConsent, so the guardian links are
+  // still held when 'ready' lands (scan-review/route.ts).
+  const updateOne = client
+    ? async (text: string, values: unknown[]) => (await client.query<VideoSessionReviewRecord>(text, values)).rows[0] ?? null
+    : queryOne<VideoSessionReviewRecord>;
+
+  return updateOne(
     `update pilot.video_sessions
      set status = case when $3 then 'ready' else status end,
          scan_state = case when $3 then 'passed' else 'blocked' end,

@@ -16,6 +16,7 @@ import { assertVideoConcernsAthlete } from '@/src/server/pilot/videoAthleteScope
 
 import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { writeUnderFilmStudyConsent } from '@/src/server/pilot/filmStudyConsent';
 import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createCoachReportedObservation,
@@ -213,6 +214,21 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing observation_text');
     }
 
+    // Same per-athlete access check every athlete-scoped write takes. Writing
+    // an observation about an athlete is at least as sensitive as reading one.
+    await assertActorCanAccessAthlete(principal, athleteId);
+
+    // Clearing the athlete says nothing about the video. Without this a coach
+    // cleared for one child could file an observation about them against
+    // another child's bout (audit CL-A16). Checked after the athlete gate so
+    // this refusal adds nothing to probe with about children the caller
+    // cannot reach. Missing, another gym's and another child's video all
+    // answer the same here, and it runs BEFORE the destination check below
+    // (audit CL-B12): a video not of this athlete is refused as such, never
+    // as "teaching footage", so a distinct refusal cannot confirm a stray
+    // video id exists.
+    await assertVideoConcernsAthlete(principal.organizationId, videoSessionId, athleteId);
+
     /*
      * A COACH-REPORTED OBSERVATION IS FILM STUDY. Teaching footage is not
      * coaching film and may not be written about as though it were.
@@ -225,24 +241,27 @@ export async function POST(request: NextRequest) {
      */
     await assertVideoIsFilmStudyMedia(principal.organizationId, videoSessionId);
 
-    // Same per-athlete access check every athlete-scoped write takes. Writing
-    // an observation about an athlete is at least as sensitive as reading one.
-    await assertActorCanAccessAthlete(principal, athleteId);
-
-    // Clearing the athlete says nothing about the video. Without this a coach
-    // cleared for one child could file an observation about them against
-    // another child's bout (audit CL-A16). Checked after the athlete gate so
-    // this refusal adds nothing to probe with about children the caller
-    // cannot reach.
-    await assertVideoConcernsAthlete(principal.organizationId, videoSessionId, athleteId);
-
-    const proposal = await createCoachReportedObservation({
-      organizationId: principal.organizationId,
-      athleteId,
+    // AND THE GUARDIANS' CONSENT, THE SAME QUESTION THE MODEL PATH ASKS. The
+    // video-analysis request and the worker both run assertFilmStudyConsent
+    // (the athlete named here, the athlete the video is filed under, and
+    // every live tag subject: signed, covering video, not withdrawn); this
+    // write about the same footage did not ask at all. Asked inside the
+    // insert's own transaction, holding the guardian links, so a withdrawal
+    // cannot land between the check and the row. The refusal is the gate's
+    // own (409 withdrawn / photo-only / no consent on file, 404 for a tag on
+    // a deleted athlete), the same answers Film Study gives.
+    const proposal = await writeUnderFilmStudyConsent(
+      principal.organizationId,
       videoSessionId,
-      observationText,
-      reportedByAccountId: principal.accountId,
-    });
+      athleteId,
+      (client) => createCoachReportedObservation({
+        organizationId: principal.organizationId,
+        athleteId,
+        videoSessionId,
+        observationText,
+        reportedByAccountId: principal.accountId,
+      }, client),
+    );
 
     await writePilotAuditEvent({
       event_type: 'create',

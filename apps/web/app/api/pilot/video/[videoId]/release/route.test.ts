@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertConsentCoversVideo, writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getVideoReleasePolicy } from '@/src/server/pilot/videoReleasePolicy';
 import { queryOne } from '@/src/server/pilot/db';
@@ -35,8 +35,28 @@ jest.mock('@/src/server/pilot/videoScanReview', () => ({
   ...jest.requireActual('@/src/server/pilot/videoScanReview'),
   assertActorHoldsCurrentReviewLink: jest.fn(),
 }));
+// The write runs under writeUnderPlaybackConsent (from #1286): the consent
+// check for every named athlete, then the write on the held transaction. The
+// transaction itself is proven against Postgres in
+// playbackConsentRace.pg.test.ts (mintUnderPlaybackConsent delegates to it).
+// Here the double keeps the ORDER (check, then write) and, when there are
+// subjects, hands the write a sentinel client that forwards to the pooled
+// queryOne double -- so the assertions can see both that the UPDATE went
+// through the transaction's client and what it said.
+const TX_CLIENT = {
+  query: jest.fn(async (sql: string, params?: unknown[]) => {
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    const row = await queryOne(sql, params);
+    return { rows: row ? [row] : [] };
+  }),
+};
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+  writeUnderPlaybackConsent: jest.fn(async (org: string, ids: string[], write: (client: unknown) => unknown) => {
+    const { assertConsentCoversVideo } = jest.requireMock('@/src/server/pilot/videoPlaybackConsent');
+    for (const id of ids) await assertConsentCoversVideo(org, id);
+    return write(ids.length > 0 ? TX_CLIENT : null);
+  }),
 }));
 // Only the athlete-reach check is doubled; requireRole and
 // isOrganizationAdminRole stay real.
@@ -292,6 +312,44 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
     expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-1');
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  // From #1286: checked on the pool and then written on the pool, a
+  // withdrawal could commit between the two and the release still landed.
+  // The write now runs inside the consent check's own transaction.
+  test('the release write runs under the consent transaction for the named athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    const mockWrite = writeUnderPlaybackConsent as jest.Mock;
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-1'], expect.any(Function));
+    // The UPDATE was issued on the transaction's client, not on the pool: a
+    // route that checked consent in the helper and then wrote on the pool
+    // afterwards would fail here.
+    expect(TX_CLIENT.query).toHaveBeenCalledTimes(1);
+    expect(String(TX_CLIENT.query.mock.calls[0][0])).toContain("set status = 'ready'");
+    expect(TX_CLIENT.query.mock.calls[0][1]).toEqual(['vid-1', 'org-1', 'needs_human_review']);
+  });
+
+  test('unattributed footage names nobody, so the write runs with no consent subjects', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ athlete_id: null }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(writeUnderPlaybackConsent).toHaveBeenCalledWith('org-1', [], expect.any(Function));
+    expect(mockConsent).not.toHaveBeenCalled();
+    // No client, so the pooled write ran.
+    expect(TX_CLIENT.query).not.toHaveBeenCalled();
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
   });
 
   test('an organization admin is not put through the coach assignment check', async () => {
