@@ -4,6 +4,7 @@ import {
   listAnnotationEvents,
   submitAnnotationSet,
 } from '@/src/server/pilot/calibration/annotations';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import {
@@ -38,6 +39,27 @@ export const runtime = 'nodejs';
  * the count is returned so the page can ASK the annotator to confirm an empty
  * pass, which is a prompt, not a refusal.
  */
+/**
+ * A body-point set (0.2 and later) cannot be submitted incomplete: the
+ * database refuses with CALIBRATION_BODY_POINTS_INCOMPLETE and names every
+ * missing item in the error detail (calibration-body-point-rules migration).
+ * That list is for the annotator, so it comes back as a 400 that carries it;
+ * the body-points GET route reads the same list ahead of time. Anything else
+ * is rethrown as it came.
+ */
+function translateIncompleteBodyPoints(error: unknown): never {
+  const dbError = (error ?? {}) as { message?: unknown; detail?: unknown };
+  if (dbError.message === 'CALIBRATION_BODY_POINTS_INCOMPLETE') {
+    const missing = typeof dbError.detail === 'string' ? dbError.detail : '';
+    throw new ValidationError(
+      `Missing body points: this set cannot be submitted until every event has its stance type, `
+      + `three moments, a lead side and guard at each, and every point marked. Still missing: ${missing}`,
+      'CALIBRATION_BODY_POINTS_INCOMPLETE',
+    );
+  }
+  throw error;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -55,7 +77,8 @@ export async function POST(request: NextRequest) {
     const set = await loadOwnAnnotationSet(principal, annotationSetId);
     assertSetInProgress(set);
 
-    const submitted = await submitAnnotationSet(principal.organizationId, annotationSetId);
+    const submitted = await submitAnnotationSet(principal.organizationId, annotationSetId)
+      .catch(translateIncompleteBodyPoints);
     if (!submitted) {
       // submitAnnotationSet is scoped to status='in_progress' in its WHERE, so
       // null here means the set was submitted between the check above and this
