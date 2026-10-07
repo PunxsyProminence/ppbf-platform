@@ -10856,7 +10856,7 @@
     "id": "app/api/pilot/shadow/research-requirements/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/research-requirements",
-    "gate": "requirePrincipal + requireRole (ORGANIZATION_MEMBER_ROLES) + assertActorCanAccessAthlete for named athletes; resolve limited to coach/org admin",
+    "gate": "requirePrincipal + requireRole (ORGANIZATION_MEMBER_ROLES) + assertActorCanAccessAthlete for named athletes; create limited to coach/org admin (isResearchStaff); resolve limited to coach/org admin",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -10870,9 +10870,9 @@
     "writes": true,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Create is open to every member role (athlete, parent, volunteer, staff included) with caller-chosen source_event_name/knowledge_gap text; resolve is staff-only. Confirm create breadth is intended.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "POST: role gate; action resolve loads the stored subject athlete and runs assertActorCanAccessAthlete then isResearchStaff; action create runs assertActorCanAccessAthlete on every athlete named in subject_id/metadata before createShadowResearchRequirement. Subject-less creates need no relationship check.",
+    "notes": "POST: role gate; action resolve loads the stored subject athlete and runs assertActorCanAccessAthlete then isResearchStaff; action create is refused with 403 unless isResearchStaff, then runs assertActorCanAccessAthlete on every athlete named in subject_id/metadata before createShadowResearchRequirement. Subject-less creates need no relationship check.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

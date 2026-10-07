@@ -431,6 +431,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, resolved });
     }
 
+    // Filing a research requirement is staff work. The role gate above admits
+    // every organization seat because resolve narrows itself per row and the
+    // GET above shares the set, but create had no staff test at all: a parent,
+    // athlete, volunteer or staff account could POST a subject-less requirement
+    // straight into the gym's research backlog (CL-A3 ruling 2026-10-06, "Staff
+    // only"; OD-2026-10-06-010, "Family reads, staff closes"). Library
+    // questions are not filed through here -- the Library writes those itself
+    // -- so who may ASK the Library is unchanged.
+    if (!isResearchStaff(principal.role)) {
+      return NextResponse.json(
+        { ok: false, error: 'Forbidden: only coaches and organization admins file research requirements' },
+        { status: 403 },
+      );
+    }
+
     if (body.source_event_name && body.source_entity_type && body.source_entity_id && body.research_requirement && body.knowledge_gap) {
       if (SERVER_WRITTEN_EVENT_NAMES.has(body.source_event_name) || SERVER_WRITTEN_ENTITY_TYPES.has(body.source_entity_type)) {
         return NextResponse.json(
