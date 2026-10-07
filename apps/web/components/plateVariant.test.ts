@@ -684,8 +684,19 @@ describe('the resolver reads the sheet it is pointed at', () => {
     // (the current theme's `--plate: none` is gone, OD-2026-10-01-005) -- then
     // five office (of6), four clinic (of5), two night (of3) and seven floor
     // (of8), six office (of7) and the floor's first PORTRAIT variant inside
-    // the orientation block. Twenty-eight.
-    expect(declared).toHaveLength(28);
+    // the orientation block. That was twenty-eight.
+    //
+    // THIRTY since 2026-10-07: office and night got the portrait plates that
+    // were already committed and pointed at by nothing, so an upright tablet
+    // fell back to the gradient wall in two rooms that had finished art. Plain
+    // (0,1,0) rules inside the same orientation block.
+    //
+    // Clinic, board and file are NOT here on purpose. Their portrait plates
+    // measure 2.09:1, 1.02:1 and 1.01:1 against the ink those rooms write in;
+    // board and file write in --hide-900 and would get WORSE than the 1.05:1
+    // and 2.19:1 they have now. If this count rises to thirty-one or more,
+    // check that whoever added a row measured first.
+    expect(declared).toHaveLength(30);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {

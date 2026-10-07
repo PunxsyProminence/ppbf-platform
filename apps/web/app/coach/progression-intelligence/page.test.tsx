@@ -2436,3 +2436,186 @@ describe('a progression read that failed is not an athlete with no gaps or drill
     expect(screen.queryByText('Rear foot stays flat through the cross.')).toBeNull();
   });
 });
+
+// OD-2026-10-06-024 ruling 1, "Warn only, both places": an active training hold
+// is shown beside the Assign controls, and after an assignment that went
+// through, and blocks nothing. Pinned on the rendered DOM (jsdom), so what is
+// proven is that the words are in the document -- not how they look. The look
+// has not been checked and needs Jason's signed-in view on staging.
+describe('drill assignment warns on an active training hold and does not block', () => {
+  const DRILL = {
+    drill_id: 'drill-jab-return',
+    name: 'Jab return',
+    category: 'striking',
+    focus: 'Hand home before the next beat.',
+    difficulty: 'intermediate',
+    active: true,
+    reference_drill_id: null,
+  };
+  const HOLD = {
+    scope: 'contact_only',
+    reason_category: 'medical',
+    athlete_explanation: 'Waiting on a doctor note before contact resumes.',
+  };
+
+  interface Posted { path: string; body: unknown }
+
+  function fetchFor(options: {
+    holds?: Array<Record<string, unknown>>;
+    holdsOk?: boolean;
+    assignAnswer?: Record<string, unknown>;
+    /** The 201 arrives but its body is not JSON (truncated, proxied). */
+    assignBodyUnreadable?: boolean;
+    posted: Posted[];
+  }) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.endsWith('/api/pilot/progression/assignments') && method === 'POST') {
+        options.posted.push({ path: url, body: JSON.parse(String(init?.body)) });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => {
+            if (options.assignBodyUnreadable) throw new SyntaxError('Unexpected end of JSON input');
+            return options.assignAnswer ?? { assignment_id: 'asg-1' };
+          },
+        } as Response;
+      }
+      if (url.includes('/api/pilot/training-holds')) {
+        if (options.holdsOk === false) return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ ok: true, holds: options.holds ?? [] }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      if (url.endsWith('/api/pilot/drills')) return { ok: true, json: async () => ({ items: [DRILL] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  async function openAssignForm() {
+    await screen.findByText('Rear foot stays flat through the cross.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+    await screen.findByLabelText('Drill');
+  }
+
+  async function assign() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Drill'), { target: { value: DRILL.drill_id } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+  }
+
+  test('with an active hold the notice is also inside the Assign form, with the form unchanged', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [HOLD], posted }));
+    await screen.findByText('Active Training Hold');
+    await openAssignForm();
+
+    const form = screen.getByLabelText('Drill').closest('div.mat-leather') as HTMLElement;
+    expect(within(form).getByText('Active Training Hold')).toBeTruthy();
+    expect(within(form).getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+    expect(within(form).getByText('Waiting on a doctor note before contact resumes.')).toBeTruthy();
+    // Nothing blocked, nothing to confirm: the controls are live and unguarded.
+    expect((screen.getByLabelText('Drill') as HTMLSelectElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Assign drill' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/are you sure|confirm assigning/i)).toBeNull();
+  });
+
+  test('the assignment goes through, and the answer\'s hold warning is shown after the form closes', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [HOLD], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { ...HOLD, hold_id: 'h1', lift_condition_text: '', expires_at: null } } }));
+    await screen.findByText('Active Training Hold');
+    await openAssignForm();
+
+    await assign();
+
+    expect(posted).toHaveLength(1);
+    expect(await screen.findByText(/Drill assigned\. This athlete has an active training hold \(CONTACT WORK\)/)).toBeTruthy();
+    expect(screen.getByText(/Assigning was NOT blocked/)).toBeTruthy();
+  });
+
+  test('a hold the page did not know about is picked up from the assignment answer', async () => {
+    const posted: Posted[] = [];
+    // The page's own hold read says "none"; the server, reading after the write, says held.
+    await renderWithAthlete(fetchFor({ holds: [], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { ...HOLD, hold_id: 'h1', lift_condition_text: '', expires_at: null } } }));
+    await openAssignForm();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+
+    await assign();
+
+    expect(await screen.findByText('Active Training Hold')).toBeTruthy();
+    expect(screen.getByText(/Assigning was NOT blocked/)).toBeTruthy();
+  });
+
+  test('no hold: nothing shows, before or after assigning', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [], posted }));
+    await openAssignForm();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+
+    await assign();
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+    expect(screen.queryByText(/Assigning was NOT blocked/)).toBeNull();
+    expect(screen.queryByText(/training hold/i)).toBeNull();
+  });
+
+  test('an unreadable hold answer after assigning says it could not be read, not that there is no hold', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: 'unreadable' } }));
+    await openAssignForm();
+
+    await assign();
+
+    expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
+  });
+
+  test('an assignment answer that is not readable JSON is "unknown", never "no hold"', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [], posted, assignBodyUnreadable: true }));
+    await openAssignForm();
+
+    await assign();
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test('a hold_warning this screen cannot read is never drawn as a hold, and never as "no hold"', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { scope: 'made_up' } } }));
+    await openAssignForm();
+
+    await assign();
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test("the previous assignment's hold note does not stand beside a new attempt", async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [HOLD], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { ...HOLD, hold_id: 'h1', lift_condition_text: '', expires_at: null } } }));
+    await screen.findByText('Active Training Hold');
+    await openAssignForm();
+    await assign();
+    expect(await screen.findByText(/Drill assigned\. This athlete has an active training hold/)).toBeTruthy();
+
+    // Second attempt: open the form again, pick nothing, press Assign -> refused client-side.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+    await screen.findByLabelText('Drill');
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Assign drill' }).pop() as HTMLElement);
+    });
+
+    expect(screen.queryByText(/Drill assigned\. This athlete has an active training hold/)).toBeNull();
+  });
+});
