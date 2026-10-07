@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { deriveCoachDisplayName } from '@/src/server/pilot/achievements';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { callerParentIdSet, checkGuardianMediaConsent, MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
@@ -106,7 +107,9 @@ async function athleteFacing(organizationId: string, hold: TrainingHoldRow): Pro
     lift_condition_text: hold.lift_condition_text,
     placed_at: hold.placed_at,
     expires_at: hold.expires_at,
-    placed_by_name: placer?.fullName ?? hold.placed_by_account_id,
+    // As in training-holds: a placer who resolves to nobody gets the existing
+    // phrase, never the account id (often the login email).
+    placed_by_name: placer?.fullName ?? deriveCoachDisplayName(null),
   };
 }
 
