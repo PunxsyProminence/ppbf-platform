@@ -357,6 +357,7 @@
     "pilot:apply-intake-case-primary-athlete": "node scripts/pilot-apply-intake-case-primary-athlete-migration.mjs",
     "pilot:apply-retained-media-restriction": "node scripts/pilot-apply-retained-media-restriction-migration.mjs",
     "pilot:apply-microsoft-identity-binding": "node scripts/pilot-apply-microsoft-identity-binding-migration.mjs",
+    "pilot:apply-audit-events-entity-index": "node scripts/pilot-apply-audit-events-entity-index-migration.mjs",
     "pilot:apply-sparring-exposure-contact-stage": "node scripts/pilot-apply-sparring-exposure-contact-stage-migration.mjs",
     "pilot:apply-athlete-development-blocks": "node scripts/pilot-apply-athlete-development-blocks-migration.mjs",
     "pilot:apply-athlete-development-block-competition-target": "node scripts/pilot-apply-athlete-development-block-competition-target-migration.mjs",
@@ -479,7 +480,8 @@
     "test:migrations:shadow-rate-limit-refund": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowRateLimitRefund.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-memory-correction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowMemoryCorrection.pg.test.ts --testTimeout=180000",
     "test:migrations:rehome-test-login": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rehomeTestLogin.pg.test.ts --testTimeout=240000",
-    "test:migrations:shadow-library-retrieval": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowLibraryRetrieval.pg.test.ts --testTimeout=240000"
+    "test:migrations:shadow-library-retrieval": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowLibraryRetrieval.pg.test.ts --testTimeout=240000",
+    "test:migrations:audit-events-entity-index": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEventsEntityIndex.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
