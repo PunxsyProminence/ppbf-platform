@@ -406,18 +406,18 @@ export default function SessionScriptLiveDelivery({
   }
 
   return (
-    <section aria-label="Live session delivery" className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+    <section aria-label="Live session delivery" className="ge-scripts-live mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
       <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
         <div>
           <p className="t-eyebrow">Delivering now</p>
           <h2 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">
             {detail ? detail.name : 'Session in progress'}
           </h2>
-          <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">
             Pinned at version {run.script_version} when this session started.
           </p>
           {detail && detail.version !== run.script_version && (
-            <p className="t-data mt-[var(--s2)] text-[var(--restricted-ink)]">
+            <p className="mt-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
               The plan below is version {detail.version}; this session pinned version {run.script_version} at start.
             </p>
           )}
@@ -488,7 +488,7 @@ export default function SessionScriptLiveDelivery({
       </div>
 
       {actionError && (
-        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+        <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
           {actionError}
         </p>
       )}
@@ -500,7 +500,7 @@ export default function SessionScriptLiveDelivery({
 
       {detailState === 'unavailable' && (
         <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-          <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+          <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
             The plan for this session could not be loaded, so its blocks cannot be shown or
             navigated. The session itself is still live -- pausing, resuming and ending it still work.
           </p>
@@ -538,7 +538,7 @@ export default function SessionScriptLiveDelivery({
               ))}
             </div>
           ) : (
-            <p className="t-body mt-[var(--s4)] text-[var(--restricted-ink)]">
+            <p className="mt-[var(--s4)] text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
               The session&apos;s current block is not in the plan shown below. Pick a block to move
               the session onto it.
             </p>
@@ -604,7 +604,7 @@ export default function SessionScriptLiveDelivery({
             </p>
 
             {logAthletesState === 'unavailable' || logProtocolsState === 'unavailable' ? (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                 {logAthletesState === 'unavailable' && logProtocolsState === 'unavailable'
                   ? 'The athlete roster and the protocol list could not be loaded, so nothing can be logged from here.'
                   : logAthletesState === 'unavailable'
@@ -612,7 +612,7 @@ export default function SessionScriptLiveDelivery({
                     : 'The protocol list could not be loaded, so nothing can be logged from here.'}
               </p>
             ) : (
-              <div className="grid gap-[var(--s3)] sm:grid-cols-2">
+              <div className="grid items-end gap-[var(--s3)] sm:grid-cols-2">
                 <label className="field">
                   <span className="t-label">Athlete</span>
                   <select
@@ -647,7 +647,7 @@ export default function SessionScriptLiveDelivery({
             )}
 
             {logError && (
-              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                 {logError}
               </p>
             )}
@@ -658,7 +658,7 @@ export default function SessionScriptLiveDelivery({
                   <li key={item.execution_id} className="flex flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">
                     <span className="badge badge--cleared"><i aria-hidden="true">✓</i>logged</span>
                     <span className="t-body text-[color:var(--bone-200)]">{item.protocol_title}</span>
-                    <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{item.athlete_name}</span>
+                    <span className="t-data">{item.athlete_name}</span>
                   </li>
                 ))}
               </ul>
@@ -720,7 +720,7 @@ export default function SessionScriptLiveDelivery({
                 />
               </label>
             </div>
-            <label className="flex items-center gap-[var(--s2)]">
+            <label className="inline-flex min-h-[var(--tap)] items-center gap-[var(--s2)]">
               <input
                 type="checkbox"
                 checked={resetProtocolUsed}
@@ -753,7 +753,7 @@ export default function SessionScriptLiveDelivery({
               />
             </label>
             {settleFieldError && (
-              <p role="alert" className="t-data text-[var(--locked-ink)]">{settleFieldError}</p>
+              <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">{settleFieldError}</p>
             )}
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button

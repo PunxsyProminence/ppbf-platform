@@ -1118,7 +1118,7 @@
    review, #1331); the weave was thinned and both inks darkened for it.
    Type and tap floors come from data-surface="kiosk" (the app's one-attribute
    device for a gym-floor surface) on this page's own parts -- header, notices,
-   script list, plan -- and not on the live run, which shares the <main>; the
+   script list, plan -- and, since screen 3b, on the live run's wrapper; the
    plaque is raised here because that device does not hold it. The "paper"
    ratios quoted further down are the 004A pass's; the canvas ratios above
    replace them. Markup touched in this pass: that attribute and size classes
@@ -1415,6 +1415,81 @@
 .ge-scripts article { min-width: 0; }
 .ge-scripts article > div:first-child { flex-wrap: wrap; }
 .ge-scripts article h3 { min-width: 0; overflow-wrap: anywhere; }
+
+/* THE LIVE RUN (screen 3b). The console a coach runs a session from stays a
+   dark leather panel -- it carries the failure panels, and its ground does
+   not flip -- and takes the same stitched edge as the board it sits on.
+   Sizes come from data-surface="kiosk" on its wrapper; what is stated here is
+   only what that device does not get right on this console. The rules hang
+   on a class the section carries (.ge-scripts-live), not on its aria-label,
+   so rewording the label cannot silently undo them:
+   - a sentence in the data voice takes the floor's 24px with a 1.15 leading
+     set for single figures, so it gets a sentence's leading;
+   - the foundation gives every input the 55px tap floor as a MINIMUM BLOCK
+     SIZE, which turns a checkbox into a 55px box. The settle form's checkbox
+     is a checkbox again, at a size a thumb can hit, and its label row is the
+     55px target (a class on the label);
+   - "Current" on the lit row is the metal voice; the label lift above would
+     have made it bone. */
+.ge-scripts .ge-scripts-live {
+  outline: 2px dashed rgba(231,200,138,.42);
+  outline-offset: -8px;
+}
+.ge-scripts .ge-scripts-live .t-data {
+  line-height: 1.35;
+}
+.ge-scripts .ge-scripts-live input[type="checkbox"] {
+  min-block-size: 0;
+  inline-size: 28px;
+  block-size: 28px;
+  flex: none;
+}
+.ge-scripts [aria-current="step"] .t-label {
+  color: var(--brass-200);
+}
+/* Two things the rendered run showed at 390 wide and in the settle form:
+   - a script name with one long word ("FUNDAMENTALS,") at the title size is
+     wider than a phone's column, and a flex item will not shrink below its
+     content unless told it may, so the title pushed its row 41px past the
+     panel. The title's box may shrink and the word may break.
+   - the settle form's two number fields carry no type attribute, so the
+     surface's `input[type="text"]` tap rule does not reach them: 53px. */
+.ge-scripts .ge-scripts-live > div:first-child > div {
+  min-width: 0;
+}
+.ge-scripts .ge-scripts-live h2,
+.ge-scripts .ge-scripts-live h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* .select shares .input's 46px minimum in the legacy sheet; Chromium's own
+   padding happened to carry it to 55, which is not a floor. */
+.ge-scripts .ge-scripts-live :is(.input, .select) {
+  min-height: var(--tap);
+}
+/* On a phone the title steps down one rung, so a long word fits its line
+   instead of breaking mid-word ("FUNDAMENTA / LS,"). Still 24px. */
+@media (max-width: 640px) {
+  .ge-scripts .ge-scripts-live h2 { font-size: var(--t-lg); }
+}
+/* "Delivering now" is the metal voice at --brass-400: 2.7:1 on this leather.
+   Two rungs up, 4.8:1. */
+.ge-scripts .ge-scripts-live .t-eyebrow {
+  color: var(--brass-200);
+}
+/* The logged intervention's athlete name is a flex item in the data voice at
+   24px; a long unbroken name must wrap inside its row, not leave it. */
+.ge-scripts .ge-scripts-live li .t-data {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Focus that shows on the dark console. The app's brass ring is about 2:1
+   around these buttons, and the checkbox's default ring 2.4:1. */
+.ge-scripts .ge-scripts-live .btn:focus-visible,
+.ge-scripts .ge-scripts-live input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--bone-100);
+  outline-offset: 2px;
+}
 
 /* THE STRIPS. A block in the plan is a slip clipped to the board: paper from
    the seam above, a bronze rule down the leading edge where the reference

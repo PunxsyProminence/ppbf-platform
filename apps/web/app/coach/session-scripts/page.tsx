@@ -261,10 +261,9 @@ function CoachSessionScripts() {
        gym-floor surface (as on /coach/floor-groups and /coach/recognition): a
        coach reads this at arm's length, so controls take the 55px tap floor
        and voices the 19.1px type floor. It is set on THIS PAGE'S OWN PARTS --
-       the header, the notices, the script list and the plan -- and
-       deliberately not on <main>: the live run (SessionScriptLiveDelivery)
-       renders inside <main> too, and raising its sizes changes that screen's
-       layout, which is its own item with its own rendered check. */
+       the header, the notices, the script list, the plan and (since screen
+       3b, with its own rendered check) the live run's wrapper -- rather than
+       on <main>, so each part was raised when it had been looked at. */
     <main className="ge-scripts room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header data-surface="kiosk" className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
@@ -304,7 +303,7 @@ function CoachSessionScripts() {
         </div>
 
         {liveRun && (
-          <div className="mt-[var(--s5)]">
+          <div data-surface="kiosk" className="mt-[var(--s5)]">
             <SessionScriptLiveDelivery
               key={liveRun.run_id}
               initialRun={liveRun}
