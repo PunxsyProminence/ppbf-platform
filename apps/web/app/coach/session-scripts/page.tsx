@@ -257,7 +257,11 @@ function CoachSessionScripts() {
   }, [loadDeliveries]);
 
   return (
-    <main className="ge-scripts room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+    /* data-surface="kiosk" -- Law 5, the same one-attribute device as
+       /coach/floor-groups and /coach/recognition: a coach reads this at arm's
+       length on the gym floor, so every control takes the 55px tap floor and
+       every voice the 19.1px type floor. */
+    <main data-surface="kiosk" className="ge-scripts room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach Workspace</p>
@@ -279,7 +283,7 @@ function CoachSessionScripts() {
 
         {liveRunCheck === 'unavailable' && (
           <div className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-            <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+            <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
               Whether you have a session in progress could not be checked. A live session may exist
               that is not shown here -- reload to try again. Starting is disabled until this check
               succeeds, so a second session cannot be opened over a running one blindly.
@@ -324,7 +328,7 @@ function CoachSessionScripts() {
 
           {!loading && loadError && (
             <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+              <p className="text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty set of scripts.
               </p>
@@ -352,7 +356,7 @@ function CoachSessionScripts() {
                 {script.theme.trim() !== '' && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{script.theme}</p>
                 )}
-                <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                   {script.contact_structure.replace(/_/g, ' ')}
                 </p>
                 <button
@@ -378,7 +382,7 @@ function CoachSessionScripts() {
             )}
 
             {!detailLoading && detailError && (
-              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                 {detailError}
               </p>
             )}
@@ -416,7 +420,7 @@ function CoachSessionScripts() {
                   </div>
                 )}
                 {startError && (
-                  <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                  <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                     {startError}
                   </p>
                 )}
@@ -446,7 +450,7 @@ function CoachSessionScripts() {
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="plaque">{blockWindow(block)}</span>
-                        <h4 className="t-command text-[length:var(--t-sm)]">{block.block_label}</h4>
+                        <h4 className="t-command text-[length:var(--t-md)]">{block.block_label}</h4>
                         {NOTABLE_KINDS[block.block_kind] && (
                           <span className="t-label">{NOTABLE_KINDS[block.block_kind]}</span>
                         )}
@@ -469,7 +473,7 @@ function CoachSessionScripts() {
                 </ol>
 
                 {detail.renderings.length > 0 && (
-                  <p className="t-body mt-[var(--s5)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                  <p className="t-body mt-[var(--s5)] text-[color:var(--bone-300)]">
                     Also authored for: {detail.renderings.map((r) => r.format.replace(/_/g, ' ')).join(', ')}.
                   </p>
                 )}
@@ -487,7 +491,7 @@ function CoachSessionScripts() {
             )}
 
             {deliveriesState === 'unavailable' && (
-              <p className="t-body mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              <p className="t-body mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                 The delivery history could not be loaded. Deliveries may exist that are not shown --
                 this is a failed read, not an empty history.
               </p>
