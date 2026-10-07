@@ -1,4 +1,4 @@
-import { withTransaction } from './db';
+import { queryOne, withTransaction } from './db';
 import { NotFoundError, PilotError } from './errors';
 import {
   assertGuardianMediaConsent,
@@ -29,6 +29,14 @@ import { assertConsentCoversVideo } from './videoPlaybackConsent';
  * whole clip). A tag naming a deleted athlete refuses as not-found, the same
  * answer the route gave before.
  *
+ * THE VIDEO'S OWN ATHLETE IS READ FROM THE ROW, not only taken from the
+ * caller. The model path passes video.athlete_id, but a coach-reported
+ * observation names the athlete it is ABOUT, who may be a tag subject on a
+ * clip filed under another child (assertVideoConcernsAthlete allows that).
+ * Asked only for the named athlete, the child the clip is filed under was
+ * never asked (review finding on the coach-reported consent change). An
+ * unattributed clip has no row athlete and adds nobody.
+ *
  * The worker calls this AGAIN at run time because consent can be withdrawn
  * between the request and the job, and a queued job carries no consent of
  * its own -- only the request that was allowed at the time.
@@ -48,11 +56,16 @@ export async function assertFilmStudyConsent(
   // Passed on only when present, so the pooled reads are called exactly as
   // they were before a client existed.
   const inTx: [] | [QueryExecutor] = client ? [client] : [];
+  const owner = await readVideoAthlete(organizationId, videoSessionId, client);
   const subjects = await listLiveTagSubjects(organizationId, videoSessionId, ...inTx);
   if (subjects.some((subject) => subject.athlete_deleted)) {
     throw new FilmStudyTaggedAthleteDeletedError();
   }
-  const athleteIds = [...new Set([athleteId, ...subjects.map((subject) => subject.athlete_id)])];
+  const athleteIds = [...new Set([
+    athleteId,
+    ...(owner ? [owner] : []),
+    ...subjects.map((subject) => subject.athlete_id),
+  ])];
   // Every athlete's guardian links in ONE pass, in the shared order, before
   // the per-athlete reads below (which then re-take rows already held). The
   // loop visits the video's own athlete first, which is not athlete_id order,
@@ -63,6 +76,20 @@ export async function assertFilmStudyConsent(
     await assertConsentCoversVideo(organizationId, id, ...inTx);
     await assertGuardianMediaConsent(organizationId, id, ...inTx);
   }
+}
+
+/** video_sessions.athlete_id, or null for an unattributed or missing row. */
+async function readVideoAthlete(
+  organizationId: string,
+  videoSessionId: string,
+  client?: QueryExecutor,
+): Promise<string | null> {
+  const sql = `select athlete_id from pilot.video_sessions
+      where organization_id = $1 and video_session_id = $2`;
+  const row = client
+    ? (await client.query<{ athlete_id: string | null }>(sql, [organizationId, videoSessionId])).rows[0] ?? null
+    : await queryOne<{ athlete_id: string | null }>(sql, [organizationId, videoSessionId]);
+  return row?.athlete_id ?? null;
 }
 
 /*

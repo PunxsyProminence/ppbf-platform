@@ -66,7 +66,10 @@ const mockCallerParentIdSet = jest.mocked(callerParentIdSet);
 
 /** A media consent check result, one entry per linked guardian. The caller
  *  backs 'par-1' (see beforeEach); anything else is another guardian. */
-function consent(perGuardian: Array<{ parentId: string; status: string | null }>): ConsentCheckResult {
+function consent(
+  perGuardian: Array<{ parentId: string; status: string | null; coversVideo?: boolean | null }>,
+  retained: ConsentCheckResult['retained'] = [],
+): ConsentCheckResult {
   const missingParentIds = perGuardian
     .filter((g) => (g.status ?? '').trim().toLowerCase() !== 'signed')
     .map((g) => g.parentId);
@@ -77,11 +80,11 @@ function consent(perGuardian: Array<{ parentId: string; status: string | null }>
     perGuardian: perGuardian.map((g) => ({
       parentId: g.parentId,
       status: g.status,
-      coversVideo: g.status === null ? null : true,
+      coversVideo: g.coversVideo !== undefined ? g.coversVideo : (g.status === null ? null : true),
       publicUseAllowed: g.status === null ? null : false,
       signedAt: g.status === null ? null : '2026-09-01T00:00:00.000Z',
     })),
-    retained: [],
+    retained,
   };
 }
 
@@ -411,6 +414,56 @@ test('reads signed exactly when the media consent check passes, whatever the new
   // The other three types still come from their own newest row.
   expect(body.items[0].waivers.general).toBe('withdrawn');
   expect(body.items[0].waivers.travel).toBe('withdrawn');
+});
+
+/* audit CL-B11, under the 2026-10-05 ruling that photo-only means no video
+   use: every guardian signed, but one drew the line at video, so the video
+   gates refuse. Reporting that as plain "signed" told a family video was
+   cleared when it was not. */
+test('every guardian signed but one photo-only reads photo_only, not signed', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockCheckGuardianMediaConsent.mockResolvedValueOnce(
+    consent([
+      { parentId: 'par-1', status: 'signed' },
+      { parentId: 'par-2', status: 'signed', coversVideo: false },
+    ]),
+  );
+
+  const body = await (await get()).json();
+
+  expect(body.items[0].waivers.photo_media).toBe('photo_only');
+});
+
+test("a purged guardian's photo-only choice still reads photo_only (the 'no' is kept)", async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockCheckGuardianMediaConsent.mockResolvedValueOnce(
+    consent(
+      [{ parentId: 'par-1', status: 'signed' }],
+      [{ parentId: 'former-1', status: 'signed', coversVideo: false, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00.000Z' }],
+    ),
+  );
+
+  const body = await (await get()).json();
+
+  expect(body.items[0].waivers.photo_media).toBe('photo_only');
+});
+
+test("a purged guardian's withdrawal reads withdrawn, not missing, when every current guardian signed", async () => {
+  // The retained 'no' refuses every media gate (owner 2026-10-05). It is not
+  // the caller's own row, and it is not absence: the gym holds a refusal.
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  const result = consent(
+    [{ parentId: 'par-1', status: 'signed' }],
+    [{ parentId: 'former-1', status: 'withdrawn', coversVideo: false, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00.000Z' }],
+  );
+  mockCheckGuardianMediaConsent.mockResolvedValueOnce({ ...result, ok: false });
+
+  const body = await (await get()).json();
+
+  expect(body.items[0].waivers.photo_media).toBe('withdrawn');
 });
 
 test('the caller\'s own row is matched by any parent row the account backs', async () => {
