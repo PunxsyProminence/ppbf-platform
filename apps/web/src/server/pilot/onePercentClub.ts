@@ -7,6 +7,7 @@ import {
 } from './achievements';
 import { earnedMilestoneKeys, isMilestoneKey } from '@/src/shared/achievementPaths';
 import { query, queryOne } from './db';
+import { accountNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
 
 // The 1% Club (register module 127). Owner design, verbatim: "1,2,3 with the
@@ -121,16 +122,25 @@ export async function resolveActorDisplayName(input: {
     return getCoachDisplayName(input.organizationId, input.accountId);
   }
 
+  // Scope B: the two reads below take the deletion mark (deleted_at on the
+  // athlete row; accountNotDeletedSql for a login, as the portrait review
+  // queue does) and fall to the phrase they already used for a record with
+  // no name. The coach arm above reads through getCoachDisplayName, whose
+  // deletion check belongs to that module. The name this returns is frozen
+  // into the nomination or vote row at write time; what a later read shows
+  // of a person deleted since is that row's business, not this function's.
   if (input.role === 'athlete' && input.selfAthleteId) {
     const athlete = await queryOne<{ full_name: string }>(
-      `select full_name from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      `select full_name from pilot.athletes
+       where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
       [input.organizationId, input.selfAthleteId],
     );
     return athlete?.full_name?.trim() || 'An athlete';
   }
 
   const account = await queryOne<{ login_email: string | null }>(
-    `select login_email from pilot.accounts where organization_id = $1 and account_id = $2`,
+    `select login_email from pilot.accounts a
+     where a.organization_id = $1 and a.account_id = $2 and ${accountNotDeletedSql('a')}`,
     [input.organizationId, input.accountId],
   );
   const local = account?.login_email?.split('@')[0];
