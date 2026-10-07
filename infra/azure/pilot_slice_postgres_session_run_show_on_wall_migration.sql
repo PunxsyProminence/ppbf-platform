@@ -30,7 +30,9 @@ alter table pilot.session_script_runs
   drop constraint if exists pilot_ssrun_wall_only_live;
 alter table pilot.session_script_runs
   add constraint pilot_ssrun_wall_only_live
-  check (not show_on_wall or run_state = 'in_progress');
+  -- coalesce: a legacy row has run_state NULL, and a NULL check result passes in Postgres, so
+  -- `run_state = 'in_progress'` alone would let a legacy row onto the TV (caught by the pg suite).
+  check (not show_on_wall or coalesce(run_state, '') = 'in_progress');
 
 comment on column pilot.session_script_runs.show_on_wall is
   'True while the delivering coach has this live run on the gym TV (/wall). Only a live run can be shown (pilot_ssrun_wall_only_live); finishing a run turns it off.';

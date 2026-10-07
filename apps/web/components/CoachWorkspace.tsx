@@ -259,6 +259,8 @@ interface CoachLiveRun {
   is_paused: boolean;
   athletes_present: number | null;
   delivered_on: string;
+  /** The coach's Show on TV switch (S1 of the gym TV work). Server state; off by default. */
+  show_on_wall: boolean;
 }
 
 /**
@@ -976,6 +978,8 @@ export default function CoachWorkspace() {
      while this read is failing. */
   const [liveRun, setLiveRun] = useState<CoachLiveRun | null>(null);
   const [liveRunState, setLiveRunState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const [showOnWallBusy, setShowOnWallBusy] = useState(false);
+  const [showOnWallError, setShowOnWallError] = useState('');
 
   /* Today's classes, from /api/pilot/scheduler. The route filters to the
      classes this coach teaches, scheduled, or covers; nothing is re-scoped
@@ -1447,6 +1451,59 @@ export default function CoachWorkspace() {
       setLiveRunState('unavailable');
     }
   }, []);
+
+  /* The dashboard's copy of the live screen's Show on TV switch (Jason, Q3:
+     "it should be a capability in the coaches dashboard"). Same contract as
+     SessionScriptLiveDelivery: the button sends the value it wants, never
+     "toggle", so a retried tap cannot flip it back; the state shown is the
+     server's, from the response. A run that is no longer live on the server
+     is re-read rather than guessed at. */
+  const setShowOnWall = useCallback(
+    async (show: boolean): Promise<void> => {
+      if (!liveRun || showOnWallBusy) return;
+      setShowOnWallBusy(true);
+      setShowOnWallError('');
+      try {
+        let response: Response;
+        try {
+          response = await fetch(
+            `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(liveRun.run_id)}`,
+            {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'show_on_wall', show }),
+            },
+          );
+        } catch {
+          setShowOnWallError('Network error -- the TV switch was not changed on the server.');
+          return;
+        }
+        const payload = (await response.json().catch(() => ({}))) as {
+          run?: Partial<CoachLiveRun>;
+          error?: string;
+        };
+        if (!response.ok) {
+          if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
+            await loadLiveRun();
+            return;
+          }
+          setShowOnWallError(
+            typeof payload.error === 'string' && payload.error.trim() !== ''
+              ? `The server refused: ${payload.error}`
+              : 'The server refused the request.',
+          );
+          return;
+        }
+        if (payload.run && typeof payload.run.show_on_wall === 'boolean') {
+          setLiveRun((current) => (current ? { ...current, show_on_wall: payload.run!.show_on_wall as boolean } : current));
+        }
+      } finally {
+        setShowOnWallBusy(false);
+      }
+    },
+    [liveRun, showOnWallBusy, loadLiveRun],
+  );
 
   /* Today's classes for this coach. The scheduler route returns the whole
      visible set; the gym-day filter below is presentation, and the gym's zone
@@ -3208,6 +3265,32 @@ export default function CoachWorkspace() {
                           )}
                         </p>
                       </div>
+                      {/* The Show on TV switch, the same one the live screen
+                          carries. Off by default on every run. The honest line
+                          below goes in the slice that makes the TV read it. */}
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        {liveRun.show_on_wall ? (
+                          <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
+                        ) : (
+                          <span className="badge badge--filed"><i aria-hidden="true">—</i>NOT ON THE TV</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void setShowOnWall(!liveRun.show_on_wall)}
+                          disabled={showOnWallBusy}
+                          className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {liveRun.show_on_wall ? 'Take off the TV' : 'Show on TV'}
+                        </button>
+                      </div>
+                      <p className="t-data text-[color:var(--bone-400)]">
+                        The gym TV does not show sessions yet. This switch is saved now and takes effect when it does.
+                      </p>
+                      {showOnWallError && (
+                        <p role="alert" className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                          {showOnWallError}
+                        </p>
+                      )}
                       {/* Return to live delivery is the floor board's Run the
                           Room button on this tab; it is not repeated here. */}
                     </div>

@@ -228,6 +228,10 @@ beforeAll(async () => {
      values ('org-ss-premigration','org-ss-premigration','active')`,
   );
   await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ('acct-pre','coach','org-ss-premigration','microsoft')`,
+  );
+  await client.query(
     `insert into pilot.session_scripts
        (organization_id, script_id, lineage_id, version, name, created_by_account_id)
      values ('org-ss-premigration','scr-pre','scr-pre',1,'scr-pre','acct-pre')`,
