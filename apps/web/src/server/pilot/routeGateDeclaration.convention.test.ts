@@ -271,6 +271,16 @@ const NO_SESSION_GATE_ALLOWLIST = new Map<string, string>([
       + 'specifically about a session, and this route deliberately has none.',
   ],
   [
+    'app/api/pilot/tv/pair/route.ts#POST',
+    'Redeems a TV pairing code, so there is no session by construction: the '
+      + 'client is the gym television, which never signs in. The one-time, '
+      + 'five-minute code minted on the coach dashboard is the credential, '
+      + 'checked behind a per-IP budget on both the volatile and the durable '
+      + 'limiter that sits in FRONT of the lookup. Success hands the TV its '
+      + 'own device key in an httpOnly cookie; that key opens only the TV '
+      + 'read and no account. Every failure returns the same answer.',
+  ],
+  [
     'app/api/pilot/wall/route.ts#GET',
     'Unauthenticated by product decision: the client is a browser on the gym\'s '
       + 'television that nobody signs into, and a 24-hour session token would '
