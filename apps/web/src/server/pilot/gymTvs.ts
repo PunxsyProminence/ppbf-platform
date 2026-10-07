@@ -130,9 +130,11 @@ export interface MintedPairCode {
 // Mint a code for a new TV row. The code is returned to the caller exactly once.
 //
 // The mint budget is counted in the database, not in process memory, so it holds across replicas
-// and restarts. Codes that were never redeemed are left in place: an expired pending row is
-// harmless (its code cannot be redeemed) and the Paired TVs list shows it as expired, which is the
-// honest state.
+// and restarts -- and it is counted under a transaction-scoped advisory lock on (org, account), so
+// five parallel requests from one script cannot each see "4 so far" and all insert (reviewer A,
+// S2a-1). Codes that were never redeemed are left in place: an expired pending row is harmless
+// (its code cannot be redeemed) and the Paired TVs list shows it as expired, which is the honest
+// state.
 export async function mintGymTvPairCode(
   organizationId: string,
   accountId: string,
@@ -140,38 +142,37 @@ export async function mintGymTvPairCode(
 ): Promise<MintedPairCode> {
   const tvName = validateTvName(tvNameRaw);
 
-  const recent = await queryOne<{ n: string }>(
-    `select count(*)::text as n from pilot.gym_tvs
-      where organization_id = $1 and created_by_account_id = $2
-        and created_at > now() - ($3::int * interval '1 millisecond')`,
-    [organizationId, accountId, PAIR_CODE_MINT_WINDOW_MS],
-  );
-  if (Number(recent?.n ?? 0) >= PAIR_CODE_MINT_LIMIT) {
-    throw new GymTvError(429, 'TV_PAIR_CODE_RATE_LIMITED');
-  }
+  return withTransaction(async (client) => {
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', [`gym_tv_mint:${organizationId}:${accountId}`]);
 
-  // The code hash is unique across every gym. A collision is a one-in-a-billion insert failure,
-  // so one retry with a fresh code is enough; a second failure is reported, not swallowed.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const code = newPairCode();
-    const tvId = `gymtv_${Date.now()}_${randomUUID().substring(0, 8)}`;
-    try {
-      const row = await queryOne<{ tv_id: string; tv_name: string; pair_code_expires_at: string }>(
-        `insert into pilot.gym_tvs
-           (organization_id, tv_id, tv_name, created_by_account_id, pair_code_hash, pair_code_expires_at)
-         values ($1, $2, $3, $4, $5, now() + ($6::int * interval '1 millisecond'))
-         returning tv_id, tv_name, pair_code_expires_at`,
-        [organizationId, tvId, tvName, accountId, hashToken(code), PAIR_CODE_LIFETIME_MS],
-      );
-      if (!row) throw new Error('gym_tvs insert returned no row');
-      return { tv_id: row.tv_id, tv_name: row.tv_name, code, expires_at: row.pair_code_expires_at };
-    } catch (error) {
-      const sqlState = (error as { code?: unknown }).code;
-      if (sqlState === '23505' && attempt === 0) continue;
-      throw error;
+    const recent = await client.query<{ n: string }>(
+      `select count(*)::text as n from pilot.gym_tvs
+        where organization_id = $1 and created_by_account_id = $2
+          and created_at > now() - ($3::int * interval '1 millisecond')`,
+      [organizationId, accountId, PAIR_CODE_MINT_WINDOW_MS],
+    );
+    if (Number(recent.rows[0]?.n ?? 0) >= PAIR_CODE_MINT_LIMIT) {
+      throw new GymTvError(429, 'TV_PAIR_CODE_RATE_LIMITED');
     }
-  }
-  throw new Error('unreachable: pair code mint loop');
+
+    // The code hash is unique across every gym. A collision is a one-in-a-billion event; one fresh
+    // draw covers it, and a second collision surfaces as the unique-index error rather than being
+    // swallowed.
+    let code = newPairCode();
+    const clash = await client.query('select 1 from pilot.gym_tvs where pair_code_hash = $1', [hashToken(code)]);
+    if (clash.rows.length > 0) code = newPairCode();
+
+    const tvId = `gymtv_${Date.now()}_${randomUUID().substring(0, 8)}`;
+    const inserted = await client.query<{ tv_id: string; tv_name: string; pair_code_expires_at: string }>(
+      `insert into pilot.gym_tvs
+         (organization_id, tv_id, tv_name, created_by_account_id, pair_code_hash, pair_code_expires_at)
+       values ($1, $2, $3, $4, $5, now() + ($6::int * interval '1 millisecond'))
+       returning tv_id, tv_name, pair_code_expires_at`,
+      [organizationId, tvId, tvName, accountId, hashToken(code), PAIR_CODE_LIFETIME_MS],
+    );
+    const row = inserted.rows[0];
+    return { tv_id: row.tv_id, tv_name: row.tv_name, code, expires_at: row.pair_code_expires_at };
+  });
 }
 
 export async function listGymTvs(organizationId: string): Promise<GymTvListItem[]> {

@@ -54,19 +54,47 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
+  // Each transaction gets its OWN connection from a small pool, so two module calls started with
+  // Promise.all really do run as two concurrent transactions against the row locks under test.
+  // A single shared client would serialize them and prove nothing about the race.
   withTransaction: jest.fn(async (fn: (c: Client) => Promise<unknown>) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    await activeClient.query('begin');
+    const tx = await acquireTxClient();
     try {
-      const out = await fn(activeClient);
-      await activeClient.query('commit');
-      return out;
-    } catch (error) {
-      await activeClient.query('rollback');
-      throw error;
+      await tx.query('begin');
+      try {
+        const out = await fn(tx);
+        await tx.query('commit');
+        return out;
+      } catch (error) {
+        await tx.query('rollback');
+        throw error;
+      }
+    } finally {
+      releaseTxClient(tx);
     }
   }),
 }));
+
+const TX_POOL_SIZE = 8;
+const txIdle: Client[] = [];
+const txAll: Client[] = [];
+const txWaiters: Array<(c: Client) => void> = [];
+async function acquireTxClient(): Promise<Client> {
+  const idle = txIdle.pop();
+  if (idle) return idle;
+  if (txAll.length < TX_POOL_SIZE) {
+    const c = new Client({ connectionString: connectionStringFor('ppbf_test_gym_tvs') });
+    await c.connect();
+    txAll.push(c);
+    return c;
+  }
+  return new Promise<Client>((resolve) => txWaiters.push(resolve));
+}
+function releaseTxClient(c: Client): void {
+  const waiter = txWaiters.shift();
+  if (waiter) waiter(c);
+  else txIdle.push(c);
+}
 
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
@@ -193,6 +221,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   activeClient = null;
+  await Promise.all(txAll.map((c) => c.end()));
   if (client) await client.end();
   await new Promise<void>((resolve) => {
     let done = false;
@@ -283,8 +312,24 @@ describe('minting a code', () => {
       status: 429,
       code: 'TV_PAIR_CODE_RATE_LIMITED',
     });
-    // Another coach's budget is their own.
+    // Another coach's budget is their own -- in the same gym, not only in another one.
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-tv-coach-a2','coach',$1,'microsoft') on conflict do nothing`,
+      [ORG_A],
+    );
+    await expect(mintGymTvPairCode(ORG_A, 'acct-tv-coach-a2', 'A2 TV')).resolves.toBeDefined();
     await expect(mintGymTvPairCode(ORG_B, COACH_B, 'B TV')).resolves.toBeDefined();
+  });
+
+  it('the budget holds under parallel requests (advisory lock): exactly the limit succeed', async () => {
+    const results = await Promise.allSettled(
+      Array.from({ length: PAIR_CODE_MINT_LIMIT + 3 }, (_, i) => mintGymTvPairCode(ORG_A, COACH_A, `P ${i}`)),
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    expect(ok).toBe(PAIR_CODE_MINT_LIMIT);
+    const stored = await client.query('select count(*)::int as n from pilot.gym_tvs where created_by_account_id = $1', [COACH_A]);
+    expect(stored.rows[0].n).toBe(PAIR_CODE_MINT_LIMIT);
   });
 
   it('the error type carries status and code for jsonError', async () => {
@@ -323,6 +368,18 @@ describe('redeeming a code', () => {
   it('is single use: the second redemption of the same code is null', async () => {
     const { minted } = await pairedTv();
     expect(await redeemGymTvPairCode(minted.code)).toBeNull();
+  });
+
+  it('two TVs typing the same code at once: exactly one is paired (row lock + re-check)', async () => {
+    const minted = await mintGymTvPairCode(ORG_A, COACH_A, 'Gym main');
+    const [first, second] = await Promise.all([
+      redeemGymTvPairCode(minted.code),
+      redeemGymTvPairCode(minted.code),
+    ]);
+    const winners = [first, second].filter((r) => r !== null);
+    expect(winners.length).toBe(1);
+    const row = await readTv(minted.tv_id);
+    expect(row.device_key_hash).toBe(hashToken(winners[0]!.device_key));
   });
 
   it('a wrong code, a malformed code and an unknown code are all null', async () => {
