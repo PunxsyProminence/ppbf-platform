@@ -237,28 +237,39 @@ test('COACH: the REAL Morning Read digest assembles, over the REAL access scope'
 test('ATHLETE: the REAL assignment read still returns the work assigned to them', async () => {
   mockRequirePrincipal.mockResolvedValue(principal('athlete', { athleteId: 'ath-1' }));
   databaseAnswers([
-    ['pilot.drill_assignments', [{ assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope' }]],
+    ['pilot.drill_assignments', [{
+      assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope', assigned_by_account_id: 'coach-1',
+    }]],
   ]);
-  // The access guard's athlete arm reads the athlete's own live row.
-  mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+  // The access guard's athlete arm reads the athlete's own live row; then the
+  // family projection reads the assigning coach's login to name them.
+  mockQueryOne
+    .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+    .mockResolvedValueOnce({ login_email: 'jo.rivera@ppbf.test' });
 
   const response = await progressionAssignmentsGET(
     new NextRequest('http://localhost/api/pilot/progression/assignments?athlete_id=ath-1'),
   );
 
   expect(response.status).toBe(200);
+  // An athlete gets the family shape (OD-2026-10-06-025 ruling 2): the work,
+  // the coach's name, and no assigned_by_account_id.
   await expect(response.json()).resolves.toEqual({
-    items: [{ assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope' }],
+    items: [{ assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope', assigned_by_name: 'Coach Jo Rivera' }],
   });
   // The real getAthleteAssignments ran: it asked the assignments table, and
   // it asked inside this athlete's own organization.
   const [sql, params] = mockQuery.mock.calls[0];
   expect(sql).toContain('pilot.drill_assignments');
   expect(params).toEqual(expect.arrayContaining(['org-1', 'ath-1']));
-  // Its only single-row read is the guard's live-row check, in the same org.
-  expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  // Its single-row reads are the guard's live-row check and the coach-name
+  // read, both in the same org.
+  expect(mockQueryOne).toHaveBeenCalledTimes(2);
   const [guardSql, guardParams] = mockQueryOne.mock.calls[0];
   expect(guardSql).toContain('pilot.athletes');
   expect(guardSql).toContain('deleted_at is null');
   expect(guardParams).toEqual(['ath-1', 'org-1']);
+  const [nameSql, nameParams] = mockQueryOne.mock.calls[1];
+  expect(nameSql).toContain('pilot.accounts');
+  expect(nameParams).toEqual(['org-1', 'coach-1']);
 });

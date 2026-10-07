@@ -27,11 +27,9 @@ jest.mock('@/components/RoleStandaloneView', () => ({
 const video = (overrides: Record<string, unknown> = {}) => ({
   video_session_id: 'vid-1',
   title: 'Sparring round 3',
-  notes: '',
   file_name: 'round3.mp4',
   file_size_bytes: 2_000_000,
   status: 'ready',
-  uploaded_by_account_id: 'coach-1',
   created_at: '2026-07-30T00:00:00.000Z',
   ...overrides,
 });
@@ -127,5 +125,71 @@ describe("what the athlete's film screen says when it refuses", () => {
 
     await screen.findByText('Sparring round 3', { selector: 'h2, h3, p' });
     expect(screen.queryByText('That round would not open. Try it again.')).toBeNull();
+  });
+});
+
+/*
+ * COACH NOTES ON THE ATHLETE'S OWN ROUND (OD-2026-10-06-025 ruling 1). They
+ * arrive with the playback response, signed with the coach's display name
+ * (ruling 2), and the screen shows them under the player as a plain list.
+ */
+describe("coach notes on the athlete's film screen", () => {
+  test('the note shows under the opened round with the coach name and date, read-only', async () => {
+    global.fetch = mockFetch({
+      openVideo: () => ({
+        ok: true,
+        json: async () => ({
+          stream_url: 'https://example.invalid/stream',
+          title: 'Sparring round 3',
+          coach_notes: [
+            { text: 'Guard dropped in round 2. Keep the right hand home.', coach_name: 'Coach Jane', noted_at: '2026-07-30T14:00:00.000Z' },
+          ],
+        }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<AthleteVideoAnalysisPage />);
+
+    // Nothing about notes before a round is opened.
+    expect(screen.queryByText('Coach notes')).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+
+    await screen.findByText('Coach notes');
+    await screen.findByText('Guard dropped in round 2. Keep the right hand home.');
+    expect(screen.getByText(/Coach Jane/)).toBeTruthy();
+    // No way to write: nothing on the screen edits or adds a note.
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(document.body.textContent).not.toContain('coach-1');
+  });
+
+  test('a round with no note says so, rather than showing an empty heading', async () => {
+    global.fetch = mockFetch({
+      openVideo: () => ({
+        ok: true,
+        json: async () => ({ stream_url: 'https://example.invalid/stream', title: 'Sparring round 3', coach_notes: [] }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<AthleteVideoAnalysisPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+
+    await screen.findByText('No coach notes on this round.');
+  });
+
+  test('a round that is refused (409) shows the refusal and no notes', async () => {
+    global.fetch = mockFetch({
+      openVideo: () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: 'Blocked: photo-only media consent on file.', code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<AthleteVideoAnalysisPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+
+    await screen.findByText('Blocked: photo-only media consent on file.');
+    expect(screen.queryByText('Coach notes')).toBeNull();
   });
 });

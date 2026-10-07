@@ -372,6 +372,15 @@ describe('sessions.notes is recorded as what it actually is', () => {
     expect(entry.note).toContain('no author or last-editor column');
   });
 
+  // OD-2026-10-06-025 ruling 4: the edit rule is decided and enforced in the
+  // write path, so the registry names the enforcer rather than an open question.
+  it('records that only the writer edits, and names the write-path enforcers', () => {
+    expect(entry.note).toContain('ONLY THE WRITER EDITS');
+    expect(entry.note).not.toContain('open owner decision');
+    expect(entry.enforcedBy).toContain('sessionNotes.ts#isSessionNoteWriter');
+    expect(entry.enforcedBy).toContain('entities.ts#upsertSession');
+  });
+
   it('records that linked guardians are excluded', () => {
     expect(entry.note).toContain('LINKED GUARDIANS ARE EXCLUDED');
   });

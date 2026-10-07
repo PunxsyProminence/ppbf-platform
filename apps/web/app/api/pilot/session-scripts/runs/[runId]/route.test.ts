@@ -8,6 +8,7 @@ import {
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
+  setSessionScriptRunShowOnWall,
 } from '@/src/server/pilot/sessionScriptRuns';
 
 // requireRole and jsonError stay real; gating and error mapping are the point of this suite.
@@ -21,6 +22,7 @@ jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   moveSessionScriptRunCursor: jest.fn(),
   pauseSessionScriptRun: jest.fn(),
   resumeSessionScriptRun: jest.fn(),
+  setSessionScriptRunShowOnWall: jest.fn(),
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
@@ -28,6 +30,7 @@ const mockAdvance = jest.mocked(moveSessionScriptRunCursor);
 const mockPause = jest.mocked(pauseSessionScriptRun);
 const mockResume = jest.mocked(resumeSessionScriptRun);
 const mockFinish = jest.mocked(finishSessionScriptRun);
+const mockShowOnWall = jest.mocked(setSessionScriptRunShowOnWall);
 
 const RUN_ID = 'ssrun_1';
 
@@ -52,6 +55,7 @@ const liveRun = {
   current_block_id: 'blk-2',
   paused_at: null,
   paused_seconds: 0,
+  show_on_wall: false,
   elapsed_seconds: 300,
   is_paused: false,
 };
@@ -80,6 +84,7 @@ beforeEach(() => {
   mockPause.mockResolvedValue(liveRun);
   mockResume.mockResolvedValue({ ...liveRun, is_paused: false });
   mockFinish.mockResolvedValue({ ...liveRun, run_state: 'completed', ended_at: 'x' } as never);
+  mockShowOnWall.mockResolvedValue({ ...liveRun, show_on_wall: true });
 });
 
 describe('action dispatch', () => {
@@ -87,7 +92,7 @@ describe('action dispatch', () => {
     const response = await patch({});
     expect(response.status).toBe(400);
     const body = await response.json();
-    expect(body.error).toContain('advance|pause|resume|finish');
+    expect(body.error).toContain('advance|pause|resume|finish|show_on_wall');
   });
 
   it.each(['complete', 'start', 'delete', ''])('refuses unknown action %s', async (action) => {
@@ -275,10 +280,55 @@ describe('finish', () => {
   });
 });
 
+describe('show_on_wall', () => {
+  it.each([true, false])('sets the switch to %s for the delivering coach', async (show) => {
+    const response = await patch({ action: 'show_on_wall', show });
+    expect(response.status).toBe(200);
+    expect(mockShowOnWall).toHaveBeenCalledWith('org-1', 'acct-coach', RUN_ID, show);
+    await expect(response.json()).resolves.toEqual({ run: { ...liveRun, show_on_wall: true } });
+  });
+
+  // An explicit value, never a toggle, and never a string: "false" is truthy in most places it
+  // could end up, and a retried "take it off the TV" must not put it back on.
+  it.each([
+    ['missing', undefined],
+    ['the string "false"', 'false'],
+    ['the string "true"', 'true'],
+    ['1', 1],
+    ['null', null],
+  ])('rejects show given %s', async (_label, value) => {
+    const response = await patch({ action: 'show_on_wall', show: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'show:expected true|false' });
+    expect(mockShowOnWall).not.toHaveBeenCalled();
+  });
+
+  it('refuses extra fields alongside show_on_wall', async () => {
+    const response = await patch({ action: 'show_on_wall', show: true, run_state: 'completed' });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'UNEXPECTED_FIELD:run_state' });
+    expect(mockShowOnWall).not.toHaveBeenCalled();
+  });
+
+  it.each(['athlete', 'parent', 'board'])('refuses role %s before touching the module', async (role) => {
+    asCoach(role);
+    const response = await patch({ action: 'show_on_wall', show: true });
+    expect(response.status).toBe(403);
+    expect(mockShowOnWall).not.toHaveBeenCalled();
+  });
+
+  it('reports the switch on a settled run as 409', async () => {
+    mockShowOnWall.mockRejectedValue(new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409));
+    const response = await patch({ action: 'show_on_wall', show: true });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_RUN_NOT_LIVE' });
+  });
+});
+
 describe("another coach's run", () => {
   // Same code and status as a run that does not exist, so the route cannot be used to discover
   // which run ids are real.
-  it.each(['advance', 'pause', 'resume', 'finish'])(
+  it.each(['advance', 'pause', 'resume', 'finish', 'show_on_wall'])(
     'is indistinguishable from a missing run on %s',
     async (action) => {
       const notFound = new SessionScriptRunError('SESSION_RUN_NOT_FOUND', 404);
@@ -286,9 +336,14 @@ describe("another coach's run", () => {
       mockPause.mockRejectedValue(notFound);
       mockResume.mockRejectedValue(notFound);
       mockFinish.mockRejectedValue(notFound);
+      mockShowOnWall.mockRejectedValue(notFound);
 
       const body =
-        action === 'advance' ? { action, to_block_id: 'blk-3' } : { action };
+        action === 'advance'
+          ? { action, to_block_id: 'blk-3' }
+          : action === 'show_on_wall'
+            ? { action, show: true }
+            : { action };
       const response = await patch(body);
       expect(response.status).toBe(404);
       await expect(response.json()).resolves.toEqual({ error: 'SESSION_RUN_NOT_FOUND' });

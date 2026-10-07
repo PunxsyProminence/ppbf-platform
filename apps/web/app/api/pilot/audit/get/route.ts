@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { accessibleAthleteIds, requireRole } from '@/src/server/pilot/access';
+import {
+  AUDIT_ATHLETE_OWNED_ENTITY_TYPES,
+  auditEntityOwnersOf,
+  resolveAuditEntityOwners,
+} from '@/src/server/pilot/auditEntityOwners';
 import { query } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -81,30 +86,16 @@ function optionalFilter(value: unknown, field: string): string | null {
 // (intervention execution/outcome updates, coach_review {session_id},
 // mentorship end, coverage revoke), so "names no athlete" did not mean
 // "org-wide" and those rows reached every coach. For a coach, a row of one of
-// these types that names no athlete is now hidden: it fails CLOSED, at the
-// cost of a coach not seeing such rows about their own athletes here. The
-// per-type routes remain the place to read those records. Types left out
-// (announcement, behavior_standard, drill, floor_plan, intervention_protocol,
-// program_phase, rabbit_hole) are gym-wide.
-const ATHLETE_OWNED_ENTITY_TYPES = new Set([
-  'athlete_milestone',
-  'athlete_program',
-  'coach_coverage',
-  'coach_note',
-  'coach_review',
-  'external_competition_entry',
-  'goal',
-  'intervention_evidence_link',
-  'intervention_execution',
-  'intervention_outcome_review',
-  'mentorship',
-  'one_percent_nomination',
-  'recognition',
-  'scheduler_coaching_request',
-  'session',
-  'video_session',
-  'wrestling_league_roster_entry',
-]);
+// these types is gated on the athlete its ENTITY is about, resolved from
+// entity_id through the entity's own table (auditEntityOwners.ts), in union
+// with whatever details name. A row whose owner cannot be resolved -- no such
+// record, another gym's id, teaching footage with no athlete -- is gated on
+// the athletes details name alone, and when details name nobody either it
+// stays hidden: it fails CLOSED. Types left out (announcement, behavior_standard, drill,
+// floor_plan, intervention_protocol, program_phase, rabbit_hole) are gym-wide.
+// The set is the resolver table's key set, so a type cannot be owned here
+// without a resolver there.
+const ATHLETE_OWNED_ENTITY_TYPES = AUDIT_ATHLETE_OWNED_ENTITY_TYPES;
 
 // Every athlete a details blob names, under ANY athlete-named key, at any
 // depth. Reading details.athlete_id alone let mentorship rows -- which carry
@@ -156,7 +147,7 @@ export async function POST(request: NextRequest) {
     // page they asked for.
     const fetchLimit = isCoach ? Math.min(500, Math.max(limit * 5, 100)) : limit;
 
-    const rows = await query<{ entity_type: string; details: Record<string, unknown> | null }>(
+    const rows = await query<{ entity_type: string; entity_id: string; details: Record<string, unknown> | null }>(
       `select *
        from pilot.audit_events
        where organization_id = $1
@@ -179,17 +170,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, events: rows });
     }
 
-    // Athlete-scope: a row that names athletes is visible only if the coach can
-    // reach EVERY athlete it names; a row that names none is org-wide
-    // operational data and is kept. accessibleAthleteIds is the same central
-    // relationship gate assertActorCanAccessAthlete uses.
-    const namedByRow = rows.map((row) => athleteIdsNamedIn(row.details));
-    const reachable = await accessibleAthleteIds(principal, [...new Set(namedByRow.flat())]);
+    // Athlete-scope: a row is visible only if the coach can reach EVERY
+    // athlete it is about -- the ones details name AND, for an athlete-owned
+    // type, the one(s) the entity in entity_id belongs to. A row about nobody
+    // is org-wide operational data and is kept, unless its type is athlete-
+    // owned, in which case "nobody" means "unresolved" and it is hidden.
+    // accessibleAthleteIds is the same central relationship gate
+    // assertActorCanAccessAthlete uses.
+    const owners = await resolveAuditEntityOwners(
+      principal.organizationId,
+      rows.filter((row) => ATHLETE_OWNED_ENTITY_TYPES.has(row.entity_type)),
+    );
+    const aboutByRow = rows.map((row) => {
+      const named = athleteIdsNamedIn(row.details);
+      const owned = auditEntityOwnersOf(owners, row.entity_type, row.entity_id) ?? [];
+      return [...new Set([...named, ...owned])];
+    });
+    const reachable = await accessibleAthleteIds(principal, [...new Set(aboutByRow.flat())]);
     const scoped = rows
       .filter((row, index) => {
-        const named = namedByRow[index];
-        if (named.length === 0) return !ATHLETE_OWNED_ENTITY_TYPES.has(row.entity_type);
-        return named.every((id) => reachable.has(id));
+        const about = aboutByRow[index];
+        if (about.length === 0) return !ATHLETE_OWNED_ENTITY_TYPES.has(row.entity_type);
+        return about.every((id) => reachable.has(id));
       })
       .slice(0, limit);
 
