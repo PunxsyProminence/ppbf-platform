@@ -69,6 +69,7 @@ const COACH_B = 'acct-owners-coach-b';
 const ATH_A = 'ath-owners-a'; // coach A's athlete
 const ATH_B = 'ath-owners-b'; // coach B's athlete
 const ATH_X = 'ath-elsewhere-x'; // another gym's athlete
+const ATH_Y = 'ath-elsewhere-y'; // another gym's second athlete (mentorship collision)
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -140,6 +141,7 @@ async function seed(db: Client): Promise<void> {
   await db.query(athlete, [ORG, ATH_A, COACH_A]);
   await db.query(athlete, [ORG, ATH_B, COACH_B]);
   await db.query(athlete, [OTHER_ORG, ATH_X, ADMIN]);
+  await db.query(athlete, [OTHER_ORG, ATH_Y, ADMIN]);
 
   // One record per type for each of the two children, written the way the
   // routes write it, so the resolver is tested against real entity_id shapes.
@@ -301,6 +303,112 @@ async function seed(db: Client): Promise<void> {
      values ($1, 'goal-x', $2, 'goal', current_date, 'm', 'open', now(), now())`,
     [OTHER_ORG, ATH_X],
   );
+
+  // COLLIDING ids in the other gym, for every type whose id the application
+  // chooses (not the uuid-defaulted coverage and note ids, which cannot
+  // collide): a record with the SAME id as child A's, owned by the other
+  // gym's child. A lookup that dropped its organization bound, or a join that
+  // carried only the id half of the composite key, would resolve child A's
+  // record to ATH_X as well; the per-type assertions require exactly [ATH_A].
+  await db.query(
+    `insert into pilot.athlete_milestones (organization_id, athlete_id, milestone_key, awarded_by_role, awarded_by_account_id)
+     values ($1, $2, 'first_full_round', 'coach', $3)`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.athlete_programs (organization_id, athlete_id, program) values ($1, $2, 'competitive')`,
+    [OTHER_ORG, ATH_X],
+  );
+  await db.query(
+    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, notes, completed_flag, created_at, updated_at)
+     values ($1, 'sess-a', $2, current_date, 5, '', true, now(), now())`,
+    [OTHER_ORG, ATH_X],
+  );
+  await db.query(
+    `insert into pilot.coach_reviews (organization_id, review_id, session_id, coach_id, decision, notes, approved_flag, created_at, updated_at)
+     values ($1, 'rev-a', 'sess-a', $2, 'approve', '', true, now(), now())`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.external_competitions (organization_id, competition_id, competition_name, competition_date, created_by_account_id)
+     values ($1, 'comp-1', 'Open', current_date, $2)`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.external_competition_entries (organization_id, entry_id, competition_id, athlete_id, created_by_account_id)
+     values ($1, 'entry-a', 'comp-1', $2, $3)`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
+     values ($1, 'goal-a', $2, 'goal', current_date, 'm', 'open', now(), now())`,
+    [OTHER_ORG, ATH_X],
+  );
+  await db.query(
+    `insert into pilot.intervention_protocols
+       (organization_id, protocol_id, lineage_id, title, target_problem, hypothesis, intervention_description, expected_outcome, created_by_account_id)
+     values ($1, 'proto-1', 'proto-1', 't', 'p', 'h', 'd', 'o', $2)`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.intervention_executions
+       (organization_id, execution_id, lineage_id, athlete_id, protocol_id, protocol_version, recorded_by_account_id)
+     values ($1, 'exec-a', 'exec-a', $2, 'proto-1', 1, $3)`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.intervention_evidence_links
+       (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
+     values ($1, 'link-a', 'exec-a', 'baseline', 'readiness', 'r-1', $2)`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.intervention_outcome_reviews
+       (organization_id, review_id, execution_id, performance_result, performance_notes, hypothesis_result, learning_signal, reviewed_by_account_id)
+     values ($1, 'orev-a', 'exec-a', 'improved', 'n', 'supported', 'prior_belief_strengthened', $2)`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.mentorships (organization_id, mentorship_id, mentor_athlete_id, mentee_athlete_id, created_by_account_id)
+     values ($1, 'ment-ab', $2, $3, $4)`,
+    [OTHER_ORG, ATH_X, ATH_Y, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.one_percent_nominations
+       (organization_id, nomination_id, athlete_id, source, nominated_by_account_id, nominated_by_role, expires_at)
+     values ($1, 'nom-a', $2, 'coach_nomination', $3, 'coach', now() + interval '30 days')`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.recognitions (organization_id, recognition_id, athlete_id, coach_account_id, coach_display_name, kind)
+     values ($1, 'rec-a', $2, $3, 'Coach', 'good_partner')`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.scheduler_coaching_requests
+       (organization_id, request_id, athlete_id, requested_by_role, requested_by_account_id, preferred_at, goals, status)
+     values ($1, 'req-a', $2, 'coach', $3, now(), 'g', 'pending')`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
+  // video_sessions' primary key is the bare id, so the same id cannot exist
+  // in two gyms; the other gym's video gets its own id and the lookup from
+  // this gym must not see it.
+  await db.query(
+    `insert into pilot.video_sessions
+       (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title, blob_path, file_name, file_size_bytes, mime_type)
+     values ('vid-x', $1, $2, $3, 't', 'blob', 'f.mp4', 1, 'video/mp4')`,
+    [OTHER_ORG, ADMIN, ATH_X],
+  );
+  await db.query(
+    `insert into pilot.wrestling_league_seasons (organization_id, season_id, season_name, starts_on, created_by_account_id)
+     values ($1, 'season-1', 'S1', current_date, $2)`,
+    [OTHER_ORG, ADMIN],
+  );
+  await db.query(
+    `insert into pilot.wrestling_league_roster_entries (organization_id, entry_id, season_id, athlete_id, created_by_account_id)
+     values ($1, 'roster-a', 'season-1', $2, $3)`,
+    [OTHER_ORG, ATH_X, ADMIN],
+  );
 }
 
 beforeAll(async () => {
@@ -376,7 +484,11 @@ describe('resolveAuditEntityOwners against the real tables', () => {
     expect(Object.keys(ownedByB).sort()).toEqual(SINGLE_OWNER_TYPES);
   });
 
-  test.each(SINGLE_OWNER_TYPES)("%s: each child's record resolves to that child and no other", async (entityType) => {
+  // For every type, the other gym holds a record under child A's exact id
+  // (except the uuid-keyed coverage and note, and video, whose key is global),
+  // so "exactly [ATH_A]" also proves the organization bound and the composite
+  // joins: a lookup missing either would return ATH_X here too.
+  test.each(SINGLE_OWNER_TYPES)("%s: each child's record resolves to that child and no other, including across gyms", async (entityType) => {
     const result = await resolveAuditEntityOwners(ORG, [
       { entity_type: entityType, entity_id: ownedByA[entityType] },
       { entity_type: entityType, entity_id: ownedByB[entityType] },
@@ -388,9 +500,14 @@ describe('resolveAuditEntityOwners against the real tables', () => {
     expect(auditEntityOwnersOf(result, entityType, 'no-such-record')).toBeNull();
   });
 
-  test('a mentorship resolves to both children', async () => {
+  test("a mentorship resolves to both children, and not to the other gym's pairing under the same id", async () => {
     const result = await resolveAuditEntityOwners(ORG, [{ entity_type: 'mentorship', entity_id: 'ment-ab' }]);
     expect([...(auditEntityOwnersOf(result, 'mentorship', 'ment-ab') ?? [])].sort()).toEqual([ATH_A, ATH_B].sort());
+  });
+
+  test("another gym's video does not resolve from this gym", async () => {
+    const result = await resolveAuditEntityOwners(ORG, [{ entity_type: 'video_session', entity_id: 'vid-x' }]);
+    expect(auditEntityOwnersOf(result, 'video_session', 'vid-x')).toBeNull();
   });
 
   test('teaching footage (video with no athlete) resolves to nothing', async () => {

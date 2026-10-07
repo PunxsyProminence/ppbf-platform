@@ -24,8 +24,9 @@ import { query } from './db';
  *
  * FAIL CLOSED stays. An entity_id with no row (deleted, mistyped, another
  * organization's), or whose athlete column is null (video_sessions on
- * teaching footage), resolves to nothing -- the route then treats the row as
- * naming an athlete it cannot identify and hides it from coaches. Nothing
+ * teaching footage), resolves to nothing -- the route then has only what
+ * details name to gate on, and when that is nobody too the row is hidden
+ * from coaches, as #1289 left it. Nothing
  * here decides access: the ids it returns go through accessibleAthleteIds,
  * which is where the assigned-coach, coverage, deleted-athlete and
  * platform_owner rules live.
@@ -152,12 +153,21 @@ export async function resolveAuditEntityOwners(
     ids.add(ref.entity_id);
   }
 
+  // One statement per type, issued together: a page of up to 500 rows can
+  // span every type, and 17 sequential round trips is a wait the reader
+  // would feel.
+  const lookups = await Promise.all(
+    [...idsByType].map(async ([entityType, ids]) => {
+      const rows = await query<{ entity_id: string; athlete_id: string | null }>(
+        OWNER_LOOKUP_SQL[entityType],
+        [organizationId, [...ids]],
+      );
+      return [entityType, rows] as const;
+    }),
+  );
+
   const result = new Map<string, Map<string, string[]>>();
-  for (const [entityType, ids] of idsByType) {
-    const rows = await query<{ entity_id: string; athlete_id: string | null }>(
-      OWNER_LOOKUP_SQL[entityType],
-      [organizationId, [...ids]],
-    );
+  for (const [entityType, rows] of lookups) {
     const byId = new Map<string, string[]>();
     for (const row of rows) {
       // A null athlete (teaching footage) is "about nobody we can name", which

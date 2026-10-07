@@ -89,8 +89,9 @@ function optionalFilter(value: unknown, field: string): string | null {
 // these types is gated on the athlete its ENTITY is about, resolved from
 // entity_id through the entity's own table (auditEntityOwners.ts), in union
 // with whatever details name. A row whose owner cannot be resolved -- no such
-// record, another gym's id, teaching footage with no athlete -- stays hidden:
-// it fails CLOSED. Types left out (announcement, behavior_standard, drill,
+// record, another gym's id, teaching footage with no athlete -- is gated on
+// the athletes details name alone, and when details name nobody either it
+// stays hidden: it fails CLOSED. Types left out (announcement, behavior_standard, drill,
 // floor_plan, intervention_protocol, program_phase, rabbit_hole) are gym-wide.
 // The set is the resolver table's key set, so a type cannot be owned here
 // without a resolver there.
