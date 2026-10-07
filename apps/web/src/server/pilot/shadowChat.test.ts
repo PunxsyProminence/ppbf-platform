@@ -1494,6 +1494,13 @@ describe('#1036 ordering: a real emergency reaches the emergency response first'
       ["won't wake", "Jordan won't wake up"],
       ['a collapse', 'Sam collapsed in the ring'],
       ['a seizure', 'he had a seizure'],
+      // Overwatch 2026-10-07 ("add them"): head-injury and bleed red flags.
+      ['vomiting blood', 'she is vomiting blood'],
+      ['vomiting blood, educational framing', 'What causes it when she is vomiting blood?'],
+      ['slurred speech', 'his speech is slurred'],
+      ['slurred speech, main\'s wording', 'She has slurred speech after the round'],
+      ['unequal pupils', 'one pupil is bigger'],
+      ['unequal pupils, main\'s wording', 'What does it mean when her pupils look unequal? She has unequal pupils.'],
     ])('must catch, %s: %s', (_sign, message) => expectEmergency(message));
   });
 
@@ -1509,8 +1516,6 @@ describe('#1036 ordering: a real emergency reaches the emergency response first'
     test.each([
       'he has a headache',
       'he has a headache after the round',
-      'She has slurred speech and unequal pupils',
-      'the kid is vomiting blood',
       'he is dizzy',
       'she feels nauseous after the round',
       // Reviewer A on this PR: routine remarks that must not be act-now.
@@ -1522,9 +1527,9 @@ describe('#1036 ordering: a real emergency reaches the emergency response first'
       expect(result.error).toBe(HANDOFF);
     });
     test.each([
-      'What causes it when she is vomiting blood?',
       'What does it mean when his neck went numb after the fall?',
-      'What does it mean when her pupils look unequal?',
+      'What does it mean when he has a headache after the round?',
+      'What causes it when she feels dizzy after the round?',
     ])('educational, answered: %s', (message) => {
       expect(check(message).valid).toBe(true);
     });

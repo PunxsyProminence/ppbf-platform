@@ -380,9 +380,10 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
 // unresponsive / won't wake, a collapse, a seizure -- and for anything that
 // was already an emergency on main (main's own R3 condition: personal
 // context with an urgent symptom or an acute impact concern), which now
-// merely moves above the returns that used to take it. Plain urgent-symptom
-// words with no personal context -- headache, nausea, dizziness, blurry
-// vision -- stay on their current paths: a coach writing "he has a headache"
+// merely moves above the returns that used to take it. Vomiting blood,
+// slurred speech and unequal pupils joined the set on 2026-10-07. Plain
+// urgent-symptom words with no personal context -- headache, nausea,
+// dizziness, blurry vision -- stay on their current paths: a coach writing "he has a headache"
 // gets the high-risk handoff, not the act-now line. ("after sparring" is
 // personal context on main, so "he has a headache after sparring" was
 // main's R3 already and still is.)
@@ -397,12 +398,15 @@ const EMERGENCY_TOPIC_PATTERNS: readonly RegExp[] = [
   /(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope|conditioning|cardio|gas\s+tank|tank|wind|energy|pace|output|timing|rhythm|game|confidence|focus|offen[cs]e|attack|game\s?plan)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive(?!\s+to\s+(?:feedback|coaching|instructions?|corrections?|criticism|advice)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b)/i,
 ];
 
-// The true emergency signs that are not topic rows: the breathing and
-// seizure alternatives of main's urgent_symptom vocabulary. Collapse,
-// unresponsive, won't wake and not breathing are in the last topic row
-// above; chest pain, a faint and loss of consciousness are rows of their
-// own.
-const TRUE_EMERGENCY_SIGNS = /(?:can(?:not|'t)|\bcant)\s+breath(?:e)?\b|trouble\s+breathing|seizure|convulsion/i;
+// The true emergency signs that are not topic rows: the breathing, seizure,
+// vomiting-blood, slurred-speech and unequal-pupil alternatives of main's
+// urgent_symptom vocabulary (overwatch 2026-10-07: the last three are
+// head-injury and bleed red flags, the same class as loss of
+// consciousness), with the plain-speech forms a coach types for the last
+// two. Collapse, unresponsive, won't wake and not breathing are in the last
+// topic row above; chest pain, a faint and loss of consciousness are rows
+// of their own.
+const TRUE_EMERGENCY_SIGNS = /(?:can(?:not|'t)|\bcant)\s+breath(?:e)?\b|trouble\s+breathing|seizure|convulsion|vomit(?:ing|ed|s)?\s+(?:up\s+)?blood|slurred\s+speech|speech\s+is\s+slurred|slurring\s+(?:his|her|their|the)?\s*(?:words|speech)|unequal\s+pupils?|pupils?\s+(?:are|is|look|looks)\s+(?:unequal|uneven|different\s+sizes?)|one\s+pupil\s+is\s+(?:bigger|larger|smaller)/i;
 
 // A specific someone else, as against a general subject. Carried over from
 // DRAFT #1292 (CL-C9) with its reviewer's corrections: a third-person
