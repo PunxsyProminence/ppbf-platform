@@ -82,6 +82,7 @@ interface ShadowCounts {
   mentions: number;
   deidentified: number;
   deleted: number;
+  scrubbed: number;
 }
 
 async function purgeAuditRows(): Promise<Array<{ details: Record<string, number> }>> {
@@ -136,6 +137,7 @@ async function purge(via: PurgePath, apply = true): Promise<ShadowCounts> {
     mentions: event[apply ? 'shadow_profile_mentions_cleared' : 'would_clear_shadow_profile_mentions'] ?? -1,
     deidentified: event[apply ? 'shadow_chat_audit_deidentified' : 'would_deidentify_shadow_chat_audit'] ?? -1,
     deleted: event[`${prefix}shadow_chat_audit${suffix}`] ?? -1,
+    scrubbed: event[apply ? 'shadow_chat_audit_names_scrubbed' : 'would_scrub_shadow_chat_audit_names'] ?? -1,
   };
 }
 
@@ -289,6 +291,9 @@ async function seed(): Promise<Seeded> {
   await addTurn(siblingLogin, 'athlete', purged, 'Jordan is my brother', "Riley, Jordan's drills differ from yours");
   await addTurn(COACH_ID, 'coach', nameless, 'How is X doing', 'X is doing fine');
   await addTurn(COACH_ID, 'coach', live, 'Casey Pike asked about Live Kid', 'Tell Casey the plan');
+  // Keyed to nobody and to the live child: the purged names must leave these too (gym-wide).
+  await addTurn(COACH_ID, 'coach', null, 'Pair Jordan Pike with Live Kid on Saturday', 'Jordan and Live Kid are a fair match');
+  await addTurn(COACH_ID, 'coach', live, 'Riley keeps copying Live Kid', 'Riley will settle');
   await addTurn(guardian, 'parent', purged, 'This is Casey, is my son Jordan safe to spar?', 'Casey, sparring readiness is the coach’s call');
   await addTurn(coachNowLogin, 'coach', null, 'Plan for Tuesday', 'Tuesday looks light');
   await addTurn(liveAthleteLogin, 'athlete', live, 'My jab feels slow', 'Slow is fine while learning');
@@ -381,10 +386,13 @@ afterAll(async () => {
 
 // deidentified counts a turn once per purged person whose pass touched it:
 // Jordan's pass, 4 (his own turn, the coach's, the guardian's, Riley's);
-// Riley's, 1 (Riley's own); the guardian's, 2 (their own turn, and the
-// coach's turn about the live child naming them). mentions: the coach's
-// profile listed Jordan.
-const EXPECTED: ShadowCounts = { profiles: 2, jobs: 2, buckets: 2, snapshots: 2, mentions: 1, deidentified: 7, deleted: 1 };
+// Riley's, 1 (Riley's own); the guardian's, 1 (their own turn: the coach's
+// turn about the live child naming them was already scrubbed gym-wide by
+// Jordan's pass, whose names include the linked guardian's). scrubbed,
+// gym-wide: Jordan's pass, 2 (the unkeyed turn, and the guardian-named turn
+// about the live child); Riley's, 1 (the turn keyed to the live child); the
+// guardian's, 0. mentions: the coach's profile listed Jordan.
+const EXPECTED: ShadowCounts = { profiles: 2, jobs: 2, buckets: 2, snapshots: 2, mentions: 1, deidentified: 6, deleted: 1, scrubbed: 3 };
 
 describe.each<PurgePath>(['script', 'dataDeletion'])('the %s purge', (via) => {
   test("deletes a purged athlete's and guardian's SHADOW rows, and leaves their chat turns with no one in them", async () => {
@@ -459,8 +467,14 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('the %s purge', (via) => {
     expect(await turnsWhere('athlete_id = $1', [people.live])).toEqual([
       // The purged guardian's name leaves the turn about their live child; the child's key stays.
       expect.objectContaining({ user_id: COACH_ID, user_message: '[name] asked about Live Kid', shadow_response: 'Tell [name] the plan' }),
+      // Gym-wide: the purged sibling's name leaves a turn keyed to the live child; the live child's name stays.
+      expect.objectContaining({ user_id: COACH_ID, user_message: '[name] keeps copying Live Kid', shadow_response: '[name] will settle' }),
       expect.objectContaining({ user_id: people.liveAthleteLogin, user_message: 'My jab feels slow' }),
       expect.objectContaining({ user_id: COACH_ID, user_message: 'How is Live Kid doing', shadow_response: 'Live Kid is doing fine' }),
+    ]);
+    // Gym-wide: a turn keyed to nobody loses the purged child's name and keeps the live child's.
+    expect(await turnsWhere('athlete_id is null and user_id = $1', [COACH_ID])).toEqual([
+      expect.objectContaining({ user_message: 'Pair [name] with Live Kid on Saturday', shadow_response: '[name] and Live Kid are a fair match' }),
     ]);
 
     // No row anywhere still holds the child's or the guardian's name, login or words.

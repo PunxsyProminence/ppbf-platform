@@ -271,12 +271,12 @@ function blockedBy(error) {
    own full_name and login email, scrubbed from their own turns and from the
    turns about each child they were linked to (a guardian is purged a year
    before the child, so the child's purge can no longer learn their name).
-   THE METHOD'S LIMITS: only turns keyed to the person (their login, or
-   athlete_id = their record) are touched, so a turn about them keyed to
-   nobody or to another athlete keeps whatever it says; a nickname never
+   The names then leave every other turn in the gym too (Jason 2026-10-07:
+   "Gym-wide (Recommended)"). THE METHOD'S LIMITS: a nickname never
    recorded, a misspelling, a plural ("the Pikes") or a description ("the
-   red-headed kid") is not caught; people purged before this code existed
-   are not revisited. A person with no usable name on record cannot be
+   red-headed kid") is not caught; a common word that is also a name part
+   ("Will", "Kid") is blanked in every turn of that gym; people purged
+   before this code existed are not revisited. A person with no usable name on record cannot be
    scrubbed, so the turns of or about them are deleted instead (same ruling:
    "if a note can't be reliably scrubbed ... delete it"). */
 const SHADOW_OPERATIONAL_TABLES = [
@@ -350,7 +350,7 @@ async function clearShadowProfileMentions(client, tables, subjects) {
 }
 
 /**
- * `people`: one entry per purged person -- their token, the login(s) whose
+ * `people`: one entry per purged person -- their gym, their token, the login(s) whose
  * turns are theirs, the athlete records (organization_id, athlete_id) whose
  * turns the person's names must leave, and the names. A purged athlete lists
  * their own record, tokened; a purged guardian lists the children they were
@@ -363,7 +363,7 @@ async function clearShadowProfileMentions(client, tables, subjects) {
  * statement.
  */
 async function deidentifyShadowChatAudit(client, tables, people) {
-  const counts = { shadowChatAudit: 0, shadowChatAuditDeleted: 0 };
+  const counts = { shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   if (!tables.shadowChatAudit || people.length === 0) return counts;
   const logins = new Map();
   const subjects = new Map();
@@ -432,6 +432,29 @@ async function deidentifyShadowChatAudit(client, tables, people) {
     params,
   );
   counts.shadowChatAudit = updated.rowCount ?? 0;
+  // Gym-wide (Jason 2026-10-07, "Gym-wide (Recommended)"): the person's
+  // names leave every other turn in their gym too -- a coach's note about
+  // them filed under another athlete, or under nobody. Keyed turns were
+  // scrubbed above and no longer match. One pattern per gym per call.
+  const gyms = new Map();
+  for (const person of people) {
+    const entry = gyms.get(person.organizationId) ?? { organizationId: person.organizationId, names: [] };
+    entry.names.push(...person.names);
+    gyms.set(person.organizationId, entry);
+  }
+  const gymRows = [...gyms.values()]
+    .map((row) => ({ ...row, pattern: namePattern(row.names) }))
+    .filter((row) => row.pattern !== null);
+  const scrubbed = await client.query(
+    `update pilot.shadow_chat_audit a
+        set user_message = regexp_replace(a.user_message, g.pattern, '[name]', 'gi'),
+            shadow_response = regexp_replace(a.shadow_response, g.pattern, '[name]', 'gi')
+       from unnest($1::text[], $2::text[]) as g(organization_id, pattern)
+      where a.organization_id = g.organization_id
+        and (a.user_message ~* g.pattern or a.shadow_response ~* g.pattern)`,
+    [gymRows.map((row) => row.organizationId), gymRows.map((row) => row.pattern)],
+  );
+  counts.shadowChatAuditScrubbed = scrubbed.rowCount ?? 0;
   return counts;
 }
 
@@ -581,7 +604,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let filesDeleted = 0;
   let filesMissing = 0;
   let correctionsDeleted = 0;
-  const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0 };
+  const shadow = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
   const addShadow = (counts) => {
     for (const [key, n] of Object.entries(counts)) shadow[key] += n;
   };
@@ -677,7 +700,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let unlinkedHere = 0;
       let retiredHere = 0;
       let correctionsHere = 0;
-      const shadowHere = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0 };
+      const shadowHere = { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 };
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           await client.query(
@@ -723,6 +746,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         Object.assign(shadowHere, await deleteShadowOperationalRows(client, tables, athleteLogins));
         shadowHere.shadowProfileMentions = await clearShadowProfileMentions(client, tables, [subject]);
         Object.assign(shadowHere, await deidentifyShadowChatAudit(client, tables, [{
+          organizationId: athlete.organization_id,
           token, accountIds: athleteLogins, subjects: [{ ...subject, token }], names: knownNames,
         }]));
       }
@@ -801,6 +825,8 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           [accountId],
         )).rows.map((row) => row.name)
         : [];
+      const guardianGym = (await client.query('select organization_id from pilot.accounts where account_id = $1', [accountId]))
+        .rows[0]?.organization_id ?? null;
       const guardianChildren = tables.shadowChatAudit
         ? (await client.query(
           `select gl.organization_id as "organizationId", gl.athlete_id as "athleteId"
@@ -896,6 +922,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // only; a turn about their child is tokened by the child's purge.
       const shadowHere = await deleteShadowOperationalRows(client, tables, [accountId]);
       Object.assign(shadowHere, await deidentifyShadowChatAudit(client, tables, [{
+        organizationId: guardianGym,
         token: anonymousToken(),
         accountIds: [accountId],
         subjects: guardianChildren.map((child) => ({ ...child, token: null })),
@@ -928,6 +955,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
     [`${prefix.replace('delete_', 'clear_')}shadow_profile_mentions${suffix.replace('_deleted', '_cleared')}`]: shadow.shadowProfileMentions,
     [`${prefix.replace('delete_', 'deidentify_')}shadow_chat_audit${suffix.replace('_deleted', '_deidentified')}`]: shadow.shadowChatAudit,
     [`${prefix}shadow_chat_audit${suffix}`]: shadow.shadowChatAuditDeleted,
+    [`${prefix.replace('delete_', 'scrub_')}shadow_chat_audit_names${suffix.replace('_deleted', '_scrubbed')}`]: shadow.shadowChatAuditScrubbed,
   };
 }
 
@@ -1019,7 +1047,7 @@ async function main() {
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0,
-        shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0 },
+        shadow: { shadowProfiles: 0, shadowJobs: 0, shadowBuckets: 0, shadowSnapshots: 0, shadowProfileMentions: 0, shadowChatAudit: 0, shadowChatAuditDeleted: 0, shadowChatAuditScrubbed: 0 },
         blocked: {}, guardianLinkLock: 'none',
       }
       : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });

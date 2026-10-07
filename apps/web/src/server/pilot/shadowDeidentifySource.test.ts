@@ -27,6 +27,7 @@ function block(source: string, start: string): string {
 /** Strips what TypeScript adds: `export`, parameter and return types, generics. */
 function normalize(text: string): string {
   return text
+    .replace(/^\s*\/\/[^\n]*/gm, '')
     .replace(/^export /gm, '')
     .replace(/\): Promise<[^>]*(?:>[^>]*)?>\s*\{/g, ') {')
     .replace(/\): string \| null \{/g, ') {')
