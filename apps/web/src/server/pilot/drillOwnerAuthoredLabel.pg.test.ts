@@ -114,9 +114,9 @@ async function insertDrill(client: Client, fieldProvenance: string): Promise<str
   return id;
 }
 
-async function provenanceChecks(client: Client): Promise<{ conname: string; def: string }[]> {
-  const result = await client.query<{ conname: string; def: string }>(
-    `select con.conname, pg_get_constraintdef(con.oid) as def
+async function provenanceChecks(client: Client): Promise<{ conname: string; def: string; convalidated: boolean }[]> {
+  const result = await client.query<{ conname: string; def: string; convalidated: boolean }>(
+    `select con.conname, pg_get_constraintdef(con.oid) as def, con.convalidated
      from pg_constraint con
      join pg_class rel on rel.oid = con.conrelid
      join pg_namespace nsp on nsp.oid = rel.relnamespace
@@ -160,15 +160,17 @@ describe('after the label', () => {
     const client = await freshDatabase('ppbf_label_rows_untouched');
     try {
       const draft = await insertDrill(client, LITERATURE_DRAFT);
+      const craft = await insertDrill(client, CRAFT_DRAFT);
       const manual = await insertDrill(client, SOURCE_MANUAL);
       await applyMigrationTransaction(client, migrationSql);
 
       const rows = await client.query<{ drill_id: string; field_provenance: string }>(
         `select drill_id, field_provenance from pilot.drill_library`,
       );
-      expect(rows.rows).toHaveLength(2);
+      expect(rows.rows).toHaveLength(3);
       expect(rows.rows).toEqual(expect.arrayContaining([
         { drill_id: draft, field_provenance: LITERATURE_DRAFT },
+        { drill_id: craft, field_provenance: CRAFT_DRAFT },
         { drill_id: manual, field_provenance: SOURCE_MANUAL },
       ]));
     } finally {
@@ -184,6 +186,8 @@ describe('after the label', () => {
       expect(checks).toHaveLength(1);
       expect(checks[0].conname).toBe('pilot_drill_library_field_provenance_check');
       expect(checks[0].def).toContain(OWNER_AUTHORED);
+      // Validated, not NOT VALID: existing rows were checked when it was added.
+      expect(checks[0].convalidated).toBe(true);
     } finally {
       await client.end();
     }
