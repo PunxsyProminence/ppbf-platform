@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import {
   getVideoReleasePolicy,
   releasableScanStates,
@@ -83,6 +85,19 @@ export async function POST(
       }
     }
 
+    // EVERY CHILD THE CLIP SHOWS (videoClipTags.ts; owner, Jason 2026-10-03:
+    // any tagged athlete's consent block blocks the whole clip, for
+    // everyone). Playback and the scan sweep ask the clip's own athlete AND
+    // every live tag subject; this route asked only the first, so a coach
+    // could put a sparring clip into circulation past a tagged partner's
+    // guardian's refusal. A tag naming a deleted athlete reads as not found,
+    // as it does on playback. Read after the entitlement refusals above so
+    // this 404 confirms nothing to a caller those already refused.
+    const tagged = await listLiveTagSubjects(principal.organizationId, videoId);
+    if (tagged.some((subject) => subject.athlete_deleted)) {
+      return hiddenNotFound();
+    }
+
     if (row.status !== 'quarantined') {
       return NextResponse.json(
         {
@@ -147,7 +162,14 @@ export async function POST(
     // and the release still went through. writeUnderPlaybackConsent holds
     // the guardian links FOR SHARE until the update below has run, so a
     // withdrawal either lands first and is read, or waits for the release.
-    const consentSubjects = row.athlete_id ? [row.athlete_id] : [];
+    //
+    // The clip's own athlete plus every tagged athlete, each checked inside
+    // that same transaction. A tag added after the read above is not asked;
+    // the playback route carries the same window.
+    const consentSubjects = [...new Set([
+      ...(row.athlete_id ? [row.athlete_id] : []),
+      ...tagged.map((subject) => subject.athlete_id),
+    ])];
 
     /*
      * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
@@ -172,11 +194,27 @@ export async function POST(
          and scan_state = $3
        returning status`;
     const releaseParams = [videoId, principal.organizationId, row.scan_state];
-    const released = await writeUnderPlaybackConsent(principal.organizationId, consentSubjects, async (client) => (
-      client
-        ? (await client.query<{ status: string }>(releaseSql, releaseParams)).rows[0] ?? null
-        : queryOne<{ status: string }>(releaseSql, releaseParams)
-    ));
+    let released: { status: string } | null;
+    try {
+      released = await writeUnderPlaybackConsent(principal.organizationId, consentSubjects, async (client) => (
+        client
+          ? (await client.query<{ status: string }>(releaseSql, releaseParams)).rows[0] ?? null
+          : queryOne<{ status: string }>(releaseSql, releaseParams)
+      ));
+    } catch (error) {
+      // The gate's message says "this athlete's guardians" and names nobody.
+      // On a tagged clip the refusing guardian may be a partner's -- a child
+      // this coach may not reach -- so the refusal says the whole clip is
+      // blocked while ANY athlete in it is, without saying which. Same
+      // wording as playback.
+      if (tagged.length > 0 && error instanceof ConflictError) {
+        throw new ConflictError(
+          `This clip shows more than one athlete, and it is blocked for everyone while any of them is. ${error.message}`,
+          error.code,
+        );
+      }
+      throw error;
+    }
 
     if (!released) {
       return NextResponse.json(
