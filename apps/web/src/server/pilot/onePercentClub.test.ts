@@ -337,4 +337,26 @@ describe('resolveActorDisplayName', () => {
     const name = await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-admin', role: 'admin' });
     expect(name).toBe('Admin Alex Rivera');
   });
+
+  // Scope B. The real-Postgres cases are in athleteSelfPathsDeletion.pg.test.ts;
+  // these pin the reads' shape and the existing fallback phrases.
+  test('the athlete read takes the deletion mark and falls to the existing phrase', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    const name = await resolveActorDisplayName({
+      organizationId: 'org-1', accountId: 'acct-athlete', role: 'athlete', selfAthleteId: 'ath-gone',
+    });
+    expect(name).toBe('An athlete');
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toMatch(/from pilot\.athletes[\s\S]*deleted_at is null/);
+    expect(params).toEqual(['org-1', 'ath-gone']);
+  });
+
+  test('the admin read takes the deletion mark and falls to the existing phrase', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    const name = await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-gone', role: 'admin' });
+    expect(name).toBe('An administrator');
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toContain('deleted_account.deleted_at is not null');
+    expect(params).toEqual(['org-1', 'acct-gone']);
+  });
 });

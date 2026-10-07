@@ -156,7 +156,7 @@ describe('GET /api/pilot/training-holds', () => {
     expect(mockGetActive).not.toHaveBeenCalled();
   });
 
-  test('the placer name falls back to their account id when identity cannot be resolved', async () => {
+  test('the placer name falls back to the existing phrase, never the account id, when identity cannot be resolved (a deleted login included)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
     mockGetActive.mockResolvedValueOnce(FULL_HOLD);
     mockGetSubjectIdentity.mockResolvedValueOnce(null);
@@ -164,7 +164,8 @@ describe('GET /api/pilot/training-holds', () => {
     const response = await GET(getRequest());
     const payload = await response.json();
 
-    expect(payload.hold.placed_by_name).toBe('acct-coach-1');
+    expect(payload.hold.placed_by_name).toBe('Your coach');
+    expect(JSON.stringify(payload)).not.toContain('acct-coach-1');
   });
 
   test('an athlete with no hold gets null, and an athlete account without an athlete row too', async () => {
