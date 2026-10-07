@@ -40,6 +40,25 @@ export function getPilotDefaultOrganizationId(): string {
   return process.env.PPBF_PILOT_DEFAULT_ORG_ID?.trim() || 'ppbf-default-org';
 }
 
+/**
+ * The organization the public interest form files an enquiry under.
+ *
+ * Its own setting because the form's destination is not the same question as
+ * what the other signed-out surfaces show. The wall, the login-page notices
+ * and public floor hours all read getPilotDefaultOrganizationId(), and moving
+ * THAT would change what a public screen displays. An enquiry only has to
+ * reach the gym that will answer it: staff read enquiries under their session
+ * organization (public-interest/review/route.ts), so a row filed under any
+ * other organization is one nobody at the gym can see.
+ *
+ * Unset or blank falls back to the default organization, so nothing changes
+ * until an operator sets it. The value must be an existing organization:
+ * organization_id is a foreign key, and an unknown id fails every submission.
+ */
+export function getPublicInterestOrganizationId(): string {
+  return process.env.PPBF_PUBLIC_INTEREST_ORG_ID?.trim() || getPilotDefaultOrganizationId();
+}
+
 export function getPilotVideoContainerName(): string {
   return process.env.PPBF_PILOT_VIDEO_CONTAINER?.trim() || 'ppbf-pilot-video';
 }

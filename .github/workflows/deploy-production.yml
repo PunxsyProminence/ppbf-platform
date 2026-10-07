@@ -672,12 +672,31 @@ jobs:
           # command-injection path into a step holding an Azure OIDC session.
           RELEASE_DIGEST: ${{ inputs.release_digest }}
           CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          # Optional. The organization the public interest form files enquiries
+          # under (getPublicInterestOrganizationId in env.ts). An organization id
+          # is not a credential, so this is an environment VARIABLE, not a secret.
+          # Unset, the app is given nothing new and the form keeps using
+          # PPBF_PILOT_DEFAULT_ORG_ID.
+          PPBF_PUBLIC_INTEREST_ORG_ID: ${{ vars.PPBF_PUBLIC_INTEREST_ORG_ID }}
         run: |
           if [ -z "$PPBF_APP_ORIGIN" ]; then
             echo "Required production variable 'PPBF_APP_ORIGIN' is not configured."
             echo "Magic-link sign-in silently sends nothing without it. Set the"
             echo "repository or environment variable and re-run."
             exit 1
+          fi
+
+          # Appended to --set-env-vars only when the variable is set, so an unset
+          # variable leaves the command below exactly as it was. Once set it stays
+          # on the app: --set-env-vars cannot unset a value, so to go back, set
+          # the variable to the default organization's id instead of deleting it.
+          PUBLIC_INTEREST_ENV=()
+          if [ -n "$PPBF_PUBLIC_INTEREST_ORG_ID" ]; then
+            if ! [[ "$PPBF_PUBLIC_INTEREST_ORG_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
+              echo "::error::PPBF_PUBLIC_INTEREST_ORG_ID must be an organization id (letters, digits, _ and - only)."
+              exit 1
+            fi
+            PUBLIC_INTEREST_ENV=("PPBF_PUBLIC_INTEREST_ORG_ID=$PPBF_PUBLIC_INTEREST_ORG_ID")
           fi
 
           az containerapp update \
@@ -709,7 +728,8 @@ jobs:
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_VIDEO_CONTENT_SCAN=vision \
-              PPBF_DURABLE_RATE_LIMIT=true
+              PPBF_DURABLE_RATE_LIMIT=true \
+              "${PUBLIC_INTEREST_ENV[@]}"
 
       # `az containerapp update` returns when the new revision is CREATED, not
       # when it is serving. Staging learned this on run 30503641552 (its checks

@@ -1,5 +1,5 @@
 import { query, queryOne } from './db';
-import { getPilotDefaultOrganizationId } from './env';
+import { getPublicInterestOrganizationId } from './env';
 
 export type VisitorType =
   | 'Athlete / Participant'
@@ -143,7 +143,7 @@ export async function createPublicInterestSubmission(
        program_interest, preferred_contact_method, message, consent_to_contact,
        review_state, reviewed_by_account_id, reviewed_at, created_at`,
     [
-      getPilotDefaultOrganizationId(),
+      getPublicInterestOrganizationId(),
       input.fullName.trim(),
       input.email.trim(),
       input.phone?.trim() || null,

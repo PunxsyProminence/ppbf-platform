@@ -326,6 +326,12 @@ jobs:
           # an unset origin looks exactly like a link that was sent: the
           # parent is told one is on the way and none ever arrives.
           PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
+          # Optional. The organization the public interest form files enquiries
+          # under (getPublicInterestOrganizationId in env.ts). An organization id
+          # is not a credential, so this is an environment VARIABLE, not a secret.
+          # Unset, the app is given nothing new and the form keeps using
+          # PPBF_PILOT_DEFAULT_ORG_ID.
+          PPBF_PUBLIC_INTEREST_ORG_ID: ${{ vars.PPBF_PUBLIC_INTEREST_ORG_ID }}
         run: |
           for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST PPBF_APP_ORIGIN; do
             if [ -z "${!name}" ]; then
@@ -333,6 +339,19 @@ jobs:
               exit 1
             fi
           done
+
+          # Appended to --set-env-vars only when the variable is set, so an unset
+          # variable leaves the command below exactly as it was. Once set it stays
+          # on the app: --set-env-vars cannot unset a value, so to go back, set
+          # the variable to the default organization's id instead of deleting it.
+          PUBLIC_INTEREST_ENV=()
+          if [ -n "$PPBF_PUBLIC_INTEREST_ORG_ID" ]; then
+            if ! [[ "$PPBF_PUBLIC_INTEREST_ORG_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
+              echo "::error::PPBF_PUBLIC_INTEREST_ORG_ID must be an organization id (letters, digits, _ and - only)."
+              exit 1
+            fi
+            PUBLIC_INTEREST_ENV=("PPBF_PUBLIC_INTEREST_ORG_ID=$PPBF_PUBLIC_INTEREST_ORG_ID")
+          fi
 
           az containerapp update \
             --name app-ppbf-staging \
@@ -369,7 +388,8 @@ jobs:
               RESEARCH_BRIDGE_EXPORT_AUDIENCE="$RESEARCH_BRIDGE_EXPORT_AUDIENCE" \
               RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS="$RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS" \
               RESEARCH_BRIDGE_ORGANIZATION_ID=secretref:ppbf-pilot-default-org-id \
-              AZURE_TENANT_ID=secretref:ppbf-ms-tenant-id
+              AZURE_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              "${PUBLIC_INTEREST_ENV[@]}"
 
       - name: Verify Staging AI Secret Reference
         run: |
