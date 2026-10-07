@@ -5,6 +5,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { useCameraRecorder } from '@/components/useCameraRecorder';
 import { apiBase } from '@/lib/apiBase';
 import { CAPTURE_MAX_BLOB_BYTES } from '@/lib/capturePolicy';
+import { formatGymDateTime } from '@/lib/gymTime';
 
 /*
  * TEACH SHADOW: the capture surface.
@@ -500,9 +501,7 @@ export default function TeachShadowCapturePage() {
                 {resumedFrom ? (
                   <p role="status" className="t-body mb-[var(--s3)]" data-testid="session-resumed">
                     Picked up your open session
-                    {resumedFrom !== 'earlier' && !Number.isNaN(Date.parse(resumedFrom))
-                      ? `, started ${new Date(resumedFrom).toLocaleString()}`
-                      : ''}
+                    {formatGymDateTime(resumedFrom) ? `, started ${formatGymDateTime(resumedFrom)}` : ''}
                     . If this is not the one you meant, press Finish session.
                   </p>
                 ) : null}
