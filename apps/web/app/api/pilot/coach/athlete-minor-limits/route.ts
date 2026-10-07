@@ -30,7 +30,10 @@ export const dynamic = 'force-dynamic';
  *                       `value` must be PRESENT (null to clear): a body that
  *                       omits it is refused, so a partial or stale client can
  *                       never clear a limit by accident. For the two numeric
- *                       types value is a number; for supervision it is text.
+ *                       types value is a number (an empty string is refused,
+ *                       not read as a clear: an untouched number field must
+ *                       not clear a limit); for supervision it is text, and
+ *                       "" clears it.
  *
  * Coach-set data only: the route stores what a coach chose and reads it back.
  * It proposes no number and computes no score (see athleteMinorLimits.ts).
@@ -133,15 +136,16 @@ export async function POST(request: NextRequest) {
       throw new ValidationError('note must be text');
     }
 
-    const value = body.value === '' ? null : body.value;
     let valueNumber: number | null = null;
     let valueText: string | null = null;
     if (body.limit_type === 'supervision') {
+      const value = body.value === '' ? null : body.value;
       if (value !== null && typeof value !== 'string') {
         throw new ValidationError('supervision value must be text, or null to clear it');
       }
       valueText = value;
     } else {
+      const value = body.value;
       if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
         throw new ValidationError('value must be a number, or null to clear the limit');
       }

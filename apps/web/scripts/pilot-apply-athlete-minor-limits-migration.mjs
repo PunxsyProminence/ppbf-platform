@@ -19,8 +19,29 @@ function sslConfig() {
 // Asserts the table, its read index and every guard ON THIS TABLE (looked up
 // by conrelid, not by name alone), so an environment where the table exists
 // without one of its checks or its athlete foreign key cannot pass readiness.
-// The shape check is compared in full: a looser predicate that happens to
-// contain the right words fails.
+// Every CHECK is compared IN FULL against the text Postgres stores for it, so
+// a looser predicate that happens to contain the right words fails; the
+// foreign key is checked by shape (both column lists, target, ON DELETE
+// CASCADE); each clause is refused on its own (athleteMinorLimits.pg.test.ts).
+const EXPECTED_CHECKS = {
+  pilot_athlete_minor_limits_type_check:
+    "CHECK ((limit_type = ANY (ARRAY['heat_exposure_minutes_per_session'::text, 'weight_cut_max_percent_body_weight'::text, 'supervision'::text])))",
+  pilot_athlete_minor_limits_number_check:
+    "CHECK (((value_number IS NULL) OR ((value_number >= (0)::numeric) AND (value_number <> 'NaN'::numeric))))",
+  pilot_athlete_minor_limits_text_check:
+    "CHECK (((value_text IS NULL) OR ((length(btrim(value_text, ' \t\r\n'::text)) > 0) AND (length(value_text) <= 500))))",
+  pilot_athlete_minor_limits_unit_check:
+    "CHECK ((unit = ANY (ARRAY['minutes'::text, 'percent_body_weight'::text, 'text'::text])))",
+  pilot_athlete_minor_limits_note_check: 'CHECK ((length(note) <= 1000))',
+  pilot_athlete_minor_limits_role_check:
+    "CHECK ((set_by_role = ANY (ARRAY['coach'::text, 'organization_admin'::text, 'admin'::text])))",
+  pilot_athlete_minor_limits_shape_check:
+    "CHECK ((((limit_type = 'heat_exposure_minutes_per_session'::text) AND (unit = 'minutes'::text) AND (value_text IS NULL))"
+    + " OR ((limit_type = 'weight_cut_max_percent_body_weight'::text) AND (unit = 'percent_body_weight'::text) AND (value_text IS NULL)"
+    + " AND ((value_number IS NULL) OR (value_number <= (100)::numeric)))"
+    + " OR ((limit_type = 'supervision'::text) AND (unit = 'text'::text) AND (value_number IS NULL))))",
+};
+
 const READINESS_QUERY = `
   select
     to_regclass('pilot.athlete_minor_limits') is not null as athlete_minor_limits_ready,
@@ -31,42 +52,38 @@ const READINESS_QUERY = `
         and indexdef like '%(organization_id, athlete_id, limit_type, limit_seq DESC)'
     ) as athlete_type_seq_index_ready,
     (
-      select count(*) = 8 from pg_constraint
-      where conrelid = to_regclass('pilot.athlete_minor_limits')
-        and convalidated
-        and conname in (
-          'pilot_athlete_minor_limits_type_check',
-          'pilot_athlete_minor_limits_number_check',
-          'pilot_athlete_minor_limits_text_check',
-          'pilot_athlete_minor_limits_unit_check',
-          'pilot_athlete_minor_limits_note_check',
-          'pilot_athlete_minor_limits_role_check',
-          'pilot_athlete_minor_limits_athlete_fk',
-          'pilot_athlete_minor_limits_shape_check'
-        )
-    ) as guards_ready,
-    exists (
-      select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.athlete_minor_limits')
-        and conname = 'pilot_athlete_minor_limits_shape_check' and contype = 'c'
-        and pg_get_constraintdef(oid) like '%heat_exposure_minutes_per_session%'
-        and pg_get_constraintdef(oid) like '%weight_cut_max_percent_body_weight%'
-        and pg_get_constraintdef(oid) like '%value_number <= (100)%'
-        and pg_get_constraintdef(oid) like '%supervision%'
-    ) as shape_check_ready,
+      select count(*) = $1 from pg_constraint c
+      join unnest($2::text[], $3::text[]) as expected(conname, condef) on expected.conname = c.conname
+      where c.conrelid = to_regclass('pilot.athlete_minor_limits')
+        and c.contype = 'c' and c.convalidated
+        and pg_get_constraintdef(c.oid) = expected.condef
+    ) as checks_ready,
     exists (
       select 1 from pg_constraint c
       where c.conname = 'pilot_athlete_minor_limits_athlete_fk'
-        and c.conrelid = to_regclass('pilot.athlete_minor_limits') and c.contype = 'f'
+        and c.conrelid = to_regclass('pilot.athlete_minor_limits') and c.contype = 'f' and c.convalidated
         and c.confrelid = to_regclass('pilot.athletes') and c.confdeltype = 'c'
+        and (select array_agg(a.attname::text order by k.ord)
+               from unnest(c.conkey) with ordinality k(attnum, ord)
+               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+            = array['organization_id', 'athlete_id']
+        and (select array_agg(a.attname::text order by k.ord)
+               from unnest(c.confkey) with ordinality k(attnum, ord)
+               join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k.attnum)
+            = array['organization_id', 'athlete_id']
     ) as athlete_fk_ready
 `;
+const READINESS_PARAMS = [
+  Object.keys(EXPECTED_CHECKS).length,
+  Object.keys(EXPECTED_CHECKS),
+  Object.values(EXPECTED_CHECKS),
+];
 
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
     await client.query(sql);
-    const readiness = await client.query(READINESS_QUERY);
+    const readiness = await client.query(READINESS_QUERY, READINESS_PARAMS);
     const row = readiness.rows[0];
     if (!row || Object.values(row).some((value) => value !== true)) {
       throw new Error('ATHLETE_MINOR_LIMITS_TABLE_NOT_READY');

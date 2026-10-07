@@ -126,8 +126,9 @@ export function minorLimitShapeError(input: MinorLimitInput): string | null {
     return `note must be ${NOTE_MAX} characters or fewer`;
   }
   if (input.limitType === 'supervision') {
-    const text = input.valueText;
-    if (text !== null && (text.trim().length === 0 || text.length > SUPERVISION_TEXT_MAX)) {
+    // Measured after trimming, which is how it is stored.
+    const text = input.valueText?.trim() ?? null;
+    if (text !== null && (text.length === 0 || text.length > SUPERVISION_TEXT_MAX)) {
       return `supervision must be ${SUPERVISION_TEXT_MAX} characters or fewer, or null to clear it`;
     }
     return null;
@@ -135,6 +136,12 @@ export function minorLimitShapeError(input: MinorLimitInput): string | null {
   const value = input.valueNumber;
   if (value !== null && (!Number.isFinite(value) || value < 0 || value > NUMBER_MAX)) {
     return 'value must be a number, 0 or more';
+  }
+  // The column holds two decimal places. A third would be ROUNDED by the
+  // database -- 2.555 stored as 2.56 is a limit the coach never typed -- so it
+  // is refused here instead, and the stored number is always the typed one.
+  if (value !== null && Math.round(value * 100) / 100 !== value) {
+    return 'value may have at most two decimal places';
   }
   if (input.limitType === 'weight_cut_max_percent_body_weight' && value !== null && value > 100) {
     return 'a percentage of body weight cannot be more than 100';
@@ -326,6 +333,11 @@ export async function setMinorLimit(input: MinorLimitInput & {
 
     // The value stays out of the audit row (the table holds it); the audit
     // says who changed which limit type for which athlete, and when.
+    // shadow_mirror: false -- the mirrored shadow_events row would be readable
+    // by the athlete and their guardians through /api/pilot/shadow/events
+    // (SHADOW_PROJECTION_READ_ROLES admits both; the athlete tie reads
+    // details.athlete_id), and whether the family sees a child's limits is
+    // not decided. The audit table keeps the record; nothing feeds the model.
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: input.actor.accountId,
@@ -338,6 +350,7 @@ export async function setMinorLimit(input: MinorLimitInput & {
         limit_type: input.limitType,
         cleared: valueNumber === null && valueText === null,
       },
+      shadow_mirror: false,
     }, client);
 
     return row;

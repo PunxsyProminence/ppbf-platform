@@ -197,17 +197,26 @@ describe('POST', () => {
     );
   });
 
-  it('null or "" clears a limit, and a cleared limit answers limit: null', async () => {
+  it('null clears a numeric limit, and a cleared limit answers limit: null', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     mockSet.mockResolvedValue(CLEARED_HEAT);
-    for (const value of [null, '']) {
-      const response = await post({ athlete_id: 'ath-1', limit_type: 'heat_exposure_minutes_per_session', value });
-      expect(response.status).toBe(200);
-      expect(mockSet).toHaveBeenLastCalledWith(expect.objectContaining({ valueNumber: null, valueText: null }));
-      const body = await response.json();
-      expect(body.limit).toBeNull();
-      expect(body.written.limit_id).toBe('lim-3');
-    }
+    const response = await post({ athlete_id: 'ath-1', limit_type: 'heat_exposure_minutes_per_session', value: null });
+    expect(response.status).toBe(200);
+    expect(mockSet).toHaveBeenLastCalledWith(expect.objectContaining({ valueNumber: null, valueText: null }));
+    const body = await response.json();
+    expect(body.limit).toBeNull();
+    expect(body.written.limit_id).toBe('lim-3');
+  });
+
+  it('"" clears supervision (text) but is refused for a numeric type: an untouched number field never clears a limit', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockSet.mockResolvedValue({ ...SUPERVISION, value_text: null });
+    expect((await post({ athlete_id: 'ath-1', limit_type: 'supervision', value: '' })).status).toBe(200);
+    expect(mockSet).toHaveBeenLastCalledWith(expect.objectContaining({ valueText: null, valueNumber: null }));
+    mockSet.mockClear();
+    expect((await post({ athlete_id: 'ath-1', limit_type: 'heat_exposure_minutes_per_session', value: '' })).status).toBe(400);
+    expect((await post({ athlete_id: 'ath-1', limit_type: 'weight_cut_max_percent_body_weight', value: '' })).status).toBe(400);
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it.each([

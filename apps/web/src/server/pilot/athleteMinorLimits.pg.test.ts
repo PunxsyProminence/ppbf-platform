@@ -284,6 +284,11 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
   return client;
 }
 
+/** The runner's transaction with no SQL to apply: readiness alone decides. */
+function applyMutationFree(client: Client): Promise<void> {
+  return applyMigrationTransaction(client, 'select 1');
+}
+
 async function migratedDatabase(name: string): Promise<Client> {
   const client = await freshDatabase(name);
   activeClient = client;
@@ -411,13 +416,28 @@ describe('athlete minor limits migration', () => {
     }
   });
 
-  test('the runner refuses a table missing one guard, with everything else right', async () => {
-    const client = await freshDatabase('limits_one_guard_short');
+  test.each([
+    ['the shape check dropped', 'alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_shape_check'],
+    // Same words, looser predicate: the exact-text comparison is what refuses it.
+    ['the shape check loosened', `alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_shape_check,
+       add constraint pilot_athlete_minor_limits_shape_check check (
+         (limit_type = 'heat_exposure_minutes_per_session' and unit = 'minutes' and value_text is null)
+         or (limit_type = 'weight_cut_max_percent_body_weight' and unit = 'percent_body_weight' and value_text is null
+             and (value_number is null or value_number <= 100))
+         or (limit_type = 'supervision' and unit = 'text' and value_number is null)
+         or (unit = 'text'))`],
+    ['the number check loosened', `alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_number_check,
+       add constraint pilot_athlete_minor_limits_number_check check (value_number is null or value_number >= 0)`],
+    ['the read index dropped', 'drop index pilot.idx_athlete_minor_limits_athlete_type_seq'],
+    ['the athlete foreign key dropped', 'alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_athlete_fk'],
+    ['the athlete foreign key without cascade', `alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_athlete_fk,
+       add constraint pilot_athlete_minor_limits_athlete_fk foreign key (organization_id, athlete_id)
+       references pilot.athletes(organization_id, athlete_id)`],
+  ])('the runner refuses a table with %s, with everything else right', async (label, breakIt) => {
+    const client = await freshDatabase(`limits_short_${label.replace(/[^a-z]+/g, '_')}`);
     try {
-      await client.query('alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_shape_check');
-      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
-        /ATHLETE_MINOR_LIMITS_TABLE_NOT_READY/,
-      );
+      await client.query(breakIt);
+      await expect(applyMutationFree(client)).rejects.toThrow(/ATHLETE_MINOR_LIMITS_TABLE_NOT_READY/);
     } finally {
       await client.end();
     }
@@ -451,6 +471,12 @@ describe('athlete minor limits migration', () => {
       await expect(
         insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: '   ' }),
       ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);
+      // Tabs and line breaks alone are blank too (btrim's default strips spaces only).
+      await expect(
+        insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: '\t\n \r' }),
+      ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);
+      // NaN is a numeric that sorts above every number; refused by name.
+      await expect(insertRaw(client, { value_number: 'NaN' })).rejects.toThrow(/pilot_athlete_minor_limits_number_check/);
       await expect(
         insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: 'x'.repeat(501) }),
       ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);
@@ -812,6 +838,18 @@ describe('athleteMinorLimits.ts against real rows', () => {
       await expect(
         setMinorLimit({ ...base, ...CUT_3, valueNumber: 100.01 }),
       ).rejects.toBeInstanceOf(ValidationError);
+      // A third decimal place would be rounded by the column (2.555 -> 2.56),
+      // a number the coach never typed; refused before the database sees it.
+      await expect(
+        setMinorLimit({ ...base, ...CUT_3, valueNumber: 2.555 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        setMinorLimit({ ...base, ...HEAT_20, valueNumber: 0.004 }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      // Padded supervision text is measured after trimming.
+      await expect(
+        setMinorLimit({ ...base, ...SUPERVISED, valueText: `  ${'y'.repeat(500)}  ` }),
+      ).resolves.toMatchObject({ value_text: 'y'.repeat(500) });
       await expect(
         setMinorLimit({ ...base, ...SUPERVISED, valueText: '   ' }),
       ).rejects.toBeInstanceOf(ValidationError);
@@ -821,8 +859,29 @@ describe('athleteMinorLimits.ts against real rows', () => {
       await expect(
         setMinorLimit({ ...base, ...HEAT_20, note: 'x'.repeat(1001) }),
       ).rejects.toBeInstanceOf(ValidationError);
-      expect(await limitCount(client)).toBe(0);
-      expect(await auditRows(client)).toEqual([]);
+      expect(await limitCount(client)).toBe(1);
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the audit row is not mirrored into the SHADOW event stream or telemetry', async () => {
+    // /api/pilot/shadow/events admits athletes and guardians and ties rows to
+    // the athlete through details.athlete_id; whether the family sees a
+    // child's limits is undecided, so the audit row stays in the audit table.
+    const client = await migratedDatabase('limits_no_mirror');
+    try {
+      await setMinorLimit({ actor: COACH, athleteId: ATHLETE_ID, ...HEAT_20 });
+      expect(await auditRows(client)).toHaveLength(1);
+      const events = await client.query(
+        "select count(*)::int as n from pilot.shadow_events where entity_type = 'athlete_minor_limit' or event_name like '%MINOR_LIMIT%'",
+      );
+      expect(events.rows[0].n).toBe(0);
+      const telemetry = await client.query(
+        "select count(*)::int as n from pilot.shadow_telemetry_events where dimensions->>'entity_type' = 'athlete_minor_limit'",
+      );
+      expect(telemetry.rows[0].n).toBe(0);
     } finally {
       await client.end();
     }

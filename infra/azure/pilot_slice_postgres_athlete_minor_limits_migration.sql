@@ -27,8 +27,9 @@
 -- unknown date of birth counts as a minor. A coach may record these limits
 -- for any athlete they reach; reads label the athlete minor or adult.
 --
--- APPEND-ONLY, ONE ROW PER WRITE OF ONE TYPE. Setting, changing or clearing a
--- limit inserts a new row; the newest row per (athlete, limit_type) is the
+-- APPEND-ONLY, ONE ROW PER WRITE OF ONE TYPE (the module's rule, held by its
+-- schema-ownership test; the table itself has no trigger against UPDATE or
+-- DELETE). Setting, changing or clearing a limit inserts a new row; the newest row per (athlete, limit_type) is the
 -- limit in force. So the history of who allowed what, and when, is the table
 -- itself -- a child's limit is never overwritten silently. Clearing a type is
 -- a row with both values null.
@@ -45,15 +46,20 @@ create table if not exists pilot.athlete_minor_limits (
     constraint pilot_athlete_minor_limits_type_check check (
       limit_type in ('heat_exposure_minutes_per_session', 'weight_cut_max_percent_body_weight', 'supervision')
     ),
-  -- The number the coach typed, for the two numeric types. Null = cleared.
+  -- The number the coach typed, for the two numeric types (two decimal
+  -- places; the module refuses more, so nothing is rounded on the way in).
+  -- Null = cleared. NaN is a numeric in Postgres and sorts above every
+  -- number, so it is refused by name.
   value_number       numeric(8,2) null
     constraint pilot_athlete_minor_limits_number_check check (
-      value_number is null or value_number >= 0
+      value_number is null or (value_number >= 0 and value_number <> 'NaN'::numeric)
     ),
-  -- The coach's words, for supervision. Null = cleared; never blank.
+  -- The coach's words, for supervision. Null = cleared; never blank (spaces,
+  -- tabs and line breaks alone do not count).
   value_text         text null
     constraint pilot_athlete_minor_limits_text_check check (
-      value_text is null or (length(btrim(value_text)) > 0 and length(value_text) <= 500)
+      value_text is null
+      or (length(btrim(value_text, E' \t\r\n')) > 0 and length(value_text) <= 500)
     ),
   unit               text not null
     constraint pilot_athlete_minor_limits_unit_check check (
@@ -66,8 +72,8 @@ create table if not exists pilot.athlete_minor_limits (
     constraint pilot_athlete_minor_limits_role_check check (set_by_role in ('coach', 'organization_admin', 'admin')),
   set_at             timestamptz not null default clock_timestamp(),
   -- Insertion order. "Newest" is decided by this, never by a timestamp: two
-  -- writes in the same clock tick cannot tie, so the limit in force is always
-  -- the last one written.
+  -- writes in the same clock tick cannot tie, so the limit in force is the
+  -- one whose insert came last.
   limit_seq          bigint generated always as identity,
   primary key (organization_id, limit_id),
   constraint pilot_athlete_minor_limits_athlete_fk
