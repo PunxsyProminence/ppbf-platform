@@ -170,3 +170,47 @@ test('a missing set id is a 400 naming it', async () => {
   expect(response.status).toBe(400);
   expect(body.error).toContain('annotation_set_id');
 });
+
+test('a body-point set the database refuses as incomplete comes back as a 400 that lists what is missing', async () => {
+  mockPrincipal.mockResolvedValue(COACH);
+  mockGetSet.mockResolvedValue({ ...OPEN_SET, ontology_version: 'boxing-ontology-0.4' });
+  // The shape pg raises from the completeness trigger: the message is the
+  // code, the detail is the list.
+  mockSubmit.mockRejectedValue(Object.assign(new Error('CALIBRATION_BODY_POINTS_INCOMPLETE'), {
+    detail: 'evt-1: middle moment; evt-1: start points, 22 of 23',
+  }));
+
+  const response = await POST(post({ annotation_set_id: 'set-1' }));
+  const body = await response.json();
+
+  expect(response.status).toBe(400);
+  expect(body.code).toBe('CALIBRATION_BODY_POINTS_INCOMPLETE');
+  expect(body.missing).toEqual(['evt-1: middle moment', 'evt-1: start points, 22 of 23']);
+  expect(body.error).toBe('Missing body points: 2 items still to mark before this set can be submitted');
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('the incomplete refusal with no detail is still a 400 with an empty list', async () => {
+  mockPrincipal.mockResolvedValue(COACH);
+  mockGetSet.mockResolvedValue({ ...OPEN_SET, ontology_version: 'boxing-ontology-0.4' });
+  mockSubmit.mockRejectedValue(new Error('CALIBRATION_BODY_POINTS_INCOMPLETE'));
+
+  const response = await POST(post({ annotation_set_id: 'set-1' }));
+  const body = await response.json();
+
+  expect(response.status).toBe(400);
+  expect(body.missing).toEqual([]);
+  expect(body.error).toBe('Missing body points: 0 items still to mark before this set can be submitted');
+});
+
+test('any other database failure at submission stays an opaque 500', async () => {
+  mockPrincipal.mockResolvedValue(COACH);
+  mockGetSet.mockResolvedValue(OPEN_SET);
+  mockSubmit.mockRejectedValue(new Error('connection to server at 10.0.0.1 lost'));
+
+  const response = await POST(post({ annotation_set_id: 'set-1' }));
+  const body = await response.json();
+
+  expect(response.status).toBe(500);
+  expect(body.error).toBe('Internal server error');
+});
