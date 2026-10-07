@@ -9,6 +9,7 @@ import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanR
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ConflictError } from '@/src/server/pilot/errors';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { assertConsentCoversVideo, writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -54,6 +55,8 @@ jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
 jest.mock('@/src/server/pilot/blob', () => ({ getPilotVideoSasUrl: jest.fn(() => 'https://blob/sas') }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn().mockResolvedValue(undefined) }));
+// Untagged unless a test tags the clip; the SQL has its own pg suite.
+jest.mock('@/src/server/pilot/videoClipTags', () => ({ listLiveTagSubjects: jest.fn(async () => []) }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetVideo = getVideoSessionForReview as jest.Mock;
@@ -61,8 +64,19 @@ const mockReview = reviewVideoSessionScan as jest.Mock;
 const mockAssertAthlete = assertActorCanAccessAthlete as jest.Mock;
 const mockSas = getPilotVideoSasUrl as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockTags = listLiveTagSubjects as jest.Mock;
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  // clearAllMocks keeps implementations; the tagged-clip tests install a
+  // per-athlete consent double, which must not leak into the next test.
+  (assertConsentCoversVideo as jest.Mock).mockReset().mockResolvedValue(undefined);
+  mockTags.mockReset().mockResolvedValue([]);
+  // Every test sets these itself; dropping them ends any order dependence
+  // (the tagged-clip block installs a mockReview implementation).
+  mockReview.mockReset();
+  mockGetVideo.mockReset();
+});
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -383,6 +397,197 @@ describe('POST /api/pilot/video/scan-review', () => {
 
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ reason: 'VIDEO_SESSION_CHANGED' });
+  });
+});
+
+/*
+ * EVERY CHILD THE CLIP SHOWS. A sparring clip is filed under one athlete and
+ * tagged to the others in it (videoClipTags.ts; owner, Jason 2026-10-03: any
+ * tagged athlete's consent block blocks the whole clip, for everyone). Approve
+ * used to ask only the clip's own athlete, so an admin could put a clip
+ * showing a tagged child whose guardian had said no into circulation.
+ *
+ * The consent double refuses PER ATHLETE: the clip's own athlete passes and
+ * only the tagged partner refuses, so each test proves the partner's answer
+ * alone stops the approve -- and that it was asked inside the write's
+ * transaction (the sentinel client), never on the pool afterwards. The
+ * transaction and its locks are proven on Postgres for a two-athlete clip by
+ * playbackConsentRace.pg.test.ts ('a tagged clip: a withdrawal in flight for
+ * the SECOND athlete ...'); writeUnderPlaybackConsent is that same helper.
+ */
+describe('POST /api/pilot/video/scan-review on a tagged clip', () => {
+  const mockWrite = writeUnderPlaybackConsent as jest.Mock;
+  const approve = () => POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+  const taggedClip = (overrides: Record<string, unknown> = {}) => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video(overrides));
+    mockReview.mockResolvedValue({ ...video(overrides), status: 'ready', scan_state: 'passed' });
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
+  };
+  const partnerRefuses = (error: ConflictError) => {
+    mockConsent.mockImplementation(async (_org: string, athleteId: string) => {
+      if (athleteId === 'ath-tagged') throw error;
+    });
+  };
+
+  test.each([
+    ['withdrew consent', new ConflictError(
+      "Blocked: 1 of this athlete's guardians has withdrawn media consent.", 'GUARDIAN_CONSENT_WITHDRAWN',
+    )],
+    ['signed photo-only', new ConflictError(
+      "Blocked: 1 of this athlete's guardians signed a photo-only media consent that does not cover video.",
+      'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
+    )],
+    // OD-2026-10-05-023 "Keep the 'no'": a purged guardian's last answer
+    // still refuses (assertConsentCoversVideo's retained loop, proven in its
+    // own suite); the route owes that the tagged child is asked at all.
+    ['has a deleted guardian whose last answer was no', new ConflictError(
+      'Blocked: a former guardian of this athlete, whose account has since been deleted, withdrew media consent.',
+      'GUARDIAN_CONSENT_WITHDRAWN',
+    )],
+  ])('a tagged child whose guardian %s refuses the approve and nothing is written', async (_label, error) => {
+    taggedClip();
+    partnerRefuses(error);
+
+    const res = await approve();
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe(error.code);
+    // Both children were asked, inside the one write call, and the refusal
+    // came from inside it: the write itself never ran.
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-tagged'], expect.any(Function));
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-tagged');
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+    // The refusal says the whole clip is blocked while any athlete in it is,
+    // and never which one: the partner may be a child this admin's coaches
+    // cannot see.
+    expect(body.error).toContain('This clip shows more than one athlete');
+    expect(body.error).not.toContain('ath-tagged');
+    expect(body.error).not.toContain('ath-1');
+  });
+
+  test('a clip whose every athlete consents is approved inside the one transaction that asked them all', async () => {
+    taggedClip();
+
+    const res = await approve();
+
+    expect(res.status).toBe(200);
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-tagged'], expect.any(Function));
+    expect(mockConsent).toHaveBeenCalledTimes(2);
+    // The review was written on the transaction's client -- the one still
+    // holding BOTH children's guardian links -- so a withdrawal by the
+    // partner's guardian either lands first and is read, or waits.
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ decision: 'approve' }), TX_CLIENT);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    // The tags of THIS clip, in this organization: two swapped strings would
+    // read nothing and silently ask only the clip's own athlete again.
+    expect(mockTags).toHaveBeenCalledWith('org-1', 'vs-1');
+  });
+
+  test('a tag read that fails is a failure, not an untagged clip: nothing is written', async () => {
+    // "We could not find out who is in the clip, so ask only the one it is
+    // filed under" is the fail-open direction a consent read must never take.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockTags.mockRejectedValueOnce(new Error('connection reset'));
+
+    const res = await approve();
+
+    expect(res.status).toBe(500);
+    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the tagged child is refused from inside the write call, after the own athlete cleared, and the write never runs', async () => {
+    // What this proves at unit level: the partner's refusal is raised by the
+    // helper call that owns the write, so the review cannot run on a consent
+    // the partner no longer gives. What it cannot prove: a withdrawal that
+    // lands between the check and the write on a real database -- that is
+    // the helper's FOR SHARE, proven for a two-athlete clip in
+    // playbackConsentRace.pg.test.ts ('a tagged clip: a withdrawal in flight
+    // for the SECOND athlete ...'); the test above proves the review took
+    // that helper's client. The check order here is the double's, not the
+    // helper's, which sorts its subjects.
+    taggedClip();
+    const order: string[] = [];
+    mockConsent.mockImplementation(async (_org: string, athleteId: string) => {
+      order.push(`consent:${athleteId}`);
+      if (athleteId === 'ath-tagged') throw new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN');
+    });
+    mockReview.mockImplementation(async () => { order.push('write'); return null; });
+
+    expect((await approve()).status).toBe(409);
+    expect(order).toEqual(['consent:ath-1', 'consent:ath-tagged']);
+  });
+
+  test('a tag naming a deleted athlete reads as not found, as on playback, and asks nobody', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockTags.mockResolvedValueOnce([
+      { athlete_id: 'ath-tagged', athlete_deleted: false },
+      { athlete_id: 'ath-gone', athlete_deleted: true },
+    ]);
+
+    const res = await approve();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ reason: 'VIDEO_SESSION_NOT_FOUND' });
+    expect(mockPrereq).not.toHaveBeenCalled();
+    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a tag naming the clip\'s own athlete is asked once', async () => {
+    taggedClip();
+    mockTags.mockReset().mockResolvedValueOnce([
+      { athlete_id: 'ath-1', athlete_deleted: false },
+      { athlete_id: 'ath-tagged', athlete_deleted: false },
+    ]);
+
+    expect((await approve()).status).toBe(200);
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-tagged'], expect.any(Function));
+  });
+
+  test('an unattributed clip with tags asks the tagged children and writes under their consent', async () => {
+    taggedClip({ athlete_id: null });
+
+    expect((await approve()).status).toBe(200);
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-tagged'], expect.any(Function));
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-tagged');
+    expect(mockReview).toHaveBeenCalledWith(expect.anything(), TX_CLIENT);
+  });
+
+  test('block never reads the tags and asks nobody, so it still works when nobody may watch', async () => {
+    // CL-A21: Block is the non-viewing action and must keep working while a
+    // tagged child's guardian refuses. The tags are not even read for it.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'quarantined', scan_state: 'blocked' });
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
+    partnerRefuses(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+    const res = await POST(req({ video_session_id: 'vs-1', decision: 'block' }));
+
+    expect(res.status).toBe(200);
+    expect(mockTags).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ decision: 'block' }), null);
+  });
+
+  test('tags are read only after the entitlement check, so a tag\'s not-found never confirms a video exists', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(null);
+
+    expect((await approve()).status).toBe(404);
+    expect(mockTags).not.toHaveBeenCalled();
   });
 });
 
