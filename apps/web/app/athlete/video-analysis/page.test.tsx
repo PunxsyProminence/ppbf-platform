@@ -27,11 +27,9 @@ jest.mock('@/components/RoleStandaloneView', () => ({
 const video = (overrides: Record<string, unknown> = {}) => ({
   video_session_id: 'vid-1',
   title: 'Sparring round 3',
-  notes: '',
   file_name: 'round3.mp4',
   file_size_bytes: 2_000_000,
   status: 'ready',
-  uploaded_by_account_id: 'coach-1',
   created_at: '2026-07-30T00:00:00.000Z',
   ...overrides,
 });
@@ -176,7 +174,7 @@ describe("coach notes on the athlete's film screen", () => {
     render(<AthleteVideoAnalysisPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
 
-    await screen.findByText('No coach notes on this round yet.');
+    await screen.findByText('No coach notes on this round.');
   });
 
   test('a round that is refused (409) shows the refusal and no notes', async () => {

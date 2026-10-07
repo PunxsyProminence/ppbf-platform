@@ -85,7 +85,10 @@ export interface FamilyCoachNote {
   noted_at: string;
 }
 
-export interface FamilyVideoPlayback extends FamilyVideoListItem {
+// No scan_state: the playback route does not select it (a video only
+// reaches playback once it is 'ready'), and a field that is always null
+// would read as a fact.
+export interface FamilyVideoPlayback extends Omit<FamilyVideoListItem, 'scan_state'> {
   coach_notes: FamilyCoachNote[];
   stream_url: string;
 }
@@ -132,8 +135,16 @@ export async function toFamilyVideoPlayback(
         noted_at: row.created_at,
       }]
     : [];
+  const item = toFamilyVideoListItem(row);
   return {
-    ...toFamilyVideoListItem(row),
+    video_session_id: item.video_session_id,
+    title: item.title,
+    file_name: item.file_name,
+    file_size_bytes: item.file_size_bytes,
+    mime_type: item.mime_type,
+    status: item.status,
+    athlete_id: item.athlete_id,
+    created_at: item.created_at,
     coach_notes: coachNotes,
     stream_url: streamUrl,
   };
