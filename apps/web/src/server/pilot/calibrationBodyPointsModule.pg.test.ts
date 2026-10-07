@@ -704,16 +704,23 @@ describe('the gates', () => {
     const moment = await open(set, eventId, 'start');
     await markAll(set, moment.body_moment_id);
     await bodyPoints.setEventStanceType({ organizationId: set.orgId, annotationSetId: set.setId, eventId, stanceType: 'usa_boxing__classic' });
+    // Exact messages, on purpose: a lookup that forgot the organization would
+    // find ORG's event or moment through the twin's set id, write under the
+    // other organization, and fail on a foreign key -- which translates to a
+    // different "Not found" (the parent-gone one). Only the lookup's own
+    // refusal is accepted here.
+    const noSuchEvent = 'Not found: no such event in this annotation set';
+    const noSuchMoment = 'Not found: no such body moment in this annotation set';
     const notFound = /^Not found/;
     const foreign = { organizationId: OTHER_ORG_ID, annotationSetId: set.setId };
-    await expect(bodyPoints.openBodyMoment({ ...foreign, eventId, momentSlot: 'end' })).rejects.toThrow(notFound);
-    await expect(bodyPoints.updateBodyMoment({ ...foreign, bodyMomentId: moment.body_moment_id, leadSide: 'southpaw' })).rejects.toThrow(notFound);
+    await expect(bodyPoints.openBodyMoment({ ...foreign, eventId, momentSlot: 'end' })).rejects.toThrow(noSuchEvent);
+    await expect(bodyPoints.updateBodyMoment({ ...foreign, bodyMomentId: moment.body_moment_id, leadSide: 'southpaw' })).rejects.toThrow(noSuchMoment);
     // The twin set exists, so a delete finds nothing to remove (false) rather
     // than refusing the set; what matters is that nothing of ORG's is touched.
     expect(await bodyPoints.deleteBodyMoment(OTHER_ORG_ID, set.setId, moment.body_moment_id)).toBe(false);
-    await expect(bodyPoints.markBodyPoints({ ...foreign, bodyMomentId: moment.body_moment_id, points: [placed('nose')] })).rejects.toThrow(notFound);
+    await expect(bodyPoints.markBodyPoints({ ...foreign, bodyMomentId: moment.body_moment_id, points: [placed('nose')] })).rejects.toThrow(noSuchMoment);
     expect(await bodyPoints.deleteBodyPoint(OTHER_ORG_ID, set.setId, moment.body_moment_id, 'nose')).toBe(false);
-    await expect(bodyPoints.setEventStanceType({ ...foreign, eventId, stanceType: 'usa_boxing__classic' })).rejects.toThrow(notFound);
+    await expect(bodyPoints.setEventStanceType({ ...foreign, eventId, stanceType: 'usa_boxing__classic' })).rejects.toThrow(noSuchEvent);
     expect(await bodyPoints.clearEventStanceType(OTHER_ORG_ID, set.setId, eventId)).toBe(false);
     const twinData = await bodyPoints.listBodyDataForSet(OTHER_ORG_ID, set.setId);
     expect([twinData.moments, twinData.stance_labels]).toEqual([[], []]);
