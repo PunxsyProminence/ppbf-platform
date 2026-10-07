@@ -244,14 +244,19 @@ export async function PATCH(request: NextRequest) {
     const cues = parseCues(body.cues);
     const active = body.active as boolean | undefined;
 
-    // THE CUE RULE ON AN EDIT (OD-2026-10-06-026). An edit that touches the cues
-    // or the category, or that brings a drill back, must leave a drill that is
-    // in use carrying a cue (conditioning excepted). Retiring never needs one,
-    // and an edit that touches none of those leaves an existing cue-less drill
-    // exactly as it was: nothing is deleted or rewritten behind the coach.
+    // THE CUE RULE ON AN EDIT (OD-2026-10-06-026). An edit that sends cues,
+    // CHANGES the category, or brings a retired drill back must leave a drill
+    // that is in use carrying a cue (conditioning excepted). Retiring never
+    // needs one. Resending the category a drill already has, or active: true
+    // on a drill that is already active, is not a change and is not judged, so
+    // a client that resends the whole record is not refused for a field it did
+    // not touch -- an existing cue-less drill stays exactly as it was.
     if (cues !== undefined || category !== undefined || active === true) {
       const existing = await getDrill(principal.organizationId, drillId);
-      if (existing && (active ?? existing.active)) {
+      const categoryChanges = category !== undefined
+        && category.trim().toLowerCase() !== existing?.category.trim().toLowerCase();
+      const restoring = active === true && existing?.active === false;
+      if (existing && (active ?? existing.active) && (cues !== undefined || categoryChanges || restoring)) {
         await assertDrillMeetsCueRule({
           organizationId: principal.organizationId,
           name: name ?? existing.name,

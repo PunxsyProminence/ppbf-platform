@@ -196,10 +196,11 @@ export async function getDrill(organizationId: string, drillId: string): Promise
  * that breaks the rule is not touched; it is refused only when a write would
  * make it usable (or keep it usable) while still breaking the rule.
  *
- * "Conditioning" is the category word for a drill the gym wrote, and the
- * reference drill's discipline for an adopted one -- pilot.drills has no
- * discipline of its own. The reference is read only when the cheaper tests
- * (cues present, category says conditioning) have not already settled it.
+ * "Conditioning" is the reference drill's discipline for an adopted drill
+ * (overwatch ruling Q-A), and the category word for a drill the gym wrote --
+ * pilot.drills has no discipline of its own. An adopted drill's category never
+ * decides: the reference is what the gym adopted. The reference is read only
+ * when the drill has no cue.
  */
 export async function assertDrillMeetsCueRule(drill: {
   organizationId: string;
@@ -208,7 +209,7 @@ export async function assertDrillMeetsCueRule(drill: {
   cues: readonly string[];
   referenceDrillId: string | null;
 }): Promise<void> {
-  if (hasCoachingCue(drill.cues) || isConditioningLabel(drill.category)) {
+  if (hasCoachingCue(drill.cues)) {
     return;
   }
   if (drill.referenceDrillId) {
@@ -219,6 +220,8 @@ export async function assertDrillMeetsCueRule(drill: {
     if (reference && isConditioningLabel(reference.discipline)) {
       return;
     }
+  } else if (isConditioningLabel(drill.category)) {
+    return;
   }
   throw new ConflictError(cueRequiredMessage(drill.name), 'DRILL_CUE_REQUIRED');
 }

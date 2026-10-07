@@ -466,6 +466,50 @@ describe('the cue rule on an edit', () => {
     expect(mockCueRule).not.toHaveBeenCalled();
   });
 
+  test('active: true on a drill that is already active is not a restore, and is not judged', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: [] }));
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true, cues: [] }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+    expect(res.status).toBe(200);
+    expect(mockCueRule).not.toHaveBeenCalled();
+  });
+
+  test('resending the category a drill already has is not a change, and is not judged', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'Striking' }));
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'striking' }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', category: ' striking ' }));
+
+    expect(res.status).toBe(200);
+    expect(mockCueRule).not.toHaveBeenCalled();
+  });
+
+  test('moving a cue-less drill from conditioning to a technique category is refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'conditioning' }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', category: 'technical' }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('DRILL_CUE_REQUIRED');
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test("an adopted drill is judged by its reference drill's discipline, not its category word (Q-A)", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: ['x'], category: 'conditioning', reference_drill_id: 'drl_ref' }));
+    (queryOne as jest.Mock).mockResolvedValueOnce({ discipline: 'boxing' });
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', cues: [] }));
+
+    expect(res.status).toBe(409);
+    expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
   test('a drill adopted from a conditioning reference drill is exempt by that discipline', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockGetDrill.mockResolvedValueOnce(drill({ active: true, cues: [], category: 'strength', reference_drill_id: 'drl_ref' }));
