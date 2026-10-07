@@ -478,8 +478,10 @@ describe('athlete minor limits migration', () => {
       ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);
       // NaN and Infinity are numerics that sort above every number; the
       // closed upper bound refuses both (the module never sends either).
+      // OBSERVED: numeric(8,2)'s own typmod refuses Infinity first ("numeric
+      // field overflow"), so either refusal is the row being refused.
       await expect(insertRaw(client, { value_number: 'NaN' })).rejects.toThrow(/pilot_athlete_minor_limits_number_check/);
-      await expect(insertRaw(client, { value_number: 'Infinity' })).rejects.toThrow(/pilot_athlete_minor_limits_number_check/);
+      await expect(insertRaw(client, { value_number: 'Infinity' })).rejects.toThrow(/numeric field overflow|pilot_athlete_minor_limits_number_check/);
       await expect(insertRaw(client, { value_number: 1000000 })).rejects.toThrow(/numeric field overflow|pilot_athlete_minor_limits_number_check/);
       await expect(
         insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: 'x'.repeat(501) }),
