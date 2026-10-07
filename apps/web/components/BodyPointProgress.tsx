@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import {
   GUARD_TYPE_SOURCES,
   MOMENT_SLOTS,
@@ -163,6 +165,8 @@ export default function BodyPointProgress({
   missing,
   controls,
 }: BodyPointProgressProps) {
+  /* Which moment's "Remove" is waiting for its second press. */
+  const [removing, setRemoving] = useState<string | null>(null);
   if (expectedPoints === null) return null;
 
   const expected = expectedPoints.length;
@@ -246,14 +250,36 @@ export default function BodyPointProgress({
                                 >
                                   {isOpen ? `Marking ${label(slot)}` : `Mark ${label(slot)}`}
                                 </button>
-                                <button
-                                  type="button"
-                                  className="btn btn--ghost"
-                                  disabled={controls.busy}
-                                  onClick={() => controls.onRemoveMoment(moment.body_moment_id)}
-                                >
-                                  Remove {label(slot)} moment
-                                </button>
+                                {removing === moment.body_moment_id ? (
+                                  /* Removing a moment takes its points with
+                                     it and nothing brings them back, so it
+                                     is asked twice, with the count. */
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      disabled={controls.busy}
+                                      onClick={() => {
+                                        setRemoving(null);
+                                        controls.onRemoveMoment(moment.body_moment_id);
+                                      }}
+                                    >
+                                      Yes, remove it and its {moment.points.length} point{moment.points.length === 1 ? '' : 's'}
+                                    </button>
+                                    <button type="button" className="btn btn--ghost" onClick={() => setRemoving(null)}>
+                                      Keep it
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn btn--ghost"
+                                    disabled={controls.busy}
+                                    onClick={() => setRemoving(moment.body_moment_id)}
+                                  >
+                                    Remove {label(slot)} moment
+                                  </button>
+                                )}
                               </>
                             ) : (
                               <button

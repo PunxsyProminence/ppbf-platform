@@ -49,6 +49,10 @@ export interface PanelMoment {
 
 export interface BodyPointMomentPanelProps {
   moment: PanelMoment;
+  /** Whose body: the actor of the moment's own event (OD-2026-10-03-006).
+   * Named in the heading so a coach with two fighters in frame marks the
+   * right one. */
+  actorTrack: string;
   /** The set's point list, in marking order. */
   expectedPoints: readonly string[];
   activePointCode: string | null;
@@ -86,6 +90,7 @@ const CHOOSE = '— choose —';
 
 export default function BodyPointMomentPanel({
   moment,
+  actorTrack,
   expectedPoints,
   activePointCode,
   disabled,
@@ -107,7 +112,7 @@ export default function BodyPointMomentPanel({
     <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]" data-testid="body-point-moment-panel">
       <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
         <h2 className="t-eyebrow">
-          Marking the {label(moment.moment_slot)} moment ({label(moment.moment_kind)} at{' '}
+          Marking {actorTrack ? `${actorTrack}, ` : ''}{label(moment.moment_slot)} moment ({label(moment.moment_kind)} at{' '}
           {formatMediaOffset(moment.observation_ms)})
         </h2>
         <span className={marked === expectedPoints.length ? 'badge badge--cleared' : 'badge badge--monitor'}>
@@ -119,7 +124,7 @@ export default function BodyPointMomentPanel({
         <div className="alert alert--warning mt-[var(--s3)]" role="status">
           <div className="alert-body">
             <p className="t-body">
-              The playhead is not on this moment. Taps place nothing until it is.
+              The video is not held on this moment. Taps place nothing until it is paused there.
             </p>
             <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={onGoToMoment}>
               Go to the moment

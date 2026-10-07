@@ -41,6 +41,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof BodyPointMom
   render(
     <BodyPointMomentPanel
       moment={MOMENT}
+      actorTrack="blue corner"
       expectedPoints={BODY_POINTS_0_4}
       activePointCode="chin"
       disabled={false}
@@ -68,6 +69,11 @@ test('lists every point of the version in marking order, with its state and note
 test('says which point the next tap places, with its note', () => {
   renderPanel();
   expect(screen.getByTestId('body-point-next').textContent).toBe('Tap the picture to place chin (the tip of the chin).');
+});
+
+test('the heading names the actor whose body this is, and the moment', () => {
+  renderPanel();
+  expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Marking blue corner, middle moment (full extension at 0:12.600)');
 });
 
 test('when every point is marked it says so', () => {
@@ -103,9 +109,10 @@ test('lead side and guard show the moment\'s own values and report a change', ()
   expect(handlers.onSetGuard).toHaveBeenCalledWith('aiba__high_guard');
 });
 
-test('while the playhead is off the moment, the instruction gives way to a go-to button', () => {
+test('while the video is not held on the moment, the instruction gives way to a go-to button', () => {
   const handlers = renderPanel({ awayFromMoment: true });
   expect(screen.queryByTestId('body-point-next')).toBeNull();
+  expect(screen.getByRole('status').textContent).toContain('not held on this moment');
   fireEvent.click(screen.getByRole('button', { name: 'Go to the moment' }));
   expect(handlers.onGoToMoment).toHaveBeenCalledTimes(1);
 });
