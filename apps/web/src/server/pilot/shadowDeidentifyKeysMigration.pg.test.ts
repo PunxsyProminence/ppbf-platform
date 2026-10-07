@@ -488,7 +488,9 @@ describe('shadow-deidentify-keys migration', () => {
     const person = await seedPerson();
     expect(await identifiedRows(person)).toEqual(SEEDED);
 
-    // What both purge paths do today for these tables, and nothing more.
+    // What both purge paths do today for these tables, and nothing more
+    // (the parents row goes first in both, as its key restricts the account delete).
+    await client.query('delete from pilot.parents where account_id = $1', [person.guardian]);
     await client.query('delete from pilot.accounts where account_id = $1', [person.guardian]);
     expect((await identifiedRows(person)).byAccount).toBe(0);
     await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, person.athleteId]);
@@ -573,6 +575,7 @@ describe('shadow-deidentify-keys migration', () => {
     for (const table of ['shadow_evidence_bundles', 'shadow_recommendation_effectiveness', 'shadow_data_deletion_requests']) {
       await client.query(`update pilot.${table} set account_id = $1 where organization_id = $2 and account_id = $3`, [guardianToken, ORG, person.guardian]);
     }
+    await client.query('delete from pilot.parents where account_id = $1', [person.guardian]);
     await client.query('delete from pilot.accounts where account_id = $1', [person.guardian]);
     await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, person.athleteId]);
     await client.query('commit');
@@ -620,6 +623,7 @@ describe('shadow-deidentify-keys migration', () => {
 
     // Nothing was switched: the next plain delete cascades as before.
     const another = await seedPerson();
+    await client.query('delete from pilot.parents where account_id = $1', [another.guardian]);
     await client.query('delete from pilot.accounts where account_id = $1', [another.guardian]);
     await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, another.athleteId]);
     expect(await identifiedRows(another)).toEqual({ byAccount: 0, byAthlete: 0 });
