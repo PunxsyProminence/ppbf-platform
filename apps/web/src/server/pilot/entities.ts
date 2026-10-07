@@ -217,7 +217,8 @@ export async function upsertSession(
     // Writer-only note edits (OD-2026-10-06-025 ruling 4) are enforced in
     // the UPDATE's own WHERE, not by a read beforehand: a caller who is not
     // the writer ($13 false) matches the row only while the text they sent
-    // equals the stored text (whitespace at the ends ignored: the validator
+    // equals the stored text (spaces, tabs and line breaks at the ends ignored,
+    // the same set the JS trim below removes: the validator
     // trims, older rows may not be) AND the session stays with its athlete
     // ($3 = $10). The second half is the review finding that moving a session
     // moves the note: the new owner would become its "writer". For a
@@ -239,7 +240,7 @@ export async function upsertSession(
            -- stored minutes; only check-out sets or clears them.
            duration_minutes = case when $11::boolean then $12::integer else duration_minutes end
        where organization_id = $1 and session_id = $2 and athlete_id = $10
-         and ($13::boolean or (btrim(notes) = $7 and $3 = $10))
+         and ($13::boolean or (btrim(notes, ' ' || chr(9) || chr(13) || chr(10)) = $7 and $3 = $10))
        returning session_id`,
       [
         organizationId,

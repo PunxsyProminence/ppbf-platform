@@ -104,7 +104,7 @@ describe('upsertSession — write owner guard', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     // Text unchanged (ends-trimmed) AND the session stays with its athlete:
     // a move would hand the note to a new "writer".
-    expect(sql).toMatch(/and \(\$13::boolean or \(btrim\(notes\) = \$7 and \$3 = \$10\)\)/);
+    expect(sql).toMatch(/and \(\$13::boolean or \(btrim\(notes, ' ' \|\| chr\(9\) \|\| chr\(13\) \|\| chr\(10\)\) = \$7 and \$3 = \$10\)\)/);
     // A non-writer's SET never touches the stored bytes of the note.
     expect(sql).toMatch(/notes = case when \$13::boolean then \$7 else notes end/);
     expect(params[6]).toBe('rewritten');
