@@ -31,11 +31,13 @@ This policy defines how long PPBF retains data about minors and their families, 
 
 ## Data Categories and Retention Windows
 
-**What enforces these today:** two windows only. The cleanup job, when a person dispatches it
+**What enforces these today:** three windows only. The cleanup job, when a person dispatches it
 with `apply=APPLY` (the nightly run is a dry run, Method 1), hard-deletes athlete rows 2 years
-after `deleted_at` (the table below says 1 year for the athlete record) and guardian accounts
-1 year after (`apps/web/scripts/pilot-cleanup-deleted-data.mjs:47-48`). No job
-enforces the other windows below, and nothing sets `deleted_at` at age 18.
+after `deleted_at` (the table below says 1 year for the athlete record), guardian accounts
+1 year after, and public interest-form inquiries 12 months after they were sent
+(`apps/web/scripts/pilot-cleanup-deleted-data.mjs`, `ATHLETE_RETENTION`, `ACCOUNT_RETENTION`,
+`INQUIRY_RETENTION`; *Public interest-form inquiries*, below). No job enforces the other
+windows below, and nothing sets `deleted_at` at age 18.
 
 ### Athletes
 
@@ -82,6 +84,31 @@ the owner's decision.
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
 
+### Public interest-form inquiries
+
+What someone sends through the interest form on the public site (`pilot.public_interest_submissions`:
+name, email, phone, who they are, program, contact preference, message, the sending IP).
+
+| Data Type | Retention Window | Reason | Deletion Trigger |
+|---|---|---|---|
+| Interest-form inquiry | 12 months from when it was sent | Operational: answering the person about our programs | `created_at` older than 12 months |
+
+The promise on `/privacy` (`apps/web/app/privacy/page.tsx`): "We keep it for 12 months, then
+delete it, unless you join." Jason, 2026-10-06 (relayed by overwatch): "Delete all after 12 mo".
+So every inquiry goes at 12 months, whatever its review state (`new`, `contacted`, `archived`)
+and whether or not the person joined. Someone who joins has a member record; the inquiry is not
+part of it, and nothing links the two.
+
+**Enforced by** the cleanup job (Method 1): the same nightly dry run and the same human
+`apply=APPLY` dispatch as the family windows. An inquiry is due when `created_at < now() -
+interval '12 months'`. Inquiries never make a run refuse: the `max_rows` cap is measured on
+families as before, and inquiries are deleted oldest first into whatever room the families
+leave under it. Any still due are reported as `inquiries_deferred` and go on the next applied
+run, so a backlog from the public form can neither block a family's purge nor become
+undeletable. The log and the `data_purged` audit row carry counts only (`inquiries`,
+`inquiries_deleted`, `inquiries_deferred`), never what anyone wrote. Because deletion waits for a dispatch, an
+inquiry can outlive 12 months by however long the dispatch waits.
+
 ## How Data Gets Deleted
 
 ### Method 1: Automatic Deletion (Background Process)
@@ -102,6 +129,8 @@ unrecoverable.
 - Data must have a `created_at` or `deleted_at` timestamp
 - Data must be explicitly marked for deletion (e.g., account `deleted_at` is not null)
 - Soft-delete (marking `deleted_at`) happens before hard-delete (removal from database)
+- Exception: interest-form inquiries have no soft delete; they are due 12 months after
+  `created_at` (*Public interest-form inquiries*, above)
 
 **Process:**
 1. Query for rows where `deleted_at + retention_window <= now()`
@@ -315,7 +344,13 @@ app's only stored-file deletes are a portrait its owner removes or a reviewer re
 photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
 leaves the athlete's own account and profile row (it removes parent accounts only); the
 athlete's account is kept but no longer names the athlete record that was removed, and is
-marked deleted if it was not already (*Safety screens*, above). A playback
+marked deleted if it was not already (*Safety screens*, above). The SHADOW memory corrections
+that account typed (`pilot.shadow_chat_memory_corrections`, whose `corrected_value` is the
+person's own words) are deleted in the same transaction (in the cleanup job, the same
+per-person savepoint), as are a purged guardian's; both purge paths count them as
+`shadow_memory_corrections_deleted`. Until the purge they stay behind the account, read only on
+that account's own behalf (its export), so unreadable once the account is marked deleted. Pinned by
+`shadowMemoryCorrectionPurge.pg.test.ts`. A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.

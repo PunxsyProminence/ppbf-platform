@@ -6,9 +6,10 @@ import {
   guardianDisplayName,
   listOrganizationConsentStatus,
   withdrawMediaConsent,
+  type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
 import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
-import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
+import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
 import {
   hiddenNotFound,
   jsonError,
@@ -45,13 +46,15 @@ async function auditConsentEvent(event: Parameters<typeof writePilotAuditEvent>[
  * guardian photo-only (Jason, 2026-10-05: "A: Retract (Recommended)"; every
  * publication is video). The guardian's own console (parent/consent) runs the same sweep.
  *
- * Unlike an audit row, a failed sweep is a SAFETY action that did not happen:
- * it is logged and durably audited here (without that row an auditor cannot
- * tell a failed sweep from an athlete with no published media), and null
- * tells the caller to answer with a loud 500. The consent write itself is
- * already committed either way; repeating it re-runs the sweep, and the
- * compliance console's manual Retract lever is the operator fallback.
- * Returns the retracted publication ids, each audited on its own.
+ * THE CONSENT CHANGE AND THE SWEEP COMMIT TOGETHER OR NOT AT ALL
+ * (publication.ts recordMediaConsentAndSuppress). Before, the consent row
+ * committed first and the sweep ran in a second transaction, so a failed sweep
+ * left a photo-only or withdrawn consent on file with the video still live.
+ * Now a failure rolls both back: the consent is what it was, the video is what
+ * it was, and the caller answers a loud 500 saying nothing was recorded.
+ * A failure is still logged and durably audited here (that row is written
+ * outside the rolled-back transaction, so an auditor can see the attempt).
+ * On success the consent event is audited, then each retracted publication.
  */
 const SWEEPS = {
   withdrawn: {
@@ -68,20 +71,23 @@ const SWEEPS = {
   },
 } as const;
 
-async function sweepPublishedMedia(
+async function recordConsentChangeWithSweep(
   principal: PilotPrincipal,
   athleteId: string,
   parentId: string,
   cause: keyof typeof SWEEPS,
-): Promise<string[] | null> {
+  write: (transaction: QueryExecutor) => Promise<string>,
+  consentEvent: Parameters<typeof writePilotAuditEvent>[0],
+): Promise<{ waiverId: string; publicationIds: string[] } | null> {
   const sweep = SWEEPS[cause];
-  let publicationIds: string[];
+  let result: { waiverId: string; publicationIds: string[] };
   try {
-    publicationIds = await suppressPublishedMediaForAthlete({
+    result = await recordMediaConsentAndSuppress({
       organizationId: principal.organizationId,
       athleteId,
       suppressedByAccountId: principal.accountId,
       reason: sweep.reason,
+      write,
     });
   } catch (error) {
     const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
@@ -94,13 +100,14 @@ async function sweepPublishedMedia(
       organization_id: principal.organizationId,
       entity_type: 'guardian_media_consent',
       entity_id: athleteId,
-      details: { action: sweep.failedAction, parent_id: parentId, ...(code ? { code } : {}) },
+      details: { action: sweep.failedAction, parent_id: parentId, rolled_back: true, ...(code ? { code } : {}) },
       shadow_mirror: false,
     });
     return null;
   }
 
-  for (const publicationId of publicationIds) {
+  await auditConsentEvent(consentEvent);
+  for (const publicationId of result.publicationIds) {
     await auditConsentEvent({
       event_type: 'update',
       actor_account_id: principal.accountId,
@@ -112,7 +119,7 @@ async function sweepPublishedMedia(
       shadow_mirror: false,
     });
   }
-  return publicationIds;
+  return result;
 }
 
 type ConsentDecision = 'grant' | 'withdraw';
@@ -310,7 +317,7 @@ export async function POST(request: NextRequest) {
       // withdrawal. pilot.waivers is append-only and "current" is the newest
       // row per guardian, so this is an ordinary write -- and the route must
       // not grow a guard against it.
-      const waiverId = await grantMediaConsent({
+      const grant = {
         organizationId: principal.organizationId,
         athleteId,
         parentId,
@@ -320,9 +327,8 @@ export async function POST(request: NextRequest) {
         publicUseAllowed,
         signedAt,
         notes,
-      });
-
-      await auditConsentEvent({
+      };
+      const grantedEvent: Parameters<typeof writePilotAuditEvent>[0] = {
         event_type: 'consent_granted',
         // WHO ENTERED IT LIVES HERE, not in the waiver row. This is why
         // recording a paper signature needed no schema change: actor_account_id
@@ -336,22 +342,29 @@ export async function POST(request: NextRequest) {
         entity_id: athleteId,
         details: { parent_id: parentId, covers_video: coversVideo, public_use_allowed: publicUseAllowed },
         shadow_mirror: false,
-      });
+      };
 
       // Staff recording a photo-only consent does exactly what the guardian
-      // recording it does: already-published video comes down now.
+      // recording it does: already-published video comes down now, in the
+      // same transaction as the consent row.
       if (coversVideo === false) {
-        const retracted = await sweepPublishedMedia(principal, athleteId, parentId, 'photo_only');
-        if (retracted === null) {
+        const changed = await recordConsentChangeWithSweep(
+          principal,
+          athleteId,
+          parentId,
+          'photo_only',
+          (transaction) => grantMediaConsent(grant, transaction),
+          grantedEvent,
+        );
+        if (changed === null) {
           return NextResponse.json(
             {
               ok: false,
               error:
-                'The photo-only consent was recorded, but taking down already-published video failed. Record it again to retry, or contact your organization admin.',
+                'The photo-only consent was not recorded: it is saved together with taking down already-published video, and that did not complete. Nothing was changed. Record it again to retry, or contact your organization admin.',
               athlete_id: athleteId,
               parent_id: parentId,
               decision,
-              waiver_id: waiverId,
             },
             { status: 500 },
           );
@@ -361,10 +374,13 @@ export async function POST(request: NextRequest) {
           athlete_id: athleteId,
           parent_id: parentId,
           decision,
-          waiver_id: waiverId,
-          retracted_publication_ids: retracted,
+          waiver_id: changed.waiverId,
+          retracted_publication_ids: changed.publicationIds,
         });
       }
+
+      const waiverId = await grantMediaConsent(grant);
+      await auditConsentEvent(grantedEvent);
 
       return NextResponse.json({
         ok: true,
@@ -375,45 +391,51 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const waiverId = await withdrawMediaConsent({
-      organizationId: principal.organizationId,
-      athleteId,
-      parentId,
-      signedByName,
-      recordedByAccountId: principal.accountId,
-      signedAt,
-      notes,
-    });
-
-    await auditConsentEvent({
-      event_type: 'consent_withdrawn',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'guardian_media_consent',
-      entity_id: athleteId,
-      details: { parent_id: parentId },
-      shadow_mirror: false,
-    });
-
     // A WITHDRAWAL RECORDED BY STAFF DOES EXACTLY WHAT A GUARDIAN'S OWN DOES.
     // Owner decision: the two must not diverge, or the same fact produces two
     // different outcomes depending on who typed it. So the suppression sweep
-    // runs here too, in the request, with the same contract as the guardian
-    // route: a failed sweep is a safety action that did not happen and must
-    // surface loudly, never be swallowed. The withdrawal itself is already
-    // committed either way; withdrawing again re-runs the sweep.
-    const suppressedPublicationIds = await sweepPublishedMedia(principal, athleteId, parentId, 'withdrawn');
-    if (suppressedPublicationIds === null) {
+    // runs here too, in the withdrawal's own transaction, with the same
+    // contract as the guardian route: a failed sweep is a safety action that
+    // did not happen and must surface loudly, never be swallowed -- and it
+    // takes the withdrawal down with it, so nothing is half-recorded.
+    const changed = await recordConsentChangeWithSweep(
+      principal,
+      athleteId,
+      parentId,
+      'withdrawn',
+      (transaction) =>
+        withdrawMediaConsent(
+          {
+            organizationId: principal.organizationId,
+            athleteId,
+            parentId,
+            signedByName,
+            recordedByAccountId: principal.accountId,
+            signedAt,
+            notes,
+          },
+          transaction,
+        ),
+      {
+        event_type: 'consent_withdrawn',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'guardian_media_consent',
+        entity_id: athleteId,
+        details: { parent_id: parentId },
+        shadow_mirror: false,
+      },
+    );
+    if (changed === null) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            'The withdrawal was recorded, but suppressing already-published media failed. Withdraw again to retry, or contact your organization admin.',
+            'The withdrawal was not recorded: it is saved together with taking down already-published media, and that did not complete. Nothing was changed. Withdraw again to retry, or contact your organization admin.',
           athlete_id: athleteId,
           parent_id: parentId,
           decision,
-          waiver_id: waiverId,
         },
         { status: 500 },
       );
@@ -424,8 +446,8 @@ export async function POST(request: NextRequest) {
       athlete_id: athleteId,
       parent_id: parentId,
       decision,
-      waiver_id: waiverId,
-      retracted_publication_ids: suppressedPublicationIds,
+      waiver_id: changed.waiverId,
+      retracted_publication_ids: changed.publicationIds,
     });
   } catch (error) {
     return jsonError(error);

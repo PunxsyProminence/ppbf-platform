@@ -1,6 +1,7 @@
 import { query, queryOne } from './db';
 import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
+import type { PilotRole } from './contracts';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -255,10 +256,10 @@ describe('getShadowReviewProjection athlete scoping', () => {
     expect(totalParams[4]).toBe(false);
   });
 
-  test('a coach sees their own athletes cases plus the cases that have no athlete yet', async () => {
-    // Both halves matter. Scoping the coach without the second one would empty
-    // the intake review queue of every case filed before its athlete record
-    // exists -- which is most of what a review queue holds.
+  test('a coach is scoped to their roster, and to the unattributed cases they filed themselves', async () => {
+    // CL-A10: the unattributed half used to admit every coach to every case
+    // with no athlete yet. It is now the case gate's own rule: the coach who
+    // filed it, bound as the actor.
     answerCoachRoster(['ath-mine']);
     mockQuery.mockResolvedValueOnce([]); // items query
     mockQuery.mockResolvedValueOnce([{ count: '0' }]); // total query
@@ -269,8 +270,10 @@ describe('getShadowReviewProjection athlete scoping', () => {
     const totalParams = mockQuery.mock.calls[2][1];
     expect(itemsParams[5]).toEqual(['ath-mine']);
     expect(itemsParams[6]).toBe(true);
+    expect(itemsParams[7]).toBe('coach-1');
     expect(totalParams[3]).toEqual(['ath-mine']);
     expect(totalParams[4]).toBe(true);
+    expect(totalParams[5]).toBe('coach-1');
   });
 
   test('the items query and the count query carry the identical boundary', async () => {
@@ -282,12 +285,19 @@ describe('getShadowReviewProjection athlete scoping', () => {
 
     await getShadowReviewProjection(context({ actorRole: 'coach' }));
 
+    // CL-A10: every athlete the case names must be in reach (not just the
+    // column), and an unattributed case only reaches the account that filed it.
     expect(sqlOf(1)).toContain(
-      "$6::text[] is null or c.primary_athlete_id = any($6::text[]) or ($7::boolean and c.primary_athlete_id is null)",
+      "$6::text[] is null or ( cardinality(subj.athlete_ids) > 0 and subj.athlete_ids <@ $6::text[] ) or ( cardinality(subj.athlete_ids) = 0 and $7::boolean and c.submitted_by_account_id = $8::text )",
     );
     expect(sqlOf(2)).toContain(
-      "$4::text[] is null or c.primary_athlete_id = any($4::text[]) or ($5::boolean and c.primary_athlete_id is null)",
+      "$4::text[] is null or ( cardinality(subj.athlete_ids) > 0 and subj.athlete_ids <@ $4::text[] ) or ( cardinality(subj.athlete_ids) = 0 and $5::boolean and c.submitted_by_account_id = $6::text )",
     );
+    // Both read the document owners, not the column alone.
+    for (const call of [1, 2]) {
+      expect(sqlOf(call)).toContain("owner_doc.owner_entity_type = 'athlete'");
+      expect(sqlOf(call)).not.toContain('c.primary_athlete_id is null)');
+    }
   });
 
   test('an organization admin remains unrestricted across the whole organization', async () => {
@@ -367,6 +377,248 @@ describe('sanitizeEventPayload', () => {
 
     expect(rows[0].payload).toEqual({ entity_id: 'ath-1' });
   });
+});
+
+describe('actor_account_id in the events feed (staff only)', () => {
+  // The payload sanitizer never touched the row's own columns, so every
+  // non-staff caller of listShadowEvents received the staff account id that
+  // wrote the event (intake lane review, 2026-10-06). The account id is the
+  // actor identifier; actor_role is a label, not an identity, and the SQL
+  // tie relies on it, so it stays.
+  function staffWrittenRow() {
+    return {
+      shadow_event_id: 7,
+      organization_id: 'org-1',
+      event_name: 'SHADOW_INTAKE_DOCUMENT_ROUTED',
+      entity_type: 'intake_case',
+      entity_id: 'case-1',
+      actor_account_id: 'coach-acct-secret',
+      actor_role: 'coach',
+      payload: { intake_case_id: 'case-1', routed_queue: 'coach_review' },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test.each<PilotRole>(['parent', 'athlete', 'volunteer'])('%s gets null actor_account_id', async (actorRole) => {
+    if (actorRole === 'athlete') {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    }
+    if (actorRole === 'parent') {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]); // guardian_links
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole, athleteId: actorRole === 'athlete' ? 'ath-1' : null }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_account_id).toBeNull();
+    expect(rows[0].actor_role).toBe('coach');
+    expect(rows[0].payload).toEqual({ intake_case_id: 'case-1', routed_queue: 'coach_review' });
+  });
+
+  test.each<PilotRole>(['coach', 'organization_admin'])('%s still gets actor_account_id', async (actorRole) => {
+    if (actorRole === 'coach') {
+      answerCoachRoster([]);
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole }));
+
+    expect(rows[0].actor_account_id).toBe('coach-acct-secret');
+  });
+});
+
+describe('actor_account_id in the telemetry feed (staff only)', () => {
+  // /api/pilot/shadow/telemetry admits SHADOW_PROJECTION_READ_ROLES (every
+  // organization member), so the same redaction applies. listShadowAuthorityChecks
+  // is left alone: its only route admits staff roles only.
+  function staffWrittenTelemetryRow() {
+    return {
+      shadow_telemetry_event_id: 3,
+      organization_id: 'org-1',
+      metric_name: 'intake.document.routed',
+      actor_account_id: 'coach-acct-secret',
+      actor_role: 'coach',
+      dimensions: { routed_queue: 'coach_review' },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test.each<PilotRole>(['parent', 'athlete', 'volunteer'])('%s gets null actor_account_id', async (actorRole) => {
+    if (actorRole === 'athlete') {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    }
+    if (actorRole === 'parent') {
+      mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1' }]); // guardian_links
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenTelemetryRow()]);
+
+    const rows = await listShadowTelemetry(context({ actorRole, athleteId: actorRole === 'athlete' ? 'ath-1' : null }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_account_id).toBeNull();
+    expect(rows[0].actor_role).toBe('coach');
+  });
+
+  test.each<PilotRole>(['coach', 'organization_admin'])('%s still gets actor_account_id', async (actorRole) => {
+    if (actorRole === 'coach') {
+      answerCoachRoster([]);
+    }
+    mockQuery.mockResolvedValueOnce([staffWrittenTelemetryRow()]);
+
+    const rows = await listShadowTelemetry(context({ actorRole }));
+
+    expect(rows[0].actor_account_id).toBe('coach-acct-secret');
+  });
+});
+
+describe('Library question text in the events feed (CL-A3, staff only)', () => {
+  // Jason 2026-10-06, CL-A3 "Staff only": Library research questions are for
+  // coaches and org admins. platform_owner is not staff and gets no
+  // org-private access by default -- yet it reads unscoped rows and, through
+  // roleCanViewSensitivePayload, the whole payload, and a claim-gap payload's
+  // knowledge_gap quotes the question a member typed.
+  const QUESTION = 'Question lacks sufficient SHADOW Library evidence: my son keeps getting headaches after sparring, is that normal?. Evidence count: 0. Distinct sources: 0.';
+
+  function claimGapRow() {
+    return {
+      shadow_event_id: 7,
+      organization_id: 'org-1',
+      event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      entity_type: 'shadow_library_claim',
+      entity_id: 'scoped:1759700000000',
+      actor_account_id: 'acct-parent',
+      actor_role: 'parent',
+      payload: {
+        scope: 'scoped',
+        subject_id: null,
+        status: 'unsupported',
+        evidence_count: 0,
+        confidence_level: 'none',
+        distinct_source_count: 0,
+        research_requirement_id: 'rr-1',
+        research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+        knowledge_gap: QUESTION,
+        question: 'my son keeps getting headaches after sparring, is that normal?',
+      },
+      created_at: '2026-10-06T00:00:00.000Z',
+    };
+  }
+
+  test('platform_owner gets the claim-gap event without the question text, operational fields intact', async () => {
+    mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event_name).toBe('SHADOW_LIBRARY_CLAIM_GAP_DETECTED');
+    expect(rows[0].payload).not.toHaveProperty('knowledge_gap');
+    expect(rows[0].payload).not.toHaveProperty('question');
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+    expect(rows[0].payload).toEqual({
+      scope: 'scoped',
+      subject_id: null,
+      status: 'unsupported',
+      evidence_count: 0,
+      confidence_level: 'none',
+      distinct_source_count: 0,
+      research_requirement_id: 'rr-1',
+      research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+    });
+  });
+
+  test('platform_owner gets the allowlist on SHADOW_LIBRARY_CLAIM_SUPPORTED too', async () => {
+    const row = { ...claimGapRow(), event_name: 'SHADOW_LIBRARY_CLAIM_SUPPORTED' };
+    row.payload = { ...row.payload, status: 'supported', question_excerpt: 'headaches after sparring' } as typeof row.payload;
+    mockQuery.mockResolvedValueOnce([row]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+    expect(rows[0].payload.status).toBe('supported');
+  });
+
+  test('platform_owner research panel keeps the gap item but not the question', async () => {
+    mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+    const items = await getShadowResearchProjection(context({ actorRole: 'platform_owner' }));
+
+    expect(items).toHaveLength(1);
+    expect(items[0].source_event_name).toBe('SHADOW_LIBRARY_CLAIM_GAP_DETECTED');
+    expect(items[0].requirement).toBe('Strengthen SHADOW Library evidence for scoped claim');
+    expect(items[0].knowledge_gap).toBeNull();
+  });
+
+  // Every role, typed as a Record so a role added to PilotRole fails to compile
+  // here until someone decides which side of the ruling it is on.
+  const READS_LIBRARY_QUESTIONS: Record<PilotRole, boolean> = {
+    coach: true,
+    organization_admin: true,
+    admin: true,
+    platform_owner: false,
+    staff: false,
+    volunteer: false,
+    board: false,
+    parent: false,
+    athlete: false,
+  };
+  const OPERATIONAL_KEYS = [
+    'scope',
+    'subject_id',
+    'status',
+    'evidence_count',
+    'confidence_level',
+    'distinct_source_count',
+    'research_requirement_id',
+    'research_requirement',
+  ];
+
+  test.each(Object.entries(READS_LIBRARY_QUESTIONS) as [PilotRole, boolean][])(
+    '%s: reads the question text on a Library claim event = %s',
+    async (actorRole, readsQuestions) => {
+      // The roles whose scope is resolved by a lookup answer it first (empty):
+      // a coach's roster, a parent's guardian links. The row is fed to the
+      // mocked events query either way -- this pins the payload filter, not
+      // the row scope above it.
+      if (actorRole === 'coach' || actorRole === 'parent') {
+        mockQuery.mockResolvedValueOnce([]);
+      }
+      mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      if (readsQuestions) {
+        expect(rows[0].payload.knowledge_gap).toBe(QUESTION);
+        expect(rows[0].payload.question).toBeDefined();
+      } else {
+        expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+        for (const key of Object.keys(rows[0].payload)) {
+          expect(OPERATIONAL_KEYS).toContain(key);
+        }
+      }
+    },
+  );
+
+  test('platform_owner gets only operational keys on a Library claim event, so a key added later cannot carry the question', async () => {
+    const row = claimGapRow();
+    row.payload = { ...row.payload, question_excerpt: 'headaches after sparring', detail: { text: 'headaches' } } as typeof row.payload;
+    mockQuery.mockResolvedValueOnce([row]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+  });
+
+  test('platform_owner keeps the full payload of non-Library events (operational visibility unchanged)', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { ...claimGapRow(), event_name: 'SHADOW_JOB_FAILED', entity_type: 'shadow_job', payload: { job_id: 'j-1', error: 'timeout' } },
+    ]);
+
+    const rows = await listShadowEvents(context({ actorRole: 'platform_owner' }));
+
+    expect(rows[0].payload).toEqual({ job_id: 'j-1', error: 'timeout' });
+  });
+
 });
 
 describe('getShadowResearchProjection event-name filter', () => {
@@ -557,5 +809,39 @@ describe('getShadowKnowledgeProjection stream placement', () => {
     expect(items.map((item) => item.type)).toEqual([
       'Observation', 'Observation', 'Observation', 'Pattern', 'Finding',
     ]);
+  });
+});
+
+// Audit CL-C24. limit and offset arrive from a JSON body and were clamped but
+// not rounded, so 2.5 reached Postgres as a bigint bind and the caller got a
+// 500. Every number bound into these reads must be a whole number.
+describe('paging values are whole numbers before they reach SQL (CL-C24)', () => {
+  const readers: Array<[string, (filters: { limit?: number; offset?: number }) => Promise<unknown>]> = [
+    ['listShadowEvents', (filters) => listShadowEvents(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowTelemetry', (filters) => listShadowTelemetry(context({ actorRole: 'organization_admin' }), filters)],
+    ['listShadowAuthorityChecks', (filters) => listShadowAuthorityChecks(context({ actorRole: 'organization_admin' }), filters)],
+    ['getShadowReviewProjection', (filters) => getShadowReviewProjection(context({ actorRole: 'organization_admin' }), filters)],
+  ];
+
+  test.each(readers)('%s floors a fractional limit and offset', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 2.5, offset: 1.5 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([2, 1]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
+  });
+
+  test.each(readers)('%s still reads at least one row for a limit under 1', async (_name, read) => {
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ total: 0 });
+
+    await read({ limit: 0.4, offset: 0.9 });
+
+    const numbers = (mockQuery.mock.calls[0][1] as unknown[]).filter((value) => typeof value === 'number');
+    expect(numbers).toEqual(expect.arrayContaining([1, 0]));
+    expect(numbers.every((value) => Number.isInteger(value))).toBe(true);
   });
 });

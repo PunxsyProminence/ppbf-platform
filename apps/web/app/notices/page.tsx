@@ -22,17 +22,6 @@ import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import OperationsLink from '@/components/OperationsLink';
 
-const BOARD_SEATS = [
-  'board-president',
-  'board-chair',
-  'board-vice-chair',
-  'board-treasurer',
-  'board-secretary',
-  'board-safety-director',
-  'board-community-director',
-  'board-at-large',
-] as const;
-
 /**
  * A seat reads as the seat, not as its slug.
  *
@@ -108,7 +97,12 @@ function NoticesAuthoringPage() {
   const [message, setMessage] = useState('');
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [authorName, setAuthorName] = useState('');
-  const [boardSeat, setBoardSeat] = useState<string>(BOARD_SEATS[0]);
+  const [boardSeat, setBoardSeat] = useState('');
+  // What /get says this caller may do (CL-A8): the seats the post route will
+  // accept from them, and the notices the update route will let them change.
+  // Null until a read says otherwise, so an older payload hides nothing.
+  const [authorSeats, setAuthorSeats] = useState<string[]>([]);
+  const [editableIds, setEditableIds] = useState<Set<string> | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const publishingRef = useRef(false);
@@ -133,8 +127,16 @@ function NoticesAuthoringPage() {
           throw new Error('Unable to load notices. Nothing below is the full list.');
         }
 
-        const payload = (await response.json()) as { announcements?: AnnouncementItem[] };
+        const payload = (await response.json()) as {
+          announcements?: AnnouncementItem[];
+          editable_announcement_ids?: string[];
+          author_seats?: string[];
+        };
         setItems(payload.announcements ?? []);
+        setEditableIds(payload.editable_announcement_ids ? new Set(payload.editable_announcement_ids) : null);
+        const seats = payload.author_seats ?? [];
+        setAuthorSeats(seats);
+        setBoardSeat((current) => (seats.includes(current) ? current : seats[0] ?? ''));
         setListRead(true);
         setLoadError('');
       } catch (error) {
@@ -241,7 +243,10 @@ function NoticesAuthoringPage() {
     }
   }
 
-  const canPublish = draft.message.trim().length > 0 && authorName.trim().length > 0 && !windowIsBackwards;
+  // Only once a read has said which seats they hold: after a failed load the
+  // post route still decides, and its refusal names the seats they hold.
+  const seatMissing = session.role === 'board' && listRead && !boardSeat;
+  const canPublish = draft.message.trim().length > 0 && authorName.trim().length > 0 && !windowIsBackwards && !seatMissing;
 
   return (
     /* FRONT OFFICE, and this page is named in the room's own Purpose line --
@@ -394,7 +399,10 @@ function NoticesAuthoringPage() {
                 className="input"
               />
             </div>
-            {session.role === 'board' ? (
+            {session.role === 'board' && authorSeats.length === 0 && listRead ? (
+              <p className="t-body">You hold no board seat, so you cannot post a notice as one.</p>
+            ) : null}
+            {session.role === 'board' && authorSeats.length > 0 ? (
               <div className="field">
                 <label className="t-label" htmlFor="notice-seat">Board seat</label>
                 <select
@@ -407,7 +415,7 @@ function NoticesAuthoringPage() {
                       route accepts; only what the person reads changes, and it
                       changes to the label roleRoutes already gives that seat
                       rather than to a new spelling invented here. */}
-                  {BOARD_SEATS.map((seat) => (
+                  {authorSeats.map((seat) => (
                     <option key={seat} value={seat}>
                       {boardSeatLabel(seat)}
                     </option>
@@ -543,13 +551,15 @@ function NoticesAuthoringPage() {
                               tuned for leather; ppbf.css documents it as
                               grey-on-grey once it lands on a light ground. A
                               lever brings its own dark surface. */}
-                          <button
-                            type="button"
-                            onClick={() => void setActive(item.announcement_id, !item.active)}
-                            className="btn--lever"
-                          >
-                            {item.active ? 'Retire' : 'Restore'}
-                          </button>
+                          {!editableIds || editableIds.has(item.announcement_id) ? (
+                            <button
+                              type="button"
+                              onClick={() => void setActive(item.announcement_id, !item.active)}
+                              className="btn--lever"
+                            >
+                              {item.active ? 'Retire' : 'Restore'}
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     );

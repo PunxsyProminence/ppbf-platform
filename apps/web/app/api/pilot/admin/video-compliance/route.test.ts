@@ -873,10 +873,142 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as { status?: string };
       expect(body.status).toBe('pending_review');
-      expect(mockReopen).toHaveBeenCalledWith('org-a', 'pub-1');
+      expect(mockReopen).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-a', publicationId: 'pub-1', verifyBeforeCommit: expect.any(Function) }),
+      );
       expect(mockAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           details: expect.objectContaining({ action: 'publication_reopened_for_review' }),
+        }),
+      );
+      // Reopening runs the same consent gate as publishing: signed AND
+      // covering video.
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockAssertConsent).toHaveBeenCalledWith('org-a', 'ath-1');
+    });
+
+    // A consent retraction (owner decision 2026-08-14; OD-2026-10-05-021,
+    // "A: Retract (Recommended)") must not be undone while that consent still
+    // stands. Approve and publish would refuse later anyway; refusing here
+    // keeps the item out of the queue and tells the admin why now.
+    test.each([
+      ['GUARDIAN_CONSENT_WITHDRAWN', 'Blocked: withdrawn'],
+      ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', 'Blocked: photo-only'],
+      ['GUARDIAN_CONSENT_UNREADABLE', 'Blocked: unreadable'],
+    ])('reopen is refused with 409 under %s, audited, and the row is never touched', async (code, message) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError(message, code));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ code });
+      expect(mockReopen).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_id: 'pub-1',
+          details: expect.objectContaining({ action: 'publication_reopen_blocked_by_consent', reason: code }),
+        }),
+      );
+      expect(mockAudit).not.toHaveBeenCalledWith(
+        expect.objectContaining({ details: expect.objectContaining({ action: 'publication_reopened_for_review' }) }),
+      );
+    });
+
+    // Coverage runs first so a withdrawn guardian is refused as withdrawn,
+    // not as missing paperwork -- different facts the admin acts on
+    // differently (videoPlaybackConsent.ts).
+    test('a withdrawn guardian is refused as withdrawn, not as missing consent', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+      // Armed so that a signed-first order would surface as missing consent.
+      // Coverage refuses first, so this rejection is never consumed; reset it
+      // so it cannot leak into a later test (clearAllMocks keeps Once queues).
+      mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+      try {
+        const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
+        expect(mockAssertConsent).not.toHaveBeenCalled();
+        expect(mockReopen).not.toHaveBeenCalled();
+      } finally {
+        mockAssertConsent.mockReset();
+      }
+    });
+
+    test('reopen is refused with 409 when guardian consent is missing, audited with the missing parent ids', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/consent/i) });
+      expect(mockReopen).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_id: 'pub-1',
+          details: expect.objectContaining({
+            action: 'publication_reopen_blocked_by_consent',
+            missing_parent_ids: ['parent-1'],
+          }),
+        }),
+      );
+    });
+
+    test('the in-transaction re-check before the reopen commits locks consent and requires video coverage, on the same client', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      let verify: ((client: never) => Promise<void>) | undefined;
+      mockReopen.mockImplementationOnce(async (params) => {
+        verify = (params as { verifyBeforeCommit?: (client: never) => Promise<void> }).verifyBeforeCommit;
+        return true;
+      });
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+      expect(response.status).toBe(200);
+      expect(verify).toBeDefined();
+
+      // Signed consent passes the signed check (the real, unmocked
+      // assertGuardianMediaConsentWithClient, which takes the guardian_links
+      // FOR SHARE lock), so the coverage check is what refuses.
+      const client = {
+        query: jest.fn(async (text: string) => ({
+          rows: /retained_media_consent_restrictions/.test(text)
+            ? [] // no purged guardian's choice retained
+            : /guardian_links/.test(text)
+              ? [{ parent_id: 'parent-1' }]
+              : [{ parent_id: 'parent-1', status: 'signed', covers_video: false, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+        })),
+      } as never;
+      mockCoversVideo.mockClear();
+      mockCoversVideo.mockRejectedValueOnce(new ConflictError('Blocked: photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'));
+      await expect(verify!(client)).rejects.toMatchObject({ code: 'GUARDIAN_CONSENT_EXCLUDES_VIDEO' });
+      const lockSql = (client as unknown as { query: jest.Mock }).query.mock.calls.map(([text]) => text as string);
+      expect(lockSql.some((text) => /guardian_links/.test(text) && /for share/i.test(text))).toBe(true);
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-a', 'ath-1', client);
+    });
+
+    test('a withdrawal in the reopen transaction refuses it and is audited', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockReopen.mockRejectedValueOnce(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ code: 'GUARDIAN_CONSENT_WITHDRAWN' });
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({
+            action: 'publication_reopen_blocked_by_consent',
+            reason: 'GUARDIAN_CONSENT_WITHDRAWN',
+          }),
         }),
       );
     });

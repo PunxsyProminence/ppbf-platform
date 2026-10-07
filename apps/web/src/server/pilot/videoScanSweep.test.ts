@@ -85,6 +85,7 @@ function consentOf(...guardians: Array<{ status: string; coversVideo: boolean }>
     ok: guardians.every((guardian) => guardian.status === 'signed'),
     guardianIds: guardians.map((_, index) => `parent-${index + 1}`),
     missingParentIds: [],
+    retained: [],
     perGuardian: guardians.map((guardian, index) => ({
       parentId: `parent-${index + 1}`,
       status: guardian.status,

@@ -109,6 +109,25 @@ describe('POST /api/pilot/admin/bootstrap/platform-owner-microsoft', () => {
     );
   });
 
+  // CL-A19: the bootstrap key is the platform owner's recovery when its own
+  // directory user was re-created and every sign-in is refused.
+  test('asks provisioning to clear the owner\'s Microsoft binding and reports whether it did', async () => {
+    process.env.PPBF_PRIMARY_OWNER_EMAIL = 'owner@example.com';
+    mockCreateOwner.mockResolvedValueOnce({
+      accountId: 'owner-account',
+      organizationId: 'ppbf-default-org',
+      created: false,
+      microsoftIdentityCleared: true,
+    });
+
+    const response = await POST(request());
+    const payload = (await response.json()) as { microsoft_identity_cleared?: boolean };
+
+    expect(response.status).toBe(200);
+    expect(mockCreateOwner).toHaveBeenCalledWith(expect.objectContaining({ rebindMicrosoftIdentity: true }));
+    expect(payload.microsoft_identity_cleared).toBe(true);
+  });
+
   test('falls back to the same default the sign-in callback uses', async () => {
     delete process.env.PPBF_PRIMARY_OWNER_EMAIL;
 

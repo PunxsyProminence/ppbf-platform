@@ -233,7 +233,7 @@ describe('fileIncidentReport', () => {
       expect(selectSql).toContain('select escalation_id');
     });
 
-    test('the not-exists check is scoped to org, athlete, reporter, reason, and the dedup window', async () => {
+    test('the not-exists check is scoped to org, athlete, reporter, reason, severity, occurred-at, and the dedup window', async () => {
       await fileIncidentReport({
         organizationId: 'org-1',
         athleteId: 'ATH-1',
@@ -241,14 +241,37 @@ describe('fileIncidentReport', () => {
         reason: 'Athlete sprained an ankle during sparring.',
         reportedByAccountId: 'acct-coach-1',
         reportedByRole: 'coach',
+        occurredAt: '2026-08-04',
       });
 
-      const [sql] = mockQueryOne.mock.calls[0];
+      const [sql, params] = mockQueryOne.mock.calls[0];
       expect(sql).toContain('organization_id = $1');
       expect(sql).toContain('athlete_id = $3');
       expect(sql).toContain('triggered_by_account_id = $7');
       expect(sql).toContain('reason = $5');
+      expect(sql).toContain('severity = $4');
+      expect(sql).toContain("metadata->>'occurred_at' is not distinct from $11::text");
       expect(sql).toContain("interval '1 second'");
+      expect(params[10]).toBe('2026-08-04');
+    });
+
+    test('the duplicate re-read is keyed the same way as the not-exists check', async () => {
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ escalation_id: 'esc-original' });
+
+      await fileIncidentReport({
+        organizationId: 'org-1',
+        athleteId: 'ATH-1',
+        severity: 'critical',
+        reason: 'Athlete sprained an ankle during sparring.',
+        reportedByAccountId: 'acct-coach-1',
+        reportedByRole: 'coach',
+      });
+
+      const [sql, params] = mockQueryOne.mock.calls[1];
+      expect(sql).toContain('severity = $6');
+      expect(sql).toContain("metadata->>'occurred_at' is not distinct from $7::text");
+      expect(params[5]).toBe('critical');
+      expect(params[6]).toBeNull();
     });
 
     test('surfaces a real error rather than fabricating a report if the duplicate cannot be re-read', async () => {

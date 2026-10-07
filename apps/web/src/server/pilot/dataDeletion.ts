@@ -618,6 +618,19 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
       await supersedeOutstandingActivationCodes(client, athleteLogins);
     }
 
+    /* The SHADOW memory corrections a purged athlete typed go with them. The
+       login outlives the purge (retired above, not deleted), so the account
+       foreign key's cascade never fires for it, and corrected_value is the
+       child's own words. Nothing reads them for audit: they are read only
+       on that account's own behalf, which a retired login no longer has.
+       Same statement as scripts/pilot-cleanup-deleted-data.mjs. */
+    const athleteCorrections = athleteLogins.length === 0
+      ? { rowCount: 0 }
+      : await client.query(
+        'delete from pilot.shadow_chat_memory_corrections where account_id = any($1::text[])',
+        [athleteLogins],
+      );
+
     /* The guardian's own record goes first, and the account cannot be deleted
        without it. Owner decision, 2026-08-28 (D-8): "delete the parents row
        too". pilot.parents holds their name, phone and email -- the personal
@@ -691,6 +704,18 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
         )`,
     );
 
+    /* The guardian's SHADOW memory corrections, deleted here rather than left
+       to the account foreign key's cascade, so the audit row can count them. */
+    const guardianCorrections = await client.query(
+      `delete from pilot.shadow_chat_memory_corrections
+        where account_id in (
+          select account_id from pilot.accounts
+           where deleted_at is not null
+             and deleted_at < (now() - interval '1 year')
+             and role = 'parent'
+        )`,
+    );
+
     // Delete accounts (parents) soft-deleted more than 1 year ago
     const accountDelete = await client.query(
       `delete from pilot.accounts
@@ -718,6 +743,7 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
             accounts_deleted: accountDelete.rows.length,
             athlete_logins_unlinked: loginsUnlinked,
             live_athlete_logins_retired: loginsRetired,
+            shadow_memory_corrections_deleted: (athleteCorrections.rowCount ?? 0) + (guardianCorrections.rowCount ?? 0),
             total_rows_deleted: totalDeleted,
           }),
         ],

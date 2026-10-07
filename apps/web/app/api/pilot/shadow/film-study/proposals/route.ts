@@ -12,6 +12,7 @@
 // already clear it.
 import { NextResponse, type NextRequest } from 'next/server';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
+import { assertVideoConcernsAthlete } from '@/src/server/pilot/videoAthleteScope';
 
 import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -227,6 +228,13 @@ export async function POST(request: NextRequest) {
     // Same per-athlete access check every athlete-scoped write takes. Writing
     // an observation about an athlete is at least as sensitive as reading one.
     await assertActorCanAccessAthlete(principal, athleteId);
+
+    // Clearing the athlete says nothing about the video. Without this a coach
+    // cleared for one child could file an observation about them against
+    // another child's bout (audit CL-A16). Checked after the athlete gate so
+    // this refusal adds nothing to probe with about children the caller
+    // cannot reach.
+    await assertVideoConcernsAthlete(principal.organizationId, videoSessionId, athleteId);
 
     const proposal = await createCoachReportedObservation({
       organizationId: principal.organizationId,

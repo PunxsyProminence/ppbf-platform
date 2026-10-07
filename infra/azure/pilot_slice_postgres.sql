@@ -42,16 +42,28 @@ create table if not exists pilot.accounts (
   -- constraint names included, so that migration is a no-op on a new database.
   password_hash text null,
   password_set_at timestamptz null,
+  -- The Entra user (oid, unique within tid) the account's Microsoft sign-in is
+  -- bound to (CL-A19). Same shape as
+  -- pilot_slice_postgres_microsoft_identity_binding_migration.sql, names
+  -- included, so that migration is a no-op on a new database.
+  microsoft_oid text null,
+  microsoft_tid text null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, athlete_id),
   constraint pilot_accounts_password_pair_check
-    check ((password_hash is null) = (password_set_at is null))
+    check ((password_hash is null) = (password_set_at is null)),
+  constraint pilot_accounts_microsoft_identity_pair_check
+    check ((microsoft_oid is null) = (microsoft_tid is null))
 );
 
 create unique index if not exists pilot_accounts_login_email_uq
   on pilot.accounts (lower(login_email))
   where login_email is not null;
+
+create unique index if not exists pilot_accounts_microsoft_identity_uq
+  on pilot.accounts (microsoft_tid, microsoft_oid)
+  where microsoft_oid is not null;
 
 create table if not exists pilot.session_tokens (
   token_hash text primary key,
@@ -148,7 +160,7 @@ create table if not exists pilot.audit_events (
   -- auditEventVocabulary.test.ts asserts this constraint matches it -- these
   -- two previously drifted, and the missing value failed every SHADOW
   -- research-requirement upload at the audit write.
-  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted', 'consent_granted', 'consent_withdrawn', 'data_deletion_initiated', 'data_purged', 'payment_account_connected', 'payment_account_disconnected')),
+  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted', 'consent_granted', 'consent_withdrawn', 'data_deletion_initiated', 'data_purged', 'payment_account_connected', 'payment_account_disconnected', 'microsoft_identity_mismatch')),
   actor_account_id text null,
   actor_role text null,
   organization_id text null references pilot.organizations(organization_id),

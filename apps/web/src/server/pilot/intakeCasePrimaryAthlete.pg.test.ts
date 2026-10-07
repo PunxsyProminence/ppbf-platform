@@ -11,7 +11,7 @@
 //             alone; changes nothing on a second run; and the runner refuses
 //             a migration that leaves a one-owner case behind.
 //   ACCESS    the review queue (listReviewQueue -> getShadowReviewProjection)
-//             scopes a coach by the column, keeps unattributed cases, and
+//             admits exactly the cases the case gate opens (CL-A10), and
 //             drops a deleted athlete's case from the list and its count
 //             (OD-2026-09-29-002 item 10, "10 C"). The deletion is the real
 //             deleteAthleteRecord. Another gym's athlete with the same id is
@@ -70,7 +70,8 @@ import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { deleteAthleteRecord } from './dataDeletion';
 import { withTransaction } from './db';
-import { assertActorCanAccessIntakeCase, bindIntakeDocumentsToOwner, listReviewQueue } from './intake';
+import { ConflictError } from './errors';
+import { assertActorCanAccessIntakeCase, bindIntakeDocumentsToOwner, createIntakeDocument, listReviewQueue } from './intake';
 import { getShadowReviewProjection } from './shadowReadModels';
 
 jest.setTimeout(600_000);
@@ -466,8 +467,8 @@ describe('WRITER: bindIntakeDocumentsToOwner, as promotion calls it', () => {
 
 describe('ACCESS: the review queue reads the column', () => {
   // After the backfill: gone=GONE, live=LIVE, else=ELSE, alreadySet=LIVE,
-  // filedForGone=GONE (documents unbound); pending, two and twoWithGone are NULL.
-  const unattributed = [C.pending, C.two, C.twoWithGone];
+  // filedForGone=GONE (documents unbound); pending, two and twoWithGone are NULL,
+  // and two and twoWithGone still name their athletes through their documents.
 
   async function totalFor(accountId: string, role: PilotRole): Promise<number> {
     return (await getShadowReviewProjection(
@@ -484,10 +485,42 @@ describe('ACCESS: the review queue reads the column', () => {
     expect(await queueFor(OTHER_ORG, OTHER_ADMIN, 'organization_admin')).toEqual([C.otherGym]);
   });
 
-  test("a coach sees their own athletes' cases and the unattributed ones, not another coach's", async () => {
-    expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.gone, C.live, C.alreadySet, C.filedForGone, ...unattributed].sort());
-    expect(await totalFor(COACH, 'coach')).toBe(7);
-    expect(await queueFor(ORG, ELSE_COACH, 'coach')).toEqual([C.else, ...unattributed].sort());
+  // CL-A10. The queue used to admit every case with a NULL column to every
+  // coach: C.pending (filed by UPLOADER), and C.two, whose documents name
+  // LIVE (COACH's) and ELSE (ELSE_COACH's). The case gate refuses both
+  // coaches C.two and refuses everyone but UPLOADER and the admin C.pending,
+  // so the queue handed out summaries of cases neither coach could open.
+  test("a coach sees the cases whose every athlete they coach, and no one else's", async () => {
+    // C.twoWithGone names GONE and LIVE, both COACH's: in. C.two names ELSE
+    // too: out, for both coaches.
+    expect(await queueFor(ORG, COACH, 'coach')).toEqual(
+      [C.gone, C.live, C.alreadySet, C.filedForGone, C.twoWithGone].sort(),
+    );
+    expect(await totalFor(COACH, 'coach')).toBe(5);
+    expect(await queueFor(ORG, ELSE_COACH, 'coach')).toEqual([C.else]);
+  });
+
+  test('an unattributed case reaches the coach who filed it, and no other coach', async () => {
+    expect(await queueFor(ORG, UPLOADER, 'coach')).toEqual([C.pending]);
+    expect(await queueFor(ORG, COACH, 'coach')).not.toContain(C.pending);
+    expect(await queueFor(ORG, ELSE_COACH, 'coach')).not.toContain(C.pending);
+  });
+
+  test('for every reader, the queue lists exactly the cases the case gate opens', async () => {
+    const readers: Array<[string, PilotRole]> = [
+      [ADMIN, 'organization_admin'], [COACH, 'coach'], [ELSE_COACH, 'coach'], [UPLOADER, 'coach'],
+      [GUARDIAN_LIVE, 'parent'], [GUARDIAN_GONE, 'parent'], [ADMIN, 'platform_owner'],
+    ];
+    for (const [accountId, role] of readers) {
+      const actor: ActorIdentity = { accountId, role, organizationId: ORG, athleteId: null };
+      const openable: string[] = [];
+      for (const caseId of Object.values(C)) {
+        const opened = await assertActorCanAccessIntakeCase(actor, ORG, caseId).then((a) => a.found, () => false);
+        if (opened) openable.push(caseId);
+      }
+      expect({ accountId, role, queue: await queueFor(ORG, accountId, role) })
+        .toEqual({ accountId, role, queue: openable.sort() });
+    }
   });
 
   // Jason, 2026-10-05, asked in this lane: "A: keep (Recommended)" -- a
@@ -499,8 +532,10 @@ describe('ACCESS: the review queue reads the column', () => {
     expect(await queueFor(ORG, GUARDIAN_GONE, 'parent')).toEqual([C.gone, C.filedForGone].sort());
   });
 
-  test('a platform owner sees only the unattributed cases', async () => {
-    expect(await queueFor(ORG, ADMIN, 'platform_owner')).toEqual([...unattributed].sort());
+  // CL-A10, and the ruling that platform_owner holds no organization-private
+  // athlete access: it used to see every unattributed case's summary.
+  test('a platform owner sees no case', async () => {
+    expect(await queueFor(ORG, ADMIN, 'platform_owner')).toEqual([]);
   });
 
   describe('after deleteAthleteRecord(GONE)', () => {
@@ -521,11 +556,11 @@ describe('ACCESS: the review queue reads the column', () => {
 
     test('they leave the count too, so paging agrees with the list', async () => {
       expect(await totalFor(ADMIN, 'organization_admin')).toBe(5);
-      expect(await totalFor(COACH, 'coach')).toBe(4);
+      expect(await totalFor(COACH, 'coach')).toBe(2);
     });
 
     test("GONE's coach and GONE's guardian no longer see them either", async () => {
-      expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.live, C.alreadySet, C.pending, C.two].sort());
+      expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.live, C.alreadySet].sort());
       expect(await queueFor(ORG, GUARDIAN_GONE, 'parent')).toEqual([]);
     });
 
@@ -538,5 +573,48 @@ describe('ACCESS: the review queue reads the column', () => {
     test("the other gym's athlete with GONE's id keeps its case", async () => {
       expect(await queueFor(OTHER_ORG, OTHER_ADMIN, 'organization_admin')).toEqual([C.otherGym]);
     });
+  });
+});
+
+// CL-A9 / CL-C18. createIntakeDocument used to insert onto whatever case id it
+// was handed: a decided case took new documents, and a case in another gym or
+// no case at all failed at the foreign key as a 500. The pending check is now
+// in the insert itself.
+describe('createIntakeDocument files only onto a pending case in this gym (CL-A9)', () => {
+  async function fileOnto(org: string, caseId: string) {
+    return createIntakeDocument({
+      organizationId: org,
+      intakeCaseId: caseId,
+      documentType: 'general_intake',
+      fileName: 'late-form.pdf',
+      blobPath: `quarantine/${org}/late-form.pdf`,
+      classification: 'restricted',
+    });
+  }
+
+  async function documentsOn(org: string, caseId: string): Promise<number> {
+    const rows = await activeClient!.query<{ n: number }>(
+      'select count(*)::int as n from pilot.intake_documents where organization_id = $1 and intake_case_id = $2',
+      [org, caseId],
+    );
+    return rows.rows[0].n;
+  }
+
+  test('a pending case takes the document (the positive control)', async () => {
+    const before = await documentsOn(ORG, C.pending);
+    await expect(fileOnto(ORG, C.pending)).resolves.toEqual(expect.any(String));
+    expect(await documentsOn(ORG, C.pending)).toBe(before + 1);
+  });
+
+  test('a promoted case is refused with a conflict and takes nothing', async () => {
+    const before = await documentsOn(ORG, C.live);
+    await expect(fileOnto(ORG, C.live)).rejects.toBeInstanceOf(ConflictError);
+    expect(await documentsOn(ORG, C.live)).toBe(before);
+  });
+
+  test("another gym's case, and an id naming no case, are refused with a conflict, not a foreign-key error", async () => {
+    await expect(fileOnto(ORG, C.otherGym)).rejects.toBeInstanceOf(ConflictError);
+    await expect(fileOnto(ORG, '00000000-0000-4000-8000-0000000000ff')).rejects.toBeInstanceOf(ConflictError);
+    expect(await documentsOn(OTHER_ORG, C.otherGym)).toBe(1);
   });
 });

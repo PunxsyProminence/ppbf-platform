@@ -275,7 +275,7 @@ describe('reading', () => {
 });
 
 describe('linking', () => {
-  test('the block is cleared first, and block_id is NOT passed to the write', async () => {
+  test('the block is cleared first, and the CLEARED block is passed to the write', async () => {
     const actor = principal();
     mockRequirePrincipal.mockResolvedValue(actor);
     mockGetBlock.mockResolvedValue(block());
@@ -297,16 +297,19 @@ describe('linking', () => {
 
     expect(response.status).toBe(201);
     expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-a');
-    /* block_id clears the caller and goes no further: the module establishes
-       the objective's REAL parent itself. So a body naming a block the caller
-       can open plus an objective belonging to one they cannot gets nothing. */
+    /* The cleared block reaches the write (audit CL-A12). This assertion
+       used to pin the hole: it required block_id NOT to be passed, on the
+       belief that the module's SQL rejected a mismatch. It did not -- the
+       module linked the objective under its own block, so a body naming a
+       block the caller can open plus another child's objective on the same
+       group run got the link. The module now requires the two to agree. */
     expect(mockLink).toHaveBeenCalledWith({
       organizationId: 'org-1',
       runId: 'run-1',
       objectiveId: 'obj-a',
+      blockId: 'blk-a',
       linkedByAccountId: 'acct-coach-a',
     });
-    expect(mockLink.mock.calls[0][0]).not.toHaveProperty('blockId');
   });
 
   test('an objective not on a block this session supports is a 404', async () => {
@@ -381,16 +384,12 @@ describe('unlinking', () => {
        (organization, run, objective) alone read as correct. Authorization was
        proved about blk-a and then spent on whatever block obj-a belonged to.
 
-       Unlike the link path above -- where block_id is deliberately NOT passed
-       because linkSessionToObjective re-derives the block in SQL and would
-       reject a mismatch -- the delete has no such derivation, so the block it
-       was cleared for has to be carried into the statement. */
+       The link path above carries it the same way. */
     expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'obj-a', 'blk-a', actor.accountId);
   });
 
-  /* The delete path names the block; the link path deliberately does not.
-     Held together so the asymmetry reads as a decision rather than as one of
-     them having been forgotten -- which is how it got here. */
+  /* Both write paths name the cleared block. The link path once did not, on
+     the belief its SQL made it redundant; that belief was the hole (CL-A12). */
   test('the block reaching the write is the block the gate cleared, not the one asked for', async () => {
     const actor = principal();
     mockRequirePrincipal.mockResolvedValue(actor);
