@@ -74,10 +74,56 @@ const PUNCH_EVENT = {
   defends_against_event_id: null,
 };
 
+const BODY_POINT_SET = { ...OPEN_SET, ontology_version: 'boxing-ontology-0.4' };
+
+const BODY_POINTS_0_4_COUNT = 23;
+
+/* A body-points answer with one moment opened and two points on it, as the
+   server shapes it. The missing list is the server's wording verbatim. */
+const BODY_DATA = {
+  ok: true,
+  set: BODY_POINT_SET,
+  expected_points: Array.from({ length: BODY_POINTS_0_4_COUNT }, (_, i) => `point_${i}`),
+  moments: [
+    {
+      body_moment_id: 'mom-1',
+      event_id: 'evt-1',
+      moment_slot: 'start',
+      moment_kind: 'start',
+      observation_ms: 12_400,
+      event_start_ms: 12_400,
+      event_end_ms: 12_800,
+      lead_side: 'orthodox',
+      guard_type: null,
+      source_frame_width_px: null,
+      source_frame_height_px: null,
+      points: [
+        { body_point_id: 'p-1', point_code: 'nose', state: 'placed', x_norm: 0.5, y_norm: 0.2 },
+        { body_point_id: 'p-2', point_code: 'chin', state: 'not_visible', x_norm: null, y_norm: null },
+      ],
+    },
+  ],
+  stance_labels: [],
+  missing: [
+    'evt-1: end moment',
+    'evt-1: middle moment',
+    'evt-1: stance type',
+    'evt-1: start guard',
+    'evt-1: start points, 2 of 23',
+  ],
+};
+
 interface Options {
   set?: unknown;
   events?: unknown[];
   eventsResponse?: () => { ok: boolean; body: unknown };
+  /** The body-points answer: a value, or a function called per read (which
+   * may return a promise, or throw to stand for a network failure). */
+  bodyData?: unknown | (() => unknown);
+  bodyDataOk?: boolean;
+  submitResponse?: () => { ok: boolean; body: unknown };
+  /** The set the submit route answers with (before its status is set). */
+  submitSet?: unknown;
 }
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
@@ -105,10 +151,24 @@ function mockFetch(options: Options = {}) {
     if (url.includes('/api/pilot/calibration/clips')) {
       return json({ ok: true, clips: [CLIP] });
     }
+    if (url.includes('/api/pilot/calibration/body-points')) {
+      if (options.bodyDataOk === false) {
+        return json({ error: 'Not found: no such annotation set in this organization' }, false);
+      }
+      const answer = typeof options.bodyData === 'function'
+        ? (options.bodyData as () => unknown)()
+        : options.bodyData ?? BODY_DATA;
+      return json(await answer);
+    }
     if (url.includes('/api/pilot/calibration/annotation-set/submit')) {
+      if (options.submitResponse) {
+        const outcome = options.submitResponse();
+        return json(outcome.body, outcome.ok);
+      }
+      const base = (options.submitSet ?? OPEN_SET) as typeof OPEN_SET;
       return json({
         ok: true,
-        set: { ...OPEN_SET, status: 'submitted', submitted_at: '2026-08-27T10:00:00.000Z' },
+        set: { ...base, status: 'submitted', submitted_at: '2026-08-27T10:00:00.000Z' },
         event_count: 1,
       });
     }
@@ -488,10 +548,230 @@ test('a clip with no set of the annotator\'s own offers to open one', async () =
   expect(open?.body).toMatchObject({ calibration_clip_id: 'clip-1' });
 });
 
-test('nothing on the page states a frame number or a frame rate', async () => {
-  global.fetch = mockFetch({ events: [PUNCH_EVENT] });
+describe('body points', () => {
+  const bodyPointCalls = () => calls.filter((call) => call.url.includes('/api/pilot/calibration/body-points'));
+
+  test('a 0.1 set is never asked for body points and shows no body-point section', async () => {
+    global.fetch = mockFetch({ events: [PUNCH_EVENT] });
+
+    await openClip();
+    // And after an event write, which is when a body-point set re-reads.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+
+    expect(bodyPointCalls()).toHaveLength(0);
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add punch' })).toBeTruthy();
+  });
+
+  test('a body-point set reads its marks and shows the server\'s count and missing list', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openClip();
+
+    const reads = bodyPointCalls();
+    expect(reads).toHaveLength(1);
+    expect(reads[0].method).toBe('GET');
+    expect(reads[0].url).toMatch(/\/api\/pilot\/calibration\/body-points\?annotation_set_id=set-1$/);
+
+    const section = screen.getByTestId('body-point-progress');
+    expect(section.textContent).toContain('5 items still to mark');
+    expect(screen.getByTestId('body-point-totals').textContent).toBe(
+      'Points 2 of 69 · moments opened 1 of 3 · stance types 0 of 1',
+    );
+    expect(section.textContent).toContain('start at 0:12.400 · 2 of 23 points · lead side orthodox · guard not set');
+    expect(section.textContent).toContain('middle · not opened');
+    expect(section.textContent).toContain('stance type · not set');
+
+    // The server's wording after the colon is kept; the event id in front is
+    // swapped for the event's place in the clip.
+    const missing = screen.getByTestId('body-point-missing').textContent ?? '';
+    expect(missing).toContain('punch at 0:12.400 (red corner): start points, 2 of 23');
+    expect(missing).toContain('punch at 0:12.400 (red corner): stance type');
+    expect(missing).not.toContain('evt-1');
+  });
+
+  test('body points are re-read after an event write, and the re-read is what is shown', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        // The second read answers as the database would after the event's
+        // marks were cascaded away.
+        return reads === 1 ? BODY_DATA : { ...BODY_DATA, moments: [], missing: ['evt-1: start moment'] };
+      },
+    });
+
+    await openClip();
+    expect(screen.getByTestId('body-point-totals').textContent).toContain('Points 2 of 69');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+
+    expect(bodyPointCalls()).toHaveLength(2);
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-totals').textContent).toContain('Points 0 of 69');
+    });
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('1 item still to mark');
+  });
+
+  test('body points are read when a set is opened, and again after submit', async () => {
+    global.fetch = mockFetch({ set: null, events: [] });
+
+    await openClip();
+    expect(bodyPointCalls()).toHaveLength(0);
+
+    // The mock's POST answers with OPEN_SET (0.1), so opening it must not
+    // read body points either; the read happens only for a body-point set.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open my annotation set' }));
+    });
+    expect(bodyPointCalls()).toHaveLength(0);
+
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], submitSet: BODY_POINT_SET });
+    calls.length = 0;
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: '' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: 'clip-1' } });
+    });
+    expect(bodyPointCalls()).toHaveLength(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
+    });
+    expect(bodyPointCalls()).toHaveLength(2);
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+  });
+
+  test('a refused submit re-reads the marks so the panel shows what the server named', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        return reads === 1 ? { ...BODY_DATA, missing: [] } : BODY_DATA;
+      },
+      submitResponse: () => ({
+        ok: false,
+        body: {
+          error: 'Missing body points: 5 items still to mark',
+          code: 'CALIBRATION_BODY_POINTS_INCOMPLETE',
+          missing: BODY_DATA.missing,
+        },
+      }),
+    });
+
+    await openClip();
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('Complete');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Missing body points');
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-progress').textContent).toContain('5 items still to mark');
+    });
+  });
+
+  test('a body-points reply that lands after the clip was left is dropped', async () => {
+    let release: (() => void) | null = null;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => new Promise<unknown>((resolve) => {
+        release = () => resolve(BODY_DATA);
+      }),
+    });
+
+    await openClip();
+    expect(bodyPointCalls()).toHaveLength(1);
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+
+    // The coach leaves the clip before the read answers.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: '' } });
+    });
+    await act(async () => {
+      release?.();
+    });
+
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+  });
+
+  test('a body-points read that fails outright is reported, and the events still show', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => { throw new TypeError('Failed to fetch'); },
+    });
+
+    await openClip();
+
+    expect(screen.getByRole('alert').textContent).toContain('could not be read');
+    expect(screen.getAllByTestId('annotation-event')).toHaveLength(1);
+  });
+
+  test('a complete set says so, with nothing still to mark', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, missing: [] },
+    });
+
+    await openClip();
+
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('Complete');
+    expect(screen.queryByTestId('body-point-missing')).toBeNull();
+  });
+
+  test('a refused body-points read is shown beside the section, and the events still show', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], bodyDataOk: false });
+
+    await openClip();
+
+    expect(screen.getByRole('alert').textContent).toContain('Body points could not be read');
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+    expect(screen.getAllByTestId('annotation-event')).toHaveLength(1);
+  });
+
+  test('a submitted body-point set still shows its marks, read-only', async () => {
+    global.fetch = mockFetch({
+      set: { ...BODY_POINT_SET, status: 'submitted', submitted_at: '2026-08-01T00:00:00.000Z' },
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, missing: [] },
+    });
+
+    await openClip();
+
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+});
+
+test.each([
+  ['a 0.1 set', OPEN_SET],
+  ['a body-point set with its progress on screen', BODY_POINT_SET],
+])('nothing on the page states a frame number or a frame rate (%s)', async (_name, set) => {
+  global.fetch = mockFetch({ set, events: [PUNCH_EVENT] });
 
   await openClip();
+  if (set === BODY_POINT_SET) {
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+  }
 
   const text = document.body.textContent ?? '';
   // "frame 412", "frame #412", "f412", "at 30fps" -- any of these would be a

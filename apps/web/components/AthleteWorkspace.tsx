@@ -945,25 +945,28 @@ export default function AthleteWorkspace() {
   const floorLockedPendingCheckIn = !checkInLoading && checkInLoadError === null && todayCheckIn === null;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
-        const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
-        if (response.ok && payload.authenticated && payload.athlete_id) {
-          setBackendAthleteId(payload.athlete_id);
-          setAthleteIdentityState('resolved');
-          return;
-        }
-        setAthleteIdentityState('unavailable');
-      } catch {
-        // Keep workspace usable in local-only mode when backend session is
-        // unavailable. Nothing about a session can be read or written in that
-        // state, so the session panel says so rather than offering buttons.
-        setAthleteIdentityState('unavailable');
+  const loadIdentity = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
+      const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
+      if (response.ok && payload.authenticated && payload.athlete_id) {
+        setBackendAthleteId(payload.athlete_id);
+        setAthleteIdentityState('resolved');
+        return;
       }
-    })();
+      setAthleteIdentityState('unavailable');
+    } catch {
+      // Keep workspace usable in local-only mode when backend session is
+      // unavailable. Nothing about a session can be read or written in that
+      // state, so the session panel says so rather than offering buttons.
+      setAthleteIdentityState('unavailable');
+    }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadIdentity();
+  }, [loadIdentity]);
 
   // The reference library is gym-wide coaching content, so it loads once and
   // does not depend on which athlete is signed in. The SERVER decides what is
@@ -1083,7 +1086,15 @@ export default function AthleteWorkspace() {
 
   // Fetch goals when athlete ID is set
   const loadGoals = useCallback(async () => {
+    // Identity is still resolving: "Loading..." is telling the truth.
+    if (athleteIdentityState === 'loading') return;
+
     if (!backendAthleteId) {
+      // Identity did not resolve, so the goals read is never going to be made.
+      // A bare return left this on "Loading your goals..." for the rest of the
+      // visit; a failed read says so, with the retry the panel already has.
+      setGoalsLoading(false);
+      setGoalsError('Your goals did not load. Try again.');
       return;
     }
 
@@ -1128,7 +1139,7 @@ export default function AthleteWorkspace() {
     } finally {
       setGoalsLoading(false);
     }
-  }, [backendAthleteId]);
+  }, [backendAthleteId, athleteIdentityState]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1267,7 +1278,14 @@ export default function AthleteWorkspace() {
    * says in one line that it could not load instead of "No sessions yet".
    */
   const loadTrainingCard = useCallback(async () => {
-    if (!backendAthleteId) return;
+    if (athleteIdentityState === 'loading') return;
+    if (!backendAthleteId) {
+      // No identity, so no read can be made: flag the card rather than let it
+      // say "No sessions yet" about a ledger nobody looked at.
+      setTrainingSessions([]);
+      setTrainingCardUnavailable(true);
+      return;
+    }
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
@@ -1294,7 +1312,7 @@ export default function AthleteWorkspace() {
       setTrainingSessions([]);
       setTrainingCardUnavailable(true);
     }
-  }, [backendAthleteId]);
+  }, [backendAthleteId, athleteIdentityState]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1665,7 +1683,10 @@ export default function AthleteWorkspace() {
     setIsCheckingIn(true);
 
     const sessionId = `session_${Date.now()}`;
-    const sessionDate = now.toISOString().slice(0, 10);
+    // The gym's day, not UTC's: from about 8 pm Eastern the UTC day is already
+    // tomorrow, which filed an evening check-in under a date the athlete's own
+    // screen (gymDayIso above) does not call today.
+    const sessionDate = gymDayIso(now) ?? now.toISOString().slice(0, 10);
     // What this write stores is the fixed system placeholder, always -- see
     // CHECK-IN SHARES NOTHING below. It exists only because pilot.sessions
     // requires a non-empty note. Until A-FIN-01 the empty case stored "Auto
@@ -2052,6 +2073,20 @@ export default function AthleteWorkspace() {
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({ error: 'That message did not send. Try it again.' }))) as { error?: string };
         throw new Error(payload.error || 'That message did not send. Try it again.');
+      }
+
+      // Saved is a claim about the server's database, so it is read from the
+      // server's answer, not inferred from the request succeeding. A 200 with
+      // state 'degraded' (the AI provider was down) stores nothing and carries
+      // no conversationId; ok, filtered and queued all store the question.
+      // The same test app/shadow/page.tsx uses for feedbackEligible.
+      const result = (await response.json().catch(() => ({}))) as { state?: string; conversationId?: string };
+      const stored = Boolean(result.conversationId)
+        && (result.state === 'ok' || result.state === 'filtered' || result.state === 'queued');
+      if (!stored) {
+        // The draft stays in the box so the athlete can send it again.
+        setCoachMessageStatus('That message was not saved -- SHADOW could not answer right now. Try it again.');
+        return;
       }
 
       setCoachMessageBody('');
@@ -3007,6 +3042,15 @@ export default function AthleteWorkspace() {
                       <button
                         onClick={() => {
                           setGoalsError(null);
+                          if (athleteIdentityState === 'unavailable') {
+                            // The sign-in read failed, so a goals read has no
+                            // athlete to ask about: read who this is again.
+                            // loadGoals runs once that answers.
+                            setGoalsLoading(true);
+                            setAthleteIdentityState('loading');
+                            void loadIdentity();
+                            return;
+                          }
                           void loadGoals();
                         }}
                         className="btn btn--ghost min-h-[var(--tap)]"
