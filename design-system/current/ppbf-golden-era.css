@@ -1113,9 +1113,13 @@
    same rules with new materials. Inks on canvas are measured against its
    darkest stop (#BCA279, under the weave ~#B99F75): display 6.7, body 5.8,
    label 5.0, eyebrow 4.6 to 1. The label ink moved one step darker for it.
-   Type and tap floors come from data-surface="kiosk" on the page's <main>
-   (the app's one-attribute device for a gym-floor surface); the plaque is
-   raised here because that device does not hold it.
+   Type and tap floors come from data-surface="kiosk" (the app's one-attribute
+   device for a gym-floor surface) on this page's own parts -- header, notices,
+   script list, plan -- and not on the live run, which shares the <main>; the
+   plaque is raised here because that device does not hold it. The "paper"
+   ratios quoted further down are the 004A pass's; the canvas ratios above
+   replace them. Markup touched in this pass: that attribute and size classes
+   on lines that carried no floored voice. Still no control or word changed.
 
    LOCKED RED: nothing below names --locked, --stamp-red or #A81E22.
    FUNCTIONAL_CHANGES: NONE. One class on the page wrapper is the only markup
@@ -1167,7 +1171,7 @@
   position: relative;
   padding: var(--s5);
   border-radius: var(--r-lg);
-  background-color: #4A2D19;
+  background-color: #3A2313;
   background-image:
     /* four rivets, one per corner plate */
     radial-gradient(circle at 13px 13px, var(--brass-200) 0 1.7px, var(--brass-700) 1.7px 3px, transparent 3.2px),
@@ -1185,7 +1189,10 @@
     /* the lamp landing on the top of the board, then the stained face */
     radial-gradient(78% 34% at 50% -4%, rgba(255,226,168,.16), transparent 72%),
     repeating-radial-gradient(circle at 30% 30%, rgba(0,0,0,.06) 0 2px, transparent 2px 5px),
-    linear-gradient(170deg, #5A3820 0%, #4A2D19 55%, #3A2313 100%);
+    /* Old brown leather, kept as dark as the stained face it replaces: the
+       failure panels that sit straight on the board frame themselves in a red
+       keyline, and a lighter hide took that keyline from about 2.3:1 to 1.4. */
+    linear-gradient(170deg, #4A2D19 0%, #3A2313 55%, #2C1A0E 100%);
   background-repeat: no-repeat;
   background-size:
     34px 34px, 34px 34px, 34px 34px, 34px 34px,
@@ -1327,6 +1334,20 @@
   color: #3F3016;
 }
 
+/* THE LABEL VOICE ON THE DARK PLAN SECTION. .t-label is --bone-400 by
+   default, which the leather's lit corner takes under 4.5:1 ("Priorities, in
+   order", the delivery-history labels). Two rungs up, the same lift the file
+   and board rooms already give this voice. One class lighter than the canvas
+   rules above, so a strip inside the section keeps its dark ink. */
+.ge-scripts .mat-leather .t-label {
+  color: var(--bone-200);
+}
+/* A sentence in the data voice (the delivery summary) takes the floor's 24px
+   with the voice's tight 1.15 leading, which is set for single figures. */
+.ge-scripts .mat-leather ul .t-data {
+  line-height: 1.35;
+}
+
 /* .t-eyebrow is the metal voice rather than an ink one -- it pins
    var(--brass-400) -- so on paper it would be bronze on bronze. Restated at the
    dark end of the same metal, so it still reads as the metal voice rather than
@@ -1466,8 +1487,10 @@
    2.4.7. */
 .ge-scripts > div > header .btn--ghost:focus-visible,
 .ge-scripts article .btn--ghost:focus-visible {
+  /* A dark ring, not var(--focus): the brass ring is 1.1-1.2:1 against the
+     canvas these plates sit on (it was 1.28 on paper). 7:1 here. */
   box-shadow:
-    var(--focus),
+    0 0 0 3px #241A0B,
     inset 0 1px 0 rgba(255,250,232,.7),
     inset 0 -2px 4px rgba(122,88,42,.22);
 }
