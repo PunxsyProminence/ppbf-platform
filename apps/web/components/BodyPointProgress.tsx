@@ -4,6 +4,7 @@ import {
   GUARD_TYPE_SOURCES,
   MOMENT_SLOTS,
   SOURCE_MANUALS,
+  STANCE_TYPES,
   STANCE_TYPE_SOURCES,
 } from '@/src/server/pilot/calibration/ontology';
 import { formatMediaOffset } from '@/src/lib/clipTime';
@@ -50,6 +51,23 @@ export interface ProgressStanceLabel {
   stance_type: string;
 }
 
+/**
+ * The marking controls, present only on an in-progress set of the coach's
+ * own. Each opens, selects or removes a moment, or sets the stance type;
+ * the page owns the writes and the canvas, this component only offers the
+ * buttons beside each event.
+ */
+export interface BodyPointControls {
+  busy: boolean;
+  /** The moment open on the picture, if any. */
+  activeMomentId: string | null;
+  onOpenMoment: (event: ProgressEvent, slot: string) => void;
+  onSelectMoment: (momentId: string) => void;
+  onRemoveMoment: (momentId: string) => void;
+  /** '' clears the stance type. */
+  onSetStance: (eventId: string, stanceType: string) => void;
+}
+
 export interface BodyPointProgressProps {
   events: readonly ProgressEvent[];
   /** The set's own point list, in marking order; null means the set's
@@ -59,6 +77,18 @@ export interface BodyPointProgressProps {
   stanceLabels: readonly ProgressStanceLabel[];
   /** The server's own list of what submission would refuse on, verbatim. */
   missing: readonly string[];
+  /** Absent on a read-only set: the progress is shown, nothing can change. */
+  controls?: BodyPointControls;
+}
+
+/** The option text for a stance type: the manual's heading, the body and
+ * where to read it ("Classic, USA Boxing, p. 82 (PDF 83)"). */
+export function stanceTypeOption(token: string): string {
+  const source = (STANCE_TYPE_SOURCES as Record<string, { printedPage: number | null; pdfPage: number | null } | undefined>)[token];
+  if (!source) return namedPositionLabel(token);
+  const printed = source.printedPage === null ? 'page not settled' : `p. ${source.printedPage}`;
+  const pdf = source.pdfPage === null ? '' : ` (PDF ${source.pdfPage})`;
+  return `${namedPositionLabel(token)}, ${printed}${pdf}`;
 }
 
 /** Vocabulary tokens are stored lower_snake; this is display only. */
@@ -112,12 +142,26 @@ function describeMoment(moment: ProgressMoment, expected: number): string {
   return `${head} · ${points} · ${lead} · ${guard}`;
 }
 
+/** What opening a moment means for this slot of this event: the server sets
+ * the time for start, end and a middle with a contact time; only a middle
+ * with no contact time takes the coach's playhead. */
+function openLabel(event: ProgressEvent, slot: string): string {
+  if (slot === 'middle' && event.contact_ms === null) {
+    return event.event_class === 'punch'
+      ? 'Open middle at playhead (full extension)'
+      : 'Open middle at playhead (furthest point)';
+  }
+  if (slot === 'middle') return 'Open middle (at contact)';
+  return `Open ${slot}`;
+}
+
 export default function BodyPointProgress({
   events,
   expectedPoints,
   moments,
   stanceLabels,
   missing,
+  controls,
 }: BodyPointProgressProps) {
   if (expectedPoints === null) return null;
 
@@ -183,14 +227,71 @@ export default function BodyPointProgress({
                 <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                   {MOMENT_SLOTS.map((slot) => {
                     const moment = eventMoments.find((row) => row.moment_slot === slot);
+                    const isOpen = moment !== undefined && moment.body_moment_id === controls?.activeMomentId;
                     return (
-                      <li key={slot} className="t-body">
-                        {moment ? describeMoment(moment, expected) : `${label(slot)} · not opened`}
+                      <li key={slot} className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                        <span className="t-body">
+                          {moment ? describeMoment(moment, expected) : `${label(slot)} · not opened`}
+                        </span>
+                        {controls ? (
+                          <span className="flex gap-[var(--s2)]">
+                            {moment ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost"
+                                  disabled={controls.busy || isOpen}
+                                  aria-pressed={isOpen}
+                                  onClick={() => controls.onSelectMoment(moment.body_moment_id)}
+                                >
+                                  {isOpen ? `Marking ${label(slot)}` : `Mark ${label(slot)}`}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost"
+                                  disabled={controls.busy}
+                                  onClick={() => controls.onRemoveMoment(moment.body_moment_id)}
+                                >
+                                  Remove {label(slot)} moment
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                disabled={controls.busy}
+                                onClick={() => controls.onOpenMoment(event, slot)}
+                              >
+                                {openLabel(event, slot)}
+                              </button>
+                            )}
+                          </span>
+                        ) : null}
                       </li>
                     );
                   })}
-                  <li className="t-body">
-                    stance type · {stance ? namedPositionLabel(stance) : 'not set'}
+                  <li className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                    {controls ? (
+                      <div className="field w-full md:max-w-[60%]">
+                        <label htmlFor={`stance-type-${event.event_id}`} className="t-label">Stance type (once per event)</label>
+                        <select
+                          id={`stance-type-${event.event_id}`}
+                          className="select"
+                          value={stance ?? ''}
+                          disabled={controls.busy}
+                          onChange={(e) => controls.onSetStance(event.event_id, e.target.value)}
+                        >
+                          <option value="">— choose —</option>
+                          {STANCE_TYPES.map((value) => (
+                            <option key={value} value={value}>{stanceTypeOption(value)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <span className="t-body">
+                        stance type · {stance ? namedPositionLabel(stance) : 'not set'}
+                      </span>
+                    )}
                   </li>
                 </ul>
               </li>
