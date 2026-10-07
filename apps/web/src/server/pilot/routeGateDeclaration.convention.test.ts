@@ -61,74 +61,19 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-
-const WEB_ROOT = path.resolve(__dirname, '../../..');
-const API_ROOT = path.join(WEB_ROOT, 'app', 'api');
-
-const HTTP_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'] as const;
-
-/**
- * Gates that answer "who is the caller". All six are in http.ts / auth.ts;
- * the last five are the deliberate exceptions requirePrincipal's own header
- * names -- the PIN-change route, the session-read route, the Microsoft-only
- * tier for privileged operations, (BASE04-D004) the credential tier that
- * also admits a local PIN session the server itself attested, and (CL-A7)
- * the any-adult-session tier for coach authoring.
- */
-const SESSION_GATES = new Set([
-  'requirePrincipal',
-  'requirePrincipalAllowingPinChange',
-  'requireMicrosoftAuthenticatedPrincipal',
-  'requireMicrosoftOrAttestedLocalPinPrincipal',
-  // Any adult (non-PIN) session, for the routes coaches author on (audit CL-A7).
-  'requireStaffSessionPrincipal',
-  'resolvePrincipal',
-]);
-
-/**
- * Gates that answer "may this caller do this". Each was read before being
- * listed, and each refuses the ACTOR -- on their role, their relationship to
- * the subject, or both.
- *
- *   requireRole                     access.ts / http.ts -- the canonical gate
- *   requireAnnotator                annotatorGate.ts:51 -- wraps requireRole
- *   requireResearchBridgeAccess     researchBridgeAuth.ts:77 -- app-role token
- *   assertActorCanAccessAthlete     access.ts:343 -- the central relationship
- *                                   gate; 92 non-test files call it
- *   accessibleAthleteIds            access.ts -- the batched form of the above
- *   athleteIdsForCoach              access.ts -- "my athletes", actor-scoped
- *   assertCoachAssignedToAthlete    access.ts:77 -- assignment or live coverage
- *   assertAthleteUpdateAllowed      access.ts:518 -- field-level, by actor role
- *   assertViewerMayReachSubject     profileDb.ts:323 -- self, else the above
- *   assertActorCanAccessIntakeCase  intake.ts:390 -- subject, admin, or author
- *   assertCanManageBoardSeats       boardSeats.ts:209 -- admin or the President
- *   assertCanAuthorRabbitHoles      rabbitHoles.ts:449 -- coach or admin
- *   assertCanManageRabbitHole       rabbitHoles.ts:465 -- author or admin
- *   assertShadowAuthority           shadowAuthority.ts:107 -- actor + mode
- *   assertConversationAccess        shadowConversations.ts:133 -- owner + subject
- *   authorizeVideoScanReview        videoScanReview.ts:92 -- admin or uploader
- *
- * Adding a name here is a claim that the function refuses somebody. Read it
- * first, and say in the commit which line does the refusing.
- */
-const AUTHORIZATION_GATES = new Set([
-  'requireRole',
-  'requireAnnotator',
-  'requireResearchBridgeAccess',
-  'assertActorCanAccessAthlete',
-  'accessibleAthleteIds',
-  'athleteIdsForCoach',
-  'assertCoachAssignedToAthlete',
-  'assertAthleteUpdateAllowed',
-  'assertViewerMayReachSubject',
-  'assertActorCanAccessIntakeCase',
-  'assertCanManageBoardSeats',
-  'assertCanAuthorRabbitHoles',
-  'assertCanManageRabbitHole',
-  'assertShadowAuthority',
-  'assertConversationAccess',
-  'authorizeVideoScanReview',
-]);
+import {
+  API_ROOT,
+  HTTP_METHODS,
+  SESSION_GATES,
+  AUTHORIZATION_GATES,
+  blankLiterals,
+  calledNames,
+  collectFunctionBodies,
+  collectRouteFiles,
+  findHandlers,
+  reachableNames,
+  relative,
+} from './routeGateWalk';
 
 /**
  * Handlers that resolve no principal. Each is gated by something that is not a
@@ -632,263 +577,8 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
 ]);
 
 // ---------------------------------------------------------------------------
-// Walking and parsing
+// Classification (the parser itself lives in routeGateWalk.ts)
 // ---------------------------------------------------------------------------
-
-function collectRouteFiles(root: string): string[] {
-  if (!fs.existsSync(root)) return [];
-  const found: string[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const full = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      found.push(...collectRouteFiles(full));
-    } else if (entry.name === 'route.ts' || entry.name === 'route.tsx') {
-      found.push(full);
-    }
-  }
-  return found.sort();
-}
-
-/**
- * Forward slashes always. path.relative returns backslashes on Windows, so an
- * allowlist keyed on 'app/api/...' would never match there -- green in CI on
- * ubuntu, failing on every Windows run. Same normalisation, for the same
- * reason, as organizationScope.convention.test.ts.
- */
-function relative(filePath: string): string {
-  return path.relative(WEB_ROOT, filePath).split(path.sep).join('/');
-}
-
-/**
- * Blank out comments and the CONTENTS of string, template and regex literals,
- * replacing each removed character with a space so every offset still lines up
- * with the original source.
- *
- * Without this, brace matching walks into a `{` inside a SQL string or a regex
- * and every span after it is wrong; and a gate name mentioned in a comment
- * ("see requireRole") would read as a call. Template interpolations are left
- * intact, since a real call can live inside one.
- */
-export function blankLiterals(source: string): string {
-  const out = source.split('');
-  const n = source.length;
-  let i = 0;
-  let prevSignificant = '';
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to; k += 1) if (out[k] !== '\n') out[k] = ' ';
-  };
-
-  while (i < n) {
-    const c = source[i];
-    const d = source[i + 1];
-
-    if (c === '/' && d === '/') {
-      let j = i + 2;
-      while (j < n && source[j] !== '\n') j += 1;
-      blank(i, j);
-      i = j;
-      continue;
-    }
-
-    if (c === '/' && d === '*') {
-      let j = i + 2;
-      while (j < n && !(source[j] === '*' && source[j + 1] === '/')) j += 1;
-      j = Math.min(n, j + 2);
-      blank(i, j);
-      i = j;
-      continue;
-    }
-
-    if (c === '"' || c === "'") {
-      let j = i + 1;
-      while (j < n) {
-        if (source[j] === '\\') { j += 2; continue; }
-        if (source[j] === c || source[j] === '\n') break;
-        j += 1;
-      }
-      blank(i + 1, j);
-      i = Math.min(n, j + 1);
-      prevSignificant = c;
-      continue;
-    }
-
-    if (c === '`') {
-      let j = i + 1;
-      while (j < n) {
-        if (source[j] === '\\') { out[j] = ' '; out[j + 1] = ' '; j += 2; continue; }
-        if (source[j] === '`') break;
-        if (source[j] === '$' && source[j + 1] === '{') {
-          // Step over the interpolation without blanking it.
-          j += 2;
-          let braces = 1;
-          while (j < n && braces > 0) {
-            if (source[j] === '{') braces += 1;
-            else if (source[j] === '}') braces -= 1;
-            j += 1;
-          }
-          continue;
-        }
-        if (out[j] !== '\n') out[j] = ' ';
-        j += 1;
-      }
-      out[i] = ' ';
-      if (j < n) out[j] = ' ';
-      i = Math.min(n, j + 1);
-      prevSignificant = '`';
-      continue;
-    }
-
-    // A '/' is a regex literal only where a value cannot already have ended;
-    // after an identifier or a ')' it is division.
-    if (c === '/' && (prevSignificant === '' || /[=(,:;[!&|?{}+\-*%^~<>]/.test(prevSignificant))) {
-      let j = i + 1;
-      let inClass = false;
-      let closed = false;
-      while (j < n) {
-        if (source[j] === '\\') { j += 2; continue; }
-        if (source[j] === '\n') break;
-        if (source[j] === '[') inClass = true;
-        else if (source[j] === ']') inClass = false;
-        else if (source[j] === '/' && !inClass) { closed = true; break; }
-        j += 1;
-      }
-      if (closed) {
-        blank(i, j + 1);
-        i = j + 1;
-        prevSignificant = '/';
-        continue;
-      }
-    }
-
-    if (!/\s/.test(c)) prevSignificant = c;
-    i += 1;
-  }
-
-  return out.join('');
-}
-
-function matchDelimiter(blanked: string, open: number, openChar: string, closeChar: string): number {
-  let depth = 0;
-  for (let i = open; i < blanked.length; i += 1) {
-    if (blanked[i] === openChar) depth += 1;
-    else if (blanked[i] === closeChar) {
-      depth -= 1;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-type Span = readonly [start: number, end: number];
-
-/**
- * The body span of every named function-ish binding in the file -- `function
- * f() {}`, `const f = () => {}`, `const f = async function () {}` -- exported
- * or not. This is what makes gate resolution delegation-aware.
- */
-function collectFunctionBodies(blanked: string): Map<string, Span> {
-  const bodies = new Map<string, Span>();
-
-  const declaration = /(?:^|\n)\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/g;
-  let match: RegExpExecArray | null;
-  while ((match = declaration.exec(blanked)) !== null) {
-    const span = bodyAfterParameters(blanked, match.index + match[0].length - 1);
-    if (span) bodies.set(match[1], span);
-  }
-
-  const assignment = /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\s*\*?\s*[A-Za-z_$\w]*\s*)?\(/g;
-  while ((match = assignment.exec(blanked)) !== null) {
-    if (bodies.has(match[1])) continue;
-    const span = bodyAfterParameters(blanked, match.index + match[0].length - 1, true);
-    if (span) bodies.set(match[1], span);
-  }
-
-  return bodies;
-}
-
-/**
- * Given the '(' that opens a parameter list, the span of the body that follows
- * it. `allowArrow` also accepts `) => {`, and looks for the arrow BEFORE the
- * first brace so that a return-type annotation containing an object type does
- * not get mistaken for the body.
- */
-function bodyAfterParameters(blanked: string, parenOpen: number, allowArrow = false): Span | null {
-  const parenClose = matchDelimiter(blanked, parenOpen, '(', ')');
-  if (parenClose === -1) return null;
-
-  let braceOpen: number;
-  if (allowArrow) {
-    const tail = blanked.slice(parenClose + 1, parenClose + 400);
-    const arrowAt = tail.indexOf('=>');
-    const braceAt = tail.indexOf('{');
-    if (arrowAt !== -1 && (braceAt === -1 || braceAt > arrowAt)) {
-      braceOpen = blanked.indexOf('{', parenClose + 1 + arrowAt);
-    } else if (braceAt !== -1) {
-      braceOpen = parenClose + 1 + braceAt;
-    } else {
-      return null;
-    }
-  } else {
-    braceOpen = blanked.indexOf('{', parenClose);
-  }
-
-  if (braceOpen === -1) return null;
-  const braceClose = matchDelimiter(blanked, braceOpen, '{', '}');
-  if (braceClose === -1) return null;
-  return [braceOpen, braceClose + 1] as const;
-}
-
-interface Handler {
-  method: string;
-  span: Span;
-}
-
-const HANDLER_SIGNATURE = new RegExp(
-  `(?:^|\\n)\\s*export\\s+(?:async\\s+)?function\\s+(${HTTP_METHODS.join('|')})\\s*(?:<[^>(]*>)?\\s*\\(`,
-  'g',
-);
-
-function findHandlers(blanked: string): Handler[] {
-  const found: Handler[] = [];
-  const pattern = new RegExp(HANDLER_SIGNATURE.source, 'g');
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(blanked)) !== null) {
-    const span = bodyAfterParameters(blanked, match.index + match[0].length - 1);
-    if (span) found.push({ method: match[1], span });
-  }
-  return found;
-}
-
-/** Every identifier called inside a span: `name(` and `obj.name(` alike. */
-function calledNames(blanked: string, [start, end]: Span): string[] {
-  const names: string[] = [];
-  const pattern = /([A-Za-z_$][\w$]*)\s*(?:<[^<>()]*>)?\s*\(/g;
-  let match: RegExpExecArray | null;
-  const slice = blanked.slice(start, end);
-  while ((match = pattern.exec(slice)) !== null) names.push(match[1]);
-  return names;
-}
-
-/**
- * Every name reachable from a handler, following calls through same-file
- * function bodies to any depth. `seen` makes mutual recursion terminate.
- */
-function reachableNames(blanked: string, bodies: Map<string, Span>, span: Span): Set<string> {
-  const reached = new Set<string>();
-  const visited = new Set<string>();
-  const walk = (current: Span): void => {
-    for (const name of calledNames(blanked, current)) {
-      reached.add(name);
-      const body = bodies.get(name);
-      if (body && !visited.has(name)) {
-        visited.add(name);
-        walk(body);
-      }
-    }
-  };
-  walk(span);
-  return reached;
-}
 
 interface ClassifiedHandler {
   id: string;
@@ -909,7 +599,7 @@ function classifyHandlers(): { handlers: ClassifiedHandler[]; perFile: Map<strin
     perFile.set(rel, found.length);
 
     for (const handler of found) {
-      const reached = reachableNames(blanked, bodies, handler.span);
+      const { reached } = reachableNames(blanked, bodies, handler.span);
       handlers.push({
         id: `${rel}#${handler.method}`,
         file: rel,
