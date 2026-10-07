@@ -190,6 +190,17 @@ test('without the opt-in nothing is held, exactly as Film Study has always behav
   expect(hook.result.current.held).toBeNull();
 });
 
+test('a recording with no bytes is not held, so it cannot block the next one', async () => {
+  const onRecorded = jest.fn().mockRejectedValue(new Error('empty'));
+  const hook = setup({ keep: true, onRecorded });
+
+  await act(async () => { await hook.result.current.start({ take: 'take-1' }); });
+  await act(async () => { hook.result.current.stop(); });
+
+  expect(hook.result.current.errorMessage).toBe('empty');
+  expect(hook.result.current.held).toBeNull();
+});
+
 test('a successful upload holds nothing', async () => {
   const onRecorded = jest.fn().mockResolvedValue(undefined);
   const hook = setup({ keep: true, onRecorded });

@@ -223,7 +223,8 @@ export function useCameraRecorder<TContext>({
       setErrorMessage(error instanceof Error ? error.message : 'The recording could not be uploaded.');
       // The bytes are the one thing that cannot be re-shot, so they outlive the
       // failure. chunksRef is still cleared below; the File holds a copy.
-      if (keepFailedRecording && file) holdRecording({ file, recordedAt, context });
+      // Nothing to keep when no bytes arrived (Stop before the first chunk).
+      if (keepFailedRecording && file && file.size > 0) holdRecording({ file, recordedAt, context });
     } finally {
       chunksRef.current = [];
       stopStream();

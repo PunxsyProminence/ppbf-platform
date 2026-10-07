@@ -414,7 +414,9 @@ describe('a failed or refused upload keeps the footage (TEACH-02)', () => {
 
     await waitFor(() => expect(uploads).toHaveLength(1));
     const held = await screen.findByTestId('held-recording');
-    expect(held).toHaveTextContent(/still on this phone/);
+    expect(held).toHaveTextContent(/being kept on this page/);
+    // It must not claim the phone has it: the bytes are in page memory only.
+    expect(held).toHaveTextContent(/not saved to your phone yet/);
     expect(held).toHaveTextContent(/nothing has been thrown away/i);
     expect(screen.getByRole('alert')).toHaveTextContent('Service unavailable');
     expect(screen.getByRole('button', { name: 'Save to this phone' })).toBeEnabled();
@@ -440,19 +442,23 @@ describe('a failed or refused upload keeps the footage (TEACH-02)', () => {
     await screen.findByTestId('held-recording');
     expect(screen.queryByTestId('held-take-closed')).toBeNull();
 
-    // Another phone presses Next take: this one's view moves to take 2.
-    SESSION.current_take = { capture_take_id: 'take-2', take_number: 2, state: 'open', files: [] };
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Next take' }));
-    });
+    try {
+      // Another phone presses Next take: this one's view moves to take 2.
+      SESSION.current_take = { capture_take_id: 'take-2', take_number: 2, state: 'open', files: [] };
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Next take' }));
+      });
 
-    expect(await screen.findByTestId('held-take-closed')).toHaveTextContent(/take it was recorded for has since been closed/i);
-    // Still held, still saveable -- and NOT quietly re-filed against take 2.
-    expect(screen.getByTestId('held-recording')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save to this phone' })).toBeEnabled();
-    expect(uploads).toHaveLength(1);
-
-    SESSION.current_take = { capture_take_id: 'take-1', take_number: 1, state: 'open', files: [] };
+      expect(await screen.findByTestId('held-take-closed')).toHaveTextContent(/will be refused/i);
+      // Still held, still saveable -- and NOT quietly re-filed against take 2.
+      expect(screen.getByTestId('held-recording')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save to this phone' })).toBeEnabled();
+      // Try again would only be refused, so it is not offered as a live control.
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeDisabled();
+      expect(uploads).toHaveLength(1);
+    } finally {
+      SESSION.current_take = { capture_take_id: 'take-1', take_number: 1, state: 'open', files: [] };
+    }
   });
 
   test('finishing the session does not drop a held recording either', async () => {
@@ -515,14 +521,22 @@ describe('a failed or refused upload keeps the footage (TEACH-02)', () => {
 
 describe('a reload goes back into the coach own open session (TEACH-04)', () => {
   test('the open session and its join code come back without starting anything', async () => {
-    resumableSession = SESSION;
+    resumableSession = { ...SESSION, created_at: '2026-10-01T10:00:00Z' } as unknown as typeof SESSION;
 
     await renderPage();
 
     expect(await screen.findByText('H7K2QP')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Start recording session' })).toBeNull();
+    // The coach is told this was picked up, not started, with when it began.
+    expect(screen.getByTestId('session-resumed')).toHaveTextContent(/Picked up your open session, started .*Finish session/);
     // Nothing was created or joined to get here.
     expect(sessionPosts).toEqual([]);
+  });
+
+  test('a session started on this page carries no "picked up" notice', async () => {
+    await openSession();
+
+    expect(screen.queryByTestId('session-resumed')).toBeNull();
   });
 
   test('with nothing open the page offers to start one, as before', async () => {

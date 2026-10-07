@@ -68,6 +68,7 @@ interface SessionState {
   join_code: string;
   training_context: string;
   state: string;
+  created_at?: string;
   current_take: CurrentTake | null;
 }
 
@@ -118,6 +119,10 @@ export default function TeachShadowCapturePage() {
      is already open has come back would open a second one and split the
      punch's angles across two takes. */
   const [resuming, setResuming] = useState(true);
+  /* Set when the session on screen was picked up by the reload lookup rather
+     than started or joined here. An abandoned session stays open, so the one
+     found may not be the one the coach meant; the notice says which it is. */
+  const [resumedFrom, setResumedFrom] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -194,7 +199,10 @@ export default function TeachShadowCapturePage() {
         });
         const payload = (await response.json().catch(() => ({}))) as { session?: SessionState | null };
         if (!response.ok) throw new Error('lookup refused');
-        if (!cancelled && payload.session) setSession((current) => current ?? payload.session ?? null);
+        if (!cancelled && payload.session) {
+          setSession((current) => current ?? payload.session ?? null);
+          setResumedFrom(payload.session.created_at ?? 'earlier');
+        }
       } catch {
         if (!cancelled) {
           setErrorMessage('Could not check whether you already have a session open. If you do, starting a new one will split your angles from it.');
@@ -365,17 +373,23 @@ export default function TeachShadowCapturePage() {
           {held ? (
             <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
               <p role="status" className="t-body" data-testid="held-recording">
-                A recording did not upload. It is still on this phone ({(held.file.size / (1024 * 1024)).toFixed(1)} MB
-                {held.context.cameraView ? `, ${held.context.cameraView}` : ''}) and nothing has been thrown away.
+                A recording did not upload. It is being kept on this page ({(held.file.size / (1024 * 1024)).toFixed(1)} MB
+                {held.context.cameraView ? `, ${held.context.cameraView}` : ''}) and nothing has been thrown away. It is
+                not saved to your phone yet: use Save to this phone, and do not close or reload this page until you have.
               </p>
               {!take || take.capture_take_id !== held.context.captureTakeId ? (
                 <p role="status" className="t-body mt-[var(--s2)]" data-testid="held-take-closed">
-                  The take it was recorded for has since been closed, so it may be refused. Save it to this phone
+                  The take it was recorded for has since been closed, so it will be refused. Save it to this phone
                   to keep it.
                 </p>
               ) : null}
               <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                <button type="button" className="btn" disabled={phase !== 'idle'} onClick={() => void retryHeld()}>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={phase !== 'idle' || !take || take.capture_take_id !== held.context.captureTakeId}
+                  onClick={() => void retryHeld()}
+                >
                   {phase === 'uploading' ? 'Uploading…' : 'Try again'}
                 </button>
                 <button type="button" className="btn btn--ghost" onClick={saveHeld}>Save to this phone</button>
@@ -457,6 +471,15 @@ export default function TeachShadowCapturePage() {
           ) : (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+                {resumedFrom ? (
+                  <p role="status" className="t-body mb-[var(--s3)]" data-testid="session-resumed">
+                    Picked up your open session
+                    {resumedFrom !== 'earlier' && !Number.isNaN(Date.parse(resumedFrom))
+                      ? `, started ${new Date(resumedFrom).toLocaleString()}`
+                      : ''}
+                    . If this is not the one you meant, press Finish session.
+                  </p>
+                ) : null}
                 <p className="t-eyebrow">Join code</p>
                 <p className="t-gothic text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)', letterSpacing: '0.18em' }}>
                   {session.join_code}
