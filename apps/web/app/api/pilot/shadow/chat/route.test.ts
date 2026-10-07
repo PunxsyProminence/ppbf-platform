@@ -2888,19 +2888,20 @@ describe('board summary authority at the request boundary', () => {
     expect(body.highRiskTopic).toBe('chest_pain');
 
     // Escalated at the severity the REAL classifier earns, not the one I
-    // assumed: validateShadowRequest classifies this as
-    // 'personal_health_concern', which is 'high' rather than 'critical' -- the
-    // four critical classifications are chest_pain, fainting,
-    // loss_of_consciousness and urgent_personal_symptom as CLASSIFICATIONS, and
-    // 'chest_pain' here is the TOPIC. Pinning the real values so a change to
-    // either mapping is visible.
+    // assumed. Until 2026-10-06 validateShadowRequest classified this as
+    // 'personal_health_concern' ('high'): "pain" reached the personal-health
+    // return before the chest_pain topic reached the emergency one. The
+    // #1036 ordering change answers an emergency first, so a first-person
+    // chest-pain report is 'urgent_personal_symptom', one of the four
+    // critical classifications (route.ts, reviewIsCritical). Pinning the
+    // real values so a change to either mapping is visible.
     expect(mockQueueHumanReview).toHaveBeenCalledWith(
       expect.objectContaining({
         category: 'chest_pain',
-        severity: 'high',
+        severity: 'critical',
         metadata: expect.objectContaining({
           sessionType: 'board_summary',
-          validationClassification: 'personal_health_concern',
+          validationClassification: 'urgent_personal_symptom',
         }),
       }),
     );
@@ -3077,8 +3078,11 @@ describe('SHADOW pre-generation safety precedence', () => {
       expect(body.state).toBe('filtered');
       expect(body.requiresHumanReview).toBe(true);
       expect(body.highRiskTopic).toBe('chest_pain');
+      // 'critical' since the #1036 ordering change (2026-10-06): a
+      // first-person chest-pain report is an emergency, not a personal
+      // health concern.
       expect(mockQueueHumanReview).toHaveBeenCalledWith(
-        expect.objectContaining({ category: 'chest_pain', severity: 'high' }),
+        expect.objectContaining({ category: 'chest_pain', severity: 'critical' }),
       );
 
       // And the branch under test did NOT get to answer instead.

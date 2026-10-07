@@ -11,6 +11,8 @@ import {
   SHADOW_SYSTEM_PROMPT,
   HighRiskTopic,
 } from './shadowChat';
+import * as fs from 'fs';
+import * as path from 'path';
 import { assertActorCanAccessAthlete } from './access';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
@@ -1405,5 +1407,268 @@ describe('CL-C8: diagnostic and prescriptive phrasings the filter missed', () =>
     const result = validateShadowResponse(response);
     expect(result.reasonCodes).not.toContain('diagnostic_claim');
     expect(result.reasonCodes).not.toContain('prescriptive_claim');
+  });
+});
+
+// #1036 ORDERING (2026-10-06). Three ways a real emergency missed the
+// emergency response on main 411333a2, all from the order of
+// validateShadowRequest's returns: the educational shortcut returned first
+// (CL-C9, measured by Codex: "What does it mean when he passed out and can't
+// breathe?" reached the model with no emergency line); the emergency check
+// wanted first-person context, so "he can't breathe" got the high-risk
+// handoff text; and the fallback read the first matching topic row, so
+// "dizzy and passed out" was dizziness, and a clearance question above it
+// won over a faint. OD-2026-10-01-008 section 2 (Jason, option A): the line
+// appears when a message says a real emergency happened to a specific
+// person, even without "I" or "my"; unclear wording counts; a general
+// question does not. The emergency return now comes before every other.
+describe('#1036 ordering: a real emergency reaches the emergency response first', () => {
+  const EMERGENCY = 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.';
+  const check = (message: string) => validateShadowRequest(message, 'coach', 'org-1');
+  const expectEmergency = (message: string) => {
+    const result = check(message);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe(EMERGENCY);
+    expect(result.highRisk).toBe(true);
+    expect(result.classification).toBe('urgent_personal_symptom');
+  };
+
+  describe('(1) educational framing no longer hides an emergency about a specific person', () => {
+    test.each([
+      // The brief's own example, and Codex's two, verbatim.
+      'What can coach do the kid is not breathing',
+      "What does it mean when he passed out and can't breathe?",
+      // DRAFT #1292's list, carried over where the sign is in the true
+      // emergency set (see the describe below for the ones that are not).
+      'What does it mean when he can’t breathe after a body shot?',
+      // "after that hit" is personal context on main, so these two were
+      // main's own R3 condition, hidden behind the educational shortcut.
+      'What is it when the athlete has blurry vision after that hit?',
+      'What does it mean when my athlete is seeing stars?',
+      'What does it mean when Jake passed out after the round?',
+      'What does it mean when the boxer had a seizure?',
+      'What does it mean when the kid stopped breathing after that hit',
+      'What causes it when they have slurred speech after sparring?',
+      // #1292 reviewer A: subjects the first cut did not know.
+      "What does it mean when the kiddo can't breathe?",
+      'What does it mean when the 12 year old is unresponsive?',
+      "What does it mean when the other boxer can't breathe?",
+      "What does it mean when hes collapsed and won't wake up",
+      // Reviewer A on this PR (2026-10-06): a report tacked onto a general
+      // question is a report -- "ours", "one of ours", "a kid fainted".
+      'What causes fainting in athletes? one of ours just fainted',
+      'What does it mean when a boxer passed out? ours did at the bout',
+      'What causes a fighter to collapse? Ours collapsed after round 2',
+      'What causes a person to faint? A kid fainted at practice',
+      // Reviewer B on this PR: a name at the start of a sentence, "someone"
+      // with an event, "a boxer just collapsed".
+      'Mike collapsed, what is happening?',
+      'What can anyone do? Tyler is not breathing',
+      'What can coach do, someone is not breathing',
+      'What does it mean, a boxer just collapsed in the ring',
+    ])('%s', expectEmergency);
+  });
+
+  describe('(2) a third-person true emergency gets the emergency line, not the handoff text', () => {
+    test.each([
+      "Sam can't breathe",
+      'Sam cant breathe',
+      "he can't breathe",
+      'the kid is having trouble breathing',
+      'Jordan had a seizure on the canvas',
+      'she is having convulsions',
+      // "my" is personal context: main's own R3 condition.
+      "my sparring partner can't see out of his left eye",
+      // Unclear wording, no subject at all, counts as acute.
+      'passed out and not breathing',
+    ])('%s', expectEmergency);
+
+    // THE TRUE EMERGENCY SET, one must-catch each (overwatch, 2026-10-06).
+    test.each([
+      ['loss of consciousness', 'she got knocked out'],
+      ['not breathing', 'the kid is not breathing'],
+      ["can't breathe", "he can't breathe"],
+      ['chest pain', 'she has chest pain'],
+      ['a faint', 'he fainted'],
+      ['unresponsive', 'he is unresponsive'],
+      ["won't wake", "Jordan won't wake up"],
+      ['a collapse', 'Sam collapsed in the ring'],
+      ['a seizure', 'he had a seizure'],
+      // Overwatch 2026-10-07 ("add them"): head-injury and bleed red flags.
+      ['vomiting blood', 'she is vomiting blood'],
+      ['vomiting blood, educational framing', 'What causes it when she is vomiting blood?'],
+      ['slurred speech', 'his speech is slurred'],
+      ['slurred speech, main\'s wording', 'She has slurred speech after the round'],
+      ['unequal pupils', 'one pupil is bigger'],
+      ['unequal pupils, main\'s wording', 'What does it mean when her pupils look unequal? She has unequal pupils.'],
+    ])('must catch, %s: %s', (_sign, message) => expectEmergency(message));
+  });
+
+  // NOT IN THE TRUE SET (overwatch, 2026-10-06, on "educate, don't
+  // restrict"): a plain urgent-symptom word about someone else, with no
+  // personal context, stays on its current path -- the high-risk handoff,
+  // or an educational answer -- rather than jumping to the act-now line.
+  // First-person versions were main's R3 already and still are. ("after
+  // sparring" is personal context on main, so "he has a headache after
+  // sparring" was main's R3 already; the must-pass is the plain one.)
+  describe('a plain urgent-symptom word about someone else keeps its current path', () => {
+    const HANDOFF = 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.';
+    test.each([
+      'he has a headache',
+      'he has a headache after the round',
+      'he is dizzy',
+      'she feels nauseous after the round',
+      // Reviewer A on this PR: routine remarks that must not be act-now.
+      "He gets headaches when he doesn't eat breakfast",
+      "Headgear gives him a headache because it's too tight",
+    ])('must pass to the handoff, not act-now: %s', (message) => {
+      const result = check(message);
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(HANDOFF);
+    });
+    test.each([
+      'What does it mean when his neck went numb after the fall?',
+      'What does it mean when he has a headache after the round?',
+      'What causes it when she feels dizzy after the round?',
+    ])('educational, answered: %s', (message) => {
+      expect(check(message).valid).toBe(true);
+    });
+    test('the first-person versions were emergencies on main and still are', () => {
+      expectEmergency('I have a headache after sparring');
+      expectEmergency('my vision is blurry after that hit');
+    });
+  });
+
+  describe('(3) an earlier topic row or a clearance question no longer wins over an emergency', () => {
+    test.each([
+      // dehydration and dizziness are rows above fainting
+      'he got dizzy and fainted',
+      'She was dehydrated and then fainted',
+      'he has a concussion and is unresponsive',
+      'he has a concussion and chest pain',
+      // the clearance return sat above the high-risk fallback
+      'What does it mean when he fainted, is he cleared to spar?',
+      'He passed out in sparring, can he return to play?',
+      'Is he cleared to train after he was knocked out?',
+      // the prescription-or-weight-cut return sat above the emergency one
+      "I can't breathe and I need to lose weight quickly",
+      'I passed out, how do I cut weight for my weight class?',
+    ])('%s', expectEmergency);
+
+    test('the topic is the row classifyHighRiskTopic chose; the classification is the emergency one', () => {
+      expect(check('She was dehydrated and then fainted')).toMatchObject({ topic: 'dehydration', classification: 'urgent_personal_symptom' });
+      expect(check('What does it mean when he fainted, is he cleared to spar?')).toMatchObject({ topic: 'fainting' });
+      expect(check("Sam can't breathe")).toMatchObject({ topic: 'urgent_symptom' });
+    });
+  });
+
+  describe('a general question still gets an answer', () => {
+    test.each([
+      'What can cause shortness of breath?',
+      'What are general warning signs after a head impact?',
+      'What causes fainting?',
+      'What is loss of consciousness?',
+      'What is a seizure?',
+      'What causes vomiting blood in athletes?',
+      'What are the signs athletes show when their vision is blurry?',
+      'How do coaches respond when a boxer collapses?',
+      'What is the first aid for an athlete who collapsed?',
+      'What does it mean if a fighter is unresponsive?',
+      'What is a collapsed lung?',
+      // #1292 reviewer A: a pronoun or "the athlete" that refers to a general
+      // subject is not a specific person.
+      'What causes a boxer to faint after his weigh-in?',
+      'What can cause a wrestler to have a headache after he cuts weight?',
+      'What does a referee look for when deciding if a boxer is knocked out or if he can continue?',
+      'What is the difference between fainting and a seizure in an athlete and how would a coach tell if he or she needs help?',
+      'What are the signs that a fighter is unconscious versus just dazed, and what should the coach do for him?',
+      'What is syncope and how does it differ from when someone just feels her legs go weak?',
+      'What is a concussion and what headache signs should the athlete watch for?',
+      'What is the research on chest pain in young athletes?',
+      // Reviewer A on this PR (2026-10-06): a generic pronoun, a general
+      // subject the first cut did not list, and a hypothetical.
+      'How do coaches tell if their athlete is unconscious?',
+      'What does it mean when they faint after weigh-ins?',
+      'What does knocked out mean, like when they get hit clean?',
+      'What causes their chest pain during sprints?',
+      'What is the difference between fainting and passing out when he gets hit?',
+    ])('%s', (message) => {
+      const result = check(message);
+      expect(result.valid).toBe(true);
+    });
+
+    // A hypothetical about a general subject is not a report. Main refused
+    // these with the high-risk handoff (no educational framing word in
+    // them); they keep that, and do not get the act-now line. (A
+    // hypothetical on an emergency TOPIC, "what should the corner do if a
+    // fighter is knocked out?", got the emergency text from main's R8
+    // already and still does: that is main's, not this change's.)
+    test.each([
+      "What would you do if a fighter can't breathe after a body shot?",
+      "What if an athlete with asthma can't breathe?",
+      // Reviewer B on this PR: general questions with none of the
+      // classifier's educational framing words in them.
+      'Explain the signs of a seizure',
+      'Tips to spot a seizure in the ring',
+      'Why do boxers get headaches?',
+      'Can dehydration cause a boxer to faint?',
+    ])('a hypothetical keeps its path, not act-now: %s', (message) => {
+      expect(check(message).error).not.toBe(EMERGENCY);
+    });
+  });
+
+  describe('a non-acute question about someone else is not newly refused', () => {
+    test.each([
+      'What does it mean when he has a sore shoulder?',
+      'What is it when she has wrist pain after bag work?',
+      'What does it mean when they feel stiff the next day?',
+      // #1292 reviewer B: high-risk topics that are not acute keep their
+      // topic and stay allowed.
+      'What is the recovery like when he has surgery?',
+      'What does it mean when the doctor gave her a cortisone injection?',
+      'What are the risks when he cuts weight for his weight class?',
+      'What does it mean when the athlete is dehydrated?',
+    ])('%s', (message) => {
+      const result = check(message);
+      expect(result.valid).toBe(true);
+      expect(result.topic).toBe(classifyHighRiskTopic(message).topic);
+    });
+  });
+
+  describe("main's own returns keep their place behind the emergency one", () => {
+    test('a first-person emergency is unchanged', () => {
+      expectEmergency("I can't breathe after that hit");
+      expectEmergency('I collapsed after sparring');
+    });
+    test('a diagnosis, clearance or medication question with no acute sign keeps its own text', () => {
+      expect(check('Do I have a concussion?').error).toBe('Diagnosis and personal health assessment require professional medical evaluation.');
+      expect(check('Am I cleared to spar?').error).toBe('Medical clearance decisions require professional medical authority.');
+      expect(check('Should I take ibuprofen pills for this?').error).toBe('Medication and prescription recommendations require prescription authority and professional medical oversight.');
+    });
+    test('a non-emergency high-risk report keeps the handoff text', () => {
+      expect(check('he is dizzy').error).toBe('Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.');
+    });
+  });
+
+  // The four patterns emergencyReport tests directly are copies of topic
+  // rows in classifyHighRiskTopic. Read both out of the source so that an
+  // edit to a row that forgets the copy fails here.
+  test('EMERGENCY_TOPIC_PATTERNS are the chest_pain, fainting and both loss_of_consciousness rows, by source', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'shadowChat.ts'), 'utf8');
+    const rows = new Map<string, string[]>();
+    for (const m of source.matchAll(/^\s*\['(chest_pain|fainting|loss_of_consciousness)', (\/.*\/i)\],$/gm)) {
+      rows.set(m[1], [...(rows.get(m[1]) ?? []), m[2]]);
+    }
+    expect([...rows.keys()].sort()).toEqual(['chest_pain', 'fainting', 'loss_of_consciousness']);
+    expect(rows.get('loss_of_consciousness')).toHaveLength(2);
+    const block = /const EMERGENCY_TOPIC_PATTERNS: readonly RegExp\[\] = \[\n([\s\S]*?)\n\];/.exec(source);
+    if (!block) throw new Error('EMERGENCY_TOPIC_PATTERNS not found');
+    const copies = block[1].split('\n').map((line) => line.trim().replace(/,$/, ''));
+    expect(copies).toEqual([
+      rows.get('loss_of_consciousness')![0],
+      rows.get('chest_pain')![0],
+      rows.get('fainting')![0],
+      rows.get('loss_of_consciousness')![1],
+    ]);
   });
 });

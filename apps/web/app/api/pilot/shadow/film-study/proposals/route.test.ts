@@ -4,6 +4,8 @@ import { GET, PATCH, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
+import { writeUnderFilmStudyConsent } from '@/src/server/pilot/filmStudyConsent';
 import {
   createCoachReportedObservation,
   getFilmStudyProposal,
@@ -28,6 +30,20 @@ jest.mock('@/src/server/pilot/videoDestination', () => ({
 jest.mock('@/src/server/pilot/videoAthleteScope', () => ({
   ...jest.requireActual('@/src/server/pilot/videoAthleteScope'),
   assertVideoConcernsAthlete: jest.fn(),
+}));
+// The coach-reported write runs under writeUnderFilmStudyConsent, the same
+// consent-held transaction the model path uses. Doubled to run the write on
+// a stand-in client; the consent reads and the lock are proven in
+// filmStudyConsentRace.pg.test.ts and filmStudyConsent.ts's own suite.
+const TX_CLIENT = { query: jest.fn() };
+jest.mock('@/src/server/pilot/filmStudyConsent', () => ({
+  ...jest.requireActual('@/src/server/pilot/filmStudyConsent'),
+  writeUnderFilmStudyConsent: jest.fn(async (
+    _org: string,
+    _video: string,
+    _athlete: string,
+    write: (client: unknown) => unknown,
+  ) => write(TX_CLIENT)),
 }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowFilmStudyProposals', () => ({
@@ -314,10 +330,47 @@ describe('POST a coach-reported missed detection', () => {
         videoSessionId: 'vs-1',
         reportedByAccountId: 'coach-1',
       }),
+      TX_CLIENT,
     );
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({ ok: true, proposal: expect.objectContaining({ origin: 'coach_reported' }) }),
     );
+  });
+
+  /*
+   * THE SAME CONSENT QUESTION THE MODEL PATH ASKS. The video-analysis request
+   * and the worker both run assertFilmStudyConsent before anything is done
+   * with a child's footage; a coach-reported row about the same footage
+   * never asked. It now writes under writeUnderFilmStudyConsent, so the
+   * check and the insert share one transaction holding the guardian links.
+   */
+  test('the row is written under the film-study consent transaction for the named video and athlete', async () => {
+    const response = await POST(req('POST', {
+      athlete_id: 'ATH-1',
+      video_session_id: 'vs-1',
+      observation_text: 'Model missed the head staying still on the slip.',
+    }));
+
+    expect(response.status).toBe(201);
+    expect(writeUnderFilmStudyConsent).toHaveBeenCalledWith('org-1', 'vs-1', 'ATH-1', expect.any(Function));
+  });
+
+  test.each([
+    ['withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'],
+    ['photo-only', 'GUARDIAN_CONSENT_EXCLUDES_VIDEO'],
+  ])('a %s consent refuses the observation and nothing is written', async (_label, code) => {
+    jest.mocked(writeUnderFilmStudyConsent).mockRejectedValueOnce(new ConflictError('Blocked: consent', code));
+
+    const response = await POST(req('POST', {
+      athlete_id: 'ATH-1',
+      video_session_id: 'vs-1',
+      observation_text: 'Model missed the head staying still on the slip.',
+    }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe(code);
+    expect(mockCreateCoachReport).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('writing an observation about an athlete takes the per-athlete access check', async () => {
@@ -410,6 +463,22 @@ describe('POST: the video must be of the athlete the observation is about (CL-A1
     expect(mockConcerns).toHaveBeenCalledWith('org-1', 'vs-other-child', 'ATH-1');
     expect(mockAccess.mock.invocationCallOrder[0])
       .toBeLessThan(mockConcerns.mock.invocationCallOrder[0]);
+  });
+
+  test('the athlete-scope check runs before the destination check, so a stray video id is not confirmed to exist', async () => {
+    // audit CL-B12: assertVideoIsFilmStudyMedia's refusal is distinct from
+    // not-of-athlete. Run first, it told a coach whether a video id they could
+    // not reach was real. The scope check answers the same for missing,
+    // another gym's and another child's video, so it goes first.
+    await POST(req('POST', body));
+    const mockConcerns = jest.mocked(
+      jest.requireMock('@/src/server/pilot/videoAthleteScope').assertVideoConcernsAthlete,
+    );
+    const mockDestination = jest.mocked(
+      jest.requireMock('@/src/server/pilot/videoDestination').assertVideoIsFilmStudyMedia,
+    );
+    expect(mockConcerns.mock.invocationCallOrder[0])
+      .toBeLessThan(mockDestination.mock.invocationCallOrder[0]);
   });
 
   test('a video that is not of that athlete is refused and nothing is written', async () => {

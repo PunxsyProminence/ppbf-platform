@@ -8,6 +8,7 @@ import {
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
   GuardianConsentMissingError,
+  type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
@@ -23,6 +24,32 @@ const COVERAGE_REFUSAL_CODES = new Set([
   'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
   'GUARDIAN_CONSENT_UNREADABLE',
 ]);
+
+// The publish claim's own read of the video row, on the claim's client. Same
+// predicate the executor and the playback gate hold: only a 'ready' Film
+// Study video is ever handed out. FOR SHARE, so an archive or re-quarantine
+// (a bare UPDATE on the row) waits for the claim rather than landing between
+// this read and the claim's commit. Lock order: guardian links are already
+// held, and every other path takes links before the video row.
+async function assertVideoStillPublishable(
+  client: QueryExecutor,
+  organizationId: string,
+  videoSessionId: string,
+): Promise<void> {
+  const result = await client.query<{ status: string; capture_take_id: string | null }>(
+    `select status, capture_take_id from pilot.video_sessions
+      where organization_id = $1 and video_session_id = $2
+      for share`,
+    [organizationId, videoSessionId],
+  );
+  const video = result.rows[0];
+  if (!video || video.status !== 'ready' || video.capture_take_id !== null) {
+    throw new ConflictError(
+      "This video is no longer released for viewing, so it can't be published. Check its status in Video Analysis.",
+      'VIDEO_NOT_PUBLISHABLE',
+    );
+  }
+}
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
 // reason to tell the coach their (already-committed) publish failed -- same
@@ -143,6 +170,11 @@ export async function POST(request: NextRequest) {
           // Inside the claim: a clip tag added after the draft was made still
           // stops the publish (tagged clips are staff only, owner 2026-10-03).
           await assertVideoHasNoLiveClipTags(principal.organizationId, publication.video_session_id, client);
+          // And the video itself is still what was approved (audit CL-B10):
+          // released ('ready'), and Film Study media rather than teaching
+          // footage. A video archived or sent back to quarantine after
+          // approval used to reach the shelf as metadata anyway.
+          await assertVideoStillPublishable(client, principal.organizationId, publication.video_session_id);
         },
       });
     } catch (error) {

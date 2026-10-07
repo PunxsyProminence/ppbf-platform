@@ -17,6 +17,7 @@ import { resolveScanSubject } from './captureParticipants';
 import { PilotError } from './errors';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
+import { listLiveTagSubjects } from './videoClipTags';
 import { assertConsentCoversVideo } from './videoPlaybackConsent';
 import { scanVideoSession } from './videoScan';
 import {
@@ -202,21 +203,37 @@ export async function sweepQuarantinedVideos(options: {
     // rather than as missing paperwork, and the skip never rests on one
     // check alone. Same skip path as missing consent: reclaimable, backed
     // off, and re-checked on every retry.
+    //
+    // CL-B5: EVERY CHILD THE CLIP SHOWS, NOT ONLY THE ONE IT IS FILED UNDER.
+    // Tags can be added while a video is still quarantined, and a sparring
+    // clip tagged with a second child went to the vision screen on the first
+    // child's consent alone. Same subjects as Film Study (filmStudyConsent.ts):
+    // the video's own athlete plus every live tag subject; a tag naming a
+    // deleted athlete skips the screen, as Film Study refuses it. A clip
+    // with no athlete and no tags still names nobody and asks nobody.
     let contentSkippedForConsent = false;
     let contentSkippedReason: string | null = null;
-    if (config.content === 'vision') {
-      if (subject.isTeaching) {
-        // Nothing to ask, and nobody to ask it of.
-      } else if (claim.athlete_id) {
+    if (config.content === 'vision' && !subject.isTeaching) {
+      const tagSubjects = await listLiveTagSubjects(claim.organization_id, claim.video_session_id);
+      if (tagSubjects.some((tag) => tag.athlete_deleted)) {
+        contentSkippedForConsent = true;
+        contentSkippedReason = 'tagged_athlete_deleted';
+      }
+      const athleteIds = [...new Set([
+        ...(claim.athlete_id ? [claim.athlete_id] : []),
+        ...tagSubjects.map((tag) => tag.athlete_id),
+      ])];
+      for (const athleteId of athleteIds) {
+        if (contentSkippedForConsent) break;
         try {
-          await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
+          await assertGuardianMediaConsent(claim.organization_id, athleteId);
         } catch (error) {
           if (!(error instanceof GuardianConsentMissingError)) throw error;
           contentSkippedForConsent = true;
           contentSkippedReason = 'guardian_consent_missing';
         }
         try {
-          await assertConsentCoversVideo(claim.organization_id, claim.athlete_id);
+          await assertConsentCoversVideo(claim.organization_id, athleteId);
         } catch (error) {
           const reason = error instanceof PilotError && error.code ? COVERAGE_SKIP_REASONS[error.code] : undefined;
           if (!reason) throw error;

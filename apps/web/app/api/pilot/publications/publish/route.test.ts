@@ -241,6 +241,39 @@ describe('POST /api/pilot/publications/publish', () => {
     expect(mockPublish).not.toHaveBeenCalled();
   });
 
+  /*
+   * audit CL-B10: approval looked at a released video; a video archived or
+   * sent back to quarantine between approval and publish still reached the
+   * shelf as metadata. The claim now reads the video row on its own client.
+   */
+  test.each([
+    ['archived', { status: 'archived', capture_take_id: null }],
+    ['back in quarantine', { status: 'quarantined', capture_take_id: null }],
+    ['teaching footage', { status: 'ready', capture_take_id: 'take-1' }],
+    ['gone', undefined],
+  ])('a video that is %s at publish time is refused inside the claim', async (_label, row) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    const client = {
+      query: jest.fn(async (sql: string) => ({
+        rows: sql.includes('from pilot.video_sessions') ? (row ? [row] : []) : [],
+      })),
+    };
+    mockPublish.mockImplementation(async (args) => {
+      await args.verifyBeforeCommit(client);
+      return 'lib-1';
+    });
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('VIDEO_NOT_PUBLISHABLE');
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining('from pilot.video_sessions'),
+      ['org-1', 'vid-1'],
+    );
+  });
+
   test('a claim that finds nothing to publish reports it instead of returning a library id', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockGetPublication.mockResolvedValueOnce(publicationRow());
@@ -374,6 +407,8 @@ describe('a tagged clip cannot be published', () => {
       async query<T>(text: string): Promise<{ rows: T[] }> {
         statements.push(text);
         if (text.includes('to_regclass')) return { rows: [{ ready: true }] as T[] };
+        // The claim's own read of the video row (CL-B10): released Film Study media.
+        if (text.includes('from pilot.video_sessions')) return { rows: [{ status: 'ready', capture_take_id: null }] as T[] };
         return { rows: tagRows as T[] };
       },
     };

@@ -9,7 +9,7 @@ import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanR
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertConsentCoversVideo, writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -35,9 +35,21 @@ jest.mock('@/src/server/pilot/videoSessions', () => ({
 // review-link and approve now ask the guardian-consent gate (CL-A21);
 // review-link's refusals are asserted in review-link/route.test.ts. Consent
 // covers video unless a test says otherwise.
+// approve writes under writeUnderPlaybackConsent (from #1286): the consent
+// check for every named athlete, then the write on the held transaction. The
+// double keeps that order and, when there are subjects, hands the write a
+// sentinel client so the assertions can see the write took it; the real
+// transaction is proven against Postgres in playbackConsentRace.pg.test.ts
+// (mintUnderPlaybackConsent delegates to it).
+const TX_CLIENT = { query: jest.fn() };
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
   mintUnderPlaybackConsent: jest.fn(async (_org: string, _ids: string[], mint: () => unknown) => mint()),
+  writeUnderPlaybackConsent: jest.fn(async (org: string, ids: string[], write: (client: unknown) => unknown) => {
+    const { assertConsentCoversVideo } = jest.requireMock('@/src/server/pilot/videoPlaybackConsent');
+    for (const id of ids) await assertConsentCoversVideo(org, id);
+    return write(ids.length > 0 ? TX_CLIENT : null);
+  }),
 }));
 jest.mock('@/src/server/pilot/blob', () => ({ getPilotVideoSasUrl: jest.fn(() => 'https://blob/sas') }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn().mockResolvedValue(undefined) }));
@@ -109,7 +121,7 @@ describe('POST /api/pilot/video/scan-review', () => {
 
     expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({
       priorScanState: video().scan_state,
-    }));
+    }), TX_CLIENT);
   });
 
   test('approving asks whether this admin holds a current review link', async () => {
@@ -162,6 +174,27 @@ describe('POST /api/pilot/video/scan-review', () => {
     expect(mockReview).not.toHaveBeenCalled();
   });
 
+  test('an approval is written inside the consent transaction, a block is not', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'ready', scan_state: 'passed' });
+    const mockWrite = writeUnderPlaybackConsent as jest.Mock;
+
+    expect((await POST(req({ video_session_id: 'vs-1', decision: 'approve' }))).status).toBe(200);
+    expect(mockWrite).toHaveBeenCalledWith('org-1', ['ath-1'], expect.any(Function));
+    // The write took the transaction's client: a route that ran the review
+    // on the pool after the helper returned would fail here.
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ decision: 'approve' }), TX_CLIENT);
+
+    jest.clearAllMocks();
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'quarantined', scan_state: 'blocked' });
+    expect((await POST(req({ video_session_id: 'vs-1', decision: 'block' }))).status).toBe(200);
+    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockReview).toHaveBeenCalledWith(expect.anything(), null);
+  });
+
   test('blocking is not held to consent, and teaching footage has no guardian to ask', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetVideo.mockResolvedValueOnce(video());
@@ -191,7 +224,7 @@ describe('POST /api/pilot/video/scan-review', () => {
       reviewedByAccountId: 'admin-1',
       reviewedByRole: 'organization_admin',
       notes: 'ordinary sparring',
-    }));
+    }), TX_CLIENT);
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
       details: expect.objectContaining({ action: 'video_scan_review', decision: 'approve' }),
     }));
@@ -242,7 +275,7 @@ describe('POST /api/pilot/video/scan-review', () => {
     const res = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
 
     expect(res.status).toBe(200);
-    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ priorScanState: 'blocked' }));
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ priorScanState: 'blocked' }), TX_CLIENT);
   });
 
   test('an environment with no scanner still has a human exit', async () => {
