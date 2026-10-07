@@ -194,7 +194,17 @@ migration was added). The one that has its own column, `pilot.shadow_chat_sessio
 is stamped with the deletion's timestamp for the athlete's own SHADOW conversations and for
 staff conversations about them. Nothing is erased: every row stays in the database until the
 cleanup job (Method 1) removes the athlete row, and the foreign keys that cascade from it take
-most of these rows with it.
+most of these rows with it. Five SHADOW tables (chat sessions, evidence bundles, decisions,
+recommendations, film-study proposals) no longer have that key: the shadow-deidentify-keys
+migration dropped it so the purge can keep those rows de-identified (Jason 2026-10-06: "delete
+any thing that personally Identifys the person but we keep data that [makes] the Ai and ML
+better"), and until a purge declares that it has de-identified them first (`set local
+ppbf.shadow_purge = 'deidentify'` in its transaction), the trigger `pilot_shadow_rows_follow_athlete`
+deletes them with the athlete row exactly as the key did. The same holds for the seven
+account-keyed SHADOW tables (chat sessions and messages, evidence bundles, learning events,
+recommendation effectiveness, the human review queue, data-deletion requests) and
+`pilot_shadow_rows_follow_account` when a guardian's account row is purged. Pinned by
+`shadowDeidentifyKeysMigration.pg.test.ts`.
 
 **Marked deleted -- no screen shows them after the deletion:**
 - Videos: the video lists (coach and admin), any read of one video (publishing, clipping,
@@ -508,8 +518,11 @@ System has no automatic trigger for age-of-majority. The organization must manua
 Deletion tracking (`deleted_at`) exists on `pilot.athletes` and `pilot.accounts`, added by
 `infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql`, and on
 `pilot.shadow_chat_sessions` (SHADOW history). The other tables holding minors' data have none;
-a row tied to an athlete is deleted when its athlete is, and its readers check the athlete row
-(`apps/web/src/server/pilot/deletedAthletes.ts`). The pattern, as an example:
+a row tied to an athlete is deleted when its athlete is (by its foreign key, or for the five
+SHADOW tables whose athlete key the shadow-deidentify-keys migration dropped, by the trigger
+`pilot_shadow_rows_follow_athlete` until the purge de-identifies them instead), and its readers
+check the athlete row (`apps/web/src/server/pilot/deletedAthletes.ts`). The pattern, as an
+example:
 
 ```sql
 -- Example: athletes table
