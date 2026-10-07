@@ -103,7 +103,7 @@ import { checkIn } from './athleteCheckIns';
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
 import { resolveActorDisplayName } from './onePercentClub';
-import { getSubjectIdentity } from './profileDb';
+import { getSubjectIdentity, resolveRelationship } from './profileDb';
 
 jest.setTimeout(180_000);
 
@@ -559,6 +559,16 @@ describe('display-name reads: a deleted person is named by neither', () => {
     await expect(resolveActorDisplayName({
       organizationId: ORG_ID, accountId: LIVE_ADMIN, role: 'organization_admin',
     })).resolves.toBe('Admin Pat Admin');
+  });
+
+  // The literal location the work item cited (profileDb.ts, resolveRelationship's
+  // athlete-viewer arm): the viewer's own athlete row decides whether the
+  // coach is "my staff", read on the session's athlete id alone.
+  test("resolveRelationship: the live athlete's coach is their staff; the deleted athlete's session has none", async () => {
+    const coach = await getSubjectIdentity(ORG_ID, COACH);
+    if (!coach) throw new Error('test bug: coach identity missing');
+    await expect(resolveRelationship(athletePrincipal(LIVE_ATHLETE), coach, ORG_ID)).resolves.toBe('subject_is_my_staff');
+    await expect(resolveRelationship(athletePrincipal(DELETED_ATHLETE), coach, ORG_ID)).resolves.toBe('none');
   });
 
   test('resolveActorDisplayName: the deleted athlete and the deleted login get the phrases a nameless record already got', async () => {

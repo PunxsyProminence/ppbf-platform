@@ -295,7 +295,11 @@ export async function resolveRelationship(
   if (viewer.role === 'athlete' && viewer.athleteId) {
     const mine = await queryOne<{ athlete_id: string }>(
       `select athlete_id from pilot.athletes
-       where organization_id = $1 and athlete_id = $2 and coach_id = $3`,
+       where organization_id = $1 and athlete_id = $2 and coach_id = $3
+         -- Scope B: a deleted athlete's surviving session is admitted on its
+         -- own athlete id alone nowhere (OD-2026-09-29-002 item 10); the
+         -- live row decides, as in the parent arm below.
+         and deleted_at is null`,
       [subjectOrganizationId, viewer.athleteId, subject.accountId],
     );
     return mine ? 'subject_is_my_staff' : 'none';
