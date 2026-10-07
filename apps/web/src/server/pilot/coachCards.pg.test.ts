@@ -237,8 +237,10 @@ const DRILLS: Array<{ org: string; id: string; name: string; focus: string; diff
 async function seedDrills(client: Client): Promise<void> {
   for (const drill of DRILLS) {
     await client.query(
-      `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active)
-       values ($1, $2, $3, 'Fixture', $4, $5, $6)`,
+      // One cue each: the cue rule (OD-2026-10-06-026) would otherwise refuse
+      // every card below. The rule's own cases are in 'the cue rule on a card'.
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active, cues)
+       values ($1, $2, $3, 'Fixture', $4, $5, $6, '{"Fixture cue"}')`,
       [drill.org, drill.id, drill.name, drill.focus, drill.difficulty, drill.active],
     );
   }
@@ -753,6 +755,80 @@ describe('a card read is bounded by CURRENT access, not by who issued it', () =>
 // exactly why the issuance lookup has to check status: without it, active
 // memberships are still found under an archived program and real work is
 // issued to a group the gym has closed and the UI no longer offers.
+// OD-2026-10-06-026 ruling 2 against a real pilot.drills: a technique drill with
+// no cue cannot be newly assigned; a conditioning one can. This database has no
+// reference_drill_id column, which is exactly the fixture-firewall case the
+// to_jsonb read exists for.
+describe('the cue rule on a card', () => {
+  async function seedCueless(client: Client): Promise<void> {
+    await client.query(
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active)
+       values ($1, 'drill-nocue', 'Double jab entry', 'technical', 'Close distance.', 'intermediate', true),
+              ($1, 'drill-cond-nocue', 'Rope rounds', 'Conditioning', 'Three rounds.', 'beginner', true)`,
+      [ORG_ID],
+    );
+  }
+
+  test('an individual card on a cue-less technique drill is refused by name, and writes nothing', async () => {
+    const client = await freshDatabase('cards_cue_rule_card');
+    activeClient = client;
+    try {
+      await seedCueless(client);
+      await expect(
+        issueCoachCard({
+          organizationId: ORG_ID,
+          athleteId: ATHLETES[0].id,
+          assignedByAccountId: COACH_ID,
+          drillId: 'drill-nocue',
+        }),
+      ).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', message: expect.stringContaining('"Double jab entry"') });
+
+      const written = await client.query(`select 1 from pilot.drill_assignments`);
+      expect(written.rows).toHaveLength(0);
+
+      // The drill itself is untouched: refused, not edited or retired.
+      const drill = await client.query<{ active: boolean; cues: string[] }>(
+        `select active, cues from pilot.drills where drill_id = 'drill-nocue'`,
+      );
+      expect(drill.rows[0]).toEqual({ active: true, cues: [] });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a conditioning drill with no cue is issued, to one athlete and to a program', async () => {
+    const client = await freshDatabase('cards_cue_rule_conditioning');
+    activeClient = client;
+    try {
+      await seedCueless(client);
+      await insertProgramWithMembers(client, [{ athleteId: ATHLETES[0].id, status: 'active' }]);
+
+      const card = await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillId: 'drill-cond-nocue',
+      });
+      expect(card.drill_name).toBe('Rope rounds');
+
+      const group = await issueCoachCardToProgram({
+        actor: coachActor,
+        programId: PROGRAM_ID,
+        drillId: 'drill-cond-nocue',
+      });
+      expect(group?.issued).toHaveLength(1);
+
+      await expect(
+        issueCoachCardToProgram({ actor: coachActor, programId: PROGRAM_ID, drillId: 'drill-nocue' }),
+      ).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED' });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
 describe('an archived program cannot receive new work', () => {
   test('a same-org archived program_id is refused by name, and writes nothing', async () => {
     const client = await freshDatabase('cards_archived_program');

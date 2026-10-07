@@ -21,10 +21,11 @@ import {
   recordCompletion,
   verifyCompletion,
 } from './progression';
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
 
 beforeEach(() => {
   currentClient = fakeClient();
@@ -48,6 +49,57 @@ describe('assignDrill', () => {
     assignedByAccountId: 'coach-1',
     drillId: 'drill-jab',
   };
+
+  // OD-2026-10-06-026 ruling 2 at the writer: an active technique drill with no
+  // cue is refused before the transaction opens; conditioning is exempt.
+  describe('the cue rule on a new assignment', () => {
+    const found = (overrides: Record<string, unknown> = {}) => ({
+      name: 'Jab', category: 'technical', cues: [], reference_drill_id: null, ...overrides,
+    });
+
+    test('refuses a technique drill with no cue, naming the missing cue, before any write', async () => {
+      mockQueryOne.mockResolvedValueOnce(found());
+
+      await expect(assignDrill(base)).rejects.toMatchObject({
+        code: 'DRILL_CUE_REQUIRED',
+        status: 409,
+        message: expect.stringContaining('"Jab" has no coaching cue'),
+      });
+      expect(mockWithTransaction).not.toHaveBeenCalled();
+      expect(mockQueryOne.mock.calls[0][0]).toContain("to_jsonb(d) ->> 'reference_drill_id'");
+      expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'drill-jab']);
+    });
+
+    test('a conditioning drill with no cue is assigned (the exemption, by category)', async () => {
+      mockQueryOne.mockResolvedValueOnce(found({ category: 'Conditioning' }));
+      currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
+
+      await expect(assignDrill(base)).resolves.toEqual({ assignment_id: 'asg-1' });
+    });
+
+    test('a drill adopted from a conditioning reference drill is exempt by that discipline', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(found({ category: 'strength', reference_drill_id: 'drl_ref' }))
+        .mockResolvedValueOnce({ discipline: 'conditioning' });
+      currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
+
+      await expect(assignDrill(base)).resolves.toEqual({ assignment_id: 'asg-1' });
+      expect(mockQueryOne.mock.calls[1][0]).toContain('from pilot.drill_library');
+      expect(mockQueryOne.mock.calls[1][1]).toEqual(['org-1', 'drl_ref']);
+    });
+
+    test('a drill with a cue is assigned without reading its reference', async () => {
+      mockQueryOne.mockResolvedValueOnce(found({ cues: ['Turn the fist'], reference_drill_id: 'drl_ref' }));
+      currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
+
+      await expect(assignDrill(base)).resolves.toEqual({ assignment_id: 'asg-1' });
+      expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    });
+
+    test('a drill the read does not find is left to the insert, which refuses it as before', async () => {
+      await expect(assignDrill(base)).rejects.toMatchObject({ code: 'DRILL_NOT_ASSIGNABLE' });
+    });
+  });
 
   test('writes the assignment and closes out the gap in one transaction', async () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
