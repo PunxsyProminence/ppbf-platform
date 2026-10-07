@@ -84,7 +84,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, which needs the review-queue and chat-session foreign keys relaxed (migration) and a de-identification sweep; the athlete's coincide with the 2-year athlete purge. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` exists to hold the date (shadow-deidentify-keys migration); nothing writes it yet, so today a guardian's flagged chats are still deleted at the 1-year purge; the purge-time hold and the 2-year sweep are not yet built; the athlete's coincide with the 2-year athlete purge. |
 
 ### Public interest-form inquiries
 
@@ -196,7 +196,18 @@ migration was added). The one that has its own column, `pilot.shadow_chat_sessio
 is stamped with the deletion's timestamp for the athlete's own SHADOW conversations and for
 staff conversations about them. Nothing is erased: every row stays in the database until the
 cleanup job (Method 1) removes the athlete row, and the foreign keys that cascade from it take
-most of these rows with it.
+most of these rows with it. Five SHADOW tables (chat sessions, evidence bundles, decisions,
+recommendations, film-study proposals) no longer have that key: the shadow-deidentify-keys
+migration dropped it so the purge can keep those rows de-identified (Jason 2026-10-06: "delete
+any thing that personally Identifys the person but we keep data that [makes] the Ai and ML
+better"); the trigger `pilot_shadow_rows_follow_athlete` deletes every such row that still
+names the athlete with the athlete row, exactly as the key did (a row the purge has re-keyed to a
+token no longer names them; a conversation with `subject_deleted_at` set is held for the flagged-chat
+window, with its messages and the evidence they cite). The same holds for the seven
+account-keyed SHADOW tables (chat sessions and messages, evidence bundles, learning events,
+recommendation effectiveness, the human review queue, data-deletion requests) and
+`pilot_shadow_rows_follow_account` when a guardian's account row is purged. Pinned by
+`shadowDeidentifyKeysMigration.pg.test.ts`.
 
 **Marked deleted -- no screen shows them after the deletion:**
 - Videos: the video lists (coach and admin), any read of one video (publishing, clipping,
@@ -377,7 +388,7 @@ blanked to `[name]` in every turn of that gym, other children's kept AI text inc
 purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
 read-only production count); the token can still be matched to the retired login through its
 chat sessions and messages until those are de-identified too (**not yet built**: the sessions /
-messages / evidence / feedback / review-queue de-identification needs a migration first). A
+messages / evidence / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code; `shadow_feedback` has never had an account key and needs no migration). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
 `shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by
@@ -539,8 +550,11 @@ System has no automatic trigger for age-of-majority. The organization must manua
 Deletion tracking (`deleted_at`) exists on `pilot.athletes` and `pilot.accounts`, added by
 `infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql`, and on
 `pilot.shadow_chat_sessions` (SHADOW history). The other tables holding minors' data have none;
-a row tied to an athlete is deleted when its athlete is, and its readers check the athlete row
-(`apps/web/src/server/pilot/deletedAthletes.ts`). The pattern, as an example:
+a row tied to an athlete is deleted when its athlete is (by its foreign key, or for the five
+SHADOW tables whose athlete key the shadow-deidentify-keys migration dropped, by the trigger
+`pilot_shadow_rows_follow_athlete` until the purge de-identifies them instead), and its readers
+check the athlete row (`apps/web/src/server/pilot/deletedAthletes.ts`). The pattern, as an
+example:
 
 ```sql
 -- Example: athletes table
