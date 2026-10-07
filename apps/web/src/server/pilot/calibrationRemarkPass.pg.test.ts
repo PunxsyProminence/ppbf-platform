@@ -31,12 +31,20 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 import { seedCaptureTake } from '../../testing/captureFixture';
 import type { PilotPrincipal } from './auth';
 
 jest.setTimeout(180_000);
+
+// The routes resolve the caller from a session cookie; this suite is about
+// what a signed-in annotator is served, so the principal is supplied directly.
+jest.mock('@/src/server/pilot/http', () => {
+  const actual = jest.requireActual('@/src/server/pilot/http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
 
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
@@ -113,6 +121,11 @@ let ontology: typeof import('./calibration/ontology');
 let qaReportLoader: typeof import('./calibration/qaReportLoader');
 let coverage: typeof import('./teachShadow/coverage');
 let gate: typeof import('../../../app/api/pilot/calibration/annotatorGate');
+let workspaceRoute: typeof import('../../../app/api/pilot/calibration/annotation-set/route');
+let submitRoute: typeof import('../../../app/api/pilot/calibration/annotation-set/submit/route');
+let eventsRoute: typeof import('../../../app/api/pilot/calibration/events/route');
+let bodyPointsRoute: typeof import('../../../app/api/pilot/calibration/body-points/route');
+let signIn: (accountId: string, organizationId?: string) => void;
 let db: Client;
 let PROJECT_ID: string;
 let OTHER_PROJECT_ID: string;
@@ -402,6 +415,21 @@ beforeAll(async () => {
   qaReportLoader = await import('./calibration/qaReportLoader');
   coverage = await import('./teachShadow/coverage');
   gate = await import('../../../app/api/pilot/calibration/annotatorGate');
+  workspaceRoute = await import('../../../app/api/pilot/calibration/annotation-set/route');
+  submitRoute = await import('../../../app/api/pilot/calibration/annotation-set/submit/route');
+  eventsRoute = await import('../../../app/api/pilot/calibration/events/route');
+  bodyPointsRoute = await import('../../../app/api/pilot/calibration/body-points/route');
+  const http = await import('@/src/server/pilot/http');
+  signIn = (accountId, organizationId = ORG_ID) => {
+    (http.requirePrincipal as jest.Mock).mockResolvedValue({
+      accountId,
+      role: 'coach',
+      organizationId,
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+  };
 
   for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
     await db.query(
@@ -561,6 +589,31 @@ describe('the runner', () => {
     }
   });
 
+  test('each thing the migration adds is required on its own, and a real run restores it', async () => {
+    const client = await prerequisiteDatabase('ppbf_test_calib_remark_pass_clauses');
+    try {
+      const runner = await loadRunner();
+      const sql = await readMigration(THIS_SQL);
+      await runner.applyMigrationTransaction(client, sql);
+      for (const breakIt of [
+        'alter table pilot.calibration_annotation_sets drop constraint pilot_calibration_sets_pass_number_positive',
+        'drop trigger pilot_calibration_sets_pass_guard on pilot.calibration_annotation_sets',
+        'alter table pilot.calibration_annotation_sets disable trigger pilot_calibration_sets_pass_guard',
+        'drop trigger pilot_calibration_adjudications_first_pass_guard on pilot.calibration_adjudications',
+        'alter table pilot.calibration_adjudications disable trigger pilot_calibration_adjudications_first_pass_guard',
+        'alter table pilot.calibration_annotation_sets drop column pass_number',
+      ]) {
+        await client.query(breakIt);
+        await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+          'CALIBRATION_REMARK_PASS_NOT_READY',
+        );
+        await runner.applyMigrationTransaction(client, sql);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the annotations runner still refuses a database with neither key', async () => {
     const client = await prerequisiteDatabase('ppbf_test_calib_remark_pass_neither_key');
     try {
@@ -656,6 +709,10 @@ describe('when a later pass may be opened', () => {
       'update pilot.calibration_annotation_sets set calibration_clip_id = $3 where organization_id = $1 and annotation_set_id = $2',
       [ORG_ID, pass2.setId, fresh.clipId],
     )).rejects.toThrow(PASS_FIXED);
+    await expect(db.query(
+      'update pilot.calibration_annotation_sets set organization_id = $3 where organization_id = $1 and annotation_set_id = $2',
+      [ORG_ID, pass2.setId, OTHER_ORG_ID],
+    )).rejects.toThrow(PASS_FIXED);
     expect(await passNumbers(clipId, A)).toEqual([1, 2]);
   });
 
@@ -667,6 +724,100 @@ describe('when a later pass may be opened', () => {
       [ORG_ID, clipId],
     );
     expect(await passNumbers(clipId, A)).toEqual([]);
+  });
+});
+
+describe('deletion still removes every pass and everything on it', () => {
+  // A's pass 1 and pass 2 and B's pass 1, all submitted with body-point data,
+  // and an adjudication between the two first passes.
+  async function loadedClip(options: Parameters<typeof newClip>[0] = {}): Promise<string> {
+    const clipId = await newClip(options);
+    const orgId = options.orgId ?? ORG_ID;
+    const stage = async (set: SetRef): Promise<string> => {
+      const eventId = await punch(set);
+      await completeEvent(set, eventId);
+      await submit(set);
+      return eventId;
+    };
+    const first = await firstPass(A, clipId, V04, orgId);
+    const firstEvent = await stage(first);
+    await stage(await insertPass(A, clipId, 2, { version: V04, orgId }));
+    const other = await firstPass(B, clipId, V04, orgId);
+    const otherEvent = await stage(other);
+    await adjudication.recordAdjudication({
+      organizationId: orgId,
+      adjudicationId: crypto.randomUUID(),
+      calibrationClipId: clipId,
+      annotationSetIdA: first.setId,
+      annotationSetIdB: other.setId,
+      sourceEventIdA: firstEvent,
+      sourceEventIdB: otherEvent,
+      resolutionType: 'accept_a',
+      adjudicatorAccountId: ADJUDICATOR,
+      ontologyVersion: V04,
+      expectedCurrentRevision: 0,
+    });
+    return clipId;
+  }
+
+  async function remaining(clipId: string): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const table of [
+      'calibration_annotation_sets',
+      'calibration_annotation_events',
+      'calibration_body_moments',
+      'calibration_body_points',
+      'calibration_adjudications',
+    ]) {
+      // Points carry their set, not their clip.
+      const result = await db.query<{ n: string }>(
+        table === 'calibration_body_points'
+          ? `select count(*)::text as n from pilot.${table} p
+              where exists (select 1 from pilot.calibration_body_moments m
+                             where m.body_moment_id = p.body_moment_id and m.calibration_clip_id = $1)`
+          : `select count(*)::text as n from pilot.${table} where calibration_clip_id = $1`,
+        [clipId],
+      );
+      counts[table] = Number(result.rows[0].n);
+    }
+    return counts;
+  }
+
+  const GONE = {
+    calibration_annotation_sets: 0,
+    calibration_annotation_events: 0,
+    calibration_body_moments: 0,
+    calibration_body_points: 0,
+    calibration_adjudications: 0,
+  };
+
+  test('deleting the footage', async () => {
+    const videoId = `vs-remark-doomed-${crypto.randomUUID().slice(0, 8)}`;
+    await seedVideo(ORG_ID, videoId, A);
+    const clipId = await loadedClip({ videoId });
+    const before = await remaining(clipId);
+    expect(before).toMatchObject({ calibration_annotation_sets: 3, calibration_body_moments: 9, calibration_adjudications: 1 });
+    expect(before.calibration_body_points).toBeGreaterThan(0);
+
+    await db.query('delete from pilot.video_sessions where video_session_id = $1', [videoId]);
+    expect(await remaining(clipId)).toEqual(GONE);
+  });
+
+  test('deleting the whole organization', async () => {
+    // pilot.accounts does not cascade from pilot.organizations (base schema),
+    // so the doomed organization's study names this suite's accounts.
+    const orgId = `org-remark-doomed-${crypto.randomUUID().slice(0, 8)}`;
+    const videoId = `vs-${orgId}`;
+    await db.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [orgId],
+    );
+    await seedVideo(orgId, videoId, A);
+    const clipId = await loadedClip({ orgId, videoId, projectId: await newProject(orgId) });
+    expect((await remaining(clipId)).calibration_annotation_sets).toBe(3);
+
+    await db.query('delete from pilot.organizations where organization_id = $1', [orgId]);
+    expect(await remaining(clipId)).toEqual(GONE);
   });
 });
 
@@ -707,10 +858,10 @@ describe('while a later pass exists, its annotator reads nothing of the earlier 
     expect(own?.annotation_set_id).toBe(pass2.setId);
     expect(own?.pass_number).toBe(2);
 
-    const events = await annotations.listAnnotationEvents(ORG_ID, own!.annotation_set_id);
-    expect(events).toEqual([]);
-    expect(events.map((event) => event.event_id)).not.toContain(event1);
-    expect(own?.annotation_set_id).not.toBe(pass1.setId);
+    expect(await annotations.listAnnotationEvents(ORG_ID, own!.annotation_set_id)).toEqual([]);
+    // Pass 1 and its event are still there; they are just not what is served.
+    const first = await annotations.listAnnotationEvents(ORG_ID, pass1.setId);
+    expect(first.map((event) => event.event_id)).toEqual([event1]);
   });
 
   test('before any later pass, the gate and the workspace read behave as they always did', async () => {
@@ -764,6 +915,10 @@ describe('a second annotator\'s blinding is unchanged', () => {
 
     const listed = await blinding.listAnnotationSetsForAnnotator(reader(B), clipId);
     expect(listed.map((set) => set.annotation_set_id).sort()).toEqual([pass1.setId, other.setId].sort());
+    // B may read A's first pass, and learns nothing from it about a second.
+    const theirs = await blinding.getAnnotationSetForAnnotator(reader(B), pass1.setId);
+    expect(theirs?.annotation_set_id).toBe(pass1.setId);
+    expect(theirs).not.toHaveProperty('superseded_by_later_pass');
     expect(await blinding.getAnnotationSetForAnnotator(reader(B), pass2.setId)).toBeNull();
     expect(await blinding.listAnnotationEventsForAnnotator(reader(B), pass2.setId)).toBeNull();
     await expect(gate.loadOwnAnnotationSet(principal(B), pass2.setId)).rejects.toThrow(NOT_FOUND);
@@ -828,6 +983,15 @@ describe('readers that compare people read first passes only', () => {
     await expect(record(pass2, event2, other, otherEvent)).rejects.toThrow('CALIBRATION_ADJUDICATION_NOT_FIRST_PASS');
     await record(pass1, event1, other, otherEvent);
     expect(await adjudication.listAdjudicationsForClip(ORG_ID, clipId)).toHaveLength(1);
+
+    // And a stored adjudication cannot be repointed at one afterwards.
+    for (const column of ['annotation_set_id_a', 'annotation_set_id_b']) {
+      await expect(db.query(
+        `update pilot.calibration_adjudications set ${column} = $3
+          where organization_id = $1 and calibration_clip_id = $2`,
+        [ORG_ID, clipId, pass2.setId],
+      )).rejects.toThrow('CALIBRATION_ADJUDICATION_NOT_FIRST_PASS');
+    }
   });
 
   test('the agreement report loads with a re-marked clip in the study and does not count it as two readings', async () => {
@@ -843,20 +1007,33 @@ describe('readers that compare people read first passes only', () => {
     const first = await firstPass(A, paired);
     await punch(first);
     await submit(first);
+    // A's second pass reads the punch differently from both first passes, so
+    // a report built from it would show a disagreement.
     const second = await insertPass(A, paired, 2);
-    await punch(second);
+    await punch(second, { punchType: 'lead_hook' });
     await submit(second);
     const other = await firstPass(B, paired);
     await punch(other);
     await submit(other);
 
+    // Clip 3: both first passes submitted and A part-way through a re-mark.
+    // The report still compares the first passes (adjudication, above, waits).
+    const reopened = await newClip({ projectId });
+    for (const annotator of [A, B]) {
+      const set = await firstPass(annotator, reopened);
+      await punch(set);
+      await submit(set);
+    }
+    await punch(await insertPass(A, reopened, 2), { punchType: 'lead_hook' });
+
     const result = await qaReportLoader.loadCalibrationQaReport(ORG_ID, projectId);
+    expect(Object.values(result!.report.disagreementCounts).every((count) => count === 0)).toBe(true);
     expect(result?.report.clipProgress).toMatchObject({
-      totalClips: 2,
+      totalClips: 3,
       clipsAwaitingSecondAnnotator: 1,
-      clipsReadyToCompare: 1,
+      clipsReadyToCompare: 2,
     });
-    expect(result?.report.comparisonCount).toBe(1);
+    expect(result?.report.comparisonCount).toBe(2);
     expect(result?.excludedClips).toEqual({
       readingInProgress: 0,
       noRecordedPair: 0,
@@ -929,5 +1106,92 @@ describe('organization isolation is unchanged', () => {
       orgId: OTHER_ORG_ID, videoId: OTHER_VIDEO_ID, projectId: OTHER_PROJECT_ID, creator: OTHER_A,
     });
     await expect(insertPass(OTHER_A, foreignClip, 2, { orgId: OTHER_ORG_ID })).rejects.toThrow(NOT_SUBMITTED);
+  });
+});
+
+describe('the routes themselves, signed in as the annotator, against the database', () => {
+  const request = (path: string, init?: { method: string; body: unknown }) =>
+    new NextRequest(`http://localhost/api/pilot/calibration/${path}`, init && {
+      method: init.method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(init.body),
+    });
+
+  test('a re-marking annotator is served the later pass only, and cannot reach the earlier one by id', async () => {
+    // Pass 1: one punch with all its body marks, submitted. Pass 2: open.
+    const clipId = await newClip();
+    const pass1 = await firstPass(A, clipId, V04);
+    const event1 = await punch(pass1);
+    await completeEvent(pass1, event1);
+    await submit(pass1);
+    const firstMoments = (await bodyPoints.listBodyDataForSet(ORG_ID, pass1.setId)).moments
+      .map((moment) => moment.body_moment_id);
+    const pass2 = await insertPass(A, clipId, 2, { version: V04 });
+    signIn(A);
+
+    // The workspace, by clip.
+    const workspace = await workspaceRoute.GET(request(`annotation-set?calibration_clip_id=${clipId}`));
+    const workspaceText = await workspace.text();
+    const workspaceBody = JSON.parse(workspaceText);
+    expect(workspace.status).toBe(200);
+    expect(workspaceBody.set).toMatchObject({ annotation_set_id: pass2.setId, pass_number: 2 });
+    expect(workspaceBody.events).toEqual([]);
+    for (const id of [pass1.setId, event1, ...firstMoments]) {
+      expect(workspaceText).not.toContain(id);
+    }
+
+    // Body points, by set id.
+    const earlierMarks = await bodyPointsRoute.GET(request(`body-points?annotation_set_id=${pass1.setId}`));
+    expect(earlierMarks.status).toBe(404);
+    const earlierText = await earlierMarks.text();
+    for (const id of [event1, ...firstMoments]) {
+      expect(earlierText).not.toContain(id);
+    }
+    const laterMarks = await bodyPointsRoute.GET(request(`body-points?annotation_set_id=${pass2.setId}`));
+    const laterBody = await laterMarks.json();
+    expect(laterMarks.status).toBe(200);
+    expect([laterBody.moments, laterBody.stance_labels]).toEqual([[], []]);
+    expect(laterBody.set).not.toHaveProperty('superseded_by_later_pass');
+
+    // Writes and the submit door, by the earlier pass's id: the same 404 a
+    // stranger's set gets, and nothing changes.
+    const write = await eventsRoute.DELETE(request('events', {
+      method: 'DELETE',
+      body: { annotation_set_id: pass1.setId, event_id: event1 },
+    }));
+    expect(write.status).toBe(404);
+    const resubmit = await submitRoute.POST(request('annotation-set/submit', {
+      method: 'POST',
+      body: { annotation_set_id: pass1.setId },
+    }));
+    expect(resubmit.status).toBe(404);
+    expect((await annotations.listAnnotationEvents(ORG_ID, pass1.setId)).map((event) => event.event_id))
+      .toEqual([event1]);
+
+    // Opening the clip again hands back the open pass, not the finished one.
+    const reopened = await workspaceRoute.POST(request('annotation-set', {
+      method: 'POST',
+      body: { calibration_clip_id: clipId },
+    }));
+    expect((await reopened.json()).set.annotation_set_id).toBe(pass2.setId);
+  });
+
+  test('with a single pass the same routes serve it as before', async () => {
+    const clipId = await newClip();
+    const only = await firstPass(A, clipId);
+    const eventId = await punch(only);
+    signIn(A);
+
+    const workspace = await workspaceRoute.GET(request(`annotation-set?calibration_clip_id=${clipId}`));
+    const body = await workspace.json();
+    expect(body.set).toMatchObject({ annotation_set_id: only.setId, pass_number: 1, status: 'in_progress' });
+    expect(body.events.map((event: { event_id: string }) => event.event_id)).toEqual([eventId]);
+    expect((await bodyPointsRoute.GET(request(`body-points?annotation_set_id=${only.setId}`))).status).toBe(200);
+
+    // Somebody else asking for it is still told there is no such set.
+    signIn(B);
+    expect((await bodyPointsRoute.GET(request(`body-points?annotation_set_id=${only.setId}`))).status).toBe(404);
+    const theirs = await (await workspaceRoute.GET(request(`annotation-set?calibration_clip_id=${clipId}`))).json();
+    expect([theirs.set, theirs.events]).toEqual([null, []]);
   });
 });

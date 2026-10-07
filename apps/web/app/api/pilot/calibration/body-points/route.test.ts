@@ -47,6 +47,7 @@ const OWN_SET = {
   annotation_set_id: 'set-1',
   calibration_clip_id: 'clip-1',
   annotator_account_id: 'coach-1',
+  superseded_by_later_pass: false,
   ontology_version: 'boxing-ontology-0.4',
   status: 'in_progress',
   submitted_at: null,

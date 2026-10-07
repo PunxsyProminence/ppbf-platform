@@ -121,7 +121,10 @@ export type AnnotationSetBlindedReason =
   /** The reader's own earlier pass, after they opened a later one. */
   | 'superseded_by_own_later_pass'
   /** Another annotator's repeat pass. Only first passes are shared. */
-  | 'sibling_not_a_first_pass';
+  | 'sibling_not_a_first_pass'
+  /** A set in the decision does not say which pass it is, so it cannot be
+   *  placed before or after another. */
+  | 'pass_number_unreadable';
 
 /**
  * The answer, and WHY.
@@ -202,6 +205,14 @@ export function resolveAnnotationSetVisibility(
       && set.calibration_clip_id === requestedSet.calibration_clip_id
       && set.annotator_account_id === actorAccountId,
   );
+
+  // DEFAULT TO LESS, before any pass is compared with another. The column is
+  // NOT NULL, so this is a hand-built row -- and a comparison against a
+  // missing number is false in both directions, which would read a
+  // superseded pass as the latest.
+  if (![requestedSet, ...readerOwnSets].every((set) => Number.isInteger(set.pass_number))) {
+    return { outcome: 'blinded', reason: 'pass_number_unreadable' };
+  }
 
   // Rule 1. Above every state check on purpose: an annotator locked out of
   // their own in-progress work cannot do the task. The one thing that
@@ -469,7 +480,12 @@ export async function getAnnotationSetForAnnotator(
     siblingSets,
   });
 
-  return visibility.outcome === 'visible' ? set : null;
+  // The lookup's flag stays here: on another annotator's first pass it would
+  // say "they have labelled this clip again", which is a fact about their
+  // work the reader is owed nothing of.
+  const visible: AnnotationSetRow & { superseded_by_later_pass?: boolean } = { ...set };
+  delete visible.superseded_by_later_pass;
+  return visibility.outcome === 'visible' ? visible : null;
 }
 
 /**

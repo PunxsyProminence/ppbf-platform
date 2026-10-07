@@ -5,7 +5,6 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
   getAnnotationSet,
   listAnnotationSetsForClip,
-  type AnnotationSetLookupRow,
   type AnnotationSetRow,
 } from '@/src/server/pilot/calibration/annotations';
 import {
@@ -168,20 +167,27 @@ export async function loadPlayableClip(
  * put the reading they are meant to be repeating blind back on their screen
  * -- its events, body moments, points and stance labels. It gets the same
  * message, and it never comes back, so a third pass is blind to both.
+ *
+ * The lookup's flag has done its work by the time this returns and is left
+ * off the row: routes put the set on the wire as they got it.
  */
 export async function loadOwnAnnotationSet(
   principal: PilotPrincipal,
   annotationSetId: string,
-): Promise<AnnotationSetLookupRow> {
+): Promise<AnnotationSetRow> {
   const set = await getAnnotationSet(principal.organizationId, annotationSetId);
+  // `!== false`, not "is true": a row that does not say it is the latest
+  // pass has not shown that it is.
   if (
     !set
     || set.annotator_account_id !== principal.accountId
-    || set.superseded_by_later_pass
+    || set.superseded_by_later_pass !== false
   ) {
     throw new Error('Not found: no such annotation set for this annotator');
   }
-  return set;
+  const own: AnnotationSetRow & { superseded_by_later_pass?: boolean } = { ...set };
+  delete own.superseded_by_later_pass;
+  return own;
 }
 
 /**
