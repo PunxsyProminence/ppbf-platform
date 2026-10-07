@@ -71,6 +71,7 @@ const SET = {
   annotation_set_id: 'set-1',
   calibration_clip_id: 'clip-1',
   annotator_account_id: 'coach-1',
+  superseded_by_later_pass: false,
   ontology_version: 'boxing-ontology-0.1',
   status: 'in_progress',
   pass_number: 1,
@@ -184,7 +185,10 @@ describe('whose set it is', () => {
   test('the caller\'s own set comes back', async () => {
     mockGetSet.mockResolvedValue(SET);
 
-    await expect(loadOwnAnnotationSet(COACH, 'set-1')).resolves.toBe(SET);
+    const { superseded_by_later_pass: flag, ...row } = SET as AnnotationSetRow & { superseded_by_later_pass: boolean };
+    expect(flag).toBe(false);
+    // Without the lookup's flag: routes send this row to the client as it is.
+    await expect(loadOwnAnnotationSet(COACH, 'set-1')).resolves.toStrictEqual(row);
   });
 
   test('another annotator\'s set is reported exactly as a missing one is', async () => {
@@ -228,10 +232,20 @@ describe('whose set it is', () => {
   });
 
   test('the caller\'s latest pass comes back', async () => {
-    const latest = { ...SET, annotation_set_id: 'set-2', pass_number: 2, superseded_by_later_pass: false };
-    mockGetSet.mockResolvedValue(latest);
-    await expect(loadOwnAnnotationSet(COACH, 'set-2')).resolves.toBe(latest);
+    mockGetSet.mockResolvedValue({ ...SET, annotation_set_id: 'set-2', pass_number: 2 });
+    await expect(loadOwnAnnotationSet(COACH, 'set-2')).resolves.toMatchObject({
+      annotation_set_id: 'set-2',
+      pass_number: 2,
+    });
   });
+
+  test.each([undefined, null, 'false', 0])(
+    'a lookup row whose flag is %p, not false, has not shown it is the latest pass and is refused',
+    async (flag) => {
+      mockGetSet.mockResolvedValue({ ...SET, superseded_by_later_pass: flag });
+      await expect(loadOwnAnnotationSet(COACH, 'set-1')).rejects.toThrow(/^Not found/);
+    },
+  );
 
   test.each([
     ['listed first', [2, 1, 3]],

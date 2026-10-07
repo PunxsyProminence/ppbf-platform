@@ -547,3 +547,43 @@ describe('repeat passes by one annotator', () => {
       .toEqual({ outcome: 'refused', reason: 'adjudicator_annotated_this_clip' });
   });
 });
+
+describe('repeat passes: order of the list, and a pass that does not say its number', () => {
+  const first = setOf(A, 'submitted', { annotation_set_id: 'set-a-1' });
+  const open = setOf(A, 'in_progress', { annotation_set_id: 'set-a-2', pass_number: 2 });
+  const theirs = setOf(B, 'submitted');
+  const visibility = (requestedSet: BlindingSubjectSet, siblingSets: BlindingSubjectSet[]) =>
+    resolveAnnotationSetVisibility({
+      actorAccountId: A,
+      actorOrganizationId: ORG,
+      actorRole: 'coach',
+      requestedSet,
+      siblingSets,
+    });
+
+  test.each([
+    ['earliest first', [first, open, theirs]],
+    ['latest first', [open, first, theirs]],
+  ])("the reader's standing is their latest pass with the list %s", (_label, siblings) => {
+    expect(visibility(theirs, siblings)).toEqual({ outcome: 'blinded', reason: 'reader_not_submitted' });
+    expect(visibility(first, siblings)).toEqual({ outcome: 'blinded', reason: 'superseded_by_own_later_pass' });
+    expect(visibility(open, siblings)).toEqual({ outcome: 'visible', reason: 'own_set' });
+  });
+
+  test.each([undefined, null, Number.NaN, '2', 1.5])('pass number %p is never read as first or latest', (value) => {
+    const unnumbered = { ...first, pass_number: value } as unknown as BlindingSubjectSet;
+    const refusal = { outcome: 'blinded', reason: 'pass_number_unreadable' };
+
+    expect(visibility(unnumbered, [unnumbered, open])).toEqual(refusal);
+    expect(visibility(open, [unnumbered, open])).toEqual(refusal);
+    expect(visibility(theirs, [unnumbered, theirs])).toEqual(refusal);
+    expect(visibility({ ...theirs, pass_number: value } as unknown as BlindingSubjectSet, [first, theirs]))
+      .toEqual(refusal);
+    // And it is not a reading an adjudicator can be handed.
+    expect(resolveAdjudicationEligibility({
+      actorRole: 'organization_admin',
+      actorAccountId: ADJUDICATOR,
+      sets: [unnumbered, theirs],
+    })).toEqual({ outcome: 'refused', reason: 'insufficient_sets_for_comparison' });
+  });
+});
