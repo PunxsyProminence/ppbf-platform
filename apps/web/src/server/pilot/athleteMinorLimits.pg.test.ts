@@ -658,8 +658,13 @@ describe('athleteMinorLimits.ts against real rows', () => {
   test('one gym never sees another gym\'s rows for the same athlete id', async () => {
     const client = await migratedDatabase('limits_isolation');
     try {
-      await insertRaw(client, { organization_id: OTHER_ORG_ID, athlete_id: SHARED_ATHLETE_ID, set_by_account_id: VISITING_COACH_ID, value_number: 99 });
+      // This gym's row FIRST, the other gym's SECOND: the newest row across
+      // both gyms belongs to the other gym, so a read that forgot the
+      // organization would answer 99 here. (With the order reversed the
+      // newest row happened to be the right one, and a mutant that dropped
+      // the organization predicate from the in-force read stayed green.)
       await insertRaw(client, { organization_id: ORG_ID, athlete_id: SHARED_ATHLETE_ID, value_number: 20 });
+      await insertRaw(client, { organization_id: OTHER_ORG_ID, athlete_id: SHARED_ATHLETE_ID, set_by_account_id: VISITING_COACH_ID, value_number: 99 });
 
       const here = await readAthleteMinorLimits(ADMIN, SHARED_ATHLETE_ID);
       expect(here.history.map((row) => row.value_number)).toEqual([20]);
@@ -668,17 +673,22 @@ describe('athleteMinorLimits.ts against real rows', () => {
 
       const there = await readAthleteMinorLimits(OTHER_ADMIN, SHARED_ATHLETE_ID);
       expect(there.history.map((row) => row.value_number)).toEqual([99]);
+      expect(there.limits.heat_exposure_minutes_per_session?.value_number).toBe(99);
 
-      // Writing here lands here only.
+      // Writing here lands here only -- and the other gym's reads do not move.
       await setMinorLimit({ actor: COACH, athleteId: SHARED_ATHLETE_ID, ...HEAT_20, valueNumber: 25 });
       const { rows } = await client.query(
         `select organization_id, value_number::float8 as v from pilot.athlete_minor_limits order by limit_seq`,
       );
       expect(rows).toEqual([
-        { organization_id: OTHER_ORG_ID, v: 99 },
         { organization_id: ORG_ID, v: 20 },
+        { organization_id: OTHER_ORG_ID, v: 99 },
         { organization_id: ORG_ID, v: 25 },
       ]);
+      expect((await readAthleteMinorLimits(ADMIN, SHARED_ATHLETE_ID)).limits.heat_exposure_minutes_per_session?.value_number).toBe(25);
+      const thereAfter = await readAthleteMinorLimits(OTHER_ADMIN, SHARED_ATHLETE_ID);
+      expect(thereAfter.limits.heat_exposure_minutes_per_session?.value_number).toBe(99);
+      expect((await getCurrentMinorLimit(OTHER_ADMIN, SHARED_ATHLETE_ID, 'heat_exposure_minutes_per_session'))?.value_number).toBe(99);
     } finally {
       await client.end();
     }
