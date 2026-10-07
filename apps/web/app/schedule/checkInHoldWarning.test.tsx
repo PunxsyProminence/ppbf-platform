@@ -169,6 +169,36 @@ describe('attendance check-in on a held athlete', () => {
     await waitFor(() => expect(screen.queryByText('Active Training Hold')).toBeNull());
   });
 
+  test('a late answer for athlete A is never drawn under athlete B, who was picked while it was in flight', async () => {
+    const fetchMock = installFetchMock({});
+    let releasePost: (response: Response) => void = () => undefined;
+    const answered = new Promise<Response>((resolve) => {
+      releasePost = resolve;
+    });
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/pilot/scheduler') && init?.method === 'POST') return answered;
+      return original(input, init);
+    });
+
+    render(<SchedulerPage />);
+    await screen.findByText('Class Schedule');
+    const button = await screen.findByRole('button', { name: 'Update Attendance' });
+    fireEvent.click(button); // athlete-1 is selected; the POST is now in flight
+
+    const picker = button.closest('article')!.querySelectorAll('select')[1];
+    fireEvent.change(picker, { target: { value: 'athlete-2' } });
+    releasePost(await jsonResponse({ ok: true, class_id: 'class-1', athlete_id: 'athlete-1', hold_warning: HOLD_WARNING }));
+    await screen.findByText('Attendance updated with override.');
+
+    // A's hold is not on B's screen...
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+
+    // ...and comes back with A.
+    fireEvent.change(picker, { target: { value: 'athlete-1' } });
+    expect(await screen.findByText('Active Training Hold')).toBeInTheDocument();
+  });
+
   test('the warning does not outlive the next action', async () => {
     const fetchMock = installFetchMock({ hold_warning: HOLD_WARNING });
 

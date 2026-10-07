@@ -610,8 +610,10 @@ export default function CoachProgressionIntelligencePage() {
       // OD-2026-10-06-024 ruling 1: the assignment went through whether or not
       // the athlete is held; the answer says if they are. A hold the banner's
       // own read did not know about (placed since) joins the banner too.
-      const assigned = (await res.json().catch(() => ({}))) as { hold_warning?: unknown };
-      const warned = holdWarningFrom(assigned.hold_warning);
+      // An answer that cannot be read is not "no warning": the write is
+      // committed and this answer is the only fresh hold read, so it says unknown.
+      const assigned = (await res.json().catch(() => null)) as { hold_warning?: unknown } | null;
+      const warned = assigned && typeof assigned === 'object' ? holdWarningFrom(assigned.hold_warning) : 'unreadable';
       setAssignedUnderHold(warned ? { athleteId: selectedAthlete, hold: warned } : null);
       if (warned && warned !== 'unreadable') setActiveHold({ athleteId: selectedAthlete, hold: warned });
       setShowAssignForm(false);

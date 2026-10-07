@@ -182,9 +182,12 @@ export default function SchedulerPage() {
   // An action error or a failed athlete list leaves this false.
   const [schedulerFailed, setSchedulerFailed] = useState(false);
   const [errorDetail, setErrorDetail] = useState<HoldRefusalDetail | null>(null);
-  // Set by a check-in that went through for an athlete on an active hold.
+  // Set by a check-in that went through for an athlete on an active hold,
+  // stored WITH the athlete it was returned for and matched against the
+  // current selection at render: a response that lands after the coach has
+  // moved on to another athlete must never be drawn under that athlete's name.
   // Cleared with every new action, like the messages beside it.
-  const [checkInHold, setCheckInHold] = useState<CheckInHoldWarning | 'unreadable' | null>(null);
+  const [checkInHold, setCheckInHold] = useState<{ athleteId: string; hold: CheckInHoldWarning | 'unreadable' } | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
 
   // Every error write on this page goes through here, so a hold's detail is
@@ -333,7 +336,8 @@ export default function SchedulerPage() {
         ? 'The class is full, so this athlete was added to the waitlist.'
         : successMessage;
       if (payload.action === 'attendance_checkin') {
-        setCheckInHold(checkInHoldWarningFrom(result.hold_warning));
+        const warned = checkInHoldWarningFrom(result.hold_warning);
+        setCheckInHold(warned ? { athleteId: String(payload.athlete_id ?? ''), hold: warned } : null);
       }
       if (result.membership_flags && result.membership_flags.length > 0) {
         const summary = result.membership_flags
@@ -356,6 +360,10 @@ export default function SchedulerPage() {
 
   const targetAthleteForAthleteRole = athleteId;
   const targetAthleteForOthers = selectedAthleteId;
+  const shownCheckInHold = checkInHold
+    && checkInHold.athleteId === (role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers)
+    ? checkInHold.hold
+    : null;
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
@@ -666,11 +674,7 @@ export default function SchedulerPage() {
                   {(roleCanOverrideAttendance(role) || role === 'parent') && athletes.length > 0 ? (
                     <select
                       value={selectedAthleteId}
-                      onChange={(e) => {
-                          setSelectedAthleteId(e.target.value);
-                          // The warning belongs to the athlete it was returned for.
-                          setCheckInHold(null);
-                        }}
+                      onChange={(e) => setSelectedAthleteId(e.target.value)}
                       className="select"
                     >
                       {athletes.map((item) => (
@@ -731,20 +735,20 @@ export default function SchedulerPage() {
                   </button>
 
                   {/* Beside the action it belongs to (OD-2026-10-06-024 ruling 1). */}
-                  {checkInHold && checkInHold !== 'unreadable' ? (
+                  {shownCheckInHold && shownCheckInHold !== 'unreadable' ? (
                     <div className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]" role="status">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">
-                        {HOLD_SCOPE_LABEL[checkInHold.scope]} is currently paused for this athlete ({checkInHold.reason_category}).
+                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete ({shownCheckInHold.reason_category}).
                         The check-in was NOT blocked.
                       </p>
-                      <p className="t-body mt-[var(--s3)]">{checkInHold.athlete_explanation}</p>
+                      <p className="t-body mt-[var(--s3)]">{shownCheckInHold.athlete_explanation}</p>
                       <p className="t-body mt-[var(--s3)]">
-                        To lift it: {checkInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
+                        To lift it: {shownCheckInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
                       </p>
                     </div>
                   ) : null}
-                  {checkInHold === 'unreadable' ? (
+                  {shownCheckInHold === 'unreadable' ? (
                     <div className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s4)]" role="status">
                       <p className="t-eyebrow">Training hold: could not be read</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">

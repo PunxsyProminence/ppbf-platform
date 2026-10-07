@@ -2464,6 +2464,8 @@ describe('drill assignment warns on an active training hold and does not block',
     holds?: Array<Record<string, unknown>>;
     holdsOk?: boolean;
     assignAnswer?: Record<string, unknown>;
+    /** The 201 arrives but its body is not JSON (truncated, proxied). */
+    assignBodyUnreadable?: boolean;
     posted: Posted[];
   }) {
     return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2471,7 +2473,14 @@ describe('drill assignment warns on an active training hold and does not block',
       const method = (init?.method ?? 'GET').toUpperCase();
       if (url.endsWith('/api/pilot/progression/assignments') && method === 'POST') {
         options.posted.push({ path: url, body: JSON.parse(String(init?.body)) });
-        return { ok: true, status: 201, json: async () => options.assignAnswer ?? { assignment_id: 'asg-1' } } as Response;
+        return {
+          ok: true,
+          status: 201,
+          json: async () => {
+            if (options.assignBodyUnreadable) throw new SyntaxError('Unexpected end of JSON input');
+            return options.assignAnswer ?? { assignment_id: 'asg-1' };
+          },
+        } as Response;
       }
       if (url.includes('/api/pilot/training-holds')) {
         if (options.holdsOk === false) return { ok: false, status: 500, json: async () => ({}) } as Response;
@@ -2564,6 +2573,18 @@ describe('drill assignment warns on an active training hold and does not block',
     await assign();
 
     expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
+  });
+
+  test('an assignment answer that is not readable JSON is "unknown", never "no hold"', async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [], posted, assignBodyUnreadable: true }));
+    await openAssignForm();
+
+    await assign();
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
   });
 
   test('a hold_warning this screen cannot read is never drawn as a hold, and never as "no hold"', async () => {
