@@ -2524,7 +2524,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "POST is a read (mechanical writesLikely=true is wrong): returns the full athlete profile row. requireRole then assertActorCanAccessAthlete before getAthleteById. admin admitted via alias. Parent not admitted.",
+    "notes": "POST is a read (mechanical writesLikely=true is wrong): returns the full athlete profile row to staff. requireRole then assertActorCanAccessAthlete before getAthleteById. admin admitted via alias. Parent not admitted. An athlete caller gets the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2554,7 +2554,7 @@
     "missingGate": false,
     "looksWrong": "Coach branch returns the whole org roster (names, weight class, gym_status, coach_id) for athletes the coach is not assigned to; only dob and emergency_contact are redacted in SQL (entities.ts coachRosterQuery, line 406).",
     "confidence": "high",
-    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items.",
+    "notes": "Athlete: self only; parent: linked children via SQL join; coach: getAthletesForCoach (org-wide roster with partial redaction, not athleteIdsForCoach); org admin: all athletes, paged. No other roles get items. Athlete and parent items are the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id/deleted_at/emergency_contact_note (OD-2026-10-06-025 ruling 2); staff rows unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -3864,7 +3864,7 @@
     "missingGate": false,
     "looksWrong": "Athlete role is admitted and sees coach reviews of own sessions (self only via assertActorCanAccessAthlete); confirm that is intended.",
     "confidence": "high",
-    "notes": "Lists coach reviews for a session; access checked on session.athlete_id (list/route.ts). Parent is not admitted by requireRole.",
+    "notes": "Lists coach reviews for a session; access checked on session.athlete_id (list/route.ts). Parent is not admitted by requireRole. An athlete caller gets the named-field family shape (familyRecordView.ts): coach_name from getCoachDisplayName in place of coach_id, no organization_id (OD-2026-10-06-025 ruling 2); staff rows unchanged.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

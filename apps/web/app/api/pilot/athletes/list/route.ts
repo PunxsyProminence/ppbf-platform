@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getAthleteById, getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
 import { assertAthleteBelongsToOrganization, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import type { PilotAthlete } from '@/src/server/pilot/contracts';
 import { query } from '@/src/server/pilot/db';
+import { toFamilyAthletes } from '@/src/server/pilot/familyRecordView';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -24,7 +26,11 @@ export async function GET(request: NextRequest) {
       // (OD-2026-09-29-002 item 10).
       await assertAthleteBelongsToOrganization(principal.organizationId, principal.athleteId);
       const athlete = await getAthleteById(principal.organizationId, principal.athleteId);
-      return NextResponse.json({ items: athlete ? [athlete] : [] });
+      // The family shape: named fields, coach_name in place of coach_id
+      // (OD-2026-10-06-025 ruling 2). Same for the parent branch below.
+      return NextResponse.json({
+        items: await toFamilyAthletes(principal.organizationId, athlete ? [athlete] : []),
+      });
     }
 
     // `a.deleted_at is null` is the same filter guardianAccess.ts carries on
@@ -40,7 +46,7 @@ export async function GET(request: NextRequest) {
     // every parent surface builds its child selector from, which is why it
     // was the one worth missing.
     if (principal.role === 'parent') {
-      const linkedAthletes = await query(
+      const linkedAthletes = await query<PilotAthlete>(
         `select a.*
          from pilot.athletes a
          join pilot.guardian_links gl on gl.organization_id = a.organization_id and gl.athlete_id = a.athlete_id
@@ -50,7 +56,7 @@ export async function GET(request: NextRequest) {
         [principal.organizationId, principal.accountId],
       );
 
-      return NextResponse.json({ items: linkedAthletes });
+      return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, linkedAthletes) });
     }
 
     // Coaches and organization admins both read the whole roster, and they do
