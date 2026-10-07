@@ -463,7 +463,26 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
   ];
   let sourceId: string;
 
+  // A source that is not owned or open-licence holds at most 10 chunks in all, so
+  // each document here gets an approved source of its own.
+  async function approvedSource(): Promise<string> {
+    const response = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
+      title: 'Zebrafinch Monograph',
+      source_type: 'peer_reviewed',
+      authority_tier: 2,
+      status: 'active',
+    }));
+    expect(response.status).toBe(201);
+    const id = (await response.json()).source.source_id as string;
+    const approved = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'source', entityId: id, action: 'review', approvalState: 'approved',
+    }));
+    expect(approved.status).toBe(200);
+    return id;
+  }
+
   async function manualDocument(name: string, metadata: Record<string, unknown>): Promise<string> {
+    sourceId = await approvedSource();
     const response = await routes.postDocument(jsonRequest('/api/pilot/shadow/library/documents', 'POST', {
       source_id: sourceId,
       document_name: name,
