@@ -408,6 +408,11 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['drill-library-v3', 'drill-vocabulary-widening', 'workout-templates-v2']) {
       expect(at('content-import')).toBeGreaterThan(at(prerequisite));
     }
+    // drill-owner-authored-label replaces a CHECK on drill-library-v3's
+    // pilot.drill_library; its SQL raises before v3 on a fresh rebuild, and on
+    // an existing database the position does not matter (v3 guards the
+    // constraint by name), so this pins the order the rebuild needs.
+    expect(at('drill-owner-authored-label')).toBeGreaterThan(at('drill-library-v3'));
     // calibration-adjudication-revisions adds the revision column and its
     // unique index to pilot.calibration_adjudications, which
     // calibration-adjudication creates. Applied first, a rebuild dies on ALTER
