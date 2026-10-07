@@ -12,7 +12,9 @@ export const runtime = 'nodejs';
  *
  * ALWAYS ANSWERS THE SAME THING
  *
- * 202 with the same body whether a link was sent or not. issueMagicLink is
+ * 202 with the same body whether a link was sent or not (or a 503 for a site
+ * address no link can be built on -- also the same for every address; see the
+ * first step in POST). issueMagicLink is
  * already silent about unknown, deactivated, wrong-role and mismatched
  * addresses -- this route completes that by refusing to leak the difference
  * through status code, body, or timing-adjacent behaviour like skipping the
@@ -85,7 +87,9 @@ export async function POST(request: NextRequest) {
     await recordDurableFailedAttempt(ipKey);
     recordFailedAttempt(ipKey);
 
-    // Failures are swallowed on purpose, and only here.
+    // Per-address failures are swallowed on purpose, and only here (the site
+    // address fault above is the one exception, and it is the same for
+    // every address).
     //
     // issueMagicLink already returns silently for an unknown, deactivated,
     // wrong-role or mismatched address. What is caught here is the other kind:

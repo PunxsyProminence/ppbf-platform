@@ -301,16 +301,24 @@ describe('asking for a second link', () => {
     // retire it.
     await seedParent('mlr-parent-overlap2', 'parent.overlap2@mlr.test');
     const base = magicLinkDependencies();
+    let releaseFirstStore!: () => void;
+    const firstStored = new Promise<void>((resolve) => { releaseFirstStore = resolve; });
     let releaseSecondStore!: () => void;
     const secondStored = new Promise<void>((resolve) => { releaseSecondStore = resolve; });
     let releaseFirstSend!: () => void;
     const firstMaySend = new Promise<void>((resolve) => { releaseFirstSend = resolve; });
     const sent: string[] = [];
 
+    // Gated at every step, so the order is asserted rather than assumed:
+    // first stores, THEN second stores, THEN first sends and finishes, THEN
+    // second sends and finishes.
     const first = issueMagicLink('parent.overlap2@mlr.test', {
       ...base,
+      storeToken: async (row) => {
+        await base.storeToken(row);
+        releaseFirstStore();
+      },
       sendMail: async (message: { body: string }) => {
-        // Wait until the second request has stored its (newer) row.
         await secondStored;
         sent.push(message.body);
       },
@@ -318,6 +326,7 @@ describe('asking for a second link', () => {
     const second = issueMagicLink('parent.overlap2@mlr.test', {
       ...base,
       storeToken: async (row) => {
+        await firstStored;
         await base.storeToken(row);
         releaseSecondStore();
       },

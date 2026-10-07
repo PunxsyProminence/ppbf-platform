@@ -436,7 +436,7 @@ describe('email, with a password or with a link', () => {
     });
 
     test.each([200, 204, 404, 500, 502, 503])(
-      'a %i is not "sent": it says so plainly, as a refusal and not a wait',
+      'a %i is not "sent": the gym-not-answering sentence, as a refusal and not a wait',
       async (status) => {
         const { container } = await renderPanel();
         answer({ [LINK]: { status, body: { ok: true } } });
