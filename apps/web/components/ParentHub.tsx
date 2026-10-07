@@ -903,6 +903,9 @@ export default function ParentHub() {
                   <Link href="/parent/consent" className="btn btn--ghost w-full">
                     Manage Consent
                   </Link>
+                  <Link href="/parent/video" className="btn btn--ghost w-full">
+                    Your athlete&apos;s film
+                  </Link>
                 </div>
               </section>
 

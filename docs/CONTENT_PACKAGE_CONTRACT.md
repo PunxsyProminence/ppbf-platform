@@ -241,7 +241,7 @@ One row = one drill. Identity: drill_id.
 | created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
 | difficulty | yes | `beginner`, `intermediate`, `advanced`, `elite` | What the drill REQUIRES to be attempted at all (not the scale level). |
 | grounding_claim_ids |  | a list separated by `\|`; each item: a capital letter, a capital letter or digit, a hyphen, three digits (A1-001, PS-001); must be a claim in the LOADED research package | Research claims behind the drill, from the LOADED research package, separated by \|. |
-| field_provenance | yes | `PPBF source manual v3`, `LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION`, `COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION` | How the fields were authored. |
+| field_provenance | yes | `PPBF source manual v3`, `LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION`, `COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION`, `PPBF owner-authored` | How the fields were authored. |
 
 Rules:
 
