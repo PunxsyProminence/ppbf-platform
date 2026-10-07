@@ -11901,7 +11901,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Releases quarantined video to ready (release/route.ts). Non-admin must be uploader plus athlete reach; on a tagged clip the coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided before the state refusals and the consent gate so an out-of-reach caller gets hiddenNotFound and learns nothing; requires a current review link and guardian media consent for the clip's own athlete and every tagged athlete.",
+    "notes": "Releases quarantined video to ready (release/route.ts). Non-admin must be uploader plus athlete reach; on a tagged clip the coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided with the other entitlement refusals, before the consent gate, so an out-of-reach caller gets hiddenNotFound and never the consent 409; requires a current review link and guardian media consent for the clip's own athlete and every tagged athlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

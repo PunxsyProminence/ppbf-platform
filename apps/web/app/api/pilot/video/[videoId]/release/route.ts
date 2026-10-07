@@ -116,11 +116,14 @@ export async function POST(
     // entitled on the upload alone, and the consent 409 below would have told
     // them that child's guardian's decision. Playback's rule for a tagged clip
     // (video/[videoId]/route.ts, accessibleAthleteIds: the coach reaches at
-    // least one athlete in it), decided here before the state refusals and
-    // the consent gate, with the same hiddenNotFound every other not-entitled
-    // caller gets. An organization admin reaches every athlete in the
-    // organization and is not asked, as on playback; an untagged clip was
-    // fully decided above and is not asked either.
+    // least one athlete in it), decided here before the consent gate, with
+    // the same hiddenNotFound every other not-entitled caller gets. It also
+    // sits before the state refusals, for consistency with the other
+    // entitlement refusals rather than to hide the state: the coach list
+    // already shows status and scan_state for team footage. An organization
+    // admin reaches every athlete in the organization and is not asked, as
+    // on playback; an untagged clip was fully decided above and is not asked
+    // either.
     if (tagged.length > 0 && !isOrganizationAdminRole(principal.role)) {
       const reach = await accessibleAthleteIds(principal, consentSubjects);
       if (reach.size === 0) {

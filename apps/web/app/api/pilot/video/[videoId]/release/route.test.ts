@@ -603,10 +603,11 @@ describe('releasing a tagged clip', () => {
  * rule above sees the clip's own athlete, never the tags. Playback refuses a
  * tagged clip to a coach who reaches none of the athletes in it
  * (video/[videoId]/route.ts, accessibleAthleteIds); release now does the same,
- * before the state refusals and before consent is asked, so neither the
- * video's state nor the consent 409 can tell a coach about a child they cannot
- * see (coach reads are for the coach of record, a live covering coach or an
- * organization admin: OD-2026-10-05-024 item 2).
+ * before consent is asked, so the consent 409 can no longer tell a coach about
+ * a child they cannot see (coach reads are for the coach of record, a live
+ * covering coach or an organization admin: OD-2026-10-05-024 item 2). It is
+ * placed with the other entitlement refusals, ahead of the state 409s; the
+ * state itself is not a secret from this coach (the coach list shows it).
  *
  * The scenario each test is built from: coach C uploaded untagged team footage
  * (athlete_id null, so the uploader rule had no athlete to ask about), coach D
@@ -645,9 +646,10 @@ describe('releasing a tagged clip the coach reaches nobody in', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('is refused before the state refusals, so the 404 says nothing about the video\'s state either', async () => {
+  test('is refused with the other entitlement refusals, before the state 409s', async () => {
     // Already released: an entitled caller gets the 409 "already been
-    // released". An out-of-reach one must not learn even that.
+    // released". An out-of-reach one gets the entitlement 404, like a caller
+    // who is not the uploader does.
     uploaderOfTeamFootageTaggedByAnother({ athlete_id: null, status: 'ready' });
     mockReach.mockResolvedValueOnce(new Set());
 
@@ -679,8 +681,8 @@ describe('releasing a tagged clip the coach reaches nobody in', () => {
     expect(mockAudit).toHaveBeenCalledTimes(1);
   });
 
-  test('an organization admin is not asked to reach: they reach every athlete in the organization', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+  test.each(['organization_admin', 'admin'] as const)('an %s is not asked to reach: they reach every athlete in the organization', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role }));
     mockQueryOne
       .mockResolvedValueOnce(videoRow({ athlete_id: null }))
       .mockResolvedValueOnce({ status: 'ready' });

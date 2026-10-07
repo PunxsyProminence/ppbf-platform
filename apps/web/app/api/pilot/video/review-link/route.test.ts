@@ -396,8 +396,8 @@ describe('POST /api/pilot/video/review-link reach on a tagged clip', () => {
     expect(mockSas).not.toHaveBeenCalled();
   });
 
-  test('an organization admin is not asked to reach: they reach every athlete in the organization', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+  test.each(['organization_admin', 'admin'] as const)('an %s is not asked to reach: they reach every athlete in the organization', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role }));
     mockAuthorize.mockResolvedValueOnce(quarantined({ athlete_id: null }));
     mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
     mockReach.mockResolvedValueOnce(new Set());
