@@ -316,3 +316,65 @@ describe('GET /api/pilot/video/list tagged clips', () => {
     expect(mockQuery.mock.calls[0][0]).not.toContain(UNTAGGED_SENTINEL);
   });
 });
+
+/*
+ * WHAT A FAMILY RECEIVES FROM THE LIST (videoFamilyView.ts, OD-2026-10-06-025).
+ * Metadata only: the coach's notes travel with the single-video read after
+ * the playback consent check, and the coach's account id never travels to a
+ * family at all. Staff still get the storage row.
+ */
+describe('GET /api/pilot/video/list family projection', () => {
+  const storedRow = {
+    video_session_id: 'v1',
+    title: 'Sparring round 3',
+    notes: 'Guard dropped in round 2.',
+    file_name: 'r3.mp4',
+    file_size_bytes: 100,
+    mime_type: 'video/mp4',
+    status: 'ready',
+    scan_state: 'clean',
+    athlete_id: 'ath-1',
+    uploaded_by_account_id: 'coach-acct-1',
+    created_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  test('the athlete list carries no notes and no coach account id', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([storedRow]);
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].title).toBe('Sparring round 3');
+    expect(body.items[0]).not.toHaveProperty('notes');
+    expect(body.items[0]).not.toHaveProperty('uploaded_by_account_id');
+    expect(JSON.stringify(body)).not.toContain('coach-acct-1');
+    expect(JSON.stringify(body)).not.toContain('Guard dropped');
+  });
+
+  test("the parent list of their child's film carries no notes and no coach account id", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([storedRow]);
+    const res = await GET(request('http://localhost/api/pilot/video/list?athlete_id=ath-1'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items[0]).not.toHaveProperty('notes');
+    expect(body.items[0]).not.toHaveProperty('uploaded_by_account_id');
+    expect(JSON.stringify(body)).not.toContain('coach-acct-1');
+  });
+
+  test('a coach still receives the storage row, notes and uploader included', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([storedRow]);
+    const res = await GET(request('http://localhost/api/pilot/video/list?athlete_id=ath-1'));
+    const body = await res.json();
+    expect(body.items[0].notes).toBe('Guard dropped in round 2.');
+    expect(body.items[0].uploaded_by_account_id).toBe('coach-acct-1');
+  });
+});

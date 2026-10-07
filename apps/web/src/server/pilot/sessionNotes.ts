@@ -26,6 +26,25 @@ import { queryOne } from './db';
 // not collapse into one another here. "No session started today" and "no note
 // written today" are different facts about a child's day.
 
+/**
+ * Whether `actor` is the writer of the note on the session owned by
+ * `sessionAthleteId`, i.e. the one account allowed to change its text
+ * (OD-2026-10-06-025 ruling 4: only the writer edits a session note; staff
+ * add a separate note of their own).
+ *
+ * The row carries no author column, so the writer is the athlete whose
+ * session it is: AthleteWorkspace is the only shipped writer of the column,
+ * and it writes the athlete's own session. The id match is the same test
+ * assertActorCanAccessAthlete applies to an athlete; it is restated here so
+ * the write path depends on one named predicate rather than on a role list.
+ */
+export function isSessionNoteWriter(
+  actor: { readonly role: string; readonly athleteId: string | null },
+  sessionAthleteId: string,
+): boolean {
+  return actor.role === 'athlete' && actor.athleteId !== null && actor.athleteId === sessionAthleteId;
+}
+
 /** Today's session note for one athlete, or null when there is no session. */
 export interface TodaySessionNote {
   /** The human note, or null when the row carries none worth showing. */

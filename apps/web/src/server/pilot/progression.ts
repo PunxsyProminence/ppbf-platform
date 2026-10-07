@@ -97,6 +97,70 @@ export const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.dri
 export const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
       on d.organization_id = a.organization_id and d.drill_id = a.drill_id`;
 
+/**
+ * An assignment as an athlete or a linked guardian receives it
+ * (OD-2026-10-06-025 ruling 2: families see the assigning coach's display
+ * name, never the internal account id).
+ *
+ * Omit is the contract: assigned_by_account_id is not a field of this shape.
+ * The literal in toFamilyAssignments is annotated with it, so the id written
+ * back as a key is an excess-property error. (The annotation is what does
+ * that: an unannotated map callback infers its own return type, and a wider
+ * type still assigns to FamilyAssignment[].) A spread is not checked that
+ * way; the route test "no family item carries any account id, under any
+ * key" is what catches one.
+ */
+export type FamilyAssignment = Omit<DrillAssignment, 'assigned_by_account_id'> & {
+  assigned_by_name: string;
+};
+
+/**
+ * The family projection of assignment rows. Named field by field, never
+ * spread: a spread carries the account id, and every column a later change
+ * adds to ASSIGNMENT_FIELDS, to a family without anyone deciding it should.
+ *
+ * `nameFor` is asked once per distinct coach, not once per row. It is a
+ * parameter so this module does not choose the name reader; the route passes
+ * getCoachDisplayName, whose floor is a phrase and never an id.
+ */
+export async function toFamilyAssignments(
+  rows: DrillAssignment[],
+  nameFor: (accountId: string) => Promise<string>,
+): Promise<FamilyAssignment[]> {
+  const names = new Map<string, string>();
+  await Promise.all(
+    Array.from(new Set(rows.map((row) => row.assigned_by_account_id))).map(async (accountId) => {
+      names.set(accountId, await nameFor(accountId));
+    }),
+  );
+  return rows.map((row): FamilyAssignment => ({
+    assignment_id: row.assignment_id,
+    gap_id: row.gap_id,
+    athlete_id: row.athlete_id,
+    drill_id: row.drill_id,
+    drill_name: row.drill_name,
+    drill_description: row.drill_description,
+    drill_display_name: row.drill_display_name,
+    drill_display_description: row.drill_display_description,
+    drill_category: row.drill_category,
+    drill_cues: row.drill_cues,
+    drill_difficulty: row.drill_difficulty,
+    rep_count: row.rep_count,
+    duration_minutes: row.duration_minutes,
+    frequency_per_week: row.frequency_per_week,
+    due_date: row.due_date,
+    status: row.status,
+    completion_percentage: row.completion_percentage,
+    assigned_by_name: names.get(row.assigned_by_account_id) ?? FAMILY_ASSIGNED_BY_FLOOR,
+    assigned_at: row.assigned_at,
+    created_at: row.created_at,
+  }));
+}
+
+// Unreachable while nameFor answers for every id it is asked; here so the
+// field is a phrase, never undefined, if it ever does not.
+const FAMILY_ASSIGNED_BY_FLOOR = 'Your coach';
+
 export interface AssignmentCompletion {
   completion_id: string;
   assignment_id: string;

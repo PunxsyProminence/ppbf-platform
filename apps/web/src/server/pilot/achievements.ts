@@ -10,6 +10,7 @@ import {
   type RecognitionKind,
 } from '@/src/shared/achievementPaths';
 import { query, queryOne } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 
 /**
  * ACHIEVEMENT PERSISTENCE — goals somebody set for themselves, a coach catching
@@ -302,10 +303,19 @@ export async function getCoachDisplayName(
    * is the right answer, not a bug: you should not be able to name a stranger
    * by holding their account id.
    */
+  /* A DELETED ACCOUNT IS NOT NAMED. deleted_at is the one mark of deletion
+   * (deletedAccountSignIn.ts); an account carrying it falls to the floor
+   * phrase on every surface that names a coach, the same answer as a lapsed
+   * membership. The app's deletion routes mark guardian and athlete logins
+   * only (dataDeletion.ts); a staff login gets the mark from the account
+   * cleanup script (scripts/lib/account-cleanup-plan.mjs) or by hand. The
+   * family screens read this function (OD-2026-10-06-025 ruling 2), and a
+   * name is not something a deleted person keeps lending to records. */
   const row = await queryOne<{ login_email: string | null }>(
     `select a.login_email
      from pilot.accounts a
      where a.account_id = $2
+       and not ${accountDeletedSql('a')}
        and (
          a.organization_id = $1
          or exists (
