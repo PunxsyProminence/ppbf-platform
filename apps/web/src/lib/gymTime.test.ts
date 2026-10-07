@@ -143,6 +143,10 @@ describe('parseInstantAsGymTime', () => {
     expect(iso('2026-07-15 18:00')).toBe('2026-07-15T22:00:00.000Z');
     expect(iso('2026-07-15T18:00:30')).toBe('2026-07-15T22:00:30.000Z');
     expect(iso('2026-07-15T18:00:30.5')).toBe('2026-07-15T22:00:30.500Z');
+    expect(iso('2026-07-15T18:00:30.1')).toBe('2026-07-15T22:00:30.100Z');
+    expect(iso('2026-07-15T18:00:30.250')).toBe('2026-07-15T22:00:30.250Z');
+    expect(iso('2026-07-15T18:00:30.999')).toBe('2026-07-15T22:00:30.999Z');
+    expect(iso('2026-07-15t18:00:00.1234')).toBe('2026-07-15T22:00:00.123Z');
   });
 
   test('a value with Z or an offset is honoured as sent', () => {

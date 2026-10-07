@@ -300,7 +300,7 @@ export function formatGymNumber(
  * 'YYYY-MM-DDTHH:mm', optionally with seconds and fractions, 'T' or a space.
  * Nothing after the time, so no 'Z' and no offset.
  */
-const ZONELESS_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+const ZONELESS_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?$/;
 
 /** The gym zone's wall-clock fields for an instant, as UTC-style numbers. */
 function gymWallFields(instant: Date): number {
@@ -366,8 +366,8 @@ export function parseInstantAsGymTime(value: string): Date | null {
   }
   const [, y, mo, d, h, mi, s, frac] = match;
   const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, s ?? '0'].map(Number);
-  const millis = frac ? Number(frac.padEnd(3, '0')) : 0;
-  const naive = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millis));
+  const millis = frac ? Number(frac.padEnd(3, '0').slice(0, 3)) : 0;
+  const naive = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   // Date.UTC rolls an impossible field over (Feb 30 -> Mar 2); reject it.
   if (
     naive.getUTCFullYear() !== year || naive.getUTCMonth() !== month - 1 || naive.getUTCDate() !== day ||
@@ -375,5 +375,7 @@ export function parseInstantAsGymTime(value: string): Date | null {
   ) {
     return null;
   }
-  return gymWallClockToUtc(naive.getTime());
+  // Solved on whole seconds: gymWallFields drops milliseconds, so a fraction
+  // inside the solve would skew the offset. Added back afterwards.
+  return new Date(gymWallClockToUtc(naive.getTime()).getTime() + millis);
 }
