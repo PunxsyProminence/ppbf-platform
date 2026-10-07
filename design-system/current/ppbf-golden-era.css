@@ -1110,9 +1110,12 @@
    dark and light stays light, so the boundary in the paragraph above holds
    exactly as written and no locked panel changes ground. Where the notes
    below say "wood" or "paper" they describe the 004A pass; the rules are the
-   same rules with new materials. Inks on canvas are measured against its
-   darkest stop (#BCA279, under the weave ~#B99F75): display 6.7, body 5.8,
-   label 5.0, eyebrow 4.6 to 1. The label ink moved one step darker for it.
+   same rules with new materials. Inks on canvas are measured against the
+   darkest pixel the canvas can paint: its darkest stop (#BCA279) where both
+   weave threads cross, which composites to #B39972. There: display 6.3, body
+   5.4, eyebrow 5.0, label 5.0 to 1. The first cut quoted a single-thread
+   pixel and left label and eyebrow at 4.3 and 4.0 on the crossing (Codex
+   review, #1331); the weave was thinned and both inks darkened for it.
    Type and tap floors come from data-surface="kiosk" (the app's one-attribute
    device for a gym-floor surface) on this page's own parts -- header, notices,
    script list, plan -- and not on the live run, which shares the <main>; the
@@ -1286,8 +1289,8 @@
   background-color: #C4AB81;
   background-image:
     /* the weave of cotton duck: warp and weft, one thread in three */
-    repeating-linear-gradient(0deg, rgba(60,40,20,.07) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(60,40,20,.06) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, rgba(60,40,20,.04) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(60,40,20,.035) 0 1px, transparent 1px 3px),
     linear-gradient(168deg, #CDB58D 0%, #C4AB81 58%, #BCA279 100%);
   border: 1px solid var(--brass-700);
   border-radius: var(--r-md);
@@ -1331,7 +1334,7 @@
 .ge-scripts > div > header .t-muted,
 .ge-scripts article .t-muted,
 .ge-scripts ol[aria-label="Session blocks, in the order they run"] .t-muted {
-  color: #3F3016;
+  color: #3A2C14;
 }
 
 /* THE LABEL VOICE ON THE DARK PLAN SECTION. .t-label is --bone-400 by
@@ -1353,7 +1356,7 @@
    dark end of the same metal, so it still reads as the metal voice rather than
    collapsing into body copy. 5.7:1 on the darkest stop of the paper. */
 .ge-scripts > div > header .t-eyebrow {
-  color: #4A3410;
+  color: #3D2A0C;
   text-shadow: 0 1px 0 rgba(255,250,232,.5);
 }
 
