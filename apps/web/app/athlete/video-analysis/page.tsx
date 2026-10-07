@@ -26,15 +26,30 @@ interface ShadowObservationItem {
    technique automatically, and nothing here pretends to. */
 const ML_PLACEHOLDER = 'Not built. Nothing here watches your film and scores it.';
 
+/* The family shape of a video row (videoFamilyView.ts): metadata only. The
+   coach's notes arrive with the playback response below, after the server's
+   consent check, so a round the athlete may not play carries none. */
 interface VideoSession {
   video_session_id: string;
   title: string;
-  notes: string;
   file_name: string;
   file_size_bytes: number;
   status: string;
-  uploaded_by_account_id: string;
   created_at: string;
+}
+
+/* A coach's note as the server signs it for a family: the coach's display
+   name, never an account id (OD-2026-10-06-025 ruling 2). */
+interface CoachNote {
+  text: string;
+  coach_name: string;
+  noted_at: string;
+}
+
+interface ActiveVideo {
+  url: string;
+  title: string;
+  coachNotes: CoachNote[];
 }
 
 function formatBytes(bytes: number): string {
@@ -92,7 +107,7 @@ export default function AthleteVideoAnalysisPage() {
   const [videoError, setVideoError] = useState('');
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
-  const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
+  const [activeVideo, setActiveVideo] = useState<ActiveVideo | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -128,8 +143,8 @@ export default function AthleteVideoAnalysisPage() {
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await openVideoRefusal(res));
-      const data = (await res.json()) as { stream_url: string; title: string };
-      setActiveVideo({ url: data.stream_url, title: data.title });
+      const data = (await res.json()) as { stream_url: string; title: string; coach_notes?: CoachNote[] };
+      setActiveVideo({ url: data.stream_url, title: data.title, coachNotes: data.coach_notes ?? [] });
     } catch (err) {
       setVideoError(err instanceof Error ? err.message : 'That round would not open. Try it again.');
     } finally {
@@ -164,6 +179,25 @@ export default function AthleteVideoAnalysisPage() {
             <video className="mt-[var(--s4)] max-h-[480px] w-full rounded-[var(--r-md)] bg-[var(--hide-950)]" src={activeVideo.url} controls>
               <track kind="captions" />
             </video>
+            {/* Read-only. What a coach wrote on this round, signed with the
+                coach's name and dated (OD-2026-10-06-025 ruling 1). */}
+            <section aria-labelledby="coach-notes-heading" className="mt-[var(--s4)]">
+              <h3 id="coach-notes-heading" className="t-label m-0">Coach notes</h3>
+              {activeVideo.coachNotes.length === 0 ? (
+                <p className="t-muted mt-[var(--s2)]">No coach notes on this round yet.</p>
+              ) : (
+                <ul className="mt-[var(--s2)] list-none space-y-[var(--s3)] p-0">
+                  {activeVideo.coachNotes.map((note, index) => (
+                    <li key={index} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                      <p className="whitespace-pre-wrap text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-100)]">{note.text}</p>
+                      <p className="t-muted mt-[var(--s2)]">
+                        {note.coach_name} · {formatGymStamp(note.noted_at) ?? ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </section>
         ) : null}
 
