@@ -10,6 +10,7 @@ import { query } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { untaggedVideoSql } from '@/src/server/pilot/videoClipTags';
+import { isFamilyVideoCaller, toFamilyVideoListItem } from '@/src/server/pilot/videoFamilyView';
 
 export const runtime = 'nodejs';
 
@@ -218,6 +219,13 @@ export async function GET(request: NextRequest) {
       throw new Error('Forbidden: your role does not have permission to list videos');
     }
 
+    // A FAMILY READS METADATA ONLY (videoFamilyView.ts). The coach's notes and
+    // the coach's account id leave the row here for an athlete or a guardian:
+    // the notes reach them on the single-video read, after the playback
+    // consent check, and the id never does (OD-2026-10-06-025).
+    if (isFamilyVideoCaller(principal.role)) {
+      return NextResponse.json({ items: rows.map(toFamilyVideoListItem) });
+    }
     return NextResponse.json({ items: rows });
   } catch (error) {
     return jsonError(error);
