@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -8,6 +9,14 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+// The coach-name reader runs its own SQL; faking it here keeps these cases
+// about the route's projection, not about pilot.accounts. The deleted-coach
+// and tenancy cases of the real reader live in coachDisplayName.pg.test.ts.
+jest.mock('@/src/server/pilot/achievements', () => {
+  const actual = jest.requireActual('@/src/server/pilot/achievements');
+  return { ...actual, getCoachDisplayName: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -21,6 +30,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachName = getCoachDisplayName as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockWithTransaction = withTransaction as jest.Mock;
@@ -91,6 +101,110 @@ describe('GET /api/pilot/progression/assignments', () => {
     mockQueryOne.mockResolvedValueOnce(null); // no guardian link
     const res = await GET(getRequest('athlete_id=ath-other'));
     expect(res.status).toBe(403);
+  });
+
+  // WHO ASSIGNED IT -- OD-2026-10-06-025 ruling 2 (Jason: "Show coach name,
+  // hide ID"). A family reader gets the assigning coach's display name and
+  // never the account id; staff get the row unchanged. The id is removed at
+  // the server, so no screen can show it by accident.
+  describe('who assigned it: families get a name, never an account id', () => {
+    const ROW = {
+      assignment_id: 'asg-1',
+      gap_id: 'gap-1',
+      athlete_id: 'ath-1',
+      drill_id: 'drill-1',
+      drill_name: 'Pivot drill',
+      drill_description: 'Rounds on the line.',
+      drill_display_name: 'Pivot drill',
+      drill_display_description: 'Rounds on the line.',
+      drill_category: 'footwork',
+      drill_cues: ['Heel up'],
+      drill_difficulty: 'beginner',
+      rep_count: 10,
+      duration_minutes: null,
+      frequency_per_week: 3,
+      due_date: null,
+      status: 'assigned',
+      completion_percentage: 0,
+      assigned_by_account_id: 'acct-coach-1',
+      assigned_at: '2026-10-01T10:00:00.000Z',
+      created_at: '2026-10-01T10:00:00.000Z',
+    };
+    const SECOND_ROW = { ...ROW, assignment_id: 'asg-2', assigned_by_account_id: 'acct-coach-2' };
+
+    beforeEach(() => {
+      mockCoachName.mockImplementation(async (_org: string, accountId: string) =>
+        accountId === 'acct-coach-1' ? 'Coach J Rivera' : 'Your coach',
+      );
+    });
+
+    async function itemsFor(role: 'athlete' | 'parent' | 'coach' | 'organization_admin', rows: unknown[]) {
+      mockRequirePrincipal.mockResolvedValueOnce(
+        principal({ role, athleteId: role === 'athlete' ? 'ath-1' : null, accountId: `acct-${role}` }),
+      );
+      // Every arm of assertActorCanAccessAthlete makes one queryOne read and
+      // takes a row as "yes": live athlete row, guardian link, coach of record,
+      // or the athlete in the admin's gym.
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      mockQuery.mockResolvedValueOnce(rows);
+      const res = await GET(getRequest('athlete_id=ath-1'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Record<string, unknown>[] };
+      return body.items;
+    }
+
+    test('an athlete receives the coach name and no account id', async () => {
+      const [item] = await itemsFor('athlete', [ROW]);
+      expect(item.assigned_by_name).toBe('Coach J Rivera');
+      expect(item).not.toHaveProperty('assigned_by_account_id');
+      // Nothing else the screen renders is lost in the projection.
+      expect(item.drill_display_name).toBe('Pivot drill');
+      expect(item.drill_cues).toEqual(['Heel up']);
+      expect(item.status).toBe('assigned');
+      expect(mockCoachName).toHaveBeenCalledWith('org-1', 'acct-coach-1');
+    });
+
+    test('a linked parent receives the coach name and no account id', async () => {
+      const [item] = await itemsFor('parent', [ROW]);
+      expect(item.assigned_by_name).toBe('Coach J Rivera');
+      expect(item).not.toHaveProperty('assigned_by_account_id');
+    });
+
+    test('no family item carries any account id, under any key', async () => {
+      // The projection is field by field; this is the check that a spread
+      // (or a renamed column) cannot sneak the id back under another name.
+      const items = await itemsFor('athlete', [ROW, SECOND_ROW]);
+      for (const item of items) {
+        expect(JSON.stringify(item)).not.toContain('acct-coach');
+      }
+    });
+
+    test('a coach no longer nameable (deleted, left, or a stranger) shows the neutral label', async () => {
+      // The reader's floor is the phrase; the route passes it through, never
+      // an id in its place.
+      const [item] = await itemsFor('parent', [SECOND_ROW]);
+      expect(item.assigned_by_name).toBe('Your coach');
+      expect(item).not.toHaveProperty('assigned_by_account_id');
+    });
+
+    test('the name is read once per distinct coach, not once per row', async () => {
+      await itemsFor('athlete', [ROW, { ...ROW, assignment_id: 'asg-3' }, SECOND_ROW]);
+      expect(mockCoachName).toHaveBeenCalledTimes(2);
+    });
+
+    test('a coach receives the row unchanged: account id present, no name lookup', async () => {
+      const [item] = await itemsFor('coach', [ROW]);
+      expect(item.assigned_by_account_id).toBe('acct-coach-1');
+      expect(item).not.toHaveProperty('assigned_by_name');
+      expect(mockCoachName).not.toHaveBeenCalled();
+    });
+
+    test('an organization admin receives the row unchanged', async () => {
+      const [item] = await itemsFor('organization_admin', [ROW]);
+      expect(item.assigned_by_account_id).toBe('acct-coach-1');
+      expect(item).not.toHaveProperty('assigned_by_name');
+      expect(mockCoachName).not.toHaveBeenCalled();
+    });
   });
 });
 
