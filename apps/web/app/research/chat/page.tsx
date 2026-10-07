@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -12,6 +12,7 @@ import {
 } from '@/client/libraryResearch';
 import { formatGymClock24 } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 interface QAMessage {
   id: string;
@@ -33,7 +34,17 @@ interface ShadowResearchSignal {
 /* A paper-ground caption label; the sheet's .t-label is tuned for leather. */
 const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.13em] text-[color:var(--hide-600)]';
 
+/* /admin/shadow is open to administrators and the platform owner only
+   (RoleStandaloneView allowedRoles on that page), so the link is offered only
+   to them -- a parent or coach would be bounced to their own dashboard. Read
+   from the same session store OperationsLink reads; null while it resolves is
+   the closed side. This hides a door, it is not the gate. */
+function mayOpenShadowAdmin(role: string | null): boolean {
+  return role === 'admin' || role === 'platform_owner';
+}
+
 export default function ResearchQAChatPage() {
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const [messages, setMessages] = useState<QAMessage[]>([
     {
       id: '0',
@@ -290,9 +301,11 @@ export default function ResearchQAChatPage() {
               <OperationsLink className="btn btn--ghost justify-start">
                 Operations Hub
               </OperationsLink>
-              <Link href="/admin/shadow" className="btn btn--ghost justify-start">
-                SHADOW (Admin)
-              </Link>
+              {mayOpenShadowAdmin(session?.role ?? null) && (
+                <Link href="/admin/shadow" className="btn btn--ghost justify-start">
+                  SHADOW (Admin)
+                </Link>
+              )}
             </div>
           </nav>
 
