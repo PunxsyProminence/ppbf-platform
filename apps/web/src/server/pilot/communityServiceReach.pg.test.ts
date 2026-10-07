@@ -54,10 +54,14 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-community-service-reach-pg-test-${
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 
-// The base schema already carries pilot.coach_coverage and
-// pilot.athletes.deleted_at (both are in production); the two tables read
-// here are layered on top of it the way production applied them.
+// The base schema already carries pilot.coach_coverage. The retention
+// migration adds pilot.athletes.deleted_at, which every authorization query
+// in access.ts and listActivityLog's deleted-athlete predicate require
+// (production has it: see coachCoverage.pg.test.ts for why a fixture
+// without it is a database nobody runs). The two tables read here are
+// layered after it, the way production applied them.
 const LAYERED_MIGRATIONS = [
+  'pilot_slice_postgres_data_retention_deletion_migration.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
   'pilot_slice_postgres_achievements_migration.sql',
 ];
