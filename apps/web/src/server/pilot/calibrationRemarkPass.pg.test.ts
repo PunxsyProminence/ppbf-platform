@@ -1110,13 +1110,20 @@ describe('organization isolation is unchanged', () => {
 });
 
 describe('opening the next pass through the application', () => {
-  const open = (annotator: string, clipId: string, version: string = V01, orgId: string = ORG_ID) =>
+  const open = (
+    annotator: string,
+    clipId: string,
+    version: string = V01,
+    orgId: string = ORG_ID,
+    afterPassNumber: number = 1,
+  ) =>
     annotations.openNextAnnotationPass({
       organizationId: orgId,
       annotationSetId: crypto.randomUUID(),
       calibrationClipId: clipId,
       annotatorAccountId: annotator,
       ontologyVersion: version,
+      afterPassNumber,
     });
 
   test('opens nothing with no earlier pass, or while the earlier pass is in progress', async () => {
@@ -1145,8 +1152,16 @@ describe('opening the next pass through the application', () => {
     expect(await passNumbers(clipId, A)).toEqual([1, 2]);
 
     expect(await annotations.submitAnnotationSet(ORG_ID, second!.annotation_set_id)).not.toBeNull();
-    expect((await open(A, clipId))?.pass_number).toBe(3);
+    // A caller still holding pass 1 as "the pass I am repeating" opens
+    // nothing now that pass 2 is the latest; one holding pass 2 opens pass 3.
+    expect(await open(A, clipId, V01, ORG_ID, 1)).toBeNull();
+    expect(await open(A, clipId, V01, ORG_ID, 3)).toBeNull();
+    expect(await passNumbers(clipId, A)).toEqual([1, 2]);
+    expect((await open(A, clipId, V01, ORG_ID, 2))?.pass_number).toBe(3);
     expect(await passNumbers(clipId, A)).toEqual([1, 2, 3]);
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      await expect(open(A, clipId, V01, ORG_ID, bad)).rejects.toThrow(/^Missing after_pass_number/);
+    }
   });
 
   test('two requests at once open one pass between them', async () => {
@@ -1180,7 +1195,20 @@ describe('opening the next pass through the application', () => {
       );
       let settled = false;
       const pending = open(A, clipId).finally(() => { settled = true; });
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Commit only once the request is seen waiting on the rival's row. A
+      // fixed sleep would let a slow runner start the request after the
+      // commit, where it answers null without ever reaching the key.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 300 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const activity = await db.query<{ n: string }>(
+          `select count(*)::text as n from pg_stat_activity
+            where datname = current_database() and wait_event_type = 'Lock'
+              and query like 'insert into pilot.calibration_annotation_sets%'`,
+        );
+        waiting = Number(activity.rows[0].n);
+      }
+      expect(waiting).toBe(1);
       expect(settled).toBe(false);
       await rival.query('commit');
       expect(await pending).toBeNull();
@@ -1193,6 +1221,14 @@ describe('opening the next pass through the application', () => {
     const rows = await annotations.listAnnotationSetsForClip(ORG_ID, clipId);
     expect(rows.filter((row) => row.pass_number === 2).map((row) => [row.annotation_set_id, row.ontology_version]))
       .toEqual([[rivalSetId, V04]]);
+  });
+
+  test('opens nothing under another vocabulary than the earlier pass was labelled in', async () => {
+    const clipId = await newClip();
+    await submit(await firstPass(A, clipId, V01));
+    expect(await open(A, clipId, V04)).toBeNull();
+    expect(await passNumbers(clipId, A)).toEqual([1]);
+    expect((await open(A, clipId, V01))?.pass_number).toBe(2);
   });
 
   test('another annotator\'s submitted pass, or another organization, opens nothing', async () => {
@@ -1322,6 +1358,9 @@ describe('the routes themselves, signed in as the annotator, against the databas
     expect(opened.status).toBe(200);
     expect(opened.body).toMatchObject({ created: true, set: { pass_number: 2, status: 'in_progress' } });
     const pass2Id = opened.body.set.annotation_set_id as string;
+    for (const id of [pass1.setId, event1]) {
+      expect(JSON.stringify(opened.body)).not.toContain(id);
+    }
 
     const workspace = await workspaceRoute.GET(request(`annotation-set?calibration_clip_id=${clipId}`));
     const workspaceText = await workspace.text();
@@ -1333,6 +1372,7 @@ describe('the routes themselves, signed in as the annotator, against the databas
     // Pressed again: the same open pass, and no third.
     const again = await remark();
     expect(again.body).toMatchObject({ created: false, set: { annotation_set_id: pass2Id } });
+    expect(JSON.stringify(again.body)).not.toContain(pass1.setId);
     expect(await passNumbers(clipId, A)).toEqual([1, 2]);
 
     // One audit row for the pass that was opened, carrying its number; the
