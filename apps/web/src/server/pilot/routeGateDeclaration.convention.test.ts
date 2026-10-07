@@ -380,14 +380,21 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'revokeOwnSessionsInOrganization additionally refuses an account '
       + 'with no active membership in the organization; a platform owner may '
       + 'end its own sessions (audit CL-A17). Revoking somebody else\'s '
-      + 'sessions stays on the admin route.',
+      + 'sessions stays on the admin route. Its session gate is '
+      + 'requirePrincipalForSignOut: the same authentication as '
+      + 'requirePrincipal without the bootstrap-PIN stop, because a session '
+      + 'that still owes a PIN change must be able to end itself '
+      + '(signOutGate.convention.test.ts pins who may call it).',
   ],
   [
     'app/api/pilot/auth/logout/route.ts#POST',
     'SELF-SCOPED. It ends the one session token carried in the caller\'s own '
       + 'cookie and audits under principal.accountId. There is no identifier '
       + 'in the request that could name another account, so there is nothing '
-      + 'for a role gate to decide.',
+      + 'for a role gate to decide. Its session gate is '
+      + 'requirePrincipalForSignOut, so an athlete sent to /change-pin can '
+      + 'still sign out of a shared gym tablet (signOutGate.convention.test.ts '
+      + 'pins who may call it).',
   ],
   [
     'app/api/pilot/auth/session/route.ts#POST',

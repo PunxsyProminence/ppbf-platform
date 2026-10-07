@@ -1,7 +1,8 @@
 # Auth Contract
 
 The backend contract for authentication and role discovery, as the code
-implements it. Checked against the route handlers on 2026-09-21.
+implements it. Checked against the route handlers on 2026-09-21; the logout
+section re-checked 2026-10-07 (PR #1329).
 
 ## Current behavior
 
@@ -94,15 +95,22 @@ Response on success:
 
 Status codes:
 
-- `200` success
-- `401` no authenticated session
-- `403` the account must change its PIN first (`requirePrincipal` in
-  `http.ts` refuses a session with `must_change_pin` set:
-  `Forbidden: PIN change required before using this account`)
+- `200` success -- including for a session whose account still has
+  `must_change_pin` set. The gate is `requirePrincipalForSignOut` in `http.ts`
+  (since 2026-10-07): the same authentication as `requirePrincipal` without
+  the PIN-change stop, because a session that owes a PIN change must still be
+  able to sign out of a shared gym tablet. Every other route keeps the `403`
+  (`Forbidden: PIN change required before using this account`); the sign-out
+  reader's callers are pinned to this route and `logout-all` by
+  `signOutGate.convention.test.ts`.
+- `401` no authenticated session (no cookie, or a token that is unknown,
+  revoked, expired, or belongs to a deleted or inactive account)
 - `500` unexpected server failure
 
 Behavior: revokes the token server-side, writes a `logout` audit event, and
-clears the session cookie.
+clears the session cookie. `/api/pilot/auth/logout-all` uses the same gate and
+the same status codes; it revokes every session the account holds in the
+session's organization.
 
 ### POST /api/pilot/auth/session
 

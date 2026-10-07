@@ -16,9 +16,9 @@ import { GuardianConsentMissingError } from './guardianConsent';
  * remain inactive and have no PIN until one-time activation-code redemption;
  * login also refuses the retired shared bootstrap PIN outright.
  *
- * The two routes that must still work mid-bootstrap -- reading the session and
- * changing the PIN -- call resolvePrincipal or
- * requirePrincipalAllowingPinChange instead.
+ * The routes that must still work mid-bootstrap -- reading the session,
+ * changing the PIN, and signing out -- call resolvePrincipal,
+ * requirePrincipalAllowingPinChange or requirePrincipalForSignOut instead.
  */
 export async function requirePrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await requirePrincipalAllowingPinChange(request);
@@ -32,13 +32,32 @@ export async function requirePrincipal(request: NextRequest): Promise<PilotPrinc
 }
 
 // Same authentication, without the bootstrap-PIN stop. Only for the PIN
-// change route itself; anything else must use requirePrincipal.
+// change route itself; anything else must use requirePrincipal (sign-out has
+// its own named reader below).
 export async function requirePrincipalAllowingPinChange(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await resolvePrincipal(request);
   if (!principal) {
     throw new Error('Unauthorized');
   }
   return principal;
+}
+
+// Same authentication, without the bootstrap-PIN stop, for ENDING a session.
+// Only auth/logout and auth/logout-all may call this; signOutGate.convention
+// .test.ts pins the callers to those two files.
+//
+// WHY. requirePrincipal refuses a session that still owes a PIN change, which
+// is right for every route that would serve data -- but logout and logout-all
+// serve nothing: they revoke the caller's own token(s) and clear the cookie.
+// Refusing them left an athlete who had been sent to /change-pin unable to
+// sign out of a shared gym tablet, so the next person at the tablet found
+// that account still signed in. A route that can only take access AWAY from
+// the caller does not need the stop that protects data from the caller.
+//
+// Unauthenticated, revoked, expired and deleted-account sessions are refused
+// exactly as requirePrincipal refuses them: resolvePrincipal is the same.
+export async function requirePrincipalForSignOut(request: NextRequest): Promise<PilotPrincipal> {
+  return requirePrincipalAllowingPinChange(request);
 }
 
 // Microsoft-authenticated SESSION requirement for privileged operations.
