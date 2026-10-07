@@ -599,15 +599,17 @@ const COACH_HOLD_SCOPE_LABEL: Record<CoachHoldWarning['scope'], string> = {
 
 /** A `hold_warning` that is not exactly this is not drawn as a hold. */
 function parseCoachHoldWarning(value: unknown): CoachHoldWarning | 'unreadable' | null {
-  if (value === 'unreadable') return 'unreadable';
-  if (!value || typeof value !== 'object') return null;
+  // Absent is "not held". Anything PRESENT that this panel cannot read as a
+  // hold is not drawn as one, and is not "not held" either: it is unknown.
+  if (value === undefined || value === null) return null;
+  if (value === 'unreadable' || typeof value !== 'object') return 'unreadable';
   const hold = value as Record<string, unknown>;
   if (
     typeof hold.scope !== 'string' || !Object.hasOwn(COACH_HOLD_SCOPE_LABEL, hold.scope)
     || typeof hold.reason_category !== 'string'
     || typeof hold.athlete_explanation !== 'string'
   ) {
-    return null;
+    return 'unreadable';
   }
   return {
     scope: hold.scope as CoachHoldWarning['scope'],

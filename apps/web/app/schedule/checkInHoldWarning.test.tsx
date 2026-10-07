@@ -43,7 +43,10 @@ const classes = [
   },
 ];
 
-const athletes = [{ athlete_id: 'athlete-1', full_name: 'First Athlete' }];
+const athletes = [
+  { athlete_id: 'athlete-1', full_name: 'First Athlete' },
+  { athlete_id: 'athlete-2', full_name: 'Second Athlete' },
+];
 
 const HOLD_WARNING = {
   hold_id: 'hold-1',
@@ -145,12 +148,25 @@ describe('attendance check-in on a held athlete', () => {
     expect(screen.queryByText('Active Training Hold')).toBeNull();
   });
 
-  test('a malformed hold_warning is ignored rather than drawn', async () => {
+  test('a hold_warning this screen cannot read is never drawn as a hold, and never as "no hold"', async () => {
     installFetchMock({ hold_warning: { scope: 'made_up', reason_category: 'x', athlete_explanation: 'y' } });
 
     await checkIn();
 
-    expect(screen.queryByText(/training hold/i)).toBeNull();
+    expect(screen.getByText(/Training hold: could not be read/)).toBeInTheDocument();
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test('the warning does not stand over a different athlete once the coach picks one', async () => {
+    installFetchMock({ hold_warning: HOLD_WARNING });
+
+    await checkIn();
+    expect(await screen.findByText('Active Training Hold')).toBeInTheDocument();
+
+    const picker = screen.getByRole('button', { name: 'Update Attendance' }).closest('article')!.querySelectorAll('select')[1];
+    fireEvent.change(picker, { target: { value: 'athlete-2' } });
+
+    await waitFor(() => expect(screen.queryByText('Active Training Hold')).toBeNull());
   });
 
   test('the warning does not outlive the next action', async () => {

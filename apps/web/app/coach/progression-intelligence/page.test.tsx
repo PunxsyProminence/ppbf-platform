@@ -2566,7 +2566,7 @@ describe('drill assignment warns on an active training hold and does not block',
     expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
   });
 
-  test('a malformed hold_warning is ignored rather than drawn', async () => {
+  test('a hold_warning this screen cannot read is never drawn as a hold, and never as "no hold"', async () => {
     const posted: Posted[] = [];
     await renderWithAthlete(fetchFor({ holds: [], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { scope: 'made_up' } } }));
     await openAssignForm();
@@ -2574,6 +2574,27 @@ describe('drill assignment warns on an active training hold and does not block',
     await assign();
 
     await waitFor(() => expect(posted).toHaveLength(1));
+    expect(await screen.findByText(/whether this athlete is under a training hold could not be read/i)).toBeTruthy();
     expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test("the previous assignment's hold note does not stand beside a new attempt", async () => {
+    const posted: Posted[] = [];
+    await renderWithAthlete(fetchFor({ holds: [HOLD], posted, assignAnswer: { assignment_id: 'asg-1', hold_warning: { ...HOLD, hold_id: 'h1', lift_condition_text: '', expires_at: null } } }));
+    await screen.findByText('Active Training Hold');
+    await openAssignForm();
+    await assign();
+    expect(await screen.findByText(/Drill assigned\. This athlete has an active training hold/)).toBeTruthy();
+
+    // Second attempt: open the form again, pick nothing, press Assign -> refused client-side.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+    await screen.findByLabelText('Drill');
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Assign drill' }).pop() as HTMLElement);
+    });
+
+    expect(screen.queryByText(/Drill assigned\. This athlete has an active training hold/)).toBeNull();
   });
 });

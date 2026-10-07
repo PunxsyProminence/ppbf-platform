@@ -122,15 +122,17 @@ const HOLD_SCOPE_LABEL: Record<CheckInHoldWarning['scope'], string> = {
 };
 
 function checkInHoldWarningFrom(value: unknown): CheckInHoldWarning | 'unreadable' | null {
-  if (value === 'unreadable') return 'unreadable';
-  if (!value || typeof value !== 'object') return null;
+  // Absent is "not held". Anything PRESENT that this screen cannot read as a
+  // hold is not drawn as one, and is not "not held" either: it is unknown.
+  if (value === undefined || value === null) return null;
+  if (value === 'unreadable' || typeof value !== 'object') return 'unreadable';
   const hold = value as Record<string, unknown>;
   if (
     typeof hold.scope !== 'string' || !Object.hasOwn(HOLD_SCOPE_LABEL, hold.scope)
     || typeof hold.reason_category !== 'string'
     || typeof hold.athlete_explanation !== 'string'
   ) {
-    return null;
+    return 'unreadable';
   }
   return {
     scope: hold.scope as CheckInHoldWarning['scope'],
@@ -648,7 +650,10 @@ export default function SchedulerPage() {
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
                   <select
                     value={selectedClassId}
-                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedClassId(e.target.value);
+                      setCheckInHold(null);
+                    }}
                     className="input"
                   >
                     {classes.map((item) => (
@@ -661,7 +666,11 @@ export default function SchedulerPage() {
                   {(roleCanOverrideAttendance(role) || role === 'parent') && athletes.length > 0 ? (
                     <select
                       value={selectedAthleteId}
-                      onChange={(e) => setSelectedAthleteId(e.target.value)}
+                      onChange={(e) => {
+                          setSelectedAthleteId(e.target.value);
+                          // The warning belongs to the athlete it was returned for.
+                          setCheckInHold(null);
+                        }}
                       className="select"
                     >
                       {athletes.map((item) => (

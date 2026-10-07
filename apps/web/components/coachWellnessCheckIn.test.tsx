@@ -1367,11 +1367,12 @@ describe('an active training hold is shown beside the wellness check-in and bloc
     expect(holdNotice()).toBeUndefined();
   });
 
-  it('a malformed hold_warning is ignored rather than drawn', async () => {
+  it('a hold_warning this panel cannot read is never drawn as a hold, and never as "no hold"', async () => {
     await renderWorkspace(() => jsonResponse({ today: null, hold_warning: { scope: 'made_up', reason_category: 'x', athlete_explanation: 'y' } }));
     await pickAthlete('Jordan P.');
 
-    expect(panel().textContent).not.toMatch(/training hold/i);
+    expect(panel().textContent).toContain('Training hold: could not be read');
+    expect(holdNotice()).toBeUndefined();
   });
 
   it('the hold does not follow the coach to the next athlete', async () => {

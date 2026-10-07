@@ -159,15 +159,17 @@ function HoldStatusNotice({ hold }: { hold: ActiveHoldSummary | 'unreadable' }) 
 
 /** The `hold_warning` an assignment answer carries, checked before it is drawn. */
 function holdWarningFrom(value: unknown): ActiveHoldSummary | 'unreadable' | null {
-  if (value === 'unreadable') return 'unreadable';
-  if (!value || typeof value !== 'object') return null;
+  // Absent is "not held". Anything PRESENT that this screen cannot read as a
+  // hold is not drawn as one, and is not "not held" either: it is unknown.
+  if (value === undefined || value === null) return null;
+  if (value === 'unreadable' || typeof value !== 'object') return 'unreadable';
   const hold = value as Record<string, unknown>;
   if (
     typeof hold.scope !== 'string' || !Object.hasOwn(HOLD_SCOPE_LABEL, hold.scope)
     || typeof hold.reason_category !== 'string'
     || typeof hold.athlete_explanation !== 'string'
   ) {
-    return null;
+    return 'unreadable';
   }
   return {
     scope: hold.scope as ActiveHoldSummary['scope'],
@@ -575,6 +577,8 @@ export default function CoachProgressionIntelligencePage() {
   };
 
   const handleAssignDrill = async () => {
+    // A note about the LAST assignment does not stand beside a new attempt.
+    setAssignedUnderHold(null);
     if (!selectedAthlete || !assignForm.gap_id || !assignForm.drill_id) {
       setErrorMessage('Select a gap and a drill from this gym\'s library');
       return;
