@@ -80,6 +80,8 @@ const LAPSED_COACH = 'acct-lapsed-coach';
 const STRANGER = 'acct-stranger';
 /** Homed here, active membership here, and MARKED DELETED. Must stay unnamed. */
 const DELETED_COACH = 'acct-deleted-coach';
+/** Homed here, nameable by every rule, and with NO login email. Must get the phrase, never the id. */
+const UNADDRESSED_COACH = 'acct-unaddressed-coach';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -136,8 +138,9 @@ async function seededDatabase(name: string): Promise<Client> {
             ($2, 'm.okafor@ppbf.test',  'coach', $7, 'microsoft'),
             ($3, 'd.laurent@ppbf.test', 'coach', $7, 'microsoft'),
             ($4, 's.nowak@ppbf.test',   'coach', $7, 'microsoft'),
-            ($5, 'p.castro@ppbf.test',  'coach', $6, 'microsoft')`,
-    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, STRANGER, DELETED_COACH, HOME_ORG, OTHER_ORG],
+            ($5, 'p.castro@ppbf.test',  'coach', $6, 'microsoft'),
+            ($8, null,                  'coach', $6, 'microsoft')`,
+    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, STRANGER, DELETED_COACH, HOME_ORG, OTHER_ORG, UNADDRESSED_COACH],
   );
 
   await client.query(
@@ -149,8 +152,8 @@ async function seededDatabase(name: string): Promise<Client> {
     [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, DELETED_COACH, HOME_ORG],
   );
 
-  // The one mark of deletion (deletedAccountSignIn.ts). Set directly: nothing
-  // on main deletes a staff login yet, and this suite is about the reader.
+  // The one mark of deletion (deletedAccountSignIn.ts). Set directly rather
+  // than through the account cleanup script: this suite is about the reader.
   await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [DELETED_COACH]);
 
   activeClient = client;
@@ -246,6 +249,13 @@ describe('naming a coach in the organization asking', () => {
        "assigned by" through it (OD-2026-10-06-025 ruling 2), and a deleted
        person's name is not something those records keep. */
     expect(await getCoachDisplayName(HOME_ORG, DELETED_COACH)).toBe('Your coach');
+  });
+
+  test('a nameable coach with no login email gets the phrase, never the account id', async () => {
+    /* The derived name comes from login_email alone. With none there is no
+       name to derive, and the only other string to hand -- the account id --
+       is the one thing a family must never be shown. */
+    expect(await getCoachDisplayName(HOME_ORG, UNADDRESSED_COACH)).toBe('Your coach');
   });
 
   test('the other organization names its own, and not this one\'s', async () => {

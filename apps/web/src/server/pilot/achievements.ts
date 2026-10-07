@@ -306,10 +306,11 @@ export async function getCoachDisplayName(
   /* A DELETED ACCOUNT IS NOT NAMED. deleted_at is the one mark of deletion
    * (deletedAccountSignIn.ts); an account carrying it falls to the floor
    * phrase on every surface that names a coach, the same answer as a lapsed
-   * membership. Nothing on main marks a staff login deleted today, so this
-   * is reached only by a direct mark -- but the family screens read this
-   * function (OD-2026-10-06-025 ruling 2), and a name is not something a
-   * deleted person keeps lending to records. */
+   * membership. The app's deletion routes mark guardian and athlete logins
+   * only (dataDeletion.ts); a staff login gets the mark from the account
+   * cleanup script (scripts/lib/account-cleanup-plan.mjs) or by hand. The
+   * family screens read this function (OD-2026-10-06-025 ruling 2), and a
+   * name is not something a deleted person keeps lending to records. */
   const row = await queryOne<{ login_email: string | null }>(
     `select a.login_email
      from pilot.accounts a

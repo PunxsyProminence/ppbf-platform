@@ -101,9 +101,13 @@ export const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
  * (OD-2026-10-06-025 ruling 2: families see the assigning coach's display
  * name, never the internal account id).
  *
- * Omit is the contract: assigned_by_account_id is not a field of this shape,
- * so the object literal in toFamilyAssignments cannot carry it and still
- * compile.
+ * Omit is the contract: assigned_by_account_id is not a field of this shape.
+ * The literal in toFamilyAssignments is annotated with it, so the id written
+ * back as a key is an excess-property error. (The annotation is what does
+ * that: an unannotated map callback infers its own return type, and a wider
+ * type still assigns to FamilyAssignment[].) A spread is not checked that
+ * way; the route test "no family item carries any account id, under any
+ * key" is what catches one.
  */
 export type FamilyAssignment = Omit<DrillAssignment, 'assigned_by_account_id'> & {
   assigned_by_name: string;
@@ -128,7 +132,7 @@ export async function toFamilyAssignments(
       names.set(accountId, await nameFor(accountId));
     }),
   );
-  return rows.map((row) => ({
+  return rows.map((row): FamilyAssignment => ({
     assignment_id: row.assignment_id,
     gap_id: row.gap_id,
     athlete_id: row.athlete_id,

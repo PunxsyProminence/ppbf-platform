@@ -285,8 +285,10 @@ describe('gap-free Coach Cards on the assignments list', () => {
     });
 
     await screen.findByText('Pivot drill');
-    // The gap-driven row carries a name; the Coach Card fixture does not, so
-    // exactly one card says who assigned it, and it says the name.
+    // The server names every row for an athlete, Coach Cards included; the
+    // Coach Card fixture here is left without a name to prove the optional
+    // field renders nothing rather than a blank line. So exactly one card
+    // says who assigned it, and it says the name.
     expect(screen.getAllByText(/Assigned by:/)).toHaveLength(1);
     expect(screen.getByText('Coach J Rivera')).toBeTruthy();
   });
