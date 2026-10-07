@@ -164,6 +164,76 @@ and should not try to.
 
 ---
 
+## OD-2026-10-06-027 -- AI data at deletion: name scrub "Gym-wide"; flagged AI chats kept "2 years after deletion"
+
+**Provenance: PRIMARY.** Jason's answers to AskUserQuestion tool use `toolu_01JPecuc9PuqU5Z3YWgPueiB` in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 5222, 2026-10-07T04:26:14.322Z; answered line 5225, 2026-10-07T04:27:02.163Z). Read by script (records pass, 2026-10-07). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-06 because these UTC times are the evening of 2026-10-06 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
+
+- "Q13 AI data at deletion, name scrub reach: when someone is deleted, scrub their name from EVERY AI chat note in the gym (e.g. a coach's note 'pair Jordan with Sam' filed under Sam), or only notes filed under the deleted person? (Plain: gym-wide removes their name everywhere, but a common name like 'Will' would also blank that word in other kids' notes.)" Options: "Gym-wide (Recommended)" -- "Their name is removed from every kept AI note in the gym; occasional over-blanking of common words."; "Their own notes only" -- "Cheaper; names can remain in notes filed under other kids.". Jason: *"Gym-wide (Recommended)"*
+- "Q14 Safeguarding-flagged AI chats have no retention period written anywhere. How long are they kept identified before being de-identified? (Plain: if an AI chat about a child got flagged as a safety concern, how long do we keep it with names on it?)" Options: "2 years after deletion (Recommended)" -- "Same as training notes ('may be needed for incidents'); then de-identified."; "7 years" -- "Same as audit logs."; "Until their purge" -- "Athlete 2 yrs, guardian 1 yr; de-identified with everything else.". Jason: *"2 years after deletion (Recommended)"*
+
+**Rulings (at the final purge of a person's data):**
+1. Name scrub (Q13): when someone is deleted, their name is removed from every kept AI chat note in the gym, not only the notes filed under them. Jason chose the recommended option.
+2. Flagged AI chats (Q14): safeguarding-flagged AI chats are kept identified for 2 years after deletion, then de-identified. Jason chose the recommended option. This sets the period for OD-2026-10-06-023 ruling 2 (flagged chats kept until retention ends).
+
+---
+
+## OD-2026-10-06-026 -- Chokes on minors: "Don't record chokes on minors"; drill cues "Required except conditioning"; 114 drafts "Coach validates each first"; label "PPBF owner-authored"
+
+**Provenance: PRIMARY.** Jason's answers to AskUserQuestion tool use `toolu_019JS3kX5kzx8AJzHLi6nX1C` in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 5181, 2026-10-07T03:48:23.548Z; answered line 5196, 2026-10-07T04:25:55.475Z). Read by script (records pass, 2026-10-07). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-06 because these UTC times are the evening of 2026-10-06 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
+
+- "Q9 Grappling safeguarding: when a coach records that a choke/submission was completed on a CHILD in grappling/wrestling, what must the app ask them to enter? (Plain: a safeguarding record for chokes on kids. What gets written down?)" Options: "Incident-style record (Recommended)" -- "Who, when, which hold, duration/tap, any loss of consciousness (yes/no), coach present, follow-up; flags an admin review if LOC = yes."; "Simple log" -- "Date, athletes, technique, tapped yes/no."; "Don't record chokes on minors" -- "Not tracked in the app.". Jason: *"Don't record chokes on minors"*
+- "Q10 Drill rules: should every drill need at least one coaching cue before it can be used? It would block 34 of 119 drills right now (23 of 25 conditioning drills). (Plain: require a teaching tip on every drill, or allow drills without one?)" Options: "Required except conditioning (Recommended)" -- "Technique drills need a cue; conditioning drills don't."; "Required for all" -- "Blocks 34 drills until cues are added."; "Not required" -- "Cues optional everywhere.". Jason: *"Required except conditioning (Recommended)"*
+- "Q11 The 114 draft drills marked 'REQUIRES FLOOR VALIDATION': adopt them as they are, or does a coach have to try each on the floor first? (Plain: use the drafted drills now, or test each in the gym before it goes live?)" Options: "Coach validates each first (Recommended)" -- "They stay drafts until a coach marks them floor-tested."; "Adopt all now" -- "Usable immediately; fix as you go.". Jason: *"Coach validates each first (Recommended)"*
+- "Q12 Your own material: every drill carries a source label and none fits drills you wrote yourself. Add the label 'PPBF owner-authored'? (Plain: a tag that says 'Jason made this'.)" Options: "PPBF owner-authored (Recommended)" -- "Use this label for your drills and material."; "Different wording" -- "Tell me the label in the notes.". Jason: *"PPBF owner-authored (Recommended)"*
+
+**Rulings:**
+1. Grappling safeguarding (Q9): Jason chose "Don't record chokes on minors", which is not the recommended option ("Incident-style record (Recommended)"). A choke or submission completed on a child in grappling or wrestling is not tracked in the app.
+2. Drill cues (Q10): technique drills need at least one coaching cue before they can be used; conditioning drills do not. Jason chose the recommended option.
+3. The 114 draft drills (Q11): the drills marked "REQUIRES FLOOR VALIDATION" stay drafts until a coach marks each one floor-tested. Jason chose the recommended option.
+4. Source label (Q12): the label "PPBF owner-authored" is added for Jason's own drills and material. Jason chose the recommended option.
+
+---
+
+## OD-2026-10-06-025 -- Video notes visible to athlete and parent; "Show coach name, hide ID"; no-screen features: "Build all"; session notes editable only by the writer
+
+**Provenance: PRIMARY.** Jason's answers to AskUserQuestion tool use `toolu_01UCUcoURHVMkz7ohq7fzUn8` in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 5169, 2026-10-07T03:45:53.059Z; answered line 5177, 2026-10-07T03:48:07.508Z). Read by script (records pass, 2026-10-07). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-06 because these UTC times are the evening of 2026-10-06 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
+
+- "Q5 Coach video notes: should an athlete (and their parent) see the notes a coach writes on the athlete's video? Today the server sends them but no screen shows them. (Plain: when a coach comments on a kid's film, can the kid and family read it?)" Options: "Athlete + parent can read (Recommended)" -- "Coach notes on the athlete's own videos show on their video screen."; "Coaches only" -- "Stop sending them to athletes/parents."; "Coach chooses per note" -- "A 'share with athlete' tick on each note (more build).". Jason: *"Athlete + parent can read (Recommended)"*
+- "Q6 Which coach assigned it: should athletes and parents stop seeing the internal ID of the coach who assigned a drill/progression? (Plain: families see 'assigned by' as an internal code today. Hide the code; show the coach's name instead?)" Options: "Show coach name, hide ID (Recommended)" -- "Families see the coach's display name, never the internal account id."; "Hide it entirely" -- "Families don't see who assigned it.". Jason: *"Show coach name, hide ID (Recommended)"*
+- "Q7 Screens that don't exist: 15 features work only through the API with no screen (e.g. session builder, some admin tools; holds can only be placed via API). Build screens for all, or decide case by case? (Plain: some features have no page yet. Build them all, or pick?)" Options: "Case by case, I list them (Recommended)" -- "I bring the 15 with what each does; you pick build / API-only / delete."; "Build all" -- "Every one gets a screen (big build)."; "API-only for now" -- "Leave them; revisit later.". Jason: *"Build all"*
+- "Q8 Session notes: who may edit a session note after the athlete writes it? Today the athlete, any coach and org admins can. (Plain: if a kid writes how practice went, can a coach change it?)" Options: "Only the writer; coach adds own note (Recommended)" -- "The athlete's words stay theirs; coaches/admins add a separate note, never rewrite."; "Writer + org admin" -- "Admin can correct (e.g. remove something inappropriate)."; "Leave as is" -- "Athlete, coaches and admins can all edit.". Jason: *"Only the writer; coach adds own note (Recommended)"*
+
+**Rulings:**
+1. Coach video notes (Q5): the athlete and their parent can read the notes a coach writes on the athlete's own videos; the notes show on the athlete's video screen. Jason chose the recommended option.
+2. Assigned by (Q6): athletes and parents see the assigning coach's display name, never the internal account id. Jason chose the recommended option.
+3. Features with no screen (Q7): Jason chose "Build all", which is not the recommended option ("Case by case, I list them (Recommended)"). Every one of the features that work only through the API with no screen gets a screen (the question counted 15).
+4. Session notes (Q8): only the writer can edit a session note; coaches and admins add a separate note of their own and never rewrite the athlete's. Jason chose the recommended option.
+
+**Not ruled here:** which features are the 15, and the order or timing of building their screens.
+
+---
+
+## OD-2026-10-06-024 -- Holds: "Warn only, both places"; minors' limits stored as data ("Yes, build it"); Stripe setup "Later"; check-out: Jason's free-text answer (20 minutes of inactivity)
+
+**Provenance: PRIMARY.** Jason's answers to AskUserQuestion tool use `toolu_01MYS294N8FgYQyBRyawirxb` in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 5143, 2026-10-07T03:35:53.896Z; answered line 5147, 2026-10-07T03:45:26.821Z). Read by script (records pass, 2026-10-07). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-06 because these UTC times are the evening of 2026-10-06 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
+
+- "Q1 Training holds: where must an active training hold (e.g. medical, admin hold) BLOCK the athlete? Today a hold blocks competition entry but NOT check-in or drill assignment. (Plain: if a kid is on a hold, should the app stop them from checking in, stop coaches from assigning drills, or just warn?)" Options: "Block drills, warn at check-in (Recommended)" -- "They can still come in (to watch/rehab), check-in shows a clear hold warning; coaches can't assign drills that conflict with the hold."; "Block both" -- "Can't check in and can't be assigned drills while on hold."; "Warn only, both places" -- "Nothing blocked; staff see a warning.". Jason: *"Warn only, both places"*
+- "Q2 Minors' limits: authorize building a place for coaches to store per-athlete limits for minors (heat exposure time, % of body weight for cuts, contact level, supervision) as data? Today none exists and the AI asks each time. (Plain: let coaches set a kid's limits once in the app so the AI and screens follow them.)" Options: "Yes, build it (Recommended)" -- "Coach-set limits stored per athlete; AI and screens read them; coaches decide the numbers."; "Not yet" -- "Keep asking each time.". Jason: *"Yes, build it (Recommended)"*
+- "Q3 Payments: the Stripe connect flow is built but charging is blocked on registering PPBF's Stripe platform account (you) and the nonprofit Giving verification. Do you want to start that now? (Plain: should we get the app ready to take payments, e.g. adult $20/month dues?)" Options: "Yes, start setup (Recommended)" -- "I give you the step-by-step Stripe registration; then a staging test; you sign off before real charges."; "Later" -- "Keep collecting dues outside the app for now.". Jason: *"Later"*
+- "Q4 Check-out: should the app record how long an athlete trained (check-out time) and auto-close sessions nobody checks out of? (Plain: knowing session length lets the AI track training load; auto-close stops 'still here' from yesterday.)" Options: "Record length + auto-close (Recommended)" -- "Check-out saves duration; open sessions close automatically at end of day (marked auto-closed, length unknown)."; "Record length only" -- "No auto-close."; "Neither" -- "Leave as is.". Jason: *"1 bt check in give 20 min before auto close if nothing else is used in the ap for the athlet auto close and keep record of the 20 min inactivity"*
+
+**Q4 reading (INFERRED, not Jason's words):** session length is recorded; a check-in auto-closes after 20 minutes with no other app activity for that athlete; the record notes it closed after 20 minutes of inactivity. Not ruled: what counts as app activity; whether the 20 minutes counts toward session length.
+
+**Rulings:**
+1. Training holds (Q1): Jason chose "Warn only, both places", which is not the recommended option ("Block drills, warn at check-in (Recommended)"). An active hold blocks nothing at check-in or drill assignment; staff see a warning in both places.
+2. Minors' limits (Q2): build a place for coaches to store per-athlete limits for minors (heat exposure time, % of body weight for cuts, contact level, supervision) as data, so the AI and screens read them. Jason chose the recommended option.
+3. Payments (Q3): Jason chose "Later", which is not the recommended option ("Yes, start setup (Recommended)"). Registering PPBF's Stripe platform account and the nonprofit Giving verification are not started now; per the option text, dues continue to be collected outside the app for now.
+4. Check-out (Q4): Jason answered in free text, not one of the three options offered. His words are quoted above; the reading is marked INFERRED above.
+
+**Not ruled here:** Q1 asked about check-in and drill assignment only; it did not ask whether the existing block on competition entry changes. Q4: see the "Not ruled" line above.
+
+---
+
 ## OD-2026-10-06-023 -- AI data at deletion, the five details: delete their own messages and keep AI replies; flagged chats kept until retention ends; rewrite Azure backups; anonymous receipt; keep coaching records de-identified, delete medical and body mass
 
 **Provenance: PRIMARY.** Jason's answers to two AskUserQuestion tool uses in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). Question and option text is as stored. Timestamps UTC (evening of 2026-10-06 Eastern). New; refines OD-2026-10-06-012 and edits no earlier entry.
