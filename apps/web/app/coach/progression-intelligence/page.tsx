@@ -111,6 +111,73 @@ const HOLD_SCOPE_LABEL: Record<ActiveHoldSummary['scope'], string> = {
   conditioning_only: 'CONDITIONING',
 };
 
+/**
+ * The hold notice, drawn from one place so the banner at the top of the
+ * athlete's section and the copy beside the Assign controls cannot drift apart
+ * (OD-2026-10-06-024 ruling 1, "Warn only, both places": the warning rides next
+ * to the action; nothing is blocked). Wording and markup are the banner's own.
+ */
+function HoldStatusNotice({ hold }: { hold: ActiveHoldSummary | 'unreadable' }) {
+  if (hold === 'unreadable') {
+    return (
+      /* Not a hold, and not the absence of one. The restricted rung
+         rather than the safeguarding red: this is "do not read this
+         screen as a clearance", not "this person may not
+         participate". */
+      <section
+        role="status"
+        className="mat-paper rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s4)]"
+      >
+        <p className="t-eyebrow text-[var(--restricted-ink)]">Training hold: could not be read</p>
+        <p className="t-body mt-[var(--s2)] font-semibold">
+          Whether this athlete is under a training hold is UNKNOWN — nobody could look.
+        </p>
+        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+          Do not read this as &quot;no hold&quot;. Check the training holds record before
+          assigning or verifying anything that contact work depends on.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section
+      role="status"
+      className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]"
+    >
+      <p className="t-eyebrow">Active Training Hold</p>
+      <p className="t-body mt-[var(--s2)] font-semibold">
+        {HOLD_SCOPE_LABEL[hold.scope]} is currently paused for this athlete ({hold.reason_category}).
+      </p>
+      <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{hold.athlete_explanation}</p>
+      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+        Progression tools below still work -- this is visibility, not a block. Confirm the hold&apos;s
+        scope before assigning or verifying anything that conflicts with it.
+      </p>
+    </section>
+  );
+}
+
+/** The `hold_warning` an assignment answer carries, checked before it is drawn. */
+function holdWarningFrom(value: unknown): ActiveHoldSummary | 'unreadable' | null {
+  // Absent is "not held". Anything PRESENT that this screen cannot read as a
+  // hold is not drawn as one, and is not "not held" either: it is unknown.
+  if (value === undefined || value === null) return null;
+  if (value === 'unreadable' || typeof value !== 'object') return 'unreadable';
+  const hold = value as Record<string, unknown>;
+  if (
+    typeof hold.scope !== 'string' || !Object.hasOwn(HOLD_SCOPE_LABEL, hold.scope)
+    || typeof hold.reason_category !== 'string'
+    || typeof hold.athlete_explanation !== 'string'
+  ) {
+    return 'unreadable';
+  }
+  return {
+    scope: hold.scope as ActiveHoldSummary['scope'],
+    reason_category: hold.reason_category,
+    athlete_explanation: hold.athlete_explanation,
+  };
+}
+
 // A-FIN-06. Work the athlete is still expected to do -- the only work a coach
 // can cancel. The same two statuses the server's conditional update accepts;
 // completed, incomplete and cancelled work offers nothing.
@@ -187,6 +254,13 @@ export default function CoachProgressionIntelligencePage() {
     athleteId: '',
     hold: null,
   });
+  // The athlete a drill was just assigned to while a hold was on them. Kept
+  // after the assign form closes so the warning outlives the click that
+  // triggered it; matched against the selection at render like activeHold.
+  const [assignedUnderHold, setAssignedUnderHold] = useState<{
+    athleteId: string;
+    hold: ActiveHoldSummary | 'unreadable';
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [showGapForm, setShowGapForm] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
@@ -503,6 +577,8 @@ export default function CoachProgressionIntelligencePage() {
   };
 
   const handleAssignDrill = async () => {
+    // A note about the LAST assignment does not stand beside a new attempt.
+    setAssignedUnderHold(null);
     if (!selectedAthlete || !assignForm.gap_id || !assignForm.drill_id) {
       setErrorMessage('Select a gap and a drill from this gym\'s library');
       return;
@@ -531,6 +607,15 @@ export default function CoachProgressionIntelligencePage() {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || 'Failed to assign drill');
       }
+      // OD-2026-10-06-024 ruling 1: the assignment went through whether or not
+      // the athlete is held; the answer says if they are. A hold the banner's
+      // own read did not know about (placed since) joins the banner too.
+      // An answer that cannot be read is not "no warning": the write is
+      // committed and this answer is the only fresh hold read, so it says unknown.
+      const assigned = (await res.json().catch(() => null)) as { hold_warning?: unknown } | null;
+      const warned = assigned && typeof assigned === 'object' ? holdWarningFrom(assigned.hold_warning) : 'unreadable';
+      setAssignedUnderHold(warned ? { athleteId: selectedAthlete, hold: warned } : null);
+      if (warned && warned !== 'unreadable') setActiveHold({ athleteId: selectedAthlete, hold: warned });
       setShowAssignForm(false);
       if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
       setAssignForm({
@@ -662,7 +747,7 @@ export default function CoachProgressionIntelligencePage() {
   // activeHold state for why this is matched at render rather than cleared on
   // switch.
   const shownHold = activeHold.athleteId === selectedAthlete ? activeHold.hold : null;
-  const holdUnreadable = shownHold === 'unreadable';
+  const shownAssignedUnderHold = assignedUnderHold?.athleteId === selectedAthlete ? assignedUnderHold.hold : null;
 
   const onLibraryPick = (drillId: string) => {
     // Instructions opened for the previous pick describe a drill that is no
@@ -834,42 +919,7 @@ export default function CoachProgressionIntelligencePage() {
 
         {selectedAthlete && (
           <>
-            {holdUnreadable && (
-              /* Not a hold, and not the absence of one. The restricted rung
-                 rather than the safeguarding red: this is "do not read this
-                 screen as a clearance", not "this person may not
-                 participate". */
-              <section
-                role="status"
-                className="mat-paper rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s4)]"
-              >
-                <p className="t-eyebrow text-[var(--restricted-ink)]">Training hold: could not be read</p>
-                <p className="t-body mt-[var(--s2)] font-semibold">
-                  Whether this athlete is under a training hold is UNKNOWN — nobody could look.
-                </p>
-                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                  Do not read this as &quot;no hold&quot;. Check the training holds record before
-                  assigning or verifying anything that contact work depends on.
-                </p>
-              </section>
-            )}
-
-            {shownHold && shownHold !== 'unreadable' && (
-              <section
-                role="status"
-                className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]"
-              >
-                <p className="t-eyebrow">Active Training Hold</p>
-                <p className="t-body mt-[var(--s2)] font-semibold">
-                  {HOLD_SCOPE_LABEL[shownHold.scope]} is currently paused for this athlete ({shownHold.reason_category}).
-                </p>
-                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{shownHold.athlete_explanation}</p>
-                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
-                  Progression tools below still work -- this is visibility, not a block. Confirm the hold&apos;s
-                  scope before assigning or verifying anything that conflicts with it.
-                </p>
-              </section>
-            )}
+            {shownHold && <HoldStatusNotice hold={shownHold} />}
 
             {/* Progression Gaps Section */}
             <section className="space-y-[var(--s4)]">
@@ -903,6 +953,21 @@ export default function CoachProgressionIntelligencePage() {
                   </button>
                 </div>
               </div>
+
+              {/* OD-2026-10-06-024 ruling 1: told beside the action, after the
+                  fact, and nothing was blocked. Stays up after the form closes. */}
+              {shownAssignedUnderHold && shownAssignedUnderHold !== 'unreadable' && (
+                <p role="status" className="t-body font-semibold">
+                  Drill assigned. This athlete has an active training hold ({HOLD_SCOPE_LABEL[shownAssignedUnderHold.scope]}).
+                  Assigning was NOT blocked; confirm the hold&apos;s scope covers this drill.
+                </p>
+              )}
+              {shownAssignedUnderHold === 'unreadable' && (
+                <p role="status" className="t-body font-semibold">
+                  Drill assigned. Whether this athlete is under a training hold could not be read; check the
+                  training holds record.
+                </p>
+              )}
 
               {showGapForm && (
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
@@ -989,6 +1054,9 @@ export default function CoachProgressionIntelligencePage() {
 
               {showAssignForm && !drillsLoadFailed && drills.length > 0 && (
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                  {/* The hold, beside the Assign controls (OD-2026-10-06-024
+                      ruling 1). A warning only: the form below is unchanged. */}
+                  {shownHold && <HoldStatusNotice hold={shownHold} />}
                   <div className="field">
                     <label htmlFor="assign-gap" className="t-label">Gap</label>
                     <select

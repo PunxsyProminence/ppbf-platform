@@ -276,6 +276,86 @@ describe('POST /api/pilot/progression/assignments', () => {
     expect(insertParams).not.toContain('Straight Jab Retraction Snap');
   });
 
+  // OD-2026-10-06-024 ruling 1, "Warn only, both places": an active training
+  // hold does not stop an assignment. The staff caller is told in the answer.
+  describe('an active training hold warns and does not block', () => {
+    // What getActiveTrainingHold selects. reason_text is staff free text and
+    // must never ride along.
+    const HOLD_ROW = {
+      hold_id: 'hold-1',
+      athlete_id: 'ath-1',
+      scope: 'contact_only',
+      reason_category: 'medical',
+      reason_text: 'RIGHT HAND: SUSPECTED FRACTURE, XRAY PENDING',
+      athlete_explanation: 'Your hand needs a rest.',
+      lift_condition_text: 'Cleared by the doctor.',
+      placed_by_account_id: 'acct-9',
+      placed_by_role: 'coach',
+      placed_at: '2026-10-01 10:00:00+00',
+      expires_at: null,
+      status: 'active',
+    };
+
+    function assignWithHold(role: 'coach' | 'organization_admin' | 'admin', hold: Record<string, unknown> | null) {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role, athleteId: null }));
+      reachesTheDrill(ACTIVE_DRILL);
+      mockQueryOne.mockResolvedValueOnce(hold); // getActiveTrainingHold, after the write
+      mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
+    }
+
+    test.each(['coach', 'organization_admin', 'admin'] as const)(
+      '%s: the assignment is created (201) and the answer carries the hold facts',
+      async (role) => {
+        assignWithHold(role, HOLD_ROW);
+        const res = await POST(postRequest(VALID));
+
+        expect(res.status).toBe(201);
+        const body = await res.json();
+        expect(body.hold_warning).toEqual({
+          hold_id: 'hold-1',
+          scope: 'contact_only',
+          reason_category: 'medical',
+          athlete_explanation: 'Your hand needs a rest.',
+          lift_condition_text: 'Cleared by the doctor.',
+          expires_at: null,
+        });
+        // The write happened: the insert ran before the hold was read.
+        expect(mockQuery.mock.calls[0][0]).toMatch(/insert into pilot\.drill_assignments/i);
+        // Staff free text stays behind the role rules.
+        expect(JSON.stringify(body)).not.toContain('FRACTURE');
+        expect(body.hold_warning).not.toHaveProperty('reason_text');
+      },
+    );
+
+    test('no hold: the answer has no hold_warning key at all', async () => {
+      assignWithHold('coach', null);
+      const res = await POST(postRequest(VALID));
+      expect(res.status).toBe(201);
+      expect(await res.json()).not.toHaveProperty('hold_warning');
+    });
+
+    test('a hold read that fails never fails the assignment; it says "unreadable", not "no hold"', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+      reachesTheDrill(ACTIVE_DRILL);
+      mockQueryOne.mockRejectedValueOnce(new Error('connection reset'));
+      mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const res = await POST(postRequest(VALID));
+
+      expect(res.status).toBe(201);
+      expect((await res.json()).hold_warning).toBe('unreadable');
+      errors.mockRestore();
+    });
+
+    test('an athlete cannot assign, so no hold fact can reach one through this route', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+      const res = await POST(postRequest(VALID));
+      expect(res.status).toBe(403);
+      expect(mockQueryOne).not.toHaveBeenCalled();
+    });
+  });
+
   test("an explicit valid difficulty overrides the drill's; none lets the drill decide", async () => {
     coach();
     reachesTheDrill(ACTIVE_DRILL);
