@@ -965,7 +965,7 @@ describe('GET /api/pilot/video/[videoId] mints under the consent lock', () => {
  * consent) gets no notes by the same refusal.
  */
 describe('GET /api/pilot/video/[videoId] coach notes for a family', () => {
-  const noted = () => videoRow({ notes: 'Guard dropped in round 2.', updated_at: '2026-01-02T00:00:00.000Z' });
+  const noted = () => videoRow({ notes: 'Guard dropped in round 2.' });
 
   test('the athlete reads the note on their own video, signed with the coach name and no account id', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
@@ -982,7 +982,7 @@ describe('GET /api/pilot/video/[videoId] coach notes for a family', () => {
     const body = await res.json();
     expect(body.stream_url).toBe('https://blob.example/sas');
     expect(body.coach_notes).toEqual([
-      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-02T00:00:00.000Z' },
+      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-01T00:00:00.000Z' },
     ]);
     expect(mockCoachDisplayName).toHaveBeenCalledWith('org-1', 'coach-1');
     expect(body).not.toHaveProperty('uploaded_by_account_id');
@@ -1006,7 +1006,7 @@ describe('GET /api/pilot/video/[videoId] coach notes for a family', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.coach_notes).toEqual([
-      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-02T00:00:00.000Z' },
+      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-01T00:00:00.000Z' },
     ]);
     expect(body).not.toHaveProperty('uploaded_by_account_id');
     expect(JSON.stringify(body)).not.toContain('coach-1');
@@ -1037,6 +1037,21 @@ describe('GET /api/pilot/video/[videoId] coach notes for a family', () => {
     const res = await call();
 
     expect(res.status).toBe(409);
+    const text = await res.text();
+    expect(text).not.toContain('coach_notes');
+    expect(text).not.toContain('Guard dropped');
+    expect(mockCoachDisplayName).not.toHaveBeenCalled();
+  });
+
+  test('a video whose guardian withdrew consent carries no notes: same 409, no coach_notes, no name lookup', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockQueryOne.mockResolvedValueOnce(noted()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'withdrawn', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.clone().json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
     const text = await res.text();
     expect(text).not.toContain('coach_notes');
     expect(text).not.toContain('Guard dropped');

@@ -29,7 +29,6 @@ interface VideoSessionRow {
   blob_path: string;
   uploaded_by_account_id: string;
   created_at: string;
-  updated_at: string;
   /** Null for Film Study and for anything uploaded before grouping existed.
    *  Non-null means the footage was recorded to teach Shadow. */
   capture_take_id: string | null;
@@ -45,7 +44,7 @@ export async function GET(
     const { videoId } = await params;
 
     const row = await queryOne<VideoSessionRow>(
-      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at, updated_at, capture_take_id
+      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at, capture_take_id
        from pilot.video_sessions
        where video_session_id = $1 and organization_id = $2`,
       [videoId, principal.organizationId],

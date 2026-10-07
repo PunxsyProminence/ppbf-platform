@@ -44,7 +44,6 @@ interface VideoSessionSource {
   athlete_id: string | null;
   uploaded_by_account_id: string;
   created_at: string;
-  updated_at?: string;
   scan_state?: string;
 }
 
@@ -86,7 +85,10 @@ export interface FamilyCoachNote {
   noted_at: string;
 }
 
-export interface FamilyVideoPlayback extends FamilyVideoListItem {
+// No scan_state: the playback route does not select it (a video only
+// reaches playback once it is 'ready'), and a field that is always null
+// would read as a fact.
+export interface FamilyVideoPlayback extends Omit<FamilyVideoListItem, 'scan_state'> {
   coach_notes: FamilyCoachNote[];
   stream_url: string;
 }
@@ -123,15 +125,26 @@ export async function toFamilyVideoPlayback(
   streamUrl: string,
 ): Promise<FamilyVideoPlayback> {
   const text = row.notes.trim();
+  // created_at, not updated_at: the note is written once, at upload, and
+  // updated_at moves on every status change afterwards (scan, release,
+  // archive), which would date Monday's note to Tuesday's release.
   const coachNotes: FamilyCoachNote[] = text
     ? [{
         text,
         coach_name: await familyCoachName(organizationId, row.uploaded_by_account_id),
-        noted_at: row.updated_at ?? row.created_at,
+        noted_at: row.created_at,
       }]
     : [];
+  const item = toFamilyVideoListItem(row);
   return {
-    ...toFamilyVideoListItem(row),
+    video_session_id: item.video_session_id,
+    title: item.title,
+    file_name: item.file_name,
+    file_size_bytes: item.file_size_bytes,
+    mime_type: item.mime_type,
+    status: item.status,
+    athlete_id: item.athlete_id,
+    created_at: item.created_at,
     coach_notes: coachNotes,
     stream_url: streamUrl,
   };

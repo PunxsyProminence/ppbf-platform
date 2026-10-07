@@ -184,14 +184,14 @@ export default function AthleteVideoAnalysisPage() {
             <section aria-labelledby="coach-notes-heading" className="mt-[var(--s4)]">
               <h3 id="coach-notes-heading" className="t-label m-0">Coach notes</h3>
               {activeVideo.coachNotes.length === 0 ? (
-                <p className="t-muted mt-[var(--s2)]">No coach notes on this round yet.</p>
+                <p className="t-muted mt-[var(--s2)]">No coach notes on this round.</p>
               ) : (
                 <ul className="mt-[var(--s2)] list-none space-y-[var(--s3)] p-0">
                   {activeVideo.coachNotes.map((note, index) => (
                     <li key={index} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                       <p className="whitespace-pre-wrap text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-100)]">{note.text}</p>
                       <p className="t-muted mt-[var(--s2)]">
-                        {note.coach_name} · {formatGymStamp(note.noted_at) ?? ''}
+                        {[note.coach_name, formatGymStamp(note.noted_at)].filter(Boolean).join(' · ')}
                       </p>
                     </li>
                   ))}
