@@ -24,9 +24,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import type { QueryExecutor } from '@/src/server/pilot/guardianConsent';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import { writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { reviewVideoSessionScan, type VideoScanReviewDecision } from '@/src/server/pilot/videoSessions';
 import {
@@ -85,7 +87,26 @@ export async function POST(request: NextRequest) {
      * it, and an administrator who can tell from the scan record alone that
      * footage must not be seen should not have to open a link to say so.
      */
+    // EVERY CHILD THE CLIP SHOWS (videoClipTags.ts; owner, Jason 2026-10-03:
+    // any tagged athlete's consent block blocks the whole clip, for
+    // everyone). Playback and the scan sweep ask the clip's own athlete AND
+    // every live tag subject; approve asked only the first, so an admin
+    // could put a sparring clip into circulation past a tagged partner's
+    // guardian's refusal. A tag naming a deleted athlete reads as not found,
+    // as it does on playback. Block is not asked and does not read the tags:
+    // it narrows access, and must keep working when nobody may watch.
+    let consentSubjects: string[] = [];
+    let clipIsTagged = false;
     if (decision === 'approve') {
+      const tagged = await listLiveTagSubjects(principal.organizationId, videoSessionId);
+      if (tagged.some((subject) => subject.athlete_deleted)) {
+        throw new VideoScanReviewRefused('VIDEO_SESSION_NOT_FOUND', 'Not found', 404);
+      }
+      consentSubjects = [...new Set([
+        ...(video.athlete_id ? [video.athlete_id] : []),
+        ...tagged.map((subject) => subject.athlete_id),
+      ])];
+      clipIsTagged = tagged.length > 0;
       await assertActorHoldsCurrentReviewLink(principal, videoSessionId, video.scan_state);
     }
 
@@ -111,10 +132,26 @@ export async function POST(request: NextRequest) {
     // the two and the approve still landed. writeUnderPlaybackConsent holds
     // the athlete's guardian links FOR SHARE across the write, the same way
     // review-link mints under it. Teaching and unattributed footage name
-    // nobody, so the write runs as before.
-    const updated = decision === 'approve'
-      ? await writeUnderPlaybackConsent(principal.organizationId, video.athlete_id ? [video.athlete_id] : [], review)
-      : await review(null);
+    // nobody, so the write runs as before. The clip's own athlete and every
+    // tagged athlete are each checked inside that same transaction.
+    let updated: Awaited<ReturnType<typeof review>>;
+    try {
+      updated = decision === 'approve'
+        ? await writeUnderPlaybackConsent(principal.organizationId, consentSubjects, review)
+        : await review(null);
+    } catch (error) {
+      // The gate's message says "this athlete's guardians" and names nobody.
+      // On a tagged clip the refusing guardian may be a partner's, so the
+      // refusal says the whole clip is blocked while ANY athlete in it is,
+      // without saying which. Same wording as playback.
+      if (clipIsTagged && error instanceof ConflictError) {
+        throw new ConflictError(
+          `This clip shows more than one athlete, and it is blocked for everyone while any of them is. ${error.message}`,
+          error.code,
+        );
+      }
+      throw error;
+    }
 
     if (!updated) {
       // The row stopped being quarantined between the authorization read and
