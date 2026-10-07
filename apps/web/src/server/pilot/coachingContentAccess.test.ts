@@ -59,6 +59,9 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'session-scripts/route.ts': [READER_POLICY],
   'workout-templates/route.ts': [READER_POLICY],
   'drills/promote/route.ts': ['DRILL_AUTHOR_ROLES'],
+  // OD-2026-10-06-026 ruling 3: a coach or the gym's admin marks a draft
+  // reference drill floor-tested for their gym. POST-only, like promote.
+  'drills/floor-tested/route.ts': ['FLOOR_VALIDATOR_ROLES'],
   // W-D4B (OD-2026-09-19-001): the reference instruction a piece of assigned
   // work links to. The same content class reached by another path, so it
   // takes the same policy -- and then a record gate on the assignment's
@@ -79,7 +82,7 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
  * So the reader-policy case iterates the read routes, and every other case
  * iterates all of them.
  */
-const AUTHOR_ONLY_ROUTES = ['drills/promote/route.ts'];
+const AUTHOR_ONLY_ROUTES = ['drills/promote/route.ts', 'drills/floor-tested/route.ts'];
 
 const REGISTERED_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
 const GATED_READ_ROUTES = REGISTERED_ROUTES.filter(

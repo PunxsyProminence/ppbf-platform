@@ -579,6 +579,46 @@ interface CoachAthleteCheckIn {
  * Every state carries the athlete it was asked about, so the panel can refuse
  * to draw a result under any other athlete's name.
  */
+/* The training hold on the athlete, as GET /api/pilot/coach/athlete-check-in
+   returns it in `hold_warning` (OD-2026-10-06-024 ruling 1, "Warn only, both
+   places"). A warning beside the check-in and nothing more: the check-in is read
+   exactly as before. Absent means not held; 'unreadable' means the server could
+   not look, which is not "not held". The staff-only reason text is never in it. */
+interface CoachHoldWarning {
+  readonly scope: 'all_training' | 'contact_only' | 'conditioning_only';
+  readonly reasonCategory: string;
+  readonly athleteExplanation: string;
+  readonly liftConditionText: string;
+}
+
+const COACH_HOLD_SCOPE_LABEL: Record<CoachHoldWarning['scope'], string> = {
+  all_training: 'ALL TRAINING',
+  contact_only: 'CONTACT WORK',
+  conditioning_only: 'CONDITIONING',
+};
+
+/** A `hold_warning` that is not exactly this is not drawn as a hold. */
+function parseCoachHoldWarning(value: unknown): CoachHoldWarning | 'unreadable' | null {
+  // Absent is "not held". Anything PRESENT that this panel cannot read as a
+  // hold is not drawn as one, and is not "not held" either: it is unknown.
+  if (value === undefined || value === null) return null;
+  if (value === 'unreadable' || typeof value !== 'object') return 'unreadable';
+  const hold = value as Record<string, unknown>;
+  if (
+    typeof hold.scope !== 'string' || !Object.hasOwn(COACH_HOLD_SCOPE_LABEL, hold.scope)
+    || typeof hold.reason_category !== 'string'
+    || typeof hold.athlete_explanation !== 'string'
+  ) {
+    return 'unreadable';
+  }
+  return {
+    scope: hold.scope as CoachHoldWarning['scope'],
+    reasonCategory: hold.reason_category,
+    athleteExplanation: hold.athlete_explanation,
+    liftConditionText: typeof hold.lift_condition_text === 'string' ? hold.lift_condition_text.trim() : '',
+  };
+}
+
 type WellnessCheckInRead =
   | { readonly status: 'loading'; readonly athleteId: string }
   | {
@@ -586,6 +626,7 @@ type WellnessCheckInRead =
     readonly athleteId: string;
     readonly today: CoachAthleteCheckIn | null;
     readonly bodyMass: CoachBodyMass | 'unavailable' | null;
+    readonly holdWarning: CoachHoldWarning | 'unreadable' | null;
   }
   | { readonly status: 'no_access'; readonly athleteId: string }
   | { readonly status: 'unavailable'; readonly athleteId: string };
@@ -2170,7 +2211,8 @@ export default function CoachWorkspace() {
       if (parsed === 'unreadable') {
         throw new Error('wellness check-in response unreadable');
       }
-      setWellnessRead({ status: 'loaded', athleteId, today: parsed, bodyMass: null });
+      const holdWarning = parseCoachHoldWarning((payload as { hold_warning?: unknown }).hold_warning);
+      setWellnessRead({ status: 'loaded', athleteId, today: parsed, bodyMass: null, holdWarning });
       // The weight joins the panel when it arrives; a slow weight read never
       // holds the check-in on "loading".
       const bodyMass = await bodyMassRead;
@@ -3685,6 +3727,30 @@ export default function CoachWorkspace() {
                       >
                         Try again
                       </button>
+                    </div>
+                  )}
+
+                  {/* OD-2026-10-06-024 ruling 1: told, not blocked. Shown whether or
+                      not there is a check-in today, because being held is not
+                      the same thing as having checked in. */}
+                  {wellnessShown?.status === 'loaded' && wellnessShown.holdWarning !== null && wellnessShown.holdWarning !== 'unreadable' && (
+                    <div role="status" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s3)] space-y-[var(--s2)]">
+                      <p className="t-eyebrow">Active Training Hold</p>
+                      <p className="t-body font-semibold">
+                        {COACH_HOLD_SCOPE_LABEL[wellnessShown.holdWarning.scope]} is currently paused for this athlete ({wellnessShown.holdWarning.reasonCategory}).
+                      </p>
+                      <p className="t-body">{wellnessShown.holdWarning.athleteExplanation}</p>
+                      <p className="t-body">
+                        To lift it: {wellnessShown.holdWarning.liftConditionText || 'not written down — ask whoever placed the hold.'}
+                      </p>
+                    </div>
+                  )}
+                  {wellnessShown?.status === 'loaded' && wellnessShown.holdWarning === 'unreadable' && (
+                    <div role="status" className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s3)]">
+                      <p className="t-eyebrow">Training hold: could not be read</p>
+                      <p className="t-body font-semibold">
+                        Whether this athlete is under a training hold is UNKNOWN. Do not read this as &quot;no hold&quot;.
+                      </p>
                     </div>
                   )}
 

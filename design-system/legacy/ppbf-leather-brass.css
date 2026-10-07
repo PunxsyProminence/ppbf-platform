@@ -3790,6 +3790,29 @@ body.ppbf.on-canvas {
   :where([data-plate-variant~="2of2"]) .room--floor {
     --plate: url("/plates/plate-02b-floor-portrait-ring-01.jpg");
   }
+
+  /* OFFICE AND NIGHT GET THE PORTRAIT PLATES THAT WERE ALREADY IN THE REPO.
+     Both plates have been committed and owner-accepted since the floor work;
+     nothing pointed at them, so an upright tablet fell back to the gradient
+     wall in two rooms that had finished art sitting unused.
+
+     Plain room rules, exactly like .room--floor above: (0,1,0), inside the
+     block, after the base declarations in the PLATES list, so source order
+     decides and they win only while the viewport is upright. They carry NO
+     :where() because there is no attribute selector to neutralise -- :where()
+     earns its place on the variant rule above, which would otherwise be
+     (0,2,0) and outrank the generic floor rule for every door.
+
+     MEASURED against the ink each room writes in, darkest 5% of the centre
+     band: office 9.36:1, night 16.21:1. Both clear the 4.5:1 body-text bar.
+
+     CLINIC, BOARD AND FILE ARE DELIBERATELY NOT HERE. Their portrait plates
+     measure 2.09:1, 1.02:1 and 1.01:1 against their own ink. Board and file
+     write in --hide-900 and their portrait plates are bright, so binding them
+     would make those rooms WORSE than the 1.05:1 and 2.19:1 they have now.
+     They need art suited to their ink, which is a generation item. */
+  .room--office { --plate: url("/plates/plate-01-office-portrait-01.jpg"); }
+  .room--night  { --plate: url("/plates/plate-06-night-portrait-01.jpg"); }
 }
 
 /* Plate 7. The family ground is .on-canvas, not a room -- Law 6's second
