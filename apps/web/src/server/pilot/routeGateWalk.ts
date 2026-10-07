@@ -16,16 +16,18 @@ export const API_ROOT = path.join(WEB_ROOT, 'app', 'api');
 export const HTTP_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 /**
- * Gates that answer "who is the caller". All six are in http.ts / auth.ts;
- * the last five are the deliberate exceptions requirePrincipal's own header
- * names -- the PIN-change route, the session-read route, the Microsoft-only
- * tier for privileged operations, (BASE04-D004) the credential tier that
- * also admits a local PIN session the server itself attested, and (CL-A7)
- * the any-adult-session tier for coach authoring.
+ * Gates that answer "who is the caller". All seven are in http.ts / auth.ts;
+ * the last six are the deliberate exceptions requirePrincipal's own header
+ * names -- the PIN-change route, the two sign-out routes (pinned to those
+ * files by signOutGate.convention.test.ts), the session-read route, the
+ * Microsoft-only tier for privileged operations, (BASE04-D004) the credential
+ * tier that also admits a local PIN session the server itself attested, and
+ * (CL-A7) the any-adult-session tier for coach authoring.
  */
 export const SESSION_GATES = new Set([
   'requirePrincipal',
   'requirePrincipalAllowingPinChange',
+  'requirePrincipalForSignOut',
   'requireMicrosoftAuthenticatedPrincipal',
   'requireMicrosoftOrAttestedLocalPinPrincipal',
   'requireStaffSessionPrincipal',

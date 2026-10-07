@@ -2715,7 +2715,7 @@
     "id": "app/api/pilot/auth/logout-all/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/auth/logout-all",
-    "gate": "requirePrincipal (no role check, by design)",
+    "gate": "requirePrincipalForSignOut (no role check, by design; admits a session that still owes a PIN change so it can sign out)",
     "rolesAdmitted": [
       "any-authenticated"
     ],
@@ -2723,12 +2723,12 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "requirePrincipal rejects a session with mustChangePin, so a bootstrap-PIN athlete cannot use this self-revoke route until the PIN is changed.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "logout-all/route.ts:50-60 revokes the caller's own sessions in their org via revokeOwnSessionsInOrganization(principal.accountId, ...); no account_id parameter (header comment lines 17-24). Acts only on caller.",
+    "notes": "logout-all/route.ts revokes the caller's own sessions in their org via revokeOwnSessionsInOrganization(principal.accountId, ...); no account_id parameter (header comment). Acts only on caller. The gate is the sign-out reader (http.ts requirePrincipalForSignOut): same authentication as requirePrincipal without the mustChangePin stop, so a bootstrap-PIN athlete can end their sessions; signOutGate.convention.test.ts pins its callers to the two logout routes.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requirePrincipalForSignOut"
       ],
       "authorizationGates": [],
       "roleLiterals": []
@@ -2738,7 +2738,7 @@
     "id": "app/api/pilot/auth/logout/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/auth/logout",
-    "gate": "requirePrincipal (no role check)",
+    "gate": "requirePrincipalForSignOut (no role check; admits a session that still owes a PIN change so it can sign out)",
     "rolesAdmitted": [
       "any-authenticated"
     ],
@@ -2746,12 +2746,12 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "requirePrincipal (http.ts:28) throws for mustChangePin sessions, so a user forced to change PIN cannot log out through this route.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "logout/route.ts:12-17 revokes only the cookie's own token (logoutWithToken) and writes a logout audit row. Touches only the caller's session.",
+    "notes": "logout/route.ts revokes only the cookie's own token (logoutWithToken) and writes a logout audit row. Touches only the caller's session. The gate is the sign-out reader (http.ts requirePrincipalForSignOut): same authentication as requirePrincipal without the mustChangePin stop, so a user forced to change PIN can log out of a shared tablet; signOutGate.convention.test.ts pins its callers to the two logout routes.",
     "mechanical": {
       "sessionGates": [
-        "requirePrincipal"
+        "requirePrincipalForSignOut"
       ],
       "authorizationGates": [],
       "roleLiterals": []

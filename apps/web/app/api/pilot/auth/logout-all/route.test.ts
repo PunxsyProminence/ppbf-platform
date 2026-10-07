@@ -4,11 +4,15 @@ import { POST } from './route';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { resolvePrincipal } from '@/src/server/pilot/auth';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
-jest.mock('@/src/server/pilot/http', () => {
-  const actual = jest.requireActual('@/src/server/pilot/http');
-  return { ...actual, requirePrincipal: jest.fn() };
+// resolvePrincipal is the mock boundary, not the gate: the route's real
+// requirePrincipalForSignOut runs here, so "a session that still owes a PIN
+// change gets through" is a statement about the gate, not about a stub.
+jest.mock('@/src/server/pilot/auth', () => {
+  const actual = jest.requireActual('@/src/server/pilot/auth');
+  return { ...actual, resolvePrincipal: jest.fn() };
 });
 
 // The db layer is the mock boundary, NOT the auth module. These tests run the
@@ -26,7 +30,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
-const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockResolvePrincipal = resolvePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -71,16 +75,45 @@ function revocationCall() {
 
 describe('POST /api/pilot/auth/logout-all', () => {
   test('401 when unauthenticated', async () => {
-    mockRequirePrincipal.mockRejectedValueOnce(new Error('Unauthorized'));
+    // resolvePrincipal answers null for no cookie, an unknown token, a revoked
+    // or expired one, and a deleted account alike.
+    mockResolvePrincipal.mockResolvedValueOnce(null);
 
     const response = await POST(makeRequest());
 
     expect(response.status).toBe(401);
     expect(revocationCall()).toBeUndefined();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an athlete still owing a PIN change can end every session they hold here', async () => {
+    // The defect this route shared with /logout: requirePrincipal refused a
+    // mustChangePin session, so the one account that most needs to end its
+    // sessions -- a child still on a PIN somebody at the gym knows -- could
+    // not. The real requirePrincipalForSignOut runs here.
+    mockResolvePrincipal.mockResolvedValueOnce(
+      principal({ accountId: 'acct-athlete-1', role: 'athlete', athleteId: 'ATH-1', authProvider: 'ppbf_local', mustChangePin: true }),
+    );
+    mockQueryOne.mockResolvedValueOnce(membership({ account_id: 'acct-athlete-1' }));
+
+    const response = await POST(makeRequest());
+
+    expect(response.status).toBe(200);
+    expect(revocationCall()?.[1]).toEqual(['acct-athlete-1', 'org-1']);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test('that same session is still refused by requirePrincipal', async () => {
+    // The stop is skipped for signing out and nowhere else.
+    mockResolvePrincipal.mockResolvedValueOnce(
+      principal({ accountId: 'acct-athlete-1', role: 'athlete', authProvider: 'ppbf_local', mustChangePin: true }),
+    );
+
+    await expect(requirePrincipal(makeRequest())).rejects.toThrow('Forbidden: PIN change required');
   });
 
   test('a guardian on a magic link revokes their own sessions in their own organization', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
     mockQueryOne.mockResolvedValueOnce(membership());
 
     const response = await POST(makeRequest());
@@ -95,7 +128,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
     // that way. A body naming somebody else must revoke the CALLER's sessions,
     // not the named account's -- a route that can be pointed at an account id
     // is a route that will eventually be pointed at the wrong one.
-    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
     mockQueryOne.mockResolvedValueOnce(membership());
 
     const response = await POST(
@@ -107,7 +140,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
   });
 
   test('the revoked caller stops carrying the token they arrived with', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
     mockQueryOne.mockResolvedValueOnce(membership());
 
     const response = await POST(makeRequest());
@@ -121,7 +154,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
     // The membership row is the authorization. Without one the shared function
     // refuses, and the route must surface that rather than proceeding to write
     // an audit row for a revocation that did not happen.
-    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
     mockQueryOne.mockResolvedValueOnce(null);
 
     const response = await POST(makeRequest());
@@ -136,7 +169,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
     // target, and this route used to inherit that, leaving the most
     // privileged account no self-service way to end its sessions after a
     // suspected compromise. Acting on yourself is not acting on the owner.
-    mockRequirePrincipal.mockResolvedValueOnce(
+    mockResolvePrincipal.mockResolvedValueOnce(
       principal({ accountId: 'acct-owner', role: 'platform_owner', authProvider: 'microsoft' }),
     );
     mockQueryOne.mockResolvedValueOnce(membership({ account_id: 'acct-owner', is_platform_owner: true }));
@@ -149,7 +182,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
   });
 
   test('the audit row names the caller as both actor and subject', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
     mockQueryOne.mockResolvedValueOnce(membership());
 
     await POST(makeRequest());
@@ -170,7 +203,7 @@ describe('POST /api/pilot/auth/logout-all', () => {
     // credential than a guardian's inbox, not a stronger one, so gating this
     // on a Microsoft session would withhold it from the accounts that need it
     // most.
-    mockRequirePrincipal.mockResolvedValueOnce(
+    mockResolvePrincipal.mockResolvedValueOnce(
       principal({ accountId: 'acct-athlete-1', role: 'athlete', athleteId: 'ATH-1', authProvider: 'ppbf_local' }),
     );
     mockQueryOne.mockResolvedValueOnce(membership({ account_id: 'acct-athlete-1' }));

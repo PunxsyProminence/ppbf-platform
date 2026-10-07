@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { revokeOwnSessionsInOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requirePrincipalForSignOut } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -37,16 +37,19 @@ export const runtime = 'nodejs';
  * the other. Widening it to every organization would be a new capability with
  * a larger blast radius and is not what this route claims to do.
  *
- * requirePrincipal, not requireMicrosoftAuthenticatedPrincipal. The admin
- * route demands a Microsoft session because it acts on somebody else. This
- * acts only on the caller, and the people who most need it -- guardians on
- * magic links, athletes on PINs -- do not have Microsoft sessions at all.
- * Requiring one here would lock the capability away from exactly the accounts
- * whose credential is the weakest.
+ * requirePrincipalForSignOut, not requireMicrosoftAuthenticatedPrincipal and
+ * not requirePrincipal. The admin route demands a Microsoft session because it
+ * acts on somebody else. This acts only on the caller, and the people who most
+ * need it -- guardians on magic links, athletes on PINs -- do not have
+ * Microsoft sessions at all. Requiring one here would lock the capability away
+ * from exactly the accounts whose credential is the weakest. And an athlete
+ * still owing a PIN change must be able to end their sessions too: this route
+ * serves no data, so requirePrincipal's bootstrap-PIN stop protects nothing
+ * here (http.ts).
  */
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    const principal = await requirePrincipalForSignOut(request);
 
     /* Refuses an account with no active membership in this organization.
        A platform owner is admitted: the admin path refuses the owner as a
