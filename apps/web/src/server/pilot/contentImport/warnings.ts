@@ -169,6 +169,10 @@ function readinessInput(unit: UnitContent) {
     // The cue rule (OD-2026-10-06-026): a technique drill needs one, a
     // conditioning drill (by discipline) does not.
     cues: cues.map((row) => ({ cue_text: row.cue_text ?? '' })),
+    // A package is judged before any gym has marked anything: a draft in it
+    // will need a coach's floor test before that gym can adopt it.
+    field_provenance: root.field_provenance ?? '',
+    floor_tested_by_this_gym: false,
   };
 }
 

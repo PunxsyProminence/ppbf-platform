@@ -9,6 +9,7 @@ import {
   listDrillLibrary,
   listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
+import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -96,8 +97,17 @@ export async function GET(request: NextRequest) {
       // Authors also get where this drill stands in their gym (W-D4C): the
       // decision surface for Promote, Retire and Restore reads it from here,
       // fresher than the list. Derived on every read from durable rows.
-      const lifecycles = await listReferenceLifecycles(principal.organizationId, [drillId]);
-      return NextResponse.json({ drill: detail, lifecycle: lifecycles[drillId] ?? null });
+      // Beside the lifecycle: whether a coach of this gym has floor-tested
+      // this version (OD-2026-10-06-026 ruling 3), which Promote needs to know.
+      const [lifecycles, floorTested] = await Promise.all([
+        listReferenceLifecycles(principal.organizationId, [drillId]),
+        listFloorValidations(principal.organizationId, [drillId]),
+      ]);
+      return NextResponse.json({
+        drill: detail,
+        lifecycle: lifecycles[drillId] ?? null,
+        floor_tested: floorTested[drillId] ?? null,
+      });
     }
 
     if (isAthlete) {
@@ -124,8 +134,11 @@ export async function GET(request: NextRequest) {
     }
     // Keyed by reference drill id, beside the list rather than inside each row,
     // so the row shape every existing consumer reads is unchanged.
-    const lifecycle = await listReferenceLifecycles(principal.organizationId);
-    return NextResponse.json({ drills, lifecycle });
+    const [lifecycle, floorTested] = await Promise.all([
+      listReferenceLifecycles(principal.organizationId),
+      listFloorValidations(principal.organizationId),
+    ]);
+    return NextResponse.json({ drills, lifecycle, floor_tested: floorTested });
   } catch (error) {
     return jsonError(error);
   }
