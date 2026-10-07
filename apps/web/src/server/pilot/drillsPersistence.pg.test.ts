@@ -405,6 +405,7 @@ describe('an assignment anchored to a drill', () => {
       name: 'Rear Hand Return',
       category: 'Striking',
       focus: 'The cross comes home on the same line it went out.',
+      cues: ['Same line home'],
       difficulty: 'advanced',
     });
 
@@ -525,6 +526,7 @@ describe('an assignment anchored to a drill', () => {
       name: 'Catch and Return',
       category: 'Defense',
       focus: 'Catch the jab on the glove and answer with your own.',
+      cues: ['Catch, then answer'],
     });
     const existing = await progression.assignDrill({
       organizationId: ORG_A,
