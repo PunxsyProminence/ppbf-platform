@@ -393,7 +393,7 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(
         ORG_ID,
         session({ notes: 'shared', created_at: CLIENT_STAMP, updated_at: CLIENT_STAMP }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
         { closedBy: 'athlete' },
       );
       row = await readClose(client, 'sess-1');
@@ -406,7 +406,7 @@ describe('upsertSession stamps the close record on the completed transition', ()
         rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: 45,
         created_at: CLIENT_STAMP, updated_at: CLIENT_STAMP,
       })));
-      await upsertSession(ORG_ID, validateSessionPayload(checkOutBody), { mode: 'update', expectedAthleteId: ATHLETE_ID }, { closedBy: 'athlete' });
+      await upsertSession(ORG_ID, validateSessionPayload(checkOutBody), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
       row = await readClose(client, 'sess-1');
       expect(row.completed_flag).toBe(true);
       expect(row.close_method).toBe('athlete_check_out');
@@ -419,13 +419,15 @@ describe('upsertSession stamps the close record on the completed transition', ()
       expect(row.last_activity_at).toBeNull();
       expect(row.inactivity_minutes).toBeNull();
 
-      // A later STAFF write that keeps it completed (editing the notes) moves
-      // updated_at -- the old proxy -- but neither the time nor the method.
+      // A later STAFF write that keeps it completed (a coach correcting the
+      // effort; staff may not change the note text, OD-2026-10-06-025 ruling
+      // 4, so the stored note is sent back unchanged) moves updated_at -- the
+      // old proxy -- but neither the time nor the method.
       await new Promise((resolve) => setTimeout(resolve, 20));
       await upsertSession(
         ORG_ID,
-        session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, notes: 'coach edited', created_at: CLIENT_STAMP, updated_at: '2021-01-01T00:00:00.000Z' }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        session({ rpe: 8, rpe_method: SELF_REPORT, completed_flag: true, created_at: CLIENT_STAMP, updated_at: '2021-01-01T00:00:00.000Z' }),
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: false },
         { closedBy: 'staff' },
       );
       row = await readClose(client, 'sess-1');
@@ -437,7 +439,7 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(
         ORG_ID,
         session({ completed_flag: false, created_at: CLIENT_STAMP, updated_at: CLIENT_STAMP }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
         { closedBy: 'athlete' },
       );
       row = await readClose(client, 'sess-1');
@@ -449,7 +451,7 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(
         ORG_ID,
         session({ rpe: 6, rpe_method: SELF_REPORT, completed_flag: true, created_at: CLIENT_STAMP, updated_at: CLIENT_STAMP }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
         { closedBy: 'athlete' },
       );
       row = await readClose(client, 'sess-1');
@@ -474,8 +476,8 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(ORG_ID, session({ session_id: 'by-coach' }), { mode: 'create' });
       await upsertSession(
         ORG_ID,
-        session({ session_id: 'by-coach', completed_flag: true, notes: 'coach closed it' }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        session({ session_id: 'by-coach', completed_flag: true }),
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: false },
         { closedBy: 'staff' },
       );
       let row = await readClose(client, 'by-coach');
@@ -488,7 +490,7 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(
         ORG_ID,
         session({ session_id: 'by-unknown', completed_flag: true }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
       );
       row = await readClose(client, 'by-unknown');
       expect(row.close_method).toBeNull();

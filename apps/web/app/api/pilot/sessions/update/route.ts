@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { isSessionNoteWriter } from '@/src/server/pilot/sessionNotes';
 import { assertDurationWrittenByAthlete, validateSessionPayload } from '@/src/server/pilot/validation';
 
 export const runtime = 'nodejs';
@@ -26,11 +27,17 @@ export async function POST(request: NextRequest) {
 
     // Compare-and-set: the write carries the owner just authorized, so a
     // concurrent owner change between the lookup above and this write fails
-    // closed instead of overwriting a row that moved.
+    // closed instead of overwriting a row that moved. noteWriter says whether
+    // the caller may change the note's text (OD-2026-10-06-025 ruling 4:
+    // only the writer); the store refuses the change for anyone else.
     await upsertSession(
       principal.organizationId,
       payload,
-      { mode: 'update', expectedAthleteId: current.athlete_id },
+      {
+        mode: 'update',
+        expectedAthleteId: current.athlete_id,
+        noteWriter: isSessionNoteWriter(principal, current.athlete_id),
+      },
       // Check-out lands here with completed_flag true. The close record's
       // method is the signed-in role -- the athlete's own check-out, or a
       // coach/admin completing it for them -- never anything in the body.

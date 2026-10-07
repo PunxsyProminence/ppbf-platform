@@ -53,6 +53,10 @@ interface DrillAssignment {
   completion_percentage: number;
   status: string;
   created_at: string;
+  // Who assigned it, as a name (OD-2026-10-06-025 ruling 2). A guardian is
+  // sent a name and never an account id; optional so a row from a server
+  // that predates the field renders without the line, not blank.
+  assigned_by_name?: string;
 }
 
 interface AssignmentCompletion {
@@ -400,6 +404,12 @@ export default function ParentProgressionVisibilityPage() {
                               <div>
                                 <dt className="t-label">Due</dt>
                                 <dd className="t-data">{formatGymDateNumeric(assignment.due_date)}</dd>
+                              </div>
+                            ) : null}
+                            {assignment.assigned_by_name ? (
+                              <div>
+                                <dt className="t-label">Assigned by</dt>
+                                <dd className="t-data">{assignment.assigned_by_name}</dd>
                               </div>
                             ) : null}
                           </dl>

@@ -10,7 +10,7 @@ import type {
   SessionCloseMethod,
 } from './contracts';
 import { query, queryOne } from './db';
-import { ConflictError } from './errors';
+import { ConflictError, ForbiddenError } from './errors';
 
 export async function getAthleteById(organizationId: string, athleteId: string): Promise<PilotAthlete | null> {
   return queryOne<PilotAthlete>('select * from pilot.athletes where organization_id = $1 and athlete_id = $2', [organizationId, athleteId]);
@@ -215,10 +215,23 @@ export interface SessionWriteOptions {
   readonly closedBy?: SessionCloser;
 }
 
+/**
+ * The session write guard adds one fact to the owner guard: whether the
+ * caller is the writer of the session's note (sessionNotes.ts
+ * isSessionNoteWriter). It is REQUIRED on every update so no caller can
+ * forget to answer it; a route that does not know is a type error.
+ */
+export type SessionWriteGuard =
+  | { readonly mode: 'create' }
+  | { readonly mode: 'update'; readonly expectedAthleteId: string; readonly noteWriter: boolean };
+
+export const SESSION_NOTE_NOT_WRITER_MESSAGE =
+  'Forbidden: only the athlete whose session this is may change its note or move the session.';
+
 export async function upsertSession(
   organizationId: string,
   payload: PilotSession,
-  guard: WriteOwnerGuard,
+  guard: SessionWriteGuard,
   options: SessionWriteOptions = {},
 ): Promise<void> {
   const closeMethod: SessionCloseMethod | null = options.closedBy === 'athlete'
@@ -227,13 +240,25 @@ export async function upsertSession(
       ? 'staff_check_out'
       : null;
   if (guard.mode === 'update') {
+    // Writer-only note edits (OD-2026-10-06-025 ruling 4) are enforced in
+    // the UPDATE's own WHERE, not by a read beforehand: a caller who is not
+    // the writer ($13 false) matches the row only while the text they sent
+    // equals the stored text (spaces, tabs and line breaks at the ends ignored,
+    // the same set the JS trim below removes: the validator
+    // trims, older rows may not be) AND the session stays with its athlete
+    // ($3 = $10). The second half is the review finding that moving a session
+    // moves the note: the new owner would become its "writer". For a
+    // non-writer the SET keeps the stored bytes of the note untouched, so the
+    // statement itself cannot change the words for anyone else, whatever
+    // happened between the route's lookup and this write. Staff writes that
+    // leave the text alone still update the other columns.
     const updated = await query<{ session_id: string }>(
       `update pilot.sessions
        set athlete_id = $3,
            date = $4,
            rpe = $5,
            rpe_method = $6,
-           notes = $7,
+           notes = case when $13::boolean then $7 else notes end,
            completed_flag = $8,
            updated_at = $9,
            -- $11 says whether the caller sent duration_minutes at all. A
@@ -253,12 +278,13 @@ export async function upsertSession(
              when not $8::boolean then null
              else checked_out_at end,
            close_method = case
-             when $8::boolean and not completed_flag then $13::text
+             when $8::boolean and not completed_flag then $14::text
              when not $8::boolean then null
              else close_method end,
            last_activity_at = case when $8::boolean then last_activity_at else null end,
            inactivity_minutes = case when $8::boolean then inactivity_minutes else null end
        where organization_id = $1 and session_id = $2 and athlete_id = $10
+         and ($13::boolean or (btrim(notes, ' ' || chr(9) || chr(13) || chr(10)) = $7 and $3 = $10))
        returning session_id`,
       [
         organizationId,
@@ -273,10 +299,24 @@ export async function upsertSession(
         guard.expectedAthleteId,
         payload.duration_minutes !== undefined,
         payload.duration_minutes ?? null,
+        guard.noteWriter,
         closeMethod,
       ],
     );
     if (updated.length === 0) {
+      // Zero rows is one of two things, and the caller is told which: the
+      // row moved (409, retry after re-reading) or the caller tried to change
+      // or move a note that is not theirs (403). The follow-up read only
+      // picks the message; the refusal itself already happened in the UPDATE.
+      if (!guard.noteWriter) {
+        const stored = await queryOne<{ notes: string }>(
+          'select notes from pilot.sessions where organization_id = $1 and session_id = $2 and athlete_id = $3',
+          [organizationId, payload.session_id, guard.expectedAthleteId],
+        );
+        if (stored && (stored.notes.trim() !== payload.notes || payload.athlete_id !== guard.expectedAthleteId)) {
+          throw new ForbiddenError(SESSION_NOTE_NOT_WRITER_MESSAGE, 'SESSION_NOTE_WRITER_ONLY');
+        }
+      }
       throw new ConflictError('This session changed before the update was applied. Reload it and try again.');
     }
     return;

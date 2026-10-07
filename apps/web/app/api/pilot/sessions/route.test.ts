@@ -107,14 +107,14 @@ describe('POST /api/pilot/sessions', () => {
     expect(mockUpsertSession).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.anything(),
-      { mode: 'update', expectedAthleteId: 'ath-attacker' },
+      { mode: 'update', expectedAthleteId: 'ath-attacker', noteWriter: true },
       // The close record's method comes from the signed-in role (an athlete
       // here), never from the body -- see the session-close migration.
       { closedBy: 'athlete' },
     );
   });
 
-  test('a staff principal completing a session is recorded as a staff close', async () => {
+  test('a staff principal completing a session is recorded as a staff close, and is not the note writer', async () => {
     mockRequirePrincipal.mockResolvedValue({ accountId: 'acct-coach', role: 'coach', organizationId: 'org-a' });
     mockGetSessionById.mockResolvedValueOnce({ session_id: 'sess-1', athlete_id: 'ath-attacker' });
     const response = await POST(request(payload({ completed_flag: true })));
@@ -122,7 +122,7 @@ describe('POST /api/pilot/sessions', () => {
     expect(mockUpsertSession).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.anything(),
-      { mode: 'update', expectedAthleteId: 'ath-attacker' },
+      { mode: 'update', expectedAthleteId: 'ath-attacker', noteWriter: false },
       { closedBy: 'staff' },
     );
   });

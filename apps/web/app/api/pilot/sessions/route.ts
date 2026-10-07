@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { isSessionNoteWriter } from '@/src/server/pilot/sessionNotes';
 import { assertDurationWrittenByAthlete, validateSessionPayload } from '@/src/server/pilot/validation';
 
 export const runtime = 'nodejs';
@@ -31,11 +32,17 @@ export async function POST(request: NextRequest) {
       // Compare-and-set on the authorized owner: the UPDATE carries
       // existing.athlete_id in its WHERE, so a concurrent owner change between
       // this lookup and the write fails closed rather than letting the
-      // UPDATE-first upsert rewrite a row that moved (TOCTOU).
+      // UPDATE-first upsert rewrite a row that moved (TOCTOU). The note on
+      // an existing row may be changed only by its writer (sessions/update
+      // carries the same rule); the store refuses the change for anyone else.
       await upsertSession(
         principal.organizationId,
         payload,
-        { mode: 'update', expectedAthleteId: existing.athlete_id },
+        {
+          mode: 'update',
+          expectedAthleteId: existing.athlete_id,
+          noteWriter: isSessionNoteWriter(principal, existing.athlete_id),
+        },
         // For the close record if this write completes the session: the
         // method comes from the signed-in role, never from the body.
         { closedBy: principal.role === 'athlete' ? 'athlete' : 'staff' },
