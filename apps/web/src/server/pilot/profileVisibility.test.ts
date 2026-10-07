@@ -160,6 +160,16 @@ describe('an adult member', () => {
     expect(decidePortrait(eighteenToday, 'organization_staff', NOW).show).toBe('photo');
     expect(decidePortrait(seventeen, 'organization_staff', NOW).show).toBe('plate');
   });
+
+  it('is still inside the minor rule at 8pm the evening before, when UTC is already the birthday', () => {
+    // 00:00Z on Aug 3 is 8:00pm on Aug 2 in Punxsutawney. This instant was the
+    // file's old fixed clock, and the case above expected "photo" at it: the
+    // age was read from the server's UTC date, so a minor became an adult
+    // during the evening class the night before their birthday.
+    const eveningBefore = new Date('2026-08-03T00:00:00Z');
+    const eighteenTomorrow = subject({ dob: '2008-08-03' });
+    expect(decidePortrait(eighteenTomorrow, 'organization_staff', eveningBefore).show).toBe('plate');
+  });
 });
 
 describe('a staff member’s face is how "who is in your corner" works', () => {
