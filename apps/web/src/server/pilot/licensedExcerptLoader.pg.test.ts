@@ -234,15 +234,6 @@ beforeAll(async () => {
   loader = await import('./licensedExcerptLoader');
   library = await import('./shadowLibrary');
 
-  gymSourceId = (await library.createShadowLibrarySource({
-    organizationId: GYM_ID,
-    actorAccountId: GYM_ADMIN_ACCOUNT,
-    actorRole: 'organization_admin',
-    title: 'Quokka Conditioning',
-    sourceType: 'peer_reviewed',
-    authorityTier: 3,
-    status: 'active',
-  })).source_id;
   platformSourceId = (await library.createShadowLibrarySource({
     organizationId: PLATFORM,
     actorAccountId: OWNER_ACCOUNT,
@@ -252,11 +243,25 @@ beforeAll(async () => {
     authorityTier: 3,
     status: 'active',
   })).source_id;
-  // The rights marker an excerpt-only source carries (#1238). The loader does
-  // not require it -- excerpts are allowed under any source -- but reports it.
-  await rawQuery(`update pilot.shadow_library_sources set rights_status = 'licensed_excerpt_only' where source_id = $1`, [gymSourceId]);
 
   workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-excerpts-'));
+});
+
+// Each test gets its own excerpt-only source: a non-owned source is held to the
+// per-source excerpt budget (10 chunks), and the loads in this suite would
+// otherwise add up on one shared source. The rights marker is the one an
+// excerpt-only source carries (#1238); the loader does not require it.
+beforeEach(async () => {
+  gymSourceId = (await library.createShadowLibrarySource({
+    organizationId: GYM_ID,
+    actorAccountId: GYM_ADMIN_ACCOUNT,
+    actorRole: 'organization_admin',
+    title: 'Quokka Conditioning',
+    sourceType: 'peer_reviewed',
+    authorityTier: 3,
+    status: 'active',
+  })).source_id;
+  await rawQuery(`update pilot.shadow_library_sources set rights_status = 'licensed_excerpt_only' where source_id = $1`, [gymSourceId]);
 });
 
 afterAll(async () => {

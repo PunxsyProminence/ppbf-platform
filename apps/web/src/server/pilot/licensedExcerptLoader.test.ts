@@ -32,8 +32,8 @@ jest.mock('./shadowLibrary', () => ({
   createShadowLibraryDocument: jest.fn(),
   HELD_EXCERPT_BUDGET_SQL: 'select 1',
   isExcerptBudgeted: jest.fn(() => true),
-  MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE: 40,
-  MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE: 60_000,
+  MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE: 10,
+  MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE: 15_000,
 }));
 
 const VALID = {

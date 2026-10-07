@@ -1007,7 +1007,7 @@ describe('the routes answer the rule in plain words', () => {
 
     // Characters: large excerpts up to the budget load; the one that crosses it is refused.
     const sized = await sourceWithDocument('Budget Size Paper');
-    const big = 'x'.repeat(20_000);
+    const big = 'x'.repeat(5_000);
     let loaded = 0;
     let ordinal = 0;
     while (loaded + big.length <= MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE) {

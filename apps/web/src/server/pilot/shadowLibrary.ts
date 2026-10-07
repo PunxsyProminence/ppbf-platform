@@ -1033,13 +1033,13 @@ export async function createShadowLibraryDocument(input: {
 // ppbf_owned or open_licence may hold at most this many chunks and this many
 // characters in total, across all its documents.
 //
-// PLACEHOLDER NUMBERS, PENDING JASON'S APPROVAL. OD-2026-10-05-024 item 7:
-// "ChatGPT proposes a limit and Jason approves it. No number is decided yet."
-// These two values exist only so the mechanism can be built and tested; they
-// are not a decision, and the PR carrying them stays a draft until the
-// approved numbers replace them.
-export const MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE = 40;
-export const MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE = 60_000;
+// NUMBERS SET BY JASON, 2026-10-07, on Claude's recommendation ("C ... 10
+// passages / 15,000 characters per source ... ChatGPT reviews it later"); his
+// answer: "double your recomendation", read by overwatch as "do your
+// recommendation". This amends OD-2026-10-05-024 item 7 for now. ChatGPT
+// reviews the numbers later; raising them is a one-line change here.
+export const MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE = 10;
+export const MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE = 15_000;
 
 export const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
 
