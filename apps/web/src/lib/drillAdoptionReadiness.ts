@@ -17,16 +17,19 @@
 // for conditioning drills; see drillCueRule.ts). Of the 119 seeded drills, 34
 // have no cue; 23 of those are conditioning and exempt, so 11 are not ready.
 //
-// One rule is still left out: "the provenance must be validated" (114 of 119
-// are marked REQUIRES FLOOR VALIDATION and nothing records a validation). The
-// owner ruled that a coach marks each one floor-tested first (same ruling,
-// ruling 3); the mark does not exist yet, so nothing here can test it.
+// "The provenance must be validated" is a rule now too (same ruling, ruling 3:
+// "They stay drafts until a coach marks them floor-tested"). A draft -- one of
+// the two REQUIRES FLOOR VALIDATION provenance values -- is ready for a gym
+// only once a coach of THAT gym has marked it floor-tested
+// (pilot.drill_floor_validations; see drillFloorValidation.ts). 114 of the 119
+// seeded drills are drafts, so until coaches mark them none is adoptable.
 //
 // PURE and client-safe: the promote route enforces it on the server, so a
 // direct API call cannot skip it, and the coach page runs the same function to
 // show the result before anyone presses Promote.
 
 import { NO_CUE_READINESS_MESSAGE, breaksCueRule, isConditioningLabel } from './drillCueRule';
+import { NOT_FLOOR_TESTED_READINESS_MESSAGE, requiresFloorValidation } from './drillFloorValidation';
 
 export interface AdoptionReadinessInput {
   active: boolean;
@@ -50,6 +53,10 @@ export interface AdoptionReadinessInput {
   stop_rules: unknown[];
   /** The drill's cues (pilot.drill_cues rows); blank text does not count. */
   cues: { cue_text: string }[];
+  /** One of the four field_provenance literals; the two DRAFT values need a floor test. */
+  field_provenance: string;
+  /** Whether a coach of the ADOPTING gym has marked this version floor-tested. */
+  floor_tested_by_this_gym: boolean;
 }
 
 export interface AdoptionReadiness {
@@ -102,6 +109,12 @@ export function adoptionReadiness(drill: AdoptionReadinessInput): AdoptionReadin
   // Coaching: a technique drill needs at least one cue; conditioning does not.
   if (breaksCueRule({ conditioning: isConditioningLabel(drill.discipline), cues: drill.cues })) {
     missing.push(NO_CUE_READINESS_MESSAGE);
+  }
+
+  // Provenance: a draft stays a draft for this gym until one of its coaches
+  // has tried it on the floor and said so.
+  if (requiresFloorValidation(drill.field_provenance) && !drill.floor_tested_by_this_gym) {
+    missing.push(NOT_FLOOR_TESTED_READINESS_MESSAGE);
   }
 
   return { ready: missing.length === 0, missing };

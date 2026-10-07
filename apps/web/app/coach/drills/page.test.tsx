@@ -131,6 +131,9 @@ interface RouteOptions {
   details?: Record<string, unknown>;
   /** The list payload's lifecycle map. `null` sends a list with no lifecycle at all. */
   lifecycle?: LifecycleMap | null;
+  /** This gym's floor-tested marks by reference drill id (OD-2026-10-06-026 ruling 3). */
+  floorTested?: Record<string, FloorMark>;
+  onMarkFloorTested?: (body: { reference_drill_id: string }) => void;
   promote?: () => Response;
   onPromote?: () => void;
   patch?: (body: { drill_id: string; active: boolean }) => Response;
@@ -170,6 +173,7 @@ function routes(options: RouteOptions = {}) {
     ? { [reference.drill_id]: NOT_ADOPTED }
     : options.lifecycle;
   let changedBeforeDetail = options.changedBeforeDetail;
+  let floorTested: Record<string, FloorMark> = { ...options.floorTested };
   let libraryReads = 0;
   let detailReads = 0;
 
@@ -185,6 +189,19 @@ function routes(options: RouteOptions = {}) {
       lifecycle = { ...lifecycle, [referenceDrillId]: { state: 'operational', operational_drill_id: promoted.drill_id } };
       if (options.answerAfterCommit) return options.answerAfterCommit();
       return jsonResponse({ ok: true, drill: promoted }, true, 201);
+    }
+
+    if (url === '/api/pilot/drills/floor-tested' && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { reference_drill_id: string };
+      options.onMarkFloorTested?.(body);
+      const mark: FloorMark = {
+        validation_id: `dfv-${body.reference_drill_id}`,
+        drill_id: body.reference_drill_id,
+        validated_by_account_id: 'coach-1',
+        validated_at: '2026-10-07T00:00:00.000Z',
+      };
+      floorTested = { ...floorTested, [body.reference_drill_id]: mark };
+      return jsonResponse({ ok: true, floor_tested: mark }, true, 201);
     }
 
     if (url === '/api/pilot/drills' && method === 'PATCH') {
@@ -219,13 +236,13 @@ function routes(options: RouteOptions = {}) {
       if (!details[id]) return jsonResponse({ error: 'DRILL_NOT_FOUND' }, false, 404);
       return jsonResponse(options.detailWithoutLifecycle
         ? { drill: details[id] }
-        : { drill: details[id], lifecycle: lifecycle?.[id] ?? null });
+        : { drill: details[id], lifecycle: lifecycle?.[id] ?? null, floor_tested: floorTested[id] ?? null });
     }
     if (url === '/api/pilot/drill-library') {
       libraryReads += 1;
       const answer = options.libraryRead?.(libraryReads);
       if (answer) return answer;
-      return jsonResponse(lifecycle === null ? { drills: references } : { drills: references, lifecycle });
+      return jsonResponse(lifecycle === null ? { drills: references } : { drills: references, lifecycle, floor_tested: floorTested });
     }
     if (url === '/api/pilot/drills') return jsonResponse({ items: operational });
     return jsonResponse({ error: 'unexpected read' }, false, 500);
@@ -233,6 +250,10 @@ function routes(options: RouteOptions = {}) {
 }
 
 type FetchMock = ReturnType<typeof routes>;
+
+type FloorMark = { validation_id: string; drill_id: string; validated_by_account_id: string; validated_at: string };
+const LITERATURE_DRAFT =
+  'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION';
 
 /** Every non-GET call, as the server would receive it. */
 function writes(fetchMock: FetchMock) {
@@ -570,6 +591,50 @@ describe('promotion state', () => {
     expect(within(detail).queryByText('Not ready to adopt')).not.toBeInTheDocument();
     expect(within(detail).queryByRole('button', { name: 'Retire' })).not.toBeInTheDocument();
     expect(within(detail).queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument();
+  });
+
+  // OD-2026-10-06-026 ruling 3: a draft stays a draft for this gym until a
+  // coach marks it floor-tested; the mark is the one control the rule adds.
+  it('a draft this gym has not floor-tested offers Mark floor-tested instead of Promote, and says why', async () => {
+    global.fetch = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+    }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    expect(within(detail).getByText('Not ready to adopt')).toBeInTheDocument();
+    expect(within(detail).getByText('It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.')).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Mark floor-tested' })).toBeEnabled();
+    expect(within(detail).queryByRole('button', { name: 'Promote' })).not.toBeInTheDocument();
+  });
+
+  it('marking it floor-tested posts the reference id, re-reads, and then offers Promote', async () => {
+    const marked: { reference_drill_id: string }[] = [];
+    const fetchMock = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+      onMarkFloorTested: (body) => marked.push(body),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    fireEvent.click(within(detail).getByRole('button', { name: 'Mark floor-tested' }));
+
+    expect(await within(detail).findByRole('button', { name: 'Promote' })).toBeEnabled();
+    expect(marked).toEqual([{ reference_drill_id: reference.drill_id }]);
+    expect(within(detail).queryByText('Not ready to adopt')).not.toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: 'Mark floor-tested' })).not.toBeInTheDocument();
+  });
+
+  it('a drill that is not a draft never offers Mark floor-tested', async () => {
+    global.fetch = routes() as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+
+    expect(within(detail).getByRole('button', { name: 'Promote' })).toBeEnabled();
+    expect(within(detail).queryByRole('button', { name: 'Mark floor-tested' })).not.toBeInTheDocument();
   });
 
   it('reads where each reference stands from the library list, and never asks for the retired census', async () => {

@@ -5883,6 +5883,32 @@
     }
   },
   {
+    "id": "app/api/pilot/drills/floor-tested/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/drills/floor-tested",
+    "gate": "requirePrincipal + requireRole(FLOOR_VALIDATOR_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records that a coach of the session's gym floor-tested a draft reference drill (markDrillFloorTested, append-only pilot.drill_floor_validations) and writes an audit event; adopts nothing and changes no drill_library row; no athlete data. Role gate is the first statement after requirePrincipal in POST. OD-2026-10-06-026 ruling 3.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/drills/promote/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/drills/promote",
