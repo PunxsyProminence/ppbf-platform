@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import BodyPointCanvas from '@/components/BodyPointCanvas';
 import BodyPointMomentPanel from '@/components/BodyPointMomentPanel';
-import BodyPointProgress from '@/components/BodyPointProgress';
+import BodyPointProgress, { readableMissingItem } from '@/components/BodyPointProgress';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -319,15 +319,18 @@ function describeEvent(event: AnnotationEvent): string {
 }
 
 /** A refusal's message and its machine code, where the route gave one. */
-async function readRefusal(response: Response): Promise<{ message: string; code: string | null }> {
+async function readRefusal(response: Response): Promise<{ message: string; code: string | null; missing: string[] }> {
   try {
-    const payload = (await response.json()) as { error?: string; code?: string };
+    const payload = (await response.json()) as { error?: string; code?: string; missing?: unknown };
     return {
       message: payload.error ?? `Request refused (${response.status}).`,
       code: typeof payload.code === 'string' ? payload.code : null,
+      // The submit route's own list of what is still to mark, when it refuses
+      // an incomplete body-point set.
+      missing: Array.isArray(payload.missing) ? payload.missing.filter((item): item is string => typeof item === 'string') : [],
     };
   } catch {
-    return { message: `Request refused (${response.status}).`, code: null };
+    return { message: `Request refused (${response.status}).`, code: null, missing: [] };
   }
 }
 
@@ -373,6 +376,12 @@ export default function CoachCalibrationPage() {
   const [activeMomentId, setActiveMomentId] = useState<string | null>(null);
   const [activePointCode, setActivePointCode] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<Placement[]>([]);
+
+  /* An edit or delete of an event that holds marks, waiting for the coach to
+     say so twice: replacing or removing the event takes every moment, point
+     and stance type on it with it (the body-point tables cascade from the
+     event), and that is up to 69 taps. */
+  const [confirmingEventAction, setConfirmingEventAction] = useState<{ eventId: string; action: 'edit' | 'delete' } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   /* Which body-points read is the current one. A slow reply from an earlier
@@ -481,7 +490,7 @@ export default function CoachCalibrationPage() {
    * A failure here is shown beside the body-point section, not as the page's
    * refusal: the events, the player and the forms are unaffected by it.
    */
-  const loadBodyData = useCallback(async (set: AnnotationSet | null) => {
+  const loadBodyData = useCallback(async (set: AnnotationSet | null): Promise<BodyData | null> => {
     const token = bodyReadToken.current + 1;
     bodyReadToken.current = token;
     // Cleared first, not replaced on arrival: between an event write and the
@@ -490,32 +499,37 @@ export default function CoachCalibrationPage() {
     setBodyData(null);
     setBodyNotice('');
     if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
-      return;
+      return null;
     }
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/calibration/body-points?annotation_set_id=${encodeURIComponent(set.annotation_set_id)}`,
         { credentials: 'include', cache: 'no-store' },
       );
-      if (bodyReadToken.current !== token) return;
+      if (bodyReadToken.current !== token) return null;
       if (!response.ok) {
         setBodyNotice(await readError(response));
-        return;
+        return null;
       }
       const payload = (await response.json()) as Partial<BodyData>;
-      if (bodyReadToken.current !== token) return;
-      setBodyData({
+      if (bodyReadToken.current !== token) return null;
+      const data: BodyData = {
         annotation_set_id: set.annotation_set_id,
         expected_points: payload.expected_points ?? null,
         moments: payload.moments ?? [],
         stance_labels: payload.stance_labels ?? [],
         missing: payload.missing ?? [],
-      });
+      };
+      setBodyData(data);
+      // Returned as well as stored, for a caller that must act on the fresh
+      // answer in the same breath (the submit gate), not on a render later.
+      return data;
     } catch {
       // Offline, aborted, or a body that was not JSON. The events and the
       // player are unaffected; the panel says the marks could not be read.
-      if (bodyReadToken.current !== token) return;
+      if (bodyReadToken.current !== token) return null;
       setBodyNotice('The body-point marks could not be read. Reload the clip to try again.');
+      return null;
     }
   }, []);
 
@@ -1079,10 +1093,17 @@ export default function CoachCalibrationPage() {
         body: JSON.stringify({ annotation_set_id: annotationSet.annotation_set_id }),
       });
       if (!response.ok) {
-        setRefusal(await readError(response));
-        // A body-point set refused as incomplete: re-read the marks so the
-        // panel shows what the server named, not what it showed before a
-        // write from another tab or a lost reply.
+        const refusal = await readRefusal(response);
+        // A body-point set refused as incomplete: the route's own list is
+        // shown with the refusal, and the marks are re-read so the panel
+        // shows what the server named, not what it showed before a write
+        // from another tab or a lost reply.
+        setRefusal(
+          refusal.missing.length > 0
+            ? `${refusal.message} Still to mark: ${refusal.missing.map((item) => readableMissingItem(item, events)).join('; ')}.`
+            : refusal.message,
+        );
+        setConfirmingSubmit(false);
         await loadBodyData(annotationSet);
         return;
       }
@@ -1096,7 +1117,52 @@ export default function CoachCalibrationPage() {
     } finally {
       setBusy(false);
     }
-  }, [annotationSet, clip, loadBodyData]);
+  }, [annotationSet, clip, events, loadBodyData]);
+
+  /**
+   * THE SUBMIT GATE, driven by the server's missing list and nothing else.
+   *
+   * On a body-point set the marks are read again at the moment the coach
+   * asks to submit, and the confirmation is offered only when that fresh
+   * answer names nothing missing. The page never sums points itself: the
+   * list is the submission trigger's own query, read ahead of time
+   * (bodyPoints.ts listMissingBodyData), and the trigger stays the authority
+   * -- a set that passes here and is refused there shows the route's list.
+   */
+  const requestSubmit = useCallback(async () => {
+    if (!annotationSet) return;
+    setRefusal('');
+    if (!isBodyPointSet) {
+      setConfirmingSubmit(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      const fresh = await loadBodyData(annotationSet);
+      if (!fresh) {
+        setRefusal('The body-point marks could not be read, so this set cannot be submitted yet. Reload the clip and try again.');
+        return;
+      }
+      if (fresh.missing.length > 0) {
+        setNotice(`${fresh.missing.length} item${fresh.missing.length === 1 ? ' is' : 's are'} still to mark before this set can be submitted. The list is under Body points.`);
+        return;
+      }
+      setConfirmingSubmit(true);
+    } finally {
+      setBusy(false);
+    }
+  }, [annotationSet, isBodyPointSet, loadBodyData]);
+
+  /** How many marks an event holds: its moments, their points, its stance
+   * type. Zero means an edit or delete costs nothing but the event. */
+  const marksOnEvent = useCallback((eventId: string): { moments: number; points: number; stance: boolean } => {
+    const moments = bodyDataForSet?.moments.filter((row) => row.event_id === eventId) ?? [];
+    return {
+      moments: moments.length,
+      points: moments.reduce((sum, row) => sum + row.points.length, 0),
+      stance: bodyDataForSet?.stance_labels.some((row) => row.event_id === eventId) ?? false,
+    };
+  }, [bodyDataForSet]);
 
   /* The SAS warning. One timer per minted link, cleared on replacement. */
   useEffect(() => {
@@ -1435,25 +1501,78 @@ export default function CoachCalibrationPage() {
                       <p className="t-muted mt-[var(--s2)]">
                         visibility {label(event.visibility)} · certainty {label(event.certainty)}
                       </p>
-                      {canEdit ? (
-                        <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
-                          <button
-                            type="button"
-                            className="btn btn--ghost"
-                            onClick={() => setDraft(draftFromEvent(event))}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn--ghost"
-                            disabled={busy}
-                            onClick={() => { void removeEvent(event.event_id); }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ) : null}
+                      {canEdit ? (() => {
+                        const marks = marksOnEvent(event.event_id);
+                        const holdsMarks = marks.moments > 0 || marks.stance;
+                        const confirming = confirmingEventAction?.eventId === event.event_id ? confirmingEventAction : null;
+                        return (
+                          <>
+                            <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (holdsMarks) setConfirmingEventAction({ eventId: event.event_id, action: 'edit' });
+                                  else setDraft(draftFromEvent(event));
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (holdsMarks) setConfirmingEventAction({ eventId: event.event_id, action: 'delete' });
+                                  else void removeEvent(event.event_id);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                            {confirming ? (
+                              /* THE WARNING BEFORE AN EDIT WIPES THE MARKS. An
+                                 edit is a replacement (new event, old one
+                                 removed) and the body-point tables cascade
+                                 from the event, so every moment, point and
+                                 stance type on it goes too. Said plainly,
+                                 with the count, before the coach loses them. */
+                              <div className="alert alert--warning mt-[var(--s2)]" role="alertdialog" data-testid="event-marks-warning">
+                                <div className="alert-body">
+                                  <p className="alert-title">
+                                    This {label(event.event_class)} holds body-point marks
+                                  </p>
+                                  <p className="t-body">
+                                    {marks.points} point{marks.points === 1 ? '' : 's'} on {marks.moments} moment{marks.moments === 1 ? '' : 's'}
+                                    {marks.stance ? ', and its stance type' : ''}.{' '}
+                                    {confirming.action === 'edit'
+                                      ? 'Saving an edit replaces the event and removes all of them; you would mark them again on the replacement.'
+                                      : 'Deleting the event removes all of them.'}
+                                  </p>
+                                  <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setConfirmingEventAction(null);
+                                        if (confirming.action === 'edit') setDraft(draftFromEvent(event));
+                                        else void removeEvent(event.event_id);
+                                      }}
+                                    >
+                                      {confirming.action === 'edit' ? 'Edit it anyway' : 'Delete it anyway'}
+                                    </button>
+                                    <button type="button" className="btn btn--ghost" onClick={() => setConfirmingEventAction(null)}>
+                                      Keep the marks
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                          </>
+                        );
+                      })() : null}
                     </li>
                   ))}
                 </ul>
@@ -1890,7 +2009,15 @@ export default function CoachCalibrationPage() {
               <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
                 Submitting closes this pass for good. You will not be able to add, change or remove
                 an event afterwards, and there is no un-submit anywhere in the platform.
+                {isBodyPointSet
+                  ? ' A body-point set is submitted only when every moment, point, lead side, guard and stance type is marked; the marks are checked again when you press Submit.'
+                  : ''}
               </p>
+              {isBodyPointSet && bodyDataForSet && bodyDataForSet.missing.length > 0 ? (
+                <p className="t-data mt-[var(--s3)]" data-testid="submit-gate">
+                  {bodyDataForSet.missing.length} item{bodyDataForSet.missing.length === 1 ? '' : 's'} still to mark · listed under Body points
+                </p>
+              ) : null}
               {confirmingSubmit ? (
                 <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                   <button type="button" className="btn" disabled={busy} onClick={() => { void submitSet(); }}>
@@ -1904,7 +2031,8 @@ export default function CoachCalibrationPage() {
                 <button
                   type="button"
                   className="btn mt-[var(--s3)]"
-                  onClick={() => setConfirmingSubmit(true)}
+                  disabled={busy || (isBodyPointSet && (bodyDataForSet === null || bodyDataForSet.missing.length > 0))}
+                  onClick={() => { void requestSubmit(); }}
                 >
                   Submit annotation set
                 </button>
