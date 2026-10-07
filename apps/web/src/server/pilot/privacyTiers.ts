@@ -221,6 +221,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionNotes.ts#getTodaySessionNote',
       'passbook.ts#mapSession',
       'access.ts#assertActorCanAccessAthlete',
+      'sessionNotes.ts#isSessionNoteWriter',
+      'entities.ts#upsertSession',
     ],
     note:
       'Free text typed for a coach at check-in -- in the shipped UI, by the ATHLETE. The '
@@ -231,9 +233,15 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'only writer: POST /api/pilot/sessions and /api/pilot/sessions/update both accept '
       + 'organization_admin and coach as well as athlete, and a laptop seeder (scripts/seed-data.ts, '
       + 'retired 2026-10-03, OD-2026-10-03-002 section 10) bulk-loaded notes from CSV. The row carries no author or last-editor column, so no reader can be '
-      + 'told who wrote any given note. Who may EDIT a note after an athlete creates it is an '
-      + 'open owner decision, left open deliberately by A-FIN-08; until it is made, the honest '
-      + 'caption names nobody.'
+      + 'told who wrote any given note, so the honest caption names nobody.'
+      + '\n\n'
+      + 'ONLY THE WRITER EDITS (OD-2026-10-06-025 ruling 4, Jason 2026-10-06). The text of an '
+      + 'existing note may be changed only by the athlete whose session it is -- the one writer '
+      + 'the row can establish, and the only shipped one. isSessionNoteWriter decides; '
+      + 'upsertSession enforces it inside the UPDATE itself, so a coach or organization admin '
+      + 'who sends different text is refused (403 SESSION_NOTE_WRITER_ONLY) and the stored words '
+      + 'stay as the athlete left them. Staff writes that leave the text alone still update the '
+      + 'other columns. Staff add a note of their own instead of rewriting the athlete\'s.'
       + '\n\n'
       + 'THE ENFORCED TIER IS athlete_record. The dedicated staff route (A-FIN-08) is gated by '
       + 'assertActorCanAccessAthlete -- coach of record, a covering coach with a live grant, or '

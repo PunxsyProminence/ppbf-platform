@@ -9238,7 +9238,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates or updates a training session; assertActorCanAccessAthlete on payload athlete and on existing record's athlete before upsertSession; assertDurationWrittenByAthlete restricts duration field by role; audited.",
+    "notes": "Creates or updates a training session; assertActorCanAccessAthlete on payload athlete and on existing record's athlete before upsertSession; assertDurationWrittenByAthlete restricts duration field by role; on an existing id the note text may be changed only by the athlete who owns the session (noteWriter, OD-2026-10-06-025 ruling 4); audited.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9267,7 +9267,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Loads current session, runs assertActorCanAccessAthlete on both current.athlete_id and payload.athlete_id, then upsertSession mode update with expectedAthleteId; audited.",
+    "notes": "Loads current session, runs assertActorCanAccessAthlete on both current.athlete_id and payload.athlete_id, then upsertSession mode update with expectedAthleteId; the note text may be changed only by the athlete who owns the session (noteWriter, OD-2026-10-06-025 ruling 4; coach/org admin get 403 SESSION_NOTE_WRITER_ONLY when their text differs); audited.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

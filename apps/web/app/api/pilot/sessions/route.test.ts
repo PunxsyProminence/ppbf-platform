@@ -107,7 +107,7 @@ describe('POST /api/pilot/sessions', () => {
     expect(mockUpsertSession).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.anything(),
-      { mode: 'update', expectedAthleteId: 'ath-attacker' },
+      { mode: 'update', expectedAthleteId: 'ath-attacker', noteWriter: true },
     );
   });
 

@@ -1,6 +1,6 @@
-import { query } from './db';
+import { query, queryOne } from './db';
 import { upsertCoachReview, upsertGoal, upsertSession } from './entities';
-import { ConflictError } from './errors';
+import { ConflictError, ForbiddenError } from './errors';
 import type { PilotCoachReview, PilotGoal, PilotSession } from './contracts';
 
 jest.mock('./db', () => ({
@@ -9,6 +9,7 @@ jest.mock('./db', () => ({
 }));
 
 const mockQuery = query as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 function session(overrides: Partial<PilotSession> = {}): PilotSession {
   return {
@@ -72,7 +73,7 @@ describe('upsertSession — write owner guard', () => {
   test("update mode carries the expected owner in the WHERE clause", async () => {
     mockQuery.mockResolvedValueOnce([{ session_id: 'sess-1' }]);
 
-    await upsertSession('org-1', session({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner' });
+    await upsertSession('org-1', session({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('update pilot.sessions');
@@ -86,7 +87,44 @@ describe('upsertSession — write owner guard', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await expect(
-      upsertSession('org-1', session(), { mode: 'update', expectedAthleteId: 'ath-owner' }),
+      upsertSession('org-1', session(), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    // The writer's own write needs no follow-up read to explain a miss.
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  // OD-2026-10-06-025 ruling 4: only the writer changes a session note. The
+  // rule lives in the UPDATE's WHERE so it holds in the same statement as the
+  // write, not in a read that a concurrent writer could get between.
+  test('update mode carries the note-writer guard in the WHERE clause', async () => {
+    mockQuery.mockResolvedValueOnce([{ session_id: 'sess-1' }]);
+
+    await upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/and \(\$13::boolean or notes = \$7\)/);
+    expect(params[6]).toBe('rewritten');
+    expect(params[12]).toBe(false);
+  });
+
+  test('a non-writer whose text differs from the stored note is refused with a 403, not a 409', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ notes: 'the athlete wrote this' });
+
+    await expect(
+      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    // The follow-up read is scoped to the authorized owner's row.
+    const [, params] = mockQueryOne.mock.calls[0];
+    expect(params).toEqual(['org-1', 'sess-1', 'ath-owner']);
+  });
+
+  test('a non-writer whose miss is not about the note gets the ordinary conflict', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ notes: 'rewritten' });
+
+    await expect(
+      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
@@ -113,7 +151,7 @@ describe('upsertGoal — write owner guard', () => {
   test("update mode carries the expected owner in the WHERE clause", async () => {
     mockQuery.mockResolvedValueOnce([{ goal_id: 'goal-1' }]);
 
-    await upsertGoal('org-1', goal({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner' });
+    await upsertGoal('org-1', goal({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('update pilot.goals');
@@ -126,7 +164,7 @@ describe('upsertGoal — write owner guard', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await expect(
-      upsertGoal('org-1', goal(), { mode: 'update', expectedAthleteId: 'ath-owner' }),
+      upsertGoal('org-1', goal(), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
