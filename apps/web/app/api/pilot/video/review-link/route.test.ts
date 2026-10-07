@@ -229,9 +229,28 @@ describe('POST /api/pilot/video/review-link on a tagged clip', () => {
     const res = await call();
 
     expect(res.status).toBe(200);
+    // The tags of THIS clip, in this organization: two swapped strings would
+    // read nothing and silently ask only the clip's own athlete again.
+    expect(mockTags).toHaveBeenCalledWith('org-1', 'vid-1');
     expect(mockMint).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-tagged'], expect.any(Function));
     expect(mockConsent).toHaveBeenCalledTimes(2);
     expect(mockSas).toHaveBeenCalledTimes(1);
+  });
+
+  test('a tag read that fails is a failure, not an untagged clip: nothing is minted', async () => {
+    // "We could not find out who is in the clip, so ask only the one it is
+    // filed under" is the fail-open direction a consent read must never take.
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockAuthorize.mockResolvedValueOnce(quarantined());
+    mockTags.mockRejectedValueOnce(new Error('connection reset'));
+
+    const res = await call();
+
+    expect(res.status).toBe(500);
+    expect(mockMint).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(mockSas).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('a tag naming a deleted athlete reads as not found, as on playback, and asks nobody', async () => {

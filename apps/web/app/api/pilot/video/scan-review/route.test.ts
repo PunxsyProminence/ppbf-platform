@@ -72,6 +72,10 @@ afterEach(() => {
   // per-athlete consent double, which must not leak into the next test.
   (assertConsentCoversVideo as jest.Mock).mockReset().mockResolvedValue(undefined);
   mockTags.mockReset().mockResolvedValue([]);
+  // Every test sets these itself; dropping them ends any order dependence
+  // (the tagged-clip block installs a mockReview implementation).
+  mockReview.mockReset();
+  mockGetVideo.mockReset();
 });
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -478,13 +482,37 @@ describe('POST /api/pilot/video/scan-review on a tagged clip', () => {
     // partner's guardian either lands first and is read, or waits.
     expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ decision: 'approve' }), TX_CLIENT);
     expect(mockAudit).toHaveBeenCalledTimes(1);
+    // The tags of THIS clip, in this organization: two swapped strings would
+    // read nothing and silently ask only the clip's own athlete again.
+    expect(mockTags).toHaveBeenCalledWith('org-1', 'vs-1');
   });
 
-  test('the withdrawal-during-write race: the partner\'s refusal raised inside the write stops it', async () => {
-    // The double checks consent and then writes, as the real helper does on
-    // one transaction. A refusal for the tagged child is therefore raised
-    // from INSIDE the write call, after the own athlete was already cleared:
-    // the order a withdrawal landing mid-approve produces on Postgres.
+  test('a tag read that fails is a failure, not an untagged clip: nothing is written', async () => {
+    // "We could not find out who is in the clip, so ask only the one it is
+    // filed under" is the fail-open direction a consent read must never take.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockTags.mockRejectedValueOnce(new Error('connection reset'));
+
+    const res = await approve();
+
+    expect(res.status).toBe(500);
+    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the tagged child is refused from inside the write call, after the own athlete cleared, and the write never runs', async () => {
+    // What this proves at unit level: the partner's refusal is raised by the
+    // helper call that owns the write, so the review cannot run on a consent
+    // the partner no longer gives. What it cannot prove: a withdrawal that
+    // lands between the check and the write on a real database -- that is
+    // the helper's FOR SHARE, proven for a two-athlete clip in
+    // playbackConsentRace.pg.test.ts ('a tagged clip: a withdrawal in flight
+    // for the SECOND athlete ...'); the test above proves the review took
+    // that helper's client. The check order here is the double's, not the
+    // helper's, which sorts its subjects.
     taggedClip();
     const order: string[] = [];
     mockConsent.mockImplementation(async (_org: string, athleteId: string) => {

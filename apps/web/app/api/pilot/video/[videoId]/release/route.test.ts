@@ -499,15 +499,38 @@ describe('releasing a tagged clip', () => {
     expect(TX_CLIENT.query).toHaveBeenCalledTimes(1);
     expect(String(TX_CLIENT.query.mock.calls[0][0])).toContain("set status = 'ready'");
     expect(mockAudit).toHaveBeenCalledTimes(1);
+    // The tags of THIS clip, in this organization: two swapped strings would
+    // read nothing and silently ask only the clip's own athlete again.
+    expect(mockTags).toHaveBeenCalledWith('org-1', 'vid-1');
   });
 
-  test('the withdrawal-during-write race: the partner\'s refusal raised inside the write stops it', async () => {
-    // The double checks consent and then writes, as the real helper does on
-    // one transaction. A refusal for the tagged child is therefore raised
-    // from INSIDE the write call, after the own athlete was already cleared:
-    // the order a withdrawal landing mid-release produces on Postgres
-    // (playbackConsentRace.pg.test.ts, 'a tagged clip: a withdrawal in
-    // flight for the SECOND athlete ...').
+  test('a tag read that fails is a failure, not an untagged clip: nothing is written', async () => {
+    // "We could not find out who is in the clip, so ask only the one it is
+    // filed under" is the fail-open direction a consent read must never take.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockTags.mockRejectedValueOnce(new Error('connection reset'));
+
+    const res = await call();
+
+    expect(res.status).toBe(500);
+    expect(writeUnderPlaybackConsent).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(TX_CLIENT.query).not.toHaveBeenCalled();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the tagged child is refused from inside the write call, after the own athlete cleared, and the write never runs', async () => {
+    // What this proves at unit level: the partner's refusal is raised by the
+    // helper call that owns the write, so the write cannot run on a consent
+    // the partner no longer gives. What it cannot prove: a withdrawal that
+    // lands between the check and the UPDATE on a real database -- that is
+    // the helper's FOR SHARE, proven for a two-athlete clip in
+    // playbackConsentRace.pg.test.ts ('a tagged clip: a withdrawal in flight
+    // for the SECOND athlete ...'); the test above proves the UPDATE took
+    // that helper's client. The check order here is the double's, not the
+    // helper's, which sorts its subjects.
     taggedClip({}, { written: false });
     const order: string[] = [];
     mockConsent.mockImplementation(async (_org: string, athleteId: string) => {
