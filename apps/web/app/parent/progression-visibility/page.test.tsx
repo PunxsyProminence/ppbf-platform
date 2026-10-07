@@ -44,6 +44,9 @@ const ASSIGNMENT = {
   completion_percentage: 40,
   status: 'in_progress',
   created_at: '2026-07-31T12:00:00.000Z',
+  // What the server sends a guardian (OD-2026-10-06-025 ruling 2): a name,
+  // and no assigned_by_account_id.
+  assigned_by_name: 'Coach J Rivera',
 };
 
 const COMPLETION = {
@@ -148,9 +151,24 @@ test("the child's real gap, drill, and verified work render read-only", async ()
   expect(screen.getByText('40%')).toBeTruthy();
   expect(screen.getByText('20 reps')).toBeTruthy();
   expect(screen.getByText('verified')).toBeTruthy();
+  // Who assigned it, as a name (OD-2026-10-06-025 ruling 2).
+  expect(screen.getByText('Assigned by')).toBeTruthy();
+  expect(screen.getByText('Coach J Rivera')).toBeTruthy();
 
   // Read-only: no completion-logging affordance exists for a guardian.
   expect(screen.queryByRole('button', { name: /log/i })).toBeNull();
+});
+
+test('a drill with no name from the server shows no "Assigned by" line, not a blank one', async () => {
+  const { assigned_by_name: _omitted, ...unnamed } = ASSIGNMENT;
+  global.fetch = mockFetch({
+    '/progression/assignments': async () => jsonOk({ items: [unnamed] }),
+  }) as unknown as typeof fetch;
+
+  render(<ParentProgressionVisibilityPage />);
+
+  await screen.findByText('Rear-Foot Pivot Drill');
+  expect(screen.queryByText('Assigned by')).toBeNull();
 });
 
 // REQUEST ORDERING. Two children, one tap between them, and two fetch chains

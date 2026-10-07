@@ -214,6 +214,9 @@ describe('gap-free Coach Cards on the assignments list', () => {
     completion_percentage: 0,
     status: 'assigned',
     created_at: '2026-08-20T11:00:00.000Z',
+    // What the server sends a family reader (OD-2026-10-06-025 ruling 2): a
+    // name, and no assigned_by_account_id.
+    assigned_by_name: 'Coach J Rivera',
   };
 
   const GAP = {
@@ -272,6 +275,20 @@ describe('gap-free Coach Cards on the assignments list', () => {
     // The athlete can log against the card like any other assignment.
     const logButtons = screen.getAllByRole('button', { name: 'Log completion' });
     expect(logButtons).toHaveLength(2);
+  });
+
+  test('"Assigned by" names the coach when the server sends a name, and is absent when it does not', async () => {
+    global.fetch = mockWithAssignments() as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<AthleteProgressionIntelligencePage />);
+    });
+
+    await screen.findByText('Pivot drill');
+    // The gap-driven row carries a name; the Coach Card fixture does not, so
+    // exactly one card says who assigned it, and it says the name.
+    expect(screen.getAllByText(/Assigned by:/)).toHaveLength(1);
+    expect(screen.getByText('Coach J Rivera')).toBeTruthy();
   });
 });
 

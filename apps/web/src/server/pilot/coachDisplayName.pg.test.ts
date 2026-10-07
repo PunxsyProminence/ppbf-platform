@@ -78,6 +78,8 @@ const VISITING_COACH = 'acct-visiting-coach';
 const LAPSED_COACH = 'acct-lapsed-coach';
 /** Homed elsewhere, no membership here at all. Must stay unnamed. */
 const STRANGER = 'acct-stranger';
+/** Homed here, active membership here, and MARKED DELETED. Must stay unnamed. */
+const DELETED_COACH = 'acct-deleted-coach';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -130,20 +132,26 @@ async function seededDatabase(name: string): Promise<Client> {
 
   await client.query(
     `insert into pilot.accounts (account_id, login_email, role, organization_id, auth_provider)
-     values ($1, 'j.rivera@ppbf.test',  'coach', $5, 'microsoft'),
-            ($2, 'm.okafor@ppbf.test',  'coach', $6, 'microsoft'),
-            ($3, 'd.laurent@ppbf.test', 'coach', $6, 'microsoft'),
-            ($4, 's.nowak@ppbf.test',   'coach', $6, 'microsoft')`,
-    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, STRANGER, HOME_ORG, OTHER_ORG],
+     values ($1, 'j.rivera@ppbf.test',  'coach', $6, 'microsoft'),
+            ($2, 'm.okafor@ppbf.test',  'coach', $7, 'microsoft'),
+            ($3, 'd.laurent@ppbf.test', 'coach', $7, 'microsoft'),
+            ($4, 's.nowak@ppbf.test',   'coach', $7, 'microsoft'),
+            ($5, 'p.castro@ppbf.test',  'coach', $6, 'microsoft')`,
+    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, STRANGER, DELETED_COACH, HOME_ORG, OTHER_ORG],
   );
 
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $4, 'coach', true),
-            ($2, $4, 'coach', true),
-            ($3, $4, 'coach', false)`,
-    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, HOME_ORG],
+     values ($1, $5, 'coach', true),
+            ($2, $5, 'coach', true),
+            ($3, $5, 'coach', false),
+            ($4, $5, 'coach', true)`,
+    [LOCAL_COACH, VISITING_COACH, LAPSED_COACH, DELETED_COACH, HOME_ORG],
   );
+
+  // The one mark of deletion (deletedAccountSignIn.ts). Set directly: nothing
+  // on main deletes a staff login yet, and this suite is about the reader.
+  await client.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [DELETED_COACH]);
 
   activeClient = client;
   return client;
@@ -229,6 +237,15 @@ describe('naming a coach in the organization asking', () => {
        let one gym read a stranger's name -- the fallback phrase is the right
        answer here, not a bug. */
     expect(await getCoachDisplayName(HOME_ORG, STRANGER)).toBe('Your coach');
+  });
+
+  test('an account marked deleted is not named, however it is attached here', async () => {
+    /* Homed here AND actively a member here -- every other rule says name
+       them -- and marked deleted. The floor phrase is the answer, on this and
+       on every surface that reads this function: the family screens show
+       "assigned by" through it (OD-2026-10-06-025 ruling 2), and a deleted
+       person's name is not something those records keep. */
+    expect(await getCoachDisplayName(HOME_ORG, DELETED_COACH)).toBe('Your coach');
   });
 
   test('the other organization names its own, and not this one\'s', async () => {
