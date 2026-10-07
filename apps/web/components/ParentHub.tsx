@@ -673,7 +673,7 @@ export default function ParentHub() {
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Parent Support Hub</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>Family Development Dashboard</h1>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'clamp(var(--t-lg), 8vw, var(--t-2xl))' }}>Family Development Dashboard</h1>
             <p className="t-body mt-[var(--s3)]">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
           </div>
           {/* Both SHADOW buttons removed, and both destinations kept: the chat
