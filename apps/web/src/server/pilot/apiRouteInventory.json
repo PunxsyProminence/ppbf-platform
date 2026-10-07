@@ -11889,7 +11889,7 @@
     "id": "app/api/pilot/video/[videoId]/release/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/video/[videoId]/release",
-    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + uploader-ownership for non-admins + assertActorCanAccessAthlete(video.athlete_id) + assertActorHoldsCurrentReviewLink + assertConsentCoversVideo",
+    "gate": "requirePrincipal + requireRole([organization_admin, coach]) + uploader-ownership for non-admins + assertActorCanAccessAthlete(video.athlete_id) + accessibleAthleteIds (tagged clip: coach must reach at least one athlete in it) + assertActorHoldsCurrentReviewLink + assertConsentCoversVideo",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -11901,14 +11901,15 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Releases quarantined video to ready (release/route.ts:36-204). Non-admin must be uploader plus athlete reach; requires a current review link and guardian media consent for the athlete.",
+    "notes": "Releases quarantined video to ready (release/route.ts). Non-admin must be uploader plus athlete reach; on a tagged clip the coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided before the state refusals and the consent gate so an out-of-reach caller gets hiddenNotFound and learns nothing; requires a current review link and guardian media consent for the clip's own athlete and every tagged athlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "accessibleAthleteIds"
       ],
       "roleLiterals": []
     }
@@ -12174,7 +12175,7 @@
     "id": "app/api/pilot/video/review-link/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/video/review-link",
-    "gate": "requirePrincipal + requireRole(VIDEO_REVIEW_VIEW_ROLES) + authorizeVideoScanReview",
+    "gate": "requirePrincipal + requireRole(VIDEO_REVIEW_VIEW_ROLES) + authorizeVideoScanReview + accessibleAthleteIds (tagged clip: coach must reach at least one athlete in it)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -12186,13 +12187,14 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "VIDEO_REVIEW_VIEW_ROLES = organization_admin, coach (videoScanReview.ts:33). authorizeVideoScanReview (videoScanReview.ts:93) 404s unless caller is org admin or the uploader, then runs assertActorCanAccessAthlete on the video's athlete (L110). Mints a 15-minute read SAS under consent check and writes an audit event; video must be quarantined.",
+    "notes": "VIDEO_REVIEW_VIEW_ROLES = organization_admin, coach (videoScanReview.ts). authorizeVideoScanReview 404s unless caller is org admin or the uploader, then runs assertActorCanAccessAthlete on the video's athlete. On a tagged clip a coach must also reach at least one athlete the clip shows (accessibleAthleteIds, playback's rule), decided before the consent gate with the same 404. Mints a 15-minute read SAS under the consent check for the clip's own athlete and every tagged athlete, and writes an audit event; video must be quarantined.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
+        "accessibleAthleteIds",
         "authorizeVideoScanReview"
       ],
       "roleLiterals": []
