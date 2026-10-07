@@ -11,6 +11,7 @@ import { queryOne } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
+import { isFamilyVideoCaller, toFamilyVideoPlayback } from '@/src/server/pilot/videoFamilyView';
 import { mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 
 export const runtime = 'nodejs';
@@ -162,11 +163,24 @@ export async function GET(
     // must not be storable by the browser or by any intermediary -- the same
     // reasoning the portrait routes apply (docs/capabilities/GATES.md §5), and
     // the same header value they use.
+    const noStore = { headers: { 'Cache-Control': 'private, no-store, max-age=0' } };
+
+    // AN ATHLETE OR A GUARDIAN GETS THE FAMILY SHAPE (videoFamilyView.ts):
+    // the coach's notes as a "Coach notes" list signed with the coach's
+    // display name and dated, and no account id, organization id or capture
+    // take. Placed after the mint on purpose -- the consent check above is
+    // the only gate on the notes, and a refused video carries none.
+    if (isFamilyVideoCaller(principal.role)) {
+      return NextResponse.json(
+        await toFamilyVideoPlayback(principal.organizationId, row, sasUrl),
+        noStore,
+      );
+    }
     return NextResponse.json({
       ...row,
       blob_path: undefined,
       stream_url: sasUrl,
-    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
+    }, noStore);
   } catch (error) {
     return jsonError(error);
   }
