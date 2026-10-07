@@ -481,13 +481,17 @@ export default function CoachCalibrationPage() {
    * A failure here is shown beside the body-point section, not as the page's
    * refusal: the events, the player and the forms are unaffected by it.
    */
-  const loadBodyData = useCallback(async (set: AnnotationSet | null) => {
+  const loadBodyData = useCallback(async (set: AnnotationSet | null, options: { keep?: boolean } = {}) => {
     const token = bodyReadToken.current + 1;
     bodyReadToken.current = token;
-    // Cleared first, not replaced on arrival: between an event write and the
-    // re-read, the old marks would sit beside the new event list and the
-    // totals would be wrong. An empty panel for one round trip is honest.
-    setBodyData(null);
+    // Cleared first, not replaced on arrival, after an event write: between
+    // the write and the re-read, the old marks would sit beside the new event
+    // list and the totals would be wrong. An empty panel for one round trip
+    // is honest. A re-read that follows a body-point write (`keep`) leaves
+    // the marks on screen instead: the event list did not change, and
+    // unmounting the panel and the picture for every lead-side pick would
+    // throw the coach's scroll and focus away.
+    if (!options.keep) setBodyData(null);
     setBodyNotice('');
     if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
       return;
@@ -873,12 +877,24 @@ export default function CoachCalibrationPage() {
    * the video is held on the moment's time. */
   const selectMoment = useCallback(async (moment: Pick<BodyMoment, 'body_moment_id' | 'observation_ms'>) => {
     if (!annotationSet) return;
-    await loadBodyData(annotationSet);
+    await loadBodyData(annotationSet, { keep: true });
     setActiveMomentId(moment.body_moment_id);
     setUndoStack([]);
     setActivePointCode(null);
     holdOnMoment(moment.observation_ms);
   }, [annotationSet, holdOnMoment, loadBodyData]);
+
+  /* THE HOLD. A tap is a mark AT THE MOMENT (OD-2026-10-02-011 3a), so the
+     picture must be the moment's. "Held" means paused with the playhead on
+     the moment's time, within one fine step: the browser seeks to its
+     nearest frame and reports that time back, which is tens of milliseconds
+     off the whole-number moment on some files, and a hold that demanded
+     equality would never be satisfied there. A scrub or a step away from the
+     moment, even paused, lifts the hold and taps place nothing until the
+     coach goes back. */
+  const heldOnMoment = activeMoment !== null
+    && !playing
+    && Math.abs(currentMs - activeMoment.observation_ms) <= STEP_MS.fine;
 
   /* The point the next tap is for: the coach's own pick when they made one
      (and it is still on this moment), otherwise the first unmarked point in
@@ -927,11 +943,12 @@ export default function CoachCalibrationPage() {
   }, [annotationSet, bodyWrite, currentMs, loadBodyData, selectMoment]);
 
   const closeMoment = useCallback(async () => {
+    if (busy) return;
     setActiveMomentId(null);
     setActivePointCode(null);
     setUndoStack([]);
-    if (annotationSet) await loadBodyData(annotationSet);
-  }, [annotationSet, loadBodyData]);
+    if (annotationSet) await loadBodyData(annotationSet, { keep: true });
+  }, [annotationSet, busy, loadBodyData]);
 
   const removeMoment = useCallback(async (momentId: string) => {
     if (!annotationSet) return;
@@ -950,20 +967,21 @@ export default function CoachCalibrationPage() {
         setUndoStack([]);
       }
       setNotice('Moment removed, with its points.');
-      await loadBodyData(annotationSet);
+      await loadBodyData(annotationSet, { keep: true });
     } finally {
       setBusy(false);
     }
   }, [activeMomentId, annotationSet, bodyWrite, loadBodyData]);
 
   /** One point, one request: placed with its picture fraction, or not
-   * visible with none. The server answers with every point on the moment. */
+   * visible with none. The server answers with every point on the moment.
+   * Returns whether the write landed, so an undo pops its entry only then. */
   const markPoint = useCallback(async (
     pointCode: string,
     mark: { state: 'placed'; x_norm: number; y_norm: number } | { state: 'not_visible' },
     recordUndo: boolean,
-  ) => {
-    if (!activeMoment) return;
+  ): Promise<boolean> => {
+    if (!activeMoment) return false;
     setBusy(true);
     setRefusal('');
     try {
@@ -974,7 +992,7 @@ export default function CoachCalibrationPage() {
       });
       if (!result.ok) {
         setRefusal(result.message);
-        return;
+        return false;
       }
       const points = (result.payload.points as BodyPoint[] | undefined) ?? [];
       const updated = { ...activeMoment, points };
@@ -985,51 +1003,62 @@ export default function CoachCalibrationPage() {
       // Back to "the next unmarked point": when every point is marked the
       // panel says so and the coach sets the lead side and guard.
       setActivePointCode(null);
+      return true;
     } finally {
       setBusy(false);
     }
   }, [activeMoment, bodyWrite, replaceMoment]);
 
-  const clearPoint = useCallback(async (pointCode: string) => {
-    if (!activeMoment) return;
+  /** Unmarks a point. On the undo stack like a placement, so that undoing
+   * after a Clear puts the mark back rather than resurrecting an older one. */
+  const clearPoint = useCallback(async (pointCode: string, recordUndo: boolean): Promise<boolean> => {
+    if (!activeMoment) return false;
     setBusy(true);
     setRefusal('');
     try {
+      const previous = activeMoment.points.find((p) => p.point_code === pointCode) ?? null;
       const result = await bodyWrite('/points', 'DELETE', {
         body_moment_id: activeMoment.body_moment_id,
         point_code: pointCode,
       });
       if (!result.ok && !result.message.startsWith('Not found')) {
         setRefusal(result.message);
-        return;
+        return false;
       }
       const updated = { ...activeMoment, points: activeMoment.points.filter((p) => p.point_code !== pointCode) };
       replaceMoment(updated);
+      if (recordUndo && previous) {
+        setUndoStack((stack) => [...stack, { body_moment_id: activeMoment.body_moment_id, point_code: pointCode, previous }]);
+      }
       setActivePointCode(pointCode);
+      return true;
     } finally {
       setBusy(false);
     }
   }, [activeMoment, bodyWrite, replaceMoment]);
 
-  /** Takes back the last placement: the point goes back to what it was
-   * before (its earlier mark, or no mark at all). */
+  /** Takes back the last change to a point on this moment: the point goes
+   * back to what it was before (its earlier mark, or no mark at all). The
+   * entry leaves the stack only once the write has landed, so a failed undo
+   * can be tried again. */
   const undoPlacement = useCallback(async () => {
     const last = undoStack[undoStack.length - 1];
-    if (!last || !activeMoment || last.body_moment_id !== activeMoment.body_moment_id) return;
-    setUndoStack((stack) => stack.slice(0, -1));
+    if (!last || !activeMoment || busy || last.body_moment_id !== activeMoment.body_moment_id) return;
+    let landed: boolean;
     if (last.previous === null) {
-      await clearPoint(last.point_code);
-      return;
+      landed = await clearPoint(last.point_code, false);
+    } else {
+      const previous = last.previous;
+      landed = await markPoint(
+        last.point_code,
+        previous.state === 'placed' && previous.x_norm !== null && previous.y_norm !== null
+          ? { state: 'placed', x_norm: previous.x_norm, y_norm: previous.y_norm }
+          : { state: 'not_visible' },
+        false,
+      );
     }
-    const previous = last.previous;
-    await markPoint(
-      last.point_code,
-      previous.state === 'placed' && previous.x_norm !== null && previous.y_norm !== null
-        ? { state: 'placed', x_norm: previous.x_norm, y_norm: previous.y_norm }
-        : { state: 'not_visible' },
-      false,
-    );
-  }, [activeMoment, clearPoint, markPoint, undoStack]);
+    if (landed) setUndoStack((stack) => stack.slice(0, -1));
+  }, [activeMoment, busy, clearPoint, markPoint, undoStack]);
 
   const relabelMoment = useCallback(async (field: 'lead_side' | 'guard_type', value: string) => {
     if (!activeMoment) return;
@@ -1060,7 +1089,7 @@ export default function CoachCalibrationPage() {
         setRefusal(result.message);
         return;
       }
-      await loadBodyData(annotationSet);
+      await loadBodyData(annotationSet, { keep: true });
     } finally {
       setBusy(false);
     }
@@ -1295,7 +1324,7 @@ export default function CoachCalibrationPage() {
                         points={activeMoment.points}
                         edges={skeletonEdges}
                         activePointCode={canEdit ? pointToPlace : null}
-                        disabled={!canEdit || busy || playing}
+                        disabled={!canEdit || busy || !heldOnMoment}
                         onPlace={(at) => {
                           if (pointToPlace) void markPoint(pointToPlace, { state: 'placed', ...at }, true);
                         }}
@@ -1497,14 +1526,15 @@ export default function CoachCalibrationPage() {
           {activeMoment && bodyDataForSet?.expected_points ? (
             <BodyPointMomentPanel
               moment={activeMoment}
+              actorTrack={events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? ''}
               expectedPoints={bodyDataForSet.expected_points}
               activePointCode={canEdit ? pointToPlace : null}
               disabled={!canEdit || busy}
               canUndo={undoStack.length > 0}
-              awayFromMoment={playing}
-              onSelectPoint={(code) => setActivePointCode(code)}
+              awayFromMoment={!heldOnMoment}
+              onSelectPoint={(code) => { if (!busy) setActivePointCode(code); }}
               onNotVisible={(code) => { void markPoint(code, { state: 'not_visible' }, true); }}
-              onClearPoint={(code) => { void clearPoint(code); }}
+              onClearPoint={(code) => { void clearPoint(code, true); }}
               onUndo={() => { void undoPlacement(); }}
               onSetLeadSide={(value) => { void relabelMoment('lead_side', value); }}
               onSetGuard={(value) => { void relabelMoment('guard_type', value); }}
