@@ -336,6 +336,10 @@ const PARENT_GONE_CONSTRAINTS = new Set([
  * changed under a long-open screen. Anything not recognised is rethrown as it
  * came, which jsonError reports as a 500 without its text.
  *
+ * Each 409 carries a machine code (jsonError emits it as `code`), so a
+ * tablet that lost a response can tell "slot taken, read the moment back"
+ * from "event changed, reload" without matching message text.
+ *
  * Exported for bodyPoints.test.ts, which drives every branch with the shape
  * pg raises (message = the trigger's text; code and constraint from the
  * server); the pg suite reaches only the branches a test can race.
@@ -349,16 +353,16 @@ export function translateDatabaseRefusal(error: unknown): never {
     throw new AnnotationSetSubmittedError();
   }
   if (message === 'CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION') {
-    throw new PilotError(403, 'Forbidden: this annotation set\'s vocabulary has no body points');
+    throw new PilotError(403, 'Forbidden: this annotation set\'s vocabulary has no body points', 'CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION');
   }
   if (message === 'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION') {
     throw new Error('Missing point_code: not a point in this annotation set\'s vocabulary');
   }
   if (message === 'CALIBRATION_BODY_MOMENT_KIND_NOT_THIS_EVENT') {
-    throw new PilotError(409, 'Conflict: the event changed under this moment; reload and mark it again');
+    throw new PilotError(409, 'Conflict: the event changed under this moment; reload and mark it again', 'CALIBRATION_BODY_MOMENT_EVENT_CHANGED');
   }
   if (dbError.code === '23505' && constraint === 'pilot_calibration_body_moments_one_per_slot') {
-    throw new PilotError(409, 'Conflict: this event already has a moment in that slot');
+    throw new PilotError(409, 'Conflict: this event already has a moment in that slot', 'CALIBRATION_BODY_MOMENT_SLOT_TAKEN');
   }
   if (dbError.code === '23503' && PARENT_GONE_CONSTRAINTS.has(constraint)) {
     throw new Error('Not found: the event or moment this mark belongs to is gone; reload');
@@ -366,7 +370,7 @@ export function translateDatabaseRefusal(error: unknown): never {
   // Two writers on one moment: Postgres aborted one of them. Nothing of its
   // batch is kept (withTransaction rolled it back); the client retries.
   if (dbError.code === '40P01' || dbError.code === '40001') {
-    throw new PilotError(409, 'Conflict: another write on this moment got there first; try again');
+    throw new PilotError(409, 'Conflict: another write on this moment got there first; try again', 'CALIBRATION_BODY_POINTS_WRITE_RACE');
   }
   throw error;
 }
