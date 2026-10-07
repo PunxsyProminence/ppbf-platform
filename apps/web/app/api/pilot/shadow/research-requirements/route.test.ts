@@ -128,7 +128,7 @@ describe('POST /api/pilot/shadow/research-requirements (create)', () => {
     ['the capability-gap event name', { source_event_name: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED' }],
     ['the Library-claim event name', { source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED' }],
   ])('refuses %s from a caller, whatever their role', async (_label, overrides) => {
-    for (const role of ['organization_admin', 'coach', 'athlete'] as const) {
+    for (const role of ['organization_admin', 'coach'] as const) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
       const response = await POST(postRequest({ ...validBody, ...overrides }));
 
@@ -142,6 +142,33 @@ describe('POST /api/pilot/shadow/research-requirements (create)', () => {
 
     expect(mockAssertAthlete).not.toHaveBeenCalled();
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ subjectId: null }));
+  });
+
+  // The research page's "Operational research requirements" form posts here.
+  // The role gate admits every organization seat, so this is the only thing
+  // that keeps a family member or volunteer from filing into the gym's research
+  // backlog. Staff = coach and organization admin, the same pair that closes.
+  test.each(['parent', 'athlete', 'volunteer', 'staff'] as const)(
+    'refuses a %s filing a requirement, with or without an athlete named',
+    async (role) => {
+      for (const extra of [{}, { subject_id: 'ath-9' }]) {
+        mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+        const response = await POST(postRequest({ ...validBody, ...extra }));
+
+        expect(response.status).toBe(403);
+        expect((await response.json()).error).toContain('only coaches and organization admins file');
+      }
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockAssertAthlete).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)('still lets a %s file a requirement', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+    const response = await POST(postRequest(validBody));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   test('refuses a caller not linked to the named athlete', async () => {
