@@ -122,10 +122,13 @@ export async function resolveActorDisplayName(input: {
     return getCoachDisplayName(input.organizationId, input.accountId);
   }
 
-  // Scope B: a deleted person's name is read from nowhere. Both reads below
-  // take the deletion mark (deleted_at on the athlete row; accountNotDeletedSql
-  // for a login, as the portrait review queue does) and fall to the phrase
-  // they already used for a record with no name.
+  // Scope B: the two reads below take the deletion mark (deleted_at on the
+  // athlete row; accountNotDeletedSql for a login, as the portrait review
+  // queue does) and fall to the phrase they already used for a record with
+  // no name. The coach arm above reads through getCoachDisplayName, whose
+  // deletion check belongs to that module. The name this returns is frozen
+  // into the nomination or vote row at write time; what a later read shows
+  // of a person deleted since is that row's business, not this function's.
   if (input.role === 'athlete' && input.selfAthleteId) {
     const athlete = await queryOne<{ full_name: string }>(
       `select full_name from pilot.athletes
