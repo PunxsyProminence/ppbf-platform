@@ -167,7 +167,8 @@ describe('only bodyPoints.ts reads the body-point tables, and only its routes re
     const taken = [...text.matchAll(/import\s+([^;]*?)\s+from\s+['"][^'"]*\/bodyPoints['"]/g)]
       .map((match) => match[1].replace(/\s+/g, ' '));
     expect(taken).toEqual(['{ eventHoldsBodyMarks }']);
-    // No other way in: no require() and no dynamic import() of the module.
-    expect(text).not.toMatch(/(?:require|import)\s*\(\s*['"][^'"]*bodyPoints['"]/);
+    // No other way in (a re-export, require(), a dynamic import()): that one
+    // import line is the only place the module's path appears in the file.
+    expect(text.match(/\/bodyPoints['"`]/g)).toHaveLength(1);
   });
 });

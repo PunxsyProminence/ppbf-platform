@@ -622,10 +622,31 @@ describe('editing an event', () => {
       expect(mockHoldsMarks).toHaveBeenCalledWith('org-1', 'set-1', 'evt-1', client);
     });
 
-    test('a mark that lands mid-replace keeps the old event, and the response says so', async () => {
+    test('a mark that lands mid-replace is the same 409: the old event is kept and the replacement withdrawn', async () => {
       bodyPointSetReady();
+      // No marks when first asked; marks by the time the delete asked.
+      mockHoldsMarks.mockReset();
+      mockHoldsMarks.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      mockRecord.mockResolvedValueOnce(storedEvent({ event_id: 'evt-new' }));
+      mockDelete.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body.code).toBe('CALIBRATION_EVENT_HAS_BODY_MARKS');
+      expect(mockDelete).toHaveBeenCalledTimes(2);
+      expect(mockDelete.mock.calls[0].slice(0, 3)).toEqual(['org-1', 'set-1', 'evt-1']);
+      // The withdrawal: the new row, by its own id, with no question asked.
+      expect(mockDelete.mock.calls[1]).toEqual(['org-1', 'set-1', 'evt-new']);
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('an original that was already gone is still reported, not refused: nothing held marks', async () => {
+      bodyPointSetReady();
+      mockHoldsMarks.mockReset();
       mockHoldsMarks.mockResolvedValue(false);
-      mockRecord.mockResolvedValueOnce(storedEvent());
+      mockRecord.mockResolvedValueOnce(storedEvent({ event_id: 'evt-new' }));
       mockDelete.mockResolvedValueOnce(false);
 
       const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1' }));
@@ -633,6 +654,7 @@ describe('editing an event', () => {
 
       expect(response.status).toBe(200);
       expect(body.replaced_event_removed).toBe(false);
+      expect(mockDelete).toHaveBeenCalledTimes(1);
       expect(mockAudit.mock.calls[0][0].details).toMatchObject({ replaced_event_removed: false });
     });
   });

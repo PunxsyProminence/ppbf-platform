@@ -219,9 +219,10 @@ export async function POST(request: NextRequest) {
  * AN EVENT THAT HOLDS BODY MARKS IS NOT REPLACED. Its moments, their points
  * and its stance type hang off the old event_id and would go with the old
  * row by cascade. That is refused (409 CALIBRATION_EVENT_HAS_BODY_MARKS)
- * before anything is written, and asked again under the row lock just before
- * the delete; PATCH below corrects such an event in place. Only a body-point
- * set is asked: a set on any other version can hold no marks.
+ * before anything is written, and again if the delete, asking under the row
+ * lock, finds marks that landed in between (the replacement is withdrawn).
+ * PATCH below corrects such an event in place. Only a body-point set is
+ * asked: a set on any other version can hold no marks.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -253,26 +254,32 @@ export async function PUT(request: NextRequest) {
     const mayHoldMarks = isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version);
     const holdsMarks = (client?: PoolClient) =>
       eventHoldsBodyMarks(principal.organizationId, annotationSetId, replacingEventId, client);
+    const refusal = () => new EventHoldsBodyMarksError(
+      'Conflict: this event has body marks, and replacing it would remove them. '
+      + 'Edit it in place, or remove its marked moments and stance type first.',
+    );
     if (mayHoldMarks && (await holdsMarks())) {
-      throw new EventHoldsBodyMarksError(
-        'Conflict: this event has body marks, and replacing it would remove them. '
-        + 'Edit it in place, or remove its marked moments and stance type first.',
-      );
+      throw refusal();
     }
 
     const event = await recordAnnotationEvent(
       toRecordInput(principal.organizationId, annotationSetId, randomUUID(), body),
     );
 
-    // A mark that landed since the check above keeps the old event: the
-    // delete asks again under its row lock, and the result is the duplicate
-    // this route already reports (replaced_event_removed: false).
+    // The delete asks again under its row lock, so a mark that landed since
+    // the check above keeps the old event. The replacement just written (its
+    // id has gone to nobody) is then withdrawn, and the answer is the same
+    // refusal: no duplicate is left for the coach to find.
     const removed = await deleteAnnotationEvent(
       principal.organizationId,
       annotationSetId,
       replacingEventId,
       ...(mayHoldMarks ? [{ keepIf: holdsMarks }] : []),
     );
+    if (!removed && mayHoldMarks && (await holdsMarks())) {
+      await deleteAnnotationEvent(principal.organizationId, annotationSetId, event.event_id);
+      throw refusal();
+    }
 
     await writeCalibrationAuditEvent({
       eventType: 'update',

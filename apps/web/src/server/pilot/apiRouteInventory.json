@@ -3700,7 +3700,7 @@
     "missingGate": false,
     "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
     "confidence": "medium",
-    "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). Writes + audit.",
+    "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). On a body-point set, an event that holds body marks is refused (409) instead of replaced, since the delete would cascade them away. Writes + audit.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

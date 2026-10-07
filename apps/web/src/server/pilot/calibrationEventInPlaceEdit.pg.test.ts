@@ -66,6 +66,7 @@ const OTHER_ORG_ID = 'org-edit-other';
 const ANNOTATOR = 'acct-edit-annotator';
 const V01 = 'boxing-ontology-0.1';
 const V02 = 'boxing-ontology-0.2';
+const V03 = 'boxing-ontology-0.3';
 const V04 = 'boxing-ontology-0.4';
 
 const CLIP_START_MS = 60_000;
@@ -861,16 +862,26 @@ describe('the gates', () => {
 });
 
 describe('recording a new event under a body-point version is refused by name, not by a trigger\'s text', () => {
-  test.each<[string, Record<string, unknown>, RegExp]>([
-    ['a stance on the event', { stance: 'orthodox' }, /^Missing stance: boxing-ontology-0\.2/],
-    ['a peak time', { peakMs: EV_CONTACT }, /^Missing peak_ms: boxing-ontology-0\.2/],
-    ['a landed result with no contact time', { contactMs: null }, /^Missing contact_ms: in boxing-ontology-0\.2/],
-    ['a missed result with a contact time', { contactResult: 'no_contact' }, /^Missing contact_ms: in boxing-ontology-0\.2/],
-    ['an unsure result with a contact time', { contactResult: 'uncertain_contact' }, /^Missing contact_ms: in boxing-ontology-0\.2/],
-  ])('%s is a named refusal and nothing is written', async (_label, overrides, message) => {
-    const set = await newSet();
-    await expect(punch(set, overrides)).rejects.toThrow(message);
-    expect(await countFor('calibration_annotation_events', set)).toBe(0);
+  type Recorder = (set: SetRef) => Promise<string>;
+  const BREACHES: [string, Recorder, RegExp][] = [
+    ['a stance on a punch', (set) => punch(set, { stance: 'orthodox' }), /^Missing stance: boxing-ontology-0\.[234] /],
+    ['a peak time on a punch', (set) => punch(set, { peakMs: EV_CONTACT }), /^Missing peak_ms: boxing-ontology-0\.[234] /],
+    ['a landed result with no contact time', (set) => punch(set, { contactMs: null }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['a missed result with a contact time', (set) => punch(set, { contactResult: 'no_contact' }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['an unsure result with a contact time', (set) => punch(set, { contactResult: 'uncertain_contact' }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['a stance on a defence', (set) => defense(set, { stance: 'southpaw' }), /^Missing stance: boxing-ontology-0\.[234] /],
+    ['a peak time on a defence', (set) => defense(set, { peakMs: EV_START + 100 }), /^Missing peak_ms: boxing-ontology-0\.[234] /],
+  ];
+
+  describe.each([V02, V03, V04])('under %s', (version) => {
+    test.each(BREACHES)('%s is a named refusal and nothing is written', async (_label, record, message) => {
+      const set = await newSet(version);
+      const refusal = await record(set).then(() => null, (error: Error) => error);
+      expect(refusal?.message).toMatch(message);
+      // Its own version, not another's.
+      expect(refusal?.message).toContain(version);
+      expect(await countFor('calibration_annotation_events', set)).toBe(0);
+    });
   });
 
   test('what the rules allow is recorded: a landed punch with its contact time, a miss without one, a defence either way', async () => {
@@ -889,14 +900,18 @@ describe('recording a new event under a body-point version is refused by name, n
     expect(await countFor('calibration_annotation_events', set)).toBe(2);
   });
 
-  test('the database still refuses the same rows on a direct write', async () => {
+  test.each([
+    ['a stance', `stance = 'orthodox'`, 'CALIBRATION_EVENT_STANCE_NOT_IN_THIS_VERSION'],
+    ['a peak time', `peak_ms = start_ms`, 'CALIBRATION_EVENT_PEAK_NOT_IN_THIS_VERSION'],
+    ['a landed result with no contact time', `contact_ms = null`, 'CALIBRATION_EVENT_CONTACT_TIME_NOT_THIS_RESULT'],
+  ])('the database still refuses %s on a direct write', async (_label, assignment, refusal) => {
     const set = await newSet();
     const eventId = await punch(set);
     await expect(db.query(
-      `update pilot.calibration_annotation_events set stance = 'orthodox'
+      `update pilot.calibration_annotation_events set ${assignment}
         where organization_id = $1 and event_id = $2`,
       [set.orgId, eventId],
-    )).rejects.toThrow('CALIBRATION_EVENT_STANCE_NOT_IN_THIS_VERSION');
+    )).rejects.toThrow(refusal);
   });
 });
 
@@ -947,12 +962,20 @@ describe('a replace does not take an event\'s marks with it', () => {
     expect(await annotations.deleteAnnotationEvent(set.orgId, set.setId, bare, { keepIf: async () => false })).toBe(false);
   });
 
-  test('a moment landing mid-replace is seen: the delete waits for it, then keeps the event', async () => {
+  test.each(['a moment', 'a stance type'])('%s landing mid-replace is seen: the delete waits for it, then keeps the event', async (mark) => {
     const set = await newSet();
     const eventId = await punch(set);
     await db.query('begin');
     try {
-      await insertMomentDirect(set, eventId);
+      if (mark === 'a moment') {
+        await insertMomentDirect(set, eventId);
+      } else {
+        await db.query(
+          `insert into pilot.calibration_event_stance_labels (organization_id, annotation_set_id, event_id, stance_type)
+           values ($1, $2, $3, 'usa_boxing__classic')`,
+          [set.orgId, set.setId, eventId],
+        );
+      }
       let settled = false;
       const pending = annotations.deleteAnnotationEvent(set.orgId, set.setId, eventId, keepIfMarked(set, eventId))
         .finally(() => { settled = true; });
@@ -964,7 +987,9 @@ describe('a replace does not take an event\'s marks with it', () => {
     } finally {
       await db.query('rollback').catch(() => {});
     }
-    expect((await marksOf(set, eventId)).moments).toHaveLength(1);
+    const kept = await marksOf(set, eventId);
+    expect(kept.moments.length + kept.stance.length).toBe(1);
+    expect(await eventRow(set, eventId)).toBeDefined();
   });
 
   test('a submitted set, another organization and another set are refused or untouched as before', async () => {
