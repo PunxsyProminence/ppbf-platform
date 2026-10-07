@@ -322,25 +322,41 @@ describe('adoptionReadiness: the missing list has a fixed order', () => {
   });
 });
 
-describe('adoptionReadiness: cues and provenance are NOT rules', () => {
-  test('a drill with no cues is ready', () => {
-    expect(adoptionReadiness(readyDrill({ cues: [] }))).toEqual({ ready: true, missing: [] });
+const NO_CUE = 'It has no coaching cue. A technique drill needs at least one; a conditioning drill does not.';
+
+// OD-2026-10-06-026 ruling 2: "Required except conditioning".
+describe('adoptionReadiness: the cue rule', () => {
+  test('a technique drill with no cues is NOT ready, and the line names the cue', () => {
+    expect(adoptionReadiness(readyDrill({ cues: [] }))).toEqual({ ready: false, missing: [NO_CUE] });
   });
 
+  test('a conditioning drill with no cues is ready (the exemption)', () => {
+    expect(adoptionReadiness(readyDrill({ discipline: 'conditioning', category: 'strength', cues: [] })))
+      .toEqual({ ready: true, missing: [] });
+  });
+
+  test('the exemption reads the discipline, not the category word', () => {
+    // 'conditioning' as a boxing drill's category does not exempt it; the
+    // ruling counted conditioning drills by discipline (25), not category (8).
+    expect(adoptionReadiness(readyDrill({ discipline: 'boxing', category: 'conditioning', cues: [] })).ready).toBe(false);
+    expect(adoptionReadiness(readyDrill({ discipline: 'Conditioning ', category: 'warmup', cues: [] })).ready).toBe(true);
+  });
+
+  test('a blank cue does not count', () => {
+    const blank = { ...readyDrill().cues[0], cue_text: '  ' };
+    expect(adoptionReadiness(readyDrill({ cues: [blank] })).missing).toEqual([NO_CUE]);
+  });
+
+  test('the cue line comes last, after the stop-rule line', () => {
+    expect(adoptionReadiness(readyDrill({ cues: [], stop_rules: [] })).missing).toEqual([NO_STOP_RULES, NO_CUE]);
+  });
+});
+
+describe('adoptionReadiness: provenance is NOT a rule (the floor-tested mark is separate)', () => {
   test.each([LITERATURE_DRAFT, CRAFT_DRAFT])(
-    'a drill whose provenance REQUIRES FLOOR VALIDATION is ready (%s)',
+    'a drill whose provenance REQUIRES FLOOR VALIDATION is ready when it has a cue (%s)',
     (field_provenance) => {
       expect(adoptionReadiness(readyDrill({ field_provenance }))).toEqual({ ready: true, missing: [] });
     },
   );
-
-  test('a drill with no cues AND an unvalidated provenance is ready', () => {
-    const drill = readyDrill({
-      cues: [],
-      field_provenance: CRAFT_DRAFT,
-      grounding_claim_ids: [],
-      source_ref: null,
-    });
-    expect(adoptionReadiness(drill)).toEqual({ ready: true, missing: [] });
-  });
 });
