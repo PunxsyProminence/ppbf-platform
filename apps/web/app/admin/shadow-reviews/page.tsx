@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import RoleSessionGate from '@/components/RoleSessionGate';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
@@ -83,11 +83,17 @@ const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
  * Severity is the whole point of the ordering, so it is rendered as a word and
  * a colour rather than a colour alone -- a reviewer scanning on a phone in a
  * gym should not have to distinguish two similar reds.
+ *
+ * The rung and glyph are the design system's badge ladder, the same one
+ * /admin/compliance-center uses for violation severity: critical -> locked,
+ * high -> restricted, moderate -> monitor. This page first named its own
+ * classes (severity-critical, ticket, tabs ...) that no stylesheet ever
+ * defined, so it rendered unstyled until it moved onto the shared ones.
  */
-const SEVERITY_STYLE: Record<Severity, { label: string; className: string }> = {
-  critical: { label: 'CRITICAL', className: 'severity-critical' },
-  high: { label: 'HIGH', className: 'severity-high' },
-  moderate: { label: 'MODERATE', className: 'severity-moderate' },
+const SEVERITY_STYLE: Record<Severity, { label: string; rung: string; glyph: string }> = {
+  critical: { label: 'CRITICAL', rung: 'badge--locked', glyph: '✕' },
+  high: { label: 'HIGH', rung: 'badge--restricted', glyph: '▲' },
+  moderate: { label: 'MODERATE', rung: 'badge--monitor', glyph: '◉' },
 };
 
 function formatWhen(value: string | null): string {
@@ -195,28 +201,39 @@ function ShadowReviewsConsole() {
   const criticalCount = reviews.filter((r) => r.severity === 'critical').length;
 
   return (
-    <main className="shadow-reviews">
-      <header>
-        <h1>SHADOW human review</h1>
-        <p className="lede">
+    <div className="space-y-[var(--s5)]">
+      <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+        <h1
+          className="t-gothic text-[color:var(--bone-100)]"
+          style={{ fontSize: 'var(--t-2xl)' }}
+        >
+          SHADOW human review
+        </h1>
+        <p className="t-body mt-[var(--s3)] max-w-4xl">
           {'SHADOW chats sent for a human look. A ticket can come from a high-risk request, a generated answer that was withheld or replaced, or another route condition that needs review — not necessarily because SHADOW failed.'}
         </p>
       </header>
 
       {status === 'open' && criticalCount > 0 && (
-        <p className="critical-banner" role="status">
-          {criticalCount} critical {criticalCount === 1 ? 'ticket' : 'tickets'} waiting.
-          Critical means the classifier read chest pain, fainting, loss of
-          consciousness, or an urgent personal symptom.
+        <p role="status" className="alert alert--critical">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <span className="alert-msg">
+            {criticalCount} critical {criticalCount === 1 ? 'ticket' : 'tickets'} waiting.
+            Critical means the classifier read chest pain, fainting, loss of
+            consciousness, or an urgent personal symptom.
+          </span>
         </p>
       )}
 
-      <nav className="tabs" aria-label="Review status">
+      <nav
+        className="flex flex-wrap gap-[var(--s3)]"
+        aria-label="Review status"
+      >
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
             type="button"
-            className={tab.value === status ? 'tab tab-active' : 'tab'}
+            className={tab.value === status ? 'btn' : 'btn btn--ghost'}
             aria-current={tab.value === status ? 'page' : undefined}
             onClick={() => selectStatus(tab.value)}
           >
@@ -225,41 +242,51 @@ function ShadowReviewsConsole() {
         ))}
       </nav>
 
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className="alert alert--critical">
+          <span className="alert-icon" aria-hidden="true">✕</span>
+          <span className="alert-msg">{error}</span>
+        </p>
+      )}
 
-      {loading && <p className="muted">Loading…</p>}
+      {loading && <p className="t-muted">Loading…</p>}
 
       {!loading && reviews.length === 0 && !error && (
-        <p className="muted">
+        <p className="t-muted">
           {status === 'open'
             ? 'Nothing waiting. Tickets appear when SHADOW sends a chat or generated result for human review.'
             : `No ${status.replace('_', ' ')} tickets.`}
         </p>
       )}
 
-      <ul className="queue">
+      <ul className="space-y-[var(--s4)]">
         {reviews.map((review) => {
           const severity = SEVERITY_STYLE[review.severity] ?? SEVERITY_STYLE.moderate;
           const busy = pending === review.review_id;
           return (
-            <li key={review.review_id} className={`ticket ${severity.className}`}>
-              <div className="ticket-head">
-                <span className="severity-badge">{severity.label}</span>
-                <span className="category">{review.category.replace(/_/g, ' ')}</span>
-                <span className="when">{formatWhen(review.created_at)}</span>
+            <li
+              key={review.review_id}
+              className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]"
+            >
+              <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                <span className={`badge ${severity.rung}`}>
+                  <i aria-hidden="true">{severity.glyph}</i>{severity.label}
+                </span>
+                <span className="t-eyebrow">{review.category.replace(/_/g, ' ')}</span>
+                <span className="t-data">{formatWhen(review.created_at)}</span>
               </div>
 
-              <p className="summary">{review.summary}</p>
+              <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--bone-100)]">{review.summary}</p>
 
-              <dl className="facts">
+              <dl className="mt-[var(--s3)] space-y-[var(--s2)]">
                 <div>
-                  <dt>Account</dt>
-                  <dd><code>{review.account_id}</code></dd>
+                  <dt className="t-eyebrow">Account</dt>
+                  <dd className="t-data"><code>{review.account_id}</code></dd>
                 </div>
                 {review.reviewed_by && (
                   <div>
-                    <dt>Last touched by</dt>
-                    <dd>
+                    <dt className="t-eyebrow">Last touched by</dt>
+                    <dd className="t-data">
                       <code>{review.reviewed_by}</code> · {formatWhen(review.reviewed_at)}
                     </dd>
                   </div>
@@ -275,17 +302,18 @@ function ShadowReviewsConsole() {
                 or less than it is.
               */}
               {review.metadata && Object.keys(review.metadata).length > 0 && (
-                <details className="meta">
-                  <summary>What the boundary recorded</summary>
-                  <pre>{JSON.stringify(review.metadata, null, 2)}</pre>
+                <details className="mt-[var(--s3)]">
+                  <summary className="t-eyebrow cursor-pointer">What the boundary recorded</summary>
+                  <pre className="t-data mt-[var(--s2)] overflow-x-auto">{JSON.stringify(review.metadata, null, 2)}</pre>
                 </details>
               )}
 
               {(review.status === 'open' || review.status === 'in_review') && (
-                <div className="actions">
+                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
                   {review.status === 'open' && (
                     <button
                       type="button"
+                      className="btn btn--secondary"
                       disabled={busy}
                       onClick={() => void decide(review.review_id, 'in_review')}
                     >
@@ -294,6 +322,7 @@ function ShadowReviewsConsole() {
                   )}
                   <button
                     type="button"
+                    className="btn"
                     disabled={busy}
                     onClick={() => void decide(review.review_id, 'resolved')}
                   >
@@ -301,7 +330,7 @@ function ShadowReviewsConsole() {
                   </button>
                   <button
                     type="button"
-                    className="secondary"
+                    className="btn btn--ghost"
                     disabled={busy}
                     onClick={() => void decide(review.review_id, 'dismissed')}
                   >
@@ -313,14 +342,20 @@ function ShadowReviewsConsole() {
           );
         })}
       </ul>
-    </main>
+    </div>
   );
 }
 
 export default function ShadowReviewsPage() {
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleStandaloneView
+      roleLabel="Admin Workspace"
+      routeLabel="/admin/shadow-reviews"
+      allowedRoles={['admin']}
+      showShellHeader={false}
+      room="clinic"
+    >
       <ShadowReviewsConsole />
-    </RoleSessionGate>
+    </RoleStandaloneView>
   );
 }
