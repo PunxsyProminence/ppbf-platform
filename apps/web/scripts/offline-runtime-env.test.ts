@@ -112,5 +112,8 @@ describe('offline runtime environment boundary', () => {
     expect(launcher).not.toContain('process.env.NODE_OPTIONS');
     expect(launcher).toContain("AZURE_POSTGRES_CONNECTION_STRING: connectionString");
     expect(launcher).toContain("PPBF_OFFLINE_RUNTIME: 'true'");
+    // Blank, so the interest form files under the demo organization pinned
+    // beside it rather than one adopted from a developer's own .env.local.
+    expect(launcher).toContain("PPBF_PUBLIC_INTEREST_ORG_ID: ''");
   });
 });

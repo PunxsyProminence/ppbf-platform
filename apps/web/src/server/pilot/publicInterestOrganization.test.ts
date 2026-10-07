@@ -133,18 +133,21 @@ describe('an interest-form organization that does not exist', () => {
   test('fails the submission, files nothing elsewhere, and names the organization in the log', async () => {
     const foreignKey = Object.assign(new Error('violates foreign key constraint'), { code: '23503' });
     mockQueryOne.mockReset();
-    mockQueryOne.mockRejectedValue(foreignKey);
+    mockQueryOne.mockRejectedValueOnce(foreignKey);
 
     await expect(insertedOrganization()).rejects.toBe(foreignKey);
+    // One attempt. A retry under some other organization would be a second call.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
     expect(logged.mock.calls).toEqual([['public-interest-organization-unknown', { organizationId: GYM_ORG }]]);
   });
 
   test('any other database failure is not blamed on the organization', async () => {
     const outage = Object.assign(new Error('connection terminated'), { code: '57P01' });
     mockQueryOne.mockReset();
-    mockQueryOne.mockRejectedValue(outage);
+    mockQueryOne.mockRejectedValueOnce(outage);
 
     await expect(insertedOrganization()).rejects.toBe(outage);
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
     expect(logged).not.toHaveBeenCalled();
   });
 });
