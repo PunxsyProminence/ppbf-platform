@@ -654,7 +654,7 @@ describe('stop rules on drill detail: the drill\'s own and the gym\'s stored-onc
 
     // The gym's stored-once rules never make a drill adoptable on their own
     // (R3; drillAdoptionReadiness.ts): two apply here, none is the drill's.
-    expect(adoptionReadiness(coachShadow!).missing).toContain('It has no stop rules.');
+    expect(adoptionReadiness({ ...coachShadow!, floor_tested_by_this_gym: true }).missing).toContain('It has no stop rules.');
   });
 
   test("legacy scope='universal' per-drill rows appear as the drill's own", async () => {
@@ -704,7 +704,7 @@ describe('stop rules on drill detail: the drill\'s own and the gym\'s stored-onc
     expect(fromAthleteDrillDetail(athlete).stopRules).toEqual(expectedView);
 
     // And they count for adoption: the legacy-labelled row is the drill's own.
-    expect(adoptionReadiness(coach).missing).not.toContain('It has no stop rules.');
+    expect(adoptionReadiness({ ...coach, floor_tested_by_this_gym: true }).missing).not.toContain('It has no stop rules.');
   });
 });
 
