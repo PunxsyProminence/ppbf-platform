@@ -97,7 +97,10 @@ export async function writeCalibrationAuditEvent(input: {
     | 'calibration_clip'
     | 'calibration_annotation_set'
     | 'calibration_annotation_event'
-    | 'calibration_adjudication';
+    | 'calibration_adjudication'
+    | 'calibration_body_moment'
+    | 'calibration_body_point'
+    | 'calibration_event_stance_label';
   entityId: string;
   details: Record<string, unknown>;
 }): Promise<void> {

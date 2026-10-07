@@ -16,6 +16,7 @@ import {
 } from '@/src/server/pilot/drills';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
+import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 
 export const runtime = 'nodejs';
 
@@ -114,7 +115,13 @@ export async function POST(request: NextRequest) {
     // to run. The page runs the same function to show the answer first. It is
     // the presence-and-governance check the data can decide, not the
     // context-aware quality gate (see drillAdoptionReadiness.ts for why).
-    const readiness = adoptionReadiness(reference);
+    // Whether a coach of THIS gym has floor-tested this version (ruling 3). Read
+    // here, not trusted from the page, so a direct call gets the same answer.
+    const floorTested = await listFloorValidations(principal.organizationId, [reference.drill_id]);
+    const readiness = adoptionReadiness({
+      ...reference,
+      floor_tested_by_this_gym: Boolean(floorTested[reference.drill_id]),
+    });
     if (!readiness.ready) {
       return NextResponse.json(
         {

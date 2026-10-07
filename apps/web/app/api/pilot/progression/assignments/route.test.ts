@@ -217,8 +217,13 @@ describe('POST /api/pilot/progression/assignments', () => {
   // drillsPersistence.pg.test.ts.
   //
   // queryOne order inside the route: assertActorCanAccessAthlete, then
-  // getProgressionGapById, then getDrill. Every validation check runs before
-  // the first of those, so a 400 case needs no queryOne at all.
+  // getProgressionGapById, then getDrill; then, inside assignDrill, the
+  // cue-rule read (assertNewAssignmentMeetsCueRule, #1318); and after the
+  // write, for staff, the hold read (#1325). Every validation check runs
+  // before the first of those, so a 400 case needs no queryOne at all.
+  // A case that queues a value for a LATER read must queue every earlier
+  // one too: an unconsumed once-value leaks into the next test, because
+  // clearAllMocks does not empty the once-queue.
   const ACTIVE_DRILL = {
     organization_id: 'org-1',
     drill_id: 'drill-jab',
@@ -299,7 +304,9 @@ describe('POST /api/pilot/progression/assignments', () => {
     function assignWithHold(role: 'coach' | 'organization_admin' | 'admin', hold: Record<string, unknown> | null) {
       mockRequirePrincipal.mockResolvedValueOnce(principal({ role, athleteId: null }));
       reachesTheDrill(ACTIVE_DRILL);
-      mockQueryOne.mockResolvedValueOnce(hold); // getActiveTrainingHold, after the write
+      mockQueryOne
+        .mockResolvedValueOnce(null) // cue-rule read: not found here, so the insert decides
+        .mockResolvedValueOnce(hold); // getActiveTrainingHold, after the write
       mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
     }
 
@@ -337,7 +344,9 @@ describe('POST /api/pilot/progression/assignments', () => {
     test('a hold read that fails never fails the assignment; it says "unreadable", not "no hold"', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
       reachesTheDrill(ACTIVE_DRILL);
-      mockQueryOne.mockRejectedValueOnce(new Error('connection reset'));
+      mockQueryOne
+        .mockResolvedValueOnce(null) // cue-rule read: not found here, so the insert decides
+        .mockRejectedValueOnce(new Error('connection reset')); // the hold read
       mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
       const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 

@@ -708,6 +708,16 @@ describe('warnings never block', () => {
     expect(warning?.message).toEqual(expect.stringContaining('no stop rules'));
   });
 
+  it('a new DRAFT drill warns that no gym can adopt it until a coach floor-tests it (OD-2026-10-06-026 ruling 3)', () => {
+    const inputs = goodDrillPackage({
+      field_provenance: 'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION',
+    });
+    const result = run(inputs);
+    expect(result.blocking).toEqual([]);
+    const warning = result.warnings.find((w) => w.code === 'adoption_readiness');
+    expect(warning?.message).toEqual(expect.stringContaining('requires floor validation'));
+  });
+
   it("a legacy scope=universal stop rule is reported as the drill's own rule (R3)", () => {
     const inputs = goodDrillPackage();
     inputs[2] = input('seed_drill_stop_rules.csv', [stop('new:mirror-jab', '1', { scope: 'universal' })]);

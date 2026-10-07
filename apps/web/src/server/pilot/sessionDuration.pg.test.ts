@@ -62,12 +62,19 @@ const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-ap
 
 // Applied in the order the `all` chain runs them. The rollup also reads
 // readiness, activity_log and the progression tables, so those are applied
-// too; the session-duration migration comes last.
+// too. The session-close migration is applied here as well, out of `all`
+// order: upsertSession now writes the close record on every update
+// (checked_out_at and friends), so the writer under test cannot run on a
+// table without those columns. Idempotent and independent of this file's
+// subject, so applying it first changes nothing the assertions below read.
+// The session-duration migration itself is applied by each test, through its
+// own runner.
 const PREREQUISITE_MIGRATIONS = [
   'pilot_slice_postgres_progression_migration.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
   'pilot_slice_postgres_readiness_provenance_migration.sql',
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
+  'pilot_slice_postgres_session_close_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_session_duration_migration.sql';
 

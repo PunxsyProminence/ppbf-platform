@@ -8,6 +8,8 @@ import DrillDetail from '@/components/drills/DrillDetail';
 import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
+import { requiresFloorValidation } from '@/src/lib/drillFloorValidation';
+import type { DrillFloorValidation } from '@/src/server/pilot/drillFloorValidations';
 import { equipmentLabel, humanizeContactLevel } from '@/src/lib/drillPresentation';
 import type {
   DrillLibraryRow,
@@ -135,17 +137,23 @@ function ReferenceActions({
   referenceDrillId,
   state,
   detail,
+  floorTested,
   promotingReferenceId,
   changingLifecycle,
+  markingFloorTested,
   busy,
   onPromote,
   onChangeLifecycle,
+  onMarkFloorTested,
 }: {
   referenceDrillId: string;
   state: ReferenceLifecycle | undefined;
   detail: DrillWithDetail | null;
+  /** This gym's current floor-tested mark for the drill, if a coach made one. */
+  floorTested: DrillFloorValidation | undefined;
   promotingReferenceId: string;
   changingLifecycle: boolean;
+  markingFloorTested: boolean;
   /**
    * An action is still running -- its request or any re-read after it. No
    * action may start then: its re-reads can change this drill's state and
@@ -155,13 +163,30 @@ function ReferenceActions({
   busy: boolean;
   onPromote: (referenceDrillId: string) => void;
   onChangeLifecycle: (referenceDrillId: string, operationalDrillId: string, restoring: boolean) => void;
+  onMarkFloorTested: (referenceDrillId: string) => void;
 }) {
   if (!state) {
     return <p className="t-label text-[color:var(--bone-300)]">This drill&apos;s status in this gym could not be read.</p>;
   }
   const label = <p className="t-label text-[color:var(--bone-300)]">{LIFECYCLE_LABELS[state.state]}</p>;
   if (state.state === 'available') {
-    const readiness = detail ? adoptionReadiness(detail) : null;
+    const readiness = detail ? adoptionReadiness({ ...detail, floor_tested_by_this_gym: Boolean(floorTested) }) : null;
+    // The one control ruling 3 needs: a draft this gym has not floor-tested
+    // offers the mark here, where the coach can read what they are vouching
+    // for. It records who and when; it adopts nothing.
+    const markControl = detail && requiresFloorValidation(detail.field_provenance) && !floorTested
+      ? (
+        <button
+          type="button"
+          id={`floor-tested-${referenceDrillId}`}
+          onClick={() => onMarkFloorTested(referenceDrillId)}
+          disabled={busy}
+          className="btn"
+        >
+          {markingFloorTested ? 'Marking...' : 'Mark floor-tested'}
+        </button>
+      )
+      : null;
     if (readiness && !readiness.ready) {
       return (
         <div className="basis-full space-y-[var(--s2)]">
@@ -169,6 +194,7 @@ function ReferenceActions({
           <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
             {readiness.missing.map((item) => <li key={item}>{item}</li>)}
           </ul>
+          {markControl}
         </div>
       );
     }
@@ -293,6 +319,10 @@ function CoachDrillLibrary() {
   // its read failed, silently showed every drill as never adopted and offered
   // Promote on references the server would refuse.
   const [lifecycle, setLifecycle] = useState<Record<string, ReferenceLifecycle>>({});
+  // This gym's floor-tested marks, keyed by reference drill id (ruling 3).
+  const [floorTested, setFloorTested] = useState<Record<string, DrillFloorValidation>>({});
+  const [markingFloorTestedId, setMarkingFloorTestedId] = useState('');
+  const markingFloorTestedRef = useRef(false);
   const [promoteNotice, setPromoteNotice] = useState('');
 
   // Retire and Restore (OD-2026-09-19-001 LIFECYCLE): one in-flight change at
@@ -357,10 +387,12 @@ function CoachDrillLibrary() {
       const payload = (await response.json()) as {
         drills?: ReferenceDrill[];
         lifecycle?: Record<string, ReferenceLifecycle>;
+        floor_tested?: Record<string, DrillFloorValidation>;
       };
       if (!Array.isArray(payload.drills)) throw new Error('The reference drill library returned an invalid response.');
       setReferenceDrills(payload.drills);
       setLifecycle(payload.lifecycle ?? {});
+      setFloorTested(payload.floor_tested ?? {});
       setReferenceLoadError('');
       return true;
     } catch (error) {
@@ -389,7 +421,7 @@ function CoachDrillLibrary() {
   // actions are disabled. Its notice, its alert, its re-read detail and its
   // focus move all describe THAT action on THAT drill, so none of them may
   // land on another drill or be mixed up with a second action.
-  const actionInFlight = promotingReferenceId !== '' || changingLifecycle;
+  const actionInFlight = promotingReferenceId !== '' || changingLifecycle || markingFloorTestedId !== '';
 
   // Name search and the durable filters, applied to the list the server sent.
   const searchTerm = search.trim().toLowerCase();
@@ -434,16 +466,28 @@ function CoachDrillLibrary() {
       // 404 is an answer, not a failure: the drill is not in this gym's library.
       if (response.status === 404) throw new Error(REFERENCE_NOT_FOUND);
       if (!response.ok) throw new Error('This reference drill could not be loaded.');
-      const payload = (await response.json()) as { drill?: DrillWithDetail; lifecycle?: ReferenceLifecycle | null };
+      const payload = (await response.json()) as {
+        drill?: DrillWithDetail;
+        lifecycle?: ReferenceLifecycle | null;
+        floor_tested?: DrillFloorValidation | null;
+      };
       if (!payload.drill) throw new Error('This reference drill could not be loaded.');
       if (openRequestRef.current !== request) return;
       setOpenReference(fromCoachDrillDetail(payload.drill));
       setOpenReferenceDetail(payload.drill);
       // The detail's own lifecycle is read with the drill, so it is fresher
-      // than the list's; it replaces this drill's entry.
+      // than the list's; it replaces this drill's entry. Same for the mark.
       const fresh = payload.lifecycle;
       if (fresh) {
         setLifecycle((prev) => ({ ...prev, [referenceDrillId]: fresh }));
+      }
+      if (payload.floor_tested !== undefined) {
+        const mark = payload.floor_tested;
+        setFloorTested((prev) => {
+          const next = { ...prev };
+          if (mark) next[referenceDrillId] = mark; else delete next[referenceDrillId];
+          return next;
+        });
       }
     } catch (error) {
       if (openRequestRef.current !== request) return;
@@ -503,7 +547,7 @@ function CoachDrillLibrary() {
       const drill = heading?.closest('article');
       const current = document.activeElement;
       if (current && current !== document.body && !drill?.contains(current)) return;
-      (document.getElementById(`lifecycle-${id}`) ?? heading)?.focus();
+      (document.getElementById(`lifecycle-${id}`) ?? document.getElementById(`floor-tested-${id}`) ?? heading)?.focus();
     });
   }, [focusRequest]);
 
@@ -523,13 +567,21 @@ function CoachDrillLibrary() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) return;
-      const payload = (await response.json()) as { drill?: DrillWithDetail; lifecycle?: ReferenceLifecycle | null };
+      const payload = (await response.json()) as {
+        drill?: DrillWithDetail;
+        lifecycle?: ReferenceLifecycle | null;
+        floor_tested?: DrillFloorValidation | null;
+      };
       if (!payload.drill || openRequestRef.current !== request) return;
       setOpenReference(fromCoachDrillDetail(payload.drill));
       setOpenReferenceDetail(payload.drill);
       const fresh = payload.lifecycle;
       if (fresh) {
         setLifecycle((prev) => ({ ...prev, [referenceDrillId]: fresh }));
+      }
+      if (payload.floor_tested) {
+        const mark = payload.floor_tested;
+        setFloorTested((prev) => ({ ...prev, [referenceDrillId]: mark }));
       }
     } catch {
       // Keep what is shown; the list's status was already read again.
@@ -550,7 +602,7 @@ function CoachDrillLibrary() {
   }
 
   async function promoteReference(referenceDrillId: string) {
-    if (promotingRef.current || changingLifecycleRef.current) return;
+    if (promotingRef.current || changingLifecycleRef.current || markingFloorTestedRef.current) return;
 
     promotingRef.current = true;
     const openRequest = openRequestRef.current;
@@ -591,12 +643,54 @@ function CoachDrillLibrary() {
     }
   }
 
+  // Mark a draft reference drill floor-tested for this gym (OD-2026-10-06-026
+  // ruling 3). The server records who and when; the library and the open
+  // detail are then read again so the mark shown is the server's answer.
+  async function markFloorTested(referenceDrillId: string) {
+    if (markingFloorTestedRef.current || promotingRef.current || changingLifecycleRef.current) return;
+    markingFloorTestedRef.current = true;
+    const openRequest = openRequestRef.current;
+    setMarkingFloorTestedId(referenceDrillId);
+    setPromoteError('');
+    setPromoteNotice('');
+    setActionOutcome('refused');
+
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drills/floor-tested`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference_drill_id: referenceDrillId }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'The drill could not be marked floor-tested.');
+      }
+      await loadReferenceLibrary();
+      await rereadOpenDetail(referenceDrillId, openRequest);
+      setPromoteNotice('Marked floor-tested for this gym.');
+    } catch (error) {
+      // Same as a failed Promote: the mark may have landed before the answer
+      // was lost (the write and its audit are separate steps), so read again
+      // and say what is then known rather than "nothing changed".
+      const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
+      setActionOutcome(outcome);
+      setPromoteError(error instanceof Error ? error.message : 'The drill could not be marked floor-tested.');
+    } finally {
+      markingFloorTestedRef.current = false;
+      setMarkingFloorTestedId('');
+      focusLifecycleControl(referenceDrillId);
+    }
+  }
+
   // Retire or Restore the gym's adoption of a reference drill -- always the SAME
   // operational identity (the adopted lineage's newest version), through the
   // drills route's PATCH, whose restore guard the server enforces for every
   // caller. Nothing is created: promoting again after a retirement is refused.
   async function changeLifecycle(referenceDrillId: string, operationalDrillId: string, active: boolean) {
-    if (changingLifecycleRef.current || promotingRef.current) return;
+    if (changingLifecycleRef.current || promotingRef.current || markingFloorTestedRef.current) return;
     changingLifecycleRef.current = true;
     const openRequest = openRequestRef.current;
     setChangingLifecycle(true);
@@ -854,11 +948,14 @@ function CoachDrillLibrary() {
                       referenceDrillId={openReference.id}
                       state={lifecycle[openReference.id]}
                       detail={openReferenceDetail}
+                      floorTested={floorTested[openReference.id]}
                       promotingReferenceId={promotingReferenceId}
                       changingLifecycle={changingLifecycle}
+                      markingFloorTested={markingFloorTestedId === openReference.id}
                       busy={actionInFlight}
                       onPromote={(id) => void promoteReference(id)}
                       onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
+                      onMarkFloorTested={(id) => void markFloorTested(id)}
                     />
                   )}
                 />

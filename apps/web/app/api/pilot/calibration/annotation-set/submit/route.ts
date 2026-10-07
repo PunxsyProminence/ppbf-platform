@@ -4,6 +4,7 @@ import {
   listAnnotationEvents,
   submitAnnotationSet,
 } from '@/src/server/pilot/calibration/annotations';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import {
@@ -14,6 +15,35 @@ import {
 } from '../../annotatorGate';
 
 export const runtime = 'nodejs';
+
+/**
+ * A body-point set (0.2 and later) cannot be submitted incomplete: the
+ * database refuses with CALIBRATION_BODY_POINTS_INCOMPLETE and names every
+ * missing item in the error detail (calibration-body-point-rules migration,
+ * "<event_id>: <item>" joined by "; "). That list is for the annotator, so it
+ * comes back as a 400 whose body carries it as `missing[]`, with a short
+ * message rather than the list in prose (a bare set of twenty events is eighty
+ * items). The body-points GET route reads the same list ahead of time, which
+ * is what the page should gate Submit on. Anything else is rethrown as it
+ * came, for jsonError to hide.
+ */
+class BodyPointsIncompleteError extends ValidationError {
+  constructor(readonly missing: string[]) {
+    super(
+      `Missing body points: ${missing.length} item${missing.length === 1 ? '' : 's'} still to mark before this set can be submitted`,
+      'CALIBRATION_BODY_POINTS_INCOMPLETE',
+    );
+  }
+}
+
+function translateIncompleteBodyPoints(error: unknown): never {
+  const dbError = (error ?? {}) as { message?: unknown; detail?: unknown };
+  if (dbError.message === 'CALIBRATION_BODY_POINTS_INCOMPLETE') {
+    const detail = typeof dbError.detail === 'string' ? dbError.detail.trim() : '';
+    throw new BodyPointsIncompleteError(detail ? detail.split('; ') : []);
+  }
+  throw error;
+}
 
 /**
  * THE ONE-WAY DOOR.
@@ -55,7 +85,8 @@ export async function POST(request: NextRequest) {
     const set = await loadOwnAnnotationSet(principal, annotationSetId);
     assertSetInProgress(set);
 
-    const submitted = await submitAnnotationSet(principal.organizationId, annotationSetId);
+    const submitted = await submitAnnotationSet(principal.organizationId, annotationSetId)
+      .catch(translateIncompleteBodyPoints);
     if (!submitted) {
       // submitAnnotationSet is scoped to status='in_progress' in its WHERE, so
       // null here means the set was submitted between the check above and this
@@ -86,6 +117,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, set: submitted, event_count: events.length });
   } catch (error) {
+    if (error instanceof BodyPointsIncompleteError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, missing: error.missing },
+        { status: error.status },
+      );
+    }
     return jsonError(error);
   }
 }
