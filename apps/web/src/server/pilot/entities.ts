@@ -206,7 +206,7 @@ export type SessionWriteGuard =
   | { readonly mode: 'update'; readonly expectedAthleteId: string; readonly noteWriter: boolean };
 
 export const SESSION_NOTE_NOT_WRITER_MESSAGE =
-  'Forbidden: only the athlete who wrote this session note may change it. Add a note of your own instead.';
+  'Forbidden: only the athlete whose session this is may change its note or move the session.';
 
 export async function upsertSession(
   organizationId: string,
@@ -216,18 +216,22 @@ export async function upsertSession(
   if (guard.mode === 'update') {
     // Writer-only note edits (OD-2026-10-06-025 ruling 4) are enforced in
     // the UPDATE's own WHERE, not by a read beforehand: a caller who is not
-    // the writer ($13 false) matches the row only while the stored text
-    // equals what they sent, so the statement itself cannot change the note
-    // for anyone else, whatever happened between the route's lookup and this
-    // write. Staff writes that leave the text alone still update the other
-    // columns.
+    // the writer ($13 false) matches the row only while the text they sent
+    // equals the stored text (whitespace at the ends ignored: the validator
+    // trims, older rows may not be) AND the session stays with its athlete
+    // ($3 = $10). The second half is the review finding that moving a session
+    // moves the note: the new owner would become its "writer". For a
+    // non-writer the SET keeps the stored bytes of the note untouched, so the
+    // statement itself cannot change the words for anyone else, whatever
+    // happened between the route's lookup and this write. Staff writes that
+    // leave the text alone still update the other columns.
     const updated = await query<{ session_id: string }>(
       `update pilot.sessions
        set athlete_id = $3,
            date = $4,
            rpe = $5,
            rpe_method = $6,
-           notes = $7,
+           notes = case when $13::boolean then $7 else notes end,
            completed_flag = $8,
            updated_at = $9,
            -- $11 says whether the caller sent duration_minutes at all. A
@@ -235,7 +239,7 @@ export async function upsertSession(
            -- stored minutes; only check-out sets or clears them.
            duration_minutes = case when $11::boolean then $12::integer else duration_minutes end
        where organization_id = $1 and session_id = $2 and athlete_id = $10
-         and ($13::boolean or notes = $7)
+         and ($13::boolean or (btrim(notes) = $7 and $3 = $10))
        returning session_id`,
       [
         organizationId,
@@ -256,14 +260,14 @@ export async function upsertSession(
     if (updated.length === 0) {
       // Zero rows is one of two things, and the caller is told which: the
       // row moved (409, retry after re-reading) or the caller tried to change
-      // a note that is not theirs (403). The follow-up read only picks the
-      // message; the refusal itself already happened in the UPDATE above.
+      // or move a note that is not theirs (403). The follow-up read only
+      // picks the message; the refusal itself already happened in the UPDATE.
       if (!guard.noteWriter) {
         const stored = await queryOne<{ notes: string }>(
           'select notes from pilot.sessions where organization_id = $1 and session_id = $2 and athlete_id = $3',
           [organizationId, payload.session_id, guard.expectedAthleteId],
         );
-        if (stored && stored.notes !== payload.notes) {
+        if (stored && (stored.notes.trim() !== payload.notes || payload.athlete_id !== guard.expectedAthleteId)) {
           throw new ForbiddenError(SESSION_NOTE_NOT_WRITER_MESSAGE, 'SESSION_NOTE_WRITER_ONLY');
         }
       }

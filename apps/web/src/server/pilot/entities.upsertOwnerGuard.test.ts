@@ -102,9 +102,22 @@ describe('upsertSession — write owner guard', () => {
     await upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false });
 
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toMatch(/and \(\$13::boolean or notes = \$7\)/);
+    // Text unchanged (ends-trimmed) AND the session stays with its athlete:
+    // a move would hand the note to a new "writer".
+    expect(sql).toMatch(/and \(\$13::boolean or \(btrim\(notes\) = \$7 and \$3 = \$10\)\)/);
+    // A non-writer's SET never touches the stored bytes of the note.
+    expect(sql).toMatch(/notes = case when \$13::boolean then \$7 else notes end/);
     expect(params[6]).toBe('rewritten');
     expect(params[12]).toBe(false);
+  });
+
+  test('a non-writer who moves the session to another athlete is refused with a 403', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ notes: 'felt strong' });
+
+    await expect(
+      upsertSession('org-1', session({ athlete_id: 'ath-other' }), { mode: 'update', expectedAthleteId: 'ath-1', noteWriter: false }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   test('a non-writer whose text differs from the stored note is refused with a 403, not a 409', async () => {
@@ -112,19 +125,21 @@ describe('upsertSession — write owner guard', () => {
     mockQueryOne.mockResolvedValueOnce({ notes: 'the athlete wrote this' });
 
     await expect(
-      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false }),
+      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-1', noteWriter: false }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     // The follow-up read is scoped to the authorized owner's row.
     const [, params] = mockQueryOne.mock.calls[0];
-    expect(params).toEqual(['org-1', 'sess-1', 'ath-owner']);
+    expect(params).toEqual(['org-1', 'sess-1', 'ath-1']);
   });
 
   test('a non-writer whose miss is not about the note gets the ordinary conflict', async () => {
     mockQuery.mockResolvedValueOnce([]);
-    mockQueryOne.mockResolvedValueOnce({ notes: 'rewritten' });
+    // Stored with stray spaces, as an older row may be; the validator trims
+    // what the caller sent, so the comparison ignores the ends.
+    mockQueryOne.mockResolvedValueOnce({ notes: '  rewritten ' });
 
     await expect(
-      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: false }),
+      upsertSession('org-1', session({ notes: 'rewritten' }), { mode: 'update', expectedAthleteId: 'ath-1', noteWriter: false }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });

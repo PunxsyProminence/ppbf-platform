@@ -79,6 +79,7 @@ const ORG_ADMIN = 'acct-note-org-admin';
 const PARENT = 'acct-note-parent';
 const ATHLETE_ACCOUNT = 'acct-note-athlete';
 const ATHLETE_ID = 'ath-note-writer';
+const OTHER_ATHLETE_ID = 'ath-note-other';
 const SESSION_ID = 'sess-note-1';
 const ATHLETE_TEXT = 'legs heavy today, slept four hours';
 
@@ -140,12 +141,16 @@ async function freshDatabase(name: string): Promise<Client> {
       [accountId, role, ORG_ID],
     );
   }
-  await client.query(
-    `insert into pilot.athletes
-       (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
-     values ($1, $2, 'Note Writer', '2011-01-01', '60', 'active', 'contact', true, $3, now(), now())`,
-    [ORG_ID, ATHLETE_ID, COACH_OF_RECORD],
-  );
+  // Two athletes under the same coach of record, so the coach can reach both
+  // -- the setup the session-move case below needs.
+  for (const athleteId of [ATHLETE_ID, OTHER_ATHLETE_ID]) {
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Note Writer', '2011-01-01', '60', 'active', 'contact', true, $3, now(), now())`,
+      [ORG_ID, athleteId, COACH_OF_RECORD],
+    );
+  }
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
      values ($1, 'athlete', $2, 'ppbf_local', $3) on conflict do nothing`,
@@ -351,6 +356,50 @@ describe('only the writer changes a session note', () => {
 
       expect(response.status).toBe(403);
       expect(await storedNote(client)).toBe(ATHLETE_TEXT);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the coach of record cannot move the session, and its note, to another athlete they coach', async () => {
+    // Review finding: a move hands the note to a new owner, who would then be
+    // its "writer". Refused in the same UPDATE; the row stays where it was.
+    const client = await freshDatabase('note_writer_move');
+    try {
+      activeClient = client;
+      await athleteStartsSession();
+
+      const response = await writeAs(COACH_OF_RECORD_PRINCIPAL, body({ athlete_id: OTHER_ATHLETE_ID }));
+
+      expect(response.status).toBe(403);
+      expect((await response.json()).code).toBe('SESSION_NOTE_WRITER_ONLY');
+      const row = await client.query<{ athlete_id: string; notes: string }>(
+        'select athlete_id, notes from pilot.sessions where organization_id = $1 and session_id = $2',
+        [ORG_ID, SESSION_ID],
+      );
+      expect(row.rows[0]).toEqual({ athlete_id: ATHLETE_ID, notes: ATHLETE_TEXT });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a staff write replaying an older note stored with stray spaces still goes through, bytes untouched', async () => {
+    // The validator trims what the caller sends; a row seeded before the
+    // routes existed may not be. The match ignores the ends, and the SET
+    // keeps the stored bytes for a non-writer.
+    const client = await freshDatabase('note_writer_stray_spaces');
+    try {
+      activeClient = client;
+      await athleteStartsSession();
+      await client.query(
+        'update pilot.sessions set notes = $3 where organization_id = $1 and session_id = $2',
+        [ORG_ID, SESSION_ID, `  ${ATHLETE_TEXT} \n`],
+      );
+
+      const response = await writeAs(COACH_OF_RECORD_PRINCIPAL, body({ completed_flag: true }));
+
+      expect(response.status).toBe(200);
+      expect(await storedNote(client)).toBe(`  ${ATHLETE_TEXT} \n`);
     } finally {
       await client.end();
     }

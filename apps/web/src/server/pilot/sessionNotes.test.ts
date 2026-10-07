@@ -2,7 +2,7 @@ import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import { NO_ATHLETE_NOTE_PLACEHOLDER } from '../../shared/sessionNoteSemantics';
 
 import { queryOne } from './db';
-import { getTodaySessionNote } from './sessionNotes';
+import { getTodaySessionNote, isSessionNoteWriter } from './sessionNotes';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -171,4 +171,24 @@ it('refuses rather than guessing a day it cannot resolve', async () => {
     'SESSION_NOTE_GYM_DAY_UNRESOLVED',
   );
   expect(mockQueryOne).not.toHaveBeenCalled();
+});
+
+// OD-2026-10-06-025 ruling 4: the writer of a session note is the athlete
+// whose session it is -- a stand-in the row can support, since it records no
+// author. Staff and parents are never the writer; another athlete is not.
+describe('isSessionNoteWriter', () => {
+  test('the athlete whose session it is', () => {
+    expect(isSessionNoteWriter({ role: 'athlete', athleteId: 'ath-1' }, 'ath-1')).toBe(true);
+  });
+
+  test.each([
+    ['another athlete', { role: 'athlete', athleteId: 'ath-2' }],
+    ['an athlete principal with no athleteId', { role: 'athlete', athleteId: null }],
+    ['a coach', { role: 'coach', athleteId: null }],
+    ['an organization admin', { role: 'organization_admin', athleteId: null }],
+    ['a parent', { role: 'parent', athleteId: null }],
+    ['a coach whose principal somehow carries the athleteId', { role: 'coach', athleteId: 'ath-1' }],
+  ])('%s is not', (_label, actor) => {
+    expect(isSessionNoteWriter(actor, 'ath-1')).toBe(false);
+  });
 });
