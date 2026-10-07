@@ -6552,6 +6552,87 @@
     }
   },
   {
+    "id": "app/api/pilot/gym-tvs/[tvId]/disconnect/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/gym-tvs/[tvId]/disconnect",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); tv scoped to principal.organizationId in disconnectGymTv",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV pairing (S2a-1). Disconnects a paired TV: revoked_at set, session cleared, key refused from then on. Any staff member of the gym may disconnect any of its TVs (shared gym TVs). No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/gym-tvs/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/gym-tvs",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); listGymTvs(principal.organizationId)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV pairing (S2a-1). Paired TVs list for the coach dashboard: name, status, paired/last-seen, current run id. Never a code or key hash. No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/gym-tvs/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/gym-tvs",
+    "gate": "requirePrincipal + requireRole(STAFF_ROLES); mint budget counted per account in the database",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gym TV pairing (S2a-1). Mints a 6-character one-time pairing code for a named TV and returns it once; only its hash is stored (gymTvs.ts mintGymTvPairCode). No athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/incidents/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/incidents",
@@ -11754,6 +11835,25 @@
       "authorizationGates": [
         "assertCoachAssignedToAthlete"
       ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/tv/pair/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/tv/pair",
+    "gate": "none by construction (the TV has no session); one-time pairing code is the credential, behind a per-IP volatile + durable budget that counts the attempt before the body is read (reserveAttempts) and in front of the lookup",
+    "rolesAdmitted": [],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": true,
+    "looksWrong": "Unauthenticated by design: a television cannot sign in. The credential is the one-time code minted by staff on the coach dashboard, and every attempt is counted against the caller's IP on both limiters before it is checked. By the literal definition it has no session gate.",
+    "confidence": "high",
+    "notes": "Gym TV pairing (S2a-1). The TV redeems the code: gymTvs.ts redeemGymTvPairCode (row lock, single use, 5-minute life). Every failed lookup (wrong, expired, used or disconnected code) returns the same 404. Success sets the device key in an httpOnly cookie ppbf_gym_tv; body carries only the TV name. The key opens only the TV read (S2b), never an account. No athlete data.",
+    "mechanical": {
+      "sessionGates": [],
+      "authorizationGates": [],
       "roleLiterals": []
     }
   },
