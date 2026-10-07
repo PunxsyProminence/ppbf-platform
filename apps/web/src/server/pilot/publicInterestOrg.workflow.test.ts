@@ -26,7 +26,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const WORKFLOW_DIR = path.resolve(__dirname, '../../../../../.github/workflows');
+const REPO_ROOT = path.resolve(__dirname, '../../../../..');
+const WORKFLOW_DIR = path.join(REPO_ROOT, '.github/workflows');
 
 const NAME = 'PPBF_PUBLIC_INTEREST_ORG_ID';
 const ENV_LINE = `          ${NAME}: \${{ vars.${NAME} }}`;
@@ -57,6 +58,13 @@ const DEPLOY_STEPS: Array<{ label: string; file: string; step: string; lastStati
     lastStatic: 'PPBF_DURABLE_RATE_LIMIT=true',
   },
 ];
+
+/**
+ * Any line that takes the value from GitHub rather than from the shell: a
+ * `vars.`, `secrets.` or `env.` expression in any spelling. `$NAME` in a script
+ * is not one of these -- that is the environment the step was given.
+ */
+const READS_FROM_GITHUB = new RegExp(`(vars|secrets|env)\\s*(\\.\\s*|\\[\\s*['"])${NAME}`);
 
 function readWorkflow(file: string): string {
   return fs.readFileSync(path.join(WORKFLOW_DIR, file), 'utf8').replace(/\r\n/g, '\n');
@@ -137,7 +145,7 @@ function deploy(file: string, step: string, value: string | undefined): Run {
 describe('how the interest-form organization reaches the app', () => {
   test.each(DEPLOY_STEPS)('$label: sourced from a GitHub variable, through env, never a secret', ({ file, step }) => {
     const text = stepText(file, step);
-    const mentions = text.split('\n').filter((line) => line.includes(`vars.${NAME}`) || line.includes(`secrets.${NAME}`));
+    const mentions = text.split('\n').filter((line) => READS_FROM_GITHUB.test(line));
 
     // Exactly one place reads it, and that place is the step's env mapping --
     // so the value reaches the shell as data and is never spliced into it.
@@ -148,7 +156,7 @@ describe('how the interest-form organization reaches the app', () => {
     '%s: nothing outside the deploy steps reads it',
     (file) => {
       const inSteps = DEPLOY_STEPS.filter((entry) => entry.file === file).length;
-      const all = readWorkflow(file).split('\n').filter((line) => line.includes(`{ vars.${NAME} }`) || line.includes(`secrets.${NAME}`));
+      const all = readWorkflow(file).split('\n').filter((line) => READS_FROM_GITHUB.test(line));
       expect(all).toEqual(Array.from({ length: inSteps }, () => ENV_LINE));
     },
   );
@@ -177,9 +185,20 @@ describe('how the interest-form organization reaches the app', () => {
   });
 
   test.each(DEPLOY_STEPS)('$label: a value that is not a plain organization id stops before az', ({ file, step }) => {
-    for (const value of ['secretref:azure-ai-key', 'two words', 'a=b', 'org;id', ' ']) {
+    // A whitespace-only value is refused too, rather than read as unset: the
+    // app would treat it as blank, but a variable somebody created and got
+    // wrong should stop the deploy, not pass for one nobody created.
+    for (const value of ['secretref:azure-ai-key', 'two words', 'a=b', 'org;id', ' ', 'punxsy_prominence\n', 'a"b', "a'b", 'org.id']) {
       const run = deploy(file, step, value);
-      expect({ value, status: run.status, azCalls: run.azCalls }).toEqual({ value, status: 1, azCalls: 0 });
+      expect({ value, status: run.status, azCalls: run.azCalls, said: run.output.includes(`${NAME} must be an organization id`) })
+        .toEqual({ value, status: 1, azCalls: 0, said: true });
     }
+  });
+
+  test('the local template carries the name', () => {
+    // environmentInventory.workflow.test.ts cannot hold this one to the
+    // template: its parser stops at the appended array (see the header).
+    const template = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8').split(/\r?\n/);
+    expect(template.filter((line) => line.startsWith(`${NAME}=`))).toEqual([`${NAME}=`]);
   });
 });

@@ -294,7 +294,7 @@ async function startRuntime({ reset, port }) {
   const child = spawn(process.execPath, [nextBin, 'dev', '--hostname', '127.0.0.1', '--port', String(port)], {
     cwd: workspaceDir, stdio: 'inherit',
     env: {
-      ...buildOfflineChildEnv(process.env), NODE_ENV: 'development', NEXT_TELEMETRY_DISABLED: '1', PPBF_OFFLINE_RUNTIME: 'true', PPBF_PILOT_DEFAULT_ORG_ID: 'ppbf-offline-demo',
+      ...buildOfflineChildEnv(process.env), NODE_ENV: 'development', NEXT_TELEMETRY_DISABLED: '1', PPBF_OFFLINE_RUNTIME: 'true', PPBF_PILOT_DEFAULT_ORG_ID: 'ppbf-offline-demo', PPBF_PUBLIC_INTEREST_ORG_ID: '',
       NODE_OPTIONS: `--require=${path.join(scriptDir, 'offline-network-guard.cjs')}`.trim(),
       AZURE_POSTGRES_CONNECTION_STRING: connectionString, AZURE_STORAGE_CONNECTION_STRING: '', AZURE_AI_ENDPOINT: '', AZURE_AI_KEY: '',
       GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', MICROSOFT_CLIENT_ID: '', MICROSOFT_CLIENT_SECRET: '',

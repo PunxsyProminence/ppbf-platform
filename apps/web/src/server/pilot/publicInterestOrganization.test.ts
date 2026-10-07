@@ -114,6 +114,41 @@ describe('the interest form insert', () => {
   });
 });
 
+// The setting can name an organization this database does not have. Every
+// enquiry then fails the foreign key. It must stay a failure -- falling back to
+// the default organization is the defect this setting exists to end -- and the
+// log has to say which organization, because the route's own line is a constant.
+describe('an interest-form organization that does not exist', () => {
+  let logged: jest.SpyInstance;
+
+  beforeEach(() => {
+    logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    process.env.PPBF_PUBLIC_INTEREST_ORG_ID = GYM_ORG;
+  });
+
+  afterEach(() => {
+    logged.mockRestore();
+  });
+
+  test('fails the submission, files nothing elsewhere, and names the organization in the log', async () => {
+    const foreignKey = Object.assign(new Error('violates foreign key constraint'), { code: '23503' });
+    mockQueryOne.mockReset();
+    mockQueryOne.mockRejectedValue(foreignKey);
+
+    await expect(insertedOrganization()).rejects.toBe(foreignKey);
+    expect(logged.mock.calls).toEqual([['public-interest-organization-unknown', { organizationId: GYM_ORG }]]);
+  });
+
+  test('any other database failure is not blamed on the organization', async () => {
+    const outage = Object.assign(new Error('connection terminated'), { code: '57P01' });
+    mockQueryOne.mockReset();
+    mockQueryOne.mockRejectedValue(outage);
+
+    await expect(insertedOrganization()).rejects.toBe(outage);
+    expect(logged).not.toHaveBeenCalled();
+  });
+});
+
 // Not ruled, so not moved. Each of these must keep asking for the DEFAULT
 // organization while the interest-form setting points somewhere else.
 describe('the other signed-out surfaces ignore the interest-form setting', () => {
