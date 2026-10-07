@@ -83,6 +83,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired 30 days ago |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, which needs the review-queue and chat-session foreign keys relaxed (migration) and a de-identification sweep; the athlete's coincide with the 2-year athlete purge. |
 
 ### Public interest-form inquiries
 
@@ -360,7 +361,36 @@ person's own words) are deleted in the same transaction (in the cleanup job, the
 per-person savepoint), as are a purged guardian's; both purge paths count them as
 `shadow_memory_corrections_deleted`. Until the purge they stay behind the account, read only on
 that account's own behalf (its export), so unreadable once the account is marked deleted. Pinned by
-`shadowMemoryCorrectionPurge.pg.test.ts`. A playback
+`shadowMemoryCorrectionPurge.pg.test.ts`. The rest of the person's SHADOW data follows the
+owner's ruling (Jason 2026-10-06: "delete any thing that personally Identifys the person but we
+keep data that [makes] the Ai and ML better"), on both purge paths, for a purged athlete's login
+and a purged guardian: SHADOW's memory of the person (`pilot.shadow_user_profiles`), their
+queued jobs, rate-limit buckets and feature-unlock snapshots are deleted (counted as
+`shadow_profiles_deleted`, `shadow_jobs_deleted`, `shadow_rate_limit_buckets_deleted`,
+`shadow_unlock_snapshots_deleted`), and a purged athlete's id leaves every other profile's list
+of athletes discussed (`shadow_profile_mentions_cleared`). The chat log SHADOW's metrics
+aggregate (`pilot.shadow_chat_audit`) keeps its rows de-identified: one random `anon_<uuid>`
+token per person, stored nowhere else, replaces their login and athlete id on every turn keyed
+to them; their own typed words are emptied and SHADOW's replies kept (Q1, "Delete theirs, keep
+AI replies"); a coach's turn about them keeps the coach and the text with the person's known
+names scrubbed to `[name]` (2026-10-07, "Scrub the child's name, keep"): full name, ring name,
+login email and linked guardians' names, whole and part by part (split on spaces, hyphens,
+apostrophes, periods, `@`), case-insensitively, on word boundaries. A purged guardian's names
+also leave the turns about each child they were still linked to, because a guardian is purged a
+year before the child and the child's purge can no longer learn the name. The names then leave
+every other kept turn in the person's gym as well, keyed to anyone or to nobody (Jason
+2026-10-07: "Gym-wide (Recommended)"; counted as `shadow_chat_audit_names_scrubbed`). **The
+method's limits:** a nickname never recorded, a misspelling, a plural or a description is not
+caught; **over-blanking**: a common word that is also a name part ("Will", a ring name "Kid") is
+blanked to `[name]` in every turn of that gym, other children's kept AI text included; people
+purged before this existed are not revisited (**not yet built**: a one-off backfill, after a
+read-only production count); the token can still be matched to the retired login through its
+chat sessions and messages until those are de-identified too (**not yet built**: the sessions /
+messages / evidence / feedback / review-queue de-identification needs a migration first). A
+person with no usable name on record cannot be scrubbed, so the turns of or about them are
+deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
+`shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by
+`shadowDeidentifySource.test.ts`. A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.
