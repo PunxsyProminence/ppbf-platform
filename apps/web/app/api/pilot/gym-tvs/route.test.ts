@@ -49,7 +49,13 @@ describe('GET /api/pilot/gym-tvs', () => {
     expect(mockList).toHaveBeenCalledWith('org-1');
   });
 
-  // 'admin' is the legacy spelling of organization_admin (roleAlias.ts), so it is not in this list.
+  it("legacy 'admin' is admitted as organization_admin (roleAlias.ts)", async () => {
+    as('admin', 'acct-legacy-admin');
+    const response = await GET(new NextRequest('http://localhost/api/pilot/gym-tvs'));
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-1');
+  });
+
   it.each(['athlete', 'parent', 'platform_owner', 'board'])('%s is refused', async (role) => {
     as(role);
     const response = await GET(new NextRequest('http://localhost/api/pilot/gym-tvs'));
@@ -79,6 +85,13 @@ describe('POST /api/pilot/gym-tvs', () => {
     const response = await POST(post({ tv_name: 'House' }));
     expect(response.status).toBe(201);
     expect(mockMint).toHaveBeenCalledWith('org-1', 'acct-admin', 'House');
+  });
+
+  it("legacy 'admin' may mint too", async () => {
+    as('admin', 'acct-legacy-admin');
+    const response = await POST(post({ tv_name: 'House' }));
+    expect(response.status).toBe(201);
+    expect(mockMint).toHaveBeenCalledWith('org-1', 'acct-legacy-admin', 'House');
   });
 
   it.each(['athlete', 'parent', 'platform_owner'])('%s cannot mint', async (role) => {

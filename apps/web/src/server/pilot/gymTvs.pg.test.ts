@@ -404,6 +404,25 @@ describe('redeeming a code', () => {
     await disconnectGymTv(ORG_A, minted.tv_id);
     expect(await redeemGymTvPairCode(minted.code)).toBeNull();
   });
+
+  // disconnectGymTv also clears the code, so the test above cannot tell whether redeem looks at
+  // revoked_at at all (mutant M2 survived it). Here revoked_at is set with the code left in place,
+  // so revoked_at is the only thing standing between the code and a key. The state is synthetic on
+  // purpose: no current code path leaves a code on a disconnected row.
+  it('revoked_at alone refuses the code, even while the code is still stored', async () => {
+    const minted = await mintGymTvPairCode(ORG_A, COACH_A, 'Gym main');
+    await client.query(`update pilot.gym_tvs set revoked_at = now() where tv_id = $1`, [minted.tv_id]);
+    const before = await readTv(minted.tv_id);
+    expect(before.pair_code_hash).toBe(hashToken(minted.code));
+    expect(before.revoked_at).not.toBeNull();
+
+    expect(await redeemGymTvPairCode(minted.code)).toBeNull();
+
+    const after = await readTv(minted.tv_id);
+    expect(after.device_key_hash).toBeNull();
+    expect(after.paired_at).toBeNull();
+    expect(after.pair_code_hash).toBe(hashToken(minted.code));
+  });
 });
 
 describe('resolving a TV by its key', () => {

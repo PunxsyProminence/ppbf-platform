@@ -221,9 +221,11 @@ const NO_SESSION_GATE_ALLOWLIST = new Map<string, string>([
       + 'client is the gym television, which never signs in. The one-time, '
       + 'five-minute code minted on the coach dashboard is the credential, '
       + 'checked behind a per-IP budget on both the volatile and the durable '
-      + 'limiter that sits in FRONT of the lookup. Success hands the TV its '
+      + 'limiter that sits in FRONT of the lookup and counts the attempt '
+      + 'before the body is read (reserveAttempts). Success hands the TV its '
       + 'own device key in an httpOnly cookie; that key opens only the TV '
-      + 'read and no account. Every failure returns the same answer.',
+      + 'read and no account. Every failed lookup (wrong, expired, used or '
+      + 'disconnected code) returns the same 404.',
   ],
   [
     'app/api/pilot/wall/route.ts#GET',

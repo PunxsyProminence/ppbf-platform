@@ -48,7 +48,8 @@ beforeEach(() => {
   });
 });
 
-it.each(['coach', 'organization_admin'])('%s disconnects a TV in their organization', async (role) => {
+// 'admin' is the legacy row spelling of organization_admin (roleAlias.ts) and must be admitted too.
+it.each(['coach', 'organization_admin', 'admin'])('%s disconnects a TV in their organization', async (role) => {
   as(role);
   const response = await call('gymtv_1');
   expect(response.status).toBe(200);

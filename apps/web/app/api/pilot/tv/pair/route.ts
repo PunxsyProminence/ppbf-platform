@@ -7,14 +7,7 @@ import {
   normalizePairCode,
   redeemGymTvPairCode,
 } from '@/src/server/pilot/gymTvs';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  clearDurableRateLimit,
-  getClientIp,
-  recordDurableFailedAttempt,
-  recordFailedAttempt,
-} from '@/src/server/pilot/rateLimit';
+import { clearDurableRateLimit, getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -25,17 +18,22 @@ export const runtime = 'nodejs';
  * the credential. On success the TV receives its device key in an httpOnly cookie and nothing in
  * the body but the TV's name; the key opens only the TV read (S2b).
  *
- * A per-IP budget sits in FRONT of the lookup, on both the volatile and the durable limiter, the
- * way magic-link consume does it: there is no account to key on, and the code space is small
- * enough (32^6) that an unbudgeted endpoint could be walked. Every failure returns the same answer
- * whether the code was wrong, expired, already used, or belonged to a disconnected TV.
+ * A per-IP budget sits in FRONT of the lookup, on both the volatile and the durable limiter, and
+ * the attempt is COUNTED BEFORE IT IS CHECKED (reserveAttempts, CL-A4): there is no account to key
+ * on, and the code space is small enough (32^6) that an unbudgeted endpoint could be walked. The
+ * reservation happens before the body is even read, so a malformed guess costs the same as a wrong
+ * one, and of a burst of guesses in flight together at most one reaches the lookup (per replica,
+ * if the durable store is unreachable). Success clears the buckets; failure records nothing more,
+ * because the attempt was already charged.
+ *
+ * Every failed lookup (wrong, expired, already used, or belonging to a disconnected TV) returns the
+ * same 404, so a guesser learns nothing about which codes are live.
  */
 export async function POST(request: NextRequest) {
   const ipKey = `tv_pair_ip:${getClientIp(request)}`;
 
-  const volatileCheck = checkRateLimit(ipKey);
-  const durableCheck = await checkDurableRateLimit(ipKey);
-  if (volatileCheck.isLimited || durableCheck.isLimited) {
+  const reservation = await reserveAttempts([ipKey]);
+  if (reservation.isLimited) {
     return NextResponse.json({ error: 'TV_PAIR_RATE_LIMITED' }, { status: 429 });
   }
 
@@ -46,9 +44,7 @@ export async function POST(request: NextRequest) {
       : '';
   const code = normalizePairCode(rawCode);
   if (!isWellFormedPairCode(code)) {
-    // A malformed code is counted too: it is still a guess from this address.
-    recordFailedAttempt(ipKey);
-    await recordDurableFailedAttempt(ipKey);
+    // Already counted by the reservation above: a malformed code is still a guess from this address.
     return NextResponse.json({ error: 'TV_PAIR_CODE_INVALID' }, { status: 400 });
   }
 
@@ -56,13 +52,17 @@ export async function POST(request: NextRequest) {
   try {
     redeemed = await redeemGymTvPairCode(code);
   } catch (error) {
-    console.error('tv-pair-redeem-failed', { message: error instanceof Error ? error.message : String(error) });
+    // Class and driver code only. A pg error's message can carry the host name or SQL text, and
+    // this log line is reachable by an unauthenticated caller. The constructor name, not
+    // error.name: pg's DatabaseError sets name to the literal 'error'.
+    console.error('tv-pair-redeem-failed', {
+      name: error instanceof Error ? error.constructor.name : typeof error,
+      code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : undefined,
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
   if (!redeemed) {
-    recordFailedAttempt(ipKey);
-    await recordDurableFailedAttempt(ipKey);
     return NextResponse.json({ error: 'TV_PAIR_CODE_REJECTED' }, { status: 404 });
   }
 
