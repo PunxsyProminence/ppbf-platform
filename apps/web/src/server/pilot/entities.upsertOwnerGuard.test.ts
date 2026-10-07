@@ -151,7 +151,7 @@ describe('upsertGoal — write owner guard', () => {
   test("update mode carries the expected owner in the WHERE clause", async () => {
     mockQuery.mockResolvedValueOnce([{ goal_id: 'goal-1' }]);
 
-    await upsertGoal('org-1', goal({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true });
+    await upsertGoal('org-1', goal({ athlete_id: 'ath-new' }), { mode: 'update', expectedAthleteId: 'ath-owner' });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('update pilot.goals');
@@ -164,7 +164,7 @@ describe('upsertGoal — write owner guard', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await expect(
-      upsertGoal('org-1', goal(), { mode: 'update', expectedAthleteId: 'ath-owner', noteWriter: true }),
+      upsertGoal('org-1', goal(), { mode: 'update', expectedAthleteId: 'ath-owner' }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
