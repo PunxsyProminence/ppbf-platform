@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { assertConsentCoversVideo, writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -59,11 +59,14 @@ jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
     return write(ids.length > 0 ? TX_CLIENT : null);
   }),
 }));
-// Only the athlete-reach check is doubled; requireRole and
-// isOrganizationAdminRole stay real.
+// Only the two athlete-reach checks are doubled; requireRole and
+// isOrganizationAdminRole stay real. The batched one answers that the coach
+// reaches every athlete asked about unless a test says otherwise.
+const reachesEveryone = async (_actor: unknown, ids: readonly string[]) => new Set(ids);
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined),
+  accessibleAthleteIds: jest.fn(async (_actor: unknown, ids: readonly string[]) => new Set(ids)),
 }));
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
@@ -76,6 +79,7 @@ const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockReach = accessibleAthleteIds as jest.Mock;
 const mockConsent = assertConsentCoversVideo as jest.Mock;
 const mockTags = listLiveTagSubjects as jest.Mock;
 
@@ -85,6 +89,7 @@ afterEach(() => {
   // per-athlete one, which must not leak into the next test.
   mockConsent.mockReset().mockResolvedValue(undefined);
   mockTags.mockReset().mockResolvedValue([]);
+  mockReach.mockReset().mockImplementation(reachesEveryone);
 });
 
 function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
@@ -590,6 +595,125 @@ describe('releasing a tagged clip', () => {
 
     expect((await call()).status).toBe(404);
     expect(mockTags).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * AND THE COACH MUST REACH AT LEAST ONE CHILD THE CLIP SHOWS. The uploader
+ * rule above sees the clip's own athlete, never the tags. Playback refuses a
+ * tagged clip to a coach who reaches none of the athletes in it
+ * (video/[videoId]/route.ts, accessibleAthleteIds); release now does the same,
+ * before consent is asked, so the consent 409 can no longer tell a coach about
+ * a child they cannot see (coach reads are for the coach of record, a live
+ * covering coach or an organization admin: OD-2026-10-05-024 item 2). It is
+ * placed with the other entitlement refusals, ahead of the state 409s; the
+ * state itself is not a secret from this coach (the coach list shows it).
+ *
+ * The scenario each test is built from: coach C uploaded untagged team footage
+ * (athlete_id null, so the uploader rule had no athlete to ask about), coach D
+ * tagged child X, whom C does not coach.
+ */
+describe('releasing a tagged clip the coach reaches nobody in', () => {
+  const uploaderOfTeamFootageTaggedByAnother = (
+    overrides: Record<string, unknown> = { athlete_id: null },
+    { written = false } = {},
+  ) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce(videoRow(overrides));
+    if (written) mockQueryOne.mockResolvedValueOnce({ status: 'ready' });
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
+  };
+
+  test('is refused as not found and learns nothing about consent; nothing is written', async () => {
+    uploaderOfTeamFootageTaggedByAnother();
+    mockReach.mockResolvedValueOnce(new Set());
+    // The tagged child's guardian refused: the one fact this coach must not
+    // be able to read off the response.
+    mockConsent.mockRejectedValue(new ConflictError('Blocked: withdrawn', 'GUARDIAN_CONSENT_WITHDRAWN'));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    // Byte-for-byte hiddenNotFound(), the same body a stranger to the video
+    // gets: no code, no consent wording, no state.
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockReach).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1', role: 'coach' }), ['ath-tagged']);
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockPrereq).not.toHaveBeenCalled();
+    expect(writeUnderPlaybackConsent).not.toHaveBeenCalled();
+    expect(mockConsent).not.toHaveBeenCalled();
+    expect(TX_CLIENT.query).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('is refused with the other entitlement refusals, before the state 409s', async () => {
+    // Already released: an entitled caller gets the 409 "already been
+    // released". An out-of-reach one gets the entitlement 404, like a caller
+    // who is not the uploader does.
+    uploaderOfTeamFootageTaggedByAnother({ athlete_id: null, status: 'ready' });
+    mockReach.mockResolvedValueOnce(new Set());
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  test('the reach question names every athlete the clip shows, own athlete included', async () => {
+    uploaderOfTeamFootageTaggedByAnother({ athlete_id: 'ath-1' }, { written: true });
+
+    expect((await call()).status).toBe(200);
+    expect(mockReach).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1' }), ['ath-1', 'ath-tagged']);
+  });
+
+  test('a coach who reaches at least one athlete in the clip is handled as before: every child asked, release written', async () => {
+    uploaderOfTeamFootageTaggedByAnother({ athlete_id: 'ath-1' }, { written: true });
+    // Reaches the clip's own athlete only, not the tagged partner -- enough,
+    // as on playback.
+    mockReach.mockResolvedValueOnce(new Set(['ath-1']));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(writeUnderPlaybackConsent).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-tagged'], expect.any(Function));
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-tagged');
+    expect(TX_CLIENT.query).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('an %s is not asked to reach: they reach every athlete in the organization', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ athlete_id: null }))
+      .mockResolvedValueOnce({ status: 'ready' });
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
+    mockReach.mockResolvedValueOnce(new Set());
+
+    expect((await call()).status).toBe(200);
+    expect(mockReach).not.toHaveBeenCalled();
+    expect(mockConsent).toHaveBeenCalledWith('org-1', 'ath-tagged');
+  });
+
+  test('an untagged clip is not asked: the uploader rule decided it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ athlete_id: null }))
+      .mockResolvedValueOnce({ status: 'ready' });
+    mockReach.mockResolvedValueOnce(new Set());
+
+    expect((await call()).status).toBe(200);
+    expect(mockReach).not.toHaveBeenCalled();
+    expect(writeUnderPlaybackConsent).toHaveBeenCalledWith('org-1', [], expect.any(Function));
+  });
+
+  test('a reach read that fails is a failure, not a reach: nothing is written', async () => {
+    uploaderOfTeamFootageTaggedByAnother();
+    mockReach.mockRejectedValueOnce(new Error('connection reset'));
+
+    expect((await call()).status).toBe(500);
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(writeUnderPlaybackConsent).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 
