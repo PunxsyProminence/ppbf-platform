@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import BodyPointProgress from '@/components/BodyPointProgress';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import {
   ANNOTATION_CERTAINTIES,
+  BODY_POINT_ONTOLOGY_VERSIONS,
   CONTACT_RESULTS,
   CONTACT_ZONES,
   DEFENSE_TYPES,
@@ -16,6 +18,7 @@ import {
   STANCES,
   TARGET_ZONES,
   VISIBILITIES,
+  isInVocabulary,
 } from '@/src/server/pilot/calibration/ontology';
 import {
   STEP_MS,
@@ -32,10 +35,12 @@ import {
  *
  * WHAT THIS SCREEN IS FOR. Two coaches watch the same six seconds of this
  * gym's own footage and label what they saw, from a fixed vocabulary, without
- * seeing each other's answers. The output is not a scoring of an athlete and
- * is not training data for anything: it is a measurement of where trained
- * humans disagree, which is the number PPBF needs before it can say what any
- * automated observation would be worth.
+ * seeing each other's answers. The output is not a scoring of an athlete. Its
+ * event labels are a measurement of where trained humans disagree, which is
+ * the number PPBF needs before it can say what any automated observation
+ * would be worth; its body-point marks (sets of a body-point version) are the
+ * hand-made marks PPBF's own pose model will be taught from, with no borrowed
+ * tool placing anything first (OD-2026-10-02-011 sections 2 and 3a).
  *
  * FOUR THINGS THIS PAGE IS NOT ALLOWED TO DO, each of which it would be easy
  * to add and each of which would quietly wreck the study:
@@ -136,6 +141,40 @@ interface AnnotationEvent {
   sequence_order: number | null;
   counter_against_event_id: string | null;
   defends_against_event_id: string | null;
+}
+
+/* Body points, as GET /api/pilot/calibration/body-points returns them for a
+   set whose version holds them (BODY_POINT_ONTOLOGY_VERSIONS). A 0.1 set is
+   never asked: it has no body points, and the page must not change for it. */
+interface BodyPoint {
+  body_point_id: string;
+  point_code: string;
+  state: string;
+  x_norm: number | null;
+  y_norm: number | null;
+}
+
+interface BodyMoment {
+  body_moment_id: string;
+  event_id: string;
+  moment_slot: string;
+  moment_kind: string;
+  observation_ms: number;
+  event_start_ms: number;
+  event_end_ms: number;
+  lead_side: string | null;
+  guard_type: string | null;
+  source_frame_width_px: number | null;
+  source_frame_height_px: number | null;
+  points: BodyPoint[];
+}
+
+interface BodyData {
+  expected_points: string[] | null;
+  moments: BodyMoment[];
+  stance_labels: { event_id: string; stance_type: string }[];
+  /** What submission would refuse on, in the server's words; [] = would pass. */
+  missing: string[];
 }
 
 /**
@@ -289,6 +328,8 @@ export default function CoachCalibrationPage() {
   const [project, setProject] = useState<CalibrationProject | null>(null);
   const [annotationSet, setAnnotationSet] = useState<AnnotationSet | null>(null);
   const [events, setEvents] = useState<AnnotationEvent[]>([]);
+  const [bodyData, setBodyData] = useState<BodyData | null>(null);
+  const [bodyNotice, setBodyNotice] = useState('');
 
   const [streamUrl, setStreamUrl] = useState('');
   const [streamNotice, setStreamNotice] = useState('');
@@ -381,6 +422,43 @@ export default function CoachCalibrationPage() {
     setStreamUrl(payload.stream_url ?? '');
   }, []);
 
+  /**
+   * The set's body-point marks and the server's own list of what is still
+   * missing. Asked ONLY for a set whose version holds body points: a 0.1 set
+   * has none, and asking would be a new call on a page that must behave for
+   * 0.1 exactly as it did before body points existed. Re-read after every
+   * event write, because replacing or deleting an event takes its moments,
+   * points and stance type with it, and the progress shown must be the
+   * database's, never the page's memory of it.
+   *
+   * A failure here is shown beside the body-point section, not as the page's
+   * refusal: the events, the player and the forms are unaffected by it.
+   */
+  const loadBodyData = useCallback(async (set: AnnotationSet | null) => {
+    if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
+      setBodyData(null);
+      setBodyNotice('');
+      return;
+    }
+    const response = await fetch(
+      `${apiBase()}/api/pilot/calibration/body-points?annotation_set_id=${encodeURIComponent(set.annotation_set_id)}`,
+      { credentials: 'include', cache: 'no-store' },
+    );
+    if (!response.ok) {
+      setBodyData(null);
+      setBodyNotice(await readError(response));
+      return;
+    }
+    const payload = (await response.json()) as Partial<BodyData>;
+    setBodyNotice('');
+    setBodyData({
+      expected_points: payload.expected_points ?? null,
+      moments: payload.moments ?? [],
+      stance_labels: payload.stance_labels ?? [],
+      missing: payload.missing ?? [],
+    });
+  }, []);
+
   const loadWorkspace = useCallback(async (nextClipId: string) => {
     setRefusal('');
     setNotice('');
@@ -388,6 +466,8 @@ export default function CoachCalibrationPage() {
     setConfirmingSubmit(false);
     setAnnotationSet(null);
     setEvents([]);
+    setBodyData(null);
+    setBodyNotice('');
     setClip(null);
     setStreamUrl('');
     setStreamNotice('');
@@ -417,7 +497,8 @@ export default function CoachCalibrationPage() {
     setEvents(payload.events ?? []);
     setCurrentMs(payload.clip.start_ms);
     await loadStream(payload.clip.video_session_id);
-  }, [loadStream]);
+    await loadBodyData(payload.set ?? null);
+  }, [loadBodyData, loadStream]);
 
   const reloadEvents = useCallback(async (currentClipId: string) => {
     const response = await fetch(
@@ -434,7 +515,8 @@ export default function CoachCalibrationPage() {
     };
     setAnnotationSet(payload.set ?? null);
     setEvents(payload.events ?? []);
-  }, []);
+    await loadBodyData(payload.set ?? null);
+  }, [loadBodyData]);
 
   /* ------------------------------------------------------------------ *
    * Transport. Every position that reaches the media element or a form
@@ -548,10 +630,11 @@ export default function CoachCalibrationPage() {
       const payload = (await response.json()) as { set?: AnnotationSet };
       setAnnotationSet(payload.set ?? null);
       setNotice('Your annotation set is open. Nobody else can see it until you submit.');
+      await loadBodyData(payload.set ?? null);
     } finally {
       setBusy(false);
     }
-  }, [clip]);
+  }, [clip, loadBodyData]);
 
   const saveDraft = useCallback(async () => {
     if (!draft || !annotationSet || !clip) return;
@@ -662,10 +745,12 @@ export default function CoachCalibrationPage() {
       setDraft(null);
       setConfirmingSubmit(false);
       setNotice('Submitted. This set is now read-only and cannot be reopened.');
+      // The body-points read works on a submitted set; this is the read-only view.
+      await loadBodyData(payload.set ?? null);
     } finally {
       setBusy(false);
     }
-  }, [annotationSet, clip]);
+  }, [annotationSet, clip, loadBodyData]);
 
   /* The SAS warning. One timer per minted link, cleared on replacement. */
   useEffect(() => {
@@ -1009,6 +1094,25 @@ export default function CoachCalibrationPage() {
                 </ul>
               )}
             </section>
+          ) : null}
+
+          {annotationSet && bodyNotice ? (
+            <div className="alert alert--warning" role="alert">
+              <div className="alert-body">
+                <p className="alert-title">Body points could not be read</p>
+                <p className="t-body">{bodyNotice}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {annotationSet && bodyData ? (
+            <BodyPointProgress
+              events={events}
+              expectedPoints={bodyData.expected_points}
+              moments={bodyData.moments}
+              stanceLabels={bodyData.stance_labels}
+              missing={bodyData.missing}
+            />
           ) : null}
 
           {draft && clip && canEdit ? (
