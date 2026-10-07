@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+
 /**
  * THE WALL DISPLAY — the board the gym's TV points at.
  *
@@ -178,7 +180,17 @@ export interface WallConsentDecision {
   readonly reason: WallConsentReason;
 }
 
-/** Age in whole years, or null when the date of birth is missing or unreadable. */
+/**
+ * Age in whole years on the GYM's calendar day, or null when the date of birth
+ * is missing or unreadable.
+ *
+ * "Today" is read in the gym's zone, never from the server clock's own date
+ * parts. A container running in UTC is already on tomorrow from 8pm Eastern
+ * (7pm in winter), so UTC parts made an athlete an adult the evening before
+ * their 18th birthday -- during the class -- and every minor protection that
+ * asks isMinor() switched off a night early. An athlete is a minor until local
+ * midnight at the start of their birthday, and not a minute before.
+ */
 export function ageInYears(dob: string | null | undefined, now: Date): number | null {
   if (typeof dob !== 'string') return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob.trim());
@@ -189,9 +201,8 @@ export function ageInYears(dob: string | null | undefined, now: Date): number | 
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
-  let age = now.getUTCFullYear() - year;
-  const monthNow = now.getUTCMonth() + 1;
-  const dayNow = now.getUTCDate();
+  const [yearNow, monthNow, dayNow] = formatYmdInZone(now, GYM_TIME_ZONE).split('-').map(Number);
+  let age = yearNow - year;
   if (monthNow < month || (monthNow === month && dayNow < day)) {
     age -= 1;
   }
