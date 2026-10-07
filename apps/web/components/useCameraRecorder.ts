@@ -48,6 +48,22 @@ interface Options<TContext> {
    * other simply to choose a file -- so the sentence belongs to the caller.
    */
   unsupportedFormatMessage: string;
+  /*
+   * OFF unless the page asks. When on, a recording whose upload fails is HELD in
+   * memory instead of discarded, and the page is handed retry, save-to-phone and
+   * discard. It is opt-in because the two pages that record decide for
+   * themselves what a lost upload means, and a page that does not render the
+   * held recording would be holding footage nobody can reach.
+   */
+  keepFailedRecording?: boolean;
+}
+
+/** A finished recording whose upload failed, kept exactly as it was recorded. */
+export interface HeldRecording<TContext> {
+  file: File;
+  recordedAt: string;
+  /** What it belongs to, fixed when RECORD was pressed -- a retry sends the same. */
+  context: TContext;
 }
 
 export interface CameraRecorder<TContext> {
@@ -66,22 +82,40 @@ export interface CameraRecorder<TContext> {
   setErrorMessage: (message: string) => void;
   start: (context: TContext) => Promise<void>;
   stop: () => void;
+  /** Present only with keepFailedRecording, after an upload failed. */
+  held: HeldRecording<TContext> | null;
+  /** Sends the held recording again -- the same bytes, against the same context. */
+  retryHeld: () => Promise<void>;
+  /** Hands the held recording to the phone as a file download. Keeps it held. */
+  saveHeld: () => void;
+  /** The ONLY way a held recording is dropped. The person chooses it. */
+  discardHeld: () => void;
 }
 
 export function useCameraRecorder<TContext>({
   onRecorded,
   unsupportedFormatMessage,
+  keepFailedRecording = false,
 }: Options<TContext>): CameraRecorder<TContext> {
   const [phase, setPhase] = useState<RecorderPhase>('idle');
   const [recordedBytes, setRecordedBytes] = useState(0);
   const [stoppedAtLimit, setStoppedAtLimit] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [held, setHeld] = useState<HeldRecording<TContext> | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const bytesRef = useRef(0);
+  // Read synchronously by start(), which must not wait for a render to learn
+  // that a recording is still being kept.
+  const heldRef = useRef<HeldRecording<TContext> | null>(null);
+
+  const holdRecording = useCallback((recording: HeldRecording<TContext> | null) => {
+    heldRef.current = recording;
+    setHeld(recording);
+  }, []);
 
   /*
    * The recorder's onstop fires long after the render that created it, so it
@@ -140,11 +174,36 @@ export function useCameraRecorder<TContext>({
     return () => window.removeEventListener('beforeunload', hold);
   }, [phase]);
 
+  /*
+   * THE SAME ASK FOR A RECORDING WE ARE KEEPING. A held recording exists only
+   * in this page's memory, so a reload or a tap on a link would lose it as
+   * surely as one that was still uploading. Present only while one is held.
+   */
+  const isHolding = held !== null;
+  useEffect(() => {
+    if (!isHolding) return;
+    const hold = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', hold);
+    return () => window.removeEventListener('beforeunload', hold);
+  }, [isHolding]);
+
   const finish = useCallback(async (mimeType: string, recordedAt: string, context: TContext) => {
     setPhase('uploading');
+    let file: File | null = null;
     try {
       const descriptor = captureFileDescriptor(mimeType);
       if (!descriptor) {
+        /*
+         * Held under the type the recorder reported, unrenamed: the person can
+         * still save these bytes to the phone even though the platform will not
+         * take them, and describing them as something else would be a lie.
+         */
+        if (keepFailedRecording) {
+          file = new File([new Blob(chunksRef.current, { type: mimeType })], 'capture', { type: mimeType });
+        }
         throw new Error('That recording is in a format the platform does not accept.');
       }
 
@@ -157,19 +216,67 @@ export function useCameraRecorder<TContext>({
        * a lie the server's magic-byte check would catch.
        */
       const blob = new Blob(chunksRef.current, { type: descriptor.contentType });
-      const file = new File([blob], `capture${descriptor.extension}`, { type: descriptor.contentType });
+      file = new File([blob], `capture${descriptor.extension}`, { type: descriptor.contentType });
 
       await onRecordedRef.current(file, { recordedAt, context });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The recording could not be uploaded.');
+      // The bytes are the one thing that cannot be re-shot, so they outlive the
+      // failure. chunksRef is still cleared below; the File holds a copy.
+      if (keepFailedRecording && file) holdRecording({ file, recordedAt, context });
     } finally {
       chunksRef.current = [];
       stopStream();
       setPhase('idle');
     }
-  }, [stopStream]);
+  }, [stopStream, keepFailedRecording, holdRecording]);
+
+  const retryHeld = useCallback(async () => {
+    const recording = heldRef.current;
+    if (!recording) return;
+    setErrorMessage('');
+    setPhase('uploading');
+    try {
+      await onRecordedRef.current(recording.file, {
+        recordedAt: recording.recordedAt,
+        context: recording.context,
+      });
+      holdRecording(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The recording could not be uploaded.');
+    } finally {
+      setPhase('idle');
+    }
+  }, [holdRecording]);
+
+  const saveHeld = useCallback(() => {
+    const recording = heldRef.current;
+    if (!recording) return;
+    const url = URL.createObjectURL(recording.file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `shadow-capture-${recording.recordedAt.replace(/[:.]/g, '-')}${
+      recording.file.name.includes('.') ? recording.file.name.slice(recording.file.name.lastIndexOf('.')) : ''
+    }`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Not revoked at once: some mobile browsers start the save after the click returns.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }, []);
+
+  const discardHeld = useCallback(() => holdRecording(null), [holdRecording]);
 
   const start = useCallback(async (context: TContext) => {
+    /*
+     * A NEW RECORDING NEVER REPLACES ONE WE ARE STILL KEEPING. Without this the
+     * next failed upload would overwrite the held file, and the earlier rep
+     * would be gone without anyone having chosen that.
+     */
+    if (heldRef.current) {
+      setErrorMessage('A recording that did not upload is still being kept. Try it again, save it to this phone, or discard it before recording another.');
+      return;
+    }
     setErrorMessage('');
     setStoppedAtLimit(false);
     setPhase('starting');
@@ -259,5 +366,9 @@ export function useCameraRecorder<TContext>({
     setErrorMessage,
     start,
     stop,
+    held,
+    retryHeld,
+    saveHeld,
+    discardHeld,
   };
 }

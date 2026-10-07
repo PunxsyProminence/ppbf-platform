@@ -73,6 +73,11 @@ const SESSION = {
 
 const uploads: FormData[] = [];
 const sessionPosts: Array<Record<string, unknown>> = [];
+// What the reload lookup (?mine=1) answers. null is the ordinary case: this
+// coach has nothing open, so the page offers to start one.
+let resumableSession: typeof SESSION | null = null;
+// How the next uploads answer, front first; empty means success.
+let uploadAnswers: Array<{ ok: boolean; status: number; error?: string }> = [];
 
 function mockFetch() {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -86,10 +91,17 @@ function mockFetch() {
      */
     if (url.includes('/api/pilot/video/capture-session')) {
       if (init?.method === 'POST') sessionPosts.push(JSON.parse(String(init.body)));
+      if (url.includes('mine=1')) {
+        return { ok: true, status: 200, json: async () => ({ session: resumableSession }) } as Response;
+      }
       return { ok: true, status: 200, json: async () => ({ session: SESSION }) } as Response;
     }
     if (url.includes('/api/pilot/video/upload')) {
       uploads.push(init!.body as FormData);
+      const answer = uploadAnswers.shift();
+      if (answer && !answer.ok) {
+        return { ok: false, status: answer.status, json: async () => ({ error: answer.error }) } as Response;
+      }
       return { ok: true, status: 202, json: async () => ({ ok: true }) } as Response;
     }
     // Any other URL is a failure, not a default -- see the note in the Film
@@ -102,6 +114,8 @@ beforeEach(() => {
   recorderInstances = [];
   uploads.length = 0;
   sessionPosts.length = 0;
+  resumableSession = null;
+  uploadAnswers = [];
   (global as unknown as { MediaRecorder: unknown }).MediaRecorder = FakeMediaRecorder;
   Object.defineProperty(global.navigator, 'mediaDevices', {
     configurable: true,
@@ -112,7 +126,10 @@ beforeEach(() => {
 });
 
 async function renderPage() {
-  render(<TeachShadowCapturePage />);
+  // The reload lookup answers on mount; flush it so a test sees the settled page.
+  await act(async () => {
+    render(<TeachShadowCapturePage />);
+  });
 }
 
 async function openSession() {
@@ -345,7 +362,10 @@ function textOnTheWall(container: HTMLElement): string[] {
 }
 
 test('no text sits on the wall before a session, or inside one', async () => {
-  const { container } = render(<TeachShadowCapturePage />);
+  let container!: HTMLElement;
+  await act(async () => {
+    ({ container } = render(<TeachShadowCapturePage />));
+  });
   expect(textOnTheWall(container)).toEqual([]);
 
   await act(async () => {
@@ -359,7 +379,10 @@ test('a refused session start puts its alert on a material, not the wall', async
   global.fetch = jest.fn(async () => (
     { ok: false, status: 403, json: async () => ({ error: 'Forbidden: role not allowed' }) } as Response
   )) as unknown as typeof fetch;
-  const { container } = render(<TeachShadowCapturePage />);
+  let container!: HTMLElement;
+  await act(async () => {
+    ({ container } = render(<TeachShadowCapturePage />));
+  });
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
@@ -368,4 +391,199 @@ test('a refused session start puts its alert on a material, not the wall', async
   expect(alert).toHaveTextContent('Forbidden: role not allowed');
   expect(alert.closest(MATERIAL)).toHaveClass('mat-leather');
   expect(textOnTheWall(container)).toEqual([]);
+});
+
+async function recordOnce() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record Example for Shadow' }));
+  });
+  await act(async () => {
+    recorderInstances[0]!.ondataavailable?.({ data: new Blob(['footage-bytes']) });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  });
+}
+
+describe('a failed or refused upload keeps the footage (TEACH-02)', () => {
+  test('the recording is held, the person is told, and retry sends the same file again', async () => {
+    uploadAnswers = [{ ok: false, status: 503, error: 'Service unavailable' }];
+    await openSession();
+
+    await recordOnce();
+
+    await waitFor(() => expect(uploads).toHaveLength(1));
+    const held = await screen.findByTestId('held-recording');
+    expect(held).toHaveTextContent(/still on this phone/);
+    expect(held).toHaveTextContent(/nothing has been thrown away/i);
+    expect(screen.getByRole('alert')).toHaveTextContent('Service unavailable');
+    expect(screen.getByRole('button', { name: 'Save to this phone' })).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    });
+
+    await waitFor(() => expect(uploads).toHaveLength(2));
+    const first = uploads[0]!.get('file') as File;
+    const second = uploads[1]!.get('file') as File;
+    expect(second.size).toBe(first.size);
+    expect(second.size).toBe('footage-bytes'.length);
+    expect(uploads[1]!.get('capture_take_id')).toBe('take-1');
+    await waitFor(() => expect(screen.queryByTestId('held-recording')).toBeNull());
+  });
+
+  test('a take closed under the recording keeps the recording and says the take is closed', async () => {
+    uploadAnswers = [{ ok: false, status: 409, error: 'That attempt is already closed. Start the next take and record again.' }];
+    await openSession();
+
+    await recordOnce();
+    await screen.findByTestId('held-recording');
+    expect(screen.queryByTestId('held-take-closed')).toBeNull();
+
+    // Another phone presses Next take: this one's view moves to take 2.
+    SESSION.current_take = { capture_take_id: 'take-2', take_number: 2, state: 'open', files: [] };
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next take' }));
+    });
+
+    expect(await screen.findByTestId('held-take-closed')).toHaveTextContent(/take it was recorded for has since been closed/i);
+    // Still held, still saveable -- and NOT quietly re-filed against take 2.
+    expect(screen.getByTestId('held-recording')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save to this phone' })).toBeEnabled();
+    expect(uploads).toHaveLength(1);
+
+    SESSION.current_take = { capture_take_id: 'take-1', take_number: 1, state: 'open', files: [] };
+  });
+
+  test('finishing the session does not drop a held recording either', async () => {
+    uploadAnswers = [{ ok: false, status: 409, error: 'closed' }];
+    await openSession();
+    await recordOnce();
+    await screen.findByTestId('held-recording');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Finish session' }));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Start recording session' })).toBeInTheDocument();
+    expect(screen.getByTestId('held-recording')).toBeInTheDocument();
+    expect(screen.getByTestId('held-take-closed')).toBeInTheDocument();
+  });
+
+  test('another recording cannot be started over a held one', async () => {
+    uploadAnswers = [{ ok: false, status: 503, error: 'down' }];
+    await openSession();
+    await recordOnce();
+    await screen.findByTestId('held-recording');
+
+    expect(screen.getByRole('button', { name: 'Record Example for Shadow' })).toBeDisabled();
+  });
+
+  test('discarding asks first, and declining keeps the recording', async () => {
+    uploadAnswers = [{ ok: false, status: 503, error: 'down' }];
+    await openSession();
+    await recordOnce();
+    await screen.findByTestId('held-recording');
+
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByTestId('held-recording')).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }));
+    await waitFor(() => expect(screen.queryByTestId('held-recording')).toBeNull());
+    confirm.mockRestore();
+  });
+
+  test('the held panel stands on a material, not the bare wall', async () => {
+    uploadAnswers = [{ ok: false, status: 503, error: 'down' }];
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<TeachShadowCapturePage />));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+    });
+    await screen.findByText('H7K2QP');
+    await recordOnce();
+    await screen.findByTestId('held-recording');
+
+    expect(textOnTheWall(container)).toEqual([]);
+  });
+});
+
+describe('a reload goes back into the coach own open session (TEACH-04)', () => {
+  test('the open session and its join code come back without starting anything', async () => {
+    resumableSession = SESSION;
+
+    await renderPage();
+
+    expect(await screen.findByText('H7K2QP')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start recording session' })).toBeNull();
+    // Nothing was created or joined to get here.
+    expect(sessionPosts).toEqual([]);
+  });
+
+  test('with nothing open the page offers to start one, as before', async () => {
+    await renderPage();
+
+    expect(screen.getByRole('button', { name: 'Start recording session' })).toBeEnabled();
+    expect(screen.queryByText('H7K2QP')).toBeNull();
+  });
+
+  test('Start and Join wait for the lookup, so a pending session cannot be doubled', async () => {
+    let answer!: (response: Response) => void;
+    const base = mockFetch();
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('mine=1')) return new Promise<Response>((resolve) => { answer = resolve; });
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<TeachShadowCapturePage />);
+    });
+    expect(screen.getByRole('button', { name: 'Start recording session' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Join session' })).toBeDisabled();
+
+    await act(async () => {
+      answer({ ok: true, status: 200, json: async () => ({ session: SESSION }) } as Response);
+    });
+    expect(await screen.findByText('H7K2QP')).toBeInTheDocument();
+  });
+
+  test('a lookup that fails says so rather than quietly offering a second session', async () => {
+    const base = mockFetch();
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('mine=1')) {
+        return { ok: false, status: 500, json: async () => ({ error: 'boom' }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+
+    await renderPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not check whether you already have a session open/);
+    expect(screen.getByRole('button', { name: 'Start recording session' })).toBeEnabled();
+  });
+});
+
+describe('what a coach reads for their own angle (TEACH-10)', () => {
+  test.each([
+    ['quarantined', 'Uploaded, being checked'],
+    ['ready', 'Ready'],
+  ])('%s reads %s, not the raw word', async (status, label) => {
+    resumableSession = {
+      ...SESSION,
+      current_take: {
+        ...SESSION.current_take,
+        files: [{ videoSessionId: 'v1', cameraView: 'side', uploadedByAccountId: 'a', status }],
+      },
+    } as unknown as typeof SESSION;
+
+    await renderPage();
+
+    expect(await screen.findByText(`side · ${label}`)).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/quarantined/i);
+  });
 });

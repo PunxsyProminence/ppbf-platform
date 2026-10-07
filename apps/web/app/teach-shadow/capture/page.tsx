@@ -85,6 +85,17 @@ interface TakeContext {
   cameraView: string;
 }
 
+/*
+ * What a coach reads for an angle's status. The raw word is the scan's state,
+ * not a verdict: every upload is 'quarantined' until the scan finishes, so
+ * printing it told a coach their own footage had been put in quarantine.
+ */
+function angleStatusLabel(status: string): string {
+  if (status === 'quarantined') return 'Uploaded, being checked';
+  if (status === 'ready') return 'Ready';
+  return status;
+}
+
 export default function TeachShadowCapturePage() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [trainingContext, setTrainingContext] = useState('shadowboxing');
@@ -102,6 +113,11 @@ export default function TeachShadowCapturePage() {
      and an empty stale list must not say nothing was recorded: the angle
      just uploaded may be the one it is missing. */
   const [anglesUnreadable, setAnglesUnreadable] = useState(false);
+  /* True until the look for this coach's own open session has answered. The
+     start and join buttons wait for it: pressing Start before a session that
+     is already open has come back would open a second one and split the
+     punch's angles across two takes. */
+  const [resuming, setResuming] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -150,12 +166,45 @@ export default function TeachShadowCapturePage() {
 
       if (session) await refresh(session.recording_session_id);
     },
+    // A failed upload keeps the footage on this phone; see the held panel.
+    keepFailedRecording: true,
   });
 
   // Destructured rather than read through `recorder.` at each use: the hook
   // hands back a ref among its values, and the lint rule reads a member
   // access on that object as touching a ref during render.
-  const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
+  const {
+    phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop,
+    held, retryHeld, saveHeld, discardHeld,
+  } = recorder;
+
+  /*
+   * A RELOAD GOES BACK INTO THE COACH'S OWN OPEN SESSION. The session lived in
+   * page memory only, so a phone that slept or reloaded landed on "Start a
+   * session" with no way to see its join code again, and starting a new one
+   * split a punch's angles across two takes. The server answers with this
+   * coach's most recent open session, or none.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/video/capture-session?mine=1`, {
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => ({}))) as { session?: SessionState | null };
+        if (!response.ok) throw new Error('lookup refused');
+        if (!cancelled && payload.session) setSession((current) => current ?? payload.session ?? null);
+      } catch {
+        if (!cancelled) {
+          setErrorMessage('Could not check whether you already have a session open. If you do, starting a new one will split your angles from it.');
+        }
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [setErrorMessage]);
 
   /*
    * NO ROSTER IS READ HERE, and that absence is the point of the slice.
@@ -310,6 +359,40 @@ export default function TeachShadowCapturePage() {
             </div>
           ) : null}
 
+          {/* OUTSIDE the session branch on purpose: the footage is kept
+              whether or not the session is still open, and this is the only
+              place it can be sent again, saved, or let go. */}
+          {held ? (
+            <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
+              <p role="status" className="t-body" data-testid="held-recording">
+                A recording did not upload. It is still on this phone ({(held.file.size / (1024 * 1024)).toFixed(1)} MB
+                {held.context.cameraView ? `, ${held.context.cameraView}` : ''}) and nothing has been thrown away.
+              </p>
+              {!take || take.capture_take_id !== held.context.captureTakeId ? (
+                <p role="status" className="t-body mt-[var(--s2)]" data-testid="held-take-closed">
+                  The take it was recorded for has since been closed, so it may be refused. Save it to this phone
+                  to keep it.
+                </p>
+              ) : null}
+              <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                <button type="button" className="btn" disabled={phase !== 'idle'} onClick={() => void retryHeld()}>
+                  {phase === 'uploading' ? 'Uploading…' : 'Try again'}
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={saveHeld}>Save to this phone</button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={phase !== 'idle'}
+                  onClick={() => {
+                    if (window.confirm('Discard this recording? It is not saved anywhere else.')) discardHeld();
+                  }}
+                >
+                  Discard recording
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {!session ? (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
@@ -329,7 +412,7 @@ export default function TeachShadowCapturePage() {
                 <button
                   type="button"
                   className="btn mt-[var(--s4)]"
-                  disabled={busy}
+                  disabled={busy || resuming}
                   onClick={() => guarded(async () => {
                     const payload = await post({ action: 'create', training_context: trainingContext });
                     setSession(payload.session as SessionState);
@@ -361,7 +444,7 @@ export default function TeachShadowCapturePage() {
                 <button
                   type="button"
                   className="btn mt-[var(--s4)]"
-                  disabled={busy || !joinCodeInput.trim()}
+                  disabled={busy || resuming || !joinCodeInput.trim()}
                   onClick={() => guarded(async () => {
                     const payload = await post({ action: 'join', join_code: joinCodeInput });
                     setSession(payload.session as SessionState);
@@ -428,7 +511,7 @@ export default function TeachShadowCapturePage() {
                     <button
                       type="button"
                       className="btn"
-                      disabled={phase !== 'idle' || busy || !take}
+                      disabled={phase !== 'idle' || busy || !take || held !== null}
                       onClick={record}
                     >
                       {phase === 'uploading' ? 'Uploading…' : phase === 'starting' ? 'Opening camera…' : 'Record Example for Shadow'}
@@ -496,7 +579,7 @@ export default function TeachShadowCapturePage() {
                   <ul className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                     {take.files.map((takeFile) => (
                       <li key={takeFile.videoSessionId} className="t-body">
-                        {takeFile.cameraView ?? 'View not described'} · {takeFile.status}
+                        {takeFile.cameraView ?? 'View not described'} · {angleStatusLabel(takeFile.status)}
                       </li>
                     ))}
                   </ul>
