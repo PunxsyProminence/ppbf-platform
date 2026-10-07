@@ -1,6 +1,14 @@
 import type { PoolClient } from 'pg';
 
-import type { CoachRosterAthlete, PilotAthlete, PilotCoachReview, PilotGoal, PilotSession } from './contracts';
+import type {
+  CoachRosterAthlete,
+  PilotAthlete,
+  PilotCoachReview,
+  PilotGoal,
+  PilotSession,
+  PilotSessionRecord,
+  SessionCloseMethod,
+} from './contracts';
 import { query, queryOne } from './db';
 import { ConflictError } from './errors';
 
@@ -191,15 +199,33 @@ export async function upsertGoal(
   }
 }
 
-export async function getSessionById(organizationId: string, sessionId: string): Promise<PilotSession | null> {
-  return queryOne<PilotSession>('select * from pilot.sessions where organization_id = $1 and session_id = $2', [organizationId, sessionId]);
+export async function getSessionById(organizationId: string, sessionId: string): Promise<PilotSessionRecord | null> {
+  return queryOne<PilotSessionRecord>('select * from pilot.sessions where organization_id = $1 and session_id = $2', [organizationId, sessionId]);
+}
+
+/**
+ * Who is pressing Check Out, for the close record. The routes derive it from
+ * the principal's role; nothing in the request body can set it. Omitted by
+ * callers that predate the session-close migration: the close is still
+ * stamped, with its method left null ("not recorded").
+ */
+export type SessionCloser = 'athlete' | 'staff';
+
+export interface SessionWriteOptions {
+  readonly closedBy?: SessionCloser;
 }
 
 export async function upsertSession(
   organizationId: string,
   payload: PilotSession,
   guard: WriteOwnerGuard,
+  options: SessionWriteOptions = {},
 ): Promise<void> {
+  const closeMethod: SessionCloseMethod | null = options.closedBy === 'athlete'
+    ? 'athlete_check_out'
+    : options.closedBy === 'staff'
+      ? 'staff_check_out'
+      : null;
   if (guard.mode === 'update') {
     const updated = await query<{ session_id: string }>(
       `update pilot.sessions
@@ -213,7 +239,25 @@ export async function upsertSession(
            -- $11 says whether the caller sent duration_minutes at all. A
            -- writer that omits it (note publication, older client) keeps the
            -- stored minutes; only check-out sets or clears them.
-           duration_minutes = case when $11::boolean then $12::integer else duration_minutes end
+           duration_minutes = case when $11::boolean then $12::integer else duration_minutes end,
+           -- The close record (session-close migration). Every column on the
+           -- right of these CASEs is the row BEFORE this write, so
+           -- "not completed_flag" is "was open". The one write that closes an
+           -- open session stamps the SERVER clock and the caller's method; a
+           -- later write that keeps it closed (a staff edit of the notes)
+           -- leaves both alone, so the check-out time cannot drift; a write
+           -- that reopens it clears all four, because the row describes its
+           -- current state. Nothing here reads the client's updated_at.
+           checked_out_at = case
+             when $8::boolean and not completed_flag then now()
+             when not $8::boolean then null
+             else checked_out_at end,
+           close_method = case
+             when $8::boolean and not completed_flag then $13::text
+             when not $8::boolean then null
+             else close_method end,
+           last_activity_at = case when $8::boolean then last_activity_at else null end,
+           inactivity_minutes = case when $8::boolean then inactivity_minutes else null end
        where organization_id = $1 and session_id = $2 and athlete_id = $10
        returning session_id`,
       [
@@ -229,6 +273,7 @@ export async function upsertSession(
         guard.expectedAthleteId,
         payload.duration_minutes !== undefined,
         payload.duration_minutes ?? null,
+        closeMethod,
       ],
     );
     if (updated.length === 0) {
@@ -237,6 +282,10 @@ export async function upsertSession(
     return;
   }
 
+  // A row CREATED already completed (a staff-entered past session, the
+  // seeder) gets no close record: the write happening now is not when that
+  // session ended, and its created_at is the caller's stamp too. NULL is the
+  // honest value, exactly as for every pre-migration row.
   const inserted = await query<{ session_id: string }>(
     `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at, duration_minutes)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)

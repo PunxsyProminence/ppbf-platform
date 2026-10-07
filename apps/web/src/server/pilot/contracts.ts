@@ -93,6 +93,38 @@ export interface PilotSession {
 }
 
 /**
+ * What closed a session (pilot_slice_postgres_session_close_migration.sql).
+ * 'athlete_check_out' and 'staff_check_out' are the two roles the session
+ * routes admit pressing Check Out today; 'auto_inactivity' is reserved for the
+ * app closing a session nobody checked out of (OD-2026-10-06-024 Q4), whose
+ * mechanism is not built yet. null = not recorded, never proof of a method.
+ */
+export const SESSION_CLOSE_METHODS = ['athlete_check_out', 'staff_check_out', 'auto_inactivity'] as const;
+export type SessionCloseMethod = (typeof SESSION_CLOSE_METHODS)[number];
+
+/**
+ * The close record a stored session carries, SERVER-OWNED: no route accepts
+ * these on a write (validateSessionPayload refuses unknown keys), upsertSession
+ * stamps them on the completed_flag false -> true transition and clears them
+ * when a row is reopened. Read alongside completed_flag: all four are null on
+ * an open session and on every row written before the session-close
+ * migration, where updated_at is only a proxy for the check-out time.
+ *
+ * Session LENGTH is not a column. It is checked_out_at - created_at where it
+ * is shown; for an auto-closed row last_activity_at - created_at is the
+ * idle-excluded reading. Which one a screen shows is the owner's call.
+ */
+export interface SessionCloseRecord {
+  checked_out_at: string | null;
+  close_method: SessionCloseMethod | null;
+  last_activity_at: string | null;
+  inactivity_minutes: number | null;
+}
+
+/** A pilot.sessions row as the database returns it. */
+export type PilotSessionRecord = PilotSession & SessionCloseRecord;
+
+/**
  * What produced a session's rpe reading.
  *
  * Deliberately narrow, and matched to the CHECK constraint in

@@ -32,7 +32,14 @@ export async function POST(request: NextRequest) {
       // existing.athlete_id in its WHERE, so a concurrent owner change between
       // this lookup and the write fails closed rather than letting the
       // UPDATE-first upsert rewrite a row that moved (TOCTOU).
-      await upsertSession(principal.organizationId, payload, { mode: 'update', expectedAthleteId: existing.athlete_id });
+      await upsertSession(
+        principal.organizationId,
+        payload,
+        { mode: 'update', expectedAthleteId: existing.athlete_id },
+        // For the close record if this write completes the session: the
+        // method comes from the signed-in role, never from the body.
+        { closedBy: principal.role === 'athlete' ? 'athlete' : 'staff' },
+      );
     } else {
       // No row existed at authorization time; INSERT ... ON CONFLICT DO
       // NOTHING refuses rather than updating an id that appeared concurrently.
