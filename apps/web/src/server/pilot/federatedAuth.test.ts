@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { verifyAndDecodeMicrosoftIdToken } from '@/src/server/pilot/federatedAuth';
+import { resolveMicrosoftIdentityObject, verifyAndDecodeMicrosoftIdToken } from '@/src/server/pilot/federatedAuth';
 
 function toBase64Url(value: Buffer | string): string {
   const input = Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf-8');
@@ -168,5 +168,23 @@ describe('verifyAndDecodeMicrosoftIdToken', () => {
         expectedNonce: 'nonce-3',
       }),
     ).rejects.toThrow('Invalid token signature');
+  });
+});
+
+// CL-A19: the sign-in binds to oid + tid, so a token missing either is refused
+// rather than falling back to the email alone.
+describe('resolveMicrosoftIdentityObject', () => {
+  test('returns the oid and tid of a token that carries both', () => {
+    expect(resolveMicrosoftIdentityObject({ oid: ' oid-1 ', tid: 'tenant-1', email: 'a@example.com' }))
+      .toEqual({ objectId: 'oid-1', tenantId: 'tenant-1' });
+  });
+
+  test.each([
+    ['no oid', { tid: 'tenant-1', email: 'a@example.com' }],
+    ['a blank oid', { oid: '  ', tid: 'tenant-1' }],
+    ['no tid', { oid: 'oid-1' }],
+    ['a non-string oid', { oid: 42 as unknown as string, tid: 'tenant-1' }],
+  ])('refuses a token with %s', (_label, claims) => {
+    expect(() => resolveMicrosoftIdentityObject(claims)).toThrow('No Microsoft object id / tenant claim available');
   });
 });

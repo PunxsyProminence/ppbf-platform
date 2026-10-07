@@ -343,6 +343,50 @@ export async function verifyAndDecodeMicrosoftIdToken(params: {
   return claims;
 }
 
+/** The directory user behind a verified token: oid is unique within its tenant only, so the pair is the identity. */
+export interface MicrosoftDirectoryIdentity {
+  objectId: string;
+  tenantId: string;
+}
+
+// CL-A19: the email claim finds the account, and this pair decides whether the
+// person presenting it is the one the account belongs to. email,
+// preferred_username and upn are directory attributes an administrator can
+// change; oid is fixed for the life of the user. A token without both is
+// refused rather than signed in on the email alone, which is the gap this
+// closes. validateClaims has already pinned tid to the configured tenant.
+export function resolveMicrosoftIdentityObject(claims: MicrosoftClaims): MicrosoftDirectoryIdentity {
+  const objectId = typeof claims.oid === 'string' ? claims.oid.trim() : '';
+  const tenantId = typeof claims.tid === 'string' ? claims.tid.trim() : '';
+  if (!objectId || !tenantId) {
+    throw new Error('No Microsoft object id / tenant claim available');
+  }
+  return { objectId, tenantId };
+}
+
+/**
+ * A Microsoft sign-in whose email found an account that belongs to a different
+ * directory user, refused before any session is minted. Carries the account it
+ * was refused for so the callback can record the refusal; the message keeps the
+ * 'Forbidden:' prefix the callback maps to auth-forbidden.
+ */
+export class MicrosoftIdentityMismatchError extends Error {
+  readonly reason: 'oid_mismatch' | 'bound_to_other_account';
+  readonly account: { accountId: string; organizationId: string };
+
+  constructor(
+    reason: 'oid_mismatch' | 'bound_to_other_account',
+    account: { accountId: string; organizationId: string },
+  ) {
+    super(reason === 'oid_mismatch'
+      ? 'Forbidden: Microsoft identity mismatch'
+      : 'Forbidden: Microsoft identity already bound to another account');
+    this.name = 'MicrosoftIdentityMismatchError';
+    this.reason = reason;
+    this.account = account;
+  }
+}
+
 export function resolveMicrosoftIdentityEmail(claims: MicrosoftClaims): string {
   const raw = claims.email || claims.preferred_username || claims.upn || '';
   const normalized = raw.trim().toLowerCase();

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { revokeAllSessionsForAccountInOrganization } from '@/src/server/pilot/auth';
+import { revokeOwnSessionsInOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -30,9 +30,9 @@ export const runtime = 'nodejs';
  * SCOPE IS THIS ORGANIZATION, NOT EVERY ORGANIZATION. pilot.session_tokens
  * carries an organization_id and pilot.organization_memberships is keyed
  * (account_id, organization_id), so one account can legitimately hold live
- * sessions at more than one gym. This reuses the existing, tested
- * revokeAllSessionsForAccountInOrganization, which deliberately leaves the
- * other organization's sessions alone. That is a real limit, not an oversight:
+ * sessions at more than one gym. revokeOwnSessionsInOrganization, like the
+ * admin path's revokeAllSessionsForAccountInOrganization, deliberately leaves
+ * the other organization's sessions alone. That is a real limit, not an oversight:
  * a caller signed in at two gyms who runs this at one is still signed in at
  * the other. Widening it to every organization would be a new capability with
  * a larger blast radius and is not what this route claims to do.
@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
 
-    /* Refuses a platform owner and an account with no active membership in
-       this organization, both inside the shared function. A platform owner
-       reaching this gets the same generic refusal an admin would get. */
-    await revokeAllSessionsForAccountInOrganization(principal.accountId, principal.organizationId);
+    /* Refuses an account with no active membership in this organization.
+       A platform owner is admitted: the admin path refuses the owner as a
+       target of somebody else, and here the caller is the target. */
+    await revokeOwnSessionsInOrganization(principal.accountId, principal.organizationId);
 
     /* After the revocation, matching the admin route's ordering rather than
        inventing a different one. The principal is already in memory, so the

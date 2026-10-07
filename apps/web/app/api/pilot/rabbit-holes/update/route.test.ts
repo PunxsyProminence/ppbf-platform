@@ -62,6 +62,9 @@ function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
     athleteId: null,
     sessionToken: 'token-1',
     authProvider: 'microsoft',
+    // A coach's real session: an emailed link. This route is gated on any
+    // adult session (requireStaffSessionPrincipal), not a Microsoft one.
+    signInMethod: 'magic_link',
     ...overrides,
   } as PilotPrincipal;
 }
@@ -86,7 +89,7 @@ describe('POST /api/pilot/rabbit-holes/update', () => {
     mockResolvePrincipal.mockResolvedValueOnce(null);
     expect((await POST(request({ rabbit_hole_id: 'rh-1', title: 'Renamed' }))).status).toBe(401);
 
-    mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'ppbf_local' }));
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'ppbf_local', signInMethod: 'pin' }));
     expect((await POST(request({ rabbit_hole_id: 'rh-1', title: 'Renamed' }))).status).toBe(403);
 
     expect(mockUpdate).not.toHaveBeenCalled();

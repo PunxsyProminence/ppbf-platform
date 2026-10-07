@@ -66,7 +66,8 @@ alter table pilot.audit_events
     'data_deletion_initiated',
     'data_purged',
     'payment_account_connected',
-    'payment_account_disconnected'
+    'payment_account_disconnected',
+    'microsoft_identity_mismatch'
   ));
 
 comment on column pilot.audit_events.event_type is

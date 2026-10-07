@@ -144,3 +144,22 @@ describe('evidence review on the platform shelf', () => {
     expect(mockReviewSource).not.toHaveBeenCalled();
   });
 });
+
+// Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
+// the reviewer got a 500 for what is their own malformed request.
+describe('malformed JSON bodies (CL-C24)', () => {
+  test.each(['{not json', 'null', '[]', '7'])('PATCH %s is a 400, and nothing is written', async (body) => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+
+    const response = await PATCH(new NextRequest('http://localhost/api/pilot/shadow/evidence/review', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body,
+    }));
+
+    expect(response.status).toBe(400);
+    for (const mock of writeMocks()) {
+      expect(mock).not.toHaveBeenCalled();
+    }
+  });
+});

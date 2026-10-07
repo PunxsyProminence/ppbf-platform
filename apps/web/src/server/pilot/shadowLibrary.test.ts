@@ -50,6 +50,7 @@ import {
   normalizeSearchScope,
   recomputeShadowCapabilityCoverage,
   confidenceLevelForScore,
+  SEMANTIC_CANDIDATE_BATCH_SIZE,
   searchShadowLibrary,
   type ShadowLibrarySearchDetail,
 } from './shadowLibrary';
@@ -400,6 +401,50 @@ describe('SHADOW library semantic search', () => {
     expect(String(mockQuery.mock.calls[0][0])).toContain('c.embedding is not null');
   });
 
+  // CL-C13: the candidate set used to be the first 200 rows by tier and age.
+  // Every candidate is now read, in keyset batches, and the best one wins
+  // wherever it sits.
+  it('pages through every candidate and finds the best match in a later batch', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    const firstBatch = Array.from({ length: SEMANTIC_CANDIDATE_BATCH_SIZE }, (_, index) =>
+      candidate(`chunk_a${String(index).padStart(4, '0')}`, [0.1, 0.99], 1));
+    mockQuery
+      .mockResolvedValueOnce(firstBatch as never)
+      .mockResolvedValueOnce([candidate('chunk_b_best', [0.99, 0.01], 3)] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_b_best']);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [firstSql, firstParams] = mockQuery.mock.calls[0];
+    expect(String(firstSql)).not.toContain('limit 200');
+    expect(String(firstSql)).not.toContain('c.created_at asc');
+    expect(String(firstSql)).toContain('order by c.chunk_id asc');
+    expect(firstParams?.[4]).toBe('');
+    expect(firstParams?.[5]).toBe(SEMANTIC_CANDIDATE_BATCH_SIZE);
+    // The second batch starts after the last chunk of the first.
+    expect(mockQuery.mock.calls[1][1]?.[4]).toBe(firstBatch[firstBatch.length - 1].chunk_id);
+  });
+
+  it('stops after a short batch, without an extra round trip', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([candidate('chunk_only', [0.98, 0.05])] as never);
+
+    await searchShadowLibrary(searchInput);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('scores an embedding that is not an array of numbers as no match, not as a number', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([
+      candidate('chunk_strings', ['1', '0'] as unknown as number[]),
+      candidate('chunk_good', [0.9, 0.1]),
+    ] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_good']);
+  });
+
   it('restricts semantic candidates to the current embedding deployment', async () => {
     // A chunk embedded by a retired model shares a dimension with the
     // current one and would rank as a real-looking, meaningless score if the
@@ -714,6 +759,69 @@ describe('SHADOW library claim honesty', () => {
         }),
       }),
     );
+  });
+});
+
+// Audit CL-C15. The duplicate check read EVERY open requirement in the
+// organization into memory on every claim, and the new row's key carried
+// Date.now(), so two different questions in the same millisecond collided on
+// the unique key and the second was silently merged into the first.
+describe('SHADOW library claim research requirement (CL-C15)', () => {
+  const ask = (question: string) => createShadowLibraryClaim({
+    organizationId: 'org-1',
+    actorAccountId: 'acct-1',
+    actorRole: 'organization_admin',
+    athleteId: null,
+    question,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    mockIsSemanticEnabled.mockReturnValue(false);
+    mockQuery.mockResolvedValue([] as never); // no evidence -> unsupported
+    mockQueryOne.mockResolvedValue(null as never); // no open duplicate
+    jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
+    jest.mocked(createShadowResearchRequirement).mockResolvedValue(101);
+  });
+
+  it('looks up the open duplicate by key in SQL, one row, instead of reading every open requirement', async () => {
+    await ask('Is there evidence for a claim nobody has written about?');
+
+    expect(listShadowResearchRequirements).not.toHaveBeenCalled();
+    const lookup = mockQueryOne.mock.calls.find(([sql]) => /shadow_research_requirements/.test(String(sql)));
+    expect(lookup).toBeDefined();
+    const sql = String(lookup![0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("status = 'open'");
+    expect(sql).toMatch(/limit 1/i);
+    expect(lookup![1]).toEqual(expect.arrayContaining([
+      'org-1',
+      'Is there evidence for a claim nobody has written about?',
+    ]));
+  });
+
+  it('reuses the open duplicate the lookup finds and opens no new row', async () => {
+    mockQueryOne.mockResolvedValue({ research_requirement_id: 77 } as never);
+
+    const result = await ask('Is there evidence for a claim nobody has written about?');
+
+    expect(result.researchRequirementId).toBe(77);
+    expect(createShadowResearchRequirement).not.toHaveBeenCalled();
+  });
+
+  it('two different questions in the same millisecond get two different row keys', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000);
+    try {
+      await ask('Is there evidence for the first unanswered question?');
+      await ask('Is there evidence for the second unanswered question?');
+    } finally {
+      now.mockRestore();
+    }
+
+    const keys = jest.mocked(createShadowResearchRequirement).mock.calls.map(([row]) => row.sourceEntityId);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[0]).not.toContain('1760000000000');
   });
 });
 

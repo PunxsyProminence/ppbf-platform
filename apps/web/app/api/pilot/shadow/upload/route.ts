@@ -5,9 +5,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { uploadPilotShadowFile } from '@/src/server/pilot/blob';
-import { query } from '@/src/server/pilot/db';
+import { query, queryOne } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from '@/src/server/pilot/intake';
+import {
+  assertActorCanAccessIntakeCase,
+  createIntakeCase,
+  createIntakeDocument,
+  type IntakeDocumentType,
+} from '@/src/server/pilot/intake';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
@@ -97,6 +103,28 @@ export async function POST(request: NextRequest) {
     const contentSha256 = createHash('sha256').update(uploadBytes).digest('hex');
     if (intakeCaseIdInput && !isUuid(intakeCaseIdInput)) {
       return NextResponse.json({ ok: false, error: 'Intake case not found.' }, { status: 404 });
+    }
+
+    // A supplied case is checked BEFORE the file is written (CL-A9, CL-C18).
+    // The id used to go straight into the document insert: any coach could
+    // file a document onto any case in the gym -- an athlete they do not
+    // coach, or a case already decided -- and an id naming no case here
+    // failed at the foreign key as a 500 after the blob was already stored.
+    // Same gate every intake-case read uses, then the case must still be
+    // open for review. createIntakeDocument repeats the pending check in its
+    // own insert, so a case decided between here and there is refused too.
+    if (intakeCaseIdInput) {
+      const authority = await assertActorCanAccessIntakeCase(principal, principal.organizationId, intakeCaseIdInput);
+      if (!authority.found) {
+        return NextResponse.json({ ok: false, error: 'Intake case not found.' }, { status: 404 });
+      }
+      const existingCase = await queryOne<{ status: string }>(
+        'select status from pilot.intake_cases where organization_id = $1 and intake_case_id = $2',
+        [principal.organizationId, intakeCaseIdInput],
+      );
+      if (existingCase?.status !== 'pending_review') {
+        throw new ConflictError('This intake case is no longer open for review; upload without a case to start a new one.');
+      }
     }
 
     await assertShadowAuthority({

@@ -793,15 +793,34 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       expect(bucketsAsked()).toEqual(['safety_review_critical', 'safety_review']);
     });
 
-    // Not replaced, and still a response-safety event: the validation let
-    // the answer through and asked for a human look.
-    test('a generated answer that is NOT replaced but asks for review writes the response-safety row', async () => {
+    // CL-C7 (2026-10-05 audit). An answer that is NOT replaced and whose only
+    // flag is the deferral the doctrine requires ("a physician should
+    // evaluate") is routine. It wrote a response-safety row and drew on the
+    // owner's 3-per-hour allowance (OD-2026-10-01-006), so three such answers
+    // could suppress the row of a fourth that WAS withheld. It now writes no
+    // row and takes no slot; the allowance and its number are unchanged.
+    test('a routine deferral answer that is NOT replaced writes no review row and takes no slot', async () => {
       modelAnswers('A licensed physician should evaluate readiness before the next bout. RESEARCH NEEDED.');
 
       const { body } = await send({ message: BENIGN });
 
       expect(body.state).toBe('ok');
-      expect(body.requiresHumanReview).toBe(true);
+      expect(body.requiresHumanReview).toBe(false);
+      expect(summaries()).toEqual([]);
+      expect(mockConsumeReviewSlot).not.toHaveBeenCalled();
+    });
+
+    test('three routine deferral answers leave the hour for a withheld one', async () => {
+      for (let i = 0; i < 3; i += 1) {
+        modelAnswers('A licensed physician should evaluate readiness before the next bout. RESEARCH NEEDED.');
+        await send({ message: BENIGN });
+      }
+      expect(mockConsumeReviewSlot).not.toHaveBeenCalled();
+
+      modelAnswers('You have a concussion. A physician should confirm it.');
+      const { body } = await send({ message: BENIGN });
+
+      expect(body.state).toBe('filtered');
       expect(summaries()).toEqual([RESPONSE_SAFETY_SUMMARY]);
       expect(mockConsumeReviewSlot.mock.calls.map(([input]) => input.event.kind)).toEqual(['response_safety']);
     });

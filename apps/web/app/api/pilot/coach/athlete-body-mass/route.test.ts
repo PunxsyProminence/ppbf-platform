@@ -11,11 +11,13 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 /**
  * Staff read of an athlete's body mass (elite-boxing item 5).
  *
- * THE RULE UNDER TEST (Jason 2026-10-04): an adult's weight is readable by any
- * coach or organization admin in the athlete's gym; a youth's -- and an
- * athlete with no recorded date of birth -- only by the assigned coach, a
- * coach with a live coverage grant, or the organization admin. Everyone else
- * gets `body_mass: null`, the same answer as "no weigh-in".
+ * THE RULE UNDER TEST (OD-2026-10-05-024 ruling 2, Jason 2026-10-05): any
+ * athlete's weight, adult or youth, is readable only by the assigned coach, a
+ * coach with a live coverage grant, or the organization admin. Any other coach
+ * is refused (403) before any weight is read. This narrows the 2026-10-04 rule
+ * ("B everyone, youth limited"), under which an adult's weight went to any
+ * coach in the gym. The youth rule (bodyMassVisibleTo) still stands behind the
+ * gate and answers `body_mass: null` to anyone it does not admit.
  *
  * WHAT IS REAL. requirePrincipal and the database are faked; the route,
  * access.ts (both gates), athleteBodyMass.ts and the MVP-12 formula are the
@@ -306,26 +308,25 @@ describe('a youth\'s weight reaches only their own coach, a covering coach and t
   test.each([
     ['coach in the gym with no assignment and no coverage', 'coach-unrelated'],
     ['coach whose coverage grant has lapsed', 'coach-lapsed'],
-  ])('%s gets null, and the weight is never read', async (_label, accountId) => {
+  ])('%s is refused, and the weight is never read', async (_label, accountId) => {
     const { status, payload } = await readAs({ accountId });
 
-    expect(status).toBe(200);
-    expect(payload).toEqual({ body_mass: null, can_correct: false });
+    expect(status).toBe(403);
     expect(JSON.stringify(payload)).not.toMatch(/56\.4|124\.3|flag/);
     expect(weightReads()).toEqual([]);
   });
 
   test('a missing date of birth is treated as a youth', async () => {
     const unrelated = await readAs({ accountId: 'coach-unrelated' }, 'ath-no-dob');
-    expect(unrelated.payload).toEqual({ body_mass: null, can_correct: false });
+    expect(unrelated.status).toBe(403);
 
     const ownCoach = await readAs({ accountId: 'coach-record' }, 'ath-no-dob');
     expect(ownCoach.payload.body_mass).toMatchObject({ latest: { kilograms: 47 }, flagged: true });
   });
 
-  test('"no weight" and "not yours to see" are the same answer', async () => {
+  test('a refused coach cannot tell whether a weight exists', async () => {
     weighIns = weighIns.filter((row) => row.athlete_id !== 'ath-youth');
-    const none = await readAs({ accountId: 'coach-record' });
+    const none = await readAs({ accountId: 'coach-unrelated' });
     weighIns = [...weighIns, ...weighInsFor('ath-youth', 60, 56.4)];
     const hidden = await readAs({ accountId: 'coach-unrelated' });
 
@@ -333,12 +334,19 @@ describe('a youth\'s weight reaches only their own coach, a covering coach and t
   });
 });
 
-describe('an adult\'s weight follows the check-in: any coach in the gym', () => {
-  test('a coach with no assignment reads it', async () => {
-    const { status, payload } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+describe('an adult\'s weight: the assigned coach(es) and the organization admin only', () => {
+  test('the coach of record reads it', async () => {
+    const { status, payload } = await readAs({ accountId: 'coach-record' }, 'ath-adult');
 
     expect(status).toBe(200);
     expect(payload.body_mass).toMatchObject({ latest: { kilograms: 75.2 }, change: { percent: -6 }, flagged: true });
+  });
+
+  test('a coach with no assignment is refused, and the weight is never read', async () => {
+    const { status } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+
+    expect(status).toBe(403);
+    expect(weightReads()).toEqual([]);
   });
 });
 
@@ -487,8 +495,8 @@ describe('correcting a weight: everyone else is refused and nothing is written',
     expect(weighIns.some((row) => row.supersedes)).toBe(false);
   });
 
-  test('the GET does not offer "Correct" to a coach who may only read', async () => {
-    const { payload } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+  test('the GET does not offer "Correct" to an admin, who may only read', async () => {
+    const { payload } = await readAs({ accountId: 'acct-admin', role: 'organization_admin' }, 'ath-adult');
     expect(payload).toMatchObject({ body_mass: { latest: { kilograms: 75.2 } }, can_correct: false });
   });
 });

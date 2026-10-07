@@ -227,7 +227,15 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
-    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i],
+    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness|\bcant\s+(?:breathe|see|move)|(?:can(?:not|'t)|\bcant)\s+breath\b)/i],
+    // Emergency words no row above had (2026-10-06): collapsed, unresponsive,
+    // won't wake up, not breathing. LAST, so it only ever turns a topic of
+    // none into an emergency one and never displaces a topic main gave -- an
+    // allowed return_to_play or medical_clearance question keeps its canned
+    // fallback. The lookarounds keep technique talk out: "his guard
+    // collapsed", "you collapsed the distance", "not breathing out on the jab",
+    // "won't wake up for roadwork". hasUrgentSymptom carries the same words.
+    ['loss_of_consciousness', /(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope|conditioning|cardio|gas\s+tank|tank|wind|energy|pace|output|timing|rhythm|game|confidence|focus|offen[cs]e|attack|game\s?plan)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive(?!\s+to\s+(?:feedback|coaching|instructions?|corrections?|criticism|advice)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -356,8 +364,8 @@ export function validateShadowRequest(
 
   const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(text)
     || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
-  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(text);
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(text);
+  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness|\bcant\s+(?:breathe|see|move)|(?:can(?:not|'t)|\bcant)\s+breath\b|(?<!\b(?:guard|stance|posture|pocket|elbows?|wrists?|knees?|hands?|arch|side|defen[cs]e|form|frame|structure|base|shell|footwork|plan|stand|mount|bag|tent|ring\s+rope|rope|conditioning|cardio|gas\s+tank|tank|wind|energy|pace|output|timing|rhythm|game|confidence|focus|offen[cs]e|attack|game\s?plan)\s+(?:\w+ly\s+)?)collapsed(?!\s+(?:the|your|his|her|their|my|our|that|this)\s+(?:distance|range|gap|space|angle|pocket|guard|stance|elbows?)\b)(?!\s+(?:elbows?|wrists?|lung|arch|guard|stance)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)unresponsive(?!\s+to\s+(?:feedback|coaching|instructions?|corrections?|criticism|advice)\b)|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)not\s+responsive|(?<!\b(?:app|screen|tablet|phone|timer|page|site|website|button|video|upload|camera|computer|laptop|ipad|system|wifi|bluetooth|speaker|tv)\s+(?:is\s+|was\s+|seems\s+|keeps\s+)?(?:\w+ly\s+)?)(?:\bnot|isn't|\bisnt)\s+responding(?!\s+(?:to|well)\b)|(?<!\balarms?\s+)(?:won't|\bwont|will\s+not|doesn't|\bdoesnt|does\s+not)\s+wake(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:can(?:not|'t)|\bcant)\s+wake\s+(?!(?:up|myself|early)\b)\w+\b(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|(?:\bnot|isn't|\bisnt)\s+waking(?!\s+(?:(?:me|us|him|her|them)\s+)?(?:up\s+)?(?:early|in\s+time|on\s+time|(?:in\s+)?the\s+mornings?|mornings?|for\s+(?:roadwork|runs?|practice|training|school|work|class|the\s+bus|(?:the|his|her|my|their)\s+alarm)|at\s+\d|before\s+(?:practice|training|school|work|class|\d)|to\s+(?:the|his|her|my|their)\s+alarm)\b)|stopped\s+breathing(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)|barely\s+breathing|(?<!\byou(?:'re|re|\s+are)?\s+)(?:\bnot|isn't|\bisnt)\s+breathin(?:g\b|\b)(?!\s+(?:out|in\s+(?:and|through|enough|deep|deeply|on)|through|between|rhythmically)\b)(?!\s+(?:on|during|when|while|with|right|properly|correctly|enough|well)\b.{0,25}\b(?:jabs?|punch\w*|combo\w*|combinations?|shots?|pads|mitts|bag|exhale|drills?|footwork)\b))/i.test(text);
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t)|\bcant\s+(?:breathe|see|move|feel))/i.test(text);
   const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
@@ -709,6 +717,81 @@ export function validateShadowResponse(
       }
     }
   }
+  // CL-C8 (2026-10-05 audit, measured by Codex at 6736bac7). Both patterns
+  // above name a fixed subject, a fixed verb and seven ailments, so the same
+  // diagnosis passed clean when the model used a name ("Example Athlete has a
+  // concussion"), a copula ("That's a concussion", "This is a sprained
+  // ankle"), a contraction ("You've torn your ACL"), a passive ("Your wrist is
+  // broken") or an ailment off the list ("You have tendinitis"). Under the
+  // ruling that in-app AI is never diagnostic, the shape of the sentence is
+  // not the boundary.
+  //
+  // Added, never loosened: the two patterns above are untouched. What these
+  // must NOT do is withhold education or coaching ("educate, do not
+  // restrict", OD-2026-10-01-006), and a first cut did: boxing describes
+  // technique with injury verbs ("he pulled his punches", "you broke your
+  // stance", "a broken guard") and defines injuries with a copula ("that's a
+  // fracture that usually comes from..."). So:
+  //   - an injury ADJECTIVE or VERB counts only with a body part after it
+  //     ("a sprained ankle", "tore his ACL"), never a wrap, a guard or a rhythm;
+  //   - the nouns are the unambiguous ones (concussion, fracture, sprain,
+  //     tendinitis...), not "condition" or "disease", which coaching uses;
+  //   - a name is a capitalised word, so "the brain has" or "boxing has" is
+  //     not a person;
+  //   - a word after the ailment that makes it a category, a record or a
+  //     definition ("concussion SYMPTOM", "a strain PATTERN", "a fracture THAT
+  //     USUALLY comes from", "commonly called") stops the match;
+  //   - the conditional and prevention exemptions read the clause BEFORE the
+  //     match only. Read after it, "You've torn your ACL, so avoid sparring"
+  //     was exempted by its own advice (reviewer, 2026-10-06), and a model
+  //     writes a diagnosis together with an instruction.
+  if (!makesDiagnosisClaim) {
+    const folded = normaliseForMatching(response).replace(/\s+/g, ' ');
+    const body = String.raw`(?:(?:left|right|upper|lower|front|back|lead|rear)\s+)?(?:wrists?|hands?|knuckles?|thumbs?|fingers?|ankles?|knees?|acl|mcl|pcl|meniscus|shoulders?|rotator\s+cuff|elbows?|nose|jaw|ribs?|orbital|eye\s+socket|hamstrings?|groin|neck|achilles|tendons?|ligaments?|biceps?|triceps?|calf|calves|hips?|toes?|collarbone|clavicle|metacarpals?|eardrums?|disc|spine)\b(?!\s*(?:wraps?|guards?|position|placement|speed|work|strength|positioning|technique|form)\b)`;
+    const injured = String.raw`(?:sprained|strained|torn|broken|fractured|dislocated|ruptured|herniated|separated|bruised|injured|hyperextended|jammed)`;
+    const ailmentNoun = String.raw`(?:concussions?|fractures?|sprains?|[a-z]+itis|contusion|hernia|whiplash|(?:mild\s+)?tbi|injury|injuries)\b`;
+    const ailment = String.raw`(?:${ailmentNoun}|${injured}\s+${body})`;
+    const generic = String.raw`(?!,?\s*(?:risk|prevention|protocol|log|report|record|history|rate|policy|plan|program|management|screen|check|form|list|data|database|question|topic|test|assessment|education|awareness|symptoms?|signs?|threshold|pattern|territory|problem|coaches|athletes|boxers|people|commonly|usually|often|typically|also\s+called|sometimes|(?:that|which)\s+(?:usually|commonly|often|typically|can|tends?|comes?|happens?|occurs?))\b)`;
+    const gap = String.raw`(?:(?!(?:what|how|why|where|which|about|of|for|on|in|to|with|from|at|by|question|topic|common|typical|type|kind|form|sign|example|risk|part|way|reason|cause|reported|recorded|logged|documented|previous|prior|past|different)\b)[a-z']+\s+){0,3}?`;
+    const determiner = String.raw`(?:(?:a|an|the|some|your|his|her|their)\s+)?`;
+    const adverbs = String.raw`(?:(?:probably|likely|definitely|clearly|already|just|obviously)\s+)*`;
+    // A name is a capitalised word (or two), not one of these, directly
+    // followed by what the patterns below look for after a person ("has",
+    // "'s", "is", "tore"...), so "Looks like" and "Concussion education" are
+    // not names. Each is replaced by one placeholder BEFORE lowercasing, so the
+    // patterns treat "Maria", "Example Athlete" and "he" alike and still match
+    // "ACL" in any case.
+    const name = new RegExp(String.raw`\b(?!(?:This|That|It|There|Everyone|Anyone|Someone|Nobody|Each|Every|Boxing|Sparring|Training|A|An|The|If|When|You|He|She|They|What|How|Why|Your|His|Her|Their|My|Our)\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?=(?:'s|\s+(?:has|have|is|was|probably|likely|definitely|clearly|already|just|obviously|suffered|sustained|torn|tore|sprained|strained|broke|broken|fractured|dislocated|ruptured|herniated|separated|pulled|bruised|injured|hyperextended|jammed))\b)`, 'g');
+    const text = folded.replace(name, 'xnamex').toLowerCase();
+    const person = String.raw`(?:you|he|she|they|xnamex|the\s+(?:athlete|boxer|fighter|kid))`;
+    const injuryVerb = String.raw`(?:torn|tore|sprained|strained|broke|broken|fractured|dislocated|ruptured|herniated|separated|pulled|bruised|injured|hyperextended|jammed)`;
+    const widenedPatterns = [
+      // Copula: "that's a concussion", "this sounds like a torn rotator cuff",
+      // "it's a boxer's fracture".
+      new RegExp(String.raw`(?:\b(?:that|this|it)(?:'s|\s+is|\s+(?:looks|sounds|seems)\s+like)|\b(?:looks|sounds|seems)\s+like)\s+${adverbs}${determiner}${gap}${ailment}${generic}`, 'g'),
+      // A person or a name has / has got / suffered / sustained it ("Example
+      // Athlete has a concussion", "you've got tendinitis").
+      new RegExp(String.raw`\b${person}(?:'ve\s+got|'s\s+got|\s+have(?:\s+got)?|\s+has(?:\s+got)?|(?:'ve|'s|\s+have|\s+has)?\s+(?:suffered|sustained))\s+${adverbs}${determiner}${gap}${ailment}${generic}`, 'g'),
+      // Injury verbs on a body part: "you've torn your ACL", "Maria tore her
+      // ACL", "he sprained his wrist". Not "pulled his punches".
+      new RegExp(String.raw`\b${person}(?:'ve|\s+have|\s+has|'s)?\s+${adverbs}${injuryVerb}\s+(?:your|his|her|their)\s+${body}`, 'g'),
+      // Passive: "your wrist is broken", "Maria's ACL is torn", "you're
+      // concussed".
+      new RegExp(String.raw`\b(?:your|his|her|their|xnamex's)\s+${body}\s+(?:is|are|was|looks|seems)\s+${adverbs}${injured}\b`, 'g'),
+      new RegExp(String.raw`\b(?:you're|you\s+are|he's|she's|they're|he\s+is|she\s+is|they\s+are|xnamex\s+is|xnamex\s+was)\s+${adverbs}concussed\b`, 'g'),
+    ];
+    for (const pattern of widenedPatterns) {
+      for (const match of text.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        const clause = text.slice(Math.max(0, index - 60), index).split(/[.!?;\n]/).pop() ?? '';
+        if (!conditionalCue(clause) && !preventionCue.test(clause)) {
+          makesDiagnosisClaim = true;
+          break;
+        }
+      }
+      if (makesDiagnosisClaim) break;
+    }
+  }
   if (makesDiagnosisClaim) {
     filtered = true;
     flag('diagnostic_claim');
@@ -720,6 +803,20 @@ export function validateShadowResponse(
   ) {
     filtered = true;
     flag('prescriptive_claim');
+  }
+  // CL-C8: the rule above names two generics and no brand, so "Take two
+  // Advil" passed. Brands and the other drugs a model names are a separate
+  // rule so that it can carry an exemption the one above never had: a
+  // directive is "take/start/use/try/pop X", and the same words under
+  // "avoid", "never" or "don't" are a warning, which is education.
+  for (const match of normalized.matchAll(/\b(take|start|use|try|pop|double)\b.{0,40}?\b(advils?|motrin|aleve|naproxen|aspirin|tylenol|paracetamol|nsaids?|painkillers?|pain\s+relievers?|melatonin|antibiotics?|prednisone|steroids?|ibuprofen|acetaminophen)\b/g)) {
+    const index = match.index ?? 0;
+    const clause = normalized.slice(Math.max(0, index - 40), index).split(/[.!?;\n]/).pop() ?? '';
+    if (!/\b(avoid|never|don.?t|do\s+not|not|no|banned|instead\s+of)\b/.test(clause + ' ' + match[0])) {
+      filtered = true;
+      flag('prescriptive_claim');
+      break;
+    }
   }
 
   // Minute-scale rest is training vocabulary, not a medical directive.
@@ -1026,7 +1123,15 @@ export function validateShadowResponse(
     message,
     reasons,
     reasonCodes,
-    requiresHumanReview: filtered || reasons.length > 0,
+    // A withheld answer asks for a review row; an answer that passed does
+    // not, even when it carries `human_review`. That reason is the deferral
+    // the doctrine requires ("a physician should evaluate"), and every row
+    // asked for here draws on the owner's 3-per-hour allowance
+    // (OD-2026-10-01-006), so routine deferrals used up the hour a withheld
+    // answer's row needed (CL-C7). Every other reason sets `filtered`, so this
+    // is the only reason the change affects. The route and the background
+    // worker both read this field, so they move together.
+    requiresHumanReview: filtered,
     citationIds: filtered ? [] : citationIds,
     ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
   };

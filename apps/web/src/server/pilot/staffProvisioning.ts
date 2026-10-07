@@ -4,6 +4,7 @@ import type { AuthProvider } from './authProviders';
 import { lockConsentSet } from './consentSetLock';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { clearMicrosoftIdentityOnLoginEmailChangeTx } from './auth';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
@@ -472,6 +473,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   }
 
   const { guardianLink, volunteerLink } = await inTransaction(async (client) => {
+    // CL-A19. Today the address cannot change here (the account is found by
+    // it), so this is a guard for the day it can; it is in the same
+    // transaction, so a refusal below rolls it back.
+    await clearMicrosoftIdentityOnLoginEmailChangeTx(client, accountId, loginEmail);
+
     // refuseDeactivatedLogin is held in this statement, not only in the read
     // above: that read is outside the transaction, so an admin deactivating
     // the login after it would otherwise have it turned back on here. With

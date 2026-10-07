@@ -216,9 +216,10 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         { allowedEvidenceIds: binding.allowedEvidenceIds },
       );
       bindingFiltered = !decision.valid || decision.filtered;
-      // Sync parity: the synchronous path queues human review on
-      // requiresHumanReview even when the answer is not filtered. Hoisted so
-      // the review-queue condition below can see it.
+      // Sync parity: both paths queue review on filtered || requiresHumanReview.
+      // Since CL-C7 (2026-10-05) requiresHumanReview is exactly `filtered`, so
+      // a passed answer queues nothing on either path. Hoisted so the
+      // review-queue condition below can see it.
       bindingRequiresHumanReview = decision.requiresHumanReview;
       const allowedIdSet = new Set(binding.allowedEvidenceIds);
       const citationIds = decision.citationIds.filter((id) => allowedIdSet.has(id));
@@ -310,9 +311,9 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     const finalSafetyStatus = bindingFiltered ? 'filtered' as const : checkedOutput.safetyStatus;
     await completeJob(job, checkedOutput.output, finalSafetyStatus);
     // Sync parity: the synchronous path queues review on filtered OR
-    // requiresHumanReview; this queued only on filtered, so a background
-    // answer that tripped reasons without the filter displayed to the user
-    // and no reviewer ever saw it.
+    // requiresHumanReview, and so does this. (Since CL-C7 the second implies
+    // the first, so the "requires human review" summary below is kept only
+    // for parity with the route.)
     if (finalSafetyStatus === 'filtered' || bindingRequiresHumanReview) {
       const reviewTicket = {
         organizationId: job.organizationId,

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
-import { usePilotSession } from '@/components/usePilotSession';
+import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import LibraryTextIntakePanel, { SHELF_WORDS } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
@@ -38,6 +38,14 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+}
+
+/* Only coaches and organization admins close a research requirement (Jason
+   2026-10-06: "Staff only" for the gym's questions; "Family reads, staff
+   closes" for rows about a child). The server refuses anyone else, so the
+   button is not offered to them. */
+function mayOfferResolve(role: PilotSessionRole | null): boolean {
+  return role === 'coach' || isOrganizationAdminSessionRole(role);
 }
 
 /* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
@@ -762,7 +770,7 @@ export default function ResearchIntakePage() {
                     );
                   })()
                 ) : null}
-                {requirement.status === 'open' ? (
+                {requirement.status === 'open' && mayOfferResolve(session.role) ? (
                   <button
                     type="button"
                     onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}

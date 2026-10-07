@@ -128,22 +128,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Block not found.' }, { status: 404 });
     }
 
-    /* block_id is used ONLY to clear the caller. It is deliberately not
-       passed on: the module establishes the objective's real parent itself,
-       so a body naming a block the caller can open and an objective belonging
-       to one they cannot gets nothing -- the module's own SQL requires the
-       objective and the block link to agree, and the database's composite key
-       requires it again. */
+    /* blockId is passed, not just checked -- the same discipline as DELETE.
+       It used to be withheld on the belief that the module's SQL made it
+       redundant; it did not. The module linked the objective under its OWN
+       block, so a body naming a block the caller can open plus another
+       child's objective on the same group run got the link (audit CL-A12).
+       The module now requires the objective to be on this block. */
     const result = await linkSessionToObjective({
       organizationId: principal.organizationId,
       runId,
       objectiveId,
+      blockId,
       linkedByAccountId: principal.accountId,
     });
 
     if (!result) {
-      /* One of: the objective is not in this organization, it belongs to a
-         different block than the one this session supports, or the session
+      /* One of: the objective is not in this organization, it is not on the
+         block the caller cleared, it belongs to a different block than the
+         one this session supports, or the session
          was never linked to that block at all. Indistinguishable on purpose
          -- telling them apart would say whether an objective id exists. */
       return NextResponse.json(

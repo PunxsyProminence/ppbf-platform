@@ -19,8 +19,8 @@ jest.mock('pdf-parse', () => ({
     constructor(options: unknown) {
       mockConstructor(options);
     }
-    getText() {
-      return mockGetText();
+    getText(params: unknown) {
+      return mockGetText(params);
     }
     destroy() {
       return mockDestroy();
@@ -31,9 +31,22 @@ jest.mock('pdf-parse', () => ({
 const PDF_BYTES = Buffer.from('%PDF-1.7 body');
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
   mockDestroy.mockResolvedValue(undefined);
 });
+
+// Answers the way pdf-parse does: `total` is the document's page count, and
+// `pages` holds only the pages the call asked for.
+function mockDocument(pages: Array<{ num: number; text: string }>): void {
+  mockGetText.mockImplementation(async (params?: { partial?: number[] }) => ({
+    total: pages.length,
+    pages: pages.filter((page) => params?.partial?.includes(page.num)),
+  }));
+}
+
+function requestedPages(): number[][] {
+  return mockGetText.mock.calls.map(([params]) => (params as { partial: number[] }).partial);
+}
 
 describe('hasPdfSignature', () => {
   test('needs the %PDF- header', () => {
@@ -54,13 +67,11 @@ describe('extractLibraryPdfPages', () => {
   });
 
   test('returns numbered pages, trimmed, with NUL removed and line endings normalised', async () => {
-    mockGetText.mockResolvedValueOnce({
-      pages: [
-        { num: 1, text: '  first\r\npage\u0000  ' },
-        { num: 2, text: '' },
-        { num: 3, text: 'third' },
-      ],
-    });
+    mockDocument([
+      { num: 1, text: '  first\r\npage\u0000  ' },
+      { num: 2, text: '' },
+      { num: 3, text: 'third' },
+    ]);
 
     const result = await extractLibraryPdfPages(PDF_BYTES);
 
@@ -72,10 +83,11 @@ describe('extractLibraryPdfPages', () => {
       ],
       emptyPageCount: 1,
     });
+    expect(requestedPages()).toEqual([[1], [2], [3]]);
   });
 
   test('hands the parser a copy and always destroys it', async () => {
-    mockGetText.mockResolvedValueOnce({ pages: [{ num: 1, text: 'x' }] });
+    mockDocument([{ num: 1, text: 'x' }]);
 
     await extractLibraryPdfPages(PDF_BYTES);
 
@@ -109,30 +121,59 @@ describe('extractLibraryPdfPages', () => {
     }
   });
 
+  // CL-C20: the budget used to stop only the wait. The parse ran on through
+  // every remaining page after the request had already been refused.
+  test('a parse that outlasts the budget mid-document reads no further pages', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetText
+        .mockResolvedValueOnce({ total: 3, pages: [{ num: 1, text: 'one' }] })
+        .mockImplementationOnce(() => new Promise((resolve) => {
+          setTimeout(() => resolve({ total: 3, pages: [{ num: 2, text: 'two' }] }), LIBRARY_PDF_PARSE_TIMEOUT_MS * 2);
+        }))
+        .mockResolvedValue({ total: 3, pages: [{ num: 3, text: 'three' }] });
+      const pending = extractLibraryPdfPages(PDF_BYTES).catch((error: unknown) => error);
+      await jest.advanceTimersByTimeAsync(LIBRARY_PDF_PARSE_TIMEOUT_MS + 1);
+
+      expect(await pending).toMatchObject({ status: 422, code: 'PDF_TIMEOUT' });
+      expect(mockDestroy).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(LIBRARY_PDF_PARSE_TIMEOUT_MS * 2);
+      expect(requestedPages()).toEqual([[1], [2]]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('refuses a document with no pages', async () => {
-    mockGetText.mockResolvedValueOnce({ pages: [] });
+    mockDocument([]);
 
     await expect(extractLibraryPdfPages(PDF_BYTES)).rejects.toMatchObject({ status: 422, code: 'PDF_NO_PAGES' });
   });
 
   test('refuses, rather than truncates, past the page cap', async () => {
-    mockGetText.mockResolvedValueOnce({
-      pages: Array.from({ length: LIBRARY_PDF_MAX_PAGES + 1 }, (_, index) => ({ num: index + 1, text: 'x' })),
-    });
+    mockDocument(Array.from({ length: LIBRARY_PDF_MAX_PAGES + 1 }, (_, index) => ({ num: index + 1, text: 'x' })));
 
     await expect(extractLibraryPdfPages(PDF_BYTES)).rejects.toMatchObject({ status: 413, code: 'PDF_TOO_MANY_PAGES' });
+    // CL-C20: the page count is known after the first page; the other 500
+    // are never read.
+    expect(requestedPages()).toEqual([[1]]);
   });
 
   test('refuses, rather than truncates, past the total text cap', async () => {
-    mockGetText.mockResolvedValueOnce({
-      pages: [{ num: 1, text: 'a'.repeat(LIBRARY_PDF_MAX_TOTAL_CHARS + 1) }],
-    });
+    mockDocument([
+      { num: 1, text: 'a'.repeat(LIBRARY_PDF_MAX_TOTAL_CHARS + 1) },
+      { num: 2, text: 'b' },
+      { num: 3, text: 'c' },
+    ]);
 
     await expect(extractLibraryPdfPages(PDF_BYTES)).rejects.toMatchObject({ status: 413, code: 'PDF_TOO_MUCH_TEXT' });
+    // CL-C20: refused at the page that crossed the cap, not after the rest.
+    expect(requestedPages()).toEqual([[1]]);
   });
 
   test('accepts text exactly at the cap', async () => {
-    mockGetText.mockResolvedValueOnce({ pages: [{ num: 1, text: 'a'.repeat(LIBRARY_PDF_MAX_TOTAL_CHARS) }] });
+    mockDocument([{ num: 1, text: 'a'.repeat(LIBRARY_PDF_MAX_TOTAL_CHARS) }]);
 
     const result = await extractLibraryPdfPages(PDF_BYTES);
 

@@ -104,6 +104,10 @@ export async function hasRetrievableLibraryEvidence(input: {
           and d.index_completed_at is not null
           and d.approval_state = 'approved'
           and d.verification_state = 'verified'
+          -- Gym-wide chunks only. An athlete-scoped chunk is retrievable for
+          -- that athlete alone, so a Library holding only those is empty for
+          -- every other asker and must say so (CL-C21).
+          and c.subject_id is null
      ) as any_evidence`,
     [libraryRetrievalOrganizationIds(input.organizationId)],
   );

@@ -35,11 +35,14 @@ const mockFindNearMiss = jest.mocked(findNearMissByTriggerContext);
 const mockFlagNearMiss = jest.mocked(flagNearMiss);
 
 const SAVEPOINT_LITERAL = /^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)/;
+// placeTrainingHold's first statement, the competition-safety lock
+// (competitionSafetyLock.ts): it returns nothing the function reads.
+const SAFETY_LOCK = /pg_advisory_xact_lock/;
 
 /**
  * A fake transaction client. SAVEPOINT/RELEASE/ROLLBACK-TO literals
- * (findRegistrationBlockingHold's poisoning guard) resolve immediately and
- * never consume the queue, so callers only need to queue the DATA query
+ * (findRegistrationBlockingHold's poisoning guard) and the competition-safety
+ * lock resolve immediately and never consume the queue, so callers only need to queue the DATA query
  * results (the sweep's UPDATE, the duplicate-check SELECT, the INSERT, ...)
  * in the order the function under test actually issues them.
  */
@@ -48,7 +51,7 @@ function transactionClient(dataResults: Array<{ rows: unknown[] }>) {
   const client = {
     query: jest.fn<Promise<{ rows: unknown[] }>, unknown[]>((...callArgs) => {
       const sql = callArgs[0];
-      if (SAVEPOINT_LITERAL.test(String(sql).trim())) {
+      if (SAVEPOINT_LITERAL.test(String(sql).trim()) || SAFETY_LOCK.test(String(sql))) {
         return Promise.resolve({ rows: [] });
       }
       const next = queue.shift();
@@ -150,10 +153,23 @@ describe('placeTrainingHold', () => {
 
     await placeTrainingHold(input);
 
-    const [sweepSql, sweepParams] = client.query.mock.calls[0];
+    const [sweepSql, sweepParams] = client.query.mock.calls[1];
     expect(String(sweepSql)).toContain("set status = 'expired'");
     expect(String(sweepSql)).toContain('expires_at <= now()');
     expect(sweepParams).toEqual(['org-1', 'ATH-1']);
+  });
+
+  // Codex CX-1: the hold must take the per-athlete competition-safety lock
+  // before anything else, so an entry in flight commits first and an entry
+  // arriving later reads this hold (competitionSafetyLock.ts LOCK ORDER).
+  test('takes the competition-safety lock as its first statement, for this athlete', async () => {
+    const client = transactionClient([{ rows: [] }, { rows: [] }, { rows: [HOLD_ROW] }]);
+
+    await placeTrainingHold(input);
+
+    const [lockSql, lockParams] = client.query.mock.calls[0];
+    expect(String(lockSql)).toMatch(SAFETY_LOCK);
+    expect(lockParams).toEqual(['ppbf.athlete-competition-safety', 'org-1', 'ATH-1']);
   });
 
   // Sweep-then-check closes the ordinary race, but two simultaneous
@@ -165,6 +181,7 @@ describe('placeTrainingHold', () => {
     client.query.mockImplementation((sql: unknown) => {
       if (SAVEPOINT_LITERAL.test(String(sql).trim())) return Promise.resolve({ rows: [] });
       const text = String(sql);
+      if (SAFETY_LOCK.test(text)) return Promise.resolve({ rows: [] });
       if (text.includes('set status = ')) return Promise.resolve({ rows: [] }); // sweep
       if (text.includes('select hold_id from')) return Promise.resolve({ rows: [] }); // duplicate check: none found
       return Promise.reject(Object.assign(new Error('duplicate key value violates unique constraint "idx_training_holds_one_active"'), { code: '23505' }));

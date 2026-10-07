@@ -28,7 +28,8 @@ describe('SHADOW chat capabilities', () => {
   it('limits safety review to organization administrators', () => {
     expect(getShadowChatCapabilities('organization_admin').canReviewChatSafetyTelemetry).toBe(true);
     expect(getShadowChatCapabilities('admin').canReviewChatSafetyTelemetry).toBe(true);
-    expect(getShadowChatCapabilities('platform_owner').canReviewChatSafetyTelemetry).toBe(true);
+    // OD-2026-10-05-024 ruling 3: the chat human-review queue is gym business.
+    expect(getShadowChatCapabilities('platform_owner').canReviewChatSafetyTelemetry).toBe(false);
   });
 
   // Omega is broader in breadth but strictly narrower in depth than an
@@ -141,9 +142,9 @@ describe('protected-health-information flag tracks SHADOW_PHI_ROLES exactly', ()
 describe('Omega gets operational breadth but not clinical or youth-protection depth', () => {
   const omega = () => getShadowChatCapabilities('platform_owner');
 
-  test('reaches cross-organization operational signal', () => {
+  test("reaches cross-organization operational signal, but not the gym's chat review queue", () => {
     expect(omega().crossOrganizationRead).toBe(true);
-    expect(omega().canReviewChatSafetyTelemetry).toBe(true);
+    expect(omega().canReviewChatSafetyTelemetry).toBe(false);
   });
 
   test('is denied clinical state, which is enforced at the medical-status route', () => {

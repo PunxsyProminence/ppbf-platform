@@ -52,6 +52,11 @@ export const AUDIT_EVENT_TYPES = [
   // event records which account it concerns, per the slot's audit rule.
   'payment_account_connected',
   'payment_account_disconnected',
+  // CL-A19: a Microsoft sign-in refused because the email named an account
+  // bound to a different directory user (oid + tid). The one sign-in refusal
+  // recorded: it is someone presenting an address that is not theirs, or a
+  // directory user re-created under it, and an admin needs to see either.
+  'microsoft_identity_mismatch',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

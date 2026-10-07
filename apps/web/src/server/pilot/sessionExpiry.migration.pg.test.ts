@@ -682,9 +682,21 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-A-inherit');
     await seedOrganization('org-B-inherit');
 
-    await auth.createOrUpdateAthleteAccount('athlete-cross-org-1', 'athlete-cross-org-1', 'org-A-inherit');
-    await seedAthletePin('athlete-cross-org-1', '482913', 'org-A-inherit');
-    const loginA = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '482913');
+    // A staff login: the platform route refuses athlete targets outright
+    // (audit CL-A5), so the inheritance this guards against is a staff
+    // account's, and an athlete's is pinned by the refusal case below.
+    await rawQuery(
+      `insert into pilot.accounts
+        (account_id, login_email, auth_provider, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, 'microsoft', 'coach', $3, null, null, true, false)`,
+      ['coach-cross-org-1', 'coach-cross-org-1@ppbf.test', 'org-A-inherit'],
+    );
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'coach', true)`,
+      ['coach-cross-org-1', 'org-A-inherit'],
+    );
+    const loginA = await auth.loginWithMicrosoftEmail('coach-cross-org-1@ppbf.test');
     expect(loginA).not.toBeNull();
 
     const principalBefore = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
@@ -692,13 +704,36 @@ describe('session revocation regressions (real database, real application code)'
 
     // Grant this same account a new, higher-privilege membership in a
     // different organization.
-    await auth.upsertOrganizationMembership('athlete-cross-org-1', 'org-B-inherit', 'organization_admin', true);
+    await auth.upsertOrganizationMembership('coach-cross-org-1', 'org-B-inherit', 'organization_admin', true);
 
     // The old org-A session is revoked -- it can never resolve again, so it
     // can never be observed carrying the organization_admin role granted in
     // org B.
     const principalAfter = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
     expect(principalAfter).toBeNull();
+  });
+
+  test('an athlete login cannot be given a membership elsewhere at all, and its session is left as it was', async () => {
+    await seedOrganization('org-A-athlete-refused');
+    await seedOrganization('org-B-athlete-refused');
+
+    await auth.createOrUpdateAthleteAccount('athlete-cross-org-1', 'athlete-cross-org-1', 'org-A-athlete-refused');
+    await seedAthletePin('athlete-cross-org-1', '482913', 'org-A-athlete-refused');
+    const login = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '482913');
+    expect(login).not.toBeNull();
+
+    await expect(
+      auth.upsertOrganizationMembership('athlete-cross-org-1', 'org-B-athlete-refused', 'organization_admin', true),
+    ).rejects.toThrow('Forbidden: an athlete account is administered by their own gym');
+
+    const principal = await auth.resolvePrincipal(requestWithSessionCookie(login!.token));
+    expect(principal?.role).toBe('athlete');
+    expect(principal?.organizationId).toBe('org-A-athlete-refused');
+    const memberships = await rawQuery(
+      'select 1 from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+      ['athlete-cross-org-1', 'org-B-athlete-refused'],
+    );
+    expect(memberships).toHaveLength(0);
   });
 
   test('organization-admin revocation authorizes via an active secondary membership, and leaves the primary-organization session untouched', async () => {
