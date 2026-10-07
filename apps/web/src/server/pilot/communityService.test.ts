@@ -30,8 +30,11 @@ const ADMIN: ActorIdentity = { accountId: 'acct-admin', role: 'organization_admi
 const COACH: ActorIdentity = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null };
 
 beforeEach(() => {
-  // Default: no login maps to an athlete; tests that need the mapping set it.
-  mockQuery.mockResolvedValue([]);
+  // Default: no login maps to an athlete and nobody is reachable; tests that
+  // need either set it. Reset, not just cleared, so no test inherits the
+  // previous test's answer by order.
+  mockQuery.mockReset().mockResolvedValue([]);
+  mockReach.mockReset().mockResolvedValue(new Set());
 });
 
 afterEach(() => {
