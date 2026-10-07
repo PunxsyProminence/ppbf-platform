@@ -547,7 +547,7 @@ function CoachDrillLibrary() {
       const drill = heading?.closest('article');
       const current = document.activeElement;
       if (current && current !== document.body && !drill?.contains(current)) return;
-      (document.getElementById(`lifecycle-${id}`) ?? heading)?.focus();
+      (document.getElementById(`lifecycle-${id}`) ?? document.getElementById(`floor-tested-${id}`) ?? heading)?.focus();
     });
   }, [focusRequest]);
 
@@ -602,7 +602,7 @@ function CoachDrillLibrary() {
   }
 
   async function promoteReference(referenceDrillId: string) {
-    if (promotingRef.current || changingLifecycleRef.current) return;
+    if (promotingRef.current || changingLifecycleRef.current || markingFloorTestedRef.current) return;
 
     promotingRef.current = true;
     const openRequest = openRequestRef.current;
@@ -649,9 +649,13 @@ function CoachDrillLibrary() {
   async function markFloorTested(referenceDrillId: string) {
     if (markingFloorTestedRef.current || promotingRef.current || changingLifecycleRef.current) return;
     markingFloorTestedRef.current = true;
+    const openRequest = openRequestRef.current;
     setMarkingFloorTestedId(referenceDrillId);
     setPromoteError('');
     setPromoteNotice('');
+    setActionOutcome('refused');
+
+    let status: number | null = null;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drills/floor-tested`, {
         method: 'POST',
@@ -659,14 +663,20 @@ function CoachDrillLibrary() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference_drill_id: referenceDrillId }),
       });
+      status = response.status;
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
         throw new Error(payload.error || 'The drill could not be marked floor-tested.');
       }
       await loadReferenceLibrary();
-      await rereadOpenDetail(referenceDrillId, openRequestRef.current);
+      await rereadOpenDetail(referenceDrillId, openRequest);
       setPromoteNotice('Marked floor-tested for this gym.');
     } catch (error) {
+      // Same as a failed Promote: the mark may have landed before the answer
+      // was lost (the write and its audit are separate steps), so read again
+      // and say what is then known rather than "nothing changed".
+      const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
+      setActionOutcome(outcome);
       setPromoteError(error instanceof Error ? error.message : 'The drill could not be marked floor-tested.');
     } finally {
       markingFloorTestedRef.current = false;
@@ -680,7 +690,7 @@ function CoachDrillLibrary() {
   // drills route's PATCH, whose restore guard the server enforces for every
   // caller. Nothing is created: promoting again after a retirement is refused.
   async function changeLifecycle(referenceDrillId: string, operationalDrillId: string, active: boolean) {
-    if (changingLifecycleRef.current || promotingRef.current) return;
+    if (changingLifecycleRef.current || promotingRef.current || markingFloorTestedRef.current) return;
     changingLifecycleRef.current = true;
     const openRequest = openRequestRef.current;
     setChangingLifecycle(true);

@@ -35,6 +35,10 @@ function requireText(raw: unknown, field: string): string {
   return raw.trim();
 }
 
+// A short reason, not a document: it is returned to every author of the gym
+// with the library list.
+const MAX_NOTE_LENGTH = 1000;
+
 function optionalNote(raw: unknown): string {
   if (raw === undefined || raw === null) {
     return '';
@@ -42,7 +46,11 @@ function optionalNote(raw: unknown): string {
   if (typeof raw !== 'string') {
     throw new Error('Unsupported note');
   }
-  return raw.trim();
+  const note = raw.trim();
+  if (note.length > MAX_NOTE_LENGTH) {
+    throw new Error(`Unsupported note: at most ${MAX_NOTE_LENGTH} characters`);
+  }
+  return note;
 }
 
 export async function POST(request: NextRequest) {

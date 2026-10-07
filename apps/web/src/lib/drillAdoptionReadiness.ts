@@ -53,7 +53,7 @@ export interface AdoptionReadinessInput {
   stop_rules: unknown[];
   /** The drill's cues (pilot.drill_cues rows); blank text does not count. */
   cues: { cue_text: string }[];
-  /** One of the four field_provenance literals; the two DRAFT values need a floor test. */
+  /** A pilot_drill_library_field_provenance_check literal; the two DRAFT values need a floor test. */
   field_provenance: string;
   /** Whether a coach of the ADOPTING gym has marked this version floor-tested. */
   floor_tested_by_this_gym: boolean;

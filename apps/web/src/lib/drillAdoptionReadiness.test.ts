@@ -17,6 +17,8 @@
 // content_class) are present exactly as they are in production.
 
 import { adoptionReadiness } from './drillAdoptionReadiness';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from './drillFloorValidation';
+import { VOCABULARIES } from '../server/pilot/contentImport/vocabularies';
 import type { DrillWithDetail } from '../server/pilot/drillLibraryV3';
 
 const WITHDRAWN = 'The reference drill has been withdrawn.';
@@ -378,6 +380,8 @@ describe('adoptionReadiness: the floor-test rule', () => {
     },
   );
 
+  // 'PPBF owner-authored' is the label #1322 adds to the CHECK; the rule reads
+  // it as a non-draft either way, so it is pinned here ahead of that merge.
   test.each(['PPBF source manual v3', 'PPBF owner-authored'])(
     'a drill that is not a draft needs no floor test (%s)',
     (field_provenance) => {
@@ -385,6 +389,16 @@ describe('adoptionReadiness: the floor-test rule', () => {
         .toEqual({ ready: true, missing: [] });
     },
   );
+
+  test('every REQUIRES FLOOR VALIDATION value the vocabulary allows is a draft here', () => {
+    // The draft literals are copied from the CHECK (through vocabularies.ts,
+    // whose pg mirror test holds it equal to the live constraint). A reworded
+    // or added draft label that reached the vocabulary without reaching this
+    // list would make those drafts adoptable with no floor test.
+    const drafts = VOCABULARIES.field_provenance.values.filter((value) => value.includes('REQUIRES FLOOR VALIDATION'));
+    expect([...REQUIRES_FLOOR_VALIDATION_PROVENANCE].sort()).toEqual([...drafts].sort());
+    expect(drafts.length).toBeGreaterThan(0);
+  });
 
   test('the mark is read exactly: a paraphrase of the draft label is not a draft', () => {
     expect(adoptionReadiness(readyDrill({ field_provenance: 'literature-grounded draft; requires floor validation' })).ready).toBe(true);

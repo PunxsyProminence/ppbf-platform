@@ -471,8 +471,8 @@ describe('adoption readiness', () => {
   });
 
   // OD-2026-10-06-026 ruling 2: a technique drill needs at least one cue
-  // before it can be adopted; a conditioning drill does not. Provenance is
-  // still not a readiness rule here (ruling 3's floor-tested mark is separate).
+  // before it can be adopted; a conditioning drill does not. (Ruling 3, the
+  // floor-tested mark for drafts, has its own cases below.)
   it('refuses a technique drill with no cue, naming the missing cue', async () => {
     mockGetReference.mockResolvedValue(
       referenceDrill({ cues: [], field_provenance: 'PPBF source manual v3' }),
@@ -490,7 +490,7 @@ describe('adoption readiness', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('adopts a conditioning drill with no cue (the exemption), whatever its provenance', async () => {
+  it('adopts a conditioning drill with no cue (the exemption)', async () => {
     mockGetReference.mockResolvedValue(
       referenceDrill({ discipline: 'conditioning', category: 'strength', cues: [], field_provenance: 'PPBF source manual v3' }),
     );
@@ -533,11 +533,17 @@ describe('adoption readiness', () => {
   it("another gym's mark does not count: the read is for the session organization", async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-2' }));
     mockGetReference.mockResolvedValue(referenceDrill({ organization_id: 'org-2', field_provenance: LITERATURE_DRAFT }));
+    // org-1 has marked this version; org-2 has not. The read answers by the
+    // organization it is asked for, as the real query does.
+    const mark = { validation_id: 'dfv-1', drill_id: REFERENCE_ID, validated_by_account_id: 'coach-1', validated_at: '2026-10-07T00:00:00.000Z' };
+    mockFloorTested.mockImplementation(async (organizationId: string, ids: string[]) =>
+      organizationId === 'org-1' && ids.includes(REFERENCE_ID) ? { [REFERENCE_ID]: mark } : {});
 
     const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
 
     expect(response.status).toBe(409);
     expect(mockFloorTested).toHaveBeenCalledWith('org-2', [REFERENCE_ID]);
+    expect(mockPromote).not.toHaveBeenCalled();
   });
 
   it('a cue of only whitespace does not count as a cue', async () => {

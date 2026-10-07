@@ -134,6 +134,8 @@ interface RouteOptions {
   /** This gym's floor-tested marks by reference drill id (OD-2026-10-06-026 ruling 3). */
   floorTested?: Record<string, FloorMark>;
   onMarkFloorTested?: (body: { reference_drill_id: string }) => void;
+  /** The mark LANDS and then this is the answer the page gets (see answerAfterCommit). */
+  markAnswerAfterCommit?: () => Response;
   promote?: () => Response;
   onPromote?: () => void;
   patch?: (body: { drill_id: string; active: boolean }) => Response;
@@ -201,6 +203,7 @@ function routes(options: RouteOptions = {}) {
         validated_at: '2026-10-07T00:00:00.000Z',
       };
       floorTested = { ...floorTested, [body.reference_drill_id]: mark };
+      if (options.markAnswerAfterCommit) return options.markAnswerAfterCommit();
       return jsonResponse({ ok: true, floor_tested: mark }, true, 201);
     }
 
@@ -624,6 +627,24 @@ describe('promotion state', () => {
     expect(await within(detail).findByRole('button', { name: 'Promote' })).toBeEnabled();
     expect(marked).toEqual([{ reference_drill_id: reference.drill_id }]);
     expect(within(detail).queryByText('Not ready to adopt')).not.toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: 'Mark floor-tested' })).not.toBeInTheDocument();
+  });
+
+  it('a mark whose answer was lost after it landed is read again, not reported as unchanged', async () => {
+    global.fetch = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+      markAnswerAfterCommit: () => jsonResponse({ error: 'upstream timeout' }, false, 500),
+    }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    const detail = await openReference();
+    fireEvent.click(within(detail).getByRole('button', { name: 'Mark floor-tested' }));
+
+    // The server's re-read shows the mark landed: Promote is offered and the
+    // page does not claim nothing changed.
+    expect(await within(detail).findByRole('button', { name: 'Promote' })).toBeEnabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('upstream timeout');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Nothing was changed');
     expect(within(detail).queryByRole('button', { name: 'Mark floor-tested' })).not.toBeInTheDocument();
   });
 

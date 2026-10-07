@@ -163,6 +163,13 @@ describe('what it refuses', () => {
     expect(mockMark).not.toHaveBeenCalled();
   });
 
+  test('refuses a note longer than 1000 characters', async () => {
+    const res = await POST(request({ reference_drill_id: REFERENCE_ID, note: 'x'.repeat(1001) }));
+
+    expect(res.status).toBe(400);
+    expect(mockMark).not.toHaveBeenCalled();
+  });
+
   test('refuses a note that is not text', async () => {
     const res = await POST(request({ reference_drill_id: REFERENCE_ID, note: 42 }));
 
