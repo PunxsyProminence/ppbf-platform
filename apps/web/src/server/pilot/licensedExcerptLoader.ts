@@ -40,7 +40,14 @@ import path from 'node:path';
 
 import { assertImportActor, type ImportActor } from './contentImport/actor';
 import { query, withPoolClient } from './db';
-import { createShadowLibraryChunk, createShadowLibraryDocument } from './shadowLibrary';
+import {
+  createShadowLibraryChunk,
+  createShadowLibraryDocument,
+  HELD_EXCERPT_BUDGET_SQL,
+  isExcerptBudgeted,
+  MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE,
+  MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE,
+} from './shadowLibrary';
 
 export const EXCERPT_FILE_FORMAT = 'ppbf-licensed-excerpts/1';
 export const CONFIRM_PHRASE = 'LOAD EXCERPTS';
@@ -428,6 +435,45 @@ export async function buildLoadPlan(input: {
     const storedOrdinals = new Set(stored.map((chunk) => chunk.ordinal));
     plan.createOrdinals = excerpts.map((excerpt) => excerpt.ordinal).filter((ordinal) => !storedOrdinals.has(ordinal));
     plan.status = plan.createOrdinals.length === 0 ? 'complete' : 'resume';
+  }
+
+  // EXCERPT BUDGET (CL-C2). createShadowLibraryChunk refuses the excerpt that
+  // would take a source that is not ppbf_owned or open_licence past its
+  // budget, and the apply writes one excerpt at a time -- so without this
+  // check an over-budget file would load its first excerpts and then fail at
+  // the same point on every rerun. The plan adds what the source already holds
+  // to everything this run would write to it, across files, and blocks every
+  // file of a source that would go over, before any write.
+  const bySource = new Map<string, FilePlan[]>();
+  for (const plan of files) {
+    if (!plan.sourceId || !plan.sourceRights || !isExcerptBudgeted(plan.sourceRights)) continue;
+    if (plan.createOrdinals.length === 0 || plan.status === 'invalid' || plan.status === 'conflict') continue;
+    bySource.set(plan.sourceId, [...(bySource.get(plan.sourceId) ?? []), plan]);
+  }
+  for (const [sourceId, sourcePlans] of bySource) {
+    const [held] = await query<{ chunk_count: number; character_count: number }>(
+      HELD_EXCERPT_BUDGET_SQL,
+      [sourceId, input.organizationId],
+    );
+    let chunkCount = held?.chunk_count ?? 0;
+    let characterCount = held?.character_count ?? 0;
+    for (const plan of sourcePlans) {
+      const file = input.files.find((candidate) => candidate.name === plan.name) as ParsedExcerptFile;
+      for (const ordinal of plan.createOrdinals) {
+        chunkCount += 1;
+        characterCount += Array.from(file.content.excerpts[ordinal].text.trim()).length;
+      }
+    }
+    if (chunkCount > MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE || characterCount > MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE) {
+      for (const plan of sourcePlans) {
+        plan.status = 'invalid';
+        plan.problems.push(
+          `source ${sourceId} would hold ${chunkCount} excerpts and ${characterCount} characters after this run; `
+          + `a source that is not ppbf_owned or open_licence may hold at most ${MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE} `
+          + `and ${MAX_EXCERPT_CHARACTERS_PER_NON_OWNED_SOURCE}`,
+        );
+      }
+    }
   }
 
   const blocked = files.some((file) => file.status === 'invalid' || file.status === 'conflict');
