@@ -9,6 +9,8 @@
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+
 import ResearchQAChatPage from './page';
 
 // The Library is gated now (it was reachable signed-out). The note tests below
@@ -108,6 +110,38 @@ test('an empty note produces no confirmation at all', async () => {
   expect(screen.queryByText(/stays in this browser session only/i)).toBeNull();
 });
 
+// Release 11 walk-through: a signed-in parent saw a "SHADOW (Admin)" link in
+// the Library's navigation. /admin/shadow is for administrators and the
+// platform owner, so anyone else was offered a door that bounces them.
+describe('the SHADOW (Admin) link', () => {
+  afterEach(() => {
+    act(() => clearRoleSession());
+  });
+
+  test.each(['parent', 'athlete', 'coach', 'volunteer', 'staff'] as const)('is not offered to a %s', async (role) => {
+    createPersistentRoleSession(role);
+    await renderPage();
+
+    expect(screen.queryByRole('link', { name: 'SHADOW (Admin)' })).toBeNull();
+    // The rest of the navigation is untouched.
+    expect(screen.getByRole('link', { name: 'Research Intake' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Evidence Review' })).toBeTruthy();
+  });
+
+  test('is not offered before the session is known', async () => {
+    clearRoleSession();
+    await renderPage();
+
+    expect(screen.queryByRole('link', { name: 'SHADOW (Admin)' })).toBeNull();
+  });
+
+  test.each(['admin', 'platform_owner'] as const)('is still offered to a %s', async (role) => {
+    createPersistentRoleSession(role);
+    await renderPage();
+
+    expect(screen.getByRole('link', { name: 'SHADOW (Admin)' }).getAttribute('href')).toBe('/admin/shadow');
+  });
+});
 
 // The guard. /research/chat shipped with no gate: an unauthenticated visitor
 // got the whole Library surface -- transcript, ask box and note box -- even

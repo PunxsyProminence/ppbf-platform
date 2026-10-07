@@ -137,6 +137,37 @@ test('a viewer refused by the sources probe gets no Answer-a-Gap panel', async (
   expect(screen.getByRole('button', { name: 'Save Requirement' })).toBeTruthy();
 });
 
+// Release 11 walk-through: a signed-in parent was shown the "Operational
+// research requirements" form and its Save Requirement button. The requirements
+// POST refuses everyone but coaches and organization admins, so the form is
+// offered only to them. Their list stays: "Family reads, staff closes"
+// (OD-2026-10-06-010).
+test.each(['parent', 'athlete', 'volunteer', 'staff'])('a %s is not offered the Save Requirement form', async (role) => {
+  global.fetch = mockFetch({ curator: false, role });
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.queryByRole('button', { name: 'Save Requirement' })).toBeNull();
+  expect(screen.queryByPlaceholderText('Research requirement')).toBeNull();
+  // Reading is untouched; only staff get the close control.
+  expect(screen.getByRole('heading', { name: 'Operational Research Requirements' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Mark Resolved' })).toBeNull();
+});
+
+test.each(['coach', 'organization_admin', 'admin'])('a %s is still offered the Save Requirement form', async (role) => {
+  global.fetch = mockFetch({ curator: false, role });
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.getByRole('button', { name: 'Save Requirement' })).toBeTruthy();
+});
+
 test('a curator files the link with provenance and is told review decides, not the upload', async () => {
   const capture = { posts: [] as unknown[] };
   global.fetch = mockFetch({ curator: true, capture });
