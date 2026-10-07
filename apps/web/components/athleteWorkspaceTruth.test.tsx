@@ -29,7 +29,7 @@ type Call = { url: string; method: string; body: Record<string, unknown> };
 let calls: Call[] = [];
 let identity: 'ok' | 'fails' = 'ok';
 let identityReads = 0;
-let chatAnswer: { ok: boolean; body: Record<string, unknown> } = { ok: true, body: {} };
+let chatAnswer: { ok: boolean; body: Record<string, unknown>; unreadable?: boolean } = { ok: true, body: {} };
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as unknown as Response;
@@ -61,7 +61,12 @@ beforeEach(() => {
       if (identity === 'fails') throw new Error('identity offline');
       return jsonResponse({ authenticated: true, athlete_id: 'ath_test' });
     }
-    if (url.includes('/api/pilot/athlete/chat')) return jsonResponse(chatAnswer.body, chatAnswer.ok);
+    if (url.includes('/api/pilot/athlete/chat')) {
+      if (chatAnswer.unreadable) {
+        return { ok: true, status: 200, json: async () => { throw new SyntaxError('not json'); } } as unknown as Response;
+      }
+      return jsonResponse(chatAnswer.body, chatAnswer.ok);
+    }
     if (url.includes('/api/pilot/athlete/check-in')) {
       return jsonResponse({ today: { check_in_id: 'ci_test' }, recent: [] });
     }
@@ -183,6 +188,19 @@ describe('SHADOW-01: "Saved" is said only when the server stored the exchange', 
     chatAnswer = { ok: true, body: { success: true, state: 'filtered', conversationId: 'conv_1', messageId: 'msg_1' } };
     await ask();
     expect(await screen.findByText(SAVED)).toBeTruthy();
+  });
+
+  test('a queued answer is still a stored question', async () => {
+    chatAnswer = { ok: true, body: { success: true, state: 'queued', conversationId: 'conv_1', messageId: 'msg_t' } };
+    await ask();
+    expect(await screen.findByText(SAVED)).toBeTruthy();
+  });
+
+  test('a 200 whose body cannot be read is not claimed as saved', async () => {
+    chatAnswer = { ok: true, body: {}, unreadable: true };
+    await ask();
+    expect(await screen.findByText(NOT_SAVED)).toBeTruthy();
+    expect(screen.queryByText(SAVED)).toBeNull();
   });
 
   test('a degraded 200 (provider down, nothing stored) says it was not saved and keeps the draft', async () => {
