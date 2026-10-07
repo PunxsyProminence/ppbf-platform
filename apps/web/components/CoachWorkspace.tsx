@@ -1476,7 +1476,7 @@ export default function CoachWorkspace() {
             },
           );
         } catch {
-          setShowOnWallError('Network error -- the TV switch was not changed on the server.');
+          setShowOnWallError('Network error -- could not confirm the TV switch. Reload to see its real state.');
           return;
         }
         const payload = (await response.json().catch(() => ({}))) as {
@@ -3267,7 +3267,7 @@ export default function CoachWorkspace() {
                       </div>
                       {/* The Show on TV switch, the same one the live screen
                           carries. Off by default on every run. The honest line
-                          below goes in the slice that makes the TV read it. */}
+                          below is removed in the slice that makes the TV read it. */}
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
                         {liveRun.show_on_wall ? (
                           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>

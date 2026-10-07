@@ -141,6 +141,33 @@ test('the badge is the server\'s answer, not the tap: a refused switch stays off
   expect(screen.queryByText('ON THE TV')).toBeNull();
 });
 
+test('the badge is the server answer even on success: asked for true, told false, shows NOT ON THE TV', async () => {
+  await renderWorkspace({
+    liveRunGet: () => jsonResponse({ run: liveRunRow() }),
+    runPatch: () => jsonResponse({ run: liveRunRow({ show_on_wall: false }) }),
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+
+  // The request completes; the component must take the server's value, not the tap's.
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Show on TV' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
+  expect(screen.queryByText('ON THE TV')).toBeNull();
+});
+
+test('a network failure says the state is unconfirmed and leaves the badge alone', async () => {
+  const fetchMock = await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
+  fetchMock.mockImplementationOnce(async () => {
+    throw new Error('offline');
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeNull());
+  expect(screen.getByRole('alert').textContent).toMatch(/could not confirm/i);
+  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
+});
+
 test('a run the server says is no longer live is re-read, not left showing a stale switch', async () => {
   let reads = 0;
   await renderWorkspace({

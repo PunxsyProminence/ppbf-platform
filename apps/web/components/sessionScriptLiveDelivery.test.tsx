@@ -337,6 +337,20 @@ describe('the Show on TV switch', () => {
     expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
   });
 
+  it('the badge is the server answer even on success: asked for true, told false, stays NOT ON THE TV', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+    });
+
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: true }]);
+    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+    expect(screen.queryByText('ON THE TV')).toBeNull();
+  });
+
   it('a refused switch leaves the shown state as it was and says why', async () => {
     await renderLive(liveRun(), {
       patch: () => jsonResponse({ error: 'SOMETHING_ELSE' }, false, 422),
