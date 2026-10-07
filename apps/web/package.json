@@ -212,6 +212,7 @@
     "test:migrations:calibration-body-point-rules": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBodyPointRules.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-body-points-module": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBodyPointsModule.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-events-freeze-old-parent": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationEventsFreezeOldParent.pg.test.ts --testTimeout=180000",
+    "test:migrations:calibration-event-in-place-edit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationEventInPlaceEdit.pg.test.ts --testTimeout=180000",
     "test:migrations:org-quotes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/orgQuotes.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-mental-skills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMentalSkills.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-injuries": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteInjuries.pg.test.ts --testTimeout=180000",
