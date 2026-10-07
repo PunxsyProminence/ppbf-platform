@@ -350,7 +350,34 @@ person's own words) are deleted in the same transaction (in the cleanup job, the
 per-person savepoint), as are a purged guardian's; both purge paths count them as
 `shadow_memory_corrections_deleted`. Until the purge they stay behind the account, read only on
 that account's own behalf (its export), so unreadable once the account is marked deleted. Pinned by
-`shadowMemoryCorrectionPurge.pg.test.ts`. A playback
+`shadowMemoryCorrectionPurge.pg.test.ts`. The rest of the person's SHADOW data follows the
+owner's ruling (Jason 2026-10-06: "delete any thing that personally Identifys the person but we
+keep data that [makes] the Ai and ML better"), on both purge paths, for a purged athlete's login
+and a purged guardian: SHADOW's memory of the person (`pilot.shadow_user_profiles`), their
+queued jobs, rate-limit buckets and feature-unlock snapshots are deleted (counted as
+`shadow_profiles_deleted`, `shadow_jobs_deleted`, `shadow_rate_limit_buckets_deleted`,
+`shadow_unlock_snapshots_deleted`), and a purged athlete's id leaves every other profile's list
+of athletes discussed (`shadow_profile_mentions_cleared`). The chat log SHADOW's metrics
+aggregate (`pilot.shadow_chat_audit`) keeps its rows de-identified: one random `anon_<uuid>`
+token per person, stored nowhere else, replaces their login and athlete id on every turn keyed
+to them; their own typed words are emptied and SHADOW's replies kept (Q1, "Delete theirs, keep
+AI replies"); a coach's turn about them keeps the coach and the text with the person's known
+names scrubbed to `[name]` (2026-10-07, "Scrub the child's name, keep"): full name, ring name,
+login email and linked guardians' names, whole and part by part (split on spaces, hyphens,
+apostrophes, periods, `@`), case-insensitively, on word boundaries. A purged guardian's names
+also leave the turns about each child they were still linked to, because a guardian is purged a
+year before the child and the child's purge can no longer learn the name. **The method's
+limits:** only turns keyed to the person (their login, or `athlete_id` = their record) are
+touched, so a turn that names them but is keyed to nobody or to another athlete keeps what it
+says; a nickname never recorded, a misspelling, a plural or a description is not caught; a
+common word that is also a name part ("Will") is scrubbed everywhere on those turns; people
+purged before this existed are not revisited; the token can still be matched to the retired
+login through its chat sessions until those are de-identified too. A person with no usable name
+on record cannot be scrubbed, so the turns of or about them are deleted
+(`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
+`shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by
+`shadowDeidentifySource.test.ts`. Chat sessions, messages, evidence, feedback and the review
+queue are not yet de-identified at the purge (planned, needs a migration). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.
