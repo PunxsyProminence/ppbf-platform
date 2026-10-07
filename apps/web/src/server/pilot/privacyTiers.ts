@@ -437,6 +437,28 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s sparring limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'athlete_minor_limits.value_number': {
+    tier: 'organization',
+    enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
+    note:
+      'A coach-set limit for one child (OD-2026-10-06-024 ruling 2): heat minutes per session or the '
+      + 'most body weight they may cut, as a percentage. Staff only: an active coach or admin membership '
+      + 'here AND assertActorCanAccessAthlete for that athlete, run with the membership role; athletes, '
+      + 'guardians, board and platform_owner are refused. Whether the athlete or family should see their '
+      + 'own limits is not decided, so nothing shows it to them.',
+  },
+  'athlete_minor_limits.value_text': {
+    tier: 'organization',
+    enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
+    note: 'The supervision a coach requires for one child, in the coach\'s words; same staff-only gate.',
+  },
+  'athlete_minor_limits.note': {
+    tier: 'organization',
+    enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
+    note:
+      'Free text a coach typed beside a child\'s limit; it may carry the reason, which can be '
+      + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
+  },
   'athlete_pathway_minor_allowances.reason': {
     tier: 'organization',
     enforcedBy: ['adultPathway.ts#assertPathwayAccess'],
@@ -506,6 +528,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.training_holds',
   'pilot.athlete_injuries',
   'pilot.athlete_contact_caps',
+  // A coach's heat, weight-cut and supervision limits for one child.
+  'pilot.athlete_minor_limits',
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
