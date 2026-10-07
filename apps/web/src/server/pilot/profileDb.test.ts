@@ -12,7 +12,7 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne } from './db';
-import { getAccountProfile, releasePhoto } from './profileDb';
+import { getAccountProfile, getSubjectIdentity, releasePhoto } from './profileDb';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -26,6 +26,18 @@ test('profile reads select photo_uploaded_at::text -- the exact-identity form eq
 
   const [sql] = mockQueryOne.mock.calls[0];
   expect(String(sql)).toContain('photo_uploaded_at::text');
+});
+
+// The behaviour itself (a deleted athlete, and a deleted login, come back as
+// nobody) runs against real Postgres in athleteSelfPathsDeletion.pg.test.ts;
+// this pins the read's shape so a mocked-db refactor cannot drop the mark.
+test('getSubjectIdentity reads the account through accountNotDeletedSql, so a deleted person is nobody', async () => {
+  await expect(getSubjectIdentity('org-1', 'acct-1')).resolves.toBeNull();
+
+  const [sql, params] = mockQueryOne.mock.calls[0];
+  expect(String(sql)).toContain('deleted_account.deleted_at is not null');
+  expect(String(sql)).toContain('deleted_athlete.deleted_at is not null');
+  expect(params).toEqual(['org-1', 'acct-1']);
 });
 
 describe('releasePhoto compare-and-swap composition', () => {

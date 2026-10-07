@@ -102,6 +102,8 @@ import { GET as videoListGET } from '@/app/api/pilot/video/list/route';
 import { checkIn } from './athleteCheckIns';
 import type { PilotPrincipal } from './auth';
 import { requirePrincipal } from './http';
+import { resolveActorDisplayName } from './onePercentClub';
+import { getSubjectIdentity } from './profileDb';
 
 jest.setTimeout(180_000);
 
@@ -505,5 +507,66 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
       athlete_id: LIVE_ATHLETE,
     }));
     expect((await snapshot(LIVE_ATHLETE)).nominations).toBe('1');
+  });
+});
+
+// The two display-name reads that read no deletion mark (ACTIVE_WORK, the
+// athlete-self deletion lane's reviewer): getSubjectIdentity (profileDb.ts),
+// which names a person on the fight card, the portrait queue, a training
+// hold's placer and the video-compliance queue; and resolveActorDisplayName
+// (onePercentClub.ts), which names whoever nominated or voted. Each is called
+// below exactly as its callers call it. The deleted athlete here is the
+// harder case: only the athlete row is marked, the login was left open, so a
+// read that filtered the login alone would still fall through to the staff
+// branch and print the account id.
+describe('display-name reads: a deleted person is named by neither', () => {
+  const LIVE_ADMIN = 'acct-admin-asp';
+  const DELETED_ADMIN = 'acct-admin-asp-gone';
+
+  beforeAll(async () => {
+    for (const [accountId, email] of [[LIVE_ADMIN, 'pat.admin@example.org'], [DELETED_ADMIN, 'gone.admin@example.org']]) {
+      await activeClient!.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email)
+         values ($1, 'organization_admin', $2, 'microsoft', $3)`,
+        [accountId, ORG_ID, email],
+      );
+    }
+    // What deleteAccount writes to the login (dataDeletion.ts).
+    await activeClient!.query(
+      `update pilot.accounts set deleted_at = now(), active_flag = false, updated_at = now() where account_id = $1`,
+      [DELETED_ADMIN],
+    );
+  });
+
+  test('getSubjectIdentity: live control, the athlete by name and the admin by email stem', async () => {
+    await expect(getSubjectIdentity(ORG_ID, `acct-${LIVE_ATHLETE}`)).resolves.toEqual(
+      expect.objectContaining({ fullName: 'Deleted Or Not', athleteId: LIVE_ATHLETE }),
+    );
+    await expect(getSubjectIdentity(ORG_ID, LIVE_ADMIN)).resolves.toEqual(
+      expect.objectContaining({ fullName: 'Pat Admin', athleteId: null }),
+    );
+  });
+
+  test('getSubjectIdentity: the deleted athlete (login left open) and the deleted login are nobody', async () => {
+    await expect(getSubjectIdentity(ORG_ID, `acct-${DELETED_ATHLETE}`)).resolves.toBeNull();
+    await expect(getSubjectIdentity(ORG_ID, DELETED_ADMIN)).resolves.toBeNull();
+  });
+
+  test('resolveActorDisplayName: live control, the athlete by name and the admin by email stem', async () => {
+    await expect(resolveActorDisplayName({
+      organizationId: ORG_ID, accountId: `acct-${LIVE_ATHLETE}`, role: 'athlete', selfAthleteId: LIVE_ATHLETE,
+    })).resolves.toBe('Deleted Or Not');
+    await expect(resolveActorDisplayName({
+      organizationId: ORG_ID, accountId: LIVE_ADMIN, role: 'organization_admin',
+    })).resolves.toBe('Admin Pat Admin');
+  });
+
+  test('resolveActorDisplayName: the deleted athlete and the deleted login get the phrases a nameless record already got', async () => {
+    await expect(resolveActorDisplayName({
+      organizationId: ORG_ID, accountId: `acct-${DELETED_ATHLETE}`, role: 'athlete', selfAthleteId: DELETED_ATHLETE,
+    })).resolves.toBe('An athlete');
+    await expect(resolveActorDisplayName({
+      organizationId: ORG_ID, accountId: DELETED_ADMIN, role: 'organization_admin',
+    })).resolves.toBe('An administrator');
   });
 });
