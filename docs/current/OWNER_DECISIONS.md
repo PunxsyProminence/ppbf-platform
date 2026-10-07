@@ -164,6 +164,150 @@ and should not try to.
 
 ---
 
+## OD-2026-10-06-023 -- AI data at deletion, the five details: delete their own messages and keep AI replies; flagged chats kept until retention ends; rewrite Azure backups; anonymous receipt; keep coaching records de-identified, delete medical and body mass
+
+**Provenance: PRIMARY.** Jason's answers to two AskUserQuestion tool uses in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). Question and option text is as stored. Timestamps UTC (evening of 2026-10-06 Eastern). New; refines OD-2026-10-06-012 and edits no earlier entry.
+
+Before asking, overwatch said (line 4842, as written): "You ruled: delete anything that identifies the person, keep what improves the AI. The plan needs 5 details settled." (The five are the questions in the G1 plan, `Documents\PPBF-overwatch\lane-inbox\SHADOW-DEIDENTIFY-plan-2026-10-06.md`.)
+
+**(a) Tool use `toolu_017Y2eeyYLSWrKsv2mSrhmYX`** (asked line 4843, 2026-10-07T03:15:49.509Z; answered line 4851, 2026-10-07T03:17:08.077Z):
+- "AI data at deletion Q1: the person's OWN typed messages in AI chats. (Plain: when someone is deleted, do we delete what they typed to the AI but keep the AI's answers, which help improve it?)" Options: "Delete theirs, keep AI replies (Recommended)" -- "Their words go; the AI's de-identified answers stay for improvement."; "Scrub names, keep both"; "Delete the whole chat". Jason: *"Delete theirs, keep AI replies (Recommended)"*
+- "AI data at deletion Q2: chats flagged into a safeguarding review. (Plain: if a chat was flagged as a safety concern, keep it identified until the normal retention period ends, then de-identify?)" Options: "Keep until retention ends (Recommended)" -- "Safety records stay intact for the retention window, then are de-identified."; "De-identify at deletion". Jason: *"Keep until retention ends (Recommended)"*
+- "AI data at deletion Q3: the daily backups of AI chat logs already stored in Azure (they include names/ids and messages). (Plain: those copies sit outside the app's deletion today. Rewrite them to remove the person, or stop making them?)" Options: "Rewrite to remove the person (Recommended)" -- "Deletion also scrubs the person from existing backup copies."; "Stop backups, let old ones expire". Jason: *"Rewrite to remove the person (Recommended)"*
+
+**(b) Tool use `toolu_011CSAFyW6RFjaJp6MK7RDYW`** (asked line 4855, 2026-10-07T03:17:20.739Z; answered line 4856, 2026-10-07T03:18:35.352Z):
+- "AI data at deletion Q4: what record proves a deletion request was carried out? (Plain: after deleting someone, we keep a receipt. Should it hold only an anonymous code and the date, nothing that identifies them?)" Options: "Anonymous code + date (Recommended)" -- "Proof the deletion happened, with nothing identifying."; "Name + date". Jason: *"Anonymous code + date (Recommended)"*
+- "AI data at deletion Q5: athlete records that hang off the deleted person (film-study proposals, decision outcomes, medical, body mass). (Plain: keep the coaching records de-identified for AI learning, but delete medical and body-mass data outright?)" Options: "Keep coaching, delete medical (Recommended)" -- "Film/decision records de-identified and kept; medical + body mass deleted."; "Delete all of it"; "De-identify all, keep". Jason: *"Keep coaching, delete medical (Recommended)"*
+
+**Rulings (at the final purge of a person's data):**
+1. The person's own typed messages in AI chats are deleted; the AI's replies are kept, de-identified (Q1).
+2. A chat flagged into a safeguarding review stays intact until its normal retention period ends, then is de-identified (Q2).
+3. Deletion also removes the person from the existing daily AI chat-log backups in Azure; the backups are rewritten, not just left to expire (Q3).
+4. The record that proves a deletion was carried out holds only an anonymous code and the date (Q4).
+5. Coaching records linked to the person (film-study proposals, decision outcomes) are kept de-identified; medical and body-mass records are deleted (Q5).
+
+**Not ruled here:** the same tool use (b) also asked about the excerpt limit numbers (Jason typed *"explain"*) and whether to start three lanes now (Jason typed *"not yet"*); neither is a ruling.
+
+---
+
+## OD-2026-10-06-022 -- Gym TV access: each TV is paired once with a code from the coach dashboard ("Pair with code (Recommended)")
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_017Y2eeyYLSWrKsv2mSrhmYX` in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 4843, 2026-10-07T03:15:49.509Z; answered line 4851, 2026-10-07T03:17:08.077Z). Read by script (records pass, 2026-10-06, third batch). New; settles the item OD-2026-10-06-014 lists as "Not ruled" and edits no earlier entry.
+
+Before asking, overwatch explained (line 4842, as written): "A coach starts a session and turns on "Show on TV". The TV then shows the current drill, a countdown and what's next, with bells and wood-knocks for rounds. Each TV is linked to the gym once with a short code from the coach dashboard, and any coach can send their session to any gym TV."
+
+Asked (as written): "Gym TV access method: pair each TV once with a 6-character code from the coach dashboard (TV gets its own key; Paired TVs list with Disconnect), rather than a coach signing in on the TV? (Plain: pairing means no one's login sits on the TV, so a kid with the remote can't open athlete records, and it never logs out mid-class.)" Options: "Pair with code (Recommended)" -- "One-time code per TV; stays linked until disconnected."; "Coach signs in on TV" -- "Coach account open on the TV; logs out after 8-24 h."
+
+Jason: *"Pair with code (Recommended)"*
+
+**Ruling: a gym TV gets access by being paired once with a 6-character code from the coach dashboard; the TV holds its own key, no person's login sits on it, and the coach dashboard lists paired TVs with a Disconnect control.** With OD-2026-10-06-014 item 4, a paired TV stays paired until disconnected.
+
+---
+
+## OD-2026-10-06-021 -- Release 12: "staging OK" and "ran all 3"; production deployed from main `411333a2`; "bothe work" (Admin@ and ppbf@ Microsoft sign-in after the identity binding)
+
+**Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). New; edits no earlier entry.
+
+Overwatch staged Release 12 after merging #1300 (OD-2026-10-06-017) and asked (line 4703, 2026-10-07T02:54:29.638Z; numbered lines run together, middle shortened with "..."): "**Your check:** ... 1. **Sign in with Microsoft as ppbf@** (and Admin@ if you can). It should work normally; this is the first sign-in that links each account to its fixed Microsoft ID. 2. **Quick look:** the intake review queue and the event feed. Reply "staging OK" and I'll give you the production commands."
+
+Jason, line 4707, 2026-10-07T02:59:17.945Z: *"staging OK"*
+
+Overwatch then handed him three production steps (line 4712: the read-only SHADOW queue check, `apply-migrations` for production, and `deploy-production` with `confirm_sha=411333a2cc838b084b0b61c348711821bc74f61e` and `release_digest=sha256:1ebbc0dc81ae5cf0c0cc24321d0bcc20ddd25bace22cf0bd883b1f05410cc136`). Jason, line 4782, 2026-10-07T03:05:24.133Z: *"ran all 3"*
+
+After the deploy, overwatch asked him to sign in on www.punxsyprominence.org as Admin@ and then as ppbf@, so each account links to its Microsoft ID (line 4821). Jason, line 4825, 2026-10-07T03:14:48.840Z: *"bothe work"*
+
+**Ruling: Release 12 went to production from main `411333a2cc838b084b0b61c348711821bc74f61e` on Jason's "staging OK" and "ran all 3"; the GitHub approval clicks for production were his (below). His "bothe work" confirms that Admin@ and ppbf@ both sign in with Microsoft on production after the identity binding (CL-A19, #1298) shipped.**
+
+**Facts (OBSERVED by this records lane, 2026-10-06, read-only `gh run view` and `gh api .../approvals`):**
+- Staging migrations: run 37562007583, `apply-migrations`, success, head `411333a2`, 2026-10-07T02:26:44Z to 02:28:16Z.
+- Staging deploy: run 37562954709, `deploy-staging`, success, head `411333a2`, 02:38:39Z to 02:44:53Z (overwatch reported revision `app-ppbf-staging--0000259`; not re-checked here).
+- Production migrations: run 37564672718, `apply-migrations`, success, head `411333a2`, 03:00:08Z to 03:02:14Z; approved for environment `production` by GitHub user `PunxsyProminence`.
+- Production deploy: run 37564932522, `deploy-production`, success, head `411333a2`, 03:03:13Z to 03:06:05Z; approved for `production` by `PunxsyProminence`.
+- Production revision `app-ppbf-production--0000170`, running the staging image `sha256:1ebbc0dc81ae5cf0c0cc24321d0bcc20ddd25bace22cf0bd883b1f05410cc136`, www 200, production SHADOW queue empty before deploy (contract 14 to 15): REPORTED by overwatch (lines 4799, 4821; handoff file). Not re-checked here: `az` calls from this PC failed with a connection reset.
+- Contents (REPORTED by overwatch, handoff file): #1296 #1297 #1298 #1299 #1300. #1294 was closed as superseded by #1298.
+
+---
+
+## OD-2026-10-06-020 -- "how bout we clean house first", then "i want scratch polders gon": remove old worktree folders, scratch folders included
+
+**Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). New; edits no earlier entry.
+
+Jason, line 4585, 2026-10-07T02:35:57.338Z: *"how bout we clean house first"* (sent instead of answering overwatch's route-survey question, OD-2026-10-06-019).
+
+Overwatch reported a first cleanup pass and asked about six scratch worktree folders (line 4703, as written): "those 6 scratch folders hold commits found nowhere else, so I didn't guess. Say if you want them gone too."
+
+Jason, line 4716, 2026-10-07T02:59:52.517Z: *"i want scratch polders gon"*
+
+**Ruling: before new work, clean old worktree folders off this PC; the scratch worktree folders go too, even though their commits existed only on this PC.** What was kept is in the note below.
+
+**Note (OBSERVED by overwatch and reported by it as a correction, line 4778; not a ruling):** the first pass reported "I removed **72 old worktree folders**". That was false: `git worktree remove` had only unregistered them and left the folders on disk, and the step that unlinks their junctions to the shared install had failed without an error (cmd quoting). Nothing was lost. The second pass removed 7 scratch worktrees, unlinked 146 junctions and symlinks first and confirmed none were left, deleted 72 leftover folders (including the unregistered `rehome-mutant` and `rint02-baseline`), and left the shared install unchanged. Kept: main, the shared install, the two open drafts (#1287, #1292), the gym TV work in progress, #1036's branch, `look-board` (unsaved edits), and two local-only branches (`_main-before`, `drills-cabinet`). The lesson is in the handoff file ("HOUSEKEEPING CORRECTION"). These counts are overwatch's report; this lane did not re-count the folders.
+
+---
+
+## OD-2026-10-06-019 -- Route survey: Jason proposed "a mass of small model agenegts out under a fable" (multi-agent opt-in for the route list)
+
+**Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). New; edits no earlier entry.
+
+Jason, line 4576, 2026-10-07T02:34:53.944Z: *"what if we send a mass of small model agenegts out under a fable"* (after overwatch's plan to check the ~300 routes with automated who-can-call-what tests, OD-2026-10-06-018).
+
+Overwatch answered (line 4581, as written) that it fits step 1, the route list ("One Fable lead splits the routes into batches of about 20 and hands each batch to a small agent (Haiku or Sonnet)"), and not the code fixes ("Fixes stay at 2–3 lanes at a time"); that the small agents' output "is a draft list, not proof"; and asked "(A) Yes (recommended)" / "(B) No", adding "The multi-agent setup needs your explicit OK. "A" counts as that."
+
+Jason did not choose A or B: line 4585, *"how bout we clean house first"*. Later overwatch asked whether to start three lanes now, the third being "route-access tests, step 1 (Fable lead + small helper agents to list all ~300 routes)"; Jason typed *"not yet"* (line 4856, 2026-10-07T03:18:35.352Z) and then *"put thos in chips"* (queued, line 4857, 2026-10-07T03:17:20.862Z). Overwatch put up chip 5, "Route survey step 1: a Fable lead with small helper agents lists all ~300 routes" (line 4897).
+
+**Ruling: the multi-agent approach for the route survey is Jason's own proposal in his own words, so a lane started from that chip may run a Fable lead with small helper agents for step 1 (the route list) only.** Code fixes stay at a few lanes at a time, as overwatch stated. When it starts is not ruled ("not yet", then the chip); starting it is Jason's click.
+
+---
+
+## OD-2026-10-06-018 -- Route access checks cover one gym: "right now we are just focusining on one gy"
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 4538, 2026-10-07T02:32:13.790Z). Read by script (records pass, 2026-10-06, third batch). New; edits no earlier entry.
+
+Jason asked (line 4522): *"whats the best way to check the 300 rotes"*. Overwatch recommended an automated test that signs in as every role and calls every route, with checks including "**No cross-gym leaks:** gym A never sees gym B's data", on a test bench "seeded with two gyms" (line 4527).
+
+Jason: *"right now we are just focusining on one gy"*
+
+**Ruling: for now the app is built and checked for one gym; the route access tests drop the gym-versus-gym checks and seed one gym.** Overwatch's restated plan (line 4543): who is calling (coach, org admin, parent, athlete, volunteer, board member, platform owner), coach reach, parents see only their own child, restricted fields, and missing access rules; "If a second gym ever joins, adding the gym-vs-gym checks is one more step on top of this." This narrows the test plan; it does not remove existing organization separation in the code.
+
+---
+
+## OD-2026-10-06-017 -- "yes merge 1300 then stage": merge the CI time-limit PR, then stage Release 12
+
+**Provenance: PRIMARY.** Jason's typed message in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`, line 4464, 2026-10-07T02:26:23.835Z). Read by script (records pass, 2026-10-06, third batch). New; edits no earlier entry.
+
+Asked (line 4460, 2026-10-07T01:27:07.301Z; bullet lines run together): "**Your call:** - **#1300:** may I merge it now? Yes or no. - **After that:** I stage Release 12."
+
+Jason: *"yes merge 1300 then stage"*
+
+**Ruling: overwatch merges #1300 (CI `validate` time limit raised to 60 minutes) and then stages Release 12.** OBSERVED (`gh pr view 1300`): merged 2026-10-07T02:26:34Z as `411333a2cc838b084b0b61c348711821bc74f61e`, the commit Release 12 shipped from (OD-2026-10-06-021).
+
+---
+
+## OD-2026-10-06-016 -- CL-A19 recovery: who may reset a person's Microsoft link ("A: admin + platform + key (Recommended)"), and the reset signs out their devices ("Yes, sign out devices (Recommended)")
+
+**Provenance: PRIMARY.** Jason's answers to two AskUserQuestion tool uses in the "Overwatch lane" session (transcript `a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script (records pass, 2026-10-06, third batch). Question and option text is as stored. New; edits no earlier entry.
+
+Context: #1294 bound each Microsoft sign-in to the account's fixed Microsoft ID and was held from production until a recovery for locked-out accounts existed (handoff file). The recovery lane asked overwatch who may reset the link before building (line 3720).
+
+**(a) Tool use `toolu_01Ghpdy7SDX29oJnXTet4GZF`** (asked line 3723, 2026-10-06T20:13:46.334Z; answered line 3736, 2026-10-06T21:14:05.628Z):
+
+"Microsoft sign-in recovery: who may 'reset' a person's Microsoft link so their next sign-in re-links? (A) the gym admin (ppbf@) for its own staff, the platform admin (Admin@) for anyone, and the existing emergency setup key fixes Admin@ itself; (B) same, but fixing Admin@ itself needs you to approve a GitHub run; (C) only Admin@ can reset anyone. All are logged; nobody can reset themselves. (Plain: if someone's Microsoft account gets re-created and they're locked out, who can unlock them?)" Options: "A: admin + platform + key (Recommended)" -- "ppbf@ unlocks its own coaches/staff; Admin@ unlocks anyone; the existing setup key unlocks Admin@. Fastest recovery, no new workflow."; "B: same, Admin@ via your approval"; "C: Admin@ only".
+
+Jason: *"A: admin + platform + key (Recommended)"*
+
+**(b) Tool use `toolu_01JqiG6eaYiPcnSTfXJw868g`** (asked line 3854, 2026-10-06T21:39:51.344Z; answered line 3856, 2026-10-06T21:59:47.254Z):
+
+"When an admin resets someone's Microsoft link (the lockout recovery you approved), should it also sign out every device still logged in as that person? (Plain: the reset is used when an account's Microsoft identity changed, e.g. it was re-created. Signing out old devices makes sure only the new, re-linked sign-in is used.)" Options: "Yes, sign out devices (Recommended)" -- "Reset also ends that person's live sessions; they sign in again once and re-link. About 3 lines."; "No" -- "Old sessions keep working until they expire (up to 24 h)."
+
+Jason: *"Yes, sign out devices (Recommended)"*
+
+**Rulings:**
+1. The organization admin (ppbf@) may reset the Microsoft link of its own coaches and staff; the platform admin (Admin@) may reset anyone's; the existing emergency setup key resets Admin@'s own link. Every reset is logged, and nobody can reset their own.
+2. A reset also ends all of that person's live sessions, so they sign in once more and re-link.
+
+Built in #1298 (OBSERVED: merged 2026-10-06T23:45:50Z as `335c8f1e`, "Audited Microsoft identity unbind: recovery for #1294 (CL-A19)"), which shipped in Release 12 (OD-2026-10-06-021). Overwatch reported (handoff file) that #1294 was closed as superseded by #1298, and that the sign-out also applies to #1294's clear on a login email change (lane report, line 4127).
+
+---
+
 ## OD-2026-10-06-015 -- Release 11: "looks good lets deploy" and "staging OK"; production deployed from main `42b6025d`
 
 **Provenance: PRIMARY.** Jason's typed messages in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`). Read by script from that transcript (records pass, 2026-10-06, second batch). Timestamps as stored (UTC). New; edits no earlier entry.
