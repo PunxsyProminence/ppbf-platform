@@ -428,9 +428,9 @@ interface ResolvedEventFields {
   shape: ResolvedEventShape;
 }
 
-/** Every check an event's own fields must pass before the set is consulted:
- * the vocabularies, the span, and the class-conditional shape. One function
- * so recording and editing in place cannot come to accept different rows. */
+/** The checks an event's own fields must pass whatever set it is in: the
+ * vocabularies, the span, and the class-conditional shape. One function so
+ * recording and editing in place cannot come to accept different rows. */
 function resolveEventFields(input: RecordAnnotationEventInput): ResolvedEventFields {
   const eventClass = requireVocabulary(EVENT_CLASSES, input.eventClass, 'event_class');
   const visibility = requireVocabulary(VISIBILITIES, input.visibility, 'visibility');
@@ -591,12 +591,11 @@ function assertVersionEventRules(ontologyVersion: string, fields: ResolvedEventF
  * The database's refusals of an event update, in the shapes jsonError maps.
  * `moved` is the frozen facts this edit tried to change, in plain words, so
  * the refusal can name them. Anything not recognised is rethrown as it came.
+ * (A submitted set is not here: updateAnnotationEvent checks it under a lock
+ * the submission has to wait for.)
  */
 function translateEventUpdateRefusal(error: unknown, moved: string[]): never {
   const refusal = (error ?? {}) as { message?: unknown; code?: unknown; constraint?: unknown };
-  if (refusal.message === 'CALIBRATION_ANNOTATION_SET_SUBMITTED') {
-    throw new AnnotationSetSubmittedError();
-  }
   for (const field of ['counter', 'defends'] as const) {
     if (refusal.code === '23503' && refusal.constraint === `pilot_calibration_events_${field}_fk`) {
       throw new Error(`Missing ${field}_against_event_id: no such event in this annotation set`);
@@ -611,7 +610,8 @@ function translateEventUpdateRefusal(error: unknown, moved: string[]): never {
   if (refusal.message === 'CALIBRATION_EVENT_HAS_BODY_MOMENTS' || spanHeld) {
     throw new EventHoldsBodyMarksError(
       `Conflict: this event has marked moments, so its ${moved.join(', ')} cannot change. `
-      + 'Remove its marked moments first, then edit it.',
+      // The actor is also held by a stance type, which this refusal came before.
+      + `Remove its marked moments${moved.includes('actor') ? ' and its stance type' : ''} first, then edit it.`,
     );
   }
   if (refusal.message === 'CALIBRATION_EVENT_HAS_STANCE_LABEL') {
@@ -646,7 +646,8 @@ export interface UpdateAnnotationEventInput
  *
  * The event row is locked before it is read, so two edits of one event merge
  * one after the other instead of the second writing the first one's fields
- * back.
+ * back; and the set's status is read under that lock, so an edit and a
+ * submission cannot both go through.
  */
 export async function updateAnnotationEvent(
   input: UpdateAnnotationEventInput,
@@ -665,12 +666,27 @@ export async function updateAnnotationEvent(
   const moved: string[] = [];
   return withTransaction(async (client) => {
     const where = 'where organization_id = $1 and annotation_set_id = $2 and event_id = $3';
+    // NO KEY UPDATE: enough to make a second edit, and a moment or stance
+    // type being added, wait for this one; it does not block another event's
+    // relationship from pointing here.
     const current = (await client.query<AnnotationEventRow>(
-      `select ${EVENT_COLUMNS} from pilot.calibration_annotation_events ${where} for update`,
+      `select ${EVENT_COLUMNS} from pilot.calibration_annotation_events ${where} for no key update`,
       [input.organizationId, annotationSetId, eventId],
     )).rows[0];
     if (!current) {
       throw new Error('Not found: no such event in this annotation set');
+    }
+    // The set is read again, FOR SHARE, so a submission either committed
+    // before this line (refused here, as submitted) or waits for this edit.
+    // Without it an edit racing a submission is refused by whichever trigger
+    // fires first, which under marks says "remove the marks".
+    const set = (await client.query<{ status: string }>(
+      `select status from pilot.calibration_annotation_sets
+        where organization_id = $1 and annotation_set_id = $2 for share`,
+      [input.organizationId, annotationSetId],
+    )).rows[0];
+    if (set?.status !== 'in_progress') {
+      throw new AnnotationSetSubmittedError();
     }
 
     // Sent over stored, field by field. The cast below asserts nothing:
@@ -681,7 +697,13 @@ export async function updateAnnotationEvent(
       merged[field] = sent === undefined ? (current as unknown as Record<string, unknown>)[column] : sent;
     }
     const fields = resolveEventFields(merged as unknown as RecordAnnotationEventInput);
-    const actorTrack = requireNonEmpty(merged.actorTrack, 'actor_track');
+    // An actor that was not sent is written back exactly as stored.
+    const actorTrack = input.actorTrack === undefined
+      ? current.actor_track
+      : requireNonEmpty(input.actorTrack, 'actor_track');
+    if (merged.opponentTrack !== null && typeof merged.opponentTrack !== 'string') {
+      throw new Error('Missing opponent_track: expected text, or nothing');
+    }
     if (fields.startMs < current.clip_start_ms || fields.endMs > current.clip_end_ms) {
       throw new Error('Missing start_ms: the event falls outside the clip it belongs to');
     }

@@ -85,6 +85,8 @@ interface AnnotationEventBody {
   defends_against_event_id?: unknown;
 }
 
+const asSent = (value: unknown): unknown => value;
+
 /**
  * Every event field on the wire: the module field it becomes, and what a
  * blank means for it. One table for recording and for editing in place, so
@@ -92,7 +94,6 @@ interface AnnotationEventBody {
  * event's id, set, clip or organization) is never read from the body as a
  * field.
  */
-const asSent = (value: unknown): unknown => value;
 const EVENT_FIELDS: Record<string, [keyof UpdateAnnotationEventInput, (value: unknown) => unknown]> = {
   event_class: ['eventClass', asSent],
   actor_track: ['actorTrack', asSent],
@@ -191,10 +192,10 @@ export async function POST(request: NextRequest) {
 /**
  * Corrects an event the annotator has not yet submitted.
  *
- * REPLACE, NOT UPDATE, AND THE ORDER IS THE POINT. There is no update path in
- * annotations.ts -- the module offers record and delete -- so an edit is the
- * new row written FIRST and the old one removed second. That order is chosen
- * for its failure direction:
+ * REPLACE, NOT UPDATE, AND THE ORDER IS THE POINT. This method is built from
+ * the module's record and delete (the in-place edit is PATCH, below), so an
+ * edit here is the new row written FIRST and the old one removed second. That
+ * order is chosen for its failure direction:
  *
  *   * new-then-old: a rejected correction (bad label, span outside the clip)
  *     leaves the original untouched, and the annotator retries.
@@ -298,9 +299,11 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireAnnotator(principal);
 
-    const body = (await request.json().catch(() => ({}))) as AnnotationEventBody;
-    const annotationSetId = body.annotation_set_id?.trim() ?? '';
-    const eventId = body.event_id?.trim() ?? '';
+    // An id that is not a string, or a body that is not an object, is a 400
+    // naming the id, not a crash.
+    const body = ((await request.json().catch(() => null)) ?? {}) as AnnotationEventBody;
+    const annotationSetId = typeof body.annotation_set_id === 'string' ? body.annotation_set_id.trim() : '';
+    const eventId = typeof body.event_id === 'string' ? body.event_id.trim() : '';
     if (!annotationSetId) {
       throw new Error('Missing annotation_set_id');
     }

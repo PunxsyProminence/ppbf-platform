@@ -237,6 +237,84 @@ describe('recording an event', () => {
     expect(input.stance).toBeNull();
   });
 
+  test('every field of a punch reaches the module, each under its own name, and nothing else does', async () => {
+    openSetReady();
+    mockRecord.mockResolvedValueOnce(storedEvent());
+
+    await POST(post({
+      ...PUNCH_BODY,
+      peak_ms: 12_650,
+      contact_zone: 'glove',
+      combination_group: 'combo-1',
+      sequence_order: '2',
+      counter_against_event_id: 'evt-0',
+      organization_id: 'org-2',
+    }));
+
+    expect(mockRecord.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: expect.any(String),
+      eventClass: 'punch',
+      actorTrack: 'red corner',
+      opponentTrack: 'blue corner',
+      startMs: 12_400,
+      endMs: 12_760,
+      contactMs: 12_600,
+      peakMs: 12_650,
+      physicalHand: 'left',
+      handRole: 'lead',
+      stance: 'orthodox',
+      punchType: 'lead_straight',
+      targetZone: 'head',
+      contactResult: 'glancing_target_contact',
+      contactZone: 'glove',
+      defenseType: null,
+      visibility: 'partially_occluded',
+      certainty: 'probable',
+      combinationGroup: 'combo-1',
+      sequenceOrder: 2,
+      counterAgainstEventId: 'evt-0',
+      defendsAgainstEventId: null,
+    });
+  });
+
+  test('every field of a defence reaches the module the same way, on a replace too', async () => {
+    openSetReady();
+    mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
+    mockRecord.mockResolvedValueOnce(storedEvent({ event_class: 'defense' }));
+    mockDelete.mockResolvedValueOnce(true);
+
+    await PUT(put({ ...DEFENSE_BODY, event_id: 'evt-1', defends_against_event_id: 'evt-0' }));
+
+    expect(mockRecord.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: expect.any(String),
+      eventClass: 'defense',
+      actorTrack: 'blue corner',
+      opponentTrack: null,
+      startMs: 12_500,
+      endMs: 12_900,
+      contactMs: null,
+      peakMs: null,
+      physicalHand: 'right',
+      handRole: 'rear',
+      stance: null,
+      punchType: null,
+      targetZone: null,
+      contactResult: null,
+      contactZone: null,
+      defenseType: 'parry',
+      visibility: 'clear',
+      certainty: 'clear',
+      combinationGroup: null,
+      sequenceOrder: null,
+      counterAgainstEventId: null,
+      defendsAgainstEventId: 'evt-0',
+    });
+  });
+
   test('an unselected optional control never becomes an ontology value', async () => {
     openSetReady();
     mockRecord.mockResolvedValueOnce(storedEvent());
@@ -625,7 +703,11 @@ describe('editing an event in place', () => {
   test.each([
     [{ event_id: 'evt-1', certainty: 'clear' }, 'annotation_set_id'],
     [{ annotation_set_id: 'set-1', certainty: 'clear' }, 'event_id'],
-  ])('a missing id is a 400 naming it', async (body, field) => {
+    [{ annotation_set_id: 5, event_id: 'evt-1', certainty: 'clear' }, 'annotation_set_id'],
+    [{ annotation_set_id: 'set-1', event_id: { id: 'evt-1' }, certainty: 'clear' }, 'event_id'],
+    [null, 'annotation_set_id'],
+    ['certainty', 'annotation_set_id'],
+  ])('a missing or malformed id, or a body that is not an object, is a 400 naming the id', async (body, field) => {
     openSetReady();
 
     const response = await PATCH(patch(body));

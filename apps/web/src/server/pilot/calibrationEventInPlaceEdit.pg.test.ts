@@ -54,6 +54,7 @@ const PREREQUISITE_SQL = [
   'pilot_slice_postgres_calibration_annotations_migration.sql',
   'pilot_slice_postgres_calibration_body_points_migration.sql',
   'pilot_slice_postgres_calibration_body_point_rules_migration.sql',
+  'pilot_slice_postgres_calibration_events_freeze_old_parent_migration.sql',
 ];
 
 const ORG_ID = 'org-edit';
@@ -523,7 +524,7 @@ describe('an edit in place keeps the event and everything marked on it', () => {
     expect(await marksOf(set, eventId)).toEqual(before);
   });
 
-  test('a relationship another event points at the edited one survives, which a replace would have cleared', async () => {
+  test('a relationship another event points at the edited one survives', async () => {
     const set = await newSet();
     const eventId = await punch(set);
     const counter = await punch(set, {
@@ -585,7 +586,8 @@ describe('while an event holds marks, what a moment was checked against cannot c
 
     await expect(edit(set, eventId, changes)).rejects.toMatchObject({
       ...HAS_MARKS,
-      message: `Conflict: this event has marked moments, so its ${named} cannot change. Remove its marked moments first, then edit it.`,
+      message: `Conflict: this event has marked moments, so its ${named} cannot change. `
+        + `Remove its marked moments${named === 'actor' ? ' and its stance type' : ''} first, then edit it.`,
     });
     expect(await eventRow(set, eventId)).toEqual(rowBefore);
     expect(await marksOf(set, eventId)).toEqual(before);
@@ -704,6 +706,7 @@ describe('an edited event is held to every rule a new one is', () => {
     ['a required field cleared', { certainty: null as never }, /^Missing certainty/],
     ['a required punch field cleared', { targetZone: null }, /^Missing target_zone/],
     ['an actor cleared', { actorTrack: '  ' }, /^Missing actor_track/],
+    ['an opponent that is not text', { opponentTrack: { a: 1 } as never }, /^Missing opponent_track/],
     ['a defence type on a punch', { defenseType: 'slip' }, /^Missing defense_type/],
     ['a class change that keeps the punch fields', { eventClass: 'defense', defenseType: 'slip' }, /^Missing punch_type: a defense cannot carry it/],
     ['an end before the start', { endMs: EV_START }, /^Missing end_ms/],
@@ -756,6 +759,16 @@ describe('a relationship stays inside the set', () => {
     expect((await edit(set, eventId, { defendsAgainstEventId: thrown })).defends_against_event_id).toBe(thrown);
   });
 
+  test('a bad relationship sent with a moved start is reported as the relationship, never as marks the event does not have', async () => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    const rowBefore = await eventRow(set, eventId);
+
+    await expect(edit(set, eventId, { startMs: EV_START - 100, counterAgainstEventId: crypto.randomUUID() }))
+      .rejects.toThrow('Missing counter_against_event_id: no such event in this annotation set');
+    expect(await eventRow(set, eventId)).toEqual(rowBefore);
+  });
+
   test('the database holds the same line on a direct write', async () => {
     const set = await newSet();
     const eventId = await punch(set);
@@ -787,6 +800,32 @@ describe('the gates', () => {
         where organization_id = $1 and event_id = $2`,
       [set.orgId, eventId],
     )).rejects.toThrow('CALIBRATION_ANNOTATION_SET_SUBMITTED');
+  });
+
+  test('an edit racing a submission is refused as submitted, not told to remove marks it can no longer remove', async () => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    await completeEvent(set, eventId);
+    const rowBefore = await eventRow(set, eventId);
+    // The submission holds the set and has not committed when the edit starts.
+    await db.query('begin');
+    try {
+      await db.query(
+        `update pilot.calibration_annotation_sets set status = 'submitted', submitted_at = now()
+          where organization_id = $1 and annotation_set_id = $2`,
+        [set.orgId, set.setId],
+      );
+      let settled = false;
+      const pending = edit(set, eventId, { contactMs: EV_CONTACT + 10 }).finally(() => { settled = true; });
+      pending.catch(() => {});
+      await sleep(500);
+      expect(settled).toBe(false);
+      await db.query('commit');
+      await expect(pending).rejects.toMatchObject({ name: 'AnnotationSetSubmittedError' });
+    } finally {
+      await db.query('rollback').catch(() => {});
+    }
+    expect(await eventRow(set, eventId)).toEqual(rowBefore);
   });
 
   test('nothing is reachable across an organization, even through a set with the same id', async () => {
