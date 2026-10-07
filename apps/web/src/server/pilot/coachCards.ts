@@ -11,6 +11,7 @@ import { ValidationError } from './errors';
 import {
   ASSIGNMENT_DRILL_JOIN,
   ASSIGNMENT_FIELDS,
+  assertNewAssignmentMeetsCueRule,
   assignableDrillPredicate,
   drillNotAssignable,
   requireAssignableDrillId,
@@ -118,6 +119,7 @@ export async function issueCoachCard(params: {
   assignedByAccountId: string;
 } & CardContent): Promise<DrillAssignment> {
   const drillId = requireAssignableDrillId(params.drillId);
+  await assertNewAssignmentMeetsCueRule(params.organizationId, drillId);
 
   // Resolve and snapshot in one statement, as assignDrill does: an unknown,
   // cross-org, reference-library or retired drill_id selects nothing and so
@@ -235,6 +237,8 @@ export async function issueCoachCardToProgram(params: {
   if (!drill) {
     throw drillNotAssignable();
   }
+  // A group card is a new assignment for every member: the cue rule applies once.
+  await assertNewAssignmentMeetsCueRule(organizationId, drillId);
 
   const members = await query<{ athlete_id: string; athlete_name: string }>(
     `select m.athlete_id, a.full_name as athlete_name
