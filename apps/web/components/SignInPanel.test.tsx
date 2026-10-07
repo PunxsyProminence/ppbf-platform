@@ -405,6 +405,102 @@ describe('email, with a password or with a link', () => {
     expect(container.textContent).not.toMatch(/not recognised/i);
   });
 
+  /**
+   * ONLY A 202 IS "SENT". The route answers 202 for every address, with or
+   * without an account; anything else is the gym not answering (a rate-limit
+   * store it could not reach, a proxy page, a deploy mid-restart). The panel
+   * used to show every one of those as "on its way" -- a link that never
+   * existed, to a parent who then waited for it.
+   */
+  describe('the Email Link door says "sent" only for the answer that means sent', () => {
+    const NOT_SENT = /No link was sent: the gym could not be reached/i;
+    const ON_ITS_WAY = /a sign-in link is on its way/i;
+
+    async function askForLink(container: HTMLElement) {
+      await act(async () => { type(container, '#magic-link-email', 'parent@example.com'); });
+      await act(async () => { fireEvent.click(linkButton()); });
+    }
+
+    test('202: on its way, and no refusal', async () => {
+      const { container } = await renderPanel();
+      answer({ [LINK]: { status: 202, body: { ok: true } } });
+
+      await askForLink(container);
+
+      expect(container.textContent).toMatch(ON_ITS_WAY);
+      expect(container.textContent).not.toMatch(NOT_SENT);
+      expect(container.querySelector('[data-refusal-stamp]')).toBeNull();
+    });
+
+    test.each([200, 204, 404, 500, 502, 503])(
+      'a %i is not "sent": it says so plainly, as a refusal and not a wait',
+      async (status) => {
+        const { container } = await renderPanel();
+        answer({ [LINK]: { status, body: { ok: true } } });
+
+        await askForLink(container);
+
+        expect(container.textContent).not.toMatch(ON_ITS_WAY);
+        expect(container.textContent).toMatch(NOT_SENT);
+        expect(container.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('cannot_be_done');
+      },
+    );
+
+    test('the request never leaving the browser is not "sent" either', async () => {
+      const { container } = await renderPanel();
+      global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+        if (new URL(String(input), 'http://localhost').pathname === LINK) throw new TypeError('Failed to fetch');
+        return { ok: false, status: 401, json: async () => ({}) };
+      }) as unknown as typeof fetch;
+
+      await askForLink(container);
+
+      expect(container.textContent).not.toMatch(ON_ITS_WAY);
+      expect(container.textContent).toMatch(NOT_SENT);
+    });
+
+    test('a 429 is still a wait, and a 400 still names the address', async () => {
+      const { container } = await renderPanel();
+      answer({ [LINK]: { status: 429, body: {} } });
+      await askForLink(container);
+      expect(container.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('wait');
+      expect(container.textContent).not.toMatch(ON_ITS_WAY);
+
+      answer({ [LINK]: { status: 400, body: {} } });
+      await act(async () => { fireEvent.click(linkButton()); });
+      expect(container.textContent).toContain('That does not look like an email address');
+      expect(container.textContent).not.toMatch(ON_ITS_WAY);
+    });
+
+    test('a later request that fails takes down the "on its way" from an earlier one that succeeded', async () => {
+      const { container } = await renderPanel();
+      answer({ [LINK]: { status: 202, body: { ok: true } } });
+      await askForLink(container);
+      expect(container.textContent).toMatch(ON_ITS_WAY);
+
+      answer({ [LINK]: { status: 503, body: {} } });
+      await act(async () => { fireEvent.click(linkButton()); });
+
+      expect(container.textContent).not.toMatch(ON_ITS_WAY);
+      expect(container.textContent).toMatch(NOT_SENT);
+    });
+
+    test('the words reveal nothing about whether the address has an account', async () => {
+      // The same status gets the same sentence whatever was typed: the panel
+      // has no other input to go by, and must not pretend to.
+      const seen = new Set<string>();
+      for (const email of ['known@example.com', 'nobody-at-all@example.com']) {
+        const { container, unmount } = await renderPanel();
+        answer({ [LINK]: { status: 500, body: { error: 'Internal server error' } } });
+        await act(async () => { type(container, '#magic-link-email', email); });
+        await act(async () => { fireEvent.click(linkButton()); });
+        seen.add(container.querySelector('[data-refusal-stamp]')!.textContent ?? '');
+        unmount();
+      }
+      expect(seen.size).toBe(1);
+    });
+  });
+
   test('a password attempt takes down the "link is on its way" notice from before it', async () => {
     const { container } = await renderPanel();
     answer({ [LINK]: { status: 202, body: { ok: true } }, [LOGIN]: { status: 401, body: {} } });

@@ -3,6 +3,7 @@ import {
   consumeMagicLink,
   issueMagicLink,
   MAGIC_LINK_LIFETIME_MS,
+  magicLinkOrigin,
   normalizeEmail,
   type ConsumeDependencies,
   type MagicLinkAccount,
@@ -28,7 +29,11 @@ function account(overrides: Partial<MagicLinkAccount> = {}): MagicLinkAccount {
 interface Recorded {
   stored: Array<{ tokenHash: string; accountId: string; sentToEmail: string; expiresAt: Date }>;
   sent: Array<{ to: string; subject: string; body: string }>;
-  invalidated: string[];
+  invalidated: Array<{ accountId: string; keepTokenHash: string }>;
+  discarded: string[];
+  lookedUp: string[];
+  /** Every dependency call, in the order it happened. */
+  order: string[];
 }
 
 function issueDeps(
@@ -37,14 +42,24 @@ function issueDeps(
   overrides: Partial<MagicLinkDependencies> = {},
 ): MagicLinkDependencies {
   return {
-    findAccountByEmail: async () => found,
-    invalidateLiveTokens: async (id) => {
-      recorded.invalidated.push(id);
+    findAccountByEmail: async (email) => {
+      recorded.lookedUp.push(email);
+      return found;
+    },
+    invalidateLiveTokens: async (accountId, keepTokenHash) => {
+      recorded.order.push('invalidate');
+      recorded.invalidated.push({ accountId, keepTokenHash });
+    },
+    discardToken: async (tokenHash) => {
+      recorded.order.push('discard');
+      recorded.discarded.push(tokenHash);
     },
     storeToken: async (row) => {
+      recorded.order.push('store');
       recorded.stored.push(row);
     },
     sendMail: async (m) => {
+      recorded.order.push('send');
       recorded.sent.push(m);
     },
     now: () => NOW,
@@ -55,7 +70,7 @@ function issueDeps(
 }
 
 function fresh(): Recorded {
-  return { stored: [], sent: [], invalidated: [] };
+  return { stored: [], sent: [], invalidated: [], discarded: [], lookedUp: [], order: [] };
 }
 
 function tokenRow(overrides: Record<string, unknown> = {}) {
@@ -115,12 +130,136 @@ describe('issuing a magic link', () => {
     expect(recorded.stored[0].expiresAt.getTime() - NOW.getTime()).toBe(MAGIC_LINK_LIFETIME_MS);
   });
 
-  test('kills outstanding links before issuing a new one', async () => {
-    const recorded = fresh();
-    await issueMagicLink('coach@example.com', issueDeps(account(), recorded));
-    // Otherwise a parent who clicks "send again" three times leaves three
-    // working credentials sitting in an inbox.
-    expect(recorded.invalidated).toEqual(['coach-1']);
+  /**
+   * THE OLD LINK SURVIVES A FAILED SEND. The first version invalidated the
+   * account's live links, then stored, then sent: a send that failed left the
+   * person with no working link at all, including the one still unread in
+   * their inbox. Now the other links are retired only once the new one has
+   * actually gone out.
+   */
+  describe('the link already in the inbox outlives a failed send', () => {
+    test('a sent link retires every OTHER live link, after the send and not before', async () => {
+      const recorded = fresh();
+      await issueMagicLink('coach@example.com', issueDeps(account(), recorded));
+
+      // Otherwise a parent who clicks "send again" three times leaves three
+      // working credentials sitting in an inbox.
+      expect(recorded.invalidated).toEqual([
+        { accountId: 'coach-1', keepTokenHash: hashToken('test-token-value') },
+      ]);
+      expect(recorded.order).toEqual(['store', 'send', 'invalidate']);
+      expect(recorded.discarded).toEqual([]);
+    });
+
+    test('a failed send leaves the other links alone, discards the unsent one, and still throws', async () => {
+      const recorded = fresh();
+      await expect(
+        issueMagicLink(
+          'coach@example.com',
+          issueDeps(account(), recorded, {
+            sendMail: async () => {
+              recorded.order.push('send');
+              throw new Error('GRAPH_SEND_FAILED');
+            },
+          }),
+        ),
+      ).rejects.toThrow('GRAPH_SEND_FAILED');
+
+      expect(recorded.invalidated).toEqual([]);
+      expect(recorded.discarded).toEqual([hashToken('test-token-value')]);
+      expect(recorded.order).toEqual(['store', 'send', 'discard']);
+    });
+
+    test('a discard that itself fails does not hide the send fault', async () => {
+      const recorded = fresh();
+      await expect(
+        issueMagicLink(
+          'coach@example.com',
+          issueDeps(account(), recorded, {
+            sendMail: async () => {
+              throw new Error('GRAPH_SEND_FAILED');
+            },
+            discardToken: async () => {
+              throw new Error('DB_DOWN');
+            },
+          }),
+        ),
+      ).rejects.toThrow('GRAPH_SEND_FAILED');
+      expect(recorded.invalidated).toEqual([]);
+    });
+  });
+
+  /**
+   * THE SITE ADDRESS IS CHECKED, NOT JUST PRESENT. Production once held
+   * `punxsyprominence.org` -- no scheme, a host with no address record -- and
+   * every emailed link was dead while every send reported success.
+   */
+  describe('refuses to build a link on a site address it cannot vouch for', () => {
+    const bad: Array<[string, string]> = [
+      ['no scheme', 'punxsyprominence.org'],
+      ['no scheme, with www', 'www.punxsyprominence.org'],
+      ['empty', ''],
+      ['whitespace only', '   '],
+      ['a path only', '/auth/link'],
+      ['http on a public host', 'http://www.punxsyprominence.org'],
+      ['http on a host that merely starts with localhost', 'http://localhost.example.org'],
+      ['http on a non-loopback 127-lookalike', 'http://127.0.0.1.example.org'],
+      ['a path after the host', 'https://www.punxsyprominence.org/app'],
+      ['a query string', 'https://www.punxsyprominence.org/?x=1'],
+      ['a fragment', 'https://www.punxsyprominence.org/#top'],
+      ['credentials in the address', 'https://user:pw@www.punxsyprominence.org'],
+      ['a scheme that is not http(s)', 'ftp://www.punxsyprominence.org'],
+      ['a scheme with no host', 'https://'],
+      ['a mailto', 'mailto:admin@punxsyprominence.org'],
+    ];
+
+    test.each(bad)('%s: looks nobody up, stores nothing, mails nothing, and throws', async (_label, appOrigin) => {
+      const recorded = fresh();
+      await expect(
+        issueMagicLink('coach@example.com', issueDeps(account(), recorded, { appOrigin })),
+      ).rejects.toThrow(/^INVALID_PPBF_APP_ORIGIN:/);
+
+      // Refused before the lookup, so the failure is the same for an address
+      // with an account and one without: no enumeration signal.
+      expect(recorded.lookedUp).toEqual([]);
+      expect(recorded.stored).toEqual([]);
+      expect(recorded.sent).toEqual([]);
+      expect(recorded.invalidated).toEqual([]);
+    });
+
+    test('the thrown message names the reason and never the value', async () => {
+      const recorded = fresh();
+      await expect(
+        issueMagicLink('coach@example.com', issueDeps(account(), recorded, {
+          appOrigin: 'http://secret-host.example.org',
+        })),
+      ).rejects.toThrow(/^INVALID_PPBF_APP_ORIGIN:http_not_loopback$/);
+    });
+
+    const good: Array<[string, string, string]> = [
+      ['the production address', 'https://www.punxsyprominence.org', 'https://www.punxsyprominence.org'],
+      ['a trailing slash', 'https://www.punxsyprominence.org/', 'https://www.punxsyprominence.org'],
+      ['surrounding whitespace', '  https://app.ppbf.test  ', 'https://app.ppbf.test'],
+      ['an https port', 'https://app.ppbf.test:8443', 'https://app.ppbf.test:8443'],
+      ['a development server on localhost', 'http://localhost:3000', 'http://localhost:3000'],
+      ['a development server on 127.0.0.1', 'http://127.0.0.1:3000', 'http://127.0.0.1:3000'],
+      ['a development server on ::1', 'http://[::1]:3000', 'http://[::1]:3000'],
+      ['https on localhost', 'https://localhost:3000', 'https://localhost:3000'],
+    ];
+
+    test.each(good)('%s: the link is built on it', async (_label, appOrigin, expectedOrigin) => {
+      const recorded = fresh();
+      await issueMagicLink('coach@example.com', issueDeps(account(), recorded, { appOrigin }));
+      expect(recorded.sent[0].body).toContain(`\n${expectedOrigin}/auth/link?token=test-token-value\n`);
+    });
+
+    test('magicLinkOrigin returns the bare origin and nothing else', () => {
+      expect(magicLinkOrigin('https://www.punxsyprominence.org/')).toBe('https://www.punxsyprominence.org');
+      expect(magicLinkOrigin('HTTPS://WWW.PunxsyProminence.org')).toBe('https://www.punxsyprominence.org');
+      expect(() => magicLinkOrigin('punxsyprominence.org')).toThrow('INVALID_PPBF_APP_ORIGIN:not_absolute_url');
+      expect(() => magicLinkOrigin('')).toThrow('INVALID_PPBF_APP_ORIGIN:empty');
+      expect(() => magicLinkOrigin('https://www.punxsyprominence.org//')).toThrow('INVALID_PPBF_APP_ORIGIN:has_path');
+    });
   });
 
   test('records the address as sent, not the account address', async () => {
@@ -150,6 +289,7 @@ describe('issuing a magic link', () => {
       ).resolves.toBeUndefined();
       expect(recorded.sent).toEqual([]);
       expect(recorded.stored).toEqual([]);
+      expect(recorded.invalidated).toEqual([]);
     });
   });
 

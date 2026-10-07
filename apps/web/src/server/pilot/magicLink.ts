@@ -43,8 +43,14 @@ export interface MagicLinkAccount extends AccountDeletionFlag {
 export interface MagicLinkDependencies {
   /** Looks up an account by email. Returns null when there is no such account. */
   findAccountByEmail: (email: string) => Promise<MagicLinkAccount | null>;
-  /** Invalidates every live token for an account. Called before issuing a new one. */
-  invalidateLiveTokens: (accountId: string) => Promise<void>;
+  /**
+   * Invalidates every live token for an account EXCEPT the one named. Called
+   * after the new link has been sent, so the link the person already holds
+   * outlives a send that fails (see issueMagicLink).
+   */
+  invalidateLiveTokens: (accountId: string, keepTokenHash: string) => Promise<void>;
+  /** Invalidates one token by hash: the new link, when its send failed. */
+  discardToken: (tokenHash: string) => Promise<void>;
   storeToken: (row: {
     tokenHash: string;
     accountId: string;
@@ -55,8 +61,60 @@ export interface MagicLinkDependencies {
   sendMail: (message: { to: string; subject: string; body: string }) => Promise<void>;
   now: () => Date;
   createToken: () => string;
-  /** Absolute base for the link, e.g. https://app.example.org */
+  /** Absolute base for the link, e.g. https://app.example.org -- see magicLinkOrigin. */
   appOrigin: string;
+}
+
+/**
+ * The site address a sign-in link may be built on, or a throw.
+ *
+ * On 2026-10-06 production's PPBF_APP_ORIGIN was `punxsyprominence.org`: no
+ * scheme, and a host with no address record. Every emailed link was dead,
+ * every send reported success, and nobody knew until a parent said so. The
+ * value had passed the only check there was, "not empty".
+ *
+ * So the shape is checked, not the presence: an absolute https URL with a
+ * host and nothing after it. `http:` is admitted only for the loopback hosts
+ * db.ts admits for a local Postgres (localhost, 127.0.0.0/8, ::1), which is
+ * where a development server runs and the only place the code allows it.
+ *
+ * The thrown message names the reason and never the value: it reaches logs.
+ */
+export function magicLinkOrigin(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error('INVALID_PPBF_APP_ORIGIN:empty');
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('INVALID_PPBF_APP_ORIGIN:not_absolute_url');
+  }
+
+  const host = url.hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  if (!host) throw new Error('INVALID_PPBF_APP_ORIGIN:no_host');
+
+  if (url.protocol === 'http:') {
+    if (!isLoopbackHost(host)) throw new Error('INVALID_PPBF_APP_ORIGIN:http_not_loopback');
+  } else if (url.protocol !== 'https:') {
+    throw new Error('INVALID_PPBF_APP_ORIGIN:not_https');
+  }
+
+  if (url.username || url.password) throw new Error('INVALID_PPBF_APP_ORIGIN:credentials');
+  if (url.search || url.hash) throw new Error('INVALID_PPBF_APP_ORIGIN:query_or_fragment');
+  // `new URL('https://x')` reports pathname '/', so the bare origin and a
+  // single trailing slash both pass; anything deeper is a path.
+  if (url.pathname !== '/') throw new Error('INVALID_PPBF_APP_ORIGIN:has_path');
+
+  return url.origin;
+}
+
+function isLoopbackHost(host: string): boolean {
+  if (host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1') return true;
+  const parts = host.split('.');
+  return parts.length === 4
+    && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+    && Number(parts[0]) === 127;
 }
 
 export interface ConsumeDependencies {
@@ -116,6 +174,11 @@ export async function issueMagicLink(
   rawEmail: string,
   dependencies: MagicLinkDependencies,
 ): Promise<void> {
+  // Checked before the lookup, so a bad site address fails for every
+  // address alike: nothing stored, nothing mailed, and no difference between
+  // an address with an account and one without.
+  const origin = magicLinkOrigin(dependencies.appOrigin);
+
   const email = normalizeEmail(rawEmail);
   const account = await dependencies.findAccountByEmail(email);
 
@@ -129,16 +192,12 @@ export async function issueMagicLink(
   if (requiredCredentialFor({ role: account.role }) !== 'magic_link') return;
   if (!account.login_email || normalizeEmail(account.login_email) !== email) return;
 
-  // Issuing a new link kills the old one. Otherwise a parent who requests three
-  // links because the first was slow leaves three working credentials in an
-  // inbox, and the two they never used stay valid for fifteen minutes.
-  await dependencies.invalidateLiveTokens(account.account_id);
-
   const token = dependencies.createToken();
+  const tokenHash = hashToken(token);
   const expiresAt = new Date(dependencies.now().getTime() + MAGIC_LINK_LIFETIME_MS);
 
   await dependencies.storeToken({
-    tokenHash: hashToken(token),
+    tokenHash,
     accountId: account.account_id,
     organizationId: account.organization_id,
     // The address as sent, not the account's current one. If the account email
@@ -148,21 +207,46 @@ export async function issueMagicLink(
     expiresAt,
   });
 
-  const link = `${dependencies.appOrigin.replace(/\/+$/, '')}/auth/link?token=${encodeURIComponent(token)}`;
+  const link = `${origin}/auth/link?token=${encodeURIComponent(token)}`;
 
-  await dependencies.sendMail({
-    to: email,
-    subject: 'Your PPBF sign-in link',
-    body: [
-      'Someone asked to sign in to Punxsy Prominence Boxing and Fitness with this address.',
-      '',
-      link,
-      '',
-      'The link works once and expires in 15 minutes.',
-      '',
-      'If this was not you, you can ignore this message. Nobody can sign in without the link above.',
-    ].join('\n'),
-  });
+  // THE OLD LINK OUTLIVES A FAILED SEND. This used to invalidate the account's
+  // live links first, then store, then send -- so a send that failed left the
+  // person with no working link at all, including the one still unread in
+  // their inbox, while the page told them a new one was coming.
+  //
+  // The rule now: store the new link; send it; only on a successful send
+  // invalidate every OTHER live link for the account. A failed send discards
+  // the new link (nobody ever received it) and leaves the old one untouched,
+  // then rethrows so the caller sees the fault.
+  //
+  // Two links are valid together only while the send is in flight. Should the
+  // process die between the send and the invalidation, both stay valid, each
+  // until its own fifteen-minute expiry and no longer: the expiry rule above
+  // is the ceiling, as it always was. Issuing still ends with one live link
+  // per account, so a parent who requests three links because the first was
+  // slow is not left with three working credentials in an inbox.
+  try {
+    await dependencies.sendMail({
+      to: email,
+      subject: 'Your PPBF sign-in link',
+      body: [
+        'Someone asked to sign in to Punxsy Prominence Boxing and Fitness with this address.',
+        '',
+        link,
+        '',
+        'The link works once and expires in 15 minutes.',
+        '',
+        'If this was not you, you can ignore this message. Nobody can sign in without the link above.',
+      ].join('\n'),
+    });
+  } catch (sendError) {
+    // Best effort: an unsent link is unreachable by anyone, so a failure here
+    // changes nothing about who can sign in. The send fault is the one to report.
+    await dependencies.discardToken(tokenHash).catch(() => undefined);
+    throw sendError;
+  }
+
+  await dependencies.invalidateLiveTokens(account.account_id, tokenHash);
 }
 
 /** Generates a token without issuing one. Exposed for callers that need the

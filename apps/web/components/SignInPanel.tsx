@@ -112,6 +112,14 @@ const UNKNOWN_AUTH_ERROR_REFUSAL: {
 };
 
 /**
+ * What the Email Link door says when the request did not get a 202: the
+ * link was not sent, and the reason is the gym, not the address. One string
+ * for the fetch failing and for every non-accepted status, because to the
+ * person at the form those are the same event.
+ */
+const MAGIC_LINK_NOT_SENT = 'No link was sent: the gym could not be reached. Try again in a moment.';
+
+/**
  * THE BELL -- the platform's one sign-in flow, in one place.
  *
  * Extracted from what used to be login/page.tsx's whole body so the popover
@@ -228,6 +236,9 @@ export default function SignInPanel({
     const email = magicLinkEmail.trim();
     setMagicLinkError('');
     setMagicLinkRateLimited(false);
+    // A notice from an earlier request must not survive a later one that
+    // fails: the words on the page describe THIS request.
+    setMagicLinkSent(false);
 
     if (!email) {
       setMagicLinkError('Enter your email address.');
@@ -253,13 +264,23 @@ export default function SignInPanel({
         return;
       }
 
-      // Anything else is treated as sent. The server answers 202 whether or
-      // not the address has an account, and the confirmation below says the
-      // same thing either way -- reporting a distinction the server refused to
-      // make would put the enumeration leak back in the client.
+      // Only the answer the route defines as "accepted" reads as sent. The
+      // server answers 202 whether or not the address has an account, and the
+      // confirmation below says the same thing either way -- reporting a
+      // distinction the server refused to make would put the enumeration leak
+      // back in the client. Anything else (a 500 from a rate-limit store that
+      // could not be reached, a 503, a proxy's page) is the gym not answering,
+      // and this used to show it as "on its way" -- a link that never existed.
+      // Those answers are the same for every address, so naming them reveals
+      // nothing the route does not.
+      if (response.status !== 202) {
+        setMagicLinkError(MAGIC_LINK_NOT_SENT);
+        return;
+      }
+
       setMagicLinkSent(true);
     } catch {
-      setMagicLinkError('Could not reach the gym right now. Try again in a moment.');
+      setMagicLinkError(MAGIC_LINK_NOT_SENT);
     } finally {
       setMagicLinkBusy(false);
     }
