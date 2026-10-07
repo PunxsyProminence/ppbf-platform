@@ -114,6 +114,10 @@ interface DrillAssignment {
   completion_percentage: number;
   status: string;
   created_at: string;
+  // Who assigned it, as a name (OD-2026-10-06-025 ruling 2). The server sends
+  // a family reader a name and never an account id; optional so a row from a
+  // server that predates the field renders without the line, not blank.
+  assigned_by_name?: string;
 }
 
 interface AssignmentCompletion {
@@ -752,6 +756,12 @@ export default function AthleteProgressionIntelligencePage() {
                               <p className="t-muted mt-[var(--s3)]">
                                 Assigned for:{' '}
                                 <span className="font-medium text-[color:var(--bone-200)]">{gap.gap_type.replaceAll('_', ' ')}</span>
+                              </p>
+                            )}
+                            {assignment.assigned_by_name && (
+                              <p className="t-muted mt-[var(--s2)]">
+                                Assigned by:{' '}
+                                <span className="font-medium text-[color:var(--bone-200)]">{assignment.assigned_by_name}</span>
                               </p>
                             )}
                             {/* Learning, kept apart from doing: this opens the

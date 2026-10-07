@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pilot/drills';
 import { ValidationError } from '@/src/server/pilot/errors';
 import {
@@ -8,6 +9,7 @@ import {
   getAthleteAssignments,
   getProgressionGapById,
   requireAssignableDrillId,
+  toFamilyAssignments,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
@@ -41,7 +43,21 @@ export async function GET(request: NextRequest) {
 
     const assignments = await getAthleteAssignments(principal.organizationId, athleteId, status || undefined);
 
-    return NextResponse.json({ items: assignments });
+    // WHO ASSIGNED IT (OD-2026-10-06-025 ruling 2). Staff get the row as it
+    // is, account id included. Everyone else who passes the gates above -- the
+    // athlete, a linked guardian, and any role later added to them -- gets the
+    // family projection: the coach's display name and no account id. Staff are
+    // the named case, so a widened gate fails toward the projection. Same
+    // split as the SHADOW events feed (#1299) and drill-instruction.
+    const isStaff = principal.role === 'coach' || principal.role === 'admin' || principal.role === 'organization_admin';
+    if (isStaff) {
+      return NextResponse.json({ items: assignments });
+    }
+
+    const items = await toFamilyAssignments(assignments, (accountId) =>
+      getCoachDisplayName(principal.organizationId, accountId),
+    );
+    return NextResponse.json({ items });
   } catch (error) {
     return jsonError(error);
   }

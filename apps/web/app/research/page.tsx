@@ -48,6 +48,14 @@ function mayOfferResolve(role: PilotSessionRole | null): boolean {
   return role === 'coach' || isOrganizationAdminSessionRole(role);
 }
 
+/* Filing one is staff work too: the requirements POST refuses everyone but
+   coaches and organization admins (isResearchStaff), so the form is not offered
+   to a parent, athlete, volunteer or staff seat. The list below it stays for
+   whoever the server lets read it. */
+function mayFileRequirement(role: PilotSessionRole | null): boolean {
+  return mayOfferResolve(role);
+}
+
 /* Law 3: a review state is a queue outcome -- glyph + uppercase label on the
    status ladder, never a bare lowercase word or colour alone. */
 const REVIEW_STATE_BADGES: Record<ShadowResearchItem['review_state'], { className: string; glyph: string; label: string }> = {
@@ -682,63 +690,65 @@ export default function ResearchIntakePage() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             Operational Research Requirements
           </h2>
-          <form onSubmit={handleCreateRequirement} className="space-y-[var(--s4)]">
-            <div className="grid gap-[var(--s4)] md:grid-cols-2">
+          {mayFileRequirement(session.role) && (
+            <form onSubmit={handleCreateRequirement} className="space-y-[var(--s4)]">
+              <div className="grid gap-[var(--s4)] md:grid-cols-2">
+                <label className="field">
+                  <span className="t-label">Source event name</span>
+                  <input
+                    value={requirementDraft.sourceEventName}
+                    onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
+                    className="input"
+                    placeholder="Source event name"
+                  />
+                </label>
+                <label className="field">
+                  <span className="t-label">Source entity type</span>
+                  <input
+                    value={requirementDraft.sourceEntityType}
+                    onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
+                    className="input"
+                    placeholder="Source entity type"
+                  />
+                </label>
+              </div>
               <label className="field">
-                <span className="t-label">Source event name</span>
+                <span className="t-label">Source entity id</span>
                 <input
-                  value={requirementDraft.sourceEventName}
-                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
+                  value={requirementDraft.sourceEntityId}
+                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
                   className="input"
-                  placeholder="Source event name"
+                  placeholder="Source entity id"
                 />
               </label>
               <label className="field">
-                <span className="t-label">Source entity type</span>
-                <input
-                  value={requirementDraft.sourceEntityType}
-                  onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                  className="input"
-                  placeholder="Source entity type"
+                <span className="t-label">Research requirement</span>
+                <textarea
+                  value={requirementDraft.researchRequirement}
+                  onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
+                  className="textarea h-[89px]"
+                  placeholder="Research requirement"
                 />
               </label>
-            </div>
-            <label className="field">
-              <span className="t-label">Source entity id</span>
-              <input
-                value={requirementDraft.sourceEntityId}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-                className="input"
-                placeholder="Source entity id"
-              />
-            </label>
-            <label className="field">
-              <span className="t-label">Research requirement</span>
-              <textarea
-                value={requirementDraft.researchRequirement}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-                className="textarea h-[89px]"
-                placeholder="Research requirement"
-              />
-            </label>
-            <label className="field">
-              <span className="t-label">Knowledge gap</span>
-              <textarea
-                value={requirementDraft.knowledgeGap}
-                onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-                className="textarea h-[55px]"
-                placeholder="Knowledge gap"
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-[var(--s4)]">
-              <button type="submit" className="btn">
-                Save Requirement
-              </button>
-              <p className="t-muted" role="status">
-                {submitMessage || 'Persist a requirement from evidence or a manual note.'}
-              </p>
-            </div>
-          </form>
+              <label className="field">
+                <span className="t-label">Knowledge gap</span>
+                <textarea
+                  value={requirementDraft.knowledgeGap}
+                  onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
+                  className="textarea h-[55px]"
+                  placeholder="Knowledge gap"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-[var(--s4)]">
+                <button type="submit" className="btn">
+                  Save Requirement
+                </button>
+                <p className="t-muted" role="status">
+                  {submitMessage || 'Persist a requirement from evidence or a manual note.'}
+                </p>
+              </div>
+            </form>
+          )}
           <div className="space-y-[var(--s3)]">
             {requirements.map((requirement) => (
               <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">

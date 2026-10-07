@@ -13,12 +13,26 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import ShadowReviewsPage from './page';
 
-const mockGateRoles: string[][] = [];
-jest.mock('@/components/RoleSessionGate', () => ({
+// The shell is the same one /admin/compliance-center and /admin/shadow use. It
+// is mocked down to a <main> that carries the room classes the real shell
+// emits (components/RoleStandaloneView.tsx: `room room--<room> min-h-screen`),
+// and it records the props this page hands it.
+const mockShellProps: { allowedRoles: string[]; room?: string; showShellHeader?: boolean }[] = [];
+jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children, allowedRoles }: { readonly children: ReactNode; readonly allowedRoles: string[] }) => {
-    mockGateRoles.push(allowedRoles);
-    return children;
+  default: ({
+    children,
+    allowedRoles,
+    room,
+    showShellHeader,
+  }: {
+    readonly children: ReactNode;
+    readonly allowedRoles: string[];
+    readonly room?: string;
+    readonly showShellHeader?: boolean;
+  }) => {
+    mockShellProps.push({ allowedRoles, room, showShellHeader });
+    return <main className={`room room--${room} min-h-screen`}>{children}</main>;
   },
 }));
 
@@ -56,14 +70,14 @@ afterEach(() => {
 
 test('the page is gated to organization admins; platform_owner is not admitted (OD-2026-10-05-024 ruling 3)', async () => {
   fetchMock.mockResolvedValueOnce(jsonResponse({ reviews: [] }));
-  mockGateRoles.length = 0;
+  mockShellProps.length = 0;
 
   render(<ShadowReviewsPage />);
 
-  await waitFor(() => expect(mockGateRoles.length).toBeGreaterThan(0));
-  for (const roles of mockGateRoles) {
-    expect(roles).toContain('admin');
-    expect(roles).not.toContain('platform_owner');
+  await waitFor(() => expect(mockShellProps.length).toBeGreaterThan(0));
+  for (const { allowedRoles } of mockShellProps) {
+    expect(allowedRoles).toContain('admin');
+    expect(allowedRoles).not.toContain('platform_owner');
   }
 });
 
@@ -314,4 +328,59 @@ test('an unreachable queue is reported as unreachable, not as an empty queue', a
 
   expect((await screen.findByRole('alert')).textContent).toContain('Could not reach the review queue.');
   expect(screen.queryByText(/Nothing waiting/)).toBeNull();
+});
+
+// STYLING PIN. This page shipped (#779) with class names no stylesheet defines
+// -- shadow-reviews, tabs, tab, queue, ticket, severity-critical, actions --
+// so the status tabs and action buttons rendered as run-together plain text
+// (found on production in the Release 11 walk-through). It now uses the design
+// system's own shell and components, the same ones /admin/athlete-consent and
+// /admin/compliance-center use. jsdom cannot render CSS, so this pins the
+// structure that carries the look: if someone reintroduces the made-up names
+// or drops the shared shell, this fails. It is not a visual check.
+test('the page uses the shared admin shell and design-system components, not class names with no CSS', async () => {
+  fetchMock.mockResolvedValueOnce(
+    jsonResponse({ reviews: [ticket({ severity: 'high', status: 'open' })] }),
+  );
+
+  mockShellProps.length = 0;
+  const { container } = render(<ShadowReviewsPage />);
+  await screen.findByText(/withheld by the pre-generation safety boundary/);
+
+  // The page hands the shared shell the clinic room, as /admin/compliance-center
+  // does, and does not draw a <main> of its own.
+  expect(mockShellProps.at(-1)).toMatchObject({ room: 'clinic', showShellHeader: false });
+  expect(container.querySelectorAll('main')).toHaveLength(1);
+  expect(container.querySelector('header')?.className).toContain('mat-wood');
+
+  // Status tabs are buttons on the design system's button ladder; the active
+  // one is the filled button, the others are ghost.
+  const tabs = within(screen.getByRole('navigation', { name: 'Review status' })).getAllByRole('button');
+  expect(tabs.map((b) => b.textContent)).toEqual(['Open', 'In review', 'Resolved', 'Dismissed']);
+  for (const tab of tabs) expect(tab.className).toMatch(/\bbtn\b/);
+  expect(tabs[0].className).not.toContain('btn--ghost');
+  expect(tabs[1].className).toContain('btn--ghost');
+
+  // The ticket is a raised leather card with a severity badge on the ladder.
+  const card = screen.getByRole('listitem');
+  expect(card.className).toContain('mat-leather--raised');
+  expect(within(card).getByText('HIGH').className).toMatch(/\bbadge\b.*\bbadge--restricted\b/);
+
+  // Every action stays reachable and is a styled button.
+  for (const name of [/I am looking at this/, /Resolved — acted on in the gym/, /Dismiss — nothing to act on/]) {
+    expect(within(card).getByRole('button', { name }).className).toMatch(/\bbtn\b/);
+  }
+
+  // None of the names that had no stylesheet behind them may come back.
+  const dead = [
+    'shadow-reviews', 'tabs', 'tab', 'tab-active', 'queue', 'ticket', 'ticket-head',
+    'severity-critical', 'severity-high', 'severity-moderate', 'severity-badge',
+    'critical-banner', 'lede', 'muted', 'secondary', 'actions', 'facts', 'meta',
+    'summary', 'when', 'category', 'error',
+  ];
+  const used = new Set<string>();
+  container.querySelectorAll('[class]').forEach((el) => {
+    el.className.toString().split(/\s+/).filter(Boolean).forEach((c) => used.add(c));
+  });
+  expect(dead.filter((c) => used.has(c))).toEqual([]);
 });

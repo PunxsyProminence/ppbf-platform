@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { PoolClient } from 'pg';
 
 import { formatGymDate } from '../../lib/gymTime';
@@ -496,6 +498,196 @@ export async function deleteAthleteRecord(
   });
 }
 
+/* THE PURGED PERSON'S SHADOW ROWS. Owner ruling, Jason 2026-10-06: "delete
+   any thing that personally Identifys the person but we keep data that
+   [makes] the Ai and ML better". The statements, and the reasoning for each
+   table, are scripts/pilot-cleanup-deleted-data.mjs SHADOW_OPERATIONAL_TABLES;
+   this is the same code in the function path. In short: profiles, jobs, rate
+   buckets and unlock snapshots are deleted; shadow_chat_audit is kept with
+   every key that names the person replaced by one random token per person,
+   their own typed words emptied (Q1, "Delete theirs, keep AI replies") and
+   their known names scrubbed from every other text on the row (Jason
+   2026-10-07, "Scrub the child's name, keep"); a purged guardian's names
+   also leave the turns about each child they were linked to; a person with
+   no usable name on record has their rows deleted instead. */
+const SHADOW_OPERATIONAL_TABLES = [
+  'shadow_user_profiles',
+  'shadow_jobs',
+  'shadow_rate_limit_buckets',
+  'shadow_feature_unlock_snapshots',
+] as const;
+
+type ShadowOperationalTable = (typeof SHADOW_OPERATIONAL_TABLES)[number];
+
+export interface ShadowPurgeSubject {
+  organizationId: string;
+  token: string;
+  accountIds: string[];
+  /** Athlete records whose turns the names must leave; token null = scrub only (the person is not purged). */
+  subjects: Array<{ organizationId: string; athleteId: string; token: string | null }>;
+  names: Array<string | null | undefined>;
+}
+
+function anonymousToken(): string {
+  return `anon_${randomUUID()}`;
+}
+
+/**
+ * A Postgres ARE pattern matching any of the names, whole and by part, on
+ * word boundaries; null when nothing usable is known. Parts split on spaces,
+ * commas, hyphens, apostrophes, periods, brackets and @ ("Mary-Kate" gives
+ * "Mary" and "Kate"); an email contributes its local part; every candidate
+ * loses its leading and trailing punctuation so a word boundary can match
+ * it ("Jr." is "Jr"). Single letters are not names ("J." would scrub every
+ * j), so a part must be two characters or more. Short common words that are
+ * also name parts ("Will", "de") are scrubbed too: the method prefers losing
+ * a word of kept text to keeping a name. Same function as the script's.
+ */
+export function namePattern(names: Array<string | null | undefined>): string | null {
+  const parts = new Set<string>();
+  for (const name of names) {
+    const whole = (name ?? '').trim();
+    if (!whole) continue;
+    const candidates = [whole, ...whole.split(/[\s,.'’()@\-]+/)];
+    if (whole.includes('@')) candidates.push(whole.slice(0, whole.indexOf('@')));
+    for (const candidate of candidates) {
+      const part = candidate.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+      if (part.length >= 2) parts.add(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    }
+  }
+  if (parts.size === 0) return null;
+  // Longest first, so "Ann Lee" is replaced before "Ann" splits it.
+  return `\\m(${[...parts].sort((a, b) => b.length - a.length).join('|')})\\M`;
+}
+
+async function deleteShadowOperationalRows(
+  client: PoolClient,
+  accountIds: string[],
+): Promise<Record<ShadowOperationalTable, number>> {
+  const counts = { shadow_user_profiles: 0, shadow_jobs: 0, shadow_rate_limit_buckets: 0, shadow_feature_unlock_snapshots: 0 };
+  if (accountIds.length === 0) return counts;
+  for (const table of SHADOW_OPERATIONAL_TABLES) {
+    const deleted = await client.query(`delete from pilot.${table} where account_id = any($1::text[])`, [accountIds]);
+    counts[table] += deleted.rowCount ?? 0;
+  }
+  return counts;
+}
+
+/** A purged athlete's id leaves every other profile's athletes_discussed (the script's clearShadowProfileMentions). */
+async function clearShadowProfileMentions(
+  client: PoolClient,
+  subjects: Array<{ organizationId: string; athleteId: string }>,
+): Promise<number> {
+  if (subjects.length === 0) return 0;
+  const cleared = await client.query(
+    `update pilot.shadow_user_profiles p
+        set athlete_ids_discussed = array(
+              select x from unnest(p.athlete_ids_discussed) as x
+               where (p.organization_id, x) not in (select * from unnest($1::text[], $2::text[]))),
+            updated_at = now()
+      where exists (select 1 from unnest($1::text[], $2::text[]) as e(organization_id, athlete_id)
+                     where e.organization_id = p.organization_id and e.athlete_id = any(p.athlete_ids_discussed))`,
+    [subjects.map((row) => row.organizationId), subjects.map((row) => row.athleteId)],
+  );
+  return cleared.rowCount ?? 0;
+}
+
+/** The script's deidentifyShadowChatAudit: same merging, same statements. */
+async function deidentifyShadowChatAudit(
+  client: PoolClient,
+  people: ShadowPurgeSubject[],
+): Promise<{ deidentified: number; deleted: number; scrubbed: number }> {
+  if (people.length === 0) return { deidentified: 0, deleted: 0, scrubbed: 0 };
+  const logins = new Map<string, { accountId: string; token: string; names: ShadowPurgeSubject['names'] }>();
+  const subjects = new Map<string, { organizationId: string; athleteId: string; token: string | null; names: ShadowPurgeSubject['names'] }>();
+  for (const person of people) {
+    for (const accountId of person.accountIds) {
+      const entry = logins.get(accountId) ?? { accountId, token: person.token, names: [] };
+      entry.names.push(...person.names);
+      logins.set(accountId, entry);
+    }
+    for (const subject of person.subjects) {
+      const key = `${subject.organizationId}\u0000${subject.athleteId}`;
+      const entry = subjects.get(key) ?? { ...subject, token: null, names: [] };
+      entry.token = entry.token ?? subject.token;
+      entry.names.push(...person.names);
+      subjects.set(key, entry);
+    }
+  }
+  const loginRows = [...logins.values()].map((row) => ({ ...row, pattern: namePattern(row.names) }));
+  const subjectRows = [...subjects.values()]
+    .map((row) => ({ ...row, pattern: namePattern(row.names) }))
+    // An untokened record with no name has nothing to scrub and must not match.
+    .filter((row) => row.token !== null || row.pattern !== null);
+  const params = [
+    loginRows.map((row) => row.accountId),
+    loginRows.map((row) => row.token),
+    loginRows.map((row) => row.pattern),
+    subjectRows.map((row) => row.organizationId),
+    subjectRows.map((row) => row.athleteId),
+    subjectRows.map((row) => row.token),
+    subjectRows.map((row) => row.pattern),
+  ];
+  const matched = `
+    from pilot.shadow_chat_audit a2
+    left join unnest($1::text[], $2::text[], $3::text[]) as l(account_id, token, pattern) on l.account_id = a2.user_id
+    left join unnest($4::text[], $5::text[], $6::text[], $7::text[]) as s(organization_id, athlete_id, token, pattern)
+      on s.organization_id = a2.organization_id and s.athlete_id = a2.athlete_id
+    where l.account_id is not null
+       or (s.athlete_id is not null
+           and (s.token is not null or a2.user_message ~* s.pattern or a2.shadow_response ~* s.pattern))`;
+  // A turn is matched by the purged person's login or record; an untokened
+  // record (a purged guardian's child) only where the text holds a name, so
+  // the count is rows changed, not rows looked at.
+  // Turns of or about a purged person with no name on record: deleted, never half-scrubbed.
+  const deleted = await client.query(
+    `delete from pilot.shadow_chat_audit a
+      using (select a2.chat_audit_id, l.token as login_token, l.pattern as login_pattern,
+                    s.token as subject_token, s.pattern as subject_pattern ${matched}) m
+      where a.chat_audit_id = m.chat_audit_id
+        and ((m.login_token is not null and m.login_pattern is null)
+          or (m.subject_token is not null and m.subject_pattern is null))`,
+    params,
+  );
+  const scrub = (column: string) =>
+    `regexp_replace(regexp_replace(${column}, coalesce(m.login_pattern, m.subject_pattern), '[name]', 'gi'),
+                    coalesce(m.subject_pattern, m.login_pattern), '[name]', 'gi')`;
+  const updated = await client.query(
+    `update pilot.shadow_chat_audit a
+        set user_id = coalesce(m.login_token, a.user_id),
+            athlete_id = coalesce(m.subject_token, a.athlete_id),
+            user_message = case when m.login_token is not null then '' else ${scrub('a.user_message')} end,
+            shadow_response = ${scrub('a.shadow_response')}
+       from (select a2.chat_audit_id, l.token as login_token, l.pattern as login_pattern,
+                    s.token as subject_token, s.pattern as subject_pattern ${matched}) m
+      where a.chat_audit_id = m.chat_audit_id`,
+    params,
+  );
+  // Gym-wide (Jason 2026-10-07, "Gym-wide (Recommended)"): the person's
+  // names leave every other turn in their gym too -- a coach's note about
+  // them filed under another athlete, or under nobody. Keyed turns were
+  // scrubbed above and no longer match. One pattern per gym per call.
+  const gyms = new Map<string, { organizationId: string; names: ShadowPurgeSubject['names'] }>();
+  for (const person of people) {
+    const entry = gyms.get(person.organizationId) ?? { organizationId: person.organizationId, names: [] };
+    entry.names.push(...person.names);
+    gyms.set(person.organizationId, entry);
+  }
+  const gymRows = [...gyms.values()]
+    .map((row) => ({ ...row, pattern: namePattern(row.names) }))
+    .filter((row) => row.pattern !== null);
+  const scrubbed = await client.query(
+    `update pilot.shadow_chat_audit a
+        set user_message = regexp_replace(a.user_message, g.pattern, '[name]', 'gi'),
+            shadow_response = regexp_replace(a.shadow_response, g.pattern, '[name]', 'gi')
+       from unnest($1::text[], $2::text[]) as g(organization_id, pattern)
+      where a.organization_id = g.organization_id
+        and (a.user_message ~* g.pattern or a.shadow_response ~* g.pattern)`,
+    [gymRows.map((row) => row.organizationId), gymRows.map((row) => row.pattern)],
+  );
+  return { deidentified: updated.rowCount ?? 0, deleted: deleted.rowCount ?? 0, scrubbed: scrubbed.rowCount ?? 0 };
+}
+
 /**
  * Hard-deletes data that has been soft-deleted and reached its retention window.
  * Returns count of rows deleted.
@@ -535,9 +727,9 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
     const expiredOrgs = expired.rows.map((row) => row.organization_id);
     const expiredIds = expired.rows.map((row) => row.athlete_id);
     const linked = expired.rows.length === 0
-      ? { rows: [] as Array<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean }> }
-      : await client.query<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean }>(
-        `select acct.account_id, acct.organization_id, acct.athlete_id, acct.role, acct.deleted_at is null as live
+      ? { rows: [] as Array<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean; login_email: string | null }> }
+      : await client.query<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean; login_email: string | null }>(
+        `select acct.account_id, acct.organization_id, acct.athlete_id, acct.role, acct.deleted_at is null as live, acct.login_email
            from pilot.accounts acct
            join unnest($1::text[], $2::text[]) as expired(organization_id, athlete_id)
              on acct.organization_id = expired.organization_id
@@ -564,6 +756,35 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
         )`,
     );
     await lockGuardianLinksForPurge(client, expired.rows, expiredGuardianRecords.rows);
+
+    /* The names to scrub from SHADOW's chat log (SHADOW_OPERATIONAL_TABLES),
+       read while the rows that hold them still exist: the athlete's name,
+       the names of the guardians still linked to them, and the ring name of
+       each athlete login. Keyed by athlete, used only for those deleted. */
+    const knownNames = new Map<string, string[]>();
+    if (expired.rows.length > 0) {
+      const names = await client.query<{ organization_id: string; athlete_id: string; name: string }>(
+        `with expired(organization_id, athlete_id) as (select * from unnest($1::text[], $2::text[]))
+         select a.organization_id, a.athlete_id, a.full_name as name
+           from pilot.athletes a join expired e on e.organization_id = a.organization_id and e.athlete_id = a.athlete_id
+         union all
+         select gl.organization_id, gl.athlete_id, p.full_name
+           from pilot.guardian_links gl
+           join expired e on e.organization_id = gl.organization_id and e.athlete_id = gl.athlete_id
+           join pilot.parents p on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
+         union all
+         select acct.organization_id, acct.athlete_id, ap.display_nickname
+           from pilot.accounts acct
+           join expired e on e.organization_id = acct.organization_id and e.athlete_id = acct.athlete_id
+           join pilot.account_profiles ap on ap.organization_id = acct.organization_id and ap.account_id = acct.account_id
+          where acct.role = 'athlete' and ap.display_nickname is not null`,
+        [expiredOrgs, expiredIds],
+      );
+      for (const row of names.rows) {
+        const key = JSON.stringify([row.organization_id, row.athlete_id]);
+        knownNames.set(key, [...(knownNames.get(key) ?? []), row.name]);
+      }
+    }
 
     // Delete athletes soft-deleted more than 2 years ago: exactly the rows locked above.
     const athleteDelete = expired.rows.length === 0
@@ -631,6 +852,30 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
         [athleteLogins],
       );
 
+    /* The same athlete-role logins, and each athlete's own record: one token
+       per person (SHADOW_OPERATIONAL_TABLES). Same statements as the script. */
+    const athleteShadow = await deleteShadowOperationalRows(client, athleteLogins);
+    const purgedSubjects = athleteDelete.rows.map((row) => ({ organizationId: row.organization_id, athleteId: row.athlete_id }));
+    const athleteMentions = await clearShadowProfileMentions(client, purgedSubjects);
+    // One call per person, as the script makes one per savepoint, so the two
+    // paths count a turn naming two purged people the same way (once each).
+    const athleteAudit = { deidentified: 0, deleted: 0, scrubbed: 0 };
+    for (const subject of purgedSubjects) {
+      const key = JSON.stringify([subject.organizationId, subject.athleteId]);
+      const logins = toUnlink.filter((login) => login.role === 'athlete' && JSON.stringify([login.organization_id, login.athlete_id]) === key);
+      const token = anonymousToken();
+      const audit = await deidentifyShadowChatAudit(client, [{
+        organizationId: subject.organizationId,
+        token,
+        accountIds: logins.map((login) => login.account_id),
+        subjects: [{ ...subject, token }],
+        names: [...(knownNames.get(key) ?? []), ...logins.map((login) => login.login_email)],
+      }]);
+      athleteAudit.deidentified += audit.deidentified;
+      athleteAudit.deleted += audit.deleted;
+      athleteAudit.scrubbed += audit.scrubbed;
+    }
+
     /* The guardian's own record goes first, and the account cannot be deleted
        without it. Owner decision, 2026-08-28 (D-8): "delete the parents row
        too". pilot.parents holds their name, phone and email -- the personal
@@ -653,6 +898,27 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
        ruling, Jason 2026-10-05 ("Keep the 'no' (Recommended)"). Same statement
        and reasoning as scripts/pilot-cleanup-deleted-data.mjs; read by
        guardianConsent.ts. */
+    // Read before the guardian record and its links go (SHADOW_OPERATIONAL_TABLES):
+    // each guardian's names, and the children whose turns those names must leave.
+    const guardians = await client.query<{ account_id: string; organization_id: string; name: string | null; login_email: string | null }>(
+      `select acct.account_id, acct.organization_id, p.full_name as name, acct.login_email
+         from pilot.accounts acct
+         left join pilot.parents p on p.account_id = acct.account_id
+        where acct.deleted_at is not null
+          and acct.deleted_at < (now() - interval '1 year')
+          and acct.role = 'parent'`,
+    );
+    const guardianChildren = await client.query<{ account_id: string; organization_id: string; athlete_id: string }>(
+      `select p.account_id, gl.organization_id, gl.athlete_id
+         from pilot.guardian_links gl
+         join pilot.parents p on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
+        where p.account_id in (
+          select account_id from pilot.accounts
+           where deleted_at is not null
+             and deleted_at < (now() - interval '1 year')
+             and role = 'parent'
+        )`,
+    );
     await client.query(
       `insert into pilot.retained_media_consent_restrictions
          (organization_id, athlete_id, former_parent_key, waiver_id, retained_at)
@@ -716,6 +982,27 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
         )`,
     );
 
+    /* The guardians' SHADOW rows (SHADOW_OPERATIONAL_TABLES): their own turns
+       only; a turn about their child is tokened by the child's purge. Before
+       the account delete, so the audit row can count them. */
+    const guardianIds = [...new Set(guardians.rows.map((row) => row.account_id))];
+    const guardianShadow = await deleteShadowOperationalRows(client, guardianIds);
+    const guardianAudit = { deidentified: 0, deleted: 0, scrubbed: 0 };
+    for (const accountId of guardianIds) {
+      const audit = await deidentifyShadowChatAudit(client, [{
+        organizationId: guardians.rows.find((row) => row.account_id === accountId)?.organization_id ?? '',
+        token: anonymousToken(),
+        accountIds: [accountId],
+        subjects: guardianChildren.rows
+          .filter((row) => row.account_id === accountId)
+          .map((row) => ({ organizationId: row.organization_id, athleteId: row.athlete_id, token: null })),
+        names: guardians.rows.filter((row) => row.account_id === accountId).flatMap((row) => [row.name, row.login_email]),
+      }]);
+      guardianAudit.deidentified += audit.deidentified;
+      guardianAudit.deleted += audit.deleted;
+      guardianAudit.scrubbed += audit.scrubbed;
+    }
+
     // Delete accounts (parents) soft-deleted more than 1 year ago
     const accountDelete = await client.query(
       `delete from pilot.accounts
@@ -744,6 +1031,15 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
             athlete_logins_unlinked: loginsUnlinked,
             live_athlete_logins_retired: loginsRetired,
             shadow_memory_corrections_deleted: (athleteCorrections.rowCount ?? 0) + (guardianCorrections.rowCount ?? 0),
+            shadow_profiles_deleted: athleteShadow.shadow_user_profiles + guardianShadow.shadow_user_profiles,
+            shadow_jobs_deleted: athleteShadow.shadow_jobs + guardianShadow.shadow_jobs,
+            shadow_rate_limit_buckets_deleted: athleteShadow.shadow_rate_limit_buckets + guardianShadow.shadow_rate_limit_buckets,
+            shadow_unlock_snapshots_deleted:
+              athleteShadow.shadow_feature_unlock_snapshots + guardianShadow.shadow_feature_unlock_snapshots,
+            shadow_profile_mentions_cleared: athleteMentions,
+            shadow_chat_audit_deidentified: athleteAudit.deidentified + guardianAudit.deidentified,
+            shadow_chat_audit_deleted: athleteAudit.deleted + guardianAudit.deleted,
+            shadow_chat_audit_names_scrubbed: athleteAudit.scrubbed + guardianAudit.scrubbed,
             total_rows_deleted: totalDeleted,
           }),
         ],

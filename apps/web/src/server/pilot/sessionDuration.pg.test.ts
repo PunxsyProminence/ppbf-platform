@@ -344,7 +344,7 @@ describe("upsertSession stores the athlete's minutes", () => {
       await upsertSession(
         ORG_ID,
         session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: 45 }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
       );
       expect(await readMinutes('sess-1')).toBe(45);
 
@@ -353,7 +353,7 @@ describe("upsertSession stores the athlete's minutes", () => {
       await upsertSession(
         ORG_ID,
         session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, notes: 'edited' }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
       );
       expect(await readMinutes('sess-1')).toBe(45);
 
@@ -361,13 +361,13 @@ describe("upsertSession stores the athlete's minutes", () => {
       await upsertSession(
         ORG_ID,
         session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: null }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
       );
       expect(await readMinutes('sess-1')).toBeNull();
       await upsertSession(
         ORG_ID,
         session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: 60 }),
-        { mode: 'update', expectedAthleteId: ATHLETE_ID },
+        { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true },
       );
       expect(await readMinutes('sess-1')).toBe(60);
 
@@ -375,10 +375,10 @@ describe("upsertSession stores the athlete's minutes", () => {
       // with no duration_minutes key (a note publication) keeps the minutes.
       const noteBody = JSON.parse(JSON.stringify(session({ rpe: 7, rpe_method: SELF_REPORT, notes: 'shared' })));
       expect('duration_minutes' in noteBody).toBe(false);
-      await upsertSession(ORG_ID, validateSessionPayload(noteBody), { mode: 'update', expectedAthleteId: ATHLETE_ID });
+      await upsertSession(ORG_ID, validateSessionPayload(noteBody), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true });
       expect(await readMinutes('sess-1')).toBe(60);
       const checkOutBody = JSON.parse(JSON.stringify(session({ rpe: 7, rpe_method: SELF_REPORT, completed_flag: true, duration_minutes: 90 })));
-      await upsertSession(ORG_ID, validateSessionPayload(checkOutBody), { mode: 'update', expectedAthleteId: ATHLETE_ID });
+      await upsertSession(ORG_ID, validateSessionPayload(checkOutBody), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true });
       expect(await readMinutes('sess-1')).toBe(90);
 
       // Create with minutes stores them too.
