@@ -52,13 +52,18 @@ export const TV_NAME_MAX_LENGTH = 60;
 // presses Disconnect or the browser clears its cookies, and then it simply re-pairs.
 export const GYM_TV_DEVICE_COOKIE = 'ppbf_gym_tv';
 export const GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
-// The TV read's per-address budget: a fixed window with no backoff (rateLimit.ts escalates on
-// every call, which would black out a screen that is supposed to ask every few seconds forever).
-// A TV in session mode polls every 3 s = 20 a minute; the gym's TVs share one address, so 120
-// covers six of them with margin. The budget protects the database from load; the key protects
-// the content.
+// The TV read's budget: a fixed window with no backoff (rateLimit.ts escalates on every call,
+// which would black out a screen that is supposed to ask every few seconds forever). Two buckets:
+//   per address  600 a minute. The gym's TVs share one public address, and anything else on the
+//                gym wifi can spend this bucket before its key is even checked (reviewer A), so it
+//                is sized for a flood, not for the TVs: a TV in session mode polls every 3 s = 20.
+//   per key      60 a minute, so one screen stuck in a reload loop cannot starve the others.
+// The budget protects the database from load; the key protects the content.
 export const GYM_TV_READ_WINDOW_MS = 60_000;
-export const GYM_TV_READ_MAX_PER_WINDOW = 120;
+export const GYM_TV_READ_MAX_PER_ADDRESS = 600;
+export const GYM_TV_READ_MAX_PER_KEY = 60;
+// The cookie is scoped to the TV routes, so the key never travels with any other request.
+export const GYM_TV_DEVICE_COOKIE_PATH = '/api/pilot/tv';
 
 export class GymTvError extends PilotError {
   constructor(status: number, code: string) {
@@ -382,9 +387,18 @@ async function liveRunOnTv(
   return live.rows[0] ?? null;
 }
 
+// The same shape and the same liveness rule as the list, for one TV.
 async function toListItem(client: PoolLike, organizationId: string, tvId: string): Promise<GymTvListItem> {
   const rows = await client.query<GymTvListItem & { code_expired: boolean }>(
-    `select ${LIST_COLUMNS} from pilot.gym_tvs where organization_id = $1 and tv_id = $2`,
+    `select t.tv_id, t.tv_name, t.created_by_account_id, t.created_at, t.pair_code_expires_at,
+            t.paired_at, t.last_seen_at, t.revoked_at,
+            r.run_id as current_run_id,
+            case when r.run_id is null then null else t.current_run_set_by_account_id end
+              as current_run_set_by_account_id,
+            (t.pair_code_expires_at is not null and t.pair_code_expires_at <= now()) as code_expired
+       from pilot.gym_tvs t
+       left join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
+      where t.organization_id = $1 and t.tv_id = $2`,
     [organizationId, tvId],
   );
   const { code_expired, ...rest } = rows.rows[0];
@@ -486,9 +500,12 @@ export async function takeRunOffGymTv(
 
 // THE ALLOWLIST. Every field a TV can ever receive is named here, and the projection functions
 // below build the payload by picking these names one by one -- a column added to a SELECT never
-// reaches the screen by accident. The tests assert the whole serialized body against these lists.
-// Nothing here identifies a person: no coach, no athlete, no account id, no roster, no notes
-// (what_to_say / explain / watch / fix are the coach's script and stay on the coach's phone).
+// reaches the screen by accident. The tests assert the whole serialized body against these lists,
+// spelled out literally there so a field added here and there together still fails.
+// No person FIELD is here: no coach, no athlete, no account id, no roster, no notes (what_to_say /
+// explain / watch / fix are the coach's script and stay on the coach's phone). What staff TYPE into
+// a script name, block label, drill name or TV name is free text and is shown as written; that is
+// an authoring matter, not something this code can police.
 export const GYM_TV_BLOCK_FIELDS = [
   'block_id',
   'block_order',
@@ -533,7 +550,14 @@ export interface GymTvSession {
   server_time: string;
   elapsed_seconds: number;
   is_paused: boolean;
-  current_block: (GymTvSessionBlock & { seconds_left: number }) | null;
+  /**
+   * seconds_to_scheduled_end counts against the PLAN's clock (the block's end offset minus the
+   * run's elapsed time), not against when the coach moved to this block: a coach running behind
+   * reads 0 for the rest of the block, one running ahead reads more than the block's length. The
+   * run stores no per-block start, so a true per-block countdown is S4's timer, not this field;
+   * S3 labels it as "scheduled".
+   */
+  current_block: (GymTvSessionBlock & { seconds_to_scheduled_end: number }) | null;
   next_block: GymTvSessionBlock | null;
   blocks: GymTvSessionBlock[];
 }
@@ -565,8 +589,9 @@ function isoOf(value: unknown): string {
 // the caller tells the TV to pair again). Otherwise the TV's name and, only while the run pointed
 // at is live and shown (LIVE_SHOWN_RUN), the session: the plan's blocks with times and drill
 // names, where the coach is in it, and the server clock. The clock arithmetic is the same as
-// sessionScriptRuns.ts computeElapsedSeconds but done in SQL, so the TV's reading and the coach's
-// phone are off the same clock.
+// sessionScriptRuns.ts computeElapsedSeconds, done in SQL against the database's now() (the coach's
+// phone reads the app server's Date; the two clocks are milliseconds apart), and server_time is
+// sent so the TV can run its own countdown between polls against that same reading.
 export async function readGymTvSession(deviceKey: string): Promise<GymTvRead | null> {
   const tv = await resolveGymTvByDeviceKey(deviceKey);
   if (!tv) return null;
@@ -614,7 +639,7 @@ export async function readGymTvSession(deviceKey: string): Promise<GymTvRead | n
       elapsed_seconds: elapsed,
       is_paused: run.is_paused === true,
       current_block: current
-        ? { ...current, seconds_left: Math.max(0, current.end_offset_min * 60 - elapsed) }
+        ? { ...current, seconds_to_scheduled_end: Math.max(0, current.end_offset_min * 60 - elapsed) }
         : null,
       next_block: next,
       blocks,
@@ -622,36 +647,54 @@ export async function readGymTvSession(deviceKey: string): Promise<GymTvRead | n
   };
 }
 
-// The TV read's budget: fixed window per key, no memory of failure, no escalation. In-memory and
-// per instance, like wallRateLimit.ts, and for the same reason: it protects the database from
-// load, not the content from disclosure -- the device key does that.
+// The TV read's budget: fixed windows, no memory of failure, no escalation. In-memory and per
+// instance, like wallRateLimit.ts, and for the same reason: it protects the database from load,
+// not the content from disclosure -- the device key does that. Expired buckets are swept at most
+// once a second, not on every call, so a flood of fresh addresses costs a map insert each and not
+// a full sweep each (reviewer A).
 interface ReadBucket {
   windowStart: number;
   count: number;
 }
 const readBuckets = new Map<string, ReadBucket>();
+let lastSweepMs = 0;
 
-export function consumeGymTvReadBudget(
-  key: string,
-  nowMs: number = Date.now(),
-): { allowed: boolean; retryAfterSeconds: number } {
-  for (const [existing, bucket] of readBuckets) {
-    if (nowMs - bucket.windowStart >= GYM_TV_READ_WINDOW_MS) readBuckets.delete(existing);
-  }
+function consumeBucket(key: string, max: number, nowMs: number): { allowed: boolean; retryAfterSeconds: number } {
   const bucket = readBuckets.get(key);
-  if (!bucket) {
+  if (!bucket || nowMs - bucket.windowStart >= GYM_TV_READ_WINDOW_MS) {
     readBuckets.set(key, { windowStart: nowMs, count: 1 });
     return { allowed: true, retryAfterSeconds: 0 };
   }
   bucket.count += 1;
-  if (bucket.count > GYM_TV_READ_MAX_PER_WINDOW) {
+  if (bucket.count > max) {
     const remaining = GYM_TV_READ_WINDOW_MS - (nowMs - bucket.windowStart);
     return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(remaining / 1000)) };
   }
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
+// `address` is the client IP; `deviceKey` is the cookie's plain key, bucketed by a prefix of its
+// hash (never the key itself in a map that outlives the request). An empty key gets only the
+// address bucket: there is nothing to key on before pairing.
+export function consumeGymTvReadBudget(
+  address: string,
+  deviceKey: string,
+  nowMs: number = Date.now(),
+): { allowed: boolean; retryAfterSeconds: number } {
+  if (nowMs - lastSweepMs >= 1000) {
+    lastSweepMs = nowMs;
+    for (const [existing, bucket] of readBuckets) {
+      if (nowMs - bucket.windowStart >= GYM_TV_READ_WINDOW_MS) readBuckets.delete(existing);
+    }
+  }
+  const byAddress = consumeBucket(`tv_read_ip:${address}`, GYM_TV_READ_MAX_PER_ADDRESS, nowMs);
+  if (!byAddress.allowed) return byAddress;
+  if (deviceKey.length === 0) return byAddress;
+  return consumeBucket(`tv_read_key:${hashToken(deviceKey).slice(0, 16)}`, GYM_TV_READ_MAX_PER_KEY, nowMs);
+}
+
 /** Test seam. Never called in a request path. */
 export function resetGymTvReadBudget(): void {
   readBuckets.clear();
+  lastSweepMs = 0;
 }

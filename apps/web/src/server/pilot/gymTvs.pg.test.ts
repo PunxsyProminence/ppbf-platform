@@ -770,13 +770,26 @@ describe('the TV read (S2b, TV side)', () => {
     expect(Object.keys(read!).sort()).toEqual(['session', 'tv']);
     expect(Object.keys(read!.tv)).toEqual(['tv_name']);
     const session = read!.session!;
-    expect(Object.keys(session).sort()).toEqual([...GYM_TV_SESSION_FIELDS].sort());
+    // SPELLED OUT, not read from the module's own constant: a field added to the constant and the
+    // projection together must still fail here (reviewer B). The constant is then checked against
+    // this list, so the two cannot drift apart silently either.
+    const SESSION_FIELDS = [
+      'blocks', 'current_block', 'elapsed_seconds', 'is_paused', 'next_block', 'run_id',
+      'script_name', 'server_time', 'started_at', 'total_minutes',
+    ];
+    const BLOCK_FIELDS = [
+      'block_id', 'block_kind', 'block_label', 'block_order', 'drill_name', 'end_offset_min',
+      'scale_level', 'start_offset_min',
+    ];
+    expect([...GYM_TV_SESSION_FIELDS].sort()).toEqual(SESSION_FIELDS);
+    expect([...GYM_TV_BLOCK_FIELDS].sort()).toEqual(BLOCK_FIELDS);
+    expect(Object.keys(session).sort()).toEqual(SESSION_FIELDS);
     expect(session.blocks).toHaveLength(3);
     for (const block of session.blocks) {
-      expect(Object.keys(block).sort()).toEqual([...GYM_TV_BLOCK_FIELDS].sort());
+      expect(Object.keys(block).sort()).toEqual(BLOCK_FIELDS);
     }
-    expect(Object.keys(session.current_block!).sort()).toEqual([...GYM_TV_BLOCK_FIELDS, 'seconds_left'].sort());
-    expect(Object.keys(session.next_block!).sort()).toEqual([...GYM_TV_BLOCK_FIELDS].sort());
+    expect(Object.keys(session.current_block!).sort()).toEqual([...BLOCK_FIELDS, 'seconds_to_scheduled_end'].sort());
+    expect(Object.keys(session.next_block!).sort()).toEqual(BLOCK_FIELDS);
 
     expect(session).toMatchObject({
       run_id: 'run-1',
@@ -786,16 +799,22 @@ describe('the TV read (S2b, TV side)', () => {
       current_block: { block_id: 'blk-run-1-2', block_order: 2, block_kind: 'drill_round', drill_name: 'Drill for run-1', scale_level: 'B', start_offset_min: 10, end_offset_min: 20 },
       next_block: { block_id: 'blk-run-1-3', block_order: 3 },
     });
-    // 12 minutes in, block 2 ends at 20: about 8 minutes left, off the database clock.
+    // 12 minutes in, block 2 ends at 20: about 8 minutes to its scheduled end, off the database
+    // clock. The window is wide because the seed and the read are separate statements on a loaded
+    // machine.
     expect(session.elapsed_seconds).toBeGreaterThanOrEqual(720);
-    expect(session.elapsed_seconds).toBeLessThan(725);
-    expect(session.current_block!.seconds_left).toBe(20 * 60 - session.elapsed_seconds);
+    expect(session.elapsed_seconds).toBeLessThan(750);
+    expect(session.current_block!.seconds_to_scheduled_end).toBe(20 * 60 - session.elapsed_seconds);
     expect(new Date(session.server_time).getTime()).toBeGreaterThan(new Date(session.started_at).getTime());
 
-    // THE WHOLE SERIALIZED BODY: no coach note, no account, no athlete, no hash, no organization.
+    // THE WHOLE SERIALIZED BODY: no coach note, no note of any kind, no account, no athlete, no
+    // hash, no organization (name or id), no key, no TV id.
     const serialized = JSON.stringify(read);
     for (const marker of COACH_NOTE_MARKERS) expect(serialized).not.toContain(marker);
-    for (const forbidden of ['what_to', 'account', 'athlete', 'coach', 'delivered_by', 'hash', 'organization', COACH_A, redeemed.device_key]) {
+    for (const forbidden of [
+      'what_to', 'note', 'account', 'athlete', 'coach', 'delivered_by', 'hash', 'organization',
+      ORG_A, COACH_A, redeemed.device_key, minted.tv_id,
+    ]) {
       expect(serialized).not.toContain(forbidden);
     }
   });
@@ -813,7 +832,7 @@ describe('the TV read (S2b, TV side)', () => {
     expect(session.is_paused).toBe(true);
     // 10 minutes gross, frozen 4 minutes ago, 1 minute already banked: 5 minutes.
     expect(session.elapsed_seconds).toBe(300);
-    expect(session.current_block!.seconds_left).toBe(300);
+    expect(session.current_block!.seconds_to_scheduled_end).toBe(300);
   });
 
   it('nothing once the run has ended or been switched off the TV, though the pointer remains', async () => {

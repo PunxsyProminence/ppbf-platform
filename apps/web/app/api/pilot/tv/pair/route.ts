@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   GYM_TV_DEVICE_COOKIE,
   GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS,
+  GYM_TV_DEVICE_COOKIE_PATH,
   isWellFormedPairCode,
   normalizePairCode,
   redeemGymTvPairCode,
@@ -77,7 +78,8 @@ export async function POST(request: NextRequest) {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    path: '/',
+    // Scoped to the TV routes (S2b): the key travels with no other request.
+    path: GYM_TV_DEVICE_COOKIE_PATH,
     maxAge: GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS,
   });
   return response;

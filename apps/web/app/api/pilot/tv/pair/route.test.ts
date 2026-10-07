@@ -65,7 +65,7 @@ it('a good code pairs the TV: key in an httpOnly cookie, never in the body', asy
   expect(cookie?.value).toBe('k'.repeat(64));
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe('lax');
-  expect(cookie?.path).toBe('/');
+  expect(cookie?.path).toBe('/api/pilot/tv');
   expect(cookie?.maxAge).toBe(400 * 24 * 60 * 60);
   // Not secure here: NODE_ENV is 'test'. The production case is the next test.
   expect(cookie?.secure).toBeFalsy();

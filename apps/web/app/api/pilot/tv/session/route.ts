@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   GYM_TV_DEVICE_COOKIE,
   GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS,
+  GYM_TV_DEVICE_COOKIE_PATH,
   consumeGymTvReadBudget,
   readGymTvSession,
 } from '@/src/server/pilot/gymTvs';
@@ -16,32 +17,37 @@ export const runtime = 'nodejs';
  * Unauthenticated by construction: the TV has no session and never gets one. The credential is
  * the device key in the httpOnly cookie that /api/pilot/tv/pair set, resolved by hash; it opens
  * this read and nothing else. The payload is the fixed allowlist in gymTvs.ts (the plan's blocks,
- * times and drill names, where the coach is, the server clock) and carries no person: no coach
- * notes, no names, no account ids, no roster.
+ * times and drill names, where the coach is, the server clock) and carries no person field: no
+ * coach notes, no names, no account ids, no roster.
  *
- *   401 TV_NOT_PAIRED  no key, an unknown key, or a disconnected TV. The cookie is cleared so the
- *                      TV falls back to the code box cleanly (S3).
+ *   401 TV_NOT_PAIRED  no key, an unknown key, or a disconnected TV. The cookie is left alone: a
+ *                      stale poll answered after a re-pair must not wipe the key the TV just
+ *                      received (reviewer B), so the TV page decides when to pair again, and
+ *                      pairing overwrites the cookie.
  *   200 session: null  paired, but nothing is on this TV: no session sent, or the run has ended or
  *                      been switched off the TV.
  *   200 session: {..}  the live session.
  *
  * Each successful keyed read re-sets the cookie with a fresh Max-Age, so "until disconnected"
  * (Jason) holds for a TV that is used: the 400-day cap counts from the last read, not from the
- * day it was paired.
+ * day it was paired. The cookie is scoped to /api/pilot/tv, so the key travels with no other
+ * request.
  *
- * Budgeted per address with a fixed window (gymTvs.ts consumeGymTvReadBudget), not the auth
- * limiter: a TV is supposed to poll forever.
+ * Budgeted per address AND per key on fixed windows (gymTvs.ts consumeGymTvReadBudget), not the
+ * auth limiter: a TV is supposed to poll forever, and one stuck screen must not starve the rest.
  */
+const NO_STORE = { 'Cache-Control': 'no-store' };
+
 export async function GET(request: NextRequest) {
-  const budget = consumeGymTvReadBudget(`tv_read_ip:${getClientIp(request)}`);
+  const deviceKey = request.cookies.get(GYM_TV_DEVICE_COOKIE)?.value ?? '';
+
+  const budget = consumeGymTvReadBudget(getClientIp(request), deviceKey);
   if (!budget.allowed) {
     return NextResponse.json(
       { error: 'TV_READ_RATE_LIMITED' },
-      { status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } },
+      { status: 429, headers: { ...NO_STORE, 'Retry-After': String(budget.retryAfterSeconds) } },
     );
   }
-
-  const deviceKey = request.cookies.get(GYM_TV_DEVICE_COOKIE)?.value ?? '';
 
   let read: Awaited<ReturnType<typeof readGymTvSession>>;
   try {
@@ -53,27 +59,19 @@ export async function GET(request: NextRequest) {
       name: error instanceof Error ? error.constructor.name : typeof error,
       code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : undefined,
     });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: NO_STORE });
   }
-
-  const cookieAttributes = {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-  };
 
   if (!read) {
-    const response = NextResponse.json({ error: 'TV_NOT_PAIRED' }, { status: 401 });
-    if (deviceKey) {
-      response.cookies.set(GYM_TV_DEVICE_COOKIE, '', { ...cookieAttributes, maxAge: 0 });
-    }
-    return response;
+    return NextResponse.json({ error: 'TV_NOT_PAIRED' }, { status: 401, headers: NO_STORE });
   }
 
-  const response = NextResponse.json(read, { headers: { 'Cache-Control': 'no-store' } });
+  const response = NextResponse.json(read, { headers: NO_STORE });
   response.cookies.set(GYM_TV_DEVICE_COOKIE, deviceKey, {
-    ...cookieAttributes,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: GYM_TV_DEVICE_COOKIE_PATH,
     maxAge: GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS,
   });
   return response;
