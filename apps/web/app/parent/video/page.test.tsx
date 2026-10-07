@@ -9,7 +9,7 @@
  * signed with the coach's display name (ruling 2). Read-only throughout.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import ParentVideoPage from './page';
@@ -111,6 +111,31 @@ test('switching children re-reads the list for the other child and closes the op
   await screen.findByText("Riley Doe's Film");
   await waitFor(() => expect(screen.queryByText('Coach notes')).toBeNull());
   await screen.findByText('No film yet. It shows up here when a coach puts some up.');
+});
+
+test("a round opened for one child never lands under the other child's name", async () => {
+  // Play on Jordan's round, then switch to Riley before the playback arrives:
+  // the late response is dropped, not shown under "Riley Doe's Film".
+  let releasePlayback: (() => void) | null = null;
+  const fetchMock = mockFetch({
+    '/athletes/list': () => jsonOk({ items: [CHILD, SECOND_CHILD] }),
+    'athlete_id=athlete-002': () => jsonOk({ items: [] }),
+    '/api/pilot/video/vid-1': () => new Promise<Response>((resolve) => { releasePlayback = () => resolve(jsonOk(PLAYBACK)); }),
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<ParentVideoPage />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+  await waitFor(() => expect(releasePlayback).not.toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+  await screen.findByText("Riley Doe's Film");
+
+  await act(async () => { releasePlayback!(); });
+
+  await screen.findByText('No film yet. It shows up here when a coach puts some up.');
+  expect(screen.queryByText('Coach notes')).toBeNull();
+  expect(screen.queryByText('Guard dropped in round 2. Keep the right hand home.')).toBeNull();
 });
 
 test("a consent refusal reaches the guardian in the server's own words, with no notes", async () => {

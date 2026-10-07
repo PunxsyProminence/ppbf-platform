@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -56,9 +56,9 @@ function formatBytes(bytes: number): string {
 
 /**
  * Same rule as the athlete's film screen: a 409 is a stated consent refusal
- * the route authored a message for, and it reaches the guardian verbatim --
- * the guardian is the one person who can change it. Every other status keeps
- * the retry text.
+ * the route authored a message for, and it reaches the guardian verbatim;
+ * retrying will refuse until a guardian's consent changes. The message counts
+ * guardians and names none. Every other status keeps the retry text.
  */
 async function openVideoRefusal(response: Response): Promise<string> {
   const retry = 'That round would not open. Try it again.';
@@ -81,6 +81,10 @@ export default function ParentVideoPage() {
   const [videoError, setVideoError] = useState('');
   const [activeVideo, setActiveVideo] = useState<ActiveVideo | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
+  // Read by openVideo after its await, so a late response is dropped when
+  // the child changed meanwhile. Written in the child effect below, never
+  // during render.
+  const activeChildRef = useRef<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,15 +114,16 @@ export default function ParentVideoPage() {
   // One list per selected child. The abort guard keeps a slow first child's
   // rounds from landing under the second child's name after a switch.
   useEffect(() => {
-    setActiveVideo(null);
-    setVideoError('');
-    if (!activeChildId) {
-      setVideos([]);
-      return;
-    }
+    activeChildRef.current = activeChildId;
     const controller = new AbortController();
-    setVideosLoading(true);
     void (async () => {
+      setActiveVideo(null);
+      setVideoError('');
+      if (!activeChildId) {
+        setVideos([]);
+        return;
+      }
+      setVideosLoading(true);
       try {
         const res = await fetch(
           `${apiBase()}/api/pilot/video/list?athlete_id=${encodeURIComponent(activeChildId)}`,
@@ -139,14 +144,19 @@ export default function ParentVideoPage() {
     return () => controller.abort();
   }, [activeChildId]);
 
-  const openVideo = async (videoId: string) => {
+  // The child the round was opened for. A guardian who taps Play on one
+  // child's round and switches to the other before it lands must not see the
+  // first child's round, notes or refusal under the second child's name.
+  const openVideo = async (videoId: string, forChildId: string) => {
     setLoadingVideoId(videoId);
     try {
       const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await openVideoRefusal(res));
       const data = (await res.json()) as { stream_url: string; title: string; coach_notes?: CoachNote[] };
+      if (activeChildRef.current !== forChildId) return;
       setActiveVideo({ url: data.stream_url, title: data.title, coachNotes: data.coach_notes ?? [] });
     } catch (err) {
+      if (activeChildRef.current !== forChildId) return;
       setVideoError(err instanceof Error ? err.message : 'That round would not open. Try it again.');
     } finally {
       setLoadingVideoId(null);
@@ -269,7 +279,7 @@ export default function ParentVideoPage() {
                           <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>{formatGymStamp(v.created_at)}</p>
                         </div>
                         <button
-                          onClick={() => { void openVideo(v.video_session_id); }}
+                          onClick={() => { if (activeChildId) void openVideo(v.video_session_id, activeChildId); }}
                           disabled={loadingVideoId === v.video_session_id}
                           className="btn min-h-[var(--tap)] disabled:opacity-50 disabled:grayscale"
                         >
