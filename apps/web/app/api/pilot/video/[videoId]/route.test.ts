@@ -5,6 +5,7 @@ import { queryOne } from '@/src/server/pilot/db';
 import { checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { accessibleAthleteIds } from '@/src/server/pilot/access';
+import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -55,6 +56,12 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
   listLiveTagSubjects: jest.fn(async () => []),
 }));
 
+// The family name reader (videoFamilyView.ts -> achievements.ts). Mocked so
+// these tests never load the recognitions module; the name itself is asserted.
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getCoachDisplayName: jest.fn(),
+}));
+
 // Real implementation by default; the tagged-clip tests set the coach's scope.
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
@@ -66,6 +73,7 @@ const mockTagSubjects = jest.mocked(listLiveTagSubjects);
 const mockAccessible = jest.mocked(accessibleAthleteIds);
 const mockQueryOne = queryOne as jest.Mock;
 const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
+const mockCoachDisplayName = jest.mocked(getCoachDisplayName);
 
 /**
  * The default every existing test in this file runs under, and it is
@@ -121,6 +129,7 @@ afterEach(() => {
   mockRequirePrincipal.mockReset();
   mockQueryOne.mockReset();
   mockCheckConsent.mockReset();
+  mockCoachDisplayName.mockReset();
 });
 
 function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
@@ -944,5 +953,144 @@ describe('GET /api/pilot/video/[videoId] mints under the consent lock', () => {
 
     expect(res.status).toBe(200);
     expect(mockTransactionEvents).toEqual(['mint']);
+  });
+});
+
+/*
+ * COACH NOTES FOR A FAMILY (videoFamilyView.ts, OD-2026-10-06-025 rulings 1
+ * and 2). The athlete and a linked guardian read the coach's notes on the
+ * athlete's own video, signed with the coach's display name and dated, with
+ * no account id. The notes ride the same response as the playback URL, so a
+ * caller the gates refuse (another athlete, an unlinked parent, a photo-only
+ * consent) gets no notes by the same refusal.
+ */
+describe('GET /api/pilot/video/[videoId] coach notes for a family', () => {
+  const noted = () => videoRow({ notes: 'Guard dropped in round 2.' });
+
+  test('the athlete reads the note on their own video, signed with the coach name and no account id', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(noted())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // live athlete row (assertActorCanAccessAthlete)
+      .mockResolvedValueOnce({ deleted_at: null }); // the coach's account is live (familyCoachName)
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+    mockCoachDisplayName.mockResolvedValueOnce('Coach Jane');
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stream_url).toBe('https://blob.example/sas');
+    expect(body.coach_notes).toEqual([
+      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(mockCoachDisplayName).toHaveBeenCalledWith('org-1', 'coach-1');
+    expect(body).not.toHaveProperty('uploaded_by_account_id');
+    expect(body).not.toHaveProperty('notes');
+    expect(body).not.toHaveProperty('organization_id');
+    expect(body).not.toHaveProperty('capture_take_id');
+    expect(JSON.stringify(body)).not.toContain('coach-1');
+  });
+
+  test("a linked parent reads the note on their child's video the same way", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockQueryOne
+      .mockResolvedValueOnce(noted())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ deleted_at: null });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+    mockCoachDisplayName.mockResolvedValueOnce('Coach Jane');
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.coach_notes).toEqual([
+      { text: 'Guard dropped in round 2.', coach_name: 'Coach Jane', noted_at: '2026-01-01T00:00:00.000Z' },
+    ]);
+    expect(body).not.toHaveProperty('uploaded_by_account_id');
+    expect(JSON.stringify(body)).not.toContain('coach-1');
+  });
+
+  test('a different athlete gets the hidden not-found and no note text anywhere in the response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-2' }));
+    mockQueryOne.mockResolvedValueOnce(noted());
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('Guard dropped');
+    expect(mockCoachDisplayName).not.toHaveBeenCalled();
+  });
+
+  test('an unlinked parent gets the hidden not-found and no note text', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockQueryOne.mockResolvedValueOnce(noted()).mockResolvedValueOnce(null);
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('Guard dropped');
+  });
+
+  test('a video the family may not play (photo-only consent) carries no notes: same 409, no coach_notes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(noted()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    const text = await res.text();
+    expect(text).not.toContain('coach_notes');
+    expect(text).not.toContain('Guard dropped');
+    expect(mockCoachDisplayName).not.toHaveBeenCalled();
+  });
+
+  test('a video whose guardian withdrew consent carries no notes: same 409, no coach_notes, no name lookup', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockQueryOne.mockResolvedValueOnce(noted()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'withdrawn', false)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.clone().json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
+    const text = await res.text();
+    expect(text).not.toContain('coach_notes');
+    expect(text).not.toContain('Guard dropped');
+    expect(mockCoachDisplayName).not.toHaveBeenCalled();
+  });
+
+  test('a deleted coach is not named to a family', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(noted())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ deleted_at: '2026-01-03T00:00:00.000Z' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).coach_notes[0].coach_name).toBe('Your coach');
+    expect(mockCoachDisplayName).not.toHaveBeenCalled();
+  });
+
+  test('a video with no note gives a family an empty list, not a missing field', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect((await res.json()).coach_notes).toEqual([]);
+  });
+
+  test('a coach still receives the storage row: notes and uploader account id as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne.mockResolvedValueOnce(noted()).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', true)]));
+    const res = await call();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.notes).toBe('Guard dropped in round 2.');
+    expect(body.uploaded_by_account_id).toBe('coach-1');
+    expect(body).not.toHaveProperty('coach_notes');
   });
 });

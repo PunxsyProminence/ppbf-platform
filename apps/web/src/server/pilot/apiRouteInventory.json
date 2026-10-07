@@ -11931,7 +11931,7 @@
     "missingGate": false,
     "looksWrong": "For a clip tagged with several athletes, a coach who reaches ANY one subject (accessibleAthleteIds size > 0) gets a playback URL showing all tagged athletes; consent for all is checked, reach is not.",
     "confidence": "medium",
-    "notes": "Returns a Film Study video row and 60-min SAS URL (video/[videoId]/route.ts). Hides teaching footage (capture_take_id) and non-ready videos. Untagged athlete video: assertActorCanAccessAthlete (athlete self, parent linked, coach reach, org admin); athlete-less video: coach/org admin only. platform_owner/board refused.",
+    "notes": "Returns a Film Study video row and 60-min SAS URL (video/[videoId]/route.ts); athlete and parent callers get the family shape instead (videoFamilyView.ts: no uploaded_by_account_id/organization_id/capture_take_id, coach notes as coach_notes signed with the coach display name). Hides teaching footage (capture_take_id) and non-ready videos. Untagged athlete video: assertActorCanAccessAthlete (athlete self, parent linked, coach reach, org admin); athlete-less video: coach/org admin only. platform_owner/board refused.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12158,7 +12158,7 @@
     "missingGate": false,
     "looksWrong": "Coach list without athlete_id uses roster SQL (pilot.athletes.coach_id = caller) rather than assertActorCanAccessAthlete, so live-coverage athletes are not included and every athlete-less (unassigned) clip in the gym is listed to any coach.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
