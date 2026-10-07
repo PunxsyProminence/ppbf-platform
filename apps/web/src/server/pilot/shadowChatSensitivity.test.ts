@@ -601,10 +601,11 @@ function explainedByAddition(message: string, was: Verdict, is: Verdict): boolea
 // now comes BEFORE every one of main's returns: validateShadowRequest gains
 // one statement pair, `const emergency = emergencyReport(...)` and
 // `if (emergency) return emergency;`, undone by S1d. emergencyReport lives
-// outside the two guarded functions; it reads the folded text, main's own
-// urgent-symptom and acute-impact findings, and main's emergency topic rows
-// (shadowChat.test.ts pins those copies to the rows), and answers with
-// main's R3, field for field: the emergency text, the topic
+// outside the two guarded functions; it reads main's own R3 condition
+// (personal context with an urgent symptom or an acute impact concern),
+// the folded text against the true emergency signs and main's emergency
+// topic rows (shadowChat.test.ts pins those copies to the rows), and
+// answers with main's R3, field for field: the emergency text, the topic
 // classifyHighRiskTopic chose (urgent_symptom when none), the
 // urgent_personal_symptom classification.
 //
@@ -796,7 +797,7 @@ describe('the premises of the argument, read from source', () => {
     validate = undo(validate, ADDED_ACUTE_CANT, '', 1);
     // The named reordering (see NAMED REORDERING above): the emergency
     // return, placed before main's first return.
-    validate = drop(validate, 'const emergency = emergencyReport(text, hasUrgentSymptom || hasAcuteImpactConcern, classification);');
+    validate = drop(validate, 'const emergency = emergencyReport(text, hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern), classification);');
     validate = drop(validate, 'if (emergency) return emergency;');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
@@ -1903,13 +1904,13 @@ const SEED_DIFFERENTIAL_COUNTS = {
   // without the emergency text and that now get it, 12 from each of R4, R5,
   // R6 and R7 -- 203. The named reordering (2026-10-06, #1036) adds every
   // variant of the nine SEEDS_MOVED_TO_R3_BY_ORDERING in which main's
-  // acute sign survives the look-alike, from R1, R6 and R8: 2,724 more.
+  // true emergency sign survives the look-alike, from R1, R6 and R8: 2,364 more.
   // newlyWithheld is UNCHANGED by it: the reordering withholds nothing in
   // this seed set that main allowed (the educational seeds name no specific
   // person), and the one-way checks above hold on every message.
-  newlyEmergency: 2927,
+  newlyEmergency: 2567,
   // Messages where any field differs from main's.
-  anyFieldDiffers: 7444,
+  anyFieldDiffers: 7084,
   // By what changed: the return, or the topic under an unchanged return.
   // These nine are the kinds this seed set produces, and they sum to
   // anyFieldDiffers. Each is of a kind Step 5 of the argument allows, or
@@ -1932,7 +1933,7 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R5 diagnosis -> R3 urgent': 12,
     'R6 clearance -> R3 urgent': 996,
     'R7 medication -> R3 urgent': 12,
-    'R8 high-risk fallback -> R3 urgent': 5473,
+    'R8 high-risk fallback -> R3 urgent': 5113,
     'R9 nothing matched, allowed -> R3 urgent': 155,
   },
 };
