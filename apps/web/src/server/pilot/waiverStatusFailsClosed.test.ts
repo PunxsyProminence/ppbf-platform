@@ -352,6 +352,14 @@ describe('every direct reader of a consent status is registered', () => {
         + 'nomination statuses above.',
     ],
     [
+      'app/api/pilot/parent/safety/route.ts',
+      "The guardian's safety page. Reads a purged former guardian's retained "
+        + "status, normalised, as 'withdrawn' so the family is not told the gym "
+        + 'has no form when it holds a refusal. A value it does not recognise '
+        + "falls through to the caller's own rows and then to 'missing' -- never "
+        + 'to signed. Display only, no gate; the gates read guardianConsent.ts.',
+    ],
+    [
       'src/server/pilot/staffProvisioning.ts',
       'removeGuardianLink refuses an unlink while that guardian\'s media '
         + 'consent stands withdrawn. Arrives with the unlink-withdrawal change '

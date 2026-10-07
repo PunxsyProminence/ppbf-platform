@@ -194,6 +194,21 @@ test('each tracked waiver renders with its label, status glyph and status word',
   expect(within(travel).getByText('Missing')).toBeInTheDocument();
 });
 
+test('photo_only reads Photos only as a restricted badge, never Signed', async () => {
+  // audit CL-B11: the route reports photo_only when every guardian signed
+  // and one limited it to photos; the video gates refuse, so it must not
+  // show as cleared.
+  const article = await renderCard(
+    athleteWith({ general: 'signed', medical_release: 'signed', photo_media: 'photo_only', travel: 'signed' }),
+  );
+
+  const photo = waiverRow(article, 'photo_media');
+  expect(within(photo).getByText('Photos only')).toBeInTheDocument();
+  expect(within(photo).getByText('▲')).toBeInTheDocument();
+  expect(within(photo).getByText('Photos only').closest('.badge')).toHaveClass('badge--restricted');
+  expect(within(photo).queryByText('Signed')).not.toBeInTheDocument();
+});
+
 test('a missing waiver reads Missing with the warning mark, never Signed', async () => {
   const article = await renderCard(
     athleteWith({ general: 'signed', medical_release: 'signed', photo_media: 'signed', travel: 'missing' }),
@@ -286,7 +301,7 @@ test('the header names the four tracked waivers and keeps "what your child can s
   expect(copy).toContain('Photo & media reads Signed only when every guardian on file for your child has signed it');
   // Jason 2026-09-29 (P3 A): every child reads Missing until the gym records
   // these waiver types, so the page says what Missing means.
-  expect(copy).toContain('Missing means the gym has not recorded that waiver yet.');
+  expect(copy).toContain('Missing means the gym has no signed waiver of that kind on file.');
   // Owner decision 2026-10-04: guardians read their child's injury record, so the header says so.
   expect(copy).toContain(
     'Then your child’s injury record: each injury the gym recorded, where and what kind, who reported it and when they are expected back -- the same record your child sees, without staff notes.',

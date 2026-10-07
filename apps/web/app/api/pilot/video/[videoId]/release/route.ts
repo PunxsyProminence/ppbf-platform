@@ -8,7 +8,7 @@ import {
   getVideoReleasePolicy,
   releasableScanStates,
 } from '@/src/server/pilot/videoReleasePolicy';
-import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
+import { writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 
 export const runtime = 'nodejs';
@@ -141,9 +141,13 @@ export async function POST(
     // before the guardian changed their answer still satisfies the check above
     // for 15 minutes. Asked again here so footage is never put into
     // circulation after the guardian said no. Teaching footage names nobody.
-    if (row.athlete_id) {
-      await assertConsentCoversVideo(principal.organizationId, row.athlete_id);
-    }
+    //
+    // ASKED INSIDE THE WRITE'S OWN TRANSACTION (from #1286). Checked on the
+    // pool and then written on the pool, a withdrawal could commit in the gap
+    // and the release still went through. writeUnderPlaybackConsent holds
+    // the guardian links FOR SHARE until the update below has run, so a
+    // withdrawal either lands first and is read, or waits for the release.
+    const consentSubjects = row.athlete_id ? [row.athlete_id] : [];
 
     /*
      * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
@@ -162,14 +166,17 @@ export async function POST(
      * the window: the release either applies to what was reviewed, or it
      * fails and the coach is asked to look again.
      */
-    const released = await queryOne<{ status: string }>(
-      `update pilot.video_sessions
+    const releaseSql = `update pilot.video_sessions
        set status = 'ready', updated_at = now()
        where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
          and scan_state = $3
-       returning status`,
-      [videoId, principal.organizationId, row.scan_state],
-    );
+       returning status`;
+    const releaseParams = [videoId, principal.organizationId, row.scan_state];
+    const released = await writeUnderPlaybackConsent(principal.organizationId, consentSubjects, async (client) => (
+      client
+        ? (await client.query<{ status: string }>(releaseSql, releaseParams)).rows[0] ?? null
+        : queryOne<{ status: string }>(releaseSql, releaseParams)
+    ));
 
     if (!released) {
       return NextResponse.json(
