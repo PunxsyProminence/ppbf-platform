@@ -32,6 +32,53 @@ const mockGetAthletesForCoach = getAthletesForCoach as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 
+const COACH_ID = 'coach-alvarez@punxsyprominence.org';
+
+// The storage row as `select *` returns it to the athlete and parent
+// branches: the contract fields plus the columns the migrations added later.
+const ROW = {
+  organization_id: 'org-1',
+  athlete_id: 'ATH-1',
+  full_name: 'Marisol Vance',
+  dob: '2010-03-04',
+  weight_class: '132',
+  gym_status: 'active',
+  emergency_contact: 'Rosa Vance 814-555-0110',
+  emergency_contact_note: 'Rosa Vance 814-555-0110',
+  active_flag: true,
+  coach_id: COACH_ID,
+  created_at: '2026-08-01T00:00:00.000Z',
+  updated_at: '2026-08-02T00:00:00.000Z',
+  deleted_at: null,
+};
+
+const FAMILY_ITEM = {
+  athlete_id: 'ATH-1',
+  full_name: 'Marisol Vance',
+  dob: '2010-03-04',
+  weight_class: '132',
+  gym_status: 'active',
+  emergency_contact: 'Rosa Vance 814-555-0110',
+  active_flag: true,
+  coach_name: 'Coach Alvarez',
+  created_at: '2026-08-01T00:00:00.000Z',
+  updated_at: '2026-08-02T00:00:00.000Z',
+};
+
+/**
+ * queryOne answers by statement: the athlete branch's live-row check gets the
+ * athlete; the real getCoachDisplayName's account lookup gets the coach's
+ * login, or nothing, which is what its own SQL returns for a deleted account.
+ */
+function dbWithCoach(loginEmail: string | null) {
+  mockQueryOne.mockImplementation(async (sql: string) => {
+    if (sql.includes('login_email')) {
+      return loginEmail === null ? null : { login_email: loginEmail };
+    }
+    return { athlete_id: 'ATH-1' };
+  });
+}
+
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
     accountId: 'coach-alvarez@punxsyprominence.org',
@@ -126,12 +173,13 @@ describe('which read a role gets', () => {
 
   test('an athlete still gets only their own record', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-1' }));
-    mockQueryOne.mockResolvedValue({ athlete_id: 'ATH-1' }); // live athlete row
-    mockGetAthleteById.mockResolvedValue({ athlete_id: 'ATH-1' });
+    dbWithCoach('alvarez@punxsyprominence.org');
+    mockGetAthleteById.mockResolvedValue(ROW);
 
     const response = await GET(makeRequest());
 
-    expect(await response.json()).toEqual({ items: [{ athlete_id: 'ATH-1' }] });
+    expect(await response.json()).toEqual({ items: [FAMILY_ITEM] });
+    expect(mockGetAthleteById).toHaveBeenCalledWith('org-1', 'ATH-1');
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
     expect(mockGetAthletesByOrganization).not.toHaveBeenCalled();
   });
@@ -151,11 +199,12 @@ describe('which read a role gets', () => {
 
   test('a parent still resolves children through guardian_links', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'parent-1' }));
-    mockQuery.mockResolvedValue([{ athlete_id: 'ATH-KID' }]);
+    dbWithCoach('alvarez@punxsyprominence.org');
+    mockQuery.mockResolvedValue([ROW]);
 
     const response = await GET(makeRequest());
 
-    expect(await response.json()).toEqual({ items: [{ athlete_id: 'ATH-KID' }] });
+    expect(await response.json()).toEqual({ items: [FAMILY_ITEM] });
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('pilot.guardian_links'), ['org-1', 'parent-1']);
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
   });
@@ -168,6 +217,108 @@ describe('which read a role gets', () => {
     expect(response.status).toBe(403);
     expect(mockGetAthletesForCoach).not.toHaveBeenCalled();
     expect(mockGetAthletesByOrganization).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * OD-2026-10-06-025 ruling 2: a family sees the coach's display name, never
+ * the internal account id. The athlete and parent branches both read
+ * `select *`, so the projection is what stands between the row and the
+ * family's browser; these cases watch the WHOLE serialised body.
+ */
+describe('what a family receives', () => {
+  test.each([
+    ['athlete', principal({ role: 'athlete', athleteId: 'ATH-1' })],
+    ['parent', principal({ role: 'parent', accountId: 'parent-1' })],
+  ])('%s: no staff account id anywhere in the body, coach_name in its place', async (_role, who) => {
+    mockRequirePrincipal.mockResolvedValue(who);
+    dbWithCoach('alvarez@punxsyprominence.org');
+    mockGetAthleteById.mockResolvedValue(ROW);
+    mockQuery.mockResolvedValue([ROW, { ...ROW, athlete_id: 'ATH-2', full_name: 'Teo Vance' }]);
+
+    const response = await GET(makeRequest());
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).not.toContain(COACH_ID);
+    expect(text).not.toContain('coach_id');
+    const body = JSON.parse(text) as { items: Array<Record<string, unknown>> };
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const item of body.items) {
+      expect(Object.keys(item).sort()).toEqual(Object.keys(FAMILY_ITEM).sort());
+      expect(item.coach_name).toBe('Coach Alvarez');
+    }
+    // The name came from the tenancy-scoped reader, asked in this gym.
+    const nameLookup = mockQueryOne.mock.calls.find(([sql]) => String(sql).includes('login_email'));
+    expect(nameLookup?.[1]).toEqual(['org-1', COACH_ID]);
+  });
+
+  test.each([
+    ['athlete', principal({ role: 'athlete', athleteId: 'ATH-1' })],
+    ['parent', principal({ role: 'parent', accountId: 'parent-1' })],
+  ])('%s: a deleted coach shows the neutral phrase, never the id', async (_role, who) => {
+    mockRequirePrincipal.mockResolvedValue(who);
+    dbWithCoach(null); // the reader's SQL excludes a deleted account
+    mockGetAthleteById.mockResolvedValue(ROW);
+    mockQuery.mockResolvedValue([ROW]);
+
+    const response = await GET(makeRequest());
+    const text = await response.text();
+
+    expect(JSON.parse(text).items[0].coach_name).toBe('Your coach');
+    expect(text).not.toContain(COACH_ID);
+    const nameLookup = mockQueryOne.mock.calls.find(([sql]) => String(sql).includes('login_email'));
+    expect(nameLookup?.[0]).toContain('deleted_at is not null');
+  });
+
+  test('a parent with two children of two coaches gets each coach named, one lookup per coach', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'parent-1' }));
+    mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (!sql.includes('login_email')) return { athlete_id: 'ATH-1' };
+      return { login_email: params[1] === COACH_ID ? 'alvarez@punxsyprominence.org' : 'pike@punxsyprominence.org' };
+    });
+    mockQuery.mockResolvedValue([
+      ROW,
+      { ...ROW, athlete_id: 'ATH-2', full_name: 'Teo Vance', coach_id: 'coach-pike@punxsyprominence.org' },
+      { ...ROW, athlete_id: 'ATH-3', full_name: 'Ana Vance' },
+    ]);
+
+    const body = (await (await GET(makeRequest())).json()) as { items: Array<{ coach_name: string }> };
+
+    expect(body.items.map((item) => item.coach_name)).toEqual(['Coach Alvarez', 'Coach Pike', 'Coach Alvarez']);
+    expect(mockQueryOne.mock.calls.filter(([sql]) => String(sql).includes('login_email'))).toHaveLength(2);
+  });
+
+  test('an athlete with no live row gets an empty list and no name lookup', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-1' }));
+    dbWithCoach('alvarez@punxsyprominence.org');
+    mockGetAthleteById.mockResolvedValue(null);
+
+    expect(await (await GET(makeRequest())).text()).toBe(JSON.stringify({ items: [] }));
+    expect(mockQueryOne.mock.calls.some(([sql]) => String(sql).includes('login_email'))).toBe(false);
+  });
+});
+
+describe('what staff receive is unchanged', () => {
+  test('a coach gets the scoped roster exactly as read, byte for byte', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    const roster = [{ ...ROW, dob: null, emergency_contact: null }];
+    mockGetAthletesForCoach.mockResolvedValue(roster);
+
+    const response = await GET(makeRequest());
+
+    expect(await response.text()).toBe(JSON.stringify({ items: roster }));
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin gets the org-wide rows exactly as read, byte for byte', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+    mockGetAthletesByOrganization.mockResolvedValue([ROW]);
+
+    const response = await GET(makeRequest());
+
+    expect(await response.text()).toBe(JSON.stringify({ items: [ROW] }));
+    expect(mockQueryOne).not.toHaveBeenCalled();
   });
 });
 

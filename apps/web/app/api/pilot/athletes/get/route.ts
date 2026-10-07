@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { getAthleteById } from '@/src/server/pilot/entities';
+import { isFamilyRecordCaller, toFamilyAthlete } from '@/src/server/pilot/familyRecordView';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -21,6 +22,13 @@ export async function POST(request: NextRequest) {
     const athlete = await getAthleteById(principal.organizationId, athleteId);
     if (!athlete) {
       return NextResponse.json({ found: false });
+    }
+
+    // An athlete reading their own record gets the family shape: named
+    // fields, coach_name in place of coach_id (OD-2026-10-06-025 ruling 2).
+    // Staff keep the row.
+    if (isFamilyRecordCaller(principal.role)) {
+      return NextResponse.json({ found: true, athlete: await toFamilyAthlete(principal.organizationId, athlete) });
     }
 
     return NextResponse.json({ found: true, athlete });
