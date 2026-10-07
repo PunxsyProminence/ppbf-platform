@@ -463,8 +463,9 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
   ];
   let sourceId: string;
 
-  // A source that is not owned or open-licence holds at most 10 chunks in all, so
-  // each document here gets an approved source of its own.
+  // A source that is not owned or open-licence holds a capped number of chunks
+  // in all (MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE), so each document here gets
+  // an approved source of its own.
   async function approvedSource(): Promise<string> {
     const response = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
       title: 'Zebrafinch Monograph',

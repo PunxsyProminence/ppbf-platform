@@ -248,9 +248,10 @@ beforeAll(async () => {
 });
 
 // Each test gets its own excerpt-only source: a non-owned source is held to the
-// per-source excerpt budget (10 chunks), and the loads in this suite would
-// otherwise add up on one shared source. The rights marker is the one an
-// excerpt-only source carries (#1238); the loader does not require it.
+// per-source excerpt budget (MAX_EXCERPT_CHUNKS_PER_NON_OWNED_SOURCE), and the
+// loads in this suite would otherwise add up on one shared source. The rights
+// marker is the one an excerpt-only source carries (#1238); the loader does not
+// require it.
 beforeEach(async () => {
   gymSourceId = (await library.createShadowLibrarySource({
     organizationId: GYM_ID,
