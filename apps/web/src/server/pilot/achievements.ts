@@ -621,22 +621,28 @@ export async function createMentorship(params: {
   return created;
 }
 
+export interface MentorshipAthleteIds {
+  mentor_athlete_id: string;
+  mentee_athlete_id: string;
+}
+
 /**
- * The mentor athlete a mentorship is bound to, for authorizing an action on it
- * BEFORE mutating the row. Deliberately minimal: it reads only the id the
- * access check needs, straight from pilot.mentorships with no join, so no
+ * The two athletes a mentorship is bound to, for authorizing an action on it
+ * BEFORE mutating the row. Deliberately minimal: it reads only the ids the
+ * access checks need, straight from pilot.mentorships with no join, so no
  * mentor/mentee name or other PII is loaded before the caller is authorized.
- * mentor_athlete_id is set at creation and never reassigned.
+ * Both ids are set at creation and never reassigned. BOTH are returned
+ * because ending a pairing changes both kids' screens, so the caller must
+ * reach both -- the same rule POST applies when it creates one.
  */
-export async function getMentorshipMentorAthleteId(
+export async function getMentorshipAthleteIds(
   organizationId: string,
   mentorshipId: string,
-): Promise<string | null> {
-  const row = await queryOne<{ mentor_athlete_id: string }>(
-    'select mentor_athlete_id from pilot.mentorships where organization_id = $1 and mentorship_id = $2',
+): Promise<MentorshipAthleteIds | null> {
+  return queryOne<MentorshipAthleteIds>(
+    'select mentor_athlete_id, mentee_athlete_id from pilot.mentorships where organization_id = $1 and mentorship_id = $2',
     [organizationId, mentorshipId],
   );
-  return row?.mentor_athlete_id ?? null;
 }
 
 /**

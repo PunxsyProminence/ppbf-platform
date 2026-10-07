@@ -6,7 +6,7 @@ import {
   MentorshipAlreadyOpenError,
   createMentorship,
   endMentorship,
-  getMentorshipMentorAthleteId,
+  getMentorshipAthleteIds,
   listMentorshipsForAthlete,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -113,17 +113,22 @@ export async function DELETE(request: NextRequest) {
       throw new Error('Missing mentorship_id');
     }
 
-    // Resolve and authorize the mentorship's athlete BEFORE mutating it.
+    // Resolve and authorize the mentorship's athletes BEFORE mutating it.
     // endMentorship writes the end date first and returns the row after, so
     // authorizing on its result was too late -- a writer with no relationship
     // to the athlete could end the pairing and only then be refused, with the
-    // row already changed. The mentor_athlete_id binding is set at creation
-    // and never reassigned, so a read-then-write here is safe.
-    const mentorAthleteId = await getMentorshipMentorAthleteId(principal.organizationId, mentorshipId);
-    if (!mentorAthleteId) {
+    // row already changed. Both athlete bindings are set at creation and
+    // never reassigned, so a read-then-write here is safe.
+    //
+    // BOTH ends, same as POST: a pairing sits on two kids' screens, and
+    // reaching the mentor alone used to be enough to end the mentee's
+    // pairing. The coach must reach the mentor AND the mentee.
+    const athletes = await getMentorshipAthleteIds(principal.organizationId, mentorshipId);
+    if (!athletes) {
       throw new Error('Not found');
     }
-    await assertActorCanAccessAthlete(principal, mentorAthleteId);
+    await assertActorCanAccessAthlete(principal, athletes.mentor_athlete_id);
+    await assertActorCanAccessAthlete(principal, athletes.mentee_athlete_id);
 
     const mentorship = await endMentorship(principal.organizationId, mentorshipId);
     if (!mentorship) {
