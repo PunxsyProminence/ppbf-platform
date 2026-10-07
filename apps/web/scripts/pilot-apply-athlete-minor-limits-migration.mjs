@@ -27,7 +27,7 @@ const EXPECTED_CHECKS = {
   pilot_athlete_minor_limits_type_check:
     "CHECK ((limit_type = ANY (ARRAY['heat_exposure_minutes_per_session'::text, 'weight_cut_max_percent_body_weight'::text, 'supervision'::text])))",
   pilot_athlete_minor_limits_number_check:
-    "CHECK (((value_number IS NULL) OR ((value_number >= (0)::numeric) AND (value_number <> 'NaN'::numeric))))",
+    'CHECK (((value_number IS NULL) OR ((value_number >= (0)::numeric) AND (value_number <= 999999.99))))',
   pilot_athlete_minor_limits_text_check:
     "CHECK (((value_text IS NULL) OR ((length(btrim(value_text, ' \t\r\n'::text)) > 0) AND (length(value_text) <= 500))))",
   pilot_athlete_minor_limits_unit_check:

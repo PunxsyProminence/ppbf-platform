@@ -426,6 +426,7 @@ describe('athlete minor limits migration', () => {
              and (value_number is null or value_number <= 100))
          or (limit_type = 'supervision' and unit = 'text' and value_number is null)
          or (unit = 'text'))`],
+    // Same words, no upper bound: NaN and Infinity would pass.
     ['the number check loosened', `alter table pilot.athlete_minor_limits drop constraint pilot_athlete_minor_limits_number_check,
        add constraint pilot_athlete_minor_limits_number_check check (value_number is null or value_number >= 0)`],
     ['the read index dropped', 'drop index pilot.idx_athlete_minor_limits_athlete_type_seq'],
@@ -443,7 +444,7 @@ describe('athlete minor limits migration', () => {
     }
   });
 
-  test('the database refuses an invented type, a wrong unit, the wrong kind of value, a negative number, a percentage over 100, blank or long text, a long note and a non-staff setter', async () => {
+  test('the database refuses an invented type, a wrong unit, the wrong kind of value, a negative, NaN or infinite number, a percentage over 100, blank or long text, a long note and a non-staff setter', async () => {
     const client = await freshDatabase('limits_checks');
     try {
       // contact_level is not a type here on purpose (it lives in athlete_contact_caps).
@@ -475,8 +476,11 @@ describe('athlete minor limits migration', () => {
       await expect(
         insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: '\t\n \r' }),
       ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);
-      // NaN is a numeric that sorts above every number; refused by name.
+      // NaN and Infinity are numerics that sort above every number; the
+      // closed upper bound refuses both (the module never sends either).
       await expect(insertRaw(client, { value_number: 'NaN' })).rejects.toThrow(/pilot_athlete_minor_limits_number_check/);
+      await expect(insertRaw(client, { value_number: 'Infinity' })).rejects.toThrow(/pilot_athlete_minor_limits_number_check/);
+      await expect(insertRaw(client, { value_number: 1000000 })).rejects.toThrow(/numeric field overflow|pilot_athlete_minor_limits_number_check/);
       await expect(
         insertRaw(client, { limit_type: 'supervision', unit: 'text', value_number: null, value_text: 'x'.repeat(501) }),
       ).rejects.toThrow(/pilot_athlete_minor_limits_text_check/);

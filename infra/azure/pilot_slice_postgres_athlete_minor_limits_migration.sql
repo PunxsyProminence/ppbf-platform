@@ -48,11 +48,13 @@ create table if not exists pilot.athlete_minor_limits (
     ),
   -- The number the coach typed, for the two numeric types (two decimal
   -- places; the module refuses more, so nothing is rounded on the way in).
-  -- Null = cleared. NaN is a numeric in Postgres and sorts above every
-  -- number, so it is refused by name.
+  -- Null = cleared. Bounded on both sides by the column's own range: NaN
+  -- and Infinity are numerics in Postgres that sort above every number, and
+  -- a closed upper bound is what refuses both (NaN fails <=, as does
+  -- Infinity); the bound is the storage limit, not a policy ceiling.
   value_number       numeric(8,2) null
     constraint pilot_athlete_minor_limits_number_check check (
-      value_number is null or (value_number >= 0 and value_number <> 'NaN'::numeric)
+      value_number is null or (value_number >= 0 and value_number <= 999999.99)
     ),
   -- The coach's words, for supervision. Null = cleared; never blank (spaces,
   -- tabs and line breaks alone do not count).
