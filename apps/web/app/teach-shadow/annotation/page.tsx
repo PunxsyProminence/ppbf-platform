@@ -170,6 +170,10 @@ interface BodyMoment {
 }
 
 interface BodyData {
+  /** The set this was read for. The page shows it only beside that set: a
+   * reply that lands after the coach has moved to another clip is not that
+   * clip's progress. */
+  annotation_set_id: string;
   expected_points: string[] | null;
   moments: BodyMoment[];
   stance_labels: { event_id: string; stance_type: string }[];
@@ -344,6 +348,10 @@ export default function CoachCalibrationPage() {
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  /* Which body-points read is the current one. A slow reply from an earlier
+     read (another clip, or the same set before an event write) is dropped on
+     arrival rather than overwriting what a later read put on screen. */
+  const bodyReadToken = useRef(0);
 
   /* The set is read-only unless it is open and belongs to this session's
      annotator. `null` (no set opened yet) is also read-only -- there is
@@ -435,28 +443,41 @@ export default function CoachCalibrationPage() {
    * refusal: the events, the player and the forms are unaffected by it.
    */
   const loadBodyData = useCallback(async (set: AnnotationSet | null) => {
-    if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
-      setBodyData(null);
-      setBodyNotice('');
-      return;
-    }
-    const response = await fetch(
-      `${apiBase()}/api/pilot/calibration/body-points?annotation_set_id=${encodeURIComponent(set.annotation_set_id)}`,
-      { credentials: 'include', cache: 'no-store' },
-    );
-    if (!response.ok) {
-      setBodyData(null);
-      setBodyNotice(await readError(response));
-      return;
-    }
-    const payload = (await response.json()) as Partial<BodyData>;
+    const token = bodyReadToken.current + 1;
+    bodyReadToken.current = token;
+    // Cleared first, not replaced on arrival: between an event write and the
+    // re-read, the old marks would sit beside the new event list and the
+    // totals would be wrong. An empty panel for one round trip is honest.
+    setBodyData(null);
     setBodyNotice('');
-    setBodyData({
-      expected_points: payload.expected_points ?? null,
-      moments: payload.moments ?? [],
-      stance_labels: payload.stance_labels ?? [],
-      missing: payload.missing ?? [],
-    });
+    if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/calibration/body-points?annotation_set_id=${encodeURIComponent(set.annotation_set_id)}`,
+        { credentials: 'include', cache: 'no-store' },
+      );
+      if (bodyReadToken.current !== token) return;
+      if (!response.ok) {
+        setBodyNotice(await readError(response));
+        return;
+      }
+      const payload = (await response.json()) as Partial<BodyData>;
+      if (bodyReadToken.current !== token) return;
+      setBodyData({
+        annotation_set_id: set.annotation_set_id,
+        expected_points: payload.expected_points ?? null,
+        moments: payload.moments ?? [],
+        stance_labels: payload.stance_labels ?? [],
+        missing: payload.missing ?? [],
+      });
+    } catch {
+      // Offline, aborted, or a body that was not JSON. The events and the
+      // player are unaffected; the panel says the marks could not be read.
+      if (bodyReadToken.current !== token) return;
+      setBodyNotice('The body-point marks could not be read. Reload the clip to try again.');
+    }
   }, []);
 
   const loadWorkspace = useCallback(async (nextClipId: string) => {
@@ -738,6 +759,10 @@ export default function CoachCalibrationPage() {
       });
       if (!response.ok) {
         setRefusal(await readError(response));
+        // A body-point set refused as incomplete: re-read the marks so the
+        // panel shows what the server named, not what it showed before a
+        // write from another tab or a lost reply.
+        await loadBodyData(annotationSet);
         return;
       }
       const payload = (await response.json()) as { set?: AnnotationSet };
@@ -1105,7 +1130,7 @@ export default function CoachCalibrationPage() {
             </div>
           ) : null}
 
-          {annotationSet && bodyData ? (
+          {annotationSet && bodyData && bodyData.annotation_set_id === annotationSet.annotation_set_id ? (
             <BodyPointProgress
               events={events}
               expectedPoints={bodyData.expected_points}

@@ -1,18 +1,24 @@
 'use client';
 
-import { MOMENT_SLOTS } from '@/src/server/pilot/calibration/ontology';
+import {
+  GUARD_TYPE_SOURCES,
+  MOMENT_SLOTS,
+  SOURCE_MANUALS,
+  STANCE_TYPE_SOURCES,
+} from '@/src/server/pilot/calibration/ontology';
 import { formatMediaOffset } from '@/src/lib/clipTime';
 
 /**
  * WHERE ONE ANNOTATOR'S BODY-POINT MARKING STANDS, event by event.
  *
- * This is a reading of the server's answer and nothing more. The counts, the
- * expected point list and the "still to mark" list all come from
+ * This is a reading of the server's answer and nothing more. The expected
+ * point list and the "still to mark" list come from
  * GET /api/pilot/calibration/body-points, which reads them from the same
  * tables the submission trigger checks (bodyPoints.ts listMissingBodyData).
- * Nothing here recomputes completeness from the moments it is handed: a page
- * that did its own sum would agree with the database right up until the day
- * it did not, and that day the coach would press Submit and be refused.
+ * Completeness is never recomputed here: a page that did its own sum would
+ * agree with the database right up until the day it did not, and that day
+ * the coach would press Submit and be refused. The totals line only counts
+ * the rows it was handed.
  *
  * Marking itself (placing a point, choosing a lead side) lives in the
  * canvas and the moment controls, not here. This component only says what is
@@ -60,16 +66,32 @@ function label(token: string): string {
   return token.replace(/_/g, ' ');
 }
 
-/** "punch at 0:12.400", the way the rest of the page names an event. */
+/**
+ * A guard or stance type as the coach knows it: the manual's own heading and
+ * the body that printed it ("Half Guard, USA Boxing"), read from the
+ * vocabulary's source table, never from the token. `other` and `unknown`
+ * have no source and read as themselves.
+ */
+export function namedPositionLabel(token: string): string {
+  const source =
+    (GUARD_TYPE_SOURCES as Record<string, { body: keyof typeof SOURCE_MANUALS; nameAsPrinted: string } | undefined>)[token]
+    ?? (STANCE_TYPE_SOURCES as Record<string, { body: keyof typeof SOURCE_MANUALS; nameAsPrinted: string } | undefined>)[token];
+  if (!source) return label(token);
+  return `${source.nameAsPrinted}, ${SOURCE_MANUALS[source.body].bodyName}`;
+}
+
+/** "punch at 0:12.400 (red corner)": the event as the coach would find it in
+ * the clip, with the actor so two events at one time do not read alike. */
 export function describeEventForProgress(event: ProgressEvent): string {
-  return `${label(event.event_class)} at ${formatMediaOffset(event.start_ms)}`;
+  return `${label(event.event_class)} at ${formatMediaOffset(event.start_ms)} (${event.actor_track})`;
 }
 
 /**
  * The server names an event by its id ("<event_id>: middle moment"). An id
  * means nothing to a coach, so the leading id is swapped for the event's
  * position in the clip when that event is on the page. The server's own words
- * after the colon are kept exactly: they are what Submit will say.
+ * after the colon are kept exactly: they are what Submit will say. An event
+ * the page does not hold is shown as sent, never dropped.
  */
 export function readableMissingItem(item: string, events: readonly ProgressEvent[]): string {
   const colon = item.indexOf(': ');
@@ -78,6 +100,16 @@ export function readableMissingItem(item: string, events: readonly ProgressEvent
   const event = events.find((row) => row.event_id === eventId);
   if (!event) return item;
   return `${describeEventForProgress(event)}: ${item.slice(colon + 2)}`;
+}
+
+function describeMoment(moment: ProgressMoment, expected: number): string {
+  const when = `${label(moment.moment_kind)} at ${formatMediaOffset(moment.observation_ms)}`;
+  const points = `${moment.points.length} of ${expected} points`;
+  const lead = `lead side ${moment.lead_side ? label(moment.lead_side) : 'not set'}`;
+  const guard = `guard ${moment.guard_type ? namedPositionLabel(moment.guard_type) : 'not set'}`;
+  // start and end are their own kind; only the middle needs its kind named.
+  const head = moment.moment_slot === 'middle' ? `middle (${when})` : when;
+  return `${head} · ${points} · ${lead} · ${guard}`;
 }
 
 export default function BodyPointProgress({
@@ -102,17 +134,24 @@ export default function BodyPointProgress({
   const pointsNeeded = momentsNeeded * expected;
   const pointsMarked = moments.reduce((sum, moment) => sum + moment.points.length, 0);
 
+  let badge: { className: string; text: string };
+  if (events.length === 0) {
+    badge = { className: 'badge', text: 'Nothing to mark yet' };
+  } else if (missing.length === 0) {
+    badge = { className: 'badge badge--cleared', text: 'Complete' };
+  } else {
+    badge = { className: 'badge badge--monitor', text: `${missing.length} item${missing.length === 1 ? '' : 's'} still to mark` };
+  }
+
   return (
     <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]" data-testid="body-point-progress">
       <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
         <h2 className="t-eyebrow">Body points</h2>
-        <span className={missing.length === 0 ? 'badge badge--cleared' : 'badge badge--monitor'}>
-          {missing.length === 0 ? 'Complete' : `${missing.length} still to mark`}
-        </span>
+        <span className={badge.className}>{badge.text}</span>
       </div>
 
       <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-        Every punch and defence is marked at three moments (start, middle, end). At each moment
+        Every punch and defense is marked at three moments (start, middle, end). At each moment
         all {expected} points are placed or marked not visible, with the lead side and the
         guard; each event takes one stance type.
       </p>
@@ -124,7 +163,7 @@ export default function BodyPointProgress({
 
       {events.length === 0 ? (
         <p className="t-muted mt-[var(--s3)]">
-          No events recorded yet. Body points are marked on each punch or defence after it is
+          No events recorded yet. Body points are marked on each punch or defense after it is
           recorded.
         </p>
       ) : (
@@ -139,29 +178,19 @@ export default function BodyPointProgress({
                 className="rounded-[var(--r-sm)] border border-[color:rgba(255,255,255,.12)] p-[var(--s3)]"
               >
                 <p className="t-data">
-                  {describeEventForProgress(event)} to {formatMediaOffset(event.end_ms)} · {event.actor_track}
+                  {describeEventForProgress(event)} to {formatMediaOffset(event.end_ms)}
                 </p>
                 <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                   {MOMENT_SLOTS.map((slot) => {
                     const moment = eventMoments.find((row) => row.moment_slot === slot);
-                    if (!moment) {
-                      return (
-                        <li key={slot} className="t-body">
-                          {label(slot)} · not opened
-                        </li>
-                      );
-                    }
                     return (
                       <li key={slot} className="t-body">
-                        {label(slot)} ({label(moment.moment_kind)} at {formatMediaOffset(moment.observation_ms)}) ·{' '}
-                        {moment.points.length} of {expected} points ·{' '}
-                        lead side {moment.lead_side ? label(moment.lead_side) : 'not set'} ·{' '}
-                        guard {moment.guard_type ? label(moment.guard_type) : 'not set'}
+                        {moment ? describeMoment(moment, expected) : `${label(slot)} · not opened`}
                       </li>
                     );
                   })}
                   <li className="t-body">
-                    stance type · {stance ? label(stance) : 'not set'}
+                    stance type · {stance ? namedPositionLabel(stance) : 'not set'}
                   </li>
                 </ul>
               </li>

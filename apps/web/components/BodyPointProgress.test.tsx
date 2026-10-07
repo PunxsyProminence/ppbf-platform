@@ -66,11 +66,13 @@ test('shows each event with its three moments and its stance type, from the serv
     'Points 23 of 138 · moments opened 1 of 6 · stance types 1 of 2',
   );
   const [punch, defense] = screen.getAllByTestId('body-point-event');
-  expect(punch.textContent).toContain('middle (contact at 0:12.600) · 23 of 23 points · lead side not set · guard usa boxing  half guard');
+  // The guard and stance read as the manual's own heading and the body that
+  // printed it, from the vocabulary's source table, never the token.
+  expect(punch.textContent).toContain('middle (contact at 0:12.600) · 23 of 23 points · lead side not set · guard Half Guard, USA Boxing');
   expect(punch.textContent).toContain('start · not opened');
   expect(punch.textContent).toContain('stance type · not set');
-  expect(defense.textContent).toContain('stance type · aiba  classic');
-  expect(screen.getByText('1 still to mark')).toBeTruthy();
+  expect(defense.textContent).toContain('stance type · CLASSIC, AIBA (now IBA)');
+  expect(screen.getByText('1 item still to mark')).toBeTruthy();
 });
 
 test('an empty missing list reads as complete', () => {
@@ -81,10 +83,40 @@ test('an empty missing list reads as complete', () => {
   expect(screen.queryByTestId('body-point-missing')).toBeNull();
 });
 
+test('a set with no events is not called complete', () => {
+  render(
+    <BodyPointProgress events={[]} expectedPoints={BODY_POINTS_0_4} moments={[]} stanceLabels={[]} missing={[]} />,
+  );
+  expect(screen.getByText('Nothing to mark yet')).toBeTruthy();
+  expect(screen.queryByText('Complete')).toBeNull();
+});
+
+test('a start or end moment names its time once; other and unknown read as themselves', () => {
+  render(
+    <BodyPointProgress
+      events={[PUNCH]}
+      expectedPoints={BODY_POINTS_0_4}
+      moments={[{ ...MOMENT, moment_slot: 'start', moment_kind: 'start', observation_ms: 12_400, guard_type: 'unknown' }]}
+      stanceLabels={[{ event_id: 'evt-1', stance_type: 'other' }]}
+      missing={[]}
+    />,
+  );
+  const text = screen.getByTestId('body-point-event').textContent ?? '';
+  expect(text).toContain('start at 0:12.400 · 23 of 23 points · lead side not set · guard unknown');
+  expect(text).not.toContain('start (start');
+  expect(text).toContain('stance type · other');
+});
+
 describe('readableMissingItem', () => {
   test('swaps the event id for the event\'s place in the clip and keeps the server\'s words', () => {
-    expect(readableMissingItem('evt-1: start points, 2 of 23', [PUNCH])).toBe('punch at 0:12.400: start points, 2 of 23');
-    expect(readableMissingItem('evt-2: middle lead side', [PUNCH, DEFENSE])).toBe('defense at 0:13.000: middle lead side');
+    expect(readableMissingItem('evt-1: start points, 2 of 23', [PUNCH])).toBe('punch at 0:12.400 (red corner): start points, 2 of 23');
+    expect(readableMissingItem('evt-2: middle lead side', [PUNCH, DEFENSE])).toBe('defense at 0:13.000 (blue corner): middle lead side');
+  });
+
+  test('two events at one time are told apart by their actor', () => {
+    const other = { ...PUNCH, event_id: 'evt-3', actor_track: 'blue corner' };
+    expect(readableMissingItem('evt-1: stance type', [PUNCH, other]))
+      .not.toBe(readableMissingItem('evt-3: stance type', [PUNCH, other]));
   });
 
   test('an event the page does not hold is shown as the server sent it, never dropped', () => {
