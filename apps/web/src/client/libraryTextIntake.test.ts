@@ -212,6 +212,34 @@ describe('submitLibraryTextIntake', () => {
     expect(calls).toHaveLength(1);
   });
 
+  // CL-C2: the server's 422 sentence is shown, and an excerpt-budget refusal
+  // offers no "Finish saving", because a retry is refused the same way.
+  it('shows the server sentence for an excerpt-budget refusal and offers no resume', async () => {
+    const budget = 'This source is not marked PPBF-owned or open-licence, so the Library may hold only a limited set of excerpts of it.';
+    const { calls, impl } = recordingFetch((_call, index) => (index === 0
+      ? created
+      : index === 2
+        ? { status: 422, json: { error: budget, code: 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED' } }
+        : { status: 201 }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+
+    expect(result).toMatchObject({ ok: false, resume: null, writtenChunks: 1 });
+    expect(result.ok === false && result.message).toContain(budget);
+    expect(result.ok === false && result.message).not.toMatch(/Finish saving|\(422\)/);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('shows the server sentence for another 422 and keeps the resume', async () => {
+    const rule = 'This source is not marked PPBF-owned or open-licence, so the Library may hold only excerpts of it.';
+    const { impl } = recordingFetch((_call, index) => (index === 0
+      ? created
+      : { status: 422, json: { ok: false, error: rule } }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+
+    expect(result.ok === false && result.message).toContain(rule);
+    expect(result.ok === false && result.resume).toMatchObject({ documentId: 'doc_1', nextOrdinal: 0 });
+  });
+
   it('stops at the first failed chunk, says how far it got, and resumes the same document', async () => {
     const first = recordingFetch((_call, index) => (index === 0 ? created : index === 3 ? 'throw' : { status: 201 }));
     const failed = await submitLibraryTextIntake('', INPUT, { fetchImpl: first.impl });

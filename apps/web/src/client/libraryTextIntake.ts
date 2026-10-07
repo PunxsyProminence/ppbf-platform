@@ -279,7 +279,26 @@ export function validateIntakeInput(input: IntakeInput): string | null {
   return null;
 }
 
-function refusalMessage(status: number, what: string, shelf: IntakeShelf | undefined): string {
+// The excerpt budget's refusal code (shadowLibrary.ts EXCERPT_BUDGET_EXCEEDED_CODE;
+// not imported, so this client module carries no server import).
+const EXCERPT_BUDGET_EXCEEDED_CODE = 'SHADOW_LIBRARY_EXCERPT_BUDGET_EXCEEDED';
+
+function serverError(payload: unknown): { error: string | null; code: string | null } {
+  if (typeof payload !== 'object' || payload === null) return { error: null, code: null };
+  const { error, code } = payload as { error?: unknown; code?: unknown };
+  return {
+    error: typeof error === 'string' && error.trim() ? error.trim() : null,
+    code: typeof code === 'string' ? code : null,
+  };
+}
+
+function refusalMessage(status: number, what: string, shelf: IntakeShelf | undefined, payload?: unknown): string {
+  // A 422 is a Library rule (source rights, the excerpt budget), and the
+  // server's sentence says which and what to do; a status number does not.
+  if (status === 422) {
+    const { error } = serverError(payload);
+    if (error) return error;
+  }
   if (status === 401) return 'Sign in again, then retry.';
   if (status === 403) return 'Your role cannot add text to the Library.';
   if (status === 404) {
@@ -386,7 +405,7 @@ export async function submitLibraryTextIntake(
       return {
         ok: false,
         message: refused
-          ? `${refusalMessage(created.status, 'source', shelf)} Nothing was saved.`
+          ? `${refusalMessage(created.status, 'source', shelf, created.payload)} Nothing was saved.`
           : 'The Library did not confirm the save. An empty entry with this label may exist: check Evidence Review before trying again, and reject it there if it does.',
         resume: null,
         writtenChunks: 0,
@@ -410,10 +429,23 @@ export async function submitLibraryTextIntake(
     });
     const alreadyStored = resume !== null && written.status === 409;
     if (written.status !== 201 && !alreadyStored) {
+      // Over the source's excerpt budget, a retry is refused the same way, so
+      // no "Finish saving" is offered (CL-C2).
+      if (written.status === 422 && serverError(written.payload).code === EXCERPT_BUDGET_EXCEEDED_CODE) {
+        return {
+          ok: false,
+          message: `Saved ${index} of ${chunks.length} parts, then stopped: ${
+            refusalMessage(written.status, 'document', shelf, written.payload)
+          } The entry is incomplete; reject it in Evidence Review, or save a shorter excerpt.`,
+          resume: null,
+          writtenChunks: index,
+          totalChunks: chunks.length,
+        };
+      }
       return {
         ok: false,
         message: `Saved ${index} of ${chunks.length} parts, then stopped: ${
-          written.status === 0 ? 'the Library could not be reached.' : refusalMessage(written.status, 'document', shelf)
+          written.status === 0 ? 'the Library could not be reached.' : refusalMessage(written.status, 'document', shelf, written.payload)
         } The entry is incomplete. Use Finish saving to write the rest.`,
         resume: { documentId, nextOrdinal: index, locator, chunks, ...(shelf === 'platform' ? { shelf } : {}) },
         writtenChunks: index,
