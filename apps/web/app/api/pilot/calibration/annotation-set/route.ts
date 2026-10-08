@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   listAnnotationEvents,
   openAnnotationSet,
+  openNextAnnotationPass,
 } from '@/src/server/pilot/calibration/annotations';
 import {
   ANNOTATABLE_ONTOLOGY_VERSIONS,
@@ -98,24 +99,56 @@ export async function GET(request: NextRequest) {
  * error, it is a finished pass, and the page renders it read-only.
  *
  * There is no un-submit here and there must never be one. A genuine
- * re-annotation is a new set by a different annotator; un-submitting would
- * destroy the only evidence that a pass was completed independently.
+ * re-annotation is a NEW set -- by a different annotator, or by the same one
+ * as a later pass (below); un-submitting would destroy the only evidence that
+ * a pass was completed independently.
+ *
+ * `remark: true` OPENS THE CALLER'S NEXT PASS on a clip they have labelled
+ * and submitted: the same clip again, blind, in a later session. It is asked
+ * for in so many words, never inferred, because it is the one request here
+ * that takes something away -- from the moment the new pass exists, the
+ * earlier one is no longer served to its annotator (annotatorGate.ts).
+ *
+ *   - latest pass submitted          -> a new pass, `created: true`
+ *   - latest pass is an open re-mark -> that pass, `created: false`, so a
+ *                                       double press never opens a third
+ *   - no pass, or pass 1 still open  -> 403; there is nothing finished to
+ *                                       repeat
  */
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireAnnotator(principal);
 
-    const body = (await request.json().catch(() => ({}))) as { calibration_clip_id?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      calibration_clip_id?: string;
+      remark?: unknown;
+    };
     const clipId = body.calibration_clip_id?.trim() ?? '';
     if (!clipId) {
       throw new Error('Missing calibration_clip_id');
     }
+    // A boolean or nothing. 'true', 1 and 'yes' are refused rather than read
+    // as a yes or quietly as a no: one opens a pass nobody asked for, the
+    // other hands back the finished pass to somebody who asked to repeat it.
+    if (body.remark !== undefined && typeof body.remark !== 'boolean') {
+      throw new Error('Missing remark: expected true or false');
+    }
+    const remark = body.remark === true;
 
     const clip = await loadPlayableClip(principal.organizationId, clipId);
 
     const existing = await findOwnAnnotationSetForClip(principal, clipId);
-    if (existing) {
+    if (remark) {
+      if (existing && existing.status === 'in_progress' && existing.pass_number > 1) {
+        return NextResponse.json({ ok: true, created: false, set: existing });
+      }
+      if (!existing || existing.status !== 'submitted') {
+        throw new Error(
+          'Forbidden: a clip can be re-marked once your first pass on it has been submitted',
+        );
+      }
+    } else if (existing) {
       // No audit row: nothing changed. An audit stream that records "opened a
       // set" once per page load cannot be read for when a set was actually
       // created.
@@ -154,27 +187,90 @@ export async function POST(request: NextRequest) {
         + `can label ${ANNOTATABLE_ONTOLOGY_VERSIONS.join(', ')}, so it cannot annotate it`,
       );
     }
+    // A repeat pass is the same reading made again, so it is made under the
+    // vocabulary the pass before it was. Nothing in the application changes a
+    // project's version; this refuses rather than assumes, because two passes
+    // under two vocabularies are two measurements and could never be compared.
+    if (remark && existing && existing.ontology_version !== project.ontology_version) {
+      throw new Error(
+        `Forbidden: your last pass on this clip was labelled under ${existing.ontology_version} `
+        + `and its project is now stamped ${project.ontology_version}, so it cannot be re-marked`,
+      );
+    }
 
-    const set = await openAnnotationSet({
+    const opening = {
       organizationId: principal.organizationId,
       annotationSetId: randomUUID(),
       calibrationClipId: clip.calibration_clip_id,
       annotatorAccountId: principal.accountId,
       ontologyVersion: project.ontology_version,
-    });
+    };
+    const set = remark && existing
+      // The pass decided on above, by number: the insert opens the one after
+      // THAT pass or nothing.
+      ? await openNextAnnotationPass({ ...opening, afterPassNumber: existing.pass_number })
+      : await openAnnotationSet(opening);
+    if (!set) {
+      // Only a re-mark answers null: the pass read as submitted above was not
+      // the latest by the time of the insert -- another window got there
+      // first. If that window's pass is still open it is the caller's open
+      // re-mark, and is handed back as a double press is. If it has already
+      // been submitted too, the caller is looking at a stale page. Either way
+      // nothing was written here and nothing is audited.
+      const latest = await findOwnAnnotationSetForClip(principal, clipId);
+      if (latest && latest.status === 'in_progress' && latest.pass_number > 1) {
+        return NextResponse.json({ ok: true, created: false, set: latest });
+      }
+      throw new Error(
+        'Forbidden: this clip was re-marked from another window while this request waited; '
+        + 'reload it before re-marking again',
+      );
+    }
 
-    await writeCalibrationAuditEvent({
-      eventType: 'create',
+    const auditEvent = {
+      eventType: 'create' as const,
       principal,
-      entityType: 'calibration_annotation_set',
+      entityType: 'calibration_annotation_set' as const,
       entityId: set.annotation_set_id,
       // The clip id and the vocabulary, and nothing about the athlete or the
       // footage. An audit row is not a second copy of the record.
       details: {
         calibration_clip_id: set.calibration_clip_id,
         ontology_version: set.ontology_version,
+        pass_number: set.pass_number,
       },
-    });
+    };
+    if (!remark) {
+      await writeCalibrationAuditEvent(auditEvent);
+      return NextResponse.json({ ok: true, created: true, set });
+    }
+
+    /* A RE-MARK THAT COULD NOT BE AUDITED IS SAID TO EXIST.
+     *
+     * The pass is committed before its audit row is attempted and cannot be
+     * rolled back from here, and it is the one request on this surface that
+     * takes something away: the earlier pass is already out of reach. A bare
+     * 500 would leave the coach not knowing the clip is now on its next
+     * pass, and a retry would hand that pass back as `created: false` with
+     * no audit row ever written and nothing saying so. Returned rather than
+     * thrown for the reason clips/route.ts gives: jsonError would replace
+     * this sentence with "Internal server error".
+     */
+    try {
+      await writeCalibrationAuditEvent(auditEvent);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return NextResponse.json(
+        {
+          error: `${reason} -- pass ${set.pass_number} on this clip was opened before its audit `
+            + 'record could be written and still exists, unaudited. Do not re-mark again; '
+            + 'reload the clip to continue on it.',
+          reason: 'CALIBRATION_REMARK_AUDIT_FAILED',
+          annotation_set_id: set.annotation_set_id,
+        },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({ ok: true, created: true, set });
   } catch (error) {

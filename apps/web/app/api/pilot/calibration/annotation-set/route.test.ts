@@ -5,6 +5,7 @@ import {
   listAnnotationEvents,
   listAnnotationSetsForClip,
   openAnnotationSet,
+  openNextAnnotationPass,
 } from '@/src/server/pilot/calibration/annotations';
 import {
   VideoNotClippableError,
@@ -32,6 +33,7 @@ jest.mock('@/src/server/pilot/calibration/annotations', () => ({
   listAnnotationSetsForClip: jest.fn(),
   listAnnotationEvents: jest.fn(),
   openAnnotationSet: jest.fn(),
+  openNextAnnotationPass: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/calibration/projects', () => {
@@ -57,6 +59,7 @@ const mockPrincipal = requirePrincipal as jest.Mock;
 const mockListSets = listAnnotationSetsForClip as jest.Mock;
 const mockListEvents = listAnnotationEvents as jest.Mock;
 const mockOpen = openAnnotationSet as jest.Mock;
+const mockOpenNext = openNextAnnotationPass as jest.Mock;
 const mockGetClip = getCalibrationClip as jest.Mock;
 const mockGetProject = getCalibrationProject as jest.Mock;
 const mockClippable = assertVideoClippable as jest.Mock;
@@ -89,6 +92,7 @@ const MY_SET = {
   annotator_account_id: 'coach-1',
   ontology_version: 'boxing-ontology-0.1',
   status: 'in_progress',
+  pass_number: 1,
   submitted_at: null,
 };
 
@@ -272,7 +276,20 @@ describe('POST to open a set', () => {
       entity_type: 'calibration_annotation_set',
       entity_id: 'set-mine',
       shadow_mirror: false,
+      details: { calibration_clip_id: 'clip-1', pass_number: 1 },
     });
+    expect(mockOpenNext).not.toHaveBeenCalled();
+  });
+
+  test('a first pass whose audit record cannot be written fails as it always did', async () => {
+    ready();
+    mockOpen.mockResolvedValueOnce(MY_SET);
+    mockAudit.mockRejectedValueOnce(new Error('audit store unavailable'));
+
+    const response = await POST(post({ calibration_clip_id: 'clip-1' }));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).not.toHaveProperty('reason');
   });
 
   test('pressing it twice returns the same set rather than failing on the unique index', async () => {
@@ -344,5 +361,222 @@ describe('POST to open a set', () => {
 
     expect(response.status).toBe(400);
     expect(body.error).toContain('calibration_clip_id');
+  });
+});
+
+describe('POST { remark: true } to open the next pass', () => {
+  const SUBMITTED = { ...MY_SET, status: 'submitted', submitted_at: '2026-08-01T00:00:00.000Z' };
+  const OPEN_REMARK = { ...MY_SET, annotation_set_id: 'set-mine-2', pass_number: 2 };
+  const REFUSAL = /^Forbidden: a clip can be re-marked once your first pass on it has been submitted/;
+
+  function ready(existing: unknown[] = []) {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockGetClip.mockResolvedValue(CLIP);
+    mockClippable.mockResolvedValue({ videoSessionId: 'vid-1', athleteId: 'ath-1' });
+    mockGetProject.mockResolvedValue(PROJECT);
+    mockListSets.mockResolvedValue(existing);
+  }
+
+  async function remark(body: Record<string, unknown> = {}) {
+    const response = await POST(post({ calibration_clip_id: 'clip-1', remark: true, ...body }));
+    return { status: response.status, body: await response.json() };
+  }
+
+  function nothingOpened() {
+    expect(mockOpen).not.toHaveBeenCalled();
+    expect(mockOpenNext).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  }
+
+  test('a submitted pass opens the next one, under the project\'s vocabulary, and audits its number', async () => {
+    ready([SUBMITTED]);
+    mockOpenNext.mockResolvedValueOnce(OPEN_REMARK);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ ok: true, created: true, set: { annotation_set_id: 'set-mine-2', pass_number: 2 } });
+    expect(mockOpenNext).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      annotationSetId: expect.any(String),
+      calibrationClipId: 'clip-1',
+      annotatorAccountId: 'coach-1',
+      ontologyVersion: 'boxing-ontology-0.1',
+      afterPassNumber: 1,
+    });
+    expect(mockOpen).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      event_type: 'create',
+      entity_type: 'calibration_annotation_set',
+      entity_id: 'set-mine-2',
+      shadow_mirror: false,
+      details: { calibration_clip_id: 'clip-1', pass_number: 2 },
+    });
+  });
+
+  test('it is the LATEST pass that counts: a submitted second pass opens a third', async () => {
+    ready([SUBMITTED, { ...SUBMITTED, annotation_set_id: 'set-mine-2', pass_number: 2 }]);
+    mockOpenNext.mockResolvedValueOnce({ ...OPEN_REMARK, annotation_set_id: 'set-mine-3', pass_number: 3 });
+
+    const { status, body } = await remark();
+
+    expect([status, body.created, body.set.pass_number]).toEqual([200, true, 3]);
+    // The pass the route decided on is the one the insert is held to.
+    expect(mockOpenNext).toHaveBeenCalledWith(expect.objectContaining({ afterPassNumber: 2 }));
+  });
+
+  test('pressing it twice returns the open re-mark rather than opening a third pass', async () => {
+    ready([SUBMITTED, OPEN_REMARK]);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ created: false, set: { annotation_set_id: 'set-mine-2' } });
+    nothingOpened();
+  });
+
+  test.each([
+    ['the caller has never labelled the clip', []],
+    ['the first pass is still in progress', [MY_SET]],
+    ['only another annotator has submitted', [{ ...THEIR_SET, status: 'submitted', pass_number: 1 }]],
+  ])('refused when %s', async (_label, existing) => {
+    ready(existing);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(403);
+    expect(body.error).toMatch(REFUSAL);
+    nothingOpened();
+  });
+
+  test.each(['true', 1, 'yes', null, {}])('remark %p is a 400 naming the field, and nothing is read', async (value) => {
+    ready([SUBMITTED]);
+
+    const { status, body } = await remark({ remark: value });
+
+    expect(status).toBe(400);
+    expect(body.error).toContain('remark');
+    expect(mockGetClip).not.toHaveBeenCalled();
+    expect(mockListSets).not.toHaveBeenCalled();
+    nothingOpened();
+  });
+
+  test('remark false is an ordinary open: the finished pass comes back and nothing is created', async () => {
+    ready([SUBMITTED]);
+
+    const { status, body } = await remark({ remark: false });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ created: false, set: { annotation_set_id: 'set-mine', status: 'submitted' } });
+    nothingOpened();
+  });
+
+  test('losing the insert to a second tab hands back that tab\'s open re-mark, unaudited', async () => {
+    ready([SUBMITTED]);
+    mockListSets.mockResolvedValueOnce([SUBMITTED]).mockResolvedValueOnce([SUBMITTED, OPEN_REMARK]);
+    mockOpenNext.mockResolvedValueOnce(null);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ created: false, set: { annotation_set_id: 'set-mine-2' } });
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['nothing changed on the re-read', [SUBMITTED]],
+    ['another window opened AND submitted the next pass', [SUBMITTED, { ...SUBMITTED, annotation_set_id: 'set-mine-2', pass_number: 2 }]],
+  ])('an insert that opened nothing, when %s, is told to reload and nothing is audited', async (_label, reread) => {
+    ready([SUBMITTED]);
+    mockListSets.mockResolvedValueOnce([SUBMITTED]).mockResolvedValueOnce(reread);
+    mockOpenNext.mockResolvedValueOnce(null);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(403);
+    expect(body.error).toMatch(/^Forbidden: this clip was re-marked from another window/);
+    expect(body).not.toHaveProperty('set');
+    expect(mockOpenNext).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a pass whose audit record cannot be written is reported as opened, not as a bare failure', async () => {
+    ready([SUBMITTED]);
+    mockOpenNext.mockResolvedValueOnce(OPEN_REMARK);
+    mockAudit.mockRejectedValueOnce(new Error('audit store unavailable'));
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(500);
+    expect(body).toMatchObject({ reason: 'CALIBRATION_REMARK_AUDIT_FAILED', annotation_set_id: 'set-mine-2' });
+    expect(body.error).toContain('audit store unavailable');
+    expect(body.error).toContain('pass 2');
+    expect(body.error).toContain('Do not re-mark again');
+  });
+
+  test('the answers to a re-mark carry nothing of the earlier pass', async () => {
+    ready([SUBMITTED]);
+    mockOpenNext.mockResolvedValueOnce(OPEN_REMARK);
+    const opened = await POST(post({ calibration_clip_id: 'clip-1', remark: true }));
+    expect(await opened.text()).not.toContain('set-mine"');
+
+    ready([SUBMITTED, OPEN_REMARK]);
+    const again = await POST(post({ calibration_clip_id: 'clip-1', remark: true }));
+    expect(await again.text()).not.toContain('set-mine"');
+  });
+
+  test('a clip whose project is gone is not found, and nothing is opened', async () => {
+    ready([SUBMITTED]);
+    mockGetProject.mockResolvedValue(null);
+
+    expect((await remark()).status).toBe(404);
+    nothingOpened();
+  });
+
+  test('a project now stamped with another vocabulary than the first pass is refused', async () => {
+    ready([{ ...SUBMITTED, ontology_version: 'boxing-ontology-0.4' }]);
+
+    const { status, body } = await remark();
+
+    expect(status).toBe(403);
+    expect(body.error).toContain('boxing-ontology-0.4');
+    nothingOpened();
+  });
+
+  test('a project this build cannot label is refused before anything is opened', async () => {
+    ready([SUBMITTED]);
+    mockGetProject.mockResolvedValue({ ...PROJECT, ontology_version: 'boxing-ontology-9.9' });
+
+    expect((await remark()).status).toBe(403);
+    nothingOpened();
+  });
+
+  test('footage that is no longer clippable cannot be re-marked', async () => {
+    ready([SUBMITTED]);
+    mockClippable.mockRejectedValue(new VideoNotClippableError('quarantined'));
+
+    expect((await remark()).status).toBe(403);
+    nothingOpened();
+  });
+
+  test.each(['athlete', 'parent', 'board', 'platform_owner', 'volunteer', 'staff'])(
+    '%s may not ask, and nothing is read',
+    async (role) => {
+      ready([SUBMITTED]);
+      mockPrincipal.mockResolvedValue({ ...COACH, role });
+
+      expect((await remark()).status).toBe(403);
+      expect(mockListSets).not.toHaveBeenCalled();
+      nothingOpened();
+    },
+  );
+
+  test.each(['coach', 'organization_admin', 'admin'])('%s may ask', async (role) => {
+    ready([SUBMITTED]);
+    mockPrincipal.mockResolvedValue({ ...COACH, role });
+    mockOpenNext.mockResolvedValueOnce(OPEN_REMARK);
+
+    expect((await remark()).status).toBe(200);
   });
 });
