@@ -434,18 +434,33 @@ export async function upsertCoachReview(
 // roster; a silent default cap there would not slow them down, it would
 // make them wrong by quietly dropping athletes past the cut. Only the
 // roster-browsing route (athletes/list's org-admin branch) passes one.
+//
+// DELETED ATHLETES ARE NOT RETURNED (audit finding ADMIN-01; deletion scope
+// B). This is the admin roster: the list every admin picker is built from,
+// and every read and write a picked athlete then meets is refused for a
+// deleted one (assertAthleteBelongsToOrganization). When this filter was
+// added the function had exactly one caller left outside tests, the
+// athletes/list admin branch; the aggregate callers named above had already
+// moved to their own reads, and nothing in the deletion or purge code reads
+// through here (those read deleted_at on purpose and say so). An admin
+// surface that needs archived rows asks for them by name, not through the
+// roster.
 export async function getAthletesByOrganization(
   organizationId: string,
   page?: { limit: number; offset?: number },
 ): Promise<PilotAthlete[]> {
   if (!page) {
     return query<PilotAthlete>(
-      'select * from pilot.athletes where organization_id = $1 order by created_at desc',
+      `select * from pilot.athletes
+       where organization_id = $1 and deleted_at is null
+       order by created_at desc`,
       [organizationId]
     );
   }
   return query<PilotAthlete>(
-    'select * from pilot.athletes where organization_id = $1 order by created_at desc limit $2 offset $3',
+    `select * from pilot.athletes
+     where organization_id = $1 and deleted_at is null
+     order by created_at desc limit $2 offset $3`,
     [organizationId, page.limit, page.offset ?? 0]
   );
 }

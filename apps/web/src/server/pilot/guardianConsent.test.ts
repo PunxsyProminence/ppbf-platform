@@ -16,7 +16,11 @@ jest.mock('./db', () => ({
   withTransaction: jest.fn(),
 }));
 
+/* guardianLinkEnded and its message are the REAL ones: the 18 rule is the
+   thing under test in the write-side cases below, and a stub of it would
+   prove only that the stub was consulted. */
 jest.mock('./guardianAccess', () => ({
+  ...jest.requireActual('./guardianAccess'),
   guardianAthleteIds: jest.fn(),
   guardianParentIds: jest.fn(),
   guardianParentIdForAthlete: jest.fn(),
@@ -36,6 +40,7 @@ import {
   callerParentIdSet,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
+  GuardianLinkEndedError,
   grantMediaConsent,
   listConsentForGuardian,
   listOrganizationConsentStatus,
@@ -361,7 +366,8 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       // at all. Both are asserted -- the sequence, and the client identity.
       const seen: string[] = [];
       mockTxClient.query.mockImplementation(((sql: string) => {
-        seen.push(String(sql).includes('for update') ? 'lock' : 'other');
+        const text = String(sql);
+        seen.push(text.includes('for update') ? 'lock' : text.includes('from pilot.athletes') ? 'age' : 'other');
         return Promise.resolve({ rows: [], rowCount: 0 });
       }) as never);
       mockUpsertWaiverWithClient.mockImplementationOnce((async () => {
@@ -371,8 +377,73 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
 
       await write();
 
-      expect(seen).toEqual(['lock', 'insert']);
+      // The 18 rule's age read sits between them, on the same transaction:
+      // after the lock so a concurrent dob correction is seen, before the
+      // insert so a refused write records nothing.
+      expect(seen).toEqual(['lock', 'age', 'insert']);
       expect(mockUpsertWaiverWithClient.mock.calls[0][0]).toBe(mockTxClient);
+    });
+
+    /**
+     * OD-2026-10-07-008 (question card 1 item 3): the guardian link goes
+     * dormant at 18, for every consent change. The age read answers from the
+     * athlete row inside the write transaction; the rule itself is
+     * guardianAccess.guardianLinkEnded (wallDisplay.isMinor, gym-day).
+     */
+    describe('the guardian link has ended at 18', () => {
+      const today = new Date();
+      const gymYmd = (date: Date) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+      /** Turned 18 on the gym's calendar day today. */
+      const ADULT_DOB = `${Number(gymYmd(today).slice(0, 4)) - 18}${gymYmd(today).slice(4)}`;
+      /** Turns 18 tomorrow at the gym: still a minor until local midnight. */
+      const MINOR_DOB = (() => {
+        const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        return `${Number(gymYmd(tomorrow).slice(0, 4)) - 18}${gymYmd(tomorrow).slice(4)}`;
+      })();
+
+      function athleteRowReads(dob: string | null) {
+        mockTxClient.query.mockImplementation(((sql: string) =>
+          Promise.resolve(String(sql).includes('from pilot.athletes') ? { rows: [{ dob }], rowCount: 1 } : { rows: [], rowCount: 0 })) as never);
+      }
+
+      test.each([
+        ['withdrawal', () => withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' })],
+        ['grant', () => grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false, recordedByAccountId: 'acct-entrant' })],
+      ] as Array<[string, () => Promise<string>]>)('a %s for an athlete who is 18 today is refused by name, and nothing is written', async (_label, write) => {
+        athleteRowReads(ADULT_DOB);
+
+        await expect(write()).rejects.toThrow(GuardianLinkEndedError);
+        await expect(write()).rejects.toThrow('this athlete is 18; guardian access has ended');
+        expect(mockUpsertWaiverWithClient).not.toHaveBeenCalled();
+        // The age read is bound to this athlete in this organization.
+        const ageRead = mockTxClient.query.mock.calls.find(([sql]) => String(sql).includes('from pilot.athletes'));
+        expect(ageRead?.[1]).toEqual(['org-a', 'ath-1']);
+      });
+
+      test('an athlete who turns 18 tomorrow is still written for today', async () => {
+        athleteRowReads(MINOR_DOB);
+        mockUpsertWaiverWithClient.mockResolvedValueOnce('waiver-minor');
+
+        await expect(
+          withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' }),
+        ).resolves.toBe('waiver-minor');
+      });
+
+      test('an athlete with no date of birth on file is a minor, and is written', async () => {
+        athleteRowReads(null);
+        mockUpsertWaiverWithClient.mockResolvedValueOnce('waiver-unknown');
+
+        await expect(
+          grantMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false, recordedByAccountId: 'acct-entrant' }),
+        ).resolves.toBe('waiver-unknown');
+      });
+
+      test('the refusal is a 403 with its own code, so the routes can audit it by name', () => {
+        const error = new GuardianLinkEndedError();
+        expect(error.status).toBe(403);
+        expect(error.code).toBe('GUARDIAN_LINK_ENDED');
+      });
     });
 
     test('the pooled writer is not used any more', async () => {

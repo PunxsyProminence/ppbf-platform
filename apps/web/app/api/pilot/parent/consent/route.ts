@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   callerParentIdSet,
   grantMediaConsent,
+  GuardianLinkEndedError,
   listConsentForGuardian,
   resolveActingParent,
   withdrawMediaConsent,
@@ -33,6 +34,29 @@ async function auditConsentEvent(event: Parameters<typeof writePilotAuditEvent>[
       ...(code ? { code } : {}),
     });
   }
+}
+
+// THE 18 RULE'S REFUSAL IS AUDITED WHERE THE CONSENT WRITES ARE (OD-2026-10-07-008:
+// the guardian link goes dormant at 18). guardianConsent.ts refuses the write
+// by name; this writes the one audit row for it and lets the refusal reach
+// jsonError as the 403 it is. Any other error passes through untouched.
+async function auditGuardianLinkEnded(
+  principal: PilotPrincipal,
+  athleteId: string,
+  parentId: string,
+  error: unknown,
+): Promise<void> {
+  if (!(error instanceof GuardianLinkEndedError)) return;
+  await auditConsentEvent({
+    event_type: 'update',
+    actor_account_id: principal.accountId,
+    actor_role: principal.role,
+    organization_id: principal.organizationId,
+    entity_type: 'guardian_media_consent',
+    entity_id: athleteId,
+    details: { action: 'guardian_link_ended', parent_id: parentId },
+    shadow_mirror: false,
+  });
 }
 
 /*
@@ -85,6 +109,9 @@ async function recordConsentChangeWithSweep(
       write,
     });
   } catch (error) {
+    // Not a failed sweep: the write itself was refused before anything ran.
+    await auditGuardianLinkEnded(principal, athleteId, parentId, error);
+    if (error instanceof GuardianLinkEndedError) throw error;
     const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
     const code = sanitizedSqlState(rawCode);
     console.error({ event: sweep.failedEvent, athlete_id: athleteId, ...(code ? { code } : {}) });
@@ -287,7 +314,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true, athlete_id: athleteId, decision, retracted_publication_ids: changed.publicationIds });
       }
 
-      await grantMediaConsent(grant);
+      try {
+        await grantMediaConsent(grant);
+      } catch (error) {
+        await auditGuardianLinkEnded(principal, athleteId, actingParent.parentId, error);
+        throw error;
+      }
       await auditConsentEvent(grantedEvent);
     } else {
       // One guardian's withdrawal invalidates consent, and content already

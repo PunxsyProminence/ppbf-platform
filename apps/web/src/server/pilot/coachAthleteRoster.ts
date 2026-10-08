@@ -53,12 +53,13 @@ export async function coachAuthorizedRoster(
  * predicate, applied to the other role, so the two halves of
  * /api/pilot/coach/athletes agree with the gate and with each other.
  *
- * Deliberately NOT fixed by adding the predicate to getAthletesByOrganization
- * itself: that function has many callers with different questions -- an
- * administrator reconciling a roster may well need to see an archived
- * athlete -- and silently narrowing it from here would change surfaces this
- * change has no business touching. "Which athletes may I act on" is its own
- * question and gets its own read.
+ * Written before getAthletesByOrganization took the same predicate (audit
+ * finding ADMIN-01, 2026-10-08): at the time that function had many callers
+ * with different questions, and narrowing it from here would have changed
+ * surfaces this change had no business touching. By 2026-10-08 it had one
+ * caller left and took the filter itself. This read stays: "which athletes
+ * may I act on" is its own question, and the two halves of
+ * /api/pilot/coach/athletes are read side by side here.
  */
 export async function organizationActionableRoster(
   organizationId: string,

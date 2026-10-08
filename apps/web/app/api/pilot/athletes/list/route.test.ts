@@ -370,3 +370,31 @@ describe('what the coach branch hands back', () => {
     expect(body.items[1].gym_status).toBe('active');
   });
 });
+
+/* Dates of birth pinned to the GYM's calendar day, the way the rule reads
+   them (wallDisplay.isMinor via guardianAccess.guardianLinkEnded): one athlete
+   turned 18 today at the gym, the other turns 18 tomorrow and is a minor
+   until local midnight. */
+const gymYmd = (date: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+const minus18 = (ymd: string) => `${Number(ymd.slice(0, 4)) - 18}${ymd.slice(4)}`;
+const ADULT_DOB = minus18(gymYmd(new Date()));
+const MINOR_DOB = minus18(gymYmd(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+
+describe('the guardian link goes dormant at 18 (OD-2026-10-07-008)', () => {
+  test('a parent no longer sees the child who turned 18 today; the minor stays', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent', accountId: 'parent-1' }));
+    dbWithCoach('alvarez@punxsyprominence.org');
+    mockQuery.mockResolvedValue([
+      { ...ROW, athlete_id: 'ATH-ADULT', full_name: 'Adult Vance', dob: ADULT_DOB },
+      { ...ROW, athlete_id: 'ATH-TOMORROW', full_name: 'Tomorrow Vance', dob: MINOR_DOB },
+      ROW,
+    ]);
+
+    const response = await GET(makeRequest());
+    const body = (await response.json()) as { items: Array<{ athlete_id: string }> };
+
+    expect(body.items.map((item) => item.athlete_id)).toEqual(['ATH-TOMORROW', 'ATH-1']);
+    expect(JSON.stringify(body)).not.toContain('Adult Vance');
+  });
+});

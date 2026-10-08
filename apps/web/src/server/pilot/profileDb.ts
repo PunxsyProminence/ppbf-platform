@@ -23,6 +23,7 @@
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
+import { guardianLinkEnded } from './guardianAccess';
 import {
   normalizeCorner,
   normalizeProgram,
@@ -272,6 +273,11 @@ export async function resolveRelationship(
       return 'coach_of_subject';
     }
     if (viewer.role === 'parent') {
+      // The link goes dormant at 18 (OD-2026-10-07-008; guardianAccess.ts
+      // holds the rule). Decided from the subject's own dob before the link
+      // is even asked: an adult's guardian is another family here, and the
+      // portrait stays inside the circle the adult now controls.
+      if (guardianLinkEnded(subject.dob)) return 'none';
       const linked = await queryOne<{ athlete_id: string }>(
         `select gl.athlete_id
          from pilot.guardian_links gl

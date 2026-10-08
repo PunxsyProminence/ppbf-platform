@@ -2,8 +2,14 @@ import type { QueryResultRow } from 'pg';
 
 import { lockConsentSet, lockConsentSets } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
-import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
+import { ConflictError, ForbiddenError } from './errors';
+import {
+  GUARDIAN_LINK_ENDED_MESSAGE,
+  guardianAthleteIds,
+  guardianLinkEnded,
+  guardianParentIdForAthlete,
+  guardianParentIds,
+} from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
 
@@ -588,6 +594,7 @@ async function writeMediaConsentUnderLock(
 ): Promise<string> {
   const write = async (client: QueryExecutor) => {
     await lockGuardianLink(client, organizationId, parentId, athleteId);
+    await assertGuardianLinkNotEnded(client, organizationId, athleteId);
 
     return upsertWaiverWithClient(client, {
       ...waiver,
@@ -598,6 +605,53 @@ async function writeMediaConsentUnderLock(
     });
   };
   return transaction ? write(transaction) : withTransaction(write);
+}
+
+/**
+ * The guardian's consent change refused because the link has gone dormant
+ * (guardianAccess.guardianLinkEnded). Its own class so the two consent routes
+ * can audit the refusal by name and still answer 403 through jsonError.
+ */
+export class GuardianLinkEndedError extends ForbiddenError {
+  constructor() {
+    super(GUARDIAN_LINK_ENDED_MESSAGE, 'GUARDIAN_LINK_ENDED');
+  }
+}
+
+/*
+ * THE 18 RULE ON THE WRITE SIDE. OD-2026-10-07-008: the guardian link stops
+ * for every consent change once the athlete is an adult. Decided INSIDE the
+ * write transaction, after the link row is locked, from the athlete row as it
+ * is at that moment -- so a date-of-birth correction committing in the gap
+ * cannot admit a write the corrected row refuses, and the same instant that
+ * answers the readers answers here.
+ *
+ * Both writers meet it, and so does the staff writer (admin/athlete-consent),
+ * which records a guardian's paper consent under a parent_id: a guardian's
+ * consent for an adult is a change under the guardian link, whoever types it
+ * (overwatch, 2026-10-08, on the ruling's "every consent change"). The
+ * refusal is specific and names the reason; nothing is deleted.
+ *
+ * A MISSING ATHLETE ROW IS NOT REFUSED HERE. The write already tolerates a
+ * missing link row (see above) and a missing athlete trips the waivers
+ * foreign key as before; this check only ever adds the one refusal it is for.
+ * dob is read as to_char, never ::text, whose shape follows the session
+ * DateStyle (adultPathway.ts carries the same note).
+ */
+async function assertGuardianLinkNotEnded(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteId: string,
+): Promise<void> {
+  const { rows } = await client.query<{ dob: string | null }>(
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  const athlete = rows[0];
+  if (athlete && guardianLinkEnded(athlete.dob)) {
+    throw new GuardianLinkEndedError();
+  }
 }
 
 /*
