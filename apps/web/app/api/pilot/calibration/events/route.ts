@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
+import type { PoolClient } from 'pg';
 
 import {
+  EventHoldsBodyMarksError,
   deleteAnnotationEvent,
   listAnnotationEvents,
   recordAnnotationEvent,
@@ -10,6 +12,8 @@ import {
   type RecordAnnotationEventInput,
   type UpdateAnnotationEventInput,
 } from '@/src/server/pilot/calibration/annotations';
+import { eventHoldsBodyMarks } from '@/src/server/pilot/calibration/bodyPoints';
+import { BODY_POINT_ONTOLOGY_VERSIONS, isInVocabulary } from '@/src/server/pilot/calibration/ontology';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import {
@@ -212,9 +216,13 @@ export async function POST(request: NextRequest) {
  * is cleared. Re-pointing it would mean writing a relationship the annotator
  * did not re-assert, which is a fabricated observation.
  *
- * AND ITS BODY MARKS. On a body-point set the event's moments, their points
- * and its stance type hang off the old event_id and go with the old row.
- * PATCH below corrects an event in place and keeps them.
+ * AN EVENT THAT HOLDS BODY MARKS IS NOT REPLACED. Its moments, their points
+ * and its stance type hang off the old event_id and would go with the old
+ * row by cascade. That is refused (409 CALIBRATION_EVENT_HAS_BODY_MARKS)
+ * before anything is written, and again if the delete, asking under the row
+ * lock, finds marks that landed in between (the replacement is withdrawn).
+ * PATCH below corrects such an event in place. Only a body-point set is
+ * asked: a set on any other version can hold no marks.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -243,15 +251,35 @@ export async function PUT(request: NextRequest) {
       throw new Error('Not found: no such event in this annotation set');
     }
 
+    const mayHoldMarks = isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version);
+    const holdsMarks = (client?: PoolClient) =>
+      eventHoldsBodyMarks(principal.organizationId, annotationSetId, replacingEventId, client);
+    const refusal = () => new EventHoldsBodyMarksError(
+      'Conflict: this event has body marks, and replacing it would remove them. '
+      + 'Edit it in place, or remove its marked moments and stance type first.',
+    );
+    if (mayHoldMarks && (await holdsMarks())) {
+      throw refusal();
+    }
+
     const event = await recordAnnotationEvent(
       toRecordInput(principal.organizationId, annotationSetId, randomUUID(), body),
     );
 
+    // The delete asks again under its row lock, so a mark that landed since
+    // the check above keeps the old event. The replacement just written (its
+    // id has gone to nobody) is then withdrawn, and the answer is the same
+    // refusal: no duplicate is left for the coach to find.
     const removed = await deleteAnnotationEvent(
       principal.organizationId,
       annotationSetId,
       replacingEventId,
+      ...(mayHoldMarks ? [{ keepIf: holdsMarks }] : []),
     );
+    if (!removed && mayHoldMarks && (await holdsMarks())) {
+      await deleteAnnotationEvent(principal.organizationId, annotationSetId, event.event_id);
+      throw refusal();
+    }
 
     await writeCalibrationAuditEvent({
       eventType: 'update',

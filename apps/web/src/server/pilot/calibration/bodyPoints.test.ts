@@ -105,6 +105,12 @@ describe('only bodyPoints.ts reads the body-point tables, and only its routes re
   // a model without a change that shows up here: no runtime file but this
   // module names the three tables (migrations, their runners and tests may),
   // and no runtime file but the body-points routes imports the module.
+  //
+  // ONE EXCEPTION, held to one name: the events route imports
+  // eventHoldsBodyMarks, a yes-or-no on whether an event holds a moment or a
+  // stance type, so that replacing an event cannot delete its marks by
+  // cascade. It may import nothing else from the module, and it still may not
+  // name the tables.
   const TABLES = ['calibration_body_moments', 'calibration_body_points', 'calibration_event_stance_labels'];
   const MAY_NAME_TABLES = new Set([
     'apps/web/src/server/pilot/calibration/bodyPoints.ts',
@@ -114,6 +120,7 @@ describe('only bodyPoints.ts reads the body-point tables, and only its routes re
     'apps/web/scripts/pilot-apply-calibration-body-point-rules-migration.mjs',
   ]);
   const MAY_IMPORT_MODULE = /^apps\/web\/app\/api\/pilot\/calibration\/body-points\//;
+  const EVENTS_ROUTE = 'apps/web/app/api/pilot/calibration/events/route.ts';
   const IMPORTS_MODULE = /from\s+['"](?:@\/src\/server\/pilot\/calibration\/bodyPoints|\.{1,2}\/(?:calibration\/)?bodyPoints)['"]/;
 
   function walk(dir: string, out: string[]): void {
@@ -147,11 +154,21 @@ describe('only bodyPoints.ts reads the body-point tables, and only its routes re
     expect(offenders).toEqual([]);
   });
 
-  test('no runtime file outside the body-points routes imports the module', () => {
+  test('no runtime file outside the body-points routes imports the module, the events route apart', () => {
     const offenders = files
       .filter((file) => IMPORTS_MODULE.test(fs.readFileSync(file, 'utf8')))
       .map(relative)
-      .filter((file) => !MAY_IMPORT_MODULE.test(file));
+      .filter((file) => !MAY_IMPORT_MODULE.test(file) && file !== EVENTS_ROUTE);
     expect(offenders).toEqual([]);
+  });
+
+  test('the events route takes one function from the module, the yes-or-no on marks, and nothing else', () => {
+    const text = fs.readFileSync(path.join(repoRoot, EVENTS_ROUTE), 'utf8');
+    const taken = [...text.matchAll(/import\s+([^;]*?)\s+from\s+['"][^'"]*\/bodyPoints['"]/g)]
+      .map((match) => match[1].replace(/\s+/g, ' '));
+    expect(taken).toEqual(['{ eventHoldsBodyMarks }']);
+    // No other way in (a re-export, require(), a dynamic import()): that one
+    // import line is the only place the module's path appears in the file.
+    expect(text.match(/\/bodyPoints['"`]/g)).toHaveLength(1);
   });
 });
