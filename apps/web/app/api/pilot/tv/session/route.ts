@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { getWallDisplayNameMode } from '@/src/server/pilot/env';
 import {
   GYM_TV_DEVICE_COOKIE,
   GYM_TV_DEVICE_COOKIE_MAX_AGE_SECONDS,
   GYM_TV_DEVICE_COOKIE_PATH,
   consumeGymTvReadBudget,
-  readGymTvSession,
+  readGymTvScreen,
 } from '@/src/server/pilot/gymTvs';
 import { getClientIp } from '@/src/server/pilot/rateLimit';
+import { resolveWallNameMode } from '@/src/server/pilot/wallDisplay';
 
 export const runtime = 'nodejs';
 
@@ -16,17 +18,26 @@ export const runtime = 'nodejs';
  *
  * Unauthenticated by construction: the TV has no session and never gets one. The credential is
  * the device key in the httpOnly cookie that /api/pilot/tv/pair set, resolved by hash; it opens
- * this read and nothing else. The payload is the fixed allowlist in gymTvs.ts (the plan's blocks,
- * times and drill names, where the coach is, the server clock) and carries no person field: no
- * coach notes, no names, no account ids, no roster.
+ * this read and nothing else. The payload is two things:
+ *
+ *   session  the fixed allowlist in gymTvs.ts (the plan's blocks, times and drill names, where
+ *            the coach is, the server clock), no person field: no coach notes, no names, no
+ *            account ids, no roster.
+ *   board    the wall board WITH people on it: initials (or more, per the operator's name mode and
+ *            the consent gate in wallDisplay.ts), milestone crossings, and notices placed
+ *            'everywhere'. OD-2026-10-07-008 (Jason, "Paired gym TV only"): this is the only
+ *            place that board is served. The public address, GET /api/pilot/wall, serves classes
+ *            and a head count and nothing about anyone. The board's organization is the paired TV
+ *            row's, never the caller's.
  *
  *   401 TV_NOT_PAIRED  no key, an unknown key, or a disconnected TV. The cookie is left alone: a
  *                      stale poll answered after a re-pair must not wipe the key the TV just
  *                      received (reviewer B), so the TV page decides when to pair again, and
- *                      pairing overwrites the cookie.
+ *                      pairing overwrites the cookie. No board of any kind in this response: an
+ *                      unpaired screen falls back to the public read.
  *   200 session: null  paired, but nothing is on this TV: no session sent, or the run has ended or
- *                      been switched off the TV.
- *   200 session: {..}  the live session.
+ *                      been switched off the TV. The board is still there.
+ *   200 session: {..}  the live session, and the board.
  *
  * Each successful keyed read re-sets the cookie with a fresh Max-Age, so "until disconnected"
  * (Jason) holds for a TV that is used: the 400-day cap counts from the last read, not from the
@@ -49,9 +60,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  let read: Awaited<ReturnType<typeof readGymTvSession>>;
+  let read: Awaited<ReturnType<typeof readGymTvScreen>>;
   try {
-    read = await readGymTvSession(deviceKey);
+    read = await readGymTvScreen(deviceKey, { mode: resolveWallNameMode(getWallDisplayNameMode()) });
   } catch (error) {
     // Class and driver code only: this log line is reachable by an unauthenticated caller, and a
     // pg error's message can carry the host name or SQL text.

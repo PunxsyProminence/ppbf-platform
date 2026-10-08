@@ -19,7 +19,7 @@ jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
 }));
-jest.mock('./wallDisplayDb', () => ({ loadWallBoard: jest.fn() }));
+jest.mock('./wallDisplayDb', () => ({ loadPublicWallBoard: jest.fn() }));
 jest.mock('./announcements', () => ({ listLiveAnnouncements: jest.fn() }));
 jest.mock('./floorHours', () => ({ getFloorHoursPublic: jest.fn() }));
 
@@ -32,11 +32,11 @@ import { queryOne } from './db';
 import { getPilotDefaultOrganizationId, getPublicInterestOrganizationId } from './env';
 import { getFloorHoursPublic } from './floorHours';
 import { createPublicInterestSubmission } from './publicInterest';
-import { loadWallBoard } from './wallDisplayDb';
+import { loadPublicWallBoard } from './wallDisplayDb';
 import { resetWallBudget } from './wallRateLimit';
 
 const mockQueryOne = jest.mocked(queryOne);
-const mockLoadWallBoard = jest.mocked(loadWallBoard);
+const mockLoadWallBoard = jest.mocked(loadPublicWallBoard);
 const mockListLiveAnnouncements = jest.mocked(listLiveAnnouncements);
 const mockGetFloorHoursPublic = jest.mocked(getFloorHoursPublic);
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   process.env.PPBF_PILOT_DEFAULT_ORG_ID = DEFAULT_ORG;
   delete process.env.PPBF_PUBLIC_INTEREST_ORG_ID;
   mockQueryOne.mockResolvedValue({ submission_id: 'sub-1' });
-  mockLoadWallBoard.mockResolvedValue({} as Awaited<ReturnType<typeof loadWallBoard>>);
+  mockLoadWallBoard.mockResolvedValue({} as Awaited<ReturnType<typeof loadPublicWallBoard>>);
   mockListLiveAnnouncements.mockResolvedValue([]);
   mockGetFloorHoursPublic.mockResolvedValue([]);
 });

@@ -47,6 +47,7 @@ describe('GET /api/pilot/announcements/public', () => {
       placement: 'gym_notices',
       kind: 'notice',
       limit: 3,
+      includeEverywhere: false,
     });
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
@@ -67,11 +68,15 @@ describe('GET /api/pilot/announcements/public', () => {
       placement: 'gym_notices',
       kind: 'notice',
       limit: 8,
+      includeEverywhere: false,
     });
   });
 
   // The signed-out feed is the one announcement read an anonymous caller can
-  // reach, so the surface it serves is fixed here and not selectable.
+  // reach, so the surface it serves is fixed here and not selectable. Every
+  // call above also pins includeEverywhere: false -- an 'everywhere' notice is
+  // for members (OD-2026-10-07-008), and the fold-in that the session-scoped
+  // read does by default must never reach this route.
   test('a caller-supplied placement or kind cannot widen the anonymous read', async () => {
     mockListLiveAnnouncements.mockResolvedValueOnce([]);
 
@@ -86,6 +91,7 @@ describe('GET /api/pilot/announcements/public', () => {
       placement: 'gym_notices',
       kind: 'notice',
       limit: 3,
+      includeEverywhere: false,
     });
   });
 });
