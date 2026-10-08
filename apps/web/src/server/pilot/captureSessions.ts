@@ -232,6 +232,33 @@ export async function findOpenSessionByJoinCode(
   return row ? toSession(row) : null;
 }
 
+/*
+ * THE CALLER'S OWN OPEN SESSION, so a reload can put a coach back where they
+ * were. Scoped to the organization AND to the account that started it: a
+ * coach's phone is not handed a session some other coach opened, and joining by
+ * code stays the only way into someone else's. A phone that merely joined is not
+ * found here, because a join is not recorded -- the join code is correlation,
+ * not membership.
+ *
+ * Most recent first, because an abandoned earlier session may still be open and
+ * the one the coach was last using is the newest.
+ */
+export async function findMyOpenSession(
+  organizationId: string,
+  accountId: string,
+): Promise<RecordingSession | null> {
+  const row = await queryOne<RecordingSessionRow>(
+    `select recording_session_id, organization_id, created_by_account_id,
+            training_context, join_code, state, created_at
+       from pilot.recording_sessions
+      where organization_id = $1 and created_by_account_id = $2 and state = 'open'
+      order by created_at desc
+      limit 1`,
+    [organizationId, accountId],
+  );
+  return row ? toSession(row) : null;
+}
+
 export async function getOpenTake(recordingSessionId: string): Promise<CaptureTake | null> {
   const row = await queryOne<CaptureTakeRow>(
     `select capture_take_id, recording_session_id, take_number, state, created_at

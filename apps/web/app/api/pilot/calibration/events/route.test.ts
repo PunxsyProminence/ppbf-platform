@@ -6,15 +6,17 @@ import {
   getAnnotationSet,
   listAnnotationEvents,
   recordAnnotationEvent,
+  updateAnnotationEvent,
 } from '@/src/server/pilot/calibration/annotations';
 import {
   VideoNotClippableError,
   assertVideoClippable,
   getCalibrationClip,
 } from '@/src/server/pilot/calibration/projects';
+import { PilotError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
-import { DELETE, POST, PUT } from './route';
+import { DELETE, PATCH, POST, PUT } from './route';
 
 /**
  * The write path for one annotator's events.
@@ -39,6 +41,7 @@ jest.mock('@/src/server/pilot/calibration/annotations', () => ({
   listAnnotationEvents: jest.fn(),
   recordAnnotationEvent: jest.fn(),
   deleteAnnotationEvent: jest.fn(),
+  updateAnnotationEvent: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/calibration/projects', () => {
@@ -64,6 +67,7 @@ const mockGetSet = getAnnotationSet as jest.Mock;
 const mockListEvents = listAnnotationEvents as jest.Mock;
 const mockRecord = recordAnnotationEvent as jest.Mock;
 const mockDelete = deleteAnnotationEvent as jest.Mock;
+const mockUpdate = updateAnnotationEvent as jest.Mock;
 const mockGetClip = getCalibrationClip as jest.Mock;
 const mockClippable = assertVideoClippable as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
@@ -145,6 +149,13 @@ function put(body: unknown): NextRequest {
   }) as NextRequest;
 }
 
+function patch(body: unknown): NextRequest {
+  return new Request('http://localhost/api/pilot/calibration/events', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }) as NextRequest;
+}
+
 function del(body: unknown): NextRequest {
   return new Request('http://localhost/api/pilot/calibration/events', {
     method: 'DELETE',
@@ -174,6 +185,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAudit.mockResolvedValue(undefined);
 });
+
+const HAS_MARKS = () => new PilotError(409, 'Conflict: this event has body marks', 'CALIBRATION_EVENT_HAS_BODY_MARKS');
 
 describe('recording an event', () => {
   test('a punch reaches the module with every required field the annotator chose', async () => {
@@ -223,6 +236,84 @@ describe('recording an event', () => {
     // A blank stance is "not recorded" -- never 'unknown', which is the
     // recorded observation "I looked and could not tell".
     expect(input.stance).toBeNull();
+  });
+
+  test('every field of a punch reaches the module, each under its own name, and nothing else does', async () => {
+    openSetReady();
+    mockRecord.mockResolvedValueOnce(storedEvent());
+
+    await POST(post({
+      ...PUNCH_BODY,
+      peak_ms: 12_650,
+      contact_zone: 'glove',
+      combination_group: 'combo-1',
+      sequence_order: '2',
+      counter_against_event_id: 'evt-0',
+      organization_id: 'org-2',
+    }));
+
+    expect(mockRecord.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: expect.any(String),
+      eventClass: 'punch',
+      actorTrack: 'red corner',
+      opponentTrack: 'blue corner',
+      startMs: 12_400,
+      endMs: 12_760,
+      contactMs: 12_600,
+      peakMs: 12_650,
+      physicalHand: 'left',
+      handRole: 'lead',
+      stance: 'orthodox',
+      punchType: 'lead_straight',
+      targetZone: 'head',
+      contactResult: 'glancing_target_contact',
+      contactZone: 'glove',
+      defenseType: null,
+      visibility: 'partially_occluded',
+      certainty: 'probable',
+      combinationGroup: 'combo-1',
+      sequenceOrder: 2,
+      counterAgainstEventId: 'evt-0',
+      defendsAgainstEventId: null,
+    });
+  });
+
+  test('every field of a defence reaches the module the same way, on a replace too', async () => {
+    openSetReady();
+    mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
+    mockRecord.mockResolvedValueOnce(storedEvent({ event_class: 'defense' }));
+    mockDelete.mockResolvedValueOnce(true);
+
+    await PUT(put({ ...DEFENSE_BODY, event_id: 'evt-1', defends_against_event_id: 'evt-0' }));
+
+    expect(mockRecord.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: expect.any(String),
+      eventClass: 'defense',
+      actorTrack: 'blue corner',
+      opponentTrack: null,
+      startMs: 12_500,
+      endMs: 12_900,
+      contactMs: null,
+      peakMs: null,
+      physicalHand: 'right',
+      handRole: 'rear',
+      stance: null,
+      punchType: null,
+      targetZone: null,
+      contactResult: null,
+      contactZone: null,
+      defenseType: 'parry',
+      visibility: 'clear',
+      certainty: 'clear',
+      combinationGroup: null,
+      sequenceOrder: null,
+      counterAgainstEventId: null,
+      defendsAgainstEventId: 'evt-0',
+    });
   });
 
   test('an unselected optional control never becomes an ontology value', async () => {
@@ -509,6 +600,166 @@ describe('editing an event', () => {
       action: 'replace',
       replaced_event_id: 'evt-1',
     });
+  });
+});
+
+describe('editing an event in place', () => {
+  const EDIT = { annotation_set_id: 'set-1', event_id: 'evt-1', certainty: 'clear' };
+
+  test('only the keys sent reach the module, under the same event id, with blanks as null', async () => {
+    openSetReady();
+    mockUpdate.mockResolvedValueOnce(storedEvent({ event_id: 'evt-1' }));
+
+    const response = await PATCH(patch({
+      annotation_set_id: 'set-1',
+      event_id: 'evt-1',
+      punch_type: 'lead_hook',
+      contact_zone: '',
+      contact_ms: '12600',
+      sequence_order: '',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.event.event_id).toBe('evt-1');
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    // Exactly these keys: a field the annotator did not send is not in the
+    // input at all, so the module leaves it as stored.
+    expect(mockUpdate.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: 'evt-1',
+      punchType: 'lead_hook',
+      contactZone: null,
+      contactMs: 12_600,
+      sequenceOrder: null,
+    });
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  test('the organization, set and event an edit lands on are the caller and the two ids, never other body keys', async () => {
+    openSetReady();
+    mockUpdate.mockResolvedValueOnce(storedEvent({ event_id: 'evt-1' }));
+
+    await PATCH(patch({
+      ...EDIT,
+      organization_id: 'org-2',
+      organizationId: 'org-2',
+      eventId: 'evt-other',
+      annotationSetId: 'set-other',
+      calibration_clip_id: 'clip-2',
+    }));
+
+    expect(mockUpdate.mock.calls[0][0]).toEqual({
+      organizationId: 'org-1',
+      annotationSetId: 'set-1',
+      eventId: 'evt-1',
+      certainty: 'clear',
+    });
+  });
+
+  test('the audit row names the fields, not their values, with the SHADOW mirror off', async () => {
+    openSetReady();
+    mockUpdate.mockResolvedValueOnce(storedEvent({ event_id: 'evt-1' }));
+
+    await PATCH(patch({ annotation_set_id: 'set-1', event_id: 'evt-1', punch_type: 'lead_hook', visibility: 'clear' }));
+
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      event_type: 'update',
+      entity_type: 'calibration_annotation_event',
+      entity_id: 'evt-1',
+      shadow_mirror: false,
+    });
+    expect(mockAudit.mock.calls[0][0].details).toEqual({
+      action: 'edit_in_place',
+      annotation_set_id: 'set-1',
+      fields: ['punch_type', 'visibility'],
+    });
+  });
+
+  test('a frozen field on an event with marks is the module refusal: 409 with its code, no replace, no audit row', async () => {
+    openSetReady();
+    mockUpdate.mockRejectedValueOnce(HAS_MARKS());
+
+    const response = await PATCH(patch({ annotation_set_id: 'set-1', event_id: 'evt-1', start_ms: 12_500 }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe('CALIBRATION_EVENT_HAS_BODY_MARKS');
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('nothing to change is a 400, not an empty write', async () => {
+    openSetReady();
+
+    const response = await PATCH(patch({ annotation_set_id: 'set-1', event_id: 'evt-1', event_code: 'x' }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [{ event_id: 'evt-1', certainty: 'clear' }, 'annotation_set_id'],
+    [{ annotation_set_id: 'set-1', certainty: 'clear' }, 'event_id'],
+    [{ annotation_set_id: 5, event_id: 'evt-1', certainty: 'clear' }, 'annotation_set_id'],
+    [{ annotation_set_id: 'set-1', event_id: { id: 'evt-1' }, certainty: 'clear' }, 'event_id'],
+    [null, 'annotation_set_id'],
+    ['certainty', 'annotation_set_id'],
+  ])('a missing or malformed id, or a body that is not an object, is a 400 naming the id', async (body, field) => {
+    openSetReady();
+
+    const response = await PATCH(patch(body));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain(field);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a submitted set is refused before the module is called', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockGetSet.mockResolvedValue({ ...OPEN_SET, status: 'submitted', submitted_at: '2026-08-01T00:00:00.000Z' });
+
+    const response = await PATCH(patch(EDIT));
+
+    expect(response.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a set that belongs to another annotator reads as absent', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockGetSet.mockResolvedValue({ ...OPEN_SET, annotator_account_id: 'coach-2' });
+
+    const response = await PATCH(patch(EDIT));
+
+    expect(response.status).toBe(404);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent', 'volunteer', 'staff', 'board', 'platform_owner'])(
+    'a %s cannot edit an event',
+    async (role) => {
+      mockPrincipal.mockResolvedValue({ ...COACH, role });
+
+      const response = await PATCH(patch(EDIT));
+
+      expect(response.status).toBe(403);
+      expect(mockGetSet).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  test('footage that has left ready stops the edit', async () => {
+    openSetReady();
+    mockClippable.mockRejectedValueOnce(new Error('Forbidden: this video is not available'));
+
+    const response = await PATCH(patch(EDIT));
+
+    expect(response.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
 
