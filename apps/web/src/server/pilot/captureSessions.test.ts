@@ -9,6 +9,7 @@ import {
   advanceTake,
   closeRecordingSession,
   createRecordingSession,
+  findMyOpenSession,
   findOpenSessionByJoinCode,
   generateJoinCode,
   listTakeFiles,
@@ -165,6 +166,30 @@ describe('finding a session by its code', () => {
   test('a code that matches nothing is null, not an error', async () => {
     mockQueryOne.mockResolvedValueOnce(null);
     await expect(findOpenSessionByJoinCode('org-a', 'NOPE12')).resolves.toBeNull();
+  });
+});
+
+describe('finding the caller own open session', () => {
+  test('is scoped to the organization AND the account that started it, open only, newest first', async () => {
+    mockQueryOne.mockResolvedValueOnce(sessionRow());
+
+    const found = await findMyOpenSession('org-a', 'acct-coach');
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    // Each predicate is load-bearing: without the account a coach's phone would
+    // be handed whichever session in the gym was newest, and without the state
+    // a finished session would come back to life on reload.
+    expect(String(sql)).toContain('organization_id = $1');
+    expect(String(sql)).toContain('created_by_account_id = $2');
+    expect(String(sql)).toContain("state = 'open'");
+    expect(String(sql)).toMatch(/order by created_at desc\s+limit 1/);
+    expect(params).toEqual(['org-a', 'acct-coach']);
+    expect(found?.joinCode).toBe('H7K2QP');
+  });
+
+  test('having none open is null, not an error', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(findMyOpenSession('org-a', 'acct-coach')).resolves.toBeNull();
   });
 });
 

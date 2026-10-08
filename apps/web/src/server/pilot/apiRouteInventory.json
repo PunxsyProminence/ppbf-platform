@@ -12470,7 +12470,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads one recording session and its open take/files by recording_session_id (capture-session/route.ts:148-203), org-scoped. Anonymous teaching capture.",
+    "notes": "Reads one recording session and its open take/files by recording_session_id, org-scoped; ?mine=1 instead returns the caller own most recent open session (org + created_by_account scoped) so a reload can resume it. Anonymous teaching capture.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

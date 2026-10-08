@@ -5,6 +5,7 @@ import {
   advanceTake,
   closeRecordingSession,
   createRecordingSession,
+  findMyOpenSession,
   findOpenSessionByJoinCode,
   getOpenTake,
   getSessionById,
@@ -185,6 +186,20 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach']);
+
+    /*
+     * ?mine=1: the caller's own most recent open session, for a page that has
+     * just loaded and holds nothing. No session is `session: null`, not a 404 --
+     * having none open is the ordinary case, and a 404 would read as a fault.
+     */
+    if (request.nextUrl.searchParams.get('mine') === '1') {
+      const mine = await findMyOpenSession(principal.organizationId, principal.accountId);
+      if (!mine) {
+        return NextResponse.json({ ok: true, session: null });
+      }
+      const mineTake = await getOpenTake(mine.recordingSessionId);
+      return NextResponse.json({ ok: true, session: await sessionPayload(mine, mineTake) });
+    }
 
     const recordingSessionId = request.nextUrl.searchParams.get('recording_session_id')?.trim() ?? '';
     if (!recordingSessionId) {

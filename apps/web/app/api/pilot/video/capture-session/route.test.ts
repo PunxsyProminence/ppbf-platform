@@ -5,6 +5,7 @@ import {
   advanceTake,
   closeRecordingSession,
   createRecordingSession,
+  findMyOpenSession,
   findOpenSessionByJoinCode,
   getOpenTake,
   getSessionById,
@@ -17,6 +18,7 @@ jest.mock('@/src/server/pilot/captureSessions', () => {
   return {
     ...actual,
     createRecordingSession: jest.fn(),
+    findMyOpenSession: jest.fn(),
     findOpenSessionByJoinCode: jest.fn(),
     getSessionById: jest.fn(),
     getOpenTake: jest.fn(),
@@ -43,6 +45,7 @@ jest.mock('@/src/server/pilot/http', () => {
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockCreate = jest.mocked(createRecordingSession);
 const mockFindByCode = jest.mocked(findOpenSessionByJoinCode);
+const mockFindMine = jest.mocked(findMyOpenSession);
 const mockGetSession = jest.mocked(getSessionById);
 const mockGetOpenTake = jest.mocked(getOpenTake);
 const mockAdvance = jest.mocked(advanceTake);
@@ -260,6 +263,55 @@ describe('reading the session state', () => {
 
     expect(response.status).toBe(400);
     expect(mockGetSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('a reload asks for the caller own open session (TEACH-04)', () => {
+  test('returns the session, its join code and its open take, looked up by the caller account and organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-me', organizationId: 'org-a' }));
+    mockFindMine.mockResolvedValueOnce(SESSION);
+
+    const response = await GET(getRequest('?mine=1'));
+
+    expect(response.status).toBe(200);
+    // Both ids come from the signed-in principal, never from the request.
+    expect(mockFindMine).toHaveBeenCalledWith('org-a', 'acct-me');
+    const payload = (await response.json()) as {
+      session: { join_code: string; recording_session_id: string; current_take: { capture_take_id: string } };
+    };
+    expect(payload.session.join_code).toBe('H7K2QP');
+    expect(payload.session.recording_session_id).toBe('rs-1');
+    expect(payload.session.current_take.capture_take_id).toBe('take-1');
+    // It never reads some other session by an id the caller supplied.
+    expect(mockGetSession).not.toHaveBeenCalled();
+  });
+
+  test('nothing open is a 200 with no session, not a 404', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockFindMine.mockResolvedValueOnce(null);
+
+    const response = await GET(getRequest('?mine=1'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, session: null });
+  });
+
+  test('the same roles as the rest of the route, and nothing is read for anyone else', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete'));
+
+    const response = await GET(getRequest('?mine=1'));
+
+    expect(response.status).toBe(403);
+    expect(mockFindMine).not.toHaveBeenCalled();
+  });
+
+  test('only mine=1 asks for it; any other value falls through to the id check', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await GET(getRequest('?mine=0'));
+
+    expect(response.status).toBe(400);
+    expect(mockFindMine).not.toHaveBeenCalled();
   });
 });
 
