@@ -164,6 +164,295 @@ and should not try to.
 
 ---
 
+## OD-2026-10-08-013 -- "Build all" scope re-answered: "2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing" (row Q-E); SUPERSEDES OD-2026-10-07-012 ruling 4
+
+**Provenance: RECONSTRUCTED.** Quoted from `DocumentsPPBF-overwatchOWNER-QUESTIONS-LIVE.md`, row Q-E (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry. Overwatch (session "Overwatch: plan and lead the app-wide build") directed this entry be filed as superseding, 2026-10-08.
+
+Question (log, short): "Build all" scope: people-facing features only, or every route including internal machinery? Jason: *"2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing"*
+
+**Overwatch reading (not his words):** option 2 = everything gets a view; internal and plumbing routes need not be user-level screens, but an admin or system view of them is wanted.
+
+**Rulings:**
+1. Every route gets a view of some kind. Routes people do not interact with need not be user-level screens; an admin or system view is enough (reading above).
+
+**Supersedes.** OD-2026-10-07-012 ruling 4 ("People-facing only": plumbing routes get no screen and go to the park-or-delete list; retraction checks stay parked). The newer answer (2026-10-08) replaces the 2026-10-07 one; OD-2026-10-07-012 ruling 4 stays on record as written.
+
+**Not ruled here:** whether retraction checks stay parked (the 2026-10-07 ruling said so; the 2026-10-08 answer does not mention them); which routes are plumbing and what their admin view looks like.
+
+---
+
+## OD-2026-10-08-012 -- Build plan approved: "Approve, start wave 0 + 1a (Recommended)"; housekeeping: "Yes, both (Recommended)" (rows PLAN-1, PLAN-2)
+
+**Provenance: RECONSTRUCTED.** Quoted from Jason's answers as copied by overwatch into `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` (rows PLAN-1, PLAN-2, dated 2026-10-08). The records lane did not re-read the session transcript. A card answer is a button pick: the option's label is quoted as he picked it. New; edits no earlier entry.
+
+- **PLAN-1.** Question (overwatch, short): approve the app-wide build plan (waves 0-4, Teach-AI last, releases 14/15/16, models per risk tier)? Plan file: `lane-inbox/BUILD-PLAN-2026-10-08.md`. Jason: *"Approve, start wave 0 + 1a (Recommended)"*
+- **PLAN-2.** Question: remove the merged-and-clean worktrees (junctions unlinked first) and drop stash@{0} (tagged-kids draft, PR #1310 merged, in the 2026-10-08 bundle)? Jason: *"Yes, both (Recommended)"*
+
+**Rulings:**
+1. The build plan in `BUILD-PLAN-2026-10-08.md` is approved; wave 0 and wave 1a start.
+2. The merged-and-clean worktrees are removed (junctions unlinked first) and stash@{0} is dropped.
+
+**Not ruled here:** anything in the plan beyond waves 0 and 1a.
+
+---
+
+## OD-2026-10-08-011 -- Whole-app look and the UI lane: "Be" (read as B, every page); "No go with your best guess"; "A"; "cont"; "Next"; "Remember nothing should restrict"
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\lane-inbox\UI-WHOLE-APP-area-order-2026-10-07.md`, section 3 ("Jason's words to this lane NOT yet in docs/current/OWNER_DECISIONS.md"), written by the UI lane, which cites its transcript `~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl` by line. The records lane did not re-read that transcript. The lane's readings are labelled as readings, not his words. Timestamps UTC. New; edits no earlier entry.
+
+| His exact words | When | Transcript line | What it answered (as the UI lane wrote it) |
+|---|---|---|---|
+| *"A"* | 2026-10-07, before 11:41Z | not isolated | "Which screen should be built next? A. Session Scripts (recommended) / B. Parent / guardian hub / C. Another screen you name." Built as #1331 and #1336. |
+| *"cont"* | 2026-10-07T11:41:39Z | 5010 | Sent while overwatch was holding the start; the lane read it as go for screen 3a. |
+| *"Next"* | 2026-10-07T16:02:54Z | 5556 | After #1331 merged; the lane read it as go to the live run (3b). |
+| *"A"* | 2026-10-07T18:09:02Z | 5970 | "What should this lane build next? A (recommended): the parent / guardian hub / B another screen / C stop here." Built as #1344. |
+| *"No go with your best guess"* | 2026-10-07T18:59:02Z | 6385 | "What text size should family screens use? A (recommended): keep today's reading size. Only the buttons got bigger. B: use the large gym-floor size (19.1px minimum)." |
+| *"Be"* | 2026-10-07T19:06:26Z | 6426 | "Do you want the whole app in the new look, or only the screens people use daily? A (recommended): daily screens only... B: every page, area by area." |
+| *"Remember nothing should restrict"* | 2026-10-03, mid-turn during the coach board build | not isolated | A reminder, in the UI lane's words, that no rule limits the look. |
+
+**Readings (the lane's and overwatch's, not his words):**
+- *"No go with your best guess"* = he delegated; option A stands: family screens keep today's reading size and take no `data-surface="kiosk"`.
+- *"Be"* = B, every page, area by area. The UI lane told him so and asked for correction; overwatch re-asked once (item 4 of C1, OD-2026-10-08-002), and he confirmed it there.
+- *"Remember nothing should restrict"* is consistent with OD-2026-10-02-004 and -007.
+
+**Rulings:**
+1. Screens built next: Session Scripts (#1331, #1336) and the parent / guardian hub (#1344).
+2. Family screens keep today's reading size (delegated: "No go with your best guess").
+3. The whole app gets the new look, every page, area by area (B), confirmed by C1 item 4.
+4. No rule limits the look (as already recorded in OD-2026-10-02-004 and -007).
+
+**Not ruled here:** the lane's own guess to lift the 10-12px labels on the family hub (NOT built; the lane asked whether he would rather keep them).
+
+---
+
+## OD-2026-10-08-010 -- Visual lane: Teach room, image-generator history, plain clinic/board/file (V1-V3); and five 2026-10-02 plate rulings not filed before
+
+**Provenance: RECONSTRUCTED.** V1-V3 are quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` (dated 2026-10-08, copied by overwatch). The five 2026-10-02 rulings are quoted from `lane-inbox/VISUAL-LANE-final-handoff-2026-10-08.md`, section 2, written by the visual lane; where the repo holds the same words they were checked there (`docs/REAL-GYM-REFERENCE-LOCK.md` section 4 for "Mask the names, then release all ten" and "Lane verification is enough"; commit `3d79baecf761dc91f089f9d04e8bda9d3f2b6a92` for the drift-check message). The records lane did not re-read the visual lane's thread. New; edits no earlier entry.
+
+**Card answers, 2026-10-08.**
+- **V1.** Keep and style the Teach room, or remove it? Jason: *"Keep and style it (Recommended)"*
+- **V2.** Authorize Claude to read Jason's Grok threads (read-only) to find what was sent to image generators before 2026-10-02? Jason: *"Yes, read them (Recommended)"* (log note: read-only; report only; no deletes or posts)
+- **V3.** Clinic, board and file background art: generate new art later, or leave plain? Jason: *"Leave plain"*
+
+**2026-10-02 rulings (the visual lane's table; dates as the lane gave them).**
+1. *"You can alter them to remove people only after the other lane is done with grok"* (captured in #1097 body)
+2. *"Mask the names, then release all ten"* (an option he selected; lock section 4, #1097 body)
+3. *"Lane verification is enough — leave it labelled"* (an option he selected; lock section 4)
+4. *"Drift check, we are adding rules again the real phots are reference anyways"*, then *"Yes"* to cutting the guard back (#1097 body, commit `3d79baecf761dc91f089f9d04e8bda9d3f2b6a92`)
+5. *"Only if we have current variation openings in the app if not stand by"* (the visual lane's thread only)
+
+**Rulings:**
+1. The Teach room stays and gets styled. (Source note from the visual lane: the room has no `.room--teach` rule today; whether it should exist was his call, and this is the call.)
+2. Claude may read Jason's Grok threads, read-only, to find what was sent to image generators; report only, no deletes, no posts.
+3. The clinic, board and file rooms stay plain; no new art is generated for them.
+4. Plate photographs may be altered to remove people only after the other lane is done with Grok.
+5. The ten reference photographs are released with names masked; lane verification is enough, labelled as lane-verified.
+6. Rule-adding on the reference-photograph guard was cut back after his drift check (verbatim above).
+7. New plate work waits unless a current variation opening exists in the app.
+
+**Not ruled here:** his signed-in look at the OFFICE and NIGHT portrait plates on staging or production (log row OWED: Jason's action, the one outstanding item from merged #1324).
+
+---
+
+## OD-2026-10-08-009 -- Second question round, part 2 (D13-D24): schedule, floor cards, purge, test logins, punch map, SHADOW model, sayings, API routes, engine unlocks, policy shelf, quotes, plate rules
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` rows D13-D24 (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. A card answer is a button pick: the option's label is quoted as picked; where he typed, his typed words are quoted. Text in brackets after a quote is the log's own note and is not his words. New; edits no earlier entry.
+
+- **D13.** "Athlete Schedule": what does it show? Jason: *"Their classes + booked sessions (Recommended)"*
+- **D14.** Expandable Floor cards: link enough, or build in-place expanding cards? Jason: *"Make them expand"*
+- **D15.** Purge gaps: build the remaining removals? Jason: *"Build the removals (Recommended)"* (overwatch note: consistent with the AI-data rulings: de-identify and keep where OD-2026-10-06 AI rulings say so; delete the rest)
+- **D16.** Old held test logins (coach@ etc.): list and decide each / remove all test logins / keep all? Jason: *"Remove all test logins"* (overwatch note: production write; the lane lists every login it would remove with evidence it is a test login, Jason sees the list before the run; keep ppbf@, Admin@ and real people; confirm whether the re-homed parent test login used for parent-portal testing counts as "test")
+- **D17.** ML punch-to-skill map (IMP-14): map as listed OK? Jason: *"1 we can look up all the variations as well"* (overwatch reading: map OK; also research and include punch variations, e.g. jab and hook variants)
+- **D18.** SHADOW Quick Round model in production: check then move to luna / leave? Jason: *"Check, then move to luna (Recommended)"* (overwatch note: a production setting change needs Jason's approval at the time)
+- **D19.** Gym sayings vs the approved list (remove Steel Town, add Embrace the suck)? Jason: *"Match my approved list (Recommended)"*
+- **D20.** Unused API routes (planned get screens, parked stay parked, floor-plans deleted)? Jason: *"OK (Recommended)"*
+- **D21.** 14 engine-unlock proposals: list and approve each / approve all / hold? Jason: *"1 this overwatch"*; then on the per-engine card Jason ticked all of 015, 016, 017, 018, 021, 023, 024, 025, 029, 030, 031, 032, 033, 035 plus *"Approve all 14"* (overwatch note: approves each proposal; any draft thresholds or "Open Questions" inside a proposal still go to Jason when that engine is built)
+- **D22.** Policy-shelf move: re-point citations then move / leave? Jason: *"Re-point citations, then move (Recommended)"*
+- **D23.** Quotes library starting list: show first / approve as gathered? Jason: *"Approve as gathered"*
+- **D24.** Visual plate rules and the old plate branch: visual lane proposes and Jason approves / answer now? Jason: *"Visual lane proposes, I approve (Recommended)"*
+
+**Rulings:**
+1. D13: the athlete schedule shows their classes and booked sessions.
+2. D14: Floor cards expand in place.
+3. D15: build the remaining removals (de-identify and keep where the AI-data rulings say so; delete the rest).
+4. D16: remove all test logins, with the list shown to Jason before the production run; ppbf@, Admin@ and real people stay.
+5. D17: the punch-to-skill map is OK as listed; punch variations are researched and added (reading above).
+6. D18: check, then move the SHADOW Quick Round model to luna; the production change itself needs his approval at the time.
+7. D19: the gym sayings match his approved list.
+8. D20: the unused-API-route plan is OK as listed.
+9. D21: all 14 engine-unlock proposals are approved as proposals.
+10. D22: re-point the policy-shelf citations, then move the shelf.
+11. D23: the quotes library starting list is approved as gathered.
+12. D24: the visual lane proposes plate rules; Jason approves.
+
+**Not ruled here:** whether the re-homed parent test login counts as a test login (D16); thresholds inside the engine-unlock proposals (D21).
+
+---
+
+## OD-2026-10-08-008 -- Second question round, part 1 (D1-D12): drill versions, content import, stop rules, equipment, parent drill view, sparring wording, staging checks
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` rows D1-D12 (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. A card answer is a button pick: the option's label is quoted as picked; where he typed, his typed words are quoted. Text in brackets after a quote is the log's own note. New; edits no earlier entry.
+
+- **D1.** Newer reference drill version (IMP-15): A retire + re-promote / B "Update to newer version" in place? Jason: *"B Update in place (Recommended)"*
+- **D2.** Reinstate an earlier drill version: newest only / allow earlier versions? Jason: *"Allow earlier versions"*
+- **D3.** Retired drills: refuse the change-proposal back door, and keep retired-older blocks newer? Jason: *"Refuse back-door; keep block (Recommended)"*
+- **D4.** Upload screen vs repo CSVs: which is the source of truth? Jason: *"Upload screen wins (Recommended)"*
+- **D5.** Content-import builder defaults: OK as built? Jason: *"OK as built (Recommended)"*
+- **D6.** Disciplines, levels and cohorts edits: in place + history ledger, or versions? Jason: *"In place + history (Recommended)"*
+- **D7.** Universal stop rules: Claude drafts for approval / Jason writes / not needed? Jason: *"No let the coach decide in real world"* (log note: no universal stop-rule list; coaches decide on the floor)
+- **D8.** Blank equipment on 5 source-manual drills: treat as none needed / flag missing? Jason: *"Treat blank as 'none needed' (Recommended)"*
+- **D9.** Parents and the drill library: athlete version or coach version? Jason: *"Athlete version (Recommended)"*
+- **D10.** Sparring page wording: tell athletes that coaches see sparring-derived numbers? Jason: *"No"*
+- **D11.** drill_library.source_ref: where the drill came from (informational) / drop? Jason: *"Where the drill came from (Recommended)"*
+- **D12.** Staging check before production: only sensitive releases / every release? Jason: *"Only sensitive releases (Recommended)"*
+
+**Rulings:**
+1. D1: a newer reference drill version updates in place (B).
+2. D2: earlier drill versions may be reinstated.
+3. D3: the change-proposal back door to retired drills is refused; a retired-older block stays blocked by a newer one.
+4. D4: the upload screen wins over the repo CSVs.
+5. D5: the content-import builder defaults stand as built.
+6. D6: disciplines, levels and cohorts are edited in place with a history ledger.
+7. D7: no universal stop-rule list; coaches decide on the floor.
+8. D8: blank equipment on the five source-manual drills means "none needed".
+9. D9: parents see the athlete version of the drill library.
+10. D10: the sparring page does not tell athletes that coaches see sparring-derived numbers.
+11. D11: `drill_library.source_ref` means where the drill came from (informational).
+12. D12: a staging check before production is required only for sensitive releases.
+
+**Not ruled here:** which releases count as sensitive (D12), beyond the standing rule that screens for sign-in, minors' data or safety need his signed-in staging check.
+
+---
+
+## OD-2026-10-08-007 -- Read-back of the 15 inferred defaults: "Confirm all 15 (Recommended)" (row GO-RECS-CONFIRMED)
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md`, row GO-RECS-CONFIRMED (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry. It confirms the inference recorded as a reading in the log row for "Ok go with your recommendations" (OD-2026-10-07-006).
+
+Overwatch listed 15 defaults in plain words: O1 both check-ins; O2 block; O3 recommended; O4 Q2/Q3/Q5/Q6 recommended; O5 show as written; O6 A1; O7 B1; O11 A; O12 keep de-identified, delete formula-citing; O13 accept; O14 show as is; O15 mark on restore, adopted left alone; O16 A; O17b B (organization admin can take a session off a TV); O19 label in list. Jason: *"Confirm all 15 (Recommended)"*
+
+**Rulings:**
+1. The 15 defaults above are Jason's confirmed rulings. The earlier "go with your recommendations" inference is now his confirmed word for each.
+
+**Not ruled here:** the exact text of each O-item's recommended option lives in the log's open-questions table of 2026-10-07; this entry confirms them as listed there and does not restate them.
+
+---
+
+## OD-2026-10-08-006 -- Product questions A-Q15 to A-Q22 and PLAN-4: Parent Hub tabs, Messages tab, Message Home, mock screens, one "cleared tonight" answer, draft blocks, roster export, top-bar count and second gym
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` rows A-Q15 to A-Q22 and PLAN-4 (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. A card answer is a button pick: the option's label is quoted as picked; where he typed, his typed words are quoted. Text labelled "overwatch reading" or "overwatch note" is not his words. New; edits no earlier entry. PLAN-4 extends A-Q20 and says so below.
+
+- **A-Q15.** Parent Hub tabs with no feed: hide / keep as roadmap / build now? Jason: *"Keep as roadmap"*
+- **A-Q16.** Athlete "Messages" tab: rename "Ask SHADOW" / build coach messaging / leave? Jason: *"Rename 'Ask SHADOW' (Recommended)"*
+- **A-Q17.** Coach "Message Home": reword now / reword + email nudge? Jason: *"1 id like it to eventually forward to thier text message if possible"* (overwatch reading: reword now to "Posted to the family's page"; LATER feature: forward a notice to the family by text message. SMS was parked, needs a provider and cost decision)
+- **A-Q18.** Mock screens: remove the coach button + retire the board prototype / wire to real data / delete all? Jason: *"1 and 2"* (overwatch reading: remove the coach button and retire the board prototype now, AND wire the remaining mock consoles to real data as a build)
+- **A-Q19.** One "cleared tonight" answer: build one per-athlete answer / separate screens for now? Jason: *"Build one answer"*
+- **A-Q20.** Draft development blocks: family sees only active/completed / always with a warning? Jason: *"Only active/completed (Recommended)"*
+- **A-Q21.** Roster export: reword / make it the full family data copy later? Jason: *"Reword (Recommended)"*
+- **A-Q22.** Refused team clip alert + second gym: top-bar count vs safety list; is a second gym in scope? Jason: *"Top-bar count; plan second gym"* (overwatch note: his 2026-10-06 "right now we are just focusining on one gy"; read as PLAN for a second gym, e.g. stop hard-coding PPBF's name and address; the build stays one-gym unless he says otherwise)
+- **PLAN-4** (extends A-Q20). The family route serves athlete and parent: hide draft and cancelled blocks from the athlete as well? Jason: *"Both athlete and parent (Recommended)"*
+
+**Rulings:**
+1. A-Q15: the Parent Hub tabs with no feed stay as roadmap.
+2. A-Q16: the athlete "Messages" tab is renamed "Ask SHADOW".
+3. A-Q17: the coach "Message Home" is reworded now (reading above); forwarding a notice to the family by text message is wanted eventually, if possible. It is a later feature, not built here.
+4. A-Q18: both parts: remove the coach button and retire the board prototype, and wire the remaining mock consoles to real data (reading above).
+5. A-Q19: build one per-athlete "cleared tonight" answer.
+6. A-Q20 and PLAN-4: families see only active and completed development blocks; draft and cancelled blocks are hidden from the athlete and the parent alike.
+7. A-Q21: the roster export is reworded.
+8. A-Q22: a refused team clip raises a top-bar count; a second gym is planned for (reading above), but the build stays one-gym.
+
+**Not ruled here:** the text-message provider and its cost (A-Q17, later); the timing of a second gym (A-Q22).
+
+---
+
+## OD-2026-10-08-005 -- Teach, SHADOW and research questions A-Q10a/b/c, A-Q11 to A-Q14: Fighter 1 / Fighter 2, late angles, punch match window, passage text, the "20 passages" limit, closing a research requirement, "Allow public use"
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` rows A-Q10a, A-Q10b, A-Q10c, A-Q11, A-Q12, A-Q13, A-Q14 (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. A card answer is a button pick: the option's label is quoted as picked. Text in brackets after a quote is the log's own note. New; edits no earlier entry.
+
+- **A-Q10a.** Teach labelling, which fighter: fixed "Fighter 1 / Fighter 2" vs named sides? Jason: *"Fighter 1 / Fighter 2 (Recommended)"*
+- **A-Q10b.** Teach capture, late angle after its take closed: keep for the coach to sort vs attach to the next take? Jason: *"Keep for coach to sort (Recommended)"*
+- **A-Q10c.** Teach labelling, punch match window: two coaches' marks a few ms apart count as the same punch? Jason: *"Allow a small window (Recommended)"* (asked as about 100 ms; the exact number is tuned by the lane and shown on screen)
+- **A-Q11.** SHADOW cited passage: show passage text under each source (within the rights rule) or titles only? Jason: *"Show passage text (Recommended)"*
+- **A-Q12.** "20 passages" meaning (SHADOW-07), asked 2026-10-08 after checking main: the cap is 20 passages / 30,000 characters (Jason "A on the excerpt cap", 2026-10-07, OD-2026-10-07-001); passages are about 1,200 characters so about 24,000 effective. Jason: *"Keep, show real limit (Recommended)"*
+- **A-Q13.** Closing a research requirement: require a closing note or approved submission, and may a coach attach a source? Jason: *"Require note/submission; coach may attach (Recommended)"*
+- **A-Q14.** The "Allow public use" checkbox: hide until a public path exists / keep recording / build enforcement? Jason: *"Hide until used (Recommended)"*
+
+**Rulings:**
+1. A-Q10a: Teach labels the two fighters "Fighter 1" and "Fighter 2".
+2. A-Q10b: a late angle (after its take closed) is kept for the coach to sort.
+3. A-Q10c: two coaches' marks within a small window count as the same punch; the lane tunes the number (asked as about 100 ms) and shows it on screen.
+4. A-Q11: SHADOW shows the passage text under each source, within the rights rule.
+5. A-Q12: the excerpt cap of 20 passages / 30,000 characters stays and the screen states the real limit.
+6. A-Q13: closing a research requirement needs a closing note or an approved submission; a coach may attach a source.
+7. A-Q14: the "Allow public use" checkbox is hidden until a public path exists.
+
+**Not ruled here:** the exact punch-match window in milliseconds (the lane tunes it).
+
+---
+
+## OD-2026-10-08-004 -- Publications library is gym-wide ("Gym-wide (Recommended)", row Q-D); SUPERSEDES OD-2026-10-07-012 ruling 3
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md`, row Q-D (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry.
+
+Question (log, short): is the published-video library gym-wide or own athletes only? Jason: *"Gym-wide (Recommended)"*
+
+**Rulings:**
+1. The publications library is gym-wide: everyone signed in at the gym can browse every published clip, as built.
+
+**Supersedes.** OD-2026-10-07-012 ruling 3 (publications library: "Own athletes only", a coach sees entries about their athletes, an athlete only their own, the organization admin all). The newer answer is gym-wide. OD-2026-10-07-012 ruling 3 stays on record as written; this entry replaces it.
+
+**Not ruled here:** nothing further; row Q-E ("build all" scope) is filed separately in OD-2026-10-08-013.
+
+---
+
+## OD-2026-10-08-003 -- Route survey Q1 to Q4 re-answered (R1-R4) and extended (PLAN-3): coach gym-wide reads kept with a recorded exception; platform owner off the gym routes; athlete rows hidden; family wording only; R1 SUPERSEDES OD-2026-10-07-011 Question 1
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md` rows R1, R2, R3, R4 and PLAN-3 (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. A card answer is a button pick: the option's label is quoted as picked. New; edits no earlier entry.
+
+- **R1** (route survey Q1). Eight coach screens read athletes gym-wide: keep as a recorded exception, or narrow to own athletes? Jason: *"Keep gym-wide, record exception (Recommended)"*
+- **R2** (route survey Q2). Platform owner writing gym operations on six routes: remove? Jason: *"Remove (Recommended)"*
+- **R3** (route survey Q3). Athlete login rows on the platform staff list: hide? Jason: *"Hide athlete rows (Recommended)"*
+- **R4** (route survey Q4). Raw gap-rule numbers to athletes and parents: family wording only? Jason: *"Family wording only (Recommended)"*
+- **PLAN-3** (extends R2). The same files also admit platform_owner on gym-photos GET/DELETE, retraction-checks GET, shadow/unlocks GET and session-scripts/runs/[runId] PATCH: remove there too? Jason: *"All of them (Recommended)"*
+
+**Rulings:**
+1. R1: the eight coach gym-wide routes stay gym-wide, recorded as a standing exception.
+2. R2: platform_owner is removed from the six gym routes (gym photos, retraction checks, track assignments, SHADOW unlocks, session-script runs, drill proposal review). This repeats OD-2026-10-07-011 ruling 2.
+3. PLAN-3 extends R2 to every verb in the six files: platform_owner is also removed on gym-photos GET and DELETE, retraction-checks GET, shadow/unlocks GET and session-scripts/runs/[runId] PATCH.
+4. R3: the platform staff list hides athlete rows. This repeats OD-2026-10-07-011 ruling 3.
+5. R4: athletes and parents get family wording with no numbers; staff keep the numbers. This repeats OD-2026-10-07-011 ruling 4.
+
+**Supersedes.** OD-2026-10-07-011 Question 1 (ruling 1 there, "Split (Recommended)": names-and-status lists gym-wide, consent changes and one-percent notes assigned-coach or organization admin only). R1 replaces it: all eight stay gym-wide and the exception is recorded. OD-2026-10-07-011 ruling 1 stays on record as written; this entry replaces it.
+
+**Not ruled here:** whether consent changes via the gym-wide consent screen get any narrowing; R1 as answered keeps all eight gym-wide and names no further limit.
+
+---
+
+## OD-2026-10-08-002 -- Waiting-list confirmation: "I confirm themthings in the list that is waiting on me to confirm" (row C1); the five items as read back in section E
+
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md`, row C1 (dated 2026-10-08), as copied by overwatch; the five items are as written in `Documents\PPBF-overwatch\lane-inbox\APP-WIDE-BUILD-LIST-2026-10-08.md`, section E. The records lane did not re-read the transcript. New; edits no earlier entry.
+
+Overwatch had listed five open items waiting on his confirmation. Jason: *"I confirm themthings in the list that is waiting on me to confirm"*
+
+**Overwatch reading (not his words):** he confirmed the first-listed option of each, written out in section E of the build list; the new overwatch re-reads each to him once before building. The log's open-items table says that section E applies "as the options listed first in the handover (verify with Jason if any was not his intent)".
+
+**The five items as read back (section E):**
+1. Never-built modules: A = build 7, 13 and 70 only.
+2. Untested DRAFT drill at template issue: A = refuse and name it; auto-adopt reference drills only.
+3. Class rows stored before #1338 (4-5 hours early): A = count, then shift the exact rows.
+4. UI lane "Be": B = whole-app new look, every page.
+5. `PPBF_PUBLIC_INTEREST_ORG_ID`: A = set on staging and production and redeploy.
+
+**Rulings:**
+1. The five items above are confirmed as read back.
+2. Item 1 settles the "nine never-built modules" question left NOT RULED in OD-2026-10-07-012 ruling 1: build only modules 7, 13 and 70.
+3. Item 2 settles the follow-up left unanswered under OD-2026-10-07-012: an untested DRAFT drill at template issue is refused and named; reference drills are adopted automatically. (This narrows OD-2026-10-07-012 ruling 2 for drafts; it does not reverse it for adopted or reference drills.)
+4. Item 4 confirms the UI lane's reading of *"Be"* as B (OD-2026-10-08-011).
+
+**Not ruled here:** the log lists O6, O7, O15, O17b, O19 and audit Q10-Q22 as "Still not asked" in section E; the O-items were later confirmed in OD-2026-10-08-007, and audit Q10-Q22 have no entry here.
+
+---
+
 ## OD-2026-10-08-001 -- Release 13 production approvals ("yo make the clicks this one time to review anf deploy"); the account switch uses the handover file
 
 **Provenance: PRIMARY** for Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given with each quote). Read by script (records pass, 2026-10-08). The GitHub facts are OBSERVED by overwatch through `gh` on 2026-10-08 and are cited by run id. New; edits no earlier entry.
