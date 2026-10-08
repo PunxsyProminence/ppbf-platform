@@ -14,6 +14,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
+import { BODY_POINTS_0_4 } from '@/src/server/pilot/calibration/ontology';
+
 import CoachCalibrationPage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -74,10 +76,57 @@ const PUNCH_EVENT = {
   defends_against_event_id: null,
 };
 
+const BODY_POINT_SET = { ...OPEN_SET, ontology_version: 'boxing-ontology-0.4' };
+
+/* A body-points answer with one moment opened and two points on it, as the
+   server shapes it: the set's own point list in marking order (0.4's 23),
+   and the missing list in the server's wording verbatim. */
+const BODY_DATA = {
+  ok: true,
+  set: BODY_POINT_SET,
+  expected_points: [...BODY_POINTS_0_4],
+  moments: [
+    {
+      body_moment_id: 'mom-1',
+      event_id: 'evt-1',
+      moment_slot: 'start',
+      moment_kind: 'start',
+      observation_ms: 12_400,
+      event_start_ms: 12_400,
+      event_end_ms: 12_800,
+      lead_side: 'orthodox',
+      guard_type: null,
+      source_frame_width_px: null,
+      source_frame_height_px: null,
+      points: [
+        { body_point_id: 'p-1', point_code: 'nose', state: 'placed', x_norm: 0.5, y_norm: 0.2 },
+        { body_point_id: 'p-2', point_code: 'chin', state: 'not_visible', x_norm: null, y_norm: null },
+      ],
+    },
+  ],
+  stance_labels: [],
+  missing: [
+    'evt-1: end moment',
+    'evt-1: middle moment',
+    'evt-1: stance type',
+    'evt-1: start guard',
+    'evt-1: start points, 2 of 23',
+  ],
+};
+
 interface Options {
   set?: unknown;
   events?: unknown[];
   eventsResponse?: () => { ok: boolean; body: unknown };
+  /** The body-points answer: a value, or a function called per read (which
+   * may return a promise, or throw to stand for a network failure). */
+  bodyData?: unknown | (() => unknown);
+  bodyDataOk?: boolean;
+  submitResponse?: () => { ok: boolean; body: unknown };
+  /** The set the submit route answers with (before its status is set). */
+  submitSet?: unknown;
+  /** A body-points write's answer; undefined falls back to the echo. */
+  bodyWriteResponse?: (path: string, method: string, body: Record<string, unknown>) => { ok: boolean; body: unknown } | undefined;
 }
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
@@ -105,10 +154,51 @@ function mockFetch(options: Options = {}) {
     if (url.includes('/api/pilot/calibration/clips')) {
       return json({ ok: true, clips: [CLIP] });
     }
+    if (url.includes('/api/pilot/calibration/body-points/')) {
+      const path = url.slice(url.indexOf('/body-points/') + '/body-points'.length);
+      const sent = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {};
+      const outcome = options.bodyWriteResponse?.(path, method, sent);
+      if (outcome) return json(outcome.body, outcome.ok);
+      // The routes' own shapes, echoing what was sent.
+      if (path === '/moments' && method === 'POST') {
+        return json({ ok: true, moment: { ...BODY_DATA.moments[0], body_moment_id: 'mom-new', event_id: sent.event_id, moment_slot: sent.moment_slot, observation_ms: sent.observation_ms ?? 12_400, points: [] } });
+      }
+      if (path === '/moments' && method === 'PUT') {
+        return json({ ok: true, moment: { ...BODY_DATA.moments[0], lead_side: sent.lead_side ?? null, guard_type: sent.guard_type ?? null, points: undefined } });
+      }
+      if (path === '/points' && method === 'PUT') {
+        const marks = sent.points as { point_code: string; state: string; x_norm?: number; y_norm?: number }[];
+        return json({
+          ok: true,
+          points: [
+            ...BODY_DATA.moments[0].points.filter((p) => !marks.some((m) => m.point_code === p.point_code)),
+            ...marks.map((m, i) => ({ body_point_id: `p-new-${i}`, point_code: m.point_code, state: m.state, x_norm: m.x_norm ?? null, y_norm: m.y_norm ?? null })),
+          ],
+        });
+      }
+      if (path === '/stance' && method === 'PUT') {
+        return json({ ok: true, stance_label: { event_id: sent.event_id, stance_type: sent.stance_type } });
+      }
+      return json({ ok: true });
+    }
+    if (url.includes('/api/pilot/calibration/body-points')) {
+      if (options.bodyDataOk === false) {
+        return json({ error: 'Not found: no such annotation set in this organization' }, false);
+      }
+      const answer = typeof options.bodyData === 'function'
+        ? (options.bodyData as () => unknown)()
+        : options.bodyData ?? BODY_DATA;
+      return json(await answer);
+    }
     if (url.includes('/api/pilot/calibration/annotation-set/submit')) {
+      if (options.submitResponse) {
+        const outcome = options.submitResponse();
+        return json(outcome.body, outcome.ok);
+      }
+      const base = (options.submitSet ?? OPEN_SET) as typeof OPEN_SET;
       return json({
         ok: true,
-        set: { ...OPEN_SET, status: 'submitted', submitted_at: '2026-08-27T10:00:00.000Z' },
+        set: { ...base, status: 'submitted', submitted_at: '2026-08-27T10:00:00.000Z' },
         event_count: 1,
       });
     }
@@ -488,10 +578,699 @@ test('a clip with no set of the annotator\'s own offers to open one', async () =
   expect(open?.body).toMatchObject({ calibration_clip_id: 'clip-1' });
 });
 
-test('nothing on the page states a frame number or a frame rate', async () => {
-  global.fetch = mockFetch({ events: [PUNCH_EVENT] });
+describe('body points', () => {
+  const bodyPointCalls = () => calls.filter((call) => call.url.includes('/api/pilot/calibration/body-points'));
+
+  test('a 0.1 set is never asked for body points and shows no body-point section', async () => {
+    global.fetch = mockFetch({ events: [PUNCH_EVENT] });
+
+    await openClip();
+    // And after an event write, which is when a body-point set re-reads.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+
+    expect(bodyPointCalls()).toHaveLength(0);
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add punch' })).toBeTruthy();
+  });
+
+  test('a body-point set reads its marks and shows the server\'s count and missing list', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openClip();
+
+    const reads = bodyPointCalls();
+    expect(reads).toHaveLength(1);
+    expect(reads[0].method).toBe('GET');
+    expect(reads[0].url).toMatch(/\/api\/pilot\/calibration\/body-points\?annotation_set_id=set-1$/);
+
+    const section = screen.getByTestId('body-point-progress');
+    expect(section.textContent).toContain('5 items still to mark');
+    expect(screen.getByTestId('body-point-totals').textContent).toBe(
+      'Points 2 of 69 · moments opened 1 of 3 · stance types 0 of 1',
+    );
+    expect(section.textContent).toContain('start at 0:12.400 · 2 of 23 points · lead side orthodox · guard not set');
+    expect(section.textContent).toContain('middle · not opened');
+    // On an in-progress set the stance type is a control, not a line.
+    expect((screen.getByLabelText('Stance type (once per event)') as HTMLSelectElement).value).toBe('');
+
+    // The server's wording after the colon is kept; the event id in front is
+    // swapped for the event's place in the clip.
+    const missing = screen.getByTestId('body-point-missing').textContent ?? '';
+    expect(missing).toContain('punch at 0:12.400 (red corner): start points, 2 of 23');
+    expect(missing).toContain('punch at 0:12.400 (red corner): stance type');
+    expect(missing).not.toContain('evt-1');
+  });
+
+  test('body points are re-read after an event write, and the re-read is what is shown', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        // The second read answers as the database would after the event's
+        // marks were cascaded away.
+        return reads === 1 ? BODY_DATA : { ...BODY_DATA, moments: [], missing: ['evt-1: start moment'] };
+      },
+    });
+
+    await openClip();
+    expect(screen.getByTestId('body-point-totals').textContent).toContain('Points 2 of 69');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+
+    expect(bodyPointCalls()).toHaveLength(2);
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-totals').textContent).toContain('Points 0 of 69');
+    });
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('1 item still to mark');
+  });
+
+  test('body points are read when a set is opened, and again after submit', async () => {
+    global.fetch = mockFetch({ set: null, events: [] });
+
+    await openClip();
+    expect(bodyPointCalls()).toHaveLength(0);
+
+    // The mock's POST answers with OPEN_SET (0.1), so opening it must not
+    // read body points either; the read happens only for a body-point set.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open my annotation set' }));
+    });
+    expect(bodyPointCalls()).toHaveLength(0);
+
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], submitSet: BODY_POINT_SET });
+    calls.length = 0;
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: '' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: 'clip-1' } });
+    });
+    expect(bodyPointCalls()).toHaveLength(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
+    });
+    expect(bodyPointCalls()).toHaveLength(2);
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+  });
+
+  test('a refused submit re-reads the marks so the panel shows what the server named', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        return reads === 1 ? { ...BODY_DATA, missing: [] } : BODY_DATA;
+      },
+      submitResponse: () => ({
+        ok: false,
+        body: {
+          error: 'Missing body points: 5 items still to mark',
+          code: 'CALIBRATION_BODY_POINTS_INCOMPLETE',
+          missing: BODY_DATA.missing,
+        },
+      }),
+    });
+
+    await openClip();
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('Complete');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Missing body points');
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-progress').textContent).toContain('5 items still to mark');
+    });
+  });
+
+  test('a body-points reply that lands after the clip was left is dropped', async () => {
+    let release: (() => void) | null = null;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => new Promise<unknown>((resolve) => {
+        release = () => resolve(BODY_DATA);
+      }),
+    });
+
+    await openClip();
+    expect(bodyPointCalls()).toHaveLength(1);
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+
+    // The coach leaves the clip before the read answers.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Clip'), { target: { value: '' } });
+    });
+    await act(async () => {
+      release?.();
+    });
+
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+  });
+
+  test('a body-points read that fails outright is reported, and the events still show', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => { throw new TypeError('Failed to fetch'); },
+    });
+
+    await openClip();
+
+    expect(screen.getByRole('alert').textContent).toContain('could not be read');
+    expect(screen.getAllByTestId('annotation-event')).toHaveLength(1);
+  });
+
+  test('a complete set says so, with nothing still to mark', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, missing: [] },
+    });
+
+    await openClip();
+
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('Complete');
+    expect(screen.queryByTestId('body-point-missing')).toBeNull();
+  });
+
+  test('a refused body-points read is shown beside the section, and the events still show', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], bodyDataOk: false });
+
+    await openClip();
+
+    expect(screen.getByRole('alert').textContent).toContain('Body points could not be read');
+    expect(screen.queryByTestId('body-point-progress')).toBeNull();
+    expect(screen.getAllByTestId('annotation-event')).toHaveLength(1);
+  });
+
+  test('a submitted body-point set still shows its marks, read-only', async () => {
+    global.fetch = mockFetch({
+      set: { ...BODY_POINT_SET, status: 'submitted', submitted_at: '2026-08-01T00:00:00.000Z' },
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, missing: [] },
+    });
+
+    await openClip();
+
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+});
+
+describe('body-point marking', () => {
+  const writes = () => calls.filter((call) => call.url.includes('/api/pilot/calibration/body-points/'));
+
+  /* jsdom lays nothing out and its <video> has no picture; the canvas reads
+     these, so the page's tap path needs them to exist. A 1920x1080 video in
+     a 400x225 box: the picture fills it. */
+  const videoProps = { videoWidth: 1920, videoHeight: 1080, clientWidth: 400, clientHeight: 225 };
+  let pause: jest.SpyInstance;
+  beforeEach(() => {
+    for (const [name, value] of Object.entries(videoProps)) {
+      Object.defineProperty(HTMLVideoElement.prototype, name, { configurable: true, get: () => value });
+    }
+    // jsdom's pause() throws "not implemented"; the page holds the video on
+    // the moment by pausing it, and the hold is what is asserted below.
+    pause = jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    for (const name of Object.keys(videoProps)) {
+      delete (HTMLVideoElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+    pause.mockRestore();
+  });
+
+  async function openStartMoment() {
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark start' }));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-moment-panel')).toBeTruthy();
+    });
+  }
+
+  test('opening a start moment posts the slot with no time, then holds the video on the server\'s time', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, moments: [] },
+    });
+
+    await openClip();
+    // The playhead is at the clip start (12.000); the event starts at 12.400.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open start' }));
+    });
+
+    const open = writes().find((call) => call.method === 'POST');
+    expect(open?.body).toEqual({ annotation_set_id: 'set-1', event_id: 'evt-1', moment_slot: 'start', source_frame_width_px: 1920, source_frame_height_px: 1080 });
+    expect(screen.getByTestId('playhead').textContent).toContain('0:12.400');
+    expect(pause).toHaveBeenCalled();
+  });
+
+  test('opening the middle of an event with no contact time sends the playhead, held inside the event', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, moments: [] },
+    });
+
+    await openClip();
+    expect(screen.getByRole('button', { name: 'Open middle at playhead (full extension)' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open middle at playhead (full extension)' }));
+    });
+
+    const open = writes().find((call) => call.method === 'POST');
+    // Playhead 12.000 is before the event's 12.400 start: pulled to it.
+    expect(open?.body).toMatchObject({ moment_slot: 'middle', observation_ms: 12_400 });
+  });
+
+  test('the middle of an event with a contact time is opened without a time', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [{ ...PUNCH_EVENT, contact_ms: 12_600 }],
+      bodyData: { ...BODY_DATA, moments: [] },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open middle (at contact)' }));
+    });
+
+    const open = writes().find((call) => call.method === 'POST');
+    expect(open?.body).not.toHaveProperty('observation_ms');
+  });
+
+  test('a tap places the next unmarked point as a fraction of the picture, one request per tap', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openStartMoment();
+    // nose placed and chin not visible already: neck is next in marking order.
+    expect(screen.getByTestId('body-point-next').textContent).toContain('place neck');
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+
+    const mark = writes().find((call) => call.url.endsWith('/points') && call.method === 'PUT');
+    const body = mark?.body as { body_moment_id: string; points: { point_code: string; state: string; x_norm: number; y_norm: number }[] };
+    expect(body.body_moment_id).toBe('mom-1');
+    expect(body.points).toHaveLength(1);
+    expect(body.points[0].point_code).toBe('neck');
+    expect(body.points[0].state).toBe('placed');
+    expect(body.points[0].x_norm).toBeCloseTo(0.25, 9);
+    expect(body.points[0].y_norm).toBeCloseTo(0.2, 9);
+    // And the next point is now mid hip.
+    await waitFor(() => {
+      expect(screen.getByTestId('body-point-next').textContent).toContain('place mid hip');
+    });
+  });
+
+  test('Not visible records that observation; Clear removes a mark; Undo takes back the last placement', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openStartMoment();
+    const row = (code: string) => screen.getByTestId('body-point-list').querySelector(`[data-point-code="${code}"]`) as HTMLElement;
+
+    await act(async () => {
+      fireEvent.click(row('neck').querySelector('button[type="button"]:nth-of-type(2)') as HTMLElement); // Not visible
+    });
+    let mark = writes().filter((call) => call.url.endsWith('/points') && call.method === 'PUT').pop();
+    expect(mark?.body).toMatchObject({ body_moment_id: 'mom-1', points: [{ point_code: 'neck', state: 'not_visible' }] });
+    expect((mark?.body as { points: Record<string, unknown>[] }).points[0]).not.toHaveProperty('x_norm');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Undo last placement' }));
+    });
+    // neck had no mark before: undo removes the row.
+    const removed = writes().filter((call) => call.url.endsWith('/points') && call.method === 'DELETE').pop();
+    expect(removed?.body).toEqual({ annotation_set_id: 'set-1', body_moment_id: 'mom-1', point_code: 'neck' });
+
+    // Clear on a point the server holds (nose).
+    await act(async () => {
+      fireEvent.click(row('nose').querySelector('button[type="button"]:nth-of-type(3)') as HTMLElement); // Clear
+    });
+    mark = writes().filter((call) => call.url.endsWith('/points') && call.method === 'DELETE').pop();
+    expect(mark?.body).toMatchObject({ point_code: 'nose' });
+  });
+
+  test('a scrub off the moment lifts the hold even when paused: taps place nothing until the coach goes back', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openStartMoment();
+    expect(screen.getByTestId('body-point-next')).toBeTruthy();
+
+    // Paused, but stepped 250 ms past the moment.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+250ms' }));
+    });
+    expect(screen.queryByTestId('body-point-next')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('not held on this moment');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+    expect(writes().some((call) => call.url.endsWith('/points'))).toBe(false);
+
+    // One fine step (40 ms) is within the hold: a browser lands on its
+    // nearest frame, not on the exact millisecond.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Go to the moment' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+40ms' }));
+    });
+    expect(screen.getByTestId('body-point-next')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+    expect(writes().filter((call) => call.url.endsWith('/points') && call.method === 'PUT')).toHaveLength(1);
+  });
+
+  test('Undo after Clear puts the cleared mark back, and a failed undo keeps its turn', async () => {
+    let failNext = false;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyWriteResponse: (path, method) => {
+        if (path === '/points' && method === 'PUT' && failNext) {
+          failNext = false;
+          return { ok: false, body: { error: 'Request refused (500).' } };
+        }
+        return undefined;
+      },
+    });
+
+    await openStartMoment();
+    const row = (code: string) => screen.getByTestId('body-point-list').querySelector(`[data-point-code="${code}"]`) as HTMLElement;
+
+    // nose is placed at (0.5, 0.2) on the server. Clear it, then undo.
+    await act(async () => {
+      fireEvent.click(row('nose').querySelectorAll('button')[2]); // Clear
+    });
+    failNext = true;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Undo last placement' }));
+    });
+    // The undo's write failed: the entry stays, so it can be tried again.
+    expect((screen.getByRole('button', { name: 'Undo last placement' }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Undo last placement' }));
+    });
+    const restores = writes().filter((call) => call.url.endsWith('/points') && call.method === 'PUT');
+    expect(restores).toHaveLength(2);
+    expect(restores[1].body).toMatchObject({ points: [{ point_code: 'nose', state: 'placed', x_norm: 0.5, y_norm: 0.2 }] });
+    expect((screen.getByRole('button', { name: 'Undo last placement' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('removing a moment is asked twice, with its point count', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove start moment' }));
+    });
+    expect(writes().some((call) => call.method === 'DELETE')).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, remove it and its 2 points' }));
+    });
+    const removed = writes().find((call) => call.method === 'DELETE');
+    expect(removed?.url.endsWith('/moments')).toBe(true);
+    expect(removed?.body).toEqual({ annotation_set_id: 'set-1', body_moment_id: 'mom-1' });
+  });
+
+  test('the panel names whose body is being marked', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openStartMoment();
+    expect(screen.getByTestId('body-point-moment-panel').textContent).toContain('Marking red corner, start moment');
+  });
+
+  test('lead side and guard are set on the moment; the stance type on the event', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openStartMoment();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Lead side at this moment'), { target: { value: 'southpaw' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Guard at this moment'), { target: { value: 'usa_boxing__half_guard' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Stance type (once per event)'), { target: { value: 'usa_boxing__classic' } });
+    });
+
+    const momentWrites = writes().filter((call) => call.url.endsWith('/moments') && call.method === 'PUT');
+    expect(momentWrites[0].body).toEqual({ annotation_set_id: 'set-1', body_moment_id: 'mom-1', lead_side: 'southpaw' });
+    expect(momentWrites[1].body).toEqual({ annotation_set_id: 'set-1', body_moment_id: 'mom-1', guard_type: 'usa_boxing__half_guard' });
+    const stance = writes().find((call) => call.url.endsWith('/stance'));
+    expect(stance?.method).toBe('PUT');
+    expect(stance?.body).toEqual({ annotation_set_id: 'set-1', event_id: 'evt-1', stance_type: 'usa_boxing__classic' });
+    // The guard option reads as the manual's heading with the body and page.
+    expect(screen.getByText('Half Guard, USA Boxing, p. 82 (PDF 83)')).toBeTruthy();
+  });
+
+  test('an already-open slot is read back and shown, not refused', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, moments: [] },
+      bodyWriteResponse: (path, method) => (path === '/moments' && method === 'POST'
+        ? { ok: false, body: { error: 'Conflict: that moment is already open', code: 'CALIBRATION_BODY_MOMENT_SLOT_TAKEN' } }
+        : undefined),
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open start' }));
+    });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('already open');
+    expect(calls.filter((call) => call.url.includes('/body-points?')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('when the event under a moment changed, the page reloads rather than marking on a ghost', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyWriteResponse: (path, method) => (path === '/points' && method === 'PUT'
+        ? { ok: false, body: { error: 'Conflict: the event changed', code: 'CALIBRATION_BODY_MOMENT_EVENT_CHANGED' } }
+        : undefined),
+    });
+
+    await openStartMoment();
+    const workspaceReads = () => calls.filter((call) => call.url.includes('/annotation-set?')).length;
+    const before = workspaceReads();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+
+    expect(workspaceReads()).toBe(before + 1);
+    expect(screen.queryByTestId('body-point-moment-panel')).toBeNull();
+  });
+
+  test('a write that lost a race is sent once more', async () => {
+    let attempts = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyWriteResponse: (path, method) => {
+        if (path !== '/points' || method !== 'PUT') return undefined;
+        attempts += 1;
+        return attempts === 1
+          ? { ok: false, body: { error: 'Conflict: write race', code: 'CALIBRATION_BODY_POINTS_WRITE_RACE' } }
+          : undefined;
+      },
+    });
+
+    await openStartMoment();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('the event form on a body-point set has no stance or peak, asks the contact time in the open, and refuses a contact punch without one', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+
+    expect(screen.queryByLabelText('Stance')).toBeNull();
+    expect(screen.queryByLabelText('Peak (ms, video time)')).toBeNull();
+    const contact = screen.getByLabelText(/^Contact \(ms, video time\)/);
+    expect(contact.closest('details')).toBeNull();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'guard_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('needs its contact time');
+    expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+
+    // A miss needs none, and the 0.1 fields go out empty.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'no_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.body).toMatchObject({ stance: '', peak_ms: '', contact_ms: '' });
+  });
+
+  test('the contact rule holds both ways: a time on a miss or an uncertain punch is refused, a time on a contact is sent', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    // The event starts at the playhead (12.000) and runs 500 ms; "Mark
+    // contact at playhead" lands inside the event.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark contact at playhead' }));
+    });
+    expect((screen.getByLabelText(/^Contact \(ms, video time\)/) as HTMLInputElement).value).toBe('12000');
+
+    for (const result of ['no_contact', 'uncertain_contact']) {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: result } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+      });
+      expect(screen.getByRole('alert').textContent).toContain('carries no contact time');
+      expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+    }
+
+    // Every contact result accepts the time and sends it.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'non_target_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.body).toMatchObject({ contact_result: 'non_target_contact', contact_ms: '12000' });
+
+    // An uncertain punch with the field cleared is sent without a time.
+    calls.length = 0;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Contact result'), { target: { value: 'uncertain_contact' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+    expect(calls.find((call) => call.url.includes('/calibration/events'))?.body).toMatchObject({ contact_ms: '' });
+  });
+
+  test('"Mark contact at playhead" stays inside the event, not just the clip', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [] });
+
+    await openClip();
+    // Move the playhead to 14.000, then start an event there (14.000 to
+    // 14.500), then move the playhead on by a second: the contact mark must
+    // be pulled back to the event's end, 14.500.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Seek within the clip'), { target: { value: '14000' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+1000ms' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark contact at playhead' }));
+    });
+    expect((screen.getByLabelText(/^Contact \(ms, video time\)/) as HTMLInputElement).value).toBe('14500');
+  });
+
+  test('editing an event on a body-point set never sends a stance or a peak', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [{ ...PUNCH_EVENT, event_id: 'evt-2', stance: 'orthodox', peak_ms: 12_600, contact_ms: null, contact_result: 'no_contact' }],
+      bodyData: { ...BODY_DATA, moments: [], missing: [] },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save replacement' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.method).toBe('PUT');
+    expect(write?.body).toMatchObject({ stance: '', peak_ms: '' });
+  });
+
+  test('a 0.1 set\'s event form still has its stance and peak fields', async () => {
+    global.fetch = mockFetch({ events: [] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add punch' }));
+    });
+
+    expect(screen.getByLabelText('Stance')).toBeTruthy();
+    expect(screen.getByLabelText('Peak (ms, video time)')).toBeTruthy();
+    expect(screen.getByLabelText('Contact (ms, video time)').closest('details')).not.toBeNull();
+  });
+
+  test('a submitted body-point set shows its moments but offers no marking control', async () => {
+    global.fetch = mockFetch({
+      set: { ...BODY_POINT_SET, status: 'submitted', submitted_at: '2026-08-01T00:00:00.000Z' },
+      events: [PUNCH_EVENT],
+    });
+
+    await openClip();
+
+    expect(screen.queryByRole('button', { name: 'Mark start' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open / })).toBeNull();
+    expect(screen.queryByLabelText('Stance type (once per event)')).toBeNull();
+    expect(screen.getByTestId('body-point-progress').textContent).toContain('stance type · not set');
+  });
+});
+
+test.each([
+  ['a 0.1 set', OPEN_SET],
+  ['a body-point set with its progress on screen', BODY_POINT_SET],
+])('nothing on the page states a frame number or a frame rate (%s)', async (_name, set) => {
+  global.fetch = mockFetch({ set, events: [PUNCH_EVENT] });
 
   await openClip();
+  if (set === BODY_POINT_SET) {
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+  }
 
   const text = document.body.textContent ?? '';
   // "frame 412", "frame #412", "f412", "at 30fps" -- any of these would be a

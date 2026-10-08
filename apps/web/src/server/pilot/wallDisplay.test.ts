@@ -263,6 +263,114 @@ describe('age', () => {
   });
 });
 
+describe('the 18th birthday falls at the gym\'s midnight, not the server\'s', () => {
+  // Every instant below is written in UTC and annotated with the gym clock
+  // (America/New_York). A server running in UTC reads the UTC date parts as
+  // "today", which is already tomorrow from 8pm EDT / 7pm EST -- the evening
+  // class -- so the old arithmetic made an athlete an adult the night before
+  // their birthday. These pin the boundary on both sides of 8pm and of midnight.
+
+  describe('summer (EDT, UTC-4): born 2008-08-04, 18 on 2026-08-04', () => {
+    const dob = '2008-08-04';
+
+    it('is a minor at 7:59pm the evening before', () => {
+      const t = new Date('2026-08-03T23:59:00.000Z'); // 7:59pm EDT Aug 3
+      expect(ageInYears(dob, t)).toBe(17);
+      expect(isMinor(dob, t)).toBe(true);
+    });
+
+    it('is still a minor at 8:01pm the evening before, when UTC has rolled over', () => {
+      const t = new Date('2026-08-04T00:01:00.000Z'); // 8:01pm EDT Aug 3
+      expect(ageInYears(dob, t)).toBe(17);
+      expect(isMinor(dob, t)).toBe(true);
+    });
+
+    it('is still a minor at 11:59pm the evening before', () => {
+      const t = new Date('2026-08-04T03:59:00.000Z'); // 11:59pm EDT Aug 3
+      expect(isMinor(dob, t)).toBe(true);
+    });
+
+    it('is an adult at 12:01am on the birthday', () => {
+      const t = new Date('2026-08-04T04:01:00.000Z'); // 12:01am EDT Aug 4
+      expect(ageInYears(dob, t)).toBe(18);
+      expect(isMinor(dob, t)).toBe(false);
+    });
+  });
+
+  describe('winter (EST, UTC-5): born 2008-01-15, 18 on 2026-01-15', () => {
+    const dob = '2008-01-15';
+
+    it('is still a minor at 7:01pm the evening before, when UTC has rolled over', () => {
+      const t = new Date('2026-01-15T00:01:00.000Z'); // 7:01pm EST Jan 14
+      expect(isMinor(dob, t)).toBe(true);
+    });
+
+    it('is an adult at 12:01am on the birthday', () => {
+      const t = new Date('2026-01-15T05:01:00.000Z'); // 12:01am EST Jan 15
+      expect(isMinor(dob, t)).toBe(false);
+    });
+  });
+
+  describe('across the spring-forward night (2026-03-08, EST becomes EDT)', () => {
+    it('a birthday on the change day turns at EST midnight', () => {
+      const dob = '2008-03-08';
+      expect(isMinor(dob, new Date('2026-03-08T04:30:00.000Z'))).toBe(true); // 11:30pm EST Mar 7
+      expect(isMinor(dob, new Date('2026-03-08T05:30:00.000Z'))).toBe(false); // 12:30am EST Mar 8
+    });
+
+    it('a birthday the day after turns at EDT midnight', () => {
+      const dob = '2008-03-09';
+      expect(isMinor(dob, new Date('2026-03-09T03:30:00.000Z'))).toBe(true); // 11:30pm EDT Mar 8
+      expect(isMinor(dob, new Date('2026-03-09T04:30:00.000Z'))).toBe(false); // 12:30am EDT Mar 9
+    });
+  });
+
+  describe('across the fall-back night (2026-11-01, EDT becomes EST)', () => {
+    it('a birthday on the change day turns at EDT midnight', () => {
+      const dob = '2008-11-01';
+      expect(isMinor(dob, new Date('2026-11-01T03:30:00.000Z'))).toBe(true); // 11:30pm EDT Oct 31
+      expect(isMinor(dob, new Date('2026-11-01T04:30:00.000Z'))).toBe(false); // 12:30am EDT Nov 1
+    });
+
+    it('a birthday the day after turns at EST midnight', () => {
+      const dob = '2008-11-02';
+      expect(isMinor(dob, new Date('2026-11-02T04:30:00.000Z'))).toBe(true); // 11:30pm EST Nov 1
+      expect(isMinor(dob, new Date('2026-11-02T05:30:00.000Z'))).toBe(false); // 12:30am EST Nov 2
+    });
+  });
+
+  describe('a leap-day birthday (born 2008-02-29) turns 18 on 2026-03-01', () => {
+    // Same convention as competenceCohorts.ageOnGymDay: in a year with no
+    // Feb 29 the birthday has not arrived on Feb 28 and has on Mar 1.
+    const dob = '2008-02-29';
+
+    it('is still a minor at 8:01pm on Feb 28, when UTC is already Mar 1', () => {
+      expect(isMinor(dob, new Date('2026-03-01T01:01:00.000Z'))).toBe(true); // 8:01pm EST Feb 28
+    });
+
+    it('is still a minor at 11:59pm on Feb 28', () => {
+      expect(isMinor(dob, new Date('2026-03-01T04:59:00.000Z'))).toBe(true); // 11:59pm EST Feb 28
+    });
+
+    it('is an adult at 12:01am on Mar 1', () => {
+      expect(isMinor(dob, new Date('2026-03-01T05:01:00.000Z'))).toBe(false); // 12:01am EST Mar 1
+      expect(ageInYears(dob, new Date('2026-03-01T05:01:00.000Z'))).toBe(18);
+    });
+  });
+
+  it('an unknown date of birth stays a minor at every hour', () => {
+    for (const t of [
+      new Date('2026-08-03T23:59:00.000Z'),
+      new Date('2026-08-04T00:01:00.000Z'),
+      new Date('2026-08-04T04:01:00.000Z'),
+    ]) {
+      expect(isMinor(null, t)).toBe(true);
+      expect(isMinor(undefined, t)).toBe(true);
+      expect(isMinor('', t)).toBe(true);
+    }
+  });
+});
+
 describe('the gym day', () => {
   it('is the gym\'s day, not the server\'s', () => {
     // 00:30 UTC on Aug 4 is 8:30pm on Aug 3 in Punxsutawney -- mid evening

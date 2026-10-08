@@ -6,7 +6,9 @@ import {
   deleteAnnotationEvent,
   listAnnotationEvents,
   recordAnnotationEvent,
+  updateAnnotationEvent,
   type RecordAnnotationEventInput,
+  type UpdateAnnotationEventInput,
 } from '@/src/server/pilot/calibration/annotations';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -23,7 +25,8 @@ import {
 export const runtime = 'nodejs';
 
 /**
- * WHAT ONE ANNOTATOR SAYS THEY SAW -- created, replaced, removed.
+ * WHAT ONE ANNOTATOR SAYS THEY SAW -- created, replaced, edited in place,
+ * removed.
  *
  * Every method below refuses in the same order and for the same reasons:
  *
@@ -82,6 +85,39 @@ interface AnnotationEventBody {
   defends_against_event_id?: unknown;
 }
 
+const asSent = (value: unknown): unknown => value;
+
+/**
+ * Every event field on the wire: the module field it becomes, and what a
+ * blank means for it. One table for recording and for editing in place, so
+ * the two cannot come to read a blank differently. A key not listed here (the
+ * event's id, set, clip or organization) is never read from the body as a
+ * field.
+ */
+const EVENT_FIELDS: Record<string, [keyof UpdateAnnotationEventInput, (value: unknown) => unknown]> = {
+  event_class: ['eventClass', asSent],
+  actor_track: ['actorTrack', asSent],
+  opponent_track: ['opponentTrack', blankToNull],
+  start_ms: ['startMs', optionalMs],
+  end_ms: ['endMs', optionalMs],
+  contact_ms: ['contactMs', optionalMs],
+  peak_ms: ['peakMs', optionalMs],
+  physical_hand: ['physicalHand', blankToNull],
+  hand_role: ['handRole', blankToNull],
+  stance: ['stance', blankToNull],
+  punch_type: ['punchType', blankToNull],
+  target_zone: ['targetZone', blankToNull],
+  contact_result: ['contactResult', blankToNull],
+  contact_zone: ['contactZone', blankToNull],
+  defense_type: ['defenseType', blankToNull],
+  visibility: ['visibility', asSent],
+  certainty: ['certainty', asSent],
+  combination_group: ['combinationGroup', blankToNull],
+  sequence_order: ['sequenceOrder', optionalInteger],
+  counter_against_event_id: ['counterAgainstEventId', blankToNull],
+  defends_against_event_id: ['defendsAgainstEventId', blankToNull],
+};
+
 /**
  * The wire body, in the shape recordAnnotationEvent takes.
  *
@@ -100,32 +136,11 @@ function toRecordInput(
   eventId: string,
   body: AnnotationEventBody,
 ): RecordAnnotationEventInput {
-  return {
-    organizationId,
-    eventId,
-    annotationSetId,
-    eventClass: body.event_class,
-    actorTrack: body.actor_track,
-    opponentTrack: blankToNull(body.opponent_track),
-    startMs: optionalMs(body.start_ms),
-    endMs: optionalMs(body.end_ms),
-    contactMs: optionalMs(body.contact_ms),
-    peakMs: optionalMs(body.peak_ms),
-    physicalHand: blankToNull(body.physical_hand),
-    handRole: blankToNull(body.hand_role),
-    stance: blankToNull(body.stance),
-    punchType: blankToNull(body.punch_type),
-    targetZone: blankToNull(body.target_zone),
-    contactResult: blankToNull(body.contact_result),
-    contactZone: blankToNull(body.contact_zone),
-    defenseType: blankToNull(body.defense_type),
-    visibility: body.visibility,
-    certainty: body.certainty,
-    combinationGroup: blankToNull(body.combination_group),
-    sequenceOrder: optionalInteger(body.sequence_order),
-    counterAgainstEventId: blankToNull(body.counter_against_event_id),
-    defendsAgainstEventId: blankToNull(body.defends_against_event_id),
-  } as unknown as RecordAnnotationEventInput;
+  const input: Record<string, unknown> = { organizationId, eventId, annotationSetId };
+  for (const [key, [field, normalise]] of Object.entries(EVENT_FIELDS)) {
+    input[field] = normalise((body as Record<string, unknown>)[key]);
+  }
+  return input as unknown as RecordAnnotationEventInput;
 }
 
 /** Records one observed punch or defensive action. */
@@ -177,10 +192,10 @@ export async function POST(request: NextRequest) {
 /**
  * Corrects an event the annotator has not yet submitted.
  *
- * REPLACE, NOT UPDATE, AND THE ORDER IS THE POINT. There is no update path in
- * annotations.ts -- the module offers record and delete -- so an edit is the
- * new row written FIRST and the old one removed second. That order is chosen
- * for its failure direction:
+ * REPLACE, NOT UPDATE, AND THE ORDER IS THE POINT. This method is built from
+ * the module's record and delete (the in-place edit is PATCH, below), so an
+ * edit here is the new row written FIRST and the old one removed second. That
+ * order is chosen for its failure direction:
  *
  *   * new-then-old: a rejected correction (bad label, span outside the clip)
  *     leaves the original untouched, and the annotator retries.
@@ -196,6 +211,10 @@ export async function POST(request: NextRequest) {
  * DELETE SET NULL, so any relationship another event pointed AT the edited one
  * is cleared. Re-pointing it would mean writing a relationship the annotator
  * did not re-assert, which is a fabricated observation.
+ *
+ * AND ITS BODY MARKS. On a body-point set the event's moments, their points
+ * and its stance type hang off the old event_id and go with the old row.
+ * PATCH below corrects an event in place and keeps them.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -257,6 +276,74 @@ export async function PUT(request: NextRequest) {
       replaced_event_id: replacingEventId,
       replaced_event_removed: removed,
     });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+/**
+ * Corrects an event IN PLACE: the same event_id, so its body marks (moments,
+ * their points, its stance type) and any relationship pointing at it stay.
+ *
+ * Only the keys sent change; '' or null clears an optional field. The module
+ * holds the merged row to every rule a new event is held to, and refuses a
+ * change to start, end, contact time, class or actor while the event holds
+ * marks (409 CALIBRATION_EVENT_HAS_BODY_MARKS, naming the field). It never
+ * falls back to replacing the event.
+ *
+ * Same gate order as the replace above, footage check included: correcting a
+ * label means the annotator was watching.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireAnnotator(principal);
+
+    // An id that is not a string, or a body that is not an object, is a 400
+    // naming the id, not a crash.
+    const body = ((await request.json().catch(() => null)) ?? {}) as AnnotationEventBody;
+    const annotationSetId = typeof body.annotation_set_id === 'string' ? body.annotation_set_id.trim() : '';
+    const eventId = typeof body.event_id === 'string' ? body.event_id.trim() : '';
+    if (!annotationSetId) {
+      throw new Error('Missing annotation_set_id');
+    }
+    if (!eventId) {
+      throw new Error('Missing event_id');
+    }
+
+    const set = await loadOwnAnnotationSet(principal, annotationSetId);
+    assertSetInProgress(set);
+    await loadPlayableClip(principal.organizationId, set.calibration_clip_id);
+
+    const sent = Object.keys(EVENT_FIELDS).filter((key) => key in body);
+    if (sent.length === 0) {
+      throw new Error('Missing fields: send at least one event field to change');
+    }
+    const changes: Record<string, unknown> = {};
+    for (const key of sent) {
+      const [field, normalise] = EVENT_FIELDS[key];
+      changes[field] = normalise((body as Record<string, unknown>)[key]);
+    }
+
+    // The cast asserts nothing, as in toRecordInput: the module re-checks the
+    // merged row field by field.
+    const event = await updateAnnotationEvent({
+      ...changes,
+      organizationId: principal.organizationId,
+      annotationSetId,
+      eventId,
+    } as unknown as UpdateAnnotationEventInput);
+
+    await writeCalibrationAuditEvent({
+      eventType: 'update',
+      principal,
+      entityType: 'calibration_annotation_event',
+      entityId: event.event_id,
+      // Which fields, never their values: see the note on POST's audit row.
+      details: { action: 'edit_in_place', annotation_set_id: annotationSetId, fields: sent },
+    });
+
+    return NextResponse.json({ ok: true, event });
   } catch (error) {
     return jsonError(error);
   }

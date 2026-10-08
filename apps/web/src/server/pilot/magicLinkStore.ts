@@ -6,6 +6,7 @@ import { accountDeletedSql } from './deletedAccountSignIn';
 import { graphTokenProvider } from './managedIdentityToken';
 import { sendPlainTextMail } from './graphMailer';
 import {
+  magicLinkOrigin,
   validateTokenForRedemption,
   type ConsumeFailure,
   type MagicLinkAccount,
@@ -33,7 +34,10 @@ function appOrigin(): string {
     // cannot redeem it. Better to refuse to send than to send a dead link.
     throw new Error('MISSING_PPBF_APP_ORIGIN');
   }
-  return configured;
+  // Shape, not just presence: production once held `punxsyprominence.org`,
+  // which is not empty and built a link nothing could open. Thrown here, at
+  // construction, so a bad value fails before any address is looked up.
+  return magicLinkOrigin(configured);
 }
 
 export function magicLinkDependencies(): MagicLinkDependencies {
@@ -47,14 +51,37 @@ export function magicLinkDependencies(): MagicLinkDependencies {
         [email],
       ),
 
-    invalidateLiveTokens: async (accountId) => {
+    // Every live link for the account issued BEFORE the one just sent
+    // (magicLink.ts says why this runs after the send). "Before", not "other":
+    // two overlapping requests that each retired everything but their own
+    // would retire each other, and the parent would hold two emails and no
+    // working link. Ordered by (created_at, token_hash) so two rows stamped
+    // in the same instant still have exactly one survivor.
+    invalidateLiveTokens: async (accountId, keepTokenHash) => {
+      await query(
+        `update pilot.magic_link_tokens t
+            set invalidated_at = now()
+          where t.account_id = $1
+            and t.token_hash <> $2
+            and t.consumed_at is null
+            and t.invalidated_at is null
+            and (t.created_at, t.token_hash) < (
+              select k.created_at, k.token_hash
+                from pilot.magic_link_tokens k
+               where k.token_hash = $2
+            )`,
+        [accountId, keepTokenHash],
+      );
+    },
+
+    discardToken: async (tokenHash) => {
       await query(
         `update pilot.magic_link_tokens
             set invalidated_at = now()
-          where account_id = $1
+          where token_hash = $1
             and consumed_at is null
             and invalidated_at is null`,
-        [accountId],
+        [tokenHash],
       );
     },
 
