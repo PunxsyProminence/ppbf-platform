@@ -166,7 +166,7 @@ and should not try to.
 
 ## OD-2026-10-08-013 -- "Build all" scope re-answered: "2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing" (row Q-E); SUPERSEDES OD-2026-10-07-012 ruling 4
 
-**Provenance: RECONSTRUCTED.** Quoted from `DocumentsPPBF-overwatchOWNER-QUESTIONS-LIVE.md`, row Q-E (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry. Overwatch (session "Overwatch: plan and lead the app-wide build") directed this entry be filed as superseding, 2026-10-08.
+**Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md`, row Q-E (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry. Overwatch (session "Overwatch: plan and lead the app-wide build") directed this entry be filed as superseding, 2026-10-08.
 
 Question (log, short): "Build all" scope: people-facing features only, or every route including internal machinery? Jason: *"2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing"*
 
