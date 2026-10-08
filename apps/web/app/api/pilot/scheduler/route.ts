@@ -10,6 +10,7 @@ import {
   athleteIdsForCoach,
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
+import { parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
@@ -82,8 +83,10 @@ function toIso(value: unknown, field: string): string {
     throw new Error(`${field} must be a non-empty string`);
   }
 
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
+  // A time typed on the schedule screen carries no zone and means the gym's
+  // clock; `new Date(value)` would read it in the server's zone instead.
+  const d = parseInstantAsGymTime(value);
+  if (!d) {
     throw new Error(`${field} must be a valid date string`);
   }
 

@@ -10,10 +10,13 @@ import {
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
+import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
+  createSchedulerClass,
+  createSchedulerCoachingRequest,
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
   getSchedulerRegistrationById,
@@ -56,6 +59,8 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 }));
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
+  createSchedulerClass: jest.fn(),
+  createSchedulerCoachingRequest: jest.fn(),
   registerForClassTransactionally: jest.fn(),
   getSchedulerClassById: jest.fn(),
   getSchedulerRegistrationById: jest.fn(),
@@ -1496,5 +1501,80 @@ describe("POST parent_review_registration answers a missing id and another famil
     expect(res.status).toBe(403);
     expect(mockGetRegistration).not.toHaveBeenCalled();
     expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TIME-01 (audit 2026-10-07). The schedule screen posts a datetime-local value
+ * with no zone ('2026-07-15T18:00'). The route read it with `new Date(value)`,
+ * which uses the SERVER's zone: on a UTC server 6:00 pm was stored as 18:00Z
+ * and the gym then showed 2:00 pm. A zone-less time means the gym's clock.
+ *
+ * These expectations do not depend on the host zone, but the OLD code only
+ * fails them when the host is not America/New_York (there it was accidentally
+ * right, which is how the bug hid on a developer's machine). CI runs in UTC.
+ * Jest gives a test its own copy of process.env, so a test cannot switch the
+ * zone itself; to prove the fix on a New York machine run the file with
+ * TZ=UTC and TZ=Asia/Tokyo set before jest starts.
+ */
+describe('POST /api/pilot/scheduler reads a zone-less time as the gym clock', () => {
+  const mockCreateClass = createSchedulerClass as jest.Mock;
+  const mockCreateCoaching = createSchedulerCoachingRequest as jest.Mock;
+
+  function createClassRequest(startAt: string, endAt: string) {
+    return jsonRequest({
+      action: 'create_class',
+      title: 'Evening boxing',
+      start_at: startAt,
+      end_at: endAt,
+      location: 'Main Floor',
+      capacity: 20,
+    });
+  }
+
+  async function storedClass(startAt: string, endAt: string) {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const res = await POST(createClassRequest(startAt, endAt));
+    expect(res.status).toBe(200);
+    return mockCreateClass.mock.calls[0][1] as { start_at: string; end_at: string };
+  }
+
+  test('6:00 pm typed in summer is stored as 6:00 pm gym time and reads back as 6:00 pm', async () => {
+    const row = await storedClass('2026-07-15T18:00', '2026-07-15T19:30');
+    expect(row.start_at).toBe('2026-07-15T22:00:00.000Z');
+    expect(row.end_at).toBe('2026-07-15T23:30:00.000Z');
+    expect(formatGymTimeOfDay(row.start_at)).toBe('6:00 PM');
+    expect(formatGymStamp(row.start_at)).toBe('July 15, 2026 at 6:00 PM');
+  });
+
+  test('6:00 pm typed in winter is stored as 6:00 pm gym time and reads back as 6:00 pm', async () => {
+    const row = await storedClass('2026-01-15T18:00', '2026-01-15T19:30');
+    expect(row.start_at).toBe('2026-01-15T23:00:00.000Z');
+    expect(formatGymTimeOfDay(row.start_at)).toBe('6:00 PM');
+  });
+
+  test('a value that carries an offset or Z is stored exactly as sent', async () => {
+    const row = await storedClass('2026-07-15T18:00:00-04:00', '2026-07-15T23:30:00Z');
+    expect(row.start_at).toBe('2026-07-15T22:00:00.000Z');
+    expect(row.end_at).toBe('2026-07-15T23:30:00.000Z');
+  });
+
+  test('a preferred coaching time is read the same way', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const res = await POST(jsonRequest({
+      action: 'request_coaching',
+      athlete_id: 'ath-1',
+      preferred_at: '2026-07-15T18:00',
+      goals: 'Work the jab',
+    }));
+    expect(res.status).toBe(200);
+    expect(mockCreateCoaching.mock.calls[0][1]).toMatchObject({ preferred_at: '2026-07-15T22:00:00.000Z' });
+  });
+
+  test('an impossible date is refused rather than rolled into the next month', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const res = await POST(createClassRequest('2026-02-30T18:00', '2026-02-28T19:00'));
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(mockCreateClass).not.toHaveBeenCalled();
   });
 });
