@@ -3,7 +3,7 @@ jest.mock('./db', () => ({
   queryOne: jest.fn(),
 }));
 jest.mock('./env', () => ({
-  getPilotDefaultOrganizationId: jest.fn().mockReturnValue('org-default'),
+  getPublicInterestOrganizationId: jest.fn().mockReturnValue('org-interest'),
 }));
 
 import { queryOne } from './db';
@@ -76,10 +76,10 @@ describe('validatePublicInterestSubmission', () => {
 });
 
 describe('createPublicInterestSubmission', () => {
-  test('inserts with the default organization id and returns the row', async () => {
+  test('inserts with the interest-form organization id and returns the row', async () => {
     mockQueryOne.mockResolvedValueOnce({
       submission_id: 'sub-1',
-      organization_id: 'org-default',
+      organization_id: 'org-interest',
       full_name: 'Jordan Visitor',
       email: 'jordan@example.com',
       phone: '555-123-4567',
@@ -99,7 +99,7 @@ describe('createPublicInterestSubmission', () => {
     expect(result.submission_id).toBe('sub-1');
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(String(sql)).toContain('insert into pilot.public_interest_submissions');
-    expect(params?.[0]).toBe('org-default');
+    expect(params?.[0]).toBe('org-interest');
   });
 
   test('never reaches the database for an invalid submission', async () => {
