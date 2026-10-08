@@ -164,6 +164,170 @@ and should not try to.
 
 ---
 
+## OD-2026-10-08-001 -- Release 13 production approvals ("yo make the clicks this one time to review anf deploy"); the account switch uses the handover file
+
+**Provenance: PRIMARY** for Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given with each quote). Read by script (records pass, 2026-10-08). The GitHub facts are OBSERVED by overwatch through `gh` on 2026-10-08 and are cited by run id. New; edits no earlier entry.
+
+**The approval click.** Overwatch had dispatched the production migrations run 37723865512 and opened its page in the in-app browser, which was signed in to GitHub as `punxsyprominenceboxing-cloud`; the required reviewer is `PunxsyProminence`, so that page offered no approve control. Jason, line 22313 (2026-10-08T12:47:39.755Z): *"yo make the clicks this one time to review anf deploy"* Overwatch made no approval click: the account in the pane could not approve. Jason, line 22364 (2026-10-08T12:58:24.938Z): *"done"* `gh api .../actions/runs/37723865512/approvals` then showed `approved by PunxsyProminence`; the run finished `success`. Overwatch dispatched `deploy-production` run 37780804930 (confirm_sha `1a6b2284c9c348cf4513f26eb263a8590fe3a573`, digest `sha256:452f0dedc20b39793a35c0fdb5812a88db7095872bd5921b55bfc45ef5c8da45` from staging run 37722662989). Jason, line 22416 (2026-10-08T13:04:17.958Z): *"clicked"* That run showed `approved by PunxsyProminence` and finished `success`; live revision `app-ppbf-production--0000171`.
+
+**The account switch.** Overwatch had offered (A) moving the overwatch session to a cloud session or (B, recommended) switching the desktop app to another account and starting overwatch from the handover file. Jason, line 22514 (2026-10-08T13:15:11.453Z): *"fair dont we already have somthing set up for that to switch accounts"*
+
+**Rulings:**
+1. "make the clicks this one time": for that one occasion Jason told Claude to make the production review-and-deploy clicks. His words limit it to "this one time"; it is not standing approval. In the event both approvals were made from the `PunxsyProminence` GitHub account, not by Claude.
+2. Release 13 (main `1a6b2284`) went to production on his approvals of runs 37723865512 (migrations) and 37780804930 (deploy).
+3. The account switch is done with the handover file already set up for it (`Documents\PPBF-overwatch\OVERWATCH-HANDOFF-LIVE.md`), not by moving overwatch to the cloud. His word on option B is "fair".
+
+**Not ruled here:** whether Claude Code cloud sessions are covered by his subscription (UNVERIFIED by Claude; he was not asked to settle it once he chose the handover).
+
+---
+
+## OD-2026-10-07-013 -- "Life releas e freeze"; archive lanes that met scope; "stage and deploy what's ready"
+
+**Provenance: PRIMARY.** Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given with each quote). Read by script (records pass, 2026-10-08). Line 21723 is a queued message (an `attachment` row, `queued_command`, origin human). Timestamps UTC; the id carries 2026-10-07 because these UTC times are the evening of 2026-10-07 Eastern. New; edits no earlier entry.
+
+Context: Release 13 had been staged at `8e8f70e9` with merges paused (OD-2026-10-07-006 ruling 1), and 14 green pull requests were waiting behind that pause. Overwatch had twice offered: A, look at staging and say "go production"; B, "lift the freeze", merge the green pull requests and re-stage one bigger Release 13.
+
+1. Jason, line 21701 (2026-10-08T01:09:35.502Z): *"Check all lanes, see if there scope , if so archive them"*
+2. Jason, line 21723 (2026-10-08T01:10:36.364Z): *"Life releas e freeze"* Overwatch read "Life" as "Lift".
+3. Jason, line 22183 (2026-10-08T03:40:14.853Z): *"Check lane Nachrichten completed scope stage and deploy what's ready"* Overwatch read "Nachrichten" as a typing slip for "archive", in line with message 1.
+
+**Rulings:**
+1. Lanes that have met their scope are archived (the same direction as OD-2026-10-07-004 ruling 1).
+2. The release freeze is lifted: the green pull requests merge, and Release 13 is re-staged on the new main.
+3. "stage and deploy what's ready": overwatch took this as his word for the production steps of Release 13, each still held at his approval click (recorded in OD-2026-10-08-001).
+
+**Defect on record (overwatch's own report to him):** overwatch merged the first three pull requests (#1337, #1344, #1342) about a minute before message 2 arrived, on its own reading of message 1.
+
+**Not ruled here:** his signed-in look at staging before production. He did not say whether he looked; overwatch told him so and left it to his approval click.
+
+---
+
+## OD-2026-10-07-012 -- Question card 5 (no-screen plan Q-A, Q-B, Q-D, Q-E): template issue adopts an unadopted drill; publications library own athletes only; "build all" is people-facing only; the nine modules not ruled
+
+**Provenance: PRIMARY.** Jason's selections on a four-question card in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 21402, 2026-10-07T19:14:03.211Z; his answers at line 21403, 2026-10-07T19:15:20.172Z). Read by script (records pass, 2026-10-08). A card answer is a button pick: the option's label is quoted exactly as he picked it; where he typed instead of picking, his typed words are quoted. Questions and options are quoted as overwatch wrote them on the card. Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "Q17 The nine never-built modules (no-screen plan Q-A): modules 7, 13, 14, 22, 28, 37, 64, 65, 70 have no code. Six were later covered by a different design you chose (load-jump heads-up, injury record, sparring limits, self-talk log). What do we build? (Plain: build the three that are really missing, or rebuild all nine as first written, which undoes some later choices?)" Options as written: "Only the three gaps (Recommended)": "Issue a workout template (7), a physical-capacity note (13), the parent-task done flag (70). The other six are marked covered."; "All nine as first written": "Adds an injury-risk flag, deload flag, 1-5 resilience scale and emotion tags, reversing OD-2026-09-28-010 item 22 and the no-score mental-skills rule."; "None of the nine": "Leave all nine unbuilt and mark the files.". Jason: *"Explain and expand what they are"*
+
+**Question 2.** Overwatch, as written: "Q18 Template with an unadopted drill (no-screen plan Q-B): when a coach issues a workout template and a step names a drill the gym has not adopted (OD-2026-09-18-001 requires adoption), what happens? (Plain: a workout includes an exercise the gym has not approved. Stop and say which, approve it on the spot, or leave it out?)" Options as written: "Refuse and name the drill (Recommended)": "Nothing is issued; the coach is told which drill to adopt first."; "Adopt it as part of issuing": "Issuing the template adopts the drill for the gym in the same action."; "Skip that step, say so": "The rest is issued; the result lists the step left out.". Jason: *"Adopt it as part of issuing"*
+
+**Question 3.** Overwatch, as written: "Q19 Publications library (no-screen plan Q-D): as built, every coach, org admin and athlete in a gym can read the whole library of published clips. Who should read what? (Plain: when the gym publishes a clip, can any athlete browse all of them, or only ones they are in?)" Options as written: "Own athletes only (Recommended)": "A coach sees entries about their athletes, an athlete sees only their own, the org admin sees all."; "Gym-wide as built": "Everyone signed in at the gym can browse every published clip.". Jason: *"Own athletes only (Recommended)"*
+
+**Question 4.** Overwatch, as written: "Q20 What 'build all' covers (no-screen plan Q-E): some screenless routes are plumbing (sign-in redirects, setup, background jobs), and retraction checks are parked. (Plain: screens for the things people use, not for the plumbing?)" Options as written: "People-facing only (Recommended)": "Plumbing routes get no screen and go to the park-or-delete list. Retraction checks stay parked."; "A screen for every route": "Plumbing and machine routes get screens too.". Jason: *"People-facing only (Recommended)"*
+
+**Rulings:**
+1. Question 1 (the nine never-built modules, 7, 13, 14, 22, 28, 37, 64, 65, 70): NOT RULED. He typed "Explain and expand what they are" instead of picking. Overwatch explained the nine and asked again; no answer on record.
+2. A workout template whose step names a drill the gym has not adopted: issuing the template adopts the drill for the gym in the same action. This is not the option overwatch marked recommended ("Refuse and name the drill").
+3. Publications library: a coach sees entries about their athletes, an athlete sees only their own, the organization admin sees all.
+4. "Build all" covers people-facing functions only: plumbing routes get no screen and go to the park-or-delete list; retraction checks stay parked.
+
+**Not ruled here:** the nine modules (ruling 1). Also the follow-up overwatch put after ruling 2 and he has not answered: when the unadopted drill is an untested DRAFT, refuse and name it (overwatch's recommendation, because a draft stays a draft until a coach floor-tests it) or adopt it anyway.
+
+---
+
+## OD-2026-10-07-011 -- Question card 4 (route survey Q1 to Q4): coach gym-wide reads split; platform owner off six gym routes; athlete rows hidden on the platform staff list; gap numbers withheld from families
+
+**Provenance: PRIMARY.** Jason's selections on a four-question card in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 21374, 2026-10-07T19:12:40.315Z; his answers at line 21385, 2026-10-07T19:13:47.620Z). Read by script (records pass, 2026-10-08). A card answer is a button pick: the option's label is quoted exactly as he picked it; where he typed instead of picking, his typed words are quoted. Questions and options are quoted as overwatch wrote them on the card. Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "Q13 Coach gym-wide reads (route survey Q1): OD-2026-10-05-024 item 2 says coach reads are assigned-coach only. Eight routes still let any coach in the gym read: the athlete list (names, weight class, status), floor groups, competition entries, wrestling roster, one-percent club notes and votes, and the consent screen, where any coach can record or withdraw consent for ANY athlete. What should they do? (Plain: these screens still show every kid's name to every coach, and any coach can change any kid's photo/video permission. Leave it so coaches can plan a floor and cover each other, or tighten?)" Options as written: "Split (Recommended)": "Names-and-status lists stay gym-wide for floor planning and cover. Consent changes and one-percent notes become assigned-coach or org admin only. Fits your class-register answer."; "Keep all eight gym-wide": "Leave as built and record it as a standing exception. Any coach handed the paper can change any athlete's consent."; "Assigned coach only, all eight": "Tightest. A covering coach cannot see who is in the gym beyond their own athletes and the class they run.". Jason: *"Split (Recommended)"*
+
+**Question 2.** Overwatch, as written: "Q14 Platform owner on gym work (route survey Q2): OD-2026-10-02-015 D3 says platform for platform, gym for gym. Six gym routes still admit platform_owner: gym photos, retraction checks, track assignments, SHADOW unlocks, session-script runs, drill proposal review. (Plain: Admin@ can still change gym photos, session plans, unlock levels and drill decisions. Remove those so gym work is done from ppbf@ only?)" Options as written: "Remove all six (Recommended)": "Admin@ keeps platform work only. Gym work is done from ppbf@."; "Remove writes, keep reads": "Admin@ can look but not change."; "Leave as is": "Admin@ keeps these six gym levers.". Jason: *"Remove all six (Recommended)"*
+
+**Question 3.** Overwatch, as written: "Q15 Athlete logins on the platform staff list (route survey Q3): GET platform/staff returns every member of a gym to platform_owner, including athlete accounts (athlete id, login email, has-PIN). OD-2026-09-28-005 says the platform account never opens an individual athlete record. (Plain: when Admin@ opens a gym's people list it also sees every child's login email and whether they have a PIN. Hide the athletes?)" Options as written: "Hide athlete rows (Recommended)": "Admin@ sees staff and parents only on that list."; "Keep them": "Admin@ keeps seeing which athlete logins exist.". Jason: *"Hide athlete rows (Recommended)"*
+
+**Question 4.** Overwatch, as written: "Q16 Gap numbers to families (route survey Q4): the gap-justification route gives athletes and parents the raw rule numbers behind a flagged gap (for example a training-load multiple). The sibling route already rewrites gaps in the family wording you approved (OD-2026-10-05-015). (Plain: a child or parent can open a screen with the raw numbers instead of the gentler sentence you approved.)" Options as written: "Family wording, no numbers (Recommended)": "Athletes and parents get the approved sentence; staff keep the numbers."; "Staff only": "Athletes and parents cannot open the explanation at all."; "As is": "Families keep seeing the raw numbers.". Jason: *"Family wording, no numbers (Recommended)"*
+
+**Rulings:**
+1. The eight coach gym-wide routes are split: names-and-status lists stay gym-wide for floor planning and cover; consent changes and one-percent notes become assigned coach or organization admin only.
+2. platform_owner is removed from all six gym routes named on the card (gym photos, retraction checks, track assignments, SHADOW unlocks, session-script runs, drill proposal review); gym work is done from ppbf@.
+3. The platform staff list hides athlete rows: Admin@ sees staff and parents only on that list.
+4. Gap justification: athletes and parents get the approved family wording with no numbers; staff keep the numbers.
+
+**Note on ruling 1.** The card marked "Split" as recommended. The route survey file it came from (`Documents\PPBF-overwatch\lane-inbox\ROUTE-SURVEY-fix-batches-2026-10-07.md`, Q1) recommended keeping all eight and recording an exception; overwatch changed the recommendation on the card to fit his class-register answer (OD-2026-10-07-008 ruling 4). His pick is of the card as written.
+
+**Not ruled here:** which of the eight routes count as "names-and-status lists" beyond the card's own wording (the card lists the athlete list, floor groups, competition entries and the wrestling roster before the one-percent notes and the consent screen).
+
+---
+
+## OD-2026-10-07-010 -- Question card 3 (audit Q5, Q7, Q8, Q9): training days from the class register; the nightly run deletes old public enquiries itself; tracks kept for real athletes; the organization admin posts behavior standards
+
+**Provenance: PRIMARY.** Jason's selections on a four-question card in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 21358, 2026-10-07T19:10:15.599Z; his answers at line 21359, 2026-10-07T19:12:15.256Z). Read by script (records pass, 2026-10-08). A card answer is a button pick: the option's label is quoted exactly as he picked it; where he typed instead of picking, his typed words are quoted. Questions and options are quoted as overwatch wrote them on the card. Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "Q9 Training days (audit COACH2-01): coach screens count 'training days' from pilot.activity_log, which nothing writes, so everyone shows zero. Which source should the count read? (Plain: the 'training days' number is zero for everyone because the box it reads from is never filled. Which box should it read?)" Options as written: "The class register (Recommended)": "Count from attendance already taken (the reconciled attendance view). No new writing; numbers appear for past classes too."; "Activity log, add a write": "Keep reading the activity log and add a write at check-in. Past days stay at zero.". Jason: *"The class register (Recommended)"*
+
+**Question 2.** Overwatch, as written: "Q10 Retention runs (audit AUTO-04): OD-2026-10-06-004 sets 12 months for public enquiries. The nightly run is a dry run that deletes nothing and alerts nobody. How should deletion be triggered? (Plain: the website promises enquiries are deleted after a year. Today that happens only if someone presses the button, and nothing reminds them.)" Options as written: "Nightly goes red when due (Recommended)": "The nightly run stays a dry run but fails (shows red) when records are due, so a person presses APPLY. Nothing is deleted without a human."; "Nightly deletes enquiries itself": "The nightly run deletes public enquiries older than 12 months on its own, with a cap per run. People's records stay manual.". Jason: *"Nightly deletes enquiries itself"*
+
+**Question 3.** Overwatch, as written: "Q11 Tracks (audit SAMPLE-01): the Tracks screen sets a track for three invented athlete ids. OD-2026-09-29 treats a track as a label saved per organization. What happens to tracks? (Plain: the screen lets you set a track for three people who do not exist.)" Options as written: "Keep, wire to real athletes (Recommended)": "Tracks are assigned to real athletes and shown on the athlete's Tracks tab. The invented ids go."; "Take tracks out for now": "Remove the screen and tab until tracks do something.". Jason: *"Keep, wire to real athletes (Recommended)"*
+
+**Question 4.** Overwatch, as written: "Q12 Behavior standards (audit COACH2-04): the Standards page does nothing until the gym's standards exist, and no screen can enter them. Who enters them? (Plain: the page is empty until someone types in the gym's standards, for example respect and effort. Should ppbf@ be able to type them in?)" Options as written: "Org admin posts them (Recommended)": "Build a small entry form on the Standards page for the organization admin. You type the gym's own standards there; none are invented for you."; "Org admin and coaches": "Same form, and coaches can add or edit standards too."; "Leave the page empty": "No entry form for now; the 'Send to safeguarding' form still shows.". Jason: *"Org admin posts them (Recommended)"*
+
+**Rulings:**
+1. Coach screens count training days from the class register (the reconciled attendance view); no new write.
+2. Retention: the nightly run deletes public enquiries older than 12 months on its own, with a cap per run; people's records stay manual. This is not the option overwatch marked recommended ("Nightly goes red when due"). The 12 months is OD-2026-10-06-004.
+3. Tracks stay: assigned to real athletes and shown on the athlete's Tracks tab; the invented ids go.
+4. Behavior standards: the organization admin enters them through a small form on the Standards page; none are invented for him.
+
+**Not ruled here:** the size of the per-run cap in ruling 2, and what the gym's behavior standards are (ruling 4 says who enters them, not what they say).
+
+---
+
+## OD-2026-10-07-009 -- Question card 2 (audit Q3, Q4, Q6): organization admin deactivates departed staff; paper photo form off the register; a guardian record with no sign-in; the organization admin reads the one flagged SHADOW exchange
+
+**Provenance: PRIMARY.** Jason's selections on a four-question card in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 21302, 2026-10-07T19:06:08.746Z; his answers at line 21305, 2026-10-07T19:08:48.328Z). Read by script (records pass, 2026-10-08). A card answer is a button pick: the option's label is quoted exactly as he picked it; where he typed instead of picking, his typed words are quoted. Questions and options are quoted as overwatch wrote them on the card. Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "Q5 Departed staff (audit ADMIN-03): may the organization admin deactivate a coach, staff or volunteer account in their own organization (not another organization admin, not the platform owner, not themselves)? (Plain: when a coach leaves, only Admin@ can lock their account today. Should ppbf@ be able to do it at the desk?)" Options as written: "Yes, org admin can (Recommended)": "ppbf@ can switch off a coach, staff or volunteer in its own gym. Cannot touch another org admin, the platform owner, or itself."; "No, platform owner only": "As today: only Admin@ can lock an account.". Jason: *"Yes, org admin can (Recommended)"*
+
+**Question 2.** Overwatch, as written: "Q6 Paper photo form (audit ADMIN-02): on the general paper-form register, 'Photo and media' typed in at the desk shows 'Signed' but does not count as consent. What should happen to it? (Plain: the desk thinks the photo form is done; the app still treats the child as not consented.)" Options as written: "Remove it, send to consent screen (Recommended)": "Take 'Photo and media' off the paper register and point staff to the guardian-by-guardian consent screen, the one that actually counts."; "Keep as a log only": "Keep it as a record, but waiver status reads the real consent check, so it no longer shows 'Signed' when consent is missing.". Jason: *"Remove it, send to consent screen (Recommended)"*
+
+**Question 3.** Overwatch, as written: "Q7 Guardian with no sign-in (audit ADMIN-04): may a guardian record exist with no login, so a paper-only family's consent can be recorded? (Plain: a family with no email cannot have a paper form recorded at all today.)" Options as written: "Yes, name and relationship (Recommended)": "Staff can create a guardian with a name and relationship only, and record that guardian's paper consent against them."; "No, every guardian needs email": "As today: no email login, no guardian record, no recorded consent.". Jason: *"Yes, name and relationship (Recommended)"*
+
+**Question 4.** Overwatch, as written: "Q8 Flagged SHADOW exchange (audit SHADOW-02): on a human-review ticket, what may the organization admin read? The platform owner is already kept out of this queue. (Plain: the queue tells an admin something worrying was said but not what. Let them read that one exchange, or keep the child's words private?)" Options as written: "That one exchange (Recommended)": "The org admin can read the single flagged question and answer, including a minor's message. Nothing else from the chat."; "Summary only": "As today: the admin sees that something was flagged and must ask the person.". Jason: *"That one exchange (Recommended)"*
+
+**Rulings:**
+1. The organization admin may deactivate a coach, staff or volunteer account in its own organization; not another organization admin, not the platform owner, not itself.
+2. "Photo and media" comes off the general paper-form register; staff are sent to the guardian-by-guardian consent screen, the one that counts.
+3. A guardian record may exist with no sign-in: name and relationship only, with that guardian's paper consent recorded against them.
+4. On a human-review ticket the organization admin may read the single flagged question and answer, including a minor's message, and nothing else from the chat. The platform owner stays out of that queue (OD-2026-10-05-024 item 3).
+
+---
+
+## OD-2026-10-07-008 -- Question card 1 (O18 wall questions; audit Q1, Q2): initials only on a paired gym TV; "Everywhere" is members only; the guardian link goes dormant at 18; the coach running a class takes the register for the whole class and walk-ins
+
+**Provenance: PRIMARY.** Jason's selections on a four-question card in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 21210, 2026-10-07T19:03:17.072Z; his answers at line 21219, 2026-10-07T19:04:19.809Z). Read by script (records pass, 2026-10-08). A card answer is a button pick: the option's label is quoted exactly as he picked it; where he typed instead of picking, his typed words are quoted. Questions and options are quoted as overwatch wrote them on the card. Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "Q1 Public wall (audit PUBLIC-02): the wall address needs no sign-in. Once it points at the real gym it returns checked-in athletes' initials (minors included), today's classes with time and room, and session milestones. Who may receive the initials and milestones? (Plain: should anyone with the web address see which kids are checked in, by initials, or only the gym's own TV?)" Options as written: "Paired gym TV only (Recommended)": "The public address shows today's classes and a head count only. Initials and milestones go only to a TV paired with a code."; "Public address keeps initials": "Anyone with the address sees initials, classes and milestones, as the code does today."; "No names anywhere": "Neither the public address nor a paired TV shows initials or milestones; classes and head count only.". Jason: *"Paired gym TV only (Recommended)"*
+
+**Question 2.** Overwatch, as written: "Q2 'Everywhere' notices (audit PUBLIC-01): when staff post a notice or chalkboard line to 'Everywhere', the screen tells them it goes to athletes, coaches and parents. The code also serves it on the public, signed-out pages. What should 'Everywhere' mean? (Plain: is an 'Everywhere' message for members only, or for the open internet too?)" Options as written: "Members only (Recommended)": "'Everywhere' reaches signed-in athletes, coaches and parents. Signed-out pages show only notices posted to the public Gym Notices spot."; "Public too, and say so": "Keep serving it publicly and change the wording so the author knows it is public.". Jason: *"Members only (Recommended)"*
+
+**Question 3.** Overwatch, as written: "Q3 Guardian access at 18 (audit PAR-01): a parent linked when the athlete was a minor keeps reading injuries, safety, progression and the athlete's own mental-skills log after 18, and can still grant or withdraw consent. What happens to the guardian link at 18? (Plain: should a parent's access switch off by itself when the athlete turns 18?)" Options as written: "Goes dormant at 18 (Recommended)": "At 18 the guardian link stops working automatically for every read and every consent change."; "Stays unless athlete ends it": "It stays only if the athlete says so at 18; otherwise it ends."; "Stays until staff remove it": "As today: nothing changes until someone at the gym removes the link.". Jason: *"Goes dormant at 18 (Recommended)"*
+
+**Question 4.** Overwatch, as written: "Q4 Class register (audit COACH-01, COACH-02): your ruling limits coach reads to the assigned coach. So a coach running a class can mark attendance and place floor groups only for their own athletes, and cannot mark a walk-in at all. What may the coach who owns a class do? (Plain: should running the class be enough to take the register for the whole room?)" Options as written: "Whole class plus walk-ins (Recommended)": "The coach, cover or scheduler on that class may mark attendance and place floor groups for every athlete registered to it, and mark a walk-in present. Everything else stays assigned-coach only."; "Whole class, no walk-ins": "Same, but a walk-in still cannot be marked."; "Own athletes only": "As today, and the pickers stop offering athletes the coach cannot mark.". Jason: *"Whole class plus walk-ins (Recommended)"*
+
+**Rulings:**
+1. Public wall: checked-in athletes' initials and session milestones go only to a gym TV paired with a code. The public no-sign-in address shows today's classes and a head count only.
+2. A notice or chalkboard line posted to "Everywhere" is for members only: signed-in athletes, coaches and parents. Signed-out pages show only notices posted to the public Gym Notices spot.
+3. A guardian link goes dormant automatically when the athlete reaches 18, for every read and every consent change.
+4. The coach, cover or scheduler on a class may mark attendance and place floor groups for every athlete registered to it, and mark a walk-in present. Everything else stays assigned-coach only (OD-2026-10-05-024 item 2).
+
+**Closes** the two public-wall questions that OD-2026-10-07-005 and OD-2026-10-07-006 recorded as not ruled (rulings 1 and 2 here).
+
+---
+
+## OD-2026-10-07-007 -- Order of work: "Let figure out the waiting on me first, then the fixes, th ai piece will be when I have the best time to focus"
+
+**Provenance: PRIMARY.** Jason's typed message in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 21192, 2026-10-07T19:02:50.072Z; queued at line 21190, 2026-10-07T19:02:50.024Z). Read by script (records pass, 2026-10-08). Timestamps UTC; the id carries 2026-10-07 because these UTC times are the afternoon of 2026-10-07 Eastern. New; edits no earlier entry.
+
+He had asked "What left to build" (line 21161, 2026-10-07T19:00:45.047Z) and overwatch had answered with three groups: decisions waiting on him, fixes, and the teach-AI work. Jason, line 21192 (2026-10-07T19:02:50.072Z): *"Let figure out the waiting on me first, then the fixes, th ai piece will be when I have the best time to focus"*
+
+**Rulings:**
+1. First: the decisions waiting on him are put to him and settled.
+2. Then: the fixes.
+3. The AI (teach-AI) piece waits for when he has the best time to focus; it is not started on overwatch's initiative before then.
+
+**On record after it (not a reversal):** at 2026-10-07T19:15:55Z he himself started the chip "Teach-AI: let the same coach re-mark a clip blind" (line 21439), and overwatch let lanes finish teach-AI work already on pull requests.
+
+---
+
+
 ## OD-2026-10-07-006 -- "Ok go with your recommendations": stage Release 13 now; new studies use the 23-point list; start the database lane for a same-person blind re-mark
 
 **Provenance: PRIMARY.** Jason's typed message in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; queued at line 21056, 2026-10-07T18:56:40.769Z; user row at line 21058, 2026-10-07T18:56:40.880Z). Read by script (records pass, 2026-10-07). The three questions were put in two overwatch messages (line 21030 and line 20638); overwatch's application of the answer is line 21103. All are quoted as written. Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
