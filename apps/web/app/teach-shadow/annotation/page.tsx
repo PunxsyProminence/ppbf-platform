@@ -3,13 +3,18 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import BodyPointCanvas from '@/components/BodyPointCanvas';
+import BodyPointMomentPanel from '@/components/BodyPointMomentPanel';
 import BodyPointProgress from '@/components/BodyPointProgress';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import {
   ANNOTATION_CERTAINTIES,
+  BODY_POINT_EDGES_0_4,
   BODY_POINT_ONTOLOGY_VERSIONS,
+  BOXING_ONTOLOGY_VERSION_0_4,
   CONTACT_RESULTS,
+  CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
   DEFENSE_TYPES,
   HAND_ROLES,
@@ -313,13 +318,28 @@ function describeEvent(event: AnnotationEvent): string {
   return label(event.defense_type ?? '');
 }
 
-async function readError(response: Response): Promise<string> {
+/** A refusal's message and its machine code, where the route gave one. */
+async function readRefusal(response: Response): Promise<{ message: string; code: string | null }> {
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error ?? `Request refused (${response.status}).`;
+    const payload = (await response.json()) as { error?: string; code?: string };
+    return {
+      message: payload.error ?? `Request refused (${response.status}).`,
+      code: typeof payload.code === 'string' ? payload.code : null,
+    };
   } catch {
-    return `Request refused (${response.status}).`;
+    return { message: `Request refused (${response.status}).`, code: null };
   }
+}
+
+async function readError(response: Response): Promise<string> {
+  return (await readRefusal(response)).message;
+}
+
+/** One placement the coach can take back: what the point was before. */
+interface Placement {
+  body_moment_id: string;
+  point_code: string;
+  previous: BodyPoint | null;
 }
 
 export default function CoachCalibrationPage() {
@@ -347,6 +367,13 @@ export default function CoachCalibrationPage() {
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
 
+  /* Body-point marking: which moment is open on the picture, which point the
+     next tap is for, and the placements the coach can take back (local, per
+     open moment; cleared when the moment changes). */
+  const [activeMomentId, setActiveMomentId] = useState<string | null>(null);
+  const [activePointCode, setActivePointCode] = useState<string | null>(null);
+  const [undoStack, setUndoStack] = useState<Placement[]>([]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   /* Which body-points read is the current one. A slow reply from an earlier
      read (another clip, or the same set before an event write) is dropped on
@@ -359,6 +386,18 @@ export default function CoachCalibrationPage() {
      Written this way round so a status this build has never heard of fails
      CLOSED rather than open. */
   const canEdit = annotationSet !== null && annotationSet.status === 'in_progress';
+
+  /* A set whose version holds body points. Everything below that marks a
+     point is behind this; a 0.1 set never sees it. */
+  const isBodyPointSet = annotationSet !== null
+    && isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, annotationSet.ontology_version);
+  const bodyDataForSet = annotationSet && bodyData && bodyData.annotation_set_id === annotationSet.annotation_set_id
+    ? bodyData
+    : null;
+  const activeMoment = bodyDataForSet?.moments.find((row) => row.body_moment_id === activeMomentId) ?? null;
+  /* Skeleton lines are defined for 0.4 only (ontology.ts); other versions
+     draw dots alone. */
+  const skeletonEdges = annotationSet?.ontology_version === BOXING_ONTOLOGY_VERSION_0_4 ? BODY_POINT_EDGES_0_4 : [];
 
   /* ------------------------------------------------------------------ *
    * Loading
@@ -442,13 +481,17 @@ export default function CoachCalibrationPage() {
    * A failure here is shown beside the body-point section, not as the page's
    * refusal: the events, the player and the forms are unaffected by it.
    */
-  const loadBodyData = useCallback(async (set: AnnotationSet | null) => {
+  const loadBodyData = useCallback(async (set: AnnotationSet | null, options: { keep?: boolean } = {}) => {
     const token = bodyReadToken.current + 1;
     bodyReadToken.current = token;
-    // Cleared first, not replaced on arrival: between an event write and the
-    // re-read, the old marks would sit beside the new event list and the
-    // totals would be wrong. An empty panel for one round trip is honest.
-    setBodyData(null);
+    // Cleared first, not replaced on arrival, after an event write: between
+    // the write and the re-read, the old marks would sit beside the new event
+    // list and the totals would be wrong. An empty panel for one round trip
+    // is honest. A re-read that follows a body-point write (`keep`) leaves
+    // the marks on screen instead: the event list did not change, and
+    // unmounting the panel and the picture for every lead-side pick would
+    // throw the coach's scroll and focus away.
+    if (!options.keep) setBodyData(null);
     setBodyNotice('');
     if (!set || !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, set.ontology_version)) {
       return;
@@ -673,6 +716,26 @@ export default function CoachCalibrationPage() {
       return;
     }
 
+    /* On a body-point set a punch that made contact must carry its contact
+       time: the middle moment is marked AT contact (OD-2026-10-02-011 3a)
+       and the database refuses the event without it. Told here, with the
+       form still on screen; the server refuses the same thing. */
+    if (isBodyPointSet && draft.eventClass === 'punch') {
+      const madeContact = isInVocabulary(CONTACT_RESULTS_WITH_CONTACT, draft.contactResult);
+      const hasContactTime = draft.contactMs.trim() !== '';
+      if (madeContact && !hasContactTime) {
+        setRefusal(`A punch marked "${label(draft.contactResult)}" needs its contact time (ms, video time): the middle moment is marked at contact.`);
+        return;
+      }
+      // The same rule the other way (the database holds both directions): a
+      // miss, or a punch the coach cannot tell landed, is marked at full
+      // extension and carries no contact time.
+      if (!madeContact && hasContactTime && draft.contactResult !== '') {
+        setRefusal(`A punch marked "${label(draft.contactResult)}" carries no contact time: clear the contact field, or change the result.`);
+        return;
+      }
+    }
+
     const body = {
       annotation_set_id: annotationSet.annotation_set_id,
       event_id: draft.replacingEventId ?? undefined,
@@ -682,10 +745,12 @@ export default function CoachCalibrationPage() {
       start_ms: draft.startMs,
       end_ms: draft.endMs,
       contact_ms: draft.contactMs,
-      peak_ms: draft.peakMs,
+      // Stance and peak are 0.1 fields; a body-point set records the lead
+      // side per moment and has no peak, and the database refuses either.
+      peak_ms: isBodyPointSet ? '' : draft.peakMs,
       physical_hand: draft.physicalHand,
       hand_role: draft.handRole,
-      stance: draft.stance,
+      stance: isBodyPointSet ? '' : draft.stance,
       punch_type: draft.eventClass === 'punch' ? draft.punchType : '',
       target_zone: draft.eventClass === 'punch' ? draft.targetZone : '',
       contact_result: draft.eventClass === 'punch' ? draft.contactResult : '',
@@ -717,7 +782,7 @@ export default function CoachCalibrationPage() {
     } finally {
       setBusy(false);
     }
-  }, [annotationSet, clip, draft, reloadEvents]);
+  }, [annotationSet, clip, draft, isBodyPointSet, reloadEvents]);
 
   const removeEvent = useCallback(async (eventId: string) => {
     if (!annotationSet || !clip) return;
@@ -744,6 +809,297 @@ export default function CoachCalibrationPage() {
       setBusy(false);
     }
   }, [annotationSet, clip, reloadEvents]);
+
+  /* ------------------------------------------------------------------ *
+   * Body-point writes. Each goes to its own route; the response is folded
+   * into the page's copy of the set's marks so a tap does not cost a full
+   * re-read, and a full re-read happens whenever a moment is opened, closed
+   * or removed and whenever the server says the event under it changed.
+   * The server, and the database under it, refuse everything these send
+   * wrongly; nothing here is the enforcement.
+   * ------------------------------------------------------------------ */
+
+  /** The next point in marking order that has no mark on this moment. */
+  const nextUnmarked = useCallback((moment: BodyMoment, expected: readonly string[]): string | null => {
+    const marked = new Set(moment.points.map((point) => point.point_code));
+    return expected.find((code) => !marked.has(code)) ?? null;
+  }, []);
+
+  const replaceMoment = useCallback((updated: BodyMoment) => {
+    setBodyData((current) => current && ({
+      ...current,
+      moments: current.moments.map((row) => (row.body_moment_id === updated.body_moment_id ? updated : row)),
+    }));
+  }, []);
+
+  const bodyWrite = useCallback(async (
+    path: string,
+    method: 'POST' | 'PUT' | 'DELETE',
+    body: Record<string, unknown>,
+  ): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; code: string | null; message: string }> => {
+    if (!annotationSet) return { ok: false, code: null, message: 'No set is open.' };
+    const send = () => fetch(`${apiBase()}/api/pilot/calibration/body-points${path}`, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annotation_set_id: annotationSet.annotation_set_id, ...body }),
+    });
+    let response = await send();
+    if (!response.ok) {
+      let refusal = await readRefusal(response);
+      // Two writes crossed on the server: the second is sent once more.
+      if (refusal.code === 'CALIBRATION_BODY_POINTS_WRITE_RACE') {
+        response = await send();
+        if (response.ok) return { ok: true, payload: (await response.json()) as Record<string, unknown> };
+        refusal = await readRefusal(response);
+      }
+      if (refusal.code === 'CALIBRATION_BODY_MOMENT_EVENT_CHANGED' && clip) {
+        // The event under the moment was replaced or removed (another tab):
+        // what the page shows is no longer there. Reload everything.
+        setActiveMomentId(null);
+        setUndoStack([]);
+        setNotice('That event changed since this page was loaded. Reloaded.');
+        await reloadEvents(clip.calibration_clip_id);
+      }
+      return { ok: false, code: refusal.code, message: refusal.message };
+    }
+    return { ok: true, payload: (await response.json()) as Record<string, unknown> };
+  }, [annotationSet, clip, reloadEvents]);
+
+  /** Pause on the moment's time: the picture the coach marks. The browser
+   * shows its nearest frame to that time; the stored time is the moment's. */
+  const holdOnMoment = useCallback((observationMs: number) => {
+    try {
+      videoRef.current?.pause();
+    } catch {
+      // No media support: the seek below still positions the page's playhead.
+    }
+    setPlaying(false);
+    seekTo(observationMs);
+  }, [seekTo]);
+
+  /** Opens the picture on a moment: marks are read fresh first, so the panel
+   * starts from the database's points, not the page's memory of them; then
+   * the video is held on the moment's time. */
+  const selectMoment = useCallback(async (moment: Pick<BodyMoment, 'body_moment_id' | 'observation_ms'>) => {
+    if (!annotationSet) return;
+    await loadBodyData(annotationSet, { keep: true });
+    setActiveMomentId(moment.body_moment_id);
+    setUndoStack([]);
+    setActivePointCode(null);
+    holdOnMoment(moment.observation_ms);
+  }, [annotationSet, holdOnMoment, loadBodyData]);
+
+  /* THE HOLD. A tap is a mark AT THE MOMENT (OD-2026-10-02-011 3a), so the
+     picture must be the moment's. "Held" means paused with the playhead on
+     the moment's time, within one fine step: the browser seeks to its
+     nearest frame and reports that time back, which is tens of milliseconds
+     off the whole-number moment on some files, and a hold that demanded
+     equality would never be satisfied there. A scrub or a step away from the
+     moment, even paused, lifts the hold and taps place nothing until the
+     coach goes back. */
+  const heldOnMoment = activeMoment !== null
+    && !playing
+    && Math.abs(currentMs - activeMoment.observation_ms) <= STEP_MS.fine;
+
+  /* The point the next tap is for: the coach's own pick when they made one
+     (and it is still on this moment), otherwise the first unmarked point in
+     marking order. Derived, not stored, so it is never stale after a mark. */
+  const pointToPlace = activeMoment && bodyDataForSet?.expected_points
+    ? (activePointCode && bodyDataForSet.expected_points.includes(activePointCode)
+      ? activePointCode
+      : nextUnmarked(activeMoment, bodyDataForSet.expected_points))
+    : null;
+
+  const openMoment = useCallback(async (event: AnnotationEvent, slot: string) => {
+    if (!annotationSet) return;
+    setBusy(true);
+    setRefusal('');
+    setNotice('');
+    try {
+      const body: Record<string, unknown> = { event_id: event.event_id, moment_slot: slot };
+      // Only a middle moment of an event with no contact time takes a time:
+      // the coach's playhead, held inside the event. Every other moment's
+      // time is the server's (resolveMomentTiming in bodyPoints.ts).
+      if (slot === 'middle' && event.contact_ms === null) {
+        body.observation_ms = Math.round(Math.min(Math.max(currentMs, event.start_ms), event.end_ms));
+      }
+      const element = videoRef.current;
+      if (element && element.videoWidth > 0 && element.videoHeight > 0) {
+        body.source_frame_width_px = element.videoWidth;
+        body.source_frame_height_px = element.videoHeight;
+      }
+      const result = await bodyWrite('/moments', 'POST', body);
+      if (!result.ok) {
+        if (result.code === 'CALIBRATION_BODY_MOMENT_SLOT_TAKEN') {
+          // Already open (a second tab, or a lost reply): read it back and
+          // mark on it rather than telling the coach no.
+          await loadBodyData(annotationSet);
+          setNotice('That moment was already open. Showing it.');
+          return;
+        }
+        setRefusal(result.message);
+        return;
+      }
+      const moment = result.payload.moment as BodyMoment | undefined;
+      if (moment) await selectMoment(moment);
+    } finally {
+      setBusy(false);
+    }
+  }, [annotationSet, bodyWrite, currentMs, loadBodyData, selectMoment]);
+
+  const closeMoment = useCallback(async () => {
+    if (busy) return;
+    setActiveMomentId(null);
+    setActivePointCode(null);
+    setUndoStack([]);
+    if (annotationSet) await loadBodyData(annotationSet, { keep: true });
+  }, [annotationSet, busy, loadBodyData]);
+
+  const removeMoment = useCallback(async (momentId: string) => {
+    if (!annotationSet) return;
+    setBusy(true);
+    setRefusal('');
+    try {
+      const result = await bodyWrite('/moments', 'DELETE', { body_moment_id: momentId });
+      // A second DELETE is a 404: the moment is gone either way.
+      if (!result.ok && !result.message.startsWith('Not found')) {
+        setRefusal(result.message);
+        return;
+      }
+      if (activeMomentId === momentId) {
+        setActiveMomentId(null);
+        setActivePointCode(null);
+        setUndoStack([]);
+      }
+      setNotice('Moment removed, with its points.');
+      await loadBodyData(annotationSet, { keep: true });
+    } finally {
+      setBusy(false);
+    }
+  }, [activeMomentId, annotationSet, bodyWrite, loadBodyData]);
+
+  /** One point, one request: placed with its picture fraction, or not
+   * visible with none. The server answers with every point on the moment.
+   * Returns whether the write landed, so an undo pops its entry only then. */
+  const markPoint = useCallback(async (
+    pointCode: string,
+    mark: { state: 'placed'; x_norm: number; y_norm: number } | { state: 'not_visible' },
+    recordUndo: boolean,
+  ): Promise<boolean> => {
+    if (!activeMoment) return false;
+    setBusy(true);
+    setRefusal('');
+    try {
+      const previous = activeMoment.points.find((p) => p.point_code === pointCode) ?? null;
+      const result = await bodyWrite('/points', 'PUT', {
+        body_moment_id: activeMoment.body_moment_id,
+        points: [{ point_code: pointCode, ...mark }],
+      });
+      if (!result.ok) {
+        setRefusal(result.message);
+        return false;
+      }
+      const points = (result.payload.points as BodyPoint[] | undefined) ?? [];
+      const updated = { ...activeMoment, points };
+      replaceMoment(updated);
+      if (recordUndo) {
+        setUndoStack((stack) => [...stack, { body_moment_id: activeMoment.body_moment_id, point_code: pointCode, previous }]);
+      }
+      // Back to "the next unmarked point": when every point is marked the
+      // panel says so and the coach sets the lead side and guard.
+      setActivePointCode(null);
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  }, [activeMoment, bodyWrite, replaceMoment]);
+
+  /** Unmarks a point. On the undo stack like a placement, so that undoing
+   * after a Clear puts the mark back rather than resurrecting an older one. */
+  const clearPoint = useCallback(async (pointCode: string, recordUndo: boolean): Promise<boolean> => {
+    if (!activeMoment) return false;
+    setBusy(true);
+    setRefusal('');
+    try {
+      const previous = activeMoment.points.find((p) => p.point_code === pointCode) ?? null;
+      const result = await bodyWrite('/points', 'DELETE', {
+        body_moment_id: activeMoment.body_moment_id,
+        point_code: pointCode,
+      });
+      if (!result.ok && !result.message.startsWith('Not found')) {
+        setRefusal(result.message);
+        return false;
+      }
+      const updated = { ...activeMoment, points: activeMoment.points.filter((p) => p.point_code !== pointCode) };
+      replaceMoment(updated);
+      if (recordUndo && previous) {
+        setUndoStack((stack) => [...stack, { body_moment_id: activeMoment.body_moment_id, point_code: pointCode, previous }]);
+      }
+      setActivePointCode(pointCode);
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  }, [activeMoment, bodyWrite, replaceMoment]);
+
+  /** Takes back the last change to a point on this moment: the point goes
+   * back to what it was before (its earlier mark, or no mark at all). The
+   * entry leaves the stack only once the write has landed, so a failed undo
+   * can be tried again. */
+  const undoPlacement = useCallback(async () => {
+    const last = undoStack[undoStack.length - 1];
+    if (!last || !activeMoment || busy || last.body_moment_id !== activeMoment.body_moment_id) return;
+    let landed: boolean;
+    if (last.previous === null) {
+      landed = await clearPoint(last.point_code, false);
+    } else {
+      const previous = last.previous;
+      landed = await markPoint(
+        last.point_code,
+        previous.state === 'placed' && previous.x_norm !== null && previous.y_norm !== null
+          ? { state: 'placed', x_norm: previous.x_norm, y_norm: previous.y_norm }
+          : { state: 'not_visible' },
+        false,
+      );
+    }
+    if (landed) setUndoStack((stack) => stack.slice(0, -1));
+  }, [activeMoment, busy, clearPoint, markPoint, undoStack]);
+
+  const relabelMoment = useCallback(async (field: 'lead_side' | 'guard_type', value: string) => {
+    if (!activeMoment) return;
+    setBusy(true);
+    setRefusal('');
+    try {
+      const result = await bodyWrite('/moments', 'PUT', { body_moment_id: activeMoment.body_moment_id, [field]: value });
+      if (!result.ok) {
+        setRefusal(result.message);
+        return;
+      }
+      const moment = result.payload.moment as BodyMoment | undefined;
+      if (moment) replaceMoment({ ...moment, points: activeMoment.points });
+    } finally {
+      setBusy(false);
+    }
+  }, [activeMoment, bodyWrite, replaceMoment]);
+
+  const setStanceType = useCallback(async (eventId: string, stanceType: string) => {
+    if (!annotationSet) return;
+    setBusy(true);
+    setRefusal('');
+    try {
+      const result = stanceType
+        ? await bodyWrite('/stance', 'PUT', { event_id: eventId, stance_type: stanceType })
+        : await bodyWrite('/stance', 'DELETE', { event_id: eventId });
+      if (!result.ok && !(stanceType === '' && result.message.startsWith('Not found'))) {
+        setRefusal(result.message);
+        return;
+      }
+      await loadBodyData(annotationSet, { keep: true });
+    } finally {
+      setBusy(false);
+    }
+  }, [annotationSet, bodyWrite, loadBodyData]);
 
   const submitSet = useCallback(async () => {
     if (!annotationSet || !clip) return;
@@ -945,24 +1301,43 @@ export default function CoachCalibrationPage() {
                 ) : null}
 
                 {streamUrl ? (
-                  <video
-                    ref={videoRef}
-                    data-testid="calibration-player"
-                    className="mt-[var(--s3)] w-full max-h-[440px] rounded-[var(--r-sm)] bg-[var(--hide-950)]"
-                    src={streamUrl}
-                    preload="metadata"
-                    onLoadedMetadata={() => seekTo(clip.start_ms)}
-                    onTimeUpdate={handleTimeUpdate}
-                    onPlay={() => setPlaying(true)}
-                    onPause={() => setPlaying(false)}
-                    onError={() => setStreamNotice(
-                      'The footage stopped loading. Playback links last 60 minutes and this '
-                      + 'platform does not refresh them, so an expired link is the usual reason. '
-                      + 'Load fresh footage to carry on -- your saved events are not affected.',
-                    )}
-                  >
-                    <track kind="captions" />
-                  </video>
+                  /* The wrapper is the tap layer's frame: it hugs the video
+                     (inline-block, no margin of its own) so the overlay's
+                     picture offsets are measured from the video's own box. */
+                  <div className="relative mt-[var(--s3)] inline-block w-full">
+                    <video
+                      ref={videoRef}
+                      data-testid="calibration-player"
+                      className="block w-full max-h-[440px] rounded-[var(--r-sm)] bg-[var(--hide-950)]"
+                      src={streamUrl}
+                      preload="metadata"
+                      onLoadedMetadata={() => seekTo(clip.start_ms)}
+                      onTimeUpdate={handleTimeUpdate}
+                      onPlay={() => setPlaying(true)}
+                      onPause={() => setPlaying(false)}
+                      onError={() => setStreamNotice(
+                        'The footage stopped loading. Playback links last 60 minutes and this '
+                        + 'platform does not refresh them, so an expired link is the usual reason. '
+                        + 'Load fresh footage to carry on -- your saved events are not affected.',
+                      )}
+                    >
+                      <track kind="captions" />
+                    </video>
+                    {activeMoment && bodyDataForSet?.expected_points ? (
+                      <BodyPointCanvas
+                        videoRef={videoRef}
+                        bindKey={streamUrl}
+                        points={activeMoment.points}
+                        edges={skeletonEdges}
+                        activePointCode={canEdit ? pointToPlace : null}
+                        disabled={!canEdit || busy || !heldOnMoment}
+                        onPlace={(at) => {
+                          if (pointToPlace) void markPoint(pointToPlace, { state: 'placed', ...at }, true);
+                        }}
+                        onTapOutsidePicture={() => setNotice('That tap was outside the picture. Nothing was placed.')}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
 
                 <p className="t-data mt-[var(--s3)]" data-testid="playhead">
@@ -1130,13 +1505,47 @@ export default function CoachCalibrationPage() {
             </div>
           ) : null}
 
-          {annotationSet && bodyData && bodyData.annotation_set_id === annotationSet.annotation_set_id ? (
+          {bodyDataForSet ? (
             <BodyPointProgress
               events={events}
-              expectedPoints={bodyData.expected_points}
-              moments={bodyData.moments}
-              stanceLabels={bodyData.stance_labels}
-              missing={bodyData.missing}
+              expectedPoints={bodyDataForSet.expected_points}
+              moments={bodyDataForSet.moments}
+              stanceLabels={bodyDataForSet.stance_labels}
+              missing={bodyDataForSet.missing}
+              controls={canEdit ? {
+                busy,
+                activeMomentId,
+                onOpenMoment: (event, slot) => {
+                  const row = events.find((e) => e.event_id === event.event_id);
+                  if (row) void openMoment(row, slot);
+                },
+                onSelectMoment: (momentId) => {
+                  const moment = bodyDataForSet.moments.find((row) => row.body_moment_id === momentId);
+                  if (moment) void selectMoment(moment);
+                },
+                onRemoveMoment: (momentId) => { void removeMoment(momentId); },
+                onSetStance: (eventId, stanceType) => { void setStanceType(eventId, stanceType); },
+              } : undefined}
+            />
+          ) : null}
+
+          {activeMoment && bodyDataForSet?.expected_points ? (
+            <BodyPointMomentPanel
+              moment={activeMoment}
+              actorTrack={events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? ''}
+              expectedPoints={bodyDataForSet.expected_points}
+              activePointCode={canEdit ? pointToPlace : null}
+              disabled={!canEdit || busy}
+              canUndo={undoStack.length > 0}
+              awayFromMoment={!heldOnMoment}
+              onSelectPoint={(code) => { if (!busy) setActivePointCode(code); }}
+              onNotVisible={(code) => { void markPoint(code, { state: 'not_visible' }, true); }}
+              onClearPoint={(code) => { void clearPoint(code, true); }}
+              onUndo={() => { void undoPlacement(); }}
+              onSetLeadSide={(value) => { void relabelMoment('lead_side', value); }}
+              onSetGuard={(value) => { void relabelMoment('guard_type', value); }}
+              onGoToMoment={() => holdOnMoment(activeMoment.observation_ms)}
+              onClose={() => { void closeMoment(); }}
             />
           ) : null}
 
@@ -1346,46 +1755,87 @@ export default function CoachCalibrationPage() {
                 </div>
               </div>
 
+              {/* ON A BODY-POINT SET the contact time is not optional detail:
+                  a punch that made contact is marked AT contact
+                  (OD-2026-10-02-011 3a), so the database requires contact_ms
+                  on a contact result and the field is asked in the open. */}
+              {isBodyPointSet && draft.eventClass === 'punch' ? (
+                <div className="field mt-[var(--s3)] md:max-w-[50%]">
+                  <label htmlFor="draft-contact-ms" className="t-label">
+                    Contact (ms, video time) — required for any result except no contact and uncertain contact, and must be empty for those
+                  </label>
+                  <input
+                    id="draft-contact-ms"
+                    className="input"
+                    inputMode="numeric"
+                    value={draft.contactMs}
+                    onChange={(e) => setDraft({ ...draft, contactMs: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--ghost mt-[var(--s2)]"
+                    onClick={() => setDraft({
+                      ...draft,
+                      // Inside the EVENT, not just the clip: the server
+                      // refuses a contact time outside the event's span.
+                      contactMs: String(clampMsToClip(currentMs, draft.startMs, draft.endMs)),
+                    })}
+                  >
+                    Mark contact at playhead
+                  </button>
+                </div>
+              ) : null}
+
               <details className="mt-[var(--s3)]">
                 <summary className="t-label">Optional detail</summary>
                 <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
-                  <div className="field">
-                    <label htmlFor="draft-stance" className="t-label">Stance</label>
-                    <select
-                      id="draft-stance"
-                      className="select"
-                      value={draft.stance}
-                      onChange={(e) => setDraft({ ...draft, stance: e.target.value })}
-                    >
-                      <option value="">{CHOOSE}</option>
-                      {STANCES.map((value) => (
-                        <option key={value} value={value}>{label(value)}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Stance and peak are 0.1's. On a body-point set the lead
+                      side is recorded at each marked moment instead, and
+                      there is no peak (OD-2026-10-02-008 3A); the database
+                      refuses either on such a set, so neither is asked. */}
+                  {!isBodyPointSet ? (
+                    <div className="field">
+                      <label htmlFor="draft-stance" className="t-label">Stance</label>
+                      <select
+                        id="draft-stance"
+                        className="select"
+                        value={draft.stance}
+                        onChange={(e) => setDraft({ ...draft, stance: e.target.value })}
+                      >
+                        <option value="">{CHOOSE}</option>
+                        {STANCES.map((value) => (
+                          <option key={value} value={value}>{label(value)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
 
                   {draft.eventClass === 'punch' ? (
                     <>
-                      <div className="field">
-                        <label htmlFor="draft-contact-ms" className="t-label">Contact (ms, video time)</label>
-                        <input
-                          id="draft-contact-ms"
-                          className="input"
-                          inputMode="numeric"
-                          value={draft.contactMs}
-                          onChange={(e) => setDraft({ ...draft, contactMs: e.target.value })}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="draft-peak-ms" className="t-label">Peak (ms, video time)</label>
-                        <input
-                          id="draft-peak-ms"
-                          className="input"
-                          inputMode="numeric"
-                          value={draft.peakMs}
-                          onChange={(e) => setDraft({ ...draft, peakMs: e.target.value })}
-                        />
-                      </div>
+                      {!isBodyPointSet ? (
+                        <>
+                          <div className="field">
+                            <label htmlFor="draft-contact-ms" className="t-label">Contact (ms, video time)</label>
+                            <input
+                              id="draft-contact-ms"
+                              className="input"
+                              inputMode="numeric"
+                              value={draft.contactMs}
+                              onChange={(e) => setDraft({ ...draft, contactMs: e.target.value })}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor="draft-peak-ms" className="t-label">Peak (ms, video time)</label>
+                            <input
+                              id="draft-peak-ms"
+                              className="input"
+                              inputMode="numeric"
+                              value={draft.peakMs}
+                              onChange={(e) => setDraft({ ...draft, peakMs: e.target.value })}
+                            />
+                          </div>
+                        </>
+                      ) : null}
                       <div className="field">
                         <label htmlFor="draft-contact-zone" className="t-label">Contact zone (what it reached)</label>
                         <select

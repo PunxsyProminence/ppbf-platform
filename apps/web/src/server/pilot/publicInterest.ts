@@ -1,5 +1,5 @@
 import { query, queryOne } from './db';
-import { getPilotDefaultOrganizationId } from './env';
+import { getPublicInterestOrganizationId } from './env';
 
 export type VisitorType =
   | 'Athlete / Participant'
@@ -134,6 +134,8 @@ export async function createPublicInterestSubmission(
 ): Promise<PublicInterestSubmissionRow> {
   validatePublicInterestSubmission(input);
 
+  const organizationId = getPublicInterestOrganizationId();
+
   const row = await queryOne<PublicInterestSubmissionRow>(
     `insert into pilot.public_interest_submissions
        (organization_id, full_name, email, phone, visitor_type, program_interest,
@@ -143,7 +145,7 @@ export async function createPublicInterestSubmission(
        program_interest, preferred_contact_method, message, consent_to_contact,
        review_state, reviewed_by_account_id, reviewed_at, created_at`,
     [
-      getPilotDefaultOrganizationId(),
+      organizationId,
       input.fullName.trim(),
       input.email.trim(),
       input.phone?.trim() || null,
@@ -154,7 +156,18 @@ export async function createPublicInterestSubmission(
       input.consentToContact,
       input.submittedIp?.trim() || null,
     ],
-  );
+  ).catch((error: unknown) => {
+    // organization_id is this table's only foreign key, so 23503 here means the
+    // configured organization does not exist in this database. Every enquiry
+    // then fails and the visitor is told to try again later. That stays a
+    // failure on purpose -- filing under some other organization is how
+    // enquiries went unseen -- but the route's own log line is a constant that
+    // reads like a database outage. An organization id is not a secret; say it.
+    if ((error as { code?: unknown } | null)?.code === '23503') {
+      console.error('public-interest-organization-unknown', { organizationId });
+    }
+    throw error;
+  });
 
   if (!row) {
     throw new Error('Unable to record public interest submission.');

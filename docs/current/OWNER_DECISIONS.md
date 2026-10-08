@@ -164,6 +164,160 @@ and should not try to.
 
 ---
 
+## OD-2026-10-07-006 -- "Ok go with your recommendations": stage Release 13 now; new studies use the 23-point list; start the database lane for a same-person blind re-mark
+
+**Provenance: PRIMARY.** Jason's typed message in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; queued at line 21056, 2026-10-07T18:56:40.769Z; user row at line 21058, 2026-10-07T18:56:40.880Z). Read by script (records pass, 2026-10-07). The three questions were put in two overwatch messages (line 21030 and line 20638); overwatch's application of the answer is line 21103. All are quoted as written. Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+Overwatch, line 21030 (2026-10-07T18:52:34.920Z), as written: "**Decision for you: STAGE RELEASE 13 NOW?** - **A (recommended):** yes. I stage what's on main now. Merges pause from the staging deploy until production is dispatched; the seven open PRs keep building and go into Release 14. - **B:** wait for the open PRs to land first, about an hour, then stage everything. *In plain English:* A gets last night's and this morning's work in front of you on staging within the hour. Production still waits for your look and your click."
+
+Overwatch, line 20638 (2026-10-07T18:17:50.033Z), as written: "**O20: WHICH POINT LIST NEW STUDIES USE** - **A (recommended):** the 23-point list, no ankles. It's the latest. - **B:** the 25-point list, with ankles. - **C:** stay on the current version, with no body points. *In plain English:* when the marking screen ships, should new studies use the newest point list? Nothing switches until you answer." and: "**O21: RE-MARKING YOUR OWN CLIP LATER** The database allows one labelling pass per person per clip. A second person re-marking blind already works. You re-marking your own clip in a later session needs a small database change. - **A:** second-person re-mark only for now; your own re-mark later. - **B (my recommendation):** start the small database lane now, and the screen adds your re-mark after. *In plain English:* you said the first run is just you. Without B, you can't do your own blind second pass." The screen lane's version of the first of these, line 20605 (2026-10-07T18:16:58.731Z): "Options: A (recommended) boxing-ontology-0.4 (23 points, latest, OD-2026-10-04-021); B 0.3 (25 points, with ankles); C keep 0.1."
+
+Jason, line 21058 (2026-10-07T18:56:40.880Z): *"Ok go with your recommendations"*
+
+Overwatch, line 21103 (2026-10-07T18:58:29.535Z), as written: "**What I took your answer to cover** - **Stage Release 13 now.** Doing it. - **New studies use the 23-point list (no ankles)** once the marking screen ships. Told the screen lane. - **Start the database lane so you can re-mark your own clip blind.** A chip is up for it: "Teach-AI: let the same coach re-mark a clip blind". It sends me its design first."
+
+**Rulings (the ones overwatch applied):**
+1. Stage Release 13 now ("A (recommended)"): the staging deploy happens now; merges pause from the staging deploy until production is dispatched; production still waits for his look and his click.
+2. O20, "A (recommended)": once the marking screen ships, new studies use the 23-point list, no ankles (boxing-ontology-0.4, named in the screen lane's question at line 20605). Nothing switches before then.
+3. O21, "B (my recommendation)": the small database lane starts now so that a same-person blind re-mark is possible (chip "Teach-AI: let the same coach re-mark a clip blind"); the screen adds his re-mark after.
+
+**Reading (INFERRED, not Jason's words):** overwatch also reads the answer as confirming the recommended defaults that lanes had already built for the open questions it had put to him with a recommendation. Overwatch, line 21103: "**What I'm also reading it as, and you should correct me if wrong:** that the recommended defaults lanes already built stand (which check-in shows the hold warning, the drill cue rule on existing drills, coach name built from the login, show video notes as written, and the rest of O1 to O19 where I gave a recommendation). That's my reading, not your words, and I've recorded it as such."
+
+**Not ruled here:** the two public-wall questions; the route survey's questions, the no-screen plan's questions and the audit report's questions, none of which were put to him one by one. Overwatch, line 21103: "**What it does not cover** - **The two public-wall questions.** I gave no recommendation there: may a public page show checked-in athletes' initials, and is an "Everywhere" notice public? - **The route survey's four questions, the no-screen plan's questions, and the audit report's 22.** I never put those to you one at a time, so I'm not treating them as answered."
+
+---
+
+## OD-2026-10-07-005 -- Limits for adult athletes: "A"; then "Yes goes with those" to the interest form's own organization setting, the first five audit fix chips and the teach-AI lanes
+
+**Provenance: PRIMARY.** Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 20201, 2026-10-07T15:00:47.800Z; line 20223, 2026-10-07T15:01:49.737Z). Read by script (records pass, 2026-10-07). Overwatch's questions and readings are quoted as written, from the assistant lines cited. Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Limits for adult athletes (PR #1330).** Overwatch, line 20197 (2026-10-07T15:00:29.202Z), as written: "**The one thing only you can unblock: #1330.** May a coach record limits for an adult athlete? - **A (built, recommended):** yes, labelled minor or adult. - **B:** refuse for adults." Jason, line 20201 (2026-10-07T15:00:47.800Z): *"A"* Overwatch, line 20219 (2026-10-07T15:01:03.052Z), as written: "I've taken "A" as your answer to the one lettered question in my last message: **a coach may record limits for an adult athlete, labelled minor or adult.**" "I did **not** apply "A" to anything else. These three are still open, and each has its own A: 1. **O18, the production organization.** A = give the website interest form its own setting so enquiries reach the gym, and leave the public wall alone. 2. **Audit fix chips.** A = I put up the first five now, hard-floor items first. 3. **Teach-AI next lanes.** No letters yet: say "start teach-AI" and I'll put up the typo-fix lane and the labelling screen. If your "A" was meant for one of those too, say which."
+
+**The three other items, as put earlier.** O18, line 19314 (2026-10-07T12:08:29.501Z), as written: "**Decision for you: FIXING THE PUBLIC SITE'S ORGANIZATION (O18)** - **A (recommended): fix the enquiries without touching the wall.** One small lane gives the website interest form its own organization setting pointed at the real gym. Enquiries reach ppbf@, and the wall keeps showing nothing. Then I write the read-only count for stranded enquiries." Its two linked questions, same message: "**Two questions that go with it, whichever you pick** 1. May a public URL show checked-in athletes' initials and milestones, or only a paired gym TV? 2. Is a notice placed "Everywhere" public, or members only?" Audit fix lanes, line 19466 (2026-10-07T12:22:10.026Z), as written: "**Decision for you: AUDIT FIX LANES** - **A (recommended):** I put up the first five fix chips now, hard-floor items first, and the rest as PRs land. - **B:** you read the report first and tell me which to start." Teach-AI lanes, line 20150 (2026-10-07T14:41:51.021Z), as written: "**Teach-AI next lanes:** the "don't wipe taps on a typo fix" lane and the labelling screen are ready to chip when you say."
+
+**Jason's answer.** Line 20223 (2026-10-07T15:01:49.737Z): *"Yes goes with those"* Overwatch, line 20267 (2026-10-07T15:05:14.345Z), as written: "Eight chips are up for you to click, covering all three things you said yes to."
+
+**Rulings:** "Yes goes with those" names no item. The items are the three overwatch had just listed at line 20219, and overwatch read it as yes to all three (line 20267, quoted above).
+1. Limits for adult athletes (#1330), "A": a coach may record limits for an adult athlete, labelled minor or adult (the way #1330 is built). Option B, refuse for adults, is not taken.
+2. Production organization (O18), "Yes goes with those", on the option A put to him: the website interest form gets its own organization setting pointed at the real gym, so enquiries reach the gym, and the public wall is left alone.
+3. Audit fix chips, "Yes goes with those", on the option A put to him: the first five fix chips go up now, hard-floor items first, and the rest as PRs land.
+4. Teach-AI lanes, "Yes goes with those": the teach-AI next lanes start (the "don't wipe taps on a typo fix" lane and the labelling screen). This item had no lettered option.
+
+**Not ruled here:** the two public-wall questions inside O18, which overwatch recorded at line 20267 as still open: "**Not covered by your yes:** the two public-wall questions inside O18 are still open: may a public page show checked-in athletes' initials, and is an "Everywhere" notice public?"
+
+---
+
+## OD-2026-10-07-004 -- Lane sequencing: "retire one that met scope"; "dont start anything new yet close currents first"; "lets pick back up i have lots of usage accross thre account to burn through"
+
+**Provenance: PRIMARY.** Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 18632, 2026-10-07T11:26:33.563Z, queued at line 18629, 2026-10-07T11:26:33.416Z; line 18681, 2026-10-07T11:28:14.898Z; line 18898, 2026-10-07T11:40:48.129Z, queued at line 18896, 2026-10-07T11:40:48.076Z). Read by script (records pass, 2026-10-07). Line 18681 is not a user or queue row: it is a row of type `attachment` with `attachment.type` `queued_command`, `attachment.origin` `{"kind":"human"}` and `attachment.humanTurn` `true`, which is how a message typed while a turn is running is stored; its prompt is two text blocks, a system reminder about a lane session ending and then his words. Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+Direction, in time order:
+1. Overwatch, line 18631 (2026-10-07T11:26:21.511Z): "No response requested." Jason, line 18632 (2026-10-07T11:26:33.563Z): *"checl lane retire one that met scope"*
+2. Jason, line 18681 (2026-10-07T11:28:14.898Z): *"dont start anything new yet close currents first"* The nearest assistant text before it is the line 18631 text above; it answered no question.
+3. Overwatch, line 18894 (2026-10-07T11:39:58.600Z), as written: "Nothing is green to merge yet: all seven open PRs are on their long CI test job, which takes about 40 minutes and was started within the last 15. Nothing new has started." Jason, line 18898 (2026-10-07T11:40:48.129Z): *"lets pick back up i have lots of usage accross thre account to burn through"*
+
+**Rulings:**
+1. "retire one that met scope": a lane that has met its scope is retired. His words do not name a lane or say how many.
+2. "dont start anything new yet close currents first": no new work is started yet; the current work is closed first.
+3. "lets pick back up": work resumes, using the usage available across his three accounts.
+
+---
+
+## OD-2026-10-07-003 -- A separate audit lead: "create an audit version of you whose only job is to create chips to audt the ap that report back to it and then archive"
+
+**Provenance: PRIMARY.** Jason's typed message in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 17887, 2026-10-07T05:21:50.488Z; queued at line 17885, 2026-10-07T05:21:50.455Z). Read by script (records pass, 2026-10-07). The audit lead's two messages quoted below are REPORTED (written by the audit lead, not by Jason): they arrived in the overwatch thread as cross-session messages at line 18049 (2026-10-07T05:36:04.965Z) and line 19439 (2026-10-07T12:21:46.045Z), from the session "Audit lead: chip out a read-only audit of the whole app" (`local_7a2362a0-96e2-483a-a1b9-755003e54819`). Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+Overwatch, line 17883 (2026-10-07T05:21:50.265Z), as written: "All 16 lanes have checked in and are working. I answered the technical questions four of them raised; two product questions are queued for you in the morning, and nothing else needs you tonight." Jason, line 17887: *"create an audit version of you whose only job is to create chips to audt the ap that report back to it and then archive"*
+
+**Rulings:**
+1. A separate session, an audit version of overwatch, whose only job is to create chips that audit the app and have them report back to it, "and then archive". His words do not say what is archived.
+
+**Outcome on record (REPORTED by the audit lead).** At line 18049: "AUDIT LEAD started; wave 1 = 8 read-only audit chips are up in my session (local_7a2362a0-96e2-483a-a1b9-755003e54819), waiting for Jason's click." At line 19439: "AUDIT COMPLETE. Final report: C:\Users\jason\Documents\PPBF-overwatch\lane-inbox\AUDIT-2026-10-07-FINDINGS.md Counts: 113 distinct findings: 10 hard-floor, 34 broken, 69 rough (lanes reported 118; 5 cross-lane duplicates merged). 14 lanes, all reported, all archived, all throwaway worktrees removed". The message at line 19439 gives the report file as `C:\Users\jason\Documents\PPBF-overwatch\lane-inbox\AUDIT-2026-10-07-FINDINGS.md`, with 113 distinct findings (10 hard-floor, 34 broken, 69 rough) from 14 lanes.
+
+---
+
+## OD-2026-10-07-002 -- How work is run: "start chips"; "you dont run backround agents you run scoped chips"
+
+**Provenance: PRIMARY.** Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines 17386, 17480, 17571). Read by script (records pass, 2026-10-07). Line 17571 is a queued message: the transcript holds it as a `queue-operation` enqueue at 2026-10-07T05:14:36.846Z and its removal from the queue at 2026-10-07T05:16:11.439Z (line 17598), with no separate user row. Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+Jason, line 17386 (2026-10-07T05:02:57.880Z): *"12 should of been done i thought what all can you wor on while i go to bed"* Overwatch, line 17476 (2026-10-07T05:07:36.713Z), as written: "Still waiting on you, whenever you're back: 1. **"all" / "merge" / nothing** — how much I land overnight. 2. **Excerpt cap:** A = 20 passages / 30,000 characters (your "double"), or B = keep 10 / 15,000." Jason, line 17480 (2026-10-07T05:07:45.843Z): *"start chips"*
+
+Overwatch, line 17525 (2026-10-07T05:11:08.623Z), as written: "Started. Four pieces of work are running as background agents in this thread, since I can't click chips for you and you're heading to bed." Jason, line 17571 (queued 2026-10-07T05:14:36.846Z): *"drift and scop chek you dont run backround agents you run scoped chips"*
+
+**Rulings:**
+1. "start chips": overwatch starts the work as chips.
+2. Overwatch does not run background agents; it runs scoped chips. The same message opens with "drift and scop chek"; no ruling is drawn from those words. Context: overwatch at line 17525 said "I can't click chips for you", and Jason's message at line 17529 (recorded in OD-2026-10-07-001) includes "ill clike the chip".
+
+---
+
+## OD-2026-10-07-001 -- Check the lanes and the repo ("check lanes check repo ..."); "merge, and A on the excerpt cap": per-source excerpt cap of 20 passages / 30,000 characters
+
+**Provenance: PRIMARY.** Jason's typed messages in the overwatch session ("Overwatch: lead lanes, releases, records"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 17256, 2026-10-07T04:59:42.508Z; line 17529, 2026-10-07T05:12:34.210Z) and in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; line 4986, 2026-10-07T03:22:54.901Z). Read by script (records pass, 2026-10-07). Timestamps UTC; the id carries 2026-10-07 because these UTC times are 2026-10-07 Eastern. New; edits no earlier entry.
+
+**Check lanes and the repo.** The last assistant text before his message was the 2026-10-03 handoff to the other Claude account (line 17240, 2026-10-03T09:09:15.527Z): "Yes. The handoff is written and nothing needs to be turned into a shared project: the rules, the repo, the working files and all lane transcripts live on this PC's disk and on GitHub, not in the Claude account." Jason, line 17256: *"check lanes check repo anothe claude accountoo over when you ran out of usage, identify what it has or is currently working on see what we can tak over or what chips you can run that what interfere with thier work"*
+
+**Excerpt cap, in this thread.** Overwatch, line 17525 (2026-10-07T05:11:08.623Z), as written: "**Not started: merges.** "Start chips" didn't cover them, so nothing is merged. #1287 and #1307 are green; the other four are still on their long test run. Say **"merge"** and I'll land them in order as they go green; otherwise they wait for morning. The excerpt cap question (A = 20 / 30,000, B = 10 / 15,000) still holds #1287 either way." Jason, line 17529: *"merge, and A on the excerpt cap ill clike the chip lets get some running for while i sleep"*
+
+**Excerpt cap, in the other overwatch session.** Overwatch, line 4968 (2026-10-07T03:20:56.319Z), as written: "**1. Excerpt cap: start tight (C), then let ChatGPT check it later.** - Set 10 passages / 15,000 characters per source now, about 6 pages. That's clearly "excerpts", so it's safe on copyright, and draft #1287 can merge. - Next time you're signed in to ChatGPT, I ask it to review the numbers. Raising them later is a one-line change." Closing the same message: "Say "C" (or "A") for the excerpt cap." Jason, line 4986: *"double your recomendation. and telling me the lanes are full does not tell me what is left to build aapp wide for this gym"* That session answered at line 5010 (2026-10-07T03:23:34.718Z), as written: "I read "double your recomendation" as "do your recommendation". If you meant something else, dismiss the chip."
+
+**Rulings:**
+1. Check lanes and the repo: overwatch is to check the lanes and the repo, identify what the other Claude account (his words: "anothe claude accountoo over when you ran out of usage") has or is currently working on, and see what can be taken over or what chips can run without interfering with that work. This is Jason's direction in his own words above; it answered no question.
+2. "merge": Jason's go to overwatch's offer at line 17525 to land the open PRs in order as they go green.
+3. Excerpt cap, "A": a non-owned source may keep at most 20 passages and 30,000 characters of excerpts. In the other session his words "double your recomendation" answered a recommendation of 10 passages / 15,000 characters; that session first read them as "do your recommendation" (line 5010). In this thread the choice was put at line 17476 as A = 20 passages / 30,000 characters (the words after it in overwatch's line: your "double"), B = keep 10 / 15,000, and at line 17529 he wrote "A on the excerpt cap". This amends OD-2026-10-05-024 item 7, which left the limit for ChatGPT to propose with no number decided. The cap shipped in PR #1287, merged 2026-10-07T06:30:07Z as `774fd65ad90349319c16b1d2aeeec38f5986ff52` ("Per-source excerpt budget for non-owned sources: 20 passages / 30,000 characters (CL-C2)").
+
+**Not ruled here:** neither message mentions ChatGPT reviewing the numbers later, which line 4968 had offered.
+
+---
+
+## OD-2026-10-03-022 -- Teach-AI: "i will only use adults"; "a week is too long" for the repeat marking, which is by "another set of eyes" or Jason "on different screens different lighting and enviroments"
+
+**Provenance: PRIMARY.** Jason's typed message in the GPU / teach-AI lane session (transcript `~/.claude/projects/C--Dev/1558c5f8-27bf-4cb4-a45d-c27a7ddda0e6.jsonl`; line 628, 2026-10-03T22:22:48.935Z; queued at line 626, 2026-10-03T22:22:48.876Z). Read by script (records pass, 2026-10-07). Timestamps UTC; the id carries 2026-10-03 because these UTC times are the afternoon of 2026-10-03 Eastern. New; edits no earlier entry.
+
+The lane, line 624 (2026-10-03T22:16:11.679Z), as written: "Your next hands-on step is still step 1: once the marking screen is live, mark about 20 punches, then re-mark 10 of them a week later." Jason, line 628: *"so just to keep it simple i will only use adults, also a week is too long, i will find another set of eyes or I will do it myself on different screens different lighting and enviroments on my end"*
+
+**Rulings:**
+1. Adults only, "to keep it simple" (the same direction as OD-2026-10-03-019).
+2. "a week is too long": the lane had proposed re-marking 10 of the punches a week later (line 624), and he rejects that gap. Jason will find another set of eyes, or do it himself on different screens, in different lighting and in different environments on his end.
+
+---
+
+## OD-2026-10-03-021 -- Teach-AI first run: Jason is the one annotator ("for now at least the first run it will just be me")
+
+**Provenance: PRIMARY.** Jason's typed message in the GPU / teach-AI lane session (transcript `~/.claude/projects/C--Dev/1558c5f8-27bf-4cb4-a45d-c27a7ddda0e6.jsonl`; line 578, 2026-10-03T22:01:29.361Z; queued at line 576, 2026-10-03T22:01:29.329Z). Read by script (records pass, 2026-10-07). Timestamps UTC; the id carries 2026-10-03 because these UTC times are the afternoon of 2026-10-03 Eastern. New; edits no earlier entry.
+
+He had just asked "what are the coach agreement numbers" (line 570, 2026-10-03T21:59:18.000Z). The lane, line 574 (2026-10-03T21:59:26.384Z), as written: "Two coaches mark the same punch on their own, without seeing each other's taps." and: "It needs the coach marking screen (work order 02) built and some punches marked twice (step 1)." Jason, line 578: *"for now at least the first run it will just be me"*
+
+**Rulings:**
+1. For the first run, Jason alone marks (annotates). His words carry the limit "for now at least".
+
+---
+
+## OD-2026-10-03-020 -- Teach-AI training location: Jason's laptop, option "A" ("its my lap top and is physically locked when i dont use it")
+
+**Provenance: PRIMARY.** Jason's typed message in the GPU / teach-AI lane session (transcript `~/.claude/projects/C--Dev/1558c5f8-27bf-4cb4-a45d-c27a7ddda0e6.jsonl`; line 519, 2026-10-03T21:49:32.111Z; queued at line 517, 2026-10-03T21:49:32.057Z). Read by script (records pass, 2026-10-07). The lane put the question at line 398 as (A) Laptop / (B) Azure (quoted in OD-2026-10-03-019) and again, in words without letters, at line 515. Timestamps UTC; the id carries 2026-10-03 because these UTC times are the afternoon of 2026-10-03 Eastern. New; edits no earlier entry.
+
+The lane, line 515 (2026-10-03T21:36:37.858Z), as written: "**Still open for you:** whether training pictures are stored on your laptop (free, and with adults only there are no kids' pictures on it) or stay in Azure (paid). I recommend the laptop for gate 3." Jason, line 519: *"A laptop its my lap top and is physically locked when i dont use it"*
+
+**Rulings:**
+1. Training runs on Jason's own laptop (option A of the laptop / Azure question; line 515 asked it for gate 3).
+2. The laptop is his own and is physically locked when he is not using it.
+
+**Not ruled here:** where on the laptop the training pictures are kept and when they are deleted. The lane, line 528 (2026-10-03T21:49:41.941Z): "Still to be set later, as part of the export work: which folder the pictures go in, and when they get deleted."
+
+---
+
+## OD-2026-10-03-019 -- Teach-AI training uses adults only for now, children later if needed ("can we train it on adults only"); training continues step by step as more is added to recognize
+
+**Provenance: PRIMARY.** Jason's typed message in the GPU / teach-AI lane session (transcript `~/.claude/projects/C--Dev/1558c5f8-27bf-4cb4-a45d-c27a7ddda0e6.jsonl`). It is a queued message: the transcript holds it as a `queue-operation` enqueue at line 422 (2026-10-03T21:33:28.528Z) and its removal from the queue at line 426 (2026-10-03T21:34:42.701Z), with no separate user row. Read by script (records pass, 2026-10-07). Timestamps UTC; the id carries 2026-10-03 because these UTC times are the afternoon of 2026-10-03 Eastern. New; edits no earlier entry.
+
+The lane's question, line 398 (2026-10-03T21:28:35.666Z), as written: "**Copies of gym pictures on the laptop.** Training on the laptop means still pictures from the teaching video, including kids, get copied onto it. That's a privacy and storage choice for you (where they're kept, who can open the laptop, deleting them after). With Azure training they'd never leave the club's cloud." "*Official form:* Training-data location for gates 3–5: - (A) Laptop: training on this PC's RTX 2060, with exported frames, including minors, stored on this PC under rules you set: an encrypted folder, delete after training. - (B) Azure: a GPU machine in the club's subscription, so frames never leave Azure. Cost is priced at gate 4. **Recommended: A for gate 3**, and decide again at gate 4 with real data sizes." Jason, line 422: *"can we train it on adults only, the plan should be even when we have a working model we keep traing th AI step from start to finish adding in mor stuff to recognize, add the kids later if we dont think the end product can do it on kids since it trained on adults"*
+
+**Rulings:**
+1. Training uses adult athletes only for now. Children are added later if the end product turns out not to work on them because it was trained on adults.
+2. The plan is to keep training the AI step from start to finish, even once a model works, adding more for it to recognize.
+
+---
+
 ## OD-2026-10-06-027 -- AI data at deletion: name scrub "Gym-wide"; flagged AI chats kept "2 years after deletion"
 
 **Provenance: PRIMARY.** Jason's answers to AskUserQuestion tool use `toolu_01JPecuc9PuqU5Z3YWgPueiB` in the "Overwatch lane" session (`local_c5872d8e`; transcript `~/.claude/projects/C--Dev/a7361afb-1461-4223-9da3-20e915b4d60d.jsonl`; asked line 5222, 2026-10-07T04:26:14.322Z; answered line 5225, 2026-10-07T04:27:02.163Z). Read by script (records pass, 2026-10-07). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-06 because these UTC times are the evening of 2026-10-06 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
