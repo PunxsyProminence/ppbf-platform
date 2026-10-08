@@ -52,6 +52,7 @@ const PREREQUISITE_SQL = [
   'pilot_slice_postgres_capture_sessions_migration.sql',
   'pilot_slice_postgres_calibration_projects_migration.sql',
   'pilot_slice_postgres_calibration_annotations_migration.sql',
+  'pilot_slice_postgres_calibration_remark_pass_migration.sql',
   'pilot_slice_postgres_calibration_body_points_migration.sql',
   'pilot_slice_postgres_calibration_body_point_rules_migration.sql',
   'pilot_slice_postgres_calibration_events_freeze_old_parent_migration.sql',
