@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, queryOne, withTransaction } from '../db';
 import { PilotError } from '../errors';
 import {
@@ -562,8 +564,8 @@ function resolveEventFields(input: RecordAnnotationEventInput): ResolvedEventFie
 export async function recordAnnotationEvent(
   input: RecordAnnotationEventInput,
 ): Promise<AnnotationEventRow> {
-  const { eventClass, visibility, certainty, stance, startMs, endMs, contactMs, peakMs, shape } =
-    resolveEventFields(input);
+  const fields = resolveEventFields(input);
+  const { eventClass, visibility, certainty, stance, startMs, endMs, contactMs, peakMs, shape } = fields;
 
   const context = await loadSetContext(
     input.organizationId,
@@ -578,6 +580,10 @@ export async function recordAnnotationEvent(
   if (startMs < context.clip_start_ms || endMs > context.clip_end_ms) {
     throw new Error('Missing start_ms: the event falls outside the clip it belongs to');
   }
+  // The same named refusals an edit in place gives. Without this the 0.2+
+  // rules were the trigger's alone, and its refusal reached the caller as a
+  // 500 with no field in it.
+  assertVersionEventRules(context.ontology_version, fields);
 
   const row = await queryOne<AnnotationEventRow>(
     `insert into pilot.calibration_annotation_events
@@ -858,11 +864,19 @@ export async function updateAnnotationEvent(
  * Scoped so it can only touch a set still in_progress. After submission the
  * trigger refuses the delete outright, which is what keeps a submitted
  * reading from being quietly trimmed to agree with the other annotator's.
+ *
+ * `keepIf` is for the replace path, whose delete must not take an event's
+ * body marks with it. The event row is locked, THEN `keepIf` is asked on the
+ * same connection; a yes leaves the event and returns false. Anything being
+ * attached to the event at that instant has either committed before the
+ * question or waits for the answer. This module still reads no body-point
+ * table: the caller supplies the question.
  */
 export async function deleteAnnotationEvent(
   organizationId: string,
   annotationSetId: string,
   eventId: string,
+  options: { keepIf?: (client: PoolClient) => Promise<boolean> } = {},
 ): Promise<boolean> {
   const context = await loadSetContext(organizationId, annotationSetId);
   if (!context) {
@@ -872,11 +886,24 @@ export async function deleteAnnotationEvent(
     throw new AnnotationSetSubmittedError();
   }
 
+  const where = 'where organization_id = $1 and annotation_set_id = $2 and event_id = $3';
+  const params = [organizationId, annotationSetId, eventId];
+  const { keepIf } = options;
+  if (keepIf) {
+    return withTransaction(async (client) => {
+      const locked = await client.query(
+        `select 1 from pilot.calibration_annotation_events ${where} for update`,
+        params,
+      );
+      if (locked.rows.length === 0 || (await keepIf(client))) return false;
+      const gone = await client.query(`delete from pilot.calibration_annotation_events ${where}`, params);
+      return gone.rowCount === 1;
+    });
+  }
+
   const removed = await queryOne<{ event_id: string }>(
-    `delete from pilot.calibration_annotation_events
-      where organization_id = $1 and annotation_set_id = $2 and event_id = $3
-      returning event_id`,
-    [organizationId, annotationSetId, eventId],
+    `delete from pilot.calibration_annotation_events ${where} returning event_id`,
+    params,
   );
   return removed !== null;
 }

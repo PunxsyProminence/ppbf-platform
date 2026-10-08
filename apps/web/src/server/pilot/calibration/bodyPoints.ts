@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { query, queryOne, withTransaction } from '../db';
 import { PilotError } from '../errors';
 import { AnnotationSetSubmittedError } from './annotations';
@@ -702,6 +704,42 @@ export async function clearEventStanceType(
     [organizationId, set.annotation_set_id, requireNonEmpty(eventId, 'event_id')],
   ).catch(translateDatabaseRefusal);
   return removed !== null;
+}
+
+/* ------------------------------------------------------------------ *
+ * DOES AN EVENT HOLD MARKS
+ * ------------------------------------------------------------------ */
+
+/**
+ * Whether an event holds a moment or a stance type: a yes or a no, never the
+ * marks themselves.
+ *
+ * The one thing the events route asks of this module (bodyPoints.test.ts
+ * holds it to this function alone). Replacing an event deletes the old row,
+ * and its marks go with it by cascade, so the replace path asks first and
+ * refuses.
+ *
+ * Scoped to the organization and the set. Given the caller's transaction
+ * client it reads on that connection, so the answer is taken under whatever
+ * lock the caller already holds on the event.
+ */
+export async function eventHoldsBodyMarks(
+  organizationId: string,
+  annotationSetId: string,
+  eventId: string,
+  client?: PoolClient,
+): Promise<boolean> {
+  const text = `select (
+      exists (select 1 from pilot.calibration_body_moments
+               where organization_id = $1 and annotation_set_id = $2 and event_id = $3)
+      or exists (select 1 from pilot.calibration_event_stance_labels
+                  where organization_id = $1 and annotation_set_id = $2 and event_id = $3)
+    ) as holds`;
+  const params = [organizationId, annotationSetId, eventId];
+  const row = client
+    ? (await client.query<{ holds: boolean }>(text, params)).rows[0]
+    : await queryOne<{ holds: boolean }>(text, params);
+  return row?.holds === true;
 }
 
 /* ------------------------------------------------------------------ *

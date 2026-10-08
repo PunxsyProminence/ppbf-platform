@@ -19,6 +19,10 @@
 //   * a submitted set is frozen; nothing is reachable across an organization
 //     or from another set
 //
+// It also holds the replace path's side of the same promise: the yes-or-no on
+// marks (eventHoldsBodyMarks in bodyPoints.ts), the delete that asks it under
+// the row lock, and the 0.2+ rules on a NEW event as named refusals.
+//
 // Both body-point migrations are applied. Spins up the same disposable,
 // local-only embedded Postgres the other migration suites use. It NEVER
 // connects to production or staging.
@@ -63,6 +67,7 @@ const OTHER_ORG_ID = 'org-edit-other';
 const ANNOTATOR = 'acct-edit-annotator';
 const V01 = 'boxing-ontology-0.1';
 const V02 = 'boxing-ontology-0.2';
+const V03 = 'boxing-ontology-0.3';
 const V04 = 'boxing-ontology-0.4';
 
 const CLIP_START_MS = 60_000;
@@ -854,6 +859,154 @@ describe('the gates', () => {
     await expect(edit(mine, theirEvent, { certainty: 'uncertain' })).rejects.toThrow('Not found: no such event in this annotation set');
     await expect(edit(mine, crypto.randomUUID(), { certainty: 'uncertain' })).rejects.toThrow('Not found: no such event in this annotation set');
     expect(await eventRow(theirs, theirEvent)).toEqual(rowBefore);
+  });
+});
+
+describe('recording a new event under a body-point version is refused by name, not by a trigger\'s text', () => {
+  type Recorder = (set: SetRef) => Promise<string>;
+  const BREACHES: [string, Recorder, RegExp][] = [
+    ['a stance on a punch', (set) => punch(set, { stance: 'orthodox' }), /^Missing stance: boxing-ontology-0\.[234] /],
+    ['a peak time on a punch', (set) => punch(set, { peakMs: EV_CONTACT }), /^Missing peak_ms: boxing-ontology-0\.[234] /],
+    ['a landed result with no contact time', (set) => punch(set, { contactMs: null }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['a missed result with a contact time', (set) => punch(set, { contactResult: 'no_contact' }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['an unsure result with a contact time', (set) => punch(set, { contactResult: 'uncertain_contact' }), /^Missing contact_ms: in boxing-ontology-0\.[234] /],
+    ['a stance on a defence', (set) => defense(set, { stance: 'southpaw' }), /^Missing stance: boxing-ontology-0\.[234] /],
+    ['a peak time on a defence', (set) => defense(set, { peakMs: EV_START + 100 }), /^Missing peak_ms: boxing-ontology-0\.[234] /],
+  ];
+
+  describe.each([V02, V03, V04])('under %s', (version) => {
+    test.each(BREACHES)('%s is a named refusal and nothing is written', async (_label, record, message) => {
+      const set = await newSet(version);
+      const refusal = await record(set).then(() => null, (error: Error) => error);
+      expect(refusal?.message).toMatch(message);
+      // Its own version, not another's.
+      expect(refusal?.message).toContain(version);
+      expect(await countFor('calibration_annotation_events', set)).toBe(0);
+    });
+  });
+
+  test('what the rules allow is recorded: a landed punch with its contact time, a miss without one, a defence either way', async () => {
+    const set = await newSet(V04);
+    await punch(set);
+    await punch(set, { contactResult: 'no_contact', contactMs: null });
+    await defense(set);
+    await defense(set, { contactMs: EV_CONTACT });
+    expect(await countFor('calibration_annotation_events', set)).toBe(4);
+  });
+
+  test('a 0.1 set records as before: stance, peak, and a contact time free of the result', async () => {
+    const set = await newSet(V01);
+    await punch(set, { stance: 'orthodox', peakMs: EV_CONTACT, contactMs: null });
+    await punch(set, { contactResult: 'no_contact' });
+    expect(await countFor('calibration_annotation_events', set)).toBe(2);
+  });
+
+  test.each([
+    ['a stance', `stance = 'orthodox'`, 'CALIBRATION_EVENT_STANCE_NOT_IN_THIS_VERSION'],
+    ['a peak time', `peak_ms = start_ms`, 'CALIBRATION_EVENT_PEAK_NOT_IN_THIS_VERSION'],
+    ['a landed result with no contact time', `contact_ms = null`, 'CALIBRATION_EVENT_CONTACT_TIME_NOT_THIS_RESULT'],
+  ])('the database still refuses %s on a direct write', async (_label, assignment, refusal) => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    await expect(db.query(
+      `update pilot.calibration_annotation_events set ${assignment}
+        where organization_id = $1 and event_id = $2`,
+      [set.orgId, eventId],
+    )).rejects.toThrow(refusal);
+  });
+});
+
+describe('a replace does not take an event\'s marks with it', () => {
+  const holds = (set: SetRef, eventId: string) => bodyPoints.eventHoldsBodyMarks(set.orgId, set.setId, eventId);
+  const keepIfMarked = (set: SetRef, eventId: string) => ({
+    keepIf: (client: import('pg').PoolClient) => bodyPoints.eventHoldsBodyMarks(set.orgId, set.setId, eventId, client),
+  });
+
+  test('the question is yes for a moment, yes for a stance type alone, no for a bare event', async () => {
+    const set = await newSet();
+    const withMoment = await punch(set);
+    await open(set, withMoment, 'start');
+    const withStance = await punch(set);
+    await bodyPoints.setEventStanceType({ organizationId: set.orgId, annotationSetId: set.setId, eventId: withStance, stanceType: 'usa_boxing__classic' });
+    const bare = await punch(set);
+
+    expect([await holds(set, withMoment), await holds(set, withStance), await holds(set, bare)]).toEqual([true, true, false]);
+  });
+
+  test('the question is scoped: another set, or another organization with the same set id, sees no marks', async () => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    await completeEvent(set, eventId);
+    const otherSet = await newSet();
+    await newSet(V02, OTHER_ORG_ID, set.setId);
+
+    expect(await holds(set, eventId)).toBe(true);
+    expect(await bodyPoints.eventHoldsBodyMarks(set.orgId, otherSet.setId, eventId)).toBe(false);
+    expect(await bodyPoints.eventHoldsBodyMarks(OTHER_ORG_ID, set.setId, eventId)).toBe(false);
+  });
+
+  test('the replace path\'s delete leaves a marked event and every mark alone, and still removes an unmarked one', async () => {
+    const set = await newSet();
+    const marked = await punch(set);
+    await completeEvent(set, marked);
+    const before = await marksOf(set, marked);
+    const rowBefore = await eventRow(set, marked);
+    const bare = await punch(set);
+
+    expect(await annotations.deleteAnnotationEvent(set.orgId, set.setId, marked, keepIfMarked(set, marked))).toBe(false);
+    expect(await marksOf(set, marked)).toEqual(before);
+    expect(await eventRow(set, marked)).toEqual(rowBefore);
+
+    expect(await annotations.deleteAnnotationEvent(set.orgId, set.setId, bare, keepIfMarked(set, bare))).toBe(true);
+    expect(await eventRow(set, bare)).toBeUndefined();
+    // Gone already: nothing to remove, and the question is not what decides it.
+    expect(await annotations.deleteAnnotationEvent(set.orgId, set.setId, bare, { keepIf: async () => false })).toBe(false);
+  });
+
+  test.each(['a moment', 'a stance type'])('%s landing mid-replace is seen: the delete waits for it, then keeps the event', async (mark) => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    await db.query('begin');
+    try {
+      if (mark === 'a moment') {
+        await insertMomentDirect(set, eventId);
+      } else {
+        await db.query(
+          `insert into pilot.calibration_event_stance_labels (organization_id, annotation_set_id, event_id, stance_type)
+           values ($1, $2, $3, 'usa_boxing__classic')`,
+          [set.orgId, set.setId, eventId],
+        );
+      }
+      let settled = false;
+      const pending = annotations.deleteAnnotationEvent(set.orgId, set.setId, eventId, keepIfMarked(set, eventId))
+        .finally(() => { settled = true; });
+      pending.catch(() => {});
+      await sleep(500);
+      expect(settled).toBe(false);
+      await db.query('commit');
+      expect(await pending).toBe(false);
+    } finally {
+      await db.query('rollback').catch(() => {});
+    }
+    const kept = await marksOf(set, eventId);
+    expect(kept.moments.length + kept.stance.length).toBe(1);
+    expect(await eventRow(set, eventId)).toBeDefined();
+  });
+
+  test('a submitted set, another organization and another set are refused or untouched as before', async () => {
+    const set = await newSet();
+    const eventId = await punch(set);
+    const otherSet = await newSet();
+    expect(await annotations.deleteAnnotationEvent(set.orgId, otherSet.setId, eventId, { keepIf: async () => false })).toBe(false);
+    await expect(annotations.deleteAnnotationEvent(OTHER_ORG_ID, set.setId, eventId, { keepIf: async () => false }))
+      .rejects.toThrow('Not found: no such annotation set in this organization');
+    expect(await eventRow(set, eventId)).toBeDefined();
+
+    await completeEvent(set, eventId);
+    expect(await annotations.submitAnnotationSet(set.orgId, set.setId)).not.toBeNull();
+    await expect(annotations.deleteAnnotationEvent(set.orgId, set.setId, eventId, { keepIf: async () => false }))
+      .rejects.toMatchObject({ name: 'AnnotationSetSubmittedError' });
+    expect(await eventRow(set, eventId)).toBeDefined();
   });
 });
 
