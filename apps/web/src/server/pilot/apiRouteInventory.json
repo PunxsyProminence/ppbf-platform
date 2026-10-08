@@ -2799,7 +2799,7 @@
     "id": "app/api/pilot/auth/magic-link/request/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/auth/magic-link/request",
-    "gate": "none (unauthenticated by design); durable+volatile email/IP rate limits; always 202",
+    "gate": "none (unauthenticated by design); durable+volatile email/IP rate limits; 202 for every address, or 503 for every address when PPBF_APP_ORIGIN cannot carry a link",
     "rolesAdmitted": [],
     "athleteData": false,
     "writes": true,
@@ -3701,6 +3701,33 @@
     "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
     "confidence": "medium",
     "notes": "Replaces an event (insert new, delete old) in the caller's own in-progress set (events/route.ts PUT). On a body-point set, an event that holds body marks is refused (409) instead of replaced, since the delete would cascade them away. Writes + audit.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireAnnotator"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/calibration/events/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/calibration/events",
+    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "not-applied",
+    "missingGate": false,
+    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
+    "confidence": "medium",
+    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12497,7 +12524,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads one recording session and its open take/files by recording_session_id (capture-session/route.ts:148-203), org-scoped. Anonymous teaching capture.",
+    "notes": "Reads one recording session and its open take/files by recording_session_id, org-scoped; ?mine=1 instead returns the caller own most recent open session (org + created_by_account scoped) so a reload can resume it. Anonymous teaching capture.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
