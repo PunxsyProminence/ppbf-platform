@@ -3739,33 +3739,6 @@
     }
   },
   {
-    "id": "app/api/pilot/calibration/events/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/calibration/events",
-    "gate": "requirePrincipal + requireAnnotator (annotatorGate.ts -> requireRole coach, organization_admin) + loadOwnAnnotationSet",
-    "rolesAdmitted": [
-      "coach",
-      "organization_admin",
-      "admin"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "not-applied",
-    "missingGate": false,
-    "looksWrong": "Reach is by owning the annotation set only; no coach-athlete assignment check.",
-    "confidence": "medium",
-    "notes": "Edits an event in place (same event_id, so its body marks stay) in the caller's own in-progress set (events/route.ts PATCH); loadPlayableClip checks the footage is still clippable. Only the keys sent change; the database refuses start, end, contact time, class and actor while the event holds marks, reported as 409. Writes + audit.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireAnnotator"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
     "id": "app/api/pilot/calibration/events/route.ts#DELETE",
     "method": "DELETE",
     "path": "/api/pilot/calibration/events",
