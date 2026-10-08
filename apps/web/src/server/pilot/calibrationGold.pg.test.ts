@@ -387,6 +387,7 @@ beforeAll(async () => {
     ADJUDICATION_SQL,
     REVISIONS_SQL,
     GOLD_SQL,
+    'pilot_slice_postgres_calibration_remark_pass_migration.sql',
   ]) {
     await migrateClient.query(await readMigration(file));
   }

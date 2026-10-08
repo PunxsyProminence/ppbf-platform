@@ -88,10 +88,10 @@ export async function GET(request: NextRequest) {
  * Opens the caller's pass over one clip, or hands back the one they already
  * have.
  *
- * IDEMPOTENT ON PURPOSE. pilot_calibration_sets_one_per_annotator_uq makes a
- * second set for the same annotator and clip impossible at the database level,
- * which is right -- one annotator, one clip, one set is the unit of
- * measurement. But a coach who reopens the page and presses "Start" again has
+ * IDEMPOTENT ON PURPOSE. pilot_calibration_sets_one_per_annotator_pass_uq
+ * makes a second first pass for the same annotator and clip impossible at the
+ * database level, which is right -- one annotator, one clip, one first
+ * reading is the unit of measurement. But a coach who reopens the page and presses "Start" again has
  * not asked for a second set, and letting the unique violation reach them as
  * an opaque 500 would look like the platform losing their work. So an existing
  * set is returned as-is, including a SUBMITTED one: a submitted set is not an

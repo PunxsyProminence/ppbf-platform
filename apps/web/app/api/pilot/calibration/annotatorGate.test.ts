@@ -71,8 +71,10 @@ const SET = {
   annotation_set_id: 'set-1',
   calibration_clip_id: 'clip-1',
   annotator_account_id: 'coach-1',
+  superseded_by_later_pass: false,
   ontology_version: 'boxing-ontology-0.1',
   status: 'in_progress',
+  pass_number: 1,
   created_at: '2026-08-27T00:00:00.000Z',
   submitted_at: null,
 } as unknown as AnnotationSetRow;
@@ -183,7 +185,10 @@ describe('whose set it is', () => {
   test('the caller\'s own set comes back', async () => {
     mockGetSet.mockResolvedValue(SET);
 
-    await expect(loadOwnAnnotationSet(COACH, 'set-1')).resolves.toBe(SET);
+    const { superseded_by_later_pass: flag, ...row } = SET as AnnotationSetRow & { superseded_by_later_pass: boolean };
+    expect(flag).toBe(false);
+    // Without the lookup's flag: routes send this row to the client as it is.
+    await expect(loadOwnAnnotationSet(COACH, 'set-1')).resolves.toStrictEqual(row);
   });
 
   test('another annotator\'s set is reported exactly as a missing one is', async () => {
@@ -214,6 +219,51 @@ describe('whose set it is', () => {
     ]);
 
     await expect(findOwnAnnotationSetForClip(COACH, 'clip-1')).resolves.toBeNull();
+  });
+
+  test('the caller\'s own earlier pass, once they have opened a later one, is reported as missing too', async () => {
+    mockGetSet.mockResolvedValue({ ...SET, status: 'submitted', superseded_by_later_pass: true });
+    const superseded = await loadOwnAnnotationSet(COACH, 'set-1').catch((error: Error) => error.message);
+
+    mockGetSet.mockResolvedValue(null);
+    const missing = await loadOwnAnnotationSet(COACH, 'set-1').catch((error: Error) => error.message);
+
+    expect(superseded).toBe(missing);
+  });
+
+  test('the caller\'s latest pass comes back', async () => {
+    mockGetSet.mockResolvedValue({ ...SET, annotation_set_id: 'set-2', pass_number: 2 });
+    await expect(loadOwnAnnotationSet(COACH, 'set-2')).resolves.toMatchObject({
+      annotation_set_id: 'set-2',
+      pass_number: 2,
+    });
+  });
+
+  test.each([undefined, null, 'false', 0])(
+    'a lookup row whose flag is %p, not false, has not shown it is the latest pass and is refused',
+    async (flag) => {
+      mockGetSet.mockResolvedValue({ ...SET, superseded_by_later_pass: flag });
+      await expect(loadOwnAnnotationSet(COACH, 'set-1')).rejects.toThrow(/^Not found/);
+    },
+  );
+
+  test.each([
+    ['listed first', [2, 1, 3]],
+    ['listed last', [1, 2, 3]],
+  ])('finding a set for a clip returns the caller\'s latest pass, %s or not', async (_label, order) => {
+    const order3 = order.indexOf(3);
+    const passes = order.map((pass_number) => ({
+      ...SET,
+      annotation_set_id: `set-pass-${pass_number}`,
+      pass_number,
+    }));
+    // Somebody else's later pass must not be mistaken for the caller's.
+    passes.splice(order3, 1, { ...SET, annotation_set_id: 'set-theirs', annotator_account_id: 'coach-2', pass_number: 3 });
+    mockListSets.mockResolvedValue(passes);
+
+    const found = await findOwnAnnotationSetForClip(COACH, 'clip-1');
+
+    expect(found?.annotation_set_id).toBe('set-pass-2');
   });
 });
 

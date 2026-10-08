@@ -287,7 +287,7 @@ beforeAll(async () => {
   await migrateClient.connect();
   // REVISIONS_SQL last: recordAdjudication writes `revision`, so every test in
   // this file needs the superseding migration, not only the revision tests.
-  for (const file of [BASE_SQL, RETENTION_SQL, VIDEO_SESSIONS_SQL, CAPTURE_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL, ADJUDICATION_SQL, REVISIONS_SQL]) {
+  for (const file of [BASE_SQL, RETENTION_SQL, VIDEO_SESSIONS_SQL, CAPTURE_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL, ADJUDICATION_SQL, REVISIONS_SQL, 'pilot_slice_postgres_calibration_remark_pass_migration.sql']) {
     await migrateClient.query(await readMigration(file));
   }
   await seedTenancy(migrateClient);

@@ -160,20 +160,39 @@ export async function loadPlayableClip(
  *
  * Hence one message for both cases, matching the 403-vs-404 discipline the
  * video read path applies for the same reason.
+ *
+ * AND ONLY THE CALLER'S LATEST PASS. Once an annotator opens a later pass on
+ * a clip, their earlier pass is the wrong row too: every route here reads or
+ * writes through this function, so an earlier pass that still answered would
+ * put the reading they are meant to be repeating blind back on their screen
+ * -- its events, body moments, points and stance labels. It gets the same
+ * message, and it never comes back, so a third pass is blind to both.
+ *
+ * The lookup's flag has done its work by the time this returns and is left
+ * off the row: routes put the set on the wire as they got it.
  */
 export async function loadOwnAnnotationSet(
   principal: PilotPrincipal,
   annotationSetId: string,
 ): Promise<AnnotationSetRow> {
   const set = await getAnnotationSet(principal.organizationId, annotationSetId);
-  if (!set || set.annotator_account_id !== principal.accountId) {
+  // `!== false`, not "is true": a row that does not say it is the latest
+  // pass has not shown that it is.
+  if (
+    !set
+    || set.annotator_account_id !== principal.accountId
+    || set.superseded_by_later_pass !== false
+  ) {
     throw new Error('Not found: no such annotation set for this annotator');
   }
-  return set;
+  const own: AnnotationSetRow & { superseded_by_later_pass?: boolean } = { ...set };
+  delete own.superseded_by_later_pass;
+  return own;
 }
 
 /**
- * The caller's own set for one clip, or null when they have not opened one.
+ * The caller's own LATEST pass on one clip, or null when they have not opened
+ * one. Never an earlier pass, for the reason loadOwnAnnotationSet gives.
  *
  * listAnnotationSetsForClip is the UNBLINDED read -- its own docblock says so
  * and warns that wiring it to an annotator screen without a blinding gate
@@ -190,7 +209,12 @@ export async function findOwnAnnotationSetForClip(
   calibrationClipId: string,
 ): Promise<AnnotationSetRow | null> {
   const sets = await listAnnotationSetsForClip(principal.organizationId, calibrationClipId);
-  return sets.find((set) => set.annotator_account_id === principal.accountId) ?? null;
+  return sets
+    .filter((set) => set.annotator_account_id === principal.accountId)
+    .reduce<AnnotationSetRow | null>(
+      (latest, set) => (latest === null || set.pass_number > latest.pass_number ? set : latest),
+      null,
+    );
 }
 
 /**

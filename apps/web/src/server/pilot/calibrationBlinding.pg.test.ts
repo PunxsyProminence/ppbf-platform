@@ -327,6 +327,7 @@ beforeAll(async () => {
   await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(PROJECTS_SQL));
   await migrateClient.query(await readMigration(ANNOTATIONS_SQL));
+  await migrateClient.query(await readMigration('pilot_slice_postgres_calibration_remark_pass_migration.sql'));
   await seedTenancy(migrateClient);
   await migrateClient.end();
 

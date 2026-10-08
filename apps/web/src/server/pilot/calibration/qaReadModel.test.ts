@@ -32,6 +32,7 @@ function makeSet(clipId: string, suffix: 'a' | 'b'): AnnotationSetRow {
     annotator_account_id: suffix === 'a' ? ANNOTATOR_A : ANNOTATOR_B,
     ontology_version: ONTOLOGY,
     status: 'submitted',
+    pass_number: 1,
     created_at: '2026-08-27T00:00:00.000Z',
     submitted_at: '2026-08-27T01:00:00.000Z',
   };
