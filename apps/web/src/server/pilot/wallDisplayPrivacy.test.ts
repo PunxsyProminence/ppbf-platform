@@ -118,10 +118,12 @@ describe('the public board (unpaired television) carries no person', () => {
   /** Code only, case kept: the prose around these blocks names the very things they must not read. */
   const codeOf = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
 
-  const loader = sqlOf(exportedBlock(db, 'export async function loadPublicWallBoard'));
-  const builder = codeOf(exportedBlock(pure, 'export function buildPublicWallBoard'));
-  const shape = codeOf(exportedBlock(pure, 'export interface WallPublicBoard'));
-  const sources = codeOf(exportedBlock(pure, 'export interface WallPublicBoardSources'));
+  // Anchors carry the character after the name, so WallPublicBoard cannot
+  // match the prefix of WallPublicBoardSources whichever is declared first.
+  const loader = sqlOf(exportedBlock(db, 'export async function loadPublicWallBoard('));
+  const builder = codeOf(exportedBlock(pure, 'export function buildPublicWallBoard('));
+  const shape = codeOf(exportedBlock(pure, 'export interface WallPublicBoard {'));
+  const sources = codeOf(exportedBlock(pure, 'export interface WallPublicBoardSources {'));
 
   it.each(['pilot.athletes', 'pilot.waivers', 'pilot.sessions', 'full_name', 'dob', 'signed_by_role', 'waiver_type'])(
     'the public loader never reads %s',

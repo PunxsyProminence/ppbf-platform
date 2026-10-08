@@ -49,13 +49,16 @@ import {
  *   - today's classes (scheduler_classes: title, times, room, status);
  *   - head counts, computed in SQL as count(distinct athlete_id) per class and
  *     in total, so no athlete id crosses the wire at all -- not even to be
- *     hashed;
+ *     hashed. Deleted athletes are left out (Scope B), the same filter the
+ *     paired read applies, so the two screens agree about the room;
  *   - notices placed on gym_notices in as many words. NOT 'everywhere': that
  *     placement means every signed-in surface, and this caller is signed out.
  *
- * It never touches pilot.athletes, pilot.waivers or pilot.sessions. That is
- * pinned by wallDisplayPrivacy.test.ts against this function's own text, so a
- * join added here fails a test rather than waiting for a reviewer to notice.
+ * It selects no column from pilot.athletes (the deleted-athlete filter is a
+ * NOT EXISTS on deleted_at and returns nothing), and never touches
+ * pilot.waivers or pilot.sessions. That is pinned by wallDisplayPrivacy.test.ts
+ * against this function's own text, so a join added here fails a test rather
+ * than waiting for a reviewer to notice.
  */
 export async function loadPublicWallBoard(input: {
   organizationId: string;
@@ -86,6 +89,9 @@ export async function loadPublicWallBoard(input: {
          and status = 'present'
          and checked_in_at >= $2::timestamptz
          and checked_in_at <  $3::timestamptz
+         -- Scope B: a deleted athlete is not counted on the wall, public or
+         -- paired, so the two screens never disagree about the room.
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
        group by class_id`,
       [input.organizationId, startIso, endIso],
     ),
@@ -95,7 +101,8 @@ export async function loadPublicWallBoard(input: {
        where organization_id = $1
          and status = 'present'
          and checked_in_at >= $2::timestamptz
-         and checked_in_at <  $3::timestamptz`,
+         and checked_in_at <  $3::timestamptz
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}`,
       [input.organizationId, startIso, endIso],
     ),
     query<WallNoticeRow>(

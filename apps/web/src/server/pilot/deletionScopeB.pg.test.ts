@@ -119,7 +119,7 @@ import { getOrganizationPublications, getPublicationForPublish, getResearchLibra
 import { listRegisteredAthleteIdsForClass, listSchedulerStore, registerForClassTransactionally } from './schedulerDb';
 import { listFilmStudyProposals } from './shadowFilmStudyProposals';
 import { claimNextVideoSessionForScan, getVideoSessionById } from './videoSessions';
-import { loadWallBoard } from './wallDisplayDb';
+import { loadPublicWallBoard, loadWallBoard } from './wallDisplayDb';
 import { loadWallOfNames } from './wallOfNamesDb';
 import { listLeagueRoster } from './wrestlingLeague';
 
@@ -953,10 +953,16 @@ describe('after deleteAthleteRecord(GONE)', () => {
     expect((await registerForClassTransactionally(ORG, CLASS_FULL, THIRD, seatRequest('after-full'))).outcome).toBe('waitlisted');
   });
 
-  test('the public wall counts only LIVE on the floor and in the marquee', async () => {
+  test('the paired wall counts only LIVE on the floor and in the marquee', async () => {
     const board = await loadWallBoard({ organizationId: ORG, mode: 'initials' });
     expect(board.on_floor_total).toBe(1);
     expect(board.marquee.length).toBe(1);
+  });
+
+  test('the public wall (head count only, W1) counts only LIVE, in total and per class', async () => {
+    const board = await loadPublicWallBoard({ organizationId: ORG });
+    expect(board.on_floor_total).toBe(1);
+    expect(board.sessions.reduce((sum, session) => sum + session.on_floor, 0)).toBe(1);
   });
 
   test('the Wall of Names, the weekly trend and program headcount leave GONE out', async () => {

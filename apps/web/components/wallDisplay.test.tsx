@@ -22,6 +22,7 @@ import WallDisplay, {
   nextPollDelayMs,
   parseTimestamp,
   publicToBoard,
+  withoutPeople,
 } from './WallDisplay';
 import type { WallBoard, WallPublicBoard } from '@/src/server/pilot/wallDisplay';
 import * as sayings from './gymSayings';
@@ -397,6 +398,75 @@ describe('paired or public', () => {
     await settle();
     expect(container.textContent).not.toContain('unavailable');
     expect(screen.getByText(/coming up/i)).toBeTruthy();
+  });
+
+  it('a television that is told it is no longer paired drops the people at once, even when the public read fails', async () => {
+    // Paired first: names and a marquee are up.
+    fetchMock = respondWith({
+      tv: { tv_name: 'Gym main' },
+      session: null,
+      board: board({
+        sessions: [{ key: 'c1', title: 'Youth Boxing', start_at: '2026-08-03T22:00:00.000Z', end_at: '2026-08-03T23:00:00.000Z', location: 'Floor', state: 'upcoming', on_floor: 1 }],
+        on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }],
+        on_floor_total: 1,
+        marquee: [{ key: 'k1-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-08-02' }],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(screen.getAllByText('M.R.').length).toBeGreaterThan(0);
+
+    // Then a coach presses Disconnect: 401, and the public read is down too.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes('/api/pilot/tv/session')) {
+        return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+      }
+      throw new Error('network');
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+
+    expect(container.textContent).not.toContain('M.R.');
+    expect(container.querySelector('.marquee-run')).toBeNull();
+    // The rest of the last board stays, dated: classes, count, and the age.
+    expect(screen.getByText('Youth Boxing')).toBeTruthy();
+    expect(screen.getByText(/1 person training/i)).toBeTruthy();
+    expect(screen.getByText(/^As of /)).toBeTruthy();
+  });
+
+  it('a plain failure of the paired read keeps the last paired board, people included', async () => {
+    // Not a 401: the server did not say "not paired", it said nothing. A
+    // paired screen that flipped to the public board on one dropped packet
+    // would blink names on and off all evening.
+    fetchMock = respondWith({
+      tv: { tv_name: 'Gym main' },
+      session: null,
+      board: board({ on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }], on_floor_total: 1 }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+
+    fetchMock.mockRejectedValue(new Error('network'));
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+    expect(screen.getByText('M.R.')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('withoutPeople keeps everything but the people', () => {
+    const full = board({
+      on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }],
+      on_floor_total: 3,
+      marquee: [{ key: 'k1-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-08-02' }],
+      notice: { message: 'Open mat.', author: 'Coach', posted_at: '2026-08-01T12:00:00.000Z' },
+    });
+    expect(withoutPeople(full)).toEqual({ ...full, name_mode: 'off', on_floor: [], marquee: [] });
   });
 
   it('publicToBoard carries the public fields and nothing else', () => {

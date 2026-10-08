@@ -116,6 +116,27 @@ export function publicToBoard(board: WallPublicBoard): WallBoard {
   };
 }
 
+/**
+ * What stays on screen when this television has just been told it is NOT
+ * paired and the public read then failed too. The last board may have been a
+ * paired one, with initials and a marquee on it, and a 401 is the server
+ * saying this screen may no longer show those: a coach pressed Disconnect, or
+ * the key was revoked. So the people come off at once -- the classes, the
+ * count and the notice stay, dated like any other last-good board -- rather
+ * than riding out the twenty-minute abandon window (reviewer A).
+ */
+export function withoutPeople(board: WallBoard): WallBoard {
+  return { ...board, name_mode: 'off', on_floor: [], marquee: [] };
+}
+
+/** Thrown by readBoard when the paired read answered 401 and the public read then failed. */
+export class UnpairedReadError extends Error {
+  constructor() {
+    super('unavailable');
+    this.name = 'UnpairedReadError';
+  }
+}
+
 /** One poll: the paired read first, the public read if this screen is not paired. */
 export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean }> {
   const paired = await fetch(`${base}/api/pilot/tv/session`, {
@@ -140,13 +161,18 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
      and /api/pilot/wall is built to be safe as a public document anyway: the
      organization is never taken from the caller, and the payload has no
      person in it at all (WallPublicBoard). */
-  const response = await fetch(`${base}/api/pilot/wall`, {
-    cache: 'no-store',
-    credentials: 'omit',
-  });
-  if (!response.ok) throw new Error('unavailable');
-  const payload = (await response.json()) as PublicResponse;
-  if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new Error('unavailable');
+  let payload: PublicResponse;
+  try {
+    const response = await fetch(`${base}/api/pilot/wall`, {
+      cache: 'no-store',
+      credentials: 'omit',
+    });
+    if (!response.ok) throw new Error('unavailable');
+    payload = (await response.json()) as PublicResponse;
+  } catch {
+    throw new UnpairedReadError();
+  }
+  if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
   return { board: publicToBoard(payload.board), paired: false };
 }
 
@@ -200,12 +226,17 @@ export default function WallDisplay() {
         setBoard(next);
         setLastGoodAt(Date.now());
         setConnected(true);
-      } catch {
+      } catch (error) {
         if (!mounted.current) return;
         failures += 1;
         setConnected(false);
         // The last good board deliberately stays on screen, dated. A wall that
-        // blanks on a dropped packet is worse than one that admits its age.
+        // blanks on a dropped packet is worse than one that admits its age --
+        // except for the people on it, once the server has said this screen
+        // is not paired (withoutPeople).
+        if (error instanceof UnpairedReadError) {
+          setBoard((previous) => (previous ? withoutPeople(previous) : previous));
+        }
       } finally {
         // In `finally` so the early returns above cannot leave the display
         // holding a lock it never releases -- a wall that stops asking is a

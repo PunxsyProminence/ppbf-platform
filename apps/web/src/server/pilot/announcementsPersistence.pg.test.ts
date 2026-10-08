@@ -261,6 +261,22 @@ describe('announcements.ts against the real schema', () => {
       kind: 'notice',
     });
     expect(coachNotices.map((a) => a.message)).toEqual(['Mouthguards checked at the door.']);
+
+    // OD-2026-10-07-008, "Members only": the signed-out readers pass
+    // includeEverywhere: false, and then an 'everywhere' item is NOT folded in.
+    // A placed item still reaches its own placement either way.
+    const signedOut = await announcements.listLiveAnnouncements(ORG_C, {
+      placement: 'athlete_workspace',
+      kind: 'motivation',
+      includeEverywhere: false,
+    });
+    expect(signedOut).toEqual([]);
+    const signedOutCoach = await announcements.listLiveAnnouncements(ORG_C, {
+      placement: 'coach_workspace',
+      kind: 'notice',
+      includeEverywhere: false,
+    });
+    expect(signedOutCoach.map((a) => a.message)).toEqual(['Mouthguards checked at the door.']);
   });
 
   test('a scheduled, an expired, and a retired item all stay off the surface', async () => {
