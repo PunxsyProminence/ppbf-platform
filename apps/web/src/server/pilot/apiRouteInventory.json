@@ -2799,7 +2799,7 @@
     "id": "app/api/pilot/auth/magic-link/request/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/auth/magic-link/request",
-    "gate": "none (unauthenticated by design); durable+volatile email/IP rate limits; always 202",
+    "gate": "none (unauthenticated by design); durable+volatile email/IP rate limits; 202 for every address, or 503 for every address when PPBF_APP_ORIGIN cannot carry a link",
     "rolesAdmitted": [],
     "athleteData": false,
     "writes": true,

@@ -12,7 +12,9 @@ export const runtime = 'nodejs';
  *
  * ALWAYS ANSWERS THE SAME THING
  *
- * 202 with the same body whether a link was sent or not. issueMagicLink is
+ * 202 with the same body whether a link was sent or not (or a 503 for a site
+ * address no link can be built on -- also the same for every address; see the
+ * first step in POST). issueMagicLink is
  * already silent about unknown, deactivated, wrong-role and mismatched
  * addresses -- this route completes that by refusing to leak the difference
  * through status code, body, or timing-adjacent behaviour like skipping the
@@ -32,6 +34,30 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
+    // THE ONE FAULT THAT IS NOT SWALLOWED: a site address no link can be built
+    // on (magicLinkOrigin). It is read here, before the body, so it fails the
+    // same way for every caller -- an existing address, an unknown one, a
+    // malformed one -- and says nothing about any account. Until 2026-10-06
+    // production held `punxsyprominence.org` (no scheme): every link was dead,
+    // every request got 202, and nobody knew until a parent said so. The 503
+    // is what makes that visible at the screen (SignInPanel reads only a 202
+    // as "sent").
+    let dependencies: ReturnType<typeof magicLinkDependencies>;
+    try {
+      dependencies = magicLinkDependencies();
+    } catch (configError) {
+      // Shape only: the reason code, never the configured value.
+      console.error(JSON.stringify({
+        event: 'magic_link.config_invalid',
+        error_type: configError instanceof Error ? configError.name : typeof configError,
+        error_code: configError instanceof Error ? configError.message : 'unknown',
+      }));
+      return NextResponse.json(
+        { error: 'Sign-in links are not available right now.' },
+        { status: 503 },
+      );
+    }
+
     const body = (await request.json().catch(() => ({}))) as { email?: string };
     const email = body.email?.trim().toLowerCase() || '';
 
@@ -61,7 +87,9 @@ export async function POST(request: NextRequest) {
     await recordDurableFailedAttempt(ipKey);
     recordFailedAttempt(ipKey);
 
-    // Failures are swallowed on purpose, and only here.
+    // Per-address failures are swallowed on purpose, and only here (the site
+    // address fault above is the one exception, and it is the same for
+    // every address).
     //
     // issueMagicLink already returns silently for an unknown, deactivated,
     // wrong-role or mismatched address. What is caught here is the other kind:
@@ -76,7 +104,7 @@ export async function POST(request: NextRequest) {
     // disclosure: they retry, and the error is logged for us rather than
     // reported to them.
     try {
-      await issueMagicLink(email, magicLinkDependencies());
+      await issueMagicLink(email, dependencies);
     } catch (issueError) {
       // Shape only, never the address -- this line reaches logs.
       //

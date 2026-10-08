@@ -55,10 +55,14 @@ SHADOW, only to exercise chat, Library search, or Film Study:
 - AZURE_AI_VISION_DEPLOYMENT_NAME
 
 Magic-link sign-in -- required in every environment real families use:
-- PPBF_APP_ORIGIN (the origin sign-in links are built against; without it
-  magicLinkStore.ts refuses to send, and the request route deliberately
-  reports success anyway to avoid a roster-disclosure oracle, so a missing
-  value here fails silently. See .env.example's own comment on this variable.)
+- PPBF_APP_ORIGIN (the origin sign-in links are built against: an absolute
+  https URL with a host and nothing after it, e.g.
+  `https://www.punxsyprominence.org`; `http://localhost:3000` for a local dev
+  server. Unset logs `MISSING_PPBF_APP_ORIGIN`, any other shape logs
+  `INVALID_PPBF_APP_ORIGIN:<reason>`, and in both cases magicLinkStore.ts
+  refuses to send and the request route answers 503 for every address alike,
+  so the fault is visible without becoming a roster-disclosure oracle. See
+  .env.example's own comment on this variable.)
 
 ## Step 4: Governance
 Roles, scope, and who may merge are in [AGENT_KERNEL.md](AGENT_KERNEL.md);
