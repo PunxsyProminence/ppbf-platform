@@ -1,7 +1,10 @@
-import { query, queryOne } from '../db';
+import { query, queryOne, withTransaction } from '../db';
+import { PilotError } from '../errors';
 import {
   ANNOTATION_CERTAINTIES,
+  BODY_POINT_ONTOLOGY_VERSIONS,
   CONTACT_RESULTS,
+  CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
   DEFENSE_TYPES,
   EVENT_CLASSES,
@@ -166,6 +169,7 @@ interface SetContextRow {
   annotation_set_id: string;
   calibration_clip_id: string;
   status: string;
+  ontology_version: string;
   annotator_account_id: string;
   clip_start_ms: number;
   clip_end_ms: number;
@@ -182,7 +186,8 @@ async function loadSetContext(
   annotationSetId: string,
 ): Promise<SetContextRow | null> {
   return queryOne<SetContextRow>(
-    `select s.annotation_set_id, s.calibration_clip_id, s.status, s.annotator_account_id,
+    `select s.annotation_set_id, s.calibration_clip_id, s.status, s.ontology_version,
+            s.annotator_account_id,
             c.start_ms as clip_start_ms, c.end_ms as clip_end_ms
        from pilot.calibration_annotation_sets s
        join pilot.calibration_clips c
@@ -411,16 +416,22 @@ function resolveEventShape(input: RecordAnnotationEventInput): ResolvedEventShap
   };
 }
 
-/**
- * Records one observed event.
- *
- * The clip's bounds are read from the clip and written onto the row, where a
- * composite foreign key ties them back to it -- so the containment CHECK
- * cannot be satisfied by a lie about where the clip starts.
- */
-export async function recordAnnotationEvent(
-  input: RecordAnnotationEventInput,
-): Promise<AnnotationEventRow> {
+interface ResolvedEventFields {
+  eventClass: EventClass;
+  visibility: Visibility;
+  certainty: AnnotationCertainty;
+  stance: Stance | null;
+  startMs: number;
+  endMs: number;
+  contactMs: number | null;
+  peakMs: number | null;
+  shape: ResolvedEventShape;
+}
+
+/** The checks an event's own fields must pass whatever set it is in: the
+ * vocabularies, the span, and the class-conditional shape. One function so
+ * recording and editing in place cannot come to accept different rows. */
+function resolveEventFields(input: RecordAnnotationEventInput): ResolvedEventFields {
   const eventClass = requireVocabulary(EVENT_CLASSES, input.eventClass, 'event_class');
   const visibility = requireVocabulary(VISIBILITIES, input.visibility, 'visibility');
   const certainty = requireVocabulary(ANNOTATION_CERTAINTIES, input.certainty, 'certainty');
@@ -444,6 +455,21 @@ export async function recordAnnotationEvent(
   }
 
   const shape = resolveEventShape({ ...input, eventClass });
+  return { eventClass, visibility, certainty, stance, startMs, endMs, contactMs, peakMs, shape };
+}
+
+/**
+ * Records one observed event.
+ *
+ * The clip's bounds are read from the clip and written onto the row, where a
+ * composite foreign key ties them back to it -- so the containment CHECK
+ * cannot be satisfied by a lie about where the clip starts.
+ */
+export async function recordAnnotationEvent(
+  input: RecordAnnotationEventInput,
+): Promise<AnnotationEventRow> {
+  const { eventClass, visibility, certainty, stance, startMs, endMs, contactMs, peakMs, shape } =
+    resolveEventFields(input);
 
   const context = await loadSetContext(
     input.organizationId,
@@ -507,6 +533,229 @@ export async function recordAnnotationEvent(
     throw new Error('CALIBRATION_ANNOTATION_EVENT_WRITE_FAILED');
   }
   return row;
+}
+
+/* ------------------------------------------------------------------ *
+ * EDITING AN EVENT IN PLACE
+ *
+ * An event of a body-point set can hold marks: up to three moments, each with
+ * its points, and a stance type. They hang off the event's id, so replacing
+ * the event (a new row, the old one deleted) removes them by cascade. An edit
+ * in place keeps the id and so keeps the marks.
+ *
+ * THE DATABASE DECIDES WHETHER AN EVENT HOLDS MARKS, not this module, which
+ * never reads the body-point tables (bodyPoints.ts is the one place that
+ * does). The body-points migrations freeze the facts a moment was checked
+ * against: start, end, contact time, class and actor while the event holds a
+ * moment, and the actor while it holds a stance type. This module sends the
+ * update and turns that refusal into words that name the field.
+ * ------------------------------------------------------------------ */
+
+/** Raised when a change would move an event under its marks. */
+export class EventHoldsBodyMarksError extends PilotError {
+  constructor(message: string) {
+    super(409, message, 'CALIBRATION_EVENT_HAS_BODY_MARKS');
+  }
+}
+
+/** Module field -> column, for every field an edit may carry. */
+const EVENT_FIELD_COLUMNS = {
+  eventClass: 'event_class', actorTrack: 'actor_track', opponentTrack: 'opponent_track',
+  startMs: 'start_ms', endMs: 'end_ms', contactMs: 'contact_ms', peakMs: 'peak_ms',
+  physicalHand: 'physical_hand', handRole: 'hand_role', stance: 'stance',
+  punchType: 'punch_type', targetZone: 'target_zone', contactResult: 'contact_result',
+  contactZone: 'contact_zone', defenseType: 'defense_type', visibility: 'visibility',
+  certainty: 'certainty', combinationGroup: 'combination_group', sequenceOrder: 'sequence_order',
+  counterAgainstEventId: 'counter_against_event_id', defendsAgainstEventId: 'defends_against_event_id',
+} as const satisfies Record<keyof Omit<RecordAnnotationEventInput, 'organizationId' | 'eventId' | 'annotationSetId'>, string>;
+
+/** The 0.2+ rules on the event row, as refusals that name the field. The
+ * calibration-body-point-rules migration holds the same three. */
+function assertVersionEventRules(ontologyVersion: string, fields: ResolvedEventFields): void {
+  if (!isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, ontologyVersion)) return;
+  if (fields.stance !== null) {
+    throw new Error(`Missing stance: ${ontologyVersion} records the lead side at each marked moment, not a stance on the event`);
+  }
+  if (fields.peakMs !== null) {
+    throw new Error(`Missing peak_ms: ${ontologyVersion} has no peak time`);
+  }
+  if (
+    fields.eventClass === 'punch'
+    && isInVocabulary(CONTACT_RESULTS_WITH_CONTACT, fields.shape.contactResult) !== (fields.contactMs !== null)
+  ) {
+    throw new Error(`Missing contact_ms: in ${ontologyVersion} a punch carries a contact time exactly when its result made contact`);
+  }
+}
+
+/**
+ * The database's refusals of an event update, in the shapes jsonError maps.
+ * `moved` is the frozen facts this edit tried to change, in plain words, so
+ * the refusal can name them. Anything not recognised is rethrown as it came.
+ * (A submitted set is not here: updateAnnotationEvent checks it under a lock
+ * the submission has to wait for.)
+ */
+function translateEventUpdateRefusal(error: unknown, moved: string[]): never {
+  const refusal = (error ?? {}) as { message?: unknown; code?: unknown; constraint?: unknown };
+  for (const field of ['counter', 'defends'] as const) {
+    if (refusal.code === '23503' && refusal.constraint === `pilot_calibration_events_${field}_fk`) {
+      throw new Error(`Missing ${field}_against_event_id: no such event in this annotation set`);
+    }
+  }
+  // Contact time, class and actor are held by a trigger. Start and end are
+  // held by the foreign key of the moments anchored to them, and that is the
+  // only other foreign key an update of these columns can break (the event's
+  // own two are handled above). It is recognised by that, not by name: this
+  // module names no body-point table.
+  const spanHeld = refusal.code === '23503' && (moved.includes('start') || moved.includes('end'));
+  if (refusal.message === 'CALIBRATION_EVENT_HAS_BODY_MOMENTS' || spanHeld) {
+    throw new EventHoldsBodyMarksError(
+      `Conflict: this event has marked moments, so its ${moved.join(', ')} cannot change. `
+      // The actor is also held by a stance type, which this refusal came before.
+      + `Remove its marked moments${moved.includes('actor') ? ' and its stance type' : ''} first, then edit it.`,
+    );
+  }
+  if (refusal.message === 'CALIBRATION_EVENT_HAS_STANCE_LABEL') {
+    throw new EventHoldsBodyMarksError(
+      'Conflict: this event has a stance type, so its actor cannot change. Remove the stance type first, then edit it.',
+    );
+  }
+  throw error;
+}
+
+export interface UpdateAnnotationEventInput
+  extends Partial<Omit<RecordAnnotationEventInput, 'organizationId' | 'eventId' | 'annotationSetId'>> {
+  organizationId: string;
+  annotationSetId: string;
+  eventId: string;
+}
+
+/**
+ * Corrects an event in place, keeping its id and so everything attached to it:
+ * its moments, their points, its stance type, and any relationship another
+ * event points at it.
+ *
+ * A field left undefined stays as stored; null clears an optional one. The
+ * MERGED row is then held to every rule a new event is (resolveEventFields,
+ * the clip's bounds, the set's version), so an edit cannot reach a row that
+ * recording would have refused. Changing the class means also clearing the
+ * old class's fields; nothing is dropped on the caller's behalf.
+ *
+ * WHILE THE EVENT HOLDS MARKS its start, end, contact time, class and actor
+ * cannot change (see the section note). That is refused naming the field; it
+ * never falls back to replacing the event.
+ *
+ * The event row is locked before it is read, so two edits of one event merge
+ * one after the other instead of the second writing the first one's fields
+ * back; and the set's status is read under that lock, so an edit and a
+ * submission cannot both go through.
+ */
+export async function updateAnnotationEvent(
+  input: UpdateAnnotationEventInput,
+): Promise<AnnotationEventRow> {
+  const annotationSetId = requireNonEmpty(input.annotationSetId, 'annotation_set_id');
+  const eventId = requireNonEmpty(input.eventId, 'event_id');
+
+  const context = await loadSetContext(input.organizationId, annotationSetId);
+  if (!context) {
+    throw new Error('Not found: no such annotation set in this organization');
+  }
+  if (context.status !== 'in_progress') {
+    throw new AnnotationSetSubmittedError();
+  }
+
+  const moved: string[] = [];
+  return withTransaction(async (client) => {
+    const where = 'where organization_id = $1 and annotation_set_id = $2 and event_id = $3';
+    // NO KEY UPDATE: enough to make a second edit, and a moment or stance
+    // type being added, wait for this one; it does not block another event's
+    // relationship from pointing here.
+    const current = (await client.query<AnnotationEventRow>(
+      `select ${EVENT_COLUMNS} from pilot.calibration_annotation_events ${where} for no key update`,
+      [input.organizationId, annotationSetId, eventId],
+    )).rows[0];
+    if (!current) {
+      throw new Error('Not found: no such event in this annotation set');
+    }
+    // The set is read again, FOR SHARE, so a submission either committed
+    // before this line (refused here, as submitted) or waits for this edit.
+    // Without it an edit racing a submission is refused by whichever trigger
+    // fires first, which under marks says "remove the marks".
+    const set = (await client.query<{ status: string }>(
+      `select status from pilot.calibration_annotation_sets
+        where organization_id = $1 and annotation_set_id = $2 for share`,
+      [input.organizationId, annotationSetId],
+    )).rows[0];
+    if (set?.status !== 'in_progress') {
+      throw new AnnotationSetSubmittedError();
+    }
+
+    // Sent over stored, field by field. The cast below asserts nothing:
+    // resolveEventFields re-checks every value, stored or sent.
+    const merged: Record<string, unknown> = { organizationId: input.organizationId, eventId, annotationSetId };
+    for (const [field, column] of Object.entries(EVENT_FIELD_COLUMNS)) {
+      const sent = (input as unknown as Record<string, unknown>)[field];
+      merged[field] = sent === undefined ? (current as unknown as Record<string, unknown>)[column] : sent;
+    }
+    const fields = resolveEventFields(merged as unknown as RecordAnnotationEventInput);
+    // An actor that was not sent is written back exactly as stored.
+    const actorTrack = input.actorTrack === undefined
+      ? current.actor_track
+      : requireNonEmpty(input.actorTrack, 'actor_track');
+    if (merged.opponentTrack !== null && typeof merged.opponentTrack !== 'string') {
+      throw new Error('Missing opponent_track: expected text, or nothing');
+    }
+    if (fields.startMs < current.clip_start_ms || fields.endMs > current.clip_end_ms) {
+      throw new Error('Missing start_ms: the event falls outside the clip it belongs to');
+    }
+    assertVersionEventRules(context.ontology_version, fields);
+
+    // A relationship never points at the event itself. That it stays inside
+    // this set is the composite foreign keys' to hold; their refusal is
+    // translated below.
+    for (const [field, target] of [
+      ['counter_against_event_id', fields.shape.counterAgainstEventId],
+      ['defends_against_event_id', fields.shape.defendsAgainstEventId],
+    ] as const) {
+      if (target !== null && requireNonEmpty(target, field) === eventId) {
+        throw new Error(`Missing ${field}: an event cannot point at itself`);
+      }
+    }
+
+    moved.push(...([
+      ['start', fields.startMs !== current.start_ms],
+      ['end', fields.endMs !== current.end_ms],
+      ['contact time', fields.contactMs !== current.contact_ms],
+      ['class', fields.eventClass !== current.event_class],
+      ['actor', actorTrack !== current.actor_track],
+    ] as const).filter(([, changed]) => changed).map(([name]) => name));
+
+    const row = (await client.query<AnnotationEventRow>(
+      `update pilot.calibration_annotation_events
+          set event_class = $4, actor_track = $5, opponent_track = $6,
+              start_ms = $7, end_ms = $8, contact_ms = $9, peak_ms = $10,
+              physical_hand = $11, hand_role = $12, stance = $13,
+              punch_type = $14, target_zone = $15, contact_result = $16, contact_zone = $17,
+              defense_type = $18, visibility = $19, certainty = $20,
+              combination_group = $21, sequence_order = $22,
+              counter_against_event_id = $23, defends_against_event_id = $24
+        ${where}
+        returning ${EVENT_COLUMNS}`,
+      [
+        input.organizationId, annotationSetId, eventId,
+        fields.eventClass, actorTrack, merged.opponentTrack ?? null,
+        fields.startMs, fields.endMs, fields.contactMs, fields.peakMs,
+        fields.shape.physicalHand, fields.shape.handRole, fields.stance,
+        fields.shape.punchType, fields.shape.targetZone, fields.shape.contactResult, fields.shape.contactZone,
+        fields.shape.defenseType, fields.visibility, fields.certainty,
+        fields.shape.combinationGroup, fields.shape.sequenceOrder,
+        fields.shape.counterAgainstEventId, fields.shape.defendsAgainstEventId,
+      ],
+    )).rows[0];
+    if (!row) {
+      throw new Error('CALIBRATION_ANNOTATION_EVENT_WRITE_FAILED');
+    }
+    return row;
+  }).catch((error) => translateEventUpdateRefusal(error, moved));
 }
 
 /**

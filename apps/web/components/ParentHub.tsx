@@ -157,7 +157,7 @@ function assignmentBadge(status: HomeAssignment['status']): { className: string;
 /* Selected tab / selected child: a control in the "on" position is brass
    chassis, never a status colour (Laws 1 and 2). */
 const TAB_BASE =
-  'inline-flex min-h-[44px] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
@@ -667,13 +667,13 @@ export default function ParentHub() {
   return (
     /* Family-facing surface — the warm canvas ground itself (Law 6), stated on
        the full-bleed wrapper so every component inside restates for cream. */
-    <div className="on-canvas min-h-screen rounded-[var(--r-lg)] font-sans text-[color:var(--hide-900)]">
+    <div className="ge-family on-canvas min-h-screen rounded-[var(--r-lg)] font-sans text-[color:var(--hide-900)]">
       <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
             <p className="t-eyebrow">Parent Support Hub</p>
-            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>Family Development Dashboard</h1>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'clamp(var(--t-lg), 8vw, var(--t-2xl))' }}>Family Development Dashboard</h1>
             <p className="t-body mt-[var(--s3)]">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
           </div>
           {/* Both SHADOW buttons removed, and both destinations kept: the chat
@@ -799,7 +799,7 @@ export default function ParentHub() {
         )}
 
         {/* TAB NAVIGATION */}
-        <div className="mat-paper rounded-[var(--r-md)]">
+        <div className="ge-family__rail mat-paper rounded-[var(--r-md)]">
           <div className="flex flex-wrap gap-[var(--s2)] p-[var(--s3)]">
             {[
               { id: 'overview', label: 'Overview' },
