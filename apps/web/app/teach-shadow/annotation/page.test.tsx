@@ -639,8 +639,13 @@ describe('body points', () => {
     await openClip();
     expect(screen.getByTestId('body-point-totals').textContent).toContain('Points 2 of 69');
 
+    // The event holds marks, so Delete asks first (slice c); the write is
+    // the second press.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it anyway' }));
     });
 
     expect(bodyPointCalls()).toHaveLength(2);
@@ -663,7 +668,12 @@ describe('body points', () => {
     });
     expect(bodyPointCalls()).toHaveLength(0);
 
-    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], submitSet: BODY_POINT_SET });
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      submitSet: BODY_POINT_SET,
+      bodyData: { ...BODY_DATA, missing: [] },
+    });
     calls.length = 0;
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Clip'), { target: { value: '' } });
@@ -673,13 +683,16 @@ describe('body points', () => {
     });
     expect(bodyPointCalls()).toHaveLength(1);
 
+    // Pressing Submit re-reads the marks (the gate, slice c): read 2.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
     });
+    expect(bodyPointCalls()).toHaveLength(2);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
     });
-    expect(bodyPointCalls()).toHaveLength(2);
+    // And once more after the set is locked, for the read-only view: read 3.
+    expect(bodyPointCalls()).toHaveLength(3);
     expect(screen.getByTestId('body-point-progress')).toBeTruthy();
   });
 
@@ -690,7 +703,10 @@ describe('body points', () => {
       events: [PUNCH_EVENT],
       bodyData: () => {
         reads += 1;
-        return reads === 1 ? { ...BODY_DATA, missing: [] } : BODY_DATA;
+        // Reads 1 (open) and 2 (the gate's re-read) say complete; the server
+        // then refuses anyway (a write from another tab landed in between),
+        // and read 3 shows what it named.
+        return reads <= 2 ? { ...BODY_DATA, missing: [] } : BODY_DATA;
       },
       submitResponse: () => ({
         ok: false,
@@ -712,10 +728,14 @@ describe('body points', () => {
       fireEvent.click(screen.getByRole('button', { name: /Yes, submit 1 event/ }));
     });
 
-    expect(screen.getByRole('alert').textContent).toContain('Missing body points');
+    // The route's own list is shown with the refusal, made readable.
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Missing body points');
+    expect(alert).toContain('Still to mark: punch at 0:12.400 (red corner): end moment;');
     await waitFor(() => {
       expect(screen.getByTestId('body-point-progress').textContent).toContain('5 items still to mark');
     });
+    expect(screen.queryByRole('button', { name: /Yes, submit/ })).toBeNull();
   });
 
   test('a body-points reply that lands after the clip was left is dropped', async () => {
@@ -790,6 +810,209 @@ describe('body points', () => {
 
     expect(screen.getByTestId('body-point-progress')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+});
+
+describe('the submit gate and the edit warning (body-point sets)', () => {
+  const bodyPointReads = () => calls.filter((call) => call.url.includes('/body-points?'));
+
+  test('Submit cannot be pressed while the server lists missing items, and the count is shown', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openClip();
+
+    const submit = screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    expect(screen.getByTestId('submit-gate').textContent).toBe('5 items still to mark · listed under Body points');
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+    expect(screen.queryByRole('button', { name: /Yes, submit/ })).toBeNull();
+    expect(calls.some((call) => call.url.includes('/annotation-set/submit'))).toBe(false);
+  });
+
+  test('Submit re-reads the marks first; a missing item that appeared since stops it before the confirmation', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        return reads === 1 ? { ...BODY_DATA, missing: [] } : BODY_DATA;
+      },
+    });
+
+    await openClip();
+    expect((screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement).disabled).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+
+    expect(bodyPointReads()).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /Yes, submit/ })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('5 items are still to mark');
+    expect((screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.some((call) => call.url.includes('/annotation-set/submit'))).toBe(false);
+  });
+
+  test('a 0.1 set submits as before: no gate, no re-read', async () => {
+    global.fetch = mockFetch({ events: [PUNCH_EVENT] });
+
+    await openClip();
+    expect((screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+    expect(screen.getByRole('button', { name: /Yes, submit 1 event/ })).toBeTruthy();
+    expect(bodyPointReads()).toHaveLength(0);
+    expect(screen.queryByTestId('submit-gate')).toBeNull();
+  });
+
+  test('editing an event that holds marks warns first, with the count; the coach can keep the marks', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, stance_labels: [{ event_id: 'evt-1', stance_type: 'other' }] },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+
+    expect(screen.queryByLabelText('Punch type')).toBeNull();
+    const warning = screen.getByTestId('event-marks-warning').textContent ?? '';
+    expect(warning).toContain('This punch holds body-point marks');
+    expect(warning).toContain('2 points on 1 moment, and its stance type.');
+    expect(warning).toContain('replaces the event and removes all of them');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep the marks' }));
+    });
+    expect(screen.queryByTestId('event-marks-warning')).toBeNull();
+    expect(screen.queryByLabelText('Punch type')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open the editor anyway' }));
+    });
+    expect(screen.getByLabelText('Punch type')).toBeTruthy();
+  });
+
+  test('deleting an event that holds marks warns first; nothing is sent until the second press', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    });
+    expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+    expect(screen.getByTestId('event-marks-warning').textContent).toContain('Deleting the event removes all of them.');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it anyway' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.method).toBe('DELETE');
+  });
+
+  test('while the marks are unread, Edit, Delete and Submit wait rather than act as if there were none', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT], bodyDataOk: false });
+
+    await openClip();
+
+    expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getAllByTestId('annotation-event')).toHaveLength(1);
+  });
+
+  test('a failed re-read on Submit keeps the marks on screen and the button pressable', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        if (reads === 2) throw new TypeError('Failed to fetch');
+        return { ...BODY_DATA, missing: [] };
+      },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit annotation set' }));
+    });
+
+    // Two alerts: the page's refusal and the panel's own "could not be read".
+    expect(screen.getAllByRole('alert').map((node) => node.textContent).join(' ')).toContain('Press Submit again');
+    expect(screen.getByTestId('body-point-progress')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: /Yes, submit/ })).toBeNull();
+  });
+
+  test('an event with only a stance type still warns before an edit', async () => {
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: { ...BODY_DATA, moments: [], stance_labels: [{ event_id: 'evt-1', stance_type: 'other' }], missing: [] },
+    });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    expect(screen.getByTestId('event-marks-warning').textContent).toContain('0 points on 0 moments, and its stance type.');
+  });
+
+  test('"Save replacement" asks again when the event holds marks, and nothing is sent until the coach says so', async () => {
+    // A clean contact with its contact time: an event the form accepts as is.
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [{ ...PUNCH_EVENT, contact_ms: 12_600 }] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open the editor anyway' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save replacement' }));
+    });
+
+    expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+    expect(screen.getByTestId('save-marks-warning').textContent).toContain('2 points on 1 moment');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep the marks' }));
+    });
+    expect(screen.queryByTestId('save-marks-warning')).toBeNull();
+    expect(screen.getByLabelText('Punch type')).toBeTruthy(); // the editor stays open
+    expect(calls.some((call) => call.url.includes('/calibration/events'))).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save replacement' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Replace it and remove the marks' }));
+    });
+    const write = calls.find((call) => call.url.includes('/calibration/events'));
+    expect(write?.method).toBe('PUT');
+  });
+
+  test('an event with no marks edits and deletes without a warning', async () => {
+    const BARE = { ...PUNCH_EVENT, event_id: 'evt-2', start_ms: 13_000, end_ms: 13_300 };
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [BARE] });
+
+    await openClip();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    });
+    expect(screen.queryByTestId('event-marks-warning')).toBeNull();
+    expect(screen.getByLabelText('Punch type')).toBeTruthy();
   });
 });
 
@@ -1014,6 +1237,38 @@ describe('body-point marking', () => {
     const removed = writes().find((call) => call.method === 'DELETE');
     expect(removed?.url.endsWith('/moments')).toBe(true);
     expect(removed?.body).toEqual({ annotation_set_id: 'set-1', body_moment_id: 'mom-1' });
+  });
+
+  test('a mark written since the last read lifts the Submit hold; the press re-reads before confirming', async () => {
+    let reads = 0;
+    global.fetch = mockFetch({
+      set: BODY_POINT_SET,
+      events: [PUNCH_EVENT],
+      bodyData: () => {
+        reads += 1;
+        // Reads 1 and 2 (open; select the moment) still list missing items;
+        // read 3, the gate's own, finds everything marked.
+        return reads <= 2 ? BODY_DATA : { ...BODY_DATA, missing: [] };
+      },
+    });
+
+    await openStartMoment();
+    const submit = () => screen.getByRole('button', { name: 'Submit annotation set' }) as HTMLButtonElement;
+    expect(submit().disabled).toBe(true);
+    expect(screen.getByTestId('submit-gate')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('body-point-canvas'), { clientX: 100, clientY: 45, detail: 1 });
+    });
+    // The list is now stale, so it no longer holds the coach back.
+    expect(submit().disabled).toBe(false);
+    expect(screen.queryByTestId('submit-gate')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(submit());
+    });
+    expect(reads).toBe(3);
+    expect(screen.getByRole('button', { name: /Yes, submit 1 event/ })).toBeTruthy();
   });
 
   test('the panel names whose body is being marked', async () => {
