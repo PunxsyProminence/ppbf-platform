@@ -741,16 +741,23 @@ export async function callerParentIdSet(organizationId: string, accountId: strin
 export interface OrganizationGuardian {
   parentId: string;
   fullName: string;
+  /* false = a guardian who exists only as a name on paper (pilot.parents
+     account_id NULL): recorded so a paper-only family's consent can be filed
+     (Jason 2026-10-07, OD-2026-10-07-009 "Yes, name and relationship"). The
+     consent desk labels them, so staff know this guardian will never see the
+     parent console and cannot be emailed a link. */
+  hasLogin: boolean;
 }
 
 /*
  * PARENT_ID -> NAME, FOR THE WHOLE ORGANIZATION, IN ONE QUERY.
  *
- * DOES NOT TOUCH pilot.accounts, and that is the whole point. pilot.parents
+ * DOES NOT FILTER ON account_id, and that is the whole point. pilot.parents
  * has `account_id text null` -- a guardian who signed on paper and never
  * signed in has NULL there. Every read in guardianAccess.ts is viewer-scoped
  * and filters on account_id, so reusing any of them would return an empty
- * picker for exactly the population an admin is recording consent FOR.
+ * picker for exactly the population an admin is recording consent FOR. It
+ * does READ the column, as one boolean, so that population can be labelled.
  *
  * It does not live in guardianAccess.ts either: that module's header says in
  * writing that the athlete->guardians direction is staff-facing roster data
@@ -760,12 +767,15 @@ export interface OrganizationGuardian {
  * resolves hundreds of athletes and would otherwise issue a query per row.
  * (organization_id, parent_id) is the primary key, so this is a prefix scan.
  */
-export async function listOrganizationGuardianNames(organizationId: string): Promise<Map<string, string>> {
-  const rows = await query<{ parent_id: string; full_name: string }>(
-    `select parent_id, full_name from pilot.parents where organization_id = $1`,
+export async function listOrganizationGuardianNames(
+  organizationId: string,
+): Promise<Map<string, Omit<OrganizationGuardian, 'parentId'>>> {
+  const rows = await query<{ parent_id: string; full_name: string; has_login: boolean }>(
+    `select parent_id, full_name, (account_id is not null) as has_login
+       from pilot.parents where organization_id = $1`,
     [organizationId],
   );
-  return new Map(rows.map((row) => [row.parent_id, row.full_name]));
+  return new Map(rows.map((row) => [row.parent_id, { fullName: row.full_name, hasLogin: row.has_login }]));
 }
 
 // ONE guardian's name. The map above is for the audit, which resolves hundreds
@@ -838,7 +848,10 @@ export async function listOrganizationConsentStatus(
         // of the fallback.
         guardians: consent.guardianIds.map((parentId) => ({
           parentId,
-          fullName: guardianNames.get(parentId) ?? parentId,
+          fullName: guardianNames.get(parentId)?.fullName ?? parentId,
+          // The fallback is the defensive side: an unknown row is reported as
+          // a guardian with no login, never as one who can be emailed.
+          hasLogin: guardianNames.get(parentId)?.hasLogin ?? false,
         })),
       };
     }),
