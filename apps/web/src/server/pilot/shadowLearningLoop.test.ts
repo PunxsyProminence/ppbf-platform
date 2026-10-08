@@ -129,7 +129,13 @@ describe('SHADOW learning-loop trust gates', () => {
       expect(result.metricsRecorded).toBe(true);
       expect(result.libraryFlagged).toBe(flagged);
       expect(flagWritten()).toBe(flagged);
-      if (!flagged) {
+      if (flagged) {
+        // One row per (organization, topic): a negative flag landing on a
+        // topic that holds a pending 'promote' proposal must clear it, or the
+        // metrics route's promote exclusion would hide this flag.
+        const flagSql = mockQuery.mock.calls.map(([sql]) => String(sql)).find((sql) => sql.includes(FLAG_SQL));
+        expect(flagSql).toContain('proposed_action = NULL');
+      } else {
         expect(result.actions.join(' ')).toContain(`no Library flag for ${outcome}`);
       }
       // Nothing on this path promotes learning, whatever the outcome.
@@ -200,6 +206,20 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(trail).toContain('Library entry flagged for review');
     expect(trail).toContain('Research requirement creation failed');
     expect(trail).not.toContain('Library review flag failed');
+  });
+
+  test('a human-reviewed negative flag clears a pending promote proposal on the topic', async () => {
+    mockFeatureEnabled.mockReturnValue(false);
+    await processLearningSignal({
+      ...baseSignal,
+      outcome: 'escalated_to_human' as const,
+      verificationState: 'human_reviewed',
+    });
+    const flagSql = mockQuery.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes('latest_outcome_signal = $6'));
+    expect(flagSql).toBeDefined();
+    expect(flagSql).toContain('proposed_action = NULL');
   });
 
   // communication_style was unwritable in production: the inference required

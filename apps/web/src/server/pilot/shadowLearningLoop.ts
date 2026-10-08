@@ -317,6 +317,10 @@ async function queueClientSignalForReview(
          user_note = EXCLUDED.user_note,
          last_flagged_at = NOW(),
          latest_outcome_signal = EXCLUDED.outcome_signal,
+         -- A fresh negative signal supersedes a pending praise proposal on
+         -- the topic: left in place, a 'promote' here would hide this flag
+         -- from the metrics route's concerned topics.
+         proposed_action = NULL,
          review_state = 'pending'`,
       [
         signal.organizationId,
@@ -501,6 +505,7 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
        user_note = EXCLUDED.user_note,
        last_flagged_at = NOW(),
        latest_outcome_signal = $6,
+       proposed_action = NULL,
        review_state = 'pending'`,
     [
       signal.organizationId,
