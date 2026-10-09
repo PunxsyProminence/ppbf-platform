@@ -108,6 +108,10 @@ test('wellness self-reports are optional; present values must be whole 1-5', asy
   // Skipped fields go through as absent, never defaulted.
   expect(mockCheckIn).toHaveBeenCalledWith(expect.objectContaining({ energy: 4, soreness: undefined, focus: undefined }));
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_type: 'athlete_check_in' }));
+  // Never mirrored into the SHADOW feed: the row carries body_mass_sent, a
+  // weigh-in signal about a child, which the athlete and their guardians
+  // would otherwise read in /api/pilot/shadow/events.
+  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ shadow_mirror: false }));
 });
 
 test('EVERY wellness column is validated, not just the three that shipped first', async () => {

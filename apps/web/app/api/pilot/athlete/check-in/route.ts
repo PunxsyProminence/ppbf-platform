@@ -109,6 +109,12 @@ export async function POST(request: NextRequest) {
           checked_in_on: result.row.checked_in_on,
           body_mass_sent: typeof body.body_mass === 'number',
         },
+        // shadow_mirror: false -- the mirrored shadow_events row would carry
+        // body_mass_sent, a weigh-in signal about a child, to every reader of
+        // /api/pilot/shadow/events tied to this athlete. A child's weight
+        // record is health data whose family-feed exposure is not decided
+        // (athleteBodyMass.ts, athleteMinorLimits.ts hold the same line).
+        shadow_mirror: false,
       });
     }
 

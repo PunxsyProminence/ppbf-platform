@@ -16,22 +16,26 @@ import {
 export const runtime = 'nodejs';
 
 /**
- * T-004: THE ORG-WIDE DOOR INTO THE EXIT profile/photo/review ALREADY BUILT.
+ * T-004: THE ORG-WIDE DOOR OUT OF 'pending_review', AND NOW THE ONLY ONE.
  *
  * pilot.account_profiles has carried photo_review_state since profile-identity
- * shipped, and profile/photo/review already lets a coach or admin release or
- * block a photo -- but only if they already know the account_id. Nothing
- * listed who was waiting, so pending portraits sat invisible. This route adds
- * the list and narrows the actor to organization admin only, per the ticket;
- * it does not touch or loosen the sibling route's own (broader, deliberate)
- * gate.
+ * shipped. An older exit, api/pilot/profile/photo/review, let a coach or admin
+ * release or block a photo if they already knew the account_id; nothing
+ * listed who was waiting, so pending portraits sat invisible. This route added
+ * the list and narrowed the actor to organization admin only, per the ticket
+ * and the owner's decision of 2026-08-29 that portrait review STAYS
+ * ADMIN-ONLY (portraitReviewStaysAdminOnly.test.ts).
  *
- * 'reject' reuses the sibling route's 'block' semantics: the blob is deleted,
- * the row is kept with photo_review_state = 'blocked' and an attributed
- * reviewer/timestamp. A literal row DELETE would be a second, inconsistent
- * path to the same action, and 'delete' is not even in the audit_events
- * vocabulary this platform enforces (auditEventTypes.ts) -- it would fail the
- * check constraint on its own audit write.
+ * The older exit was removed in lane W7 (2026-10-09): nothing called it, and
+ * it released a child's portrait without the view attestation this route's
+ * POST requires below. This is the one route that decides a portrait.
+ *
+ * 'reject' keeps the 'block' semantics the older exit had: the blob is
+ * deleted, the row is kept with photo_review_state = 'blocked' and an
+ * attributed reviewer/timestamp. A literal row DELETE would be a second,
+ * inconsistent path to the same action, and 'delete' is not even in the
+ * audit_events vocabulary this platform enforces (auditEventTypes.ts) -- it
+ * would fail the check constraint on its own audit write.
  */
 export async function GET(request: NextRequest) {
   try {

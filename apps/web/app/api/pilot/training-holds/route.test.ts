@@ -264,6 +264,10 @@ describe('POST place', () => {
     expect(mockAudit).toHaveBeenCalledWith(
       expect.objectContaining({ event_type: 'safety_hold_placed', entity_type: 'training_hold', entity_id: 'hold-1' }),
     );
+    // Never mirrored into the SHADOW feed: the row names the child and the
+    // hold's reason category ('medical' here), which the athlete and their
+    // guardians would otherwise read in /api/pilot/shadow/events.
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ shadow_mirror: false }));
   });
 
   test('an admin places through the org-membership gate instead', async () => {
@@ -410,7 +414,9 @@ describe('POST lift', () => {
 
     expect(response.status).toBe(200);
     expect(mockLift).toHaveBeenCalledWith('org-a', 'hold-1', 'acct-caller', 'Cleared.');
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'safety_hold_lifted' }));
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'safety_hold_lifted', shadow_mirror: false }),
+    );
   });
 
   test('a coach lifts through the assignment gate (owner decision: coaches lift too)', async () => {

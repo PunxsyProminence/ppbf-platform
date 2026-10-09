@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   accessibleAthleteIds,
   assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
   isOrganizationAdminRole,
   requireRole,
 } from '@/src/server/pilot/access';
@@ -87,6 +88,20 @@ export async function POST(
         } catch {
           return hiddenNotFound();
         }
+      }
+    } else if (row.athlete_id) {
+      // THE ADMIN PATH ASKS WHETHER THE ATHLETE IS STILL HERE. A deleted
+      // athlete's footage reads as not found everywhere else (deletedAthletes.ts):
+      // playback refuses it through assertActorCanAccessAthlete, whose admin
+      // arm is exactly this live-row check, and the scan sweep will not claim
+      // it. This route ran no athlete check at all for an administrator, so
+      // footage of a child the gym had deleted could still be put into
+      // circulation here (found by #1326's reviewers). Same response as every
+      // other not-entitled caller.
+      try {
+        await assertAthleteBelongsToOrganization(principal.organizationId, row.athlete_id);
+      } catch {
+        return hiddenNotFound();
       }
     }
 

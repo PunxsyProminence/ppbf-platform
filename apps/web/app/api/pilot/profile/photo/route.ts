@@ -30,7 +30,8 @@ export const runtime = 'nodejs';
  * oversight: a portrait is a thing you put up about yourself, and letting an
  * adult publish a picture of a child from a form that never showed the child
  * the picture is the wrong shape for this platform. Staff can TAKE ONE DOWN
- * (see DELETE and /photo/review), which is the direction that needs to be easy.
+ * (see DELETE and /admin/portrait-review), which is the direction that needs
+ * to be easy.
  *
  * Every role uploads through here -- coach, parent, athlete, staff, admin --
  * because "who's in your corner" only works if the coach has a face too.

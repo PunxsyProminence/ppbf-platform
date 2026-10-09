@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import type { QueryExecutor } from './guardianConsent';
@@ -248,6 +250,12 @@ export async function claimNextVideoSessionForScan(): Promise<VideoScanClaim | n
  * Returns false when the row was not updated -- claim lost, video archived, or
  * a human already blocked it. Callers must not treat that as an error; see
  * recordUnsettledScanOutcome for the blocked case, which is worth keeping.
+ *
+ * `client` puts the settle on the caller's transaction. The sweep uses it to
+ * commit the verdict and its safety escalation together: a settled refusal
+ * whose escalation failed to file would otherwise never be looked at again,
+ * because a settled row is outside claimNextVideoSessionForScan's predicate.
+ * Omitted, this is the pooled autocommit update it has always been.
  */
 export async function settleVideoSessionScan(params: {
   videoSessionId: string;
@@ -256,9 +264,8 @@ export async function settleVideoSessionScan(params: {
   detail: Record<string, unknown>;
   retryInSeconds: number;
   terminal: boolean;
-}): Promise<boolean> {
-  const rows = await query<{ video_session_id: string }>(
-    `update pilot.video_sessions
+}, client?: PoolClient): Promise<boolean> {
+  const text = `update pilot.video_sessions
      set status = coalesce($3, status),
          scan_state = $2,
          scan_detail = $4::jsonb,
@@ -269,16 +276,18 @@ export async function settleVideoSessionScan(params: {
      where video_session_id = $1
        and status = 'quarantined'
        and scan_state <> 'blocked'
-     returning video_session_id`,
-    [
-      params.videoSessionId,
-      params.scanState,
-      params.nextStatus,
-      JSON.stringify(params.detail),
-      Math.max(0, Math.trunc(params.retryInSeconds)),
-      params.terminal,
-    ],
-  );
+     returning video_session_id`;
+  const values = [
+    params.videoSessionId,
+    params.scanState,
+    params.nextStatus,
+    JSON.stringify(params.detail),
+    Math.max(0, Math.trunc(params.retryInSeconds)),
+    params.terminal,
+  ];
+  const rows = client
+    ? (await client.query<{ video_session_id: string }>(text, values)).rows
+    : await query<{ video_session_id: string }>(text, values);
 
   if (rows.length === 0) {
     // The row was not settled. If a human blocked it, keep what the scan found
@@ -286,7 +295,7 @@ export async function settleVideoSessionScan(params: {
     // refusal and what the machine concluded afterwards. Anything else (claim
     // lost, video archived) leaves no trace here, which is what those cases
     // deserve.
-    await recordScanOutcomeOnBlockedVideo(params.videoSessionId, params.scanState, params.detail);
+    await recordScanOutcomeOnBlockedVideo(params.videoSessionId, params.scanState, params.detail, client);
   }
 
   return rows.length > 0;
@@ -303,31 +312,44 @@ export async function settleVideoSessionScan(params: {
  * want to look at later, and silently dropping it makes that impossible.
  *
  * Deliberately best-effort: it must never turn a settled refusal into an error
- * for the sweep that called it.
+ * for the sweep that called it. On a caller's transaction a failed statement
+ * would poison that transaction, so the append runs in a savepoint there and
+ * is rolled back to it on failure, leaving the caller's work intact.
  */
 async function recordScanOutcomeOnBlockedVideo(
   videoSessionId: string,
   scanState: string,
   detail: Record<string, unknown>,
+  client?: PoolClient,
 ): Promise<void> {
-  try {
-    await query(
-      `update pilot.video_sessions
+  const text = `update pilot.video_sessions
        set scan_detail = scan_detail || $2::jsonb,
            updated_at = now()
        where video_session_id = $1
-         and scan_state = 'blocked'`,
-      [
-        videoSessionId,
-        JSON.stringify({
-          late_scan_after_human_block: {
-            scan_state: scanState,
-            detail,
-            recorded_at: new Date().toISOString(),
-          },
-        }),
-      ],
-    );
+         and scan_state = 'blocked'`;
+  const values = [
+    videoSessionId,
+    JSON.stringify({
+      late_scan_after_human_block: {
+        scan_state: scanState,
+        detail,
+        recorded_at: new Date().toISOString(),
+      },
+    }),
+  ];
+  try {
+    if (client) {
+      await client.query('savepoint late_scan_note');
+      try {
+        await client.query(text, values);
+        await client.query('release savepoint late_scan_note');
+      } catch (error) {
+        await client.query('rollback to savepoint late_scan_note');
+        throw error;
+      }
+    } else {
+      await query(text, values);
+    }
   } catch {
     // Nothing here is worth failing the sweep for.
   }

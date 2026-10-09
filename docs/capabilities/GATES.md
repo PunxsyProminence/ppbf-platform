@@ -185,8 +185,8 @@ order by created_at desc`) `photo_media` waiver with `status = 'signed'`.
 Full detail: `profileVisibility.ts` (its header states the
 relationship-not-consent model). One note with no other home: a guardian's
 `photo_media` withdrawal never un-releases a portrait — guardians have no
-takedown route; they ask staff to block (`photo/review` admits admin+coach
-only). A second note, that the portrait-review POST accepted an approve with no
+takedown route; they ask an organization admin to reject it
+(`admin/portrait-review`). A second note, that the portrait-review POST accepted an approve with no
 attestation, is closed: see the "Approve is attested server-side" row below and
 Closed gaps.
 
@@ -203,8 +203,8 @@ find.
 | Dimensions measured, not asked | real pixel dimensions read from the file; <=640px long edge, >=96px short edge, <=1.5MB | same | 413 `Photos are stored at 512px. This one is <N>px on its long edge -- resize it and try again.`; 400 `A portrait needs to be at least 96px on its short edge.` | **LIVE** |
 | **EXIF/GPS stripped before storing** | every APPn and comment segment (JPEG); every non-essential chunk incl. `eXIf`/`tEXt`/`iTXt`/`zTXt` (PNG) | `profilePhotoPolicy.ts:stripJpegMetadata`, `:stripPngMetadata` | -- | **LIVE** |
 | Born pending | `photo_review_state = 'pending_review'`; only the uploader sees it | `profileDb.ts:setPhoto`; `profileVisibility.ts:decidePortrait` | plate / 404 | **LIVE** |
-| Human review has a door | an org admin, or one of the athlete's **own** coaches, releases or blocks | `profile/photo/review/route.ts` | 404 `Not found` for a coach with no `coach_of_subject` relationship | **LIVE** |
-| Block deletes the bytes | not just a flag | `profile/photo/review/route.ts` -> `blob.ts:deletePilotProfilePhoto` | -- | **LIVE** |
+| Human review has a door | an org admin approves or rejects from the console; the coach/self exit (`profile/photo/review`) was removed 2026-10-09 (no caller, no view attestation; portrait review stays admin-only) | `admin/portrait-review/route.ts` | 403 for every other role | **LIVE** |
+| Block deletes the bytes | not just a flag | `admin/portrait-review/route.ts` (reject) -> `blob.ts:deletePilotProfilePhoto` | -- | **LIVE** |
 | Takedown beats self-access | `blocked`/`removed` shows the plate to the uploader too | `profileVisibility.ts:decidePortrait` | plate | **LIVE** |
 | **The minor circle** | a minor's released portrait reaches only `self`, `coach_of_subject`, `guardian_of_subject`. Org admins, the board and the platform owner are **outside** it | `profileVisibility.ts:MINOR_CIRCLE`, `:decidePortrait` | 404 / plate, reason `minor_outside_own_circle` | **LIVE** |
 | Ring name scoped identically | the chosen name travels with the face | `profileVisibility.ts:decideRingName` | `null` | **LIVE** |

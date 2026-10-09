@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import {
+  accessibleAthleteIds,
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+} from '@/src/server/pilot/access';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { assertConsentCoversVideo, writeUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -59,13 +63,15 @@ jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
     return write(ids.length > 0 ? TX_CLIENT : null);
   }),
 }));
-// Only the two athlete-reach checks are doubled; requireRole and
-// isOrganizationAdminRole stay real. The batched one answers that the coach
-// reaches every athlete asked about unless a test says otherwise.
+// Only the athlete checks are doubled; requireRole and isOrganizationAdminRole
+// stay real. The batched one answers that the coach reaches every athlete
+// asked about unless a test says otherwise; the live-row check (the admin
+// path's) answers that the athlete is still here unless a test says otherwise.
 const reachesEveryone = async (_actor: unknown, ids: readonly string[]) => new Set(ids);
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined),
+  assertAthleteBelongsToOrganization: jest.fn().mockResolvedValue(undefined),
   accessibleAthleteIds: jest.fn(async (_actor: unknown, ids: readonly string[]) => new Set(ids)),
 }));
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -79,6 +85,7 @@ const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
 const mockReach = accessibleAthleteIds as jest.Mock;
 const mockConsent = assertConsentCoversVideo as jest.Mock;
 const mockTags = listLiveTagSubjects as jest.Mock;
@@ -384,6 +391,51 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
     const res = await call();
 
     expect(res.status).toBe(200);
+  });
+
+  /*
+   * THE ADMIN PATH ASKS WHETHER THE ATHLETE IS STILL HERE (lane W7, from
+   * #1326's reviewers). A deleted athlete's footage reads as not found on
+   * playback, whose admin arm is exactly this live-row check; release ran no
+   * athlete check at all for an administrator.
+   */
+  test('an organization admin is asked whether the video\'s athlete is still here, and the answer is the live-row check', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ uploaded_by_account_id: 'coach-1' }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockAccess).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin cannot release footage of a deleted athlete, and is not told it exists', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ uploaded_by_account_id: 'coach-1' }));
+    mockLiveRow.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    // Refused with the other entitlement refusals: no tag read, no review
+    // link asked for, nothing written, nothing audited.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockTags).not.toHaveBeenCalled();
+    expect(mockPrereq).not.toHaveBeenCalled();
+    expect(writeUnderPlaybackConsent).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('unattributed footage names nobody, so the admin path has no live row to ask about', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ athlete_id: null, uploaded_by_account_id: 'coach-1' }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockLiveRow).not.toHaveBeenCalled();
   });
 
   test.each(['infected', 'error', 'archived', 'processing', 'uploaded'])(
