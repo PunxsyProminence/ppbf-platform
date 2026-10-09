@@ -921,25 +921,54 @@ export async function assertGuardianLoginProvisionable(params: {
  */
 export async function removeGuardianLink(params: {
   organizationId: string;
-  accountId: string;
   athleteId: string;
+  /** The guardian's login. The usual form; every rule below applies. */
+  accountId?: string;
+  /**
+   * The guardian RECORD, for a guardian who has no login (pilot.parents
+   * account_id NULL: a paper-only guardian from the consent desk, or an intake
+   * row never claimed; OD-2026-10-07-009). Refused for a record that has a
+   * login -- that guardian is removed by account, so the last-link rule
+   * below still protects them. A paper-only guardian signs in to nothing, so
+   * removing their only link strands nobody, and that rule does not apply;
+   * the withdrawn-consent refusal does, unchanged.
+   */
+  parentId?: string;
 }): Promise<{ parentId: string; athleteId: string }> {
   const organizationId = params.organizationId.trim();
-  const accountId = params.accountId.trim();
+  const accountId = params.accountId?.trim() ?? '';
+  const paperParentId = params.parentId?.trim() ?? '';
   const athleteId = params.athleteId.trim();
 
-  if (!organizationId || !accountId || !athleteId) {
-    throw new Error('Missing organization_id, account_id, or athlete_id');
+  if (!organizationId || !athleteId || (!accountId && !paperParentId)) {
+    throw new Error('Missing organization_id, athlete_id, and one of account_id or parent_id');
+  }
+  if (accountId && paperParentId) {
+    throw new Error('Unsupported: name the guardian by account_id or by parent_id, not both');
   }
 
   return withTransaction(async (client) => {
-    const parentRows = await client.query<{ parent_id: string }>(
-      'select parent_id from pilot.parents where organization_id = $1 and account_id = $2',
-      [organizationId, accountId],
-    );
+    const parentRows = paperParentId
+      ? await client.query<{ parent_id: string; account_id: string | null }>(
+        'select parent_id, account_id from pilot.parents where organization_id = $1 and parent_id = $2',
+        [organizationId, paperParentId],
+      )
+      : await client.query<{ parent_id: string; account_id: string | null }>(
+        'select parent_id, account_id from pilot.parents where organization_id = $1 and account_id = $2',
+        [organizationId, accountId],
+      );
 
     if (parentRows.rowCount === 0) {
-      throw new Error('Not found: this account holds no guardian record in your organization');
+      throw new Error(
+        paperParentId
+          ? 'Not found: no guardian record with that id in your organization'
+          : 'Not found: this account holds no guardian record in your organization',
+      );
+    }
+    if (paperParentId && parentRows.rows[0].account_id !== null) {
+      throw new Error(
+        'Forbidden: this guardian has a login. Remove the link from their account on the People page, where the rule against leaving an account that sees nothing applies.',
+      );
     }
 
     const parentIds = parentRows.rows.map((row) => row.parent_id);
@@ -1057,7 +1086,11 @@ export async function removeGuardianLink(params: {
       );
     }
 
-    if (links.rowCount === 1) {
+    // A guardian with no login signs in to nothing, so the last link is not
+    // protecting anyone; a paper-only record may be unlinked entirely. The
+    // pilot.parents row itself stays: pilot.waivers.parent_id references it
+    // and an earlier signed consent may still cite it.
+    if (links.rowCount === 1 && !paperParentId) {
       throw new Error(
         'Forbidden: this is the only athlete this guardian is linked to, and removing it would leave an account that signs in and sees nothing. Link them to the correct athlete first, then remove this one.',
       );

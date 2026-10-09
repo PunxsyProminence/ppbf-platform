@@ -57,6 +57,12 @@ export const AUDIT_EVENT_TYPES = [
   // recorded: it is someone presenting an address that is not theirs, or a
   // directory user re-created under it, and an admin needs to see either.
   'microsoft_identity_mismatch',
+  // W5 (OD-2026-10-07-009 question card 2 item 4, "That one exchange"): an
+  // organization admin read the single flagged question and answer behind
+  // a SHADOW human-review ticket. A read of a member's words -- often a
+  // child's -- recorded as its own event, who read whose, so it is never
+  // invisible and never a bare 'update'.
+  'shadow_review_exchange_read',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

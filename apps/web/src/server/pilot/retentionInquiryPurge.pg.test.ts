@@ -89,8 +89,12 @@ async function runCleanup(extraEnv: Record<string, string>): Promise<{
       },
       (error, stdout, stderr) => {
         const output = `${stdout}${stderr}`;
-        const lines = output.split('\n').filter((entry) => entry.trim().startsWith('{'));
-        // The run's own verdict is its LAST structured line.
+        const jsonLines = (text: string) => text.split('\n').filter((entry) => entry.trim().startsWith('{'));
+        // The run's own verdict is its LAST structured line on stdout; a run
+        // that never reached one (refused, failed) has it on stderr instead.
+        // Warnings on stderr (max_rows clamped, people over the cap) never
+        // outrank a verdict.
+        const lines = jsonLines(stdout).length > 0 ? jsonLines(stdout) : jsonLines(stderr);
         const line = lines[lines.length - 1];
         if (!line) {
           reject(new Error(`No JSON output. stdout=${stdout} stderr=${stderr}`));
@@ -131,6 +135,53 @@ async function seedInquiries(): Promise<void> {
       [ORG, row.name, `inquirer${index}@example.test`, row.state],
     );
   }
+}
+
+/* A withdrawn family past its windows: an athlete soft-deleted 3 years ago and
+   a parent account soft-deleted 2 years ago. Both are due. The inquiries-only
+   run must count them and leave them exactly where they are. */
+const COACH_ID = 'coach-inquiry-purge';
+const EXPIRED_ATHLETE_ID = 'athlete-inquiry-purge-expired';
+const EXPIRED_PARENT_ID = 'parent-inquiry-purge-expired';
+
+async function seedExpiredFamily(): Promise<void> {
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+    [COACH_ID, ORG],
+  );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, deleted_at)
+     values ($1, 'parent', $2, 'microsoft', now() - interval '2 years') on conflict do nothing`,
+    [EXPIRED_PARENT_ID, ORG],
+  );
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+     values ($1, $2, 'Expired Athlete', '2013-05-06', 'fly', 'withdrawn', 'contact', false, $3, now(), now(), now() - interval '3 years')
+     on conflict do nothing`,
+    [ORG, EXPIRED_ATHLETE_ID, COACH_ID],
+  );
+}
+
+async function removeExpiredFamily(): Promise<void> {
+  await client.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, EXPIRED_ATHLETE_ID]);
+  await client.query('delete from pilot.accounts where account_id = $1', [EXPIRED_PARENT_ID]);
+}
+
+async function expiredFamilyPresent(): Promise<{ athlete: boolean; parent: boolean }> {
+  const athlete = await client.query(
+    'select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2',
+    [ORG, EXPIRED_ATHLETE_ID],
+  );
+  const parent = await client.query('select 1 from pilot.accounts where account_id = $1', [EXPIRED_PARENT_ID]);
+  return { athlete: athlete.rows.length === 1, parent: parent.rows.length === 1 };
+}
+
+async function latestAuditDetails(): Promise<Record<string, unknown> | null> {
+  const audit = await client.query<{ details: Record<string, unknown> }>(
+    `select details from pilot.audit_events where event_type = 'data_purged' order by created_at desc limit 1`,
+  );
+  return audit.rows[0]?.details ?? null;
 }
 
 async function inquiryNames(): Promise<string[]> {
@@ -210,8 +261,13 @@ describe('the retention purge deletes interest-form inquiries after 12 months', 
 
     expect(code).toBe(0);
     expect(event.event).toBe('retention.cleanup.dry-run');
+    expect(event.mode).toBe('dry_run');
     expect(event.inquiries).toBe(DUE);
     expect(event.would_delete_inquiries).toBe(DUE);
+    // The dry run names what the nightly run will delete on its own, and what
+    // waits for a person to dispatch APPLY.
+    expect(event.nightly_deletes_inquiries).toBe(DUE);
+    expect(event.apply_needed_for).toEqual({ athletes: 0, accounts: 0, videos: 0 });
     expect(await inquiryNames()).toHaveLength(SEEDED.length);
   });
 
@@ -294,5 +350,138 @@ describe('the retention purge deletes interest-form inquiries after 12 months', 
     expect(event.event).toBe('retention.cleanup.completed');
     expect(event.inquiries).toBe(0);
     expect(await inquiryNames()).toEqual(KEPT_NAMES);
+  });
+});
+
+/* THE NIGHTLY MODE. Jason, 2026-10-07 (OD-2026-10-07-010, Q2): "Nightly
+   deletes enquiries itself" -- the nightly run deletes public enquiries older
+   than 12 months on its own, with a cap per run; people's records stay manual.
+   PPBF_RETENTION_APPLY_INQUIRIES=true is that run. Every case here seeds a
+   family that is DUE, so that "stays manual" is proven on rows the full apply
+   would have removed, not on an empty table. */
+describe('the inquiries-only run (the nightly schedule) deletes expired inquiries and nothing else', () => {
+  beforeEach(async () => {
+    await seedInquiries();
+    await seedExpiredFamily();
+  });
+
+  afterEach(async () => {
+    await removeExpiredFamily();
+  });
+
+  test("deletes every due inquiry, counts the due family, and leaves the family's rows where they are", async () => {
+    const { code, event, output } = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true' });
+
+    expect(code).toBe(0);
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.mode).toBe('inquiries_only');
+    expect(event.inquiries).toBe(DUE);
+    expect(event.inquiries_deferred).toBe(0);
+    expect(await inquiryNames()).toEqual(KEPT_NAMES);
+
+    // Seen and reported; not touched. The purge of people's records was never
+    // entered, so its counts are zero and no login, video or SHADOW row moved.
+    expect(event.people_due).toEqual({ athletes: 1, accounts: 1, videos: 0 });
+    expect(event.athletes).toBe(0);
+    expect(event.accounts).toBe(0);
+    expect(event.athlete_logins_unlinked).toBe(0);
+    expect(event.total).toBe(DUE);
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+
+    // The audit row says which mode ran and what it left for a person.
+    const details = await latestAuditDetails();
+    expect(details).toMatchObject({
+      mode: 'inquiries_only',
+      people_due: { athletes: 1, accounts: 1, videos: 0 },
+      athletes_deleted: 0,
+      accounts_deleted: 0,
+      inquiries_deleted: DUE,
+      total_rows_deleted: DUE,
+    });
+    expect(JSON.stringify(details)).not.toMatch(/example\.test|Expired Athlete/);
+    expect(output).not.toMatch(/inquirer\d@example\.test|Expired Athlete|please call/);
+  });
+
+  test('the due family takes no room under the cap: inquiries get all of it, oldest first, the rest deferred', async () => {
+    // Under the full apply, two due people would leave DUE-1-2 = 0 room for
+    // inquiries at this cap. Here they are not deleted, so they do not count.
+    const first = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true', PPBF_RETENTION_MAX_ROWS: String(DUE - 1) });
+
+    expect(first.code).toBe(0);
+    expect(first.event.event).toBe('retention.cleanup.completed');
+    expect(first.event.inquiries).toBe(DUE - 1);
+    expect(first.event.inquiries_deferred).toBe(1);
+    expect(await inquiryNames()).toEqual(['A day past twelve months, archived', ...KEPT_NAMES].sort());
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+
+    const second = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true', PPBF_RETENTION_MAX_ROWS: String(DUE - 1) });
+    expect(second.event.inquiries).toBe(1);
+    expect(second.event.inquiries_deferred).toBe(0);
+    expect(await inquiryNames()).toEqual(KEPT_NAMES);
+  });
+
+  test('more due people than the cap does not refuse the run: it reports them and still deletes the inquiries', async () => {
+    // The blast-radius guard protects people's records from a runaway sweep.
+    // This run never sweeps them, so refusing it would only stop inquiry
+    // retention. A full APPLY of the same database IS refused.
+    const nightly = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true', PPBF_RETENTION_MAX_ROWS: '1' });
+
+    expect(nightly.code).toBe(0);
+    expect(nightly.event.event).toBe('retention.cleanup.completed');
+    expect(nightly.event.inquiries).toBe(1);
+    expect(nightly.event.people_due).toEqual({ athletes: 1, accounts: 1, videos: 0 });
+    expect(nightly.output).toContain('"event":"retention.cleanup.people_over_cap"');
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+
+    const full = await runCleanup({ PPBF_RETENTION_APPLY: 'true', PPBF_RETENTION_MAX_ROWS: '1' });
+    expect(full.code).toBe(1);
+    expect(full.event).toMatchObject({ event: 'retention.cleanup.refused', reason: 'BLAST_RADIUS_EXCEEDED' });
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+  });
+
+  test('with no inquiry due, the run deletes nothing, writes no audit row, and still reports the due family', async () => {
+    await client.query(`delete from pilot.public_interest_submissions where created_at < now() - interval '12 months'`);
+    const { code, event } = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true' });
+
+    expect(code).toBe(0);
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.mode).toBe('inquiries_only');
+    expect(event.inquiries).toBe(0);
+    expect(event.people_due).toEqual({ athletes: 1, accounts: 1, videos: 0 });
+    expect(await latestAuditDetails()).toBeNull();
+    expect(await inquiryNames()).toEqual(KEPT_NAMES);
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+  });
+
+  test('the dry run, with a due family, says what the nightly run will delete and what waits for APPLY', async () => {
+    const { event } = await runCleanup({ PPBF_RETENTION_MAX_ROWS: String(DUE - 1) });
+
+    expect(event.event).toBe('retention.cleanup.dry-run');
+    expect(event.nightly_deletes_inquiries).toBe(DUE - 1);
+    expect(event.apply_needed_for).toEqual({ athletes: 1, accounts: 1, videos: 0 });
+    expect(await inquiryNames()).toHaveLength(SEEDED.length);
+    expect(await expiredFamilyPresent()).toEqual({ athlete: true, parent: true });
+  });
+
+  test('a refused inquiry delete fails the nightly run by name and deletes nothing', async () => {
+    await client.query(`
+      create or replace function pilot.test_refuse_inquiry_delete() returns trigger
+      language plpgsql as $$ begin raise exception 'refused' using errcode = 'P0001'; end $$`);
+    await client.query(`
+      create trigger test_refuse_inquiry_delete before delete on pilot.public_interest_submissions
+      for each row execute function pilot.test_refuse_inquiry_delete()`);
+    try {
+      const { code, event } = await runCleanup({ PPBF_RETENTION_APPLY_INQUIRIES: 'true' });
+
+      expect(code).toBe(1);
+      expect(event.event).toBe('retention.cleanup.incomplete');
+      expect(event.mode).toBe('inquiries_only');
+      expect(event.inquiries).toBe(0);
+      expect(event.blocked_by).toEqual({ P0001: 1 });
+      expect(await inquiryNames()).toHaveLength(SEEDED.length);
+    } finally {
+      await client.query('drop trigger test_refuse_inquiry_delete on pilot.public_interest_submissions');
+      await client.query('drop function pilot.test_refuse_inquiry_delete()');
+    }
   });
 });

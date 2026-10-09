@@ -1,14 +1,19 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import OperationsLink from '@/components/OperationsLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 
 interface GuardianConsentRow {
   parent_id: string;
   parent_name: string;
+  /* false = a guardian who exists only as a name on paper: no login, no
+     email, never sees the parent console. Labelled wherever the name shows,
+     so nobody waits for this guardian to "sign in and do it themselves". */
+  has_login: boolean;
   status: string | null;
   /* Whether this guardian counts as consented, decided by the server with the
      same normalisation the consent gates use. This screen must never re-derive
@@ -32,7 +37,31 @@ interface OrganizationConsentRow {
 
 type Filter = 'all' | 'missing' | 'ok';
 
+/**
+ * pilot.guardian_links.relationship_to_athlete is plain text; this is the
+ * same fixed list the people console's guardian invite offers, so the two
+ * entry points write the same words for the same relationship.
+ */
+const GUARDIAN_RELATIONSHIPS = [
+  { value: 'mother', label: 'Mother' },
+  { value: 'father', label: 'Father' },
+  { value: 'guardian', label: 'Legal guardian' },
+  { value: 'grandparent', label: 'Grandparent' },
+  { value: 'other', label: 'Other family member' },
+];
+
+/** A guardian's name as the picker and the cell show it. */
+function guardianLabel(guardian: GuardianConsentRow): string {
+  return guardian.has_login ? guardian.parent_name : `${guardian.parent_name} (paper only)`;
+}
+
 export default function AthleteConsentAuditPage() {
+  /* Advisory, like the page gate: the server refuses a coach's guardian
+     write regardless. Read so the control is not offered to a role that
+     would only ever see it refused. */
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const canAddGuardian = session?.role === 'admin';
+
   const [items, setItems] = useState<OrganizationConsentRow[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [filter, setFilter] = useState<Filter>('missing');
@@ -53,7 +82,31 @@ export default function AthleteConsentAuditPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const load = useCallback(async () => {
+  /* THE PAPER-ONLY GUARDIAN (Jason 2026-10-07, OD-2026-10-07-009, "Yes, name
+     and relationship"): a guardian record with no login, so a family that
+     deals with the gym on paper can have its consent recorded against a
+     named guardian. One form open at a time, for the same reason as the
+     recorder above. */
+  const [addingForAthleteId, setAddingForAthleteId] = useState<string | null>(null);
+  const [newGuardianName, setNewGuardianName] = useState('');
+  const [newGuardianRelationship, setNewGuardianRelationship] = useState(GUARDIAN_RELATIONSHIPS[0].value);
+  // Set when a guardian with the same name is already linked: the add waits
+  // for a second press, so a form entered twice does not make two records.
+  const [sameNameConfirmed, setSameNameConfirmed] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [addNotice, setAddNotice] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  /* REMOVING A PAPER-ONLY GUARDIAN. The one undo for a wrong-row add: a
+     guardian with no login is unlinked by record (DELETE /api/pilot/admin/staff
+     with parent_id). The server keeps its refusal while that guardian's media
+     consent stands withdrawn, so this can never turn a "no" into a "yes". */
+  const [removeArmed, setRemoveArmed] = useState<{ athleteId: string; parentId: string } | null>(null);
+  const [removeError, setRemoveError] = useState<{ athleteId: string; message: string } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // Returns what it loaded, so a caller that needs the fresh rows (the
+  // guardian add below) does not have to wait for a render to see them.
+  const load = useCallback(async (): Promise<OrganizationConsentRow[] | null> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/athlete-consent`, { credentials: 'include' });
       const payload = (await response.json().catch(() => ({}))) as { items?: OrganizationConsentRow[]; error?: string };
@@ -62,9 +115,11 @@ export default function AthleteConsentAuditPage() {
       }
       setItems(payload.items ?? []);
       setErrorMessage('');
+      return payload.items ?? [];
     } catch (error) {
       setItems([]);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load consent status.');
+      return null;
     }
   }, []);
 
@@ -74,18 +129,120 @@ export default function AthleteConsentAuditPage() {
     })();
   }, [load]);
 
-  function openRecorder(item: OrganizationConsentRow) {
+  function openRecorder(item: OrganizationConsentRow, preferParentId?: string) {
     setOpenAthleteId(item.athlete_id);
-    // Preselect the first guardian still missing consent -- the one the person
-    // holding the paper is most likely here about.
+    setAddingForAthleteId(null);
+    // Preselect the guardian just added, else the first guardian still
+    // missing consent -- the one the person holding the paper is most likely
+    // here about.
+    const preferred = preferParentId ? item.per_guardian.find((g) => g.parent_id === preferParentId) : undefined;
     const missing = item.per_guardian.find((g) => !g.consented);
-    setSelectedParentId((missing ?? item.per_guardian[0])?.parent_id ?? '');
+    setSelectedParentId((preferred ?? missing ?? item.per_guardian[0])?.parent_id ?? '');
     setDecision('grant');
     setCoversVideo(true);
     setPublicUseAllowed(false);
     setSignedAt('');
     setNotes('');
     setFormError('');
+  }
+
+  function openGuardianForm(item: OrganizationConsentRow) {
+    setAddingForAthleteId(item.athlete_id);
+    setOpenAthleteId(null);
+    setNewGuardianName('');
+    setNewGuardianRelationship(GUARDIAN_RELATIONSHIPS[0].value);
+    setSameNameConfirmed(false);
+    setAddError('');
+    setAddNotice('');
+  }
+
+  /** Guardians already linked to this athlete under the typed name. */
+  function sameNameGuardians(item: OrganizationConsentRow): GuardianConsentRow[] {
+    const typed = newGuardianName.trim().toLowerCase();
+    return typed ? item.per_guardian.filter((g) => g.parent_name.trim().toLowerCase() === typed) : [];
+  }
+
+  async function submitGuardian(item: OrganizationConsentRow) {
+    const fullName = newGuardianName.trim();
+    if (!fullName) return;
+    if (sameNameGuardians(item).length > 0 && !sameNameConfirmed) {
+      // First press on a duplicate name only arms the confirmation.
+      setSameNameConfirmed(true);
+      return;
+    }
+    setIsAdding(true);
+    setAddError('');
+    try {
+      /* The id is minted here because the write below takes one and this
+         record has no account to derive one from (an invited guardian's is
+         par-<account id>, staffProvisioning.ts). pilot.parents.parent_id is
+         plain text with no convention the readers depend on; the "paper"
+         infix keeps it out of the par-<account> space and legible in an
+         audit row. Inside the try: randomUUID throws outside a secure
+         context, and that must read as an error, not a button stuck on
+         "Adding…". */
+      const parentId = `par-paper-${crypto.randomUUID()}`;
+      /* THE SAME WRITE INTAKE USES, not a second one: domain-upsert's
+         guardian_link (organization_admin only) creates the pilot.parents row
+         with no account and no email and the guardian_links row under the
+         consent-set lock, in one transaction, audited. Nothing can sign in
+         as this guardian and no invite can claim the record by accident,
+         because there is no address to match. */
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'guardian_link',
+          athlete_id: item.athlete_id,
+          payload: { parent_id: parentId, full_name: fullName, relationship_to_athlete: newGuardianRelationship },
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'That guardian could not be added.');
+      }
+      setAddingForAthleteId(null);
+      setAddNotice(`${fullName} is now a paper-only guardian of ${item.athlete_name}. Record what they signed below.`);
+      // Re-read, then open the recorder on the new guardian so the consent is
+      // filed next -- the reason the record was made.
+      const fresh = await load();
+      const refreshed = fresh?.find((row) => row.athlete_id === item.athlete_id);
+      if (refreshed?.per_guardian.some((g) => g.parent_id === parentId)) {
+        openRecorder(refreshed, parentId);
+      }
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : 'That guardian could not be added.');
+    } finally {
+      setIsAdding(false);
+    }
+  }
+
+  async function removePaperGuardian(item: OrganizationConsentRow, guardian: GuardianConsentRow) {
+    setIsRemoving(true);
+    setRemoveError(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: guardian.parent_id, athlete_id: item.athlete_id }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'That guardian could not be removed.');
+      }
+      setRemoveArmed(null);
+      setAddNotice(`${guardian.parent_name} is no longer a guardian of ${item.athlete_name}.`);
+      await load();
+    } catch (error) {
+      setRemoveError({
+        athleteId: item.athlete_id,
+        message: error instanceof Error ? error.message : 'That guardian could not be removed.',
+      });
+    } finally {
+      setIsRemoving(false);
+    }
   }
 
   async function submitConsent(athleteId: string) {
@@ -161,6 +318,22 @@ export default function AthleteConsentAuditPage() {
               consent on file. An athlete with no guardians on file cannot have consent verified at all -- that
               shows as missing, not as cleared.
             </p>
+            {/* The register at /admin/consent no longer files photo and media
+                consent (OD-2026-10-07-009); the people arriving from its
+                pointer need to know they are in the right place. */}
+            <p className="t-body mt-[var(--s2)] max-w-4xl">
+              This is the only place photo and video consent is recorded. A guardian who has no login is shown as
+              &ldquo;paper only&rdquo;; their consent is recorded here from the signed form, the same as anyone else&rsquo;s.
+            </p>
+            {addNotice ? (
+              <div role="status" className="alert alert--success mt-[var(--s3)]">
+                <span className="alert-icon" aria-hidden="true">✓</span>
+                <div className="alert-body">
+                  <p className="alert-title">Guardians updated</p>
+                  <p className="alert-msg">{addNotice}</p>
+                </div>
+              </div>
+            ) : null}
             {/* A failed read is a network fact. --locked red is what this room
                 says when a clinician or a safeguarding decision has stopped
                 something, so it does not carry this. --restricted does, keeping
@@ -226,6 +399,70 @@ export default function AthleteConsentAuditPage() {
                           {item.guardian_count === 0
                             ? 'No guardians on file'
                             : `${item.guardian_count - item.missing_guardian_count}/${item.guardian_count} consented`}
+                          {/* Who they are, with the paper-only ones marked:
+                              a count alone cannot say which guardian is the
+                              one nobody can email. */}
+                          {item.per_guardian.length > 0 ? (
+                            <ul className="mt-[var(--s1)] flex flex-col gap-[var(--s1)] text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
+                              {item.per_guardian.map((guardian) => {
+                                const armed = removeArmed?.athleteId === item.athlete_id && removeArmed.parentId === guardian.parent_id;
+                                return (
+                                  <li key={guardian.parent_id} className="flex flex-wrap items-center gap-[var(--s2)]">
+                                    <span>{guardianLabel(guardian)}</span>
+                                    {/* Only a guardian with no login is removed
+                                        here; one with a login is unlinked from
+                                        their account on People, where the rule
+                                        against stranding an account applies. */}
+                                    {canAddGuardian && !guardian.has_login ? (
+                                      armed ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="btn btn--danger px-[var(--s3)] text-[length:var(--t-xs)]"
+                                            disabled={isRemoving}
+                                            onClick={() => {
+                                              void removePaperGuardian(item, guardian);
+                                            }}
+                                          >
+                                            {isRemoving ? 'Removing…' : `Confirm remove ${guardian.parent_name}`}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn--ghost px-[var(--s3)] text-[length:var(--t-xs)]"
+                                            disabled={isRemoving}
+                                            onClick={() => setRemoveArmed(null)}
+                                          >
+                                            Keep
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="btn btn--ghost px-[var(--s3)] text-[length:var(--t-xs)]"
+                                          aria-label={`Remove ${guardian.parent_name} as a guardian of ${item.athlete_name}`}
+                                          onClick={() => {
+                                            setRemoveArmed({ athleteId: item.athlete_id, parentId: guardian.parent_id });
+                                            setRemoveError(null);
+                                          }}
+                                        >
+                                          Remove
+                                        </button>
+                                      )
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : null}
+                          {removeError?.athleteId === item.athlete_id ? (
+                            <div role="alert" className="alert alert--warning mt-[var(--s2)]">
+                              <span className="alert-icon" aria-hidden="true">▲</span>
+                              <div className="alert-body">
+                                <p className="alert-title">Not removed</p>
+                                <p className="alert-msg">{removeError.message}</p>
+                              </div>
+                            </div>
+                          ) : null}
                         </td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           <span className={`badge ${item.consent_ok ? 'badge--cleared' : 'badge--restricted'}`}>
@@ -234,26 +471,120 @@ export default function AthleteConsentAuditPage() {
                           </span>
                         </td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
-                          {/* An athlete with no guardian links cannot have a
-                              consent row recorded at all -- the write is
-                              refused, because a consent has to belong to a
-                              named guardian. Linking a guardian is an
-                              organization_admin action on another screen, so a
-                              coach seeing this cannot fix it here. */}
-                          <button
-                            type="button"
-                            className="btn btn--ghost"
-                            disabled={item.guardian_count === 0}
-                            onClick={() => (openAthleteId === item.athlete_id ? setOpenAthleteId(null) : openRecorder(item))}
-                          >
-                            {item.guardian_count === 0
-                              ? 'No guardian to record against'
-                              : openAthleteId === item.athlete_id
-                                ? 'Close'
-                                : 'Record'}
-                          </button>
+                          <div className="flex flex-wrap gap-[var(--s2)]">
+                            {/* An athlete with no guardian links cannot have a
+                                consent row recorded at all -- the write is
+                                refused, because a consent has to belong to a
+                                named guardian. An organization admin adds the
+                                guardian with the control beside this one; a
+                                coach seeing this cannot fix it here. */}
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={item.guardian_count === 0}
+                              onClick={() => (openAthleteId === item.athlete_id ? setOpenAthleteId(null) : openRecorder(item))}
+                            >
+                              {item.guardian_count === 0
+                                ? 'No guardian to record against'
+                                : openAthleteId === item.athlete_id
+                                  ? 'Close'
+                                  : 'Record'}
+                            </button>
+                            {canAddGuardian ? (
+                              <button
+                                type="button"
+                                className="btn btn--ghost"
+                                onClick={() => (addingForAthleteId === item.athlete_id ? setAddingForAthleteId(null) : openGuardianForm(item))}
+                              >
+                                {addingForAthleteId === item.athlete_id ? 'Close' : 'Add paper-only guardian'}
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
+                      {addingForAthleteId === item.athlete_id ? (
+                        <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
+                          <td colSpan={4} className="px-[var(--s4)] py-[var(--s4)]">
+                            <div className="flex flex-col gap-[var(--s3)]">
+                              <p className="t-body">
+                                Adding a guardian of {item.athlete_name} who deals with the gym on paper. They get no
+                                login and no email: their consent is recorded here from the form they sign. If this
+                                person will sign in, invite them from People instead.
+                              </p>
+
+                              <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
+                                Guardian&rsquo;s full name
+                                <input
+                                  type="text"
+                                  className="input"
+                                  value={newGuardianName}
+                                  onChange={(event) => {
+                                    setNewGuardianName(event.target.value);
+                                    setSameNameConfirmed(false);
+                                  }}
+                                />
+                              </label>
+
+                              <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
+                                Relationship to {item.athlete_name}
+                                <select
+                                  className="input"
+                                  value={newGuardianRelationship}
+                                  onChange={(event) => setNewGuardianRelationship(event.target.value)}
+                                >
+                                  {GUARDIAN_RELATIONSHIPS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              {/* A second record for a guardian already linked
+                                  would mean two consents to collect from one
+                                  person. Shown and confirmed, not refused: two
+                                  guardians can share a name. */}
+                              {sameNameGuardians(item).length > 0 ? (
+                                <div role="alert" className="alert alert--warning">
+                                  <span className="alert-icon" aria-hidden="true">▲</span>
+                                  <div className="alert-body">
+                                    <p className="alert-title">Already linked</p>
+                                    <p className="alert-msg">
+                                      {sameNameGuardians(item).map(guardianLabel).join(', ')} is already a guardian of{' '}
+                                      {item.athlete_name}. Adding again makes a second record, and both would need to sign.
+                                      {sameNameConfirmed ? ' Press “Add anyway” to add a second guardian with this name.' : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {addError ? (
+                                <div role="alert" className="alert alert--warning">
+                                  <span className="alert-icon" aria-hidden="true">▲</span>
+                                  <div className="alert-body">
+                                    <p className="alert-title">Attention</p>
+                                    <p className="alert-msg">{addError}</p>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              <div className="flex flex-wrap gap-[var(--s3)]">
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  disabled={isAdding || newGuardianName.trim() === ''}
+                                  onClick={() => {
+                                    void submitGuardian(item);
+                                  }}
+                                >
+                                  {isAdding ? 'Adding…' : sameNameConfirmed ? 'Add anyway' : 'Add guardian'}
+                                </button>
+                                <button type="button" className="btn btn--ghost" onClick={() => setAddingForAthleteId(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
                       {openAthleteId === item.athlete_id ? (
                         <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
                           <td colSpan={4} className="px-[var(--s4)] py-[var(--s4)]">
@@ -272,7 +603,7 @@ export default function AthleteConsentAuditPage() {
                                 >
                                   {item.per_guardian.map((guardian) => (
                                     <option key={guardian.parent_id} value={guardian.parent_id}>
-                                      {guardian.parent_name}
+                                      {guardianLabel(guardian)}
                                       {guardian.status ? ` — ${guardian.status}` : ' — nothing on file'}
                                     </option>
                                   ))}

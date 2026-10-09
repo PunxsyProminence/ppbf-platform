@@ -328,4 +328,48 @@ describe('DELETE', () => {
     expect(response.status).toBe(400);
     expect(mockRemoveLink).not.toHaveBeenCalled();
   });
+
+  // A guardian with no login (OD-2026-10-07-009) is named by record. The
+  // provisioning helper refuses this form for a record that has a login, so
+  // the route only has to pass the right identifier through and audit it as
+  // a guardian record rather than an account.
+  test('removes a paper-only guardian by parent_id and audits it against the record', async () => {
+    mockRemoveLink.mockResolvedValue({ parentId: 'par-paper-1', athleteId: 'ath-2' });
+
+    const response = await DELETE(
+      jsonRequest('DELETE', { parent_id: 'par-paper-1', athlete_id: 'ath-2' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ ok: true, account_id: null, parent_id: 'par-paper-1', athlete_id: 'ath-2' });
+    expect(mockRemoveLink).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      parentId: 'par-paper-1',
+      athleteId: 'ath-2',
+    });
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity_type: 'guardian',
+        entity_id: 'par-paper-1',
+        details: expect.objectContaining({ action: 'organization_admin_remove_guardian_link', paper_only: true }),
+      }),
+    );
+  });
+
+  test('a parent_id removal is organization admin only, like the account form', async () => {
+    mockRequireMicrosoft.mockResolvedValue(principal('coach'));
+
+    const response = await DELETE(jsonRequest('DELETE', { parent_id: 'par-paper-1', athlete_id: 'ath-2' }));
+
+    expect(response.status).toBe(403);
+    expect(mockRemoveLink).not.toHaveBeenCalled();
+  });
+
+  test('a parent_id alone, with no athlete, is refused', async () => {
+    const response = await DELETE(jsonRequest('DELETE', { parent_id: 'par-paper-1' }));
+
+    expect(response.status).toBe(400);
+    expect(mockRemoveLink).not.toHaveBeenCalled();
+  });
 });
