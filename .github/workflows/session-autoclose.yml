@@ -1,0 +1,172 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Nightly auto-close of training sessions nobody checked out of.
+#
+# Owner ruling OD-2026-10-06-024 Q4 (docs/current/OWNER_DECISIONS.md), in
+# Jason's words: "1 bt check in give 20 min before auto close if nothing else
+# is used in the ap for the athlet auto close and keep record of the 20 min
+# inactivity". The rule runs in two places: lazily, inside the sessions list
+# read, so a stale session closes the next time anyone looks; and here, so a
+# session nobody looks at still closes before the next gym day.
+#
+# WHAT THE SCRIPT DOES AND DOES NOT DO (apps/web/scripts/pilot-close-inactive-sessions.ts)
+#   * closes OPEN sessions whose newest saved activity for the athlete is 20+
+#     minutes old: completed_flag true, close_method 'auto_inactivity', the
+#     last activity, the 20-minute window and the close time stamped on the
+#     row, plus one audit row per close;
+#   * never touches a session already closed, never changes the athlete's
+#     typed minutes, effort or notes, deletes nothing;
+#   * refuses a database the caller did not name (POSTGRES_TARGET_MISMATCH);
+#   * prints one JSON line of counts -- no session or athlete ids ever reach
+#     this log; the athletes are minors.
+#
+# THE SCHEDULED RUN APPLIES. Unlike retention-cleanup.yml, whose nightly run
+# is a dry run because deletion is unrecoverable, this write is the ruling's
+# own behaviour and is reversible (an athlete or coach can reopen a session
+# through the same routes as today, which clears the close record). A
+# workflow_dispatch defaults to a dry run so an operator can look first.
+#
+# WHY THIS DECLARES NO `environment:`: the same reason backup.yml and
+# retention-cleanup.yml do not -- a scheduled run against a protected
+# environment waits for a human and is cancelled after thirty days.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: session-autoclose
+
+on:
+  schedule:
+    # 06:30 UTC daily -- roughly 02:30 America/New_York, well after the last
+    # evening session and before backup.yml's 07:10 run, so the night's backup
+    # carries the closed rows.
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to sweep
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      apply:
+        description: Type APPLY to close sessions. Anything else is a dry run that only reports counts.
+        required: true
+        default: DRY_RUN
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: session-autoclose-${{ inputs.target || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET: ${{ inputs.target || 'production' }}
+      # RESOURCE_GROUP is resolved per target below (see retention-cleanup.yml
+      # for why a job-level staging literal was wrong for production).
+      CONTAINER_APP_NAME: ${{ (inputs.target || 'production') == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+
+    steps:
+      - name: Resolve Target Resource Group
+        env:
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Fetched from the target-NAMED Container App, so the fetch itself is the
+      # strong target guard; the expected host/database are derived from the
+      # same string and re-checked by the script (see retention-cleanup.yml).
+      - name: Resolve Database Connection
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$HOST"
+          test -n "$DB"
+
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # A scheduled run has no inputs (github.event_name == 'schedule'), and it
+      # APPLIES -- that is the ruling. A dispatch applies only when a person
+      # typed APPLY.
+      - name: Close Inactive Sessions
+        env:
+          PPBF_SESSION_AUTOCLOSE_APPLY: ${{ github.event_name == 'schedule' || inputs.apply == 'APPLY' }}
+        # `shell: bash` for pipefail, so a failed sweep is not hidden by `tee`.
+        shell: bash
+        run: |
+          npm --prefix apps/web run pilot:close-inactive-sessions | tee autoclose-result.json
+
+      - name: Record What Ran
+        if: always()
+        env:
+          # Free text reaches the shell through the environment, never by
+          # interpolation (see retention-cleanup.yml).
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply == 'APPLY' }}
+        run: |
+          {
+            echo "### Session auto-close -- \`$TARGET\`"
+            echo ''
+            if [ "$APPLY" = "true" ]; then
+              echo '- mode: **APPLY** (inactive sessions were closed)'
+            else
+              echo '- mode: dry run (counts only, nothing closed)'
+            fi
+            echo "- outcome: \`${{ job.status }}\`"
+            echo ''
+            echo '```json'
+            [ -s autoclose-result.json ] && cat autoclose-result.json || echo '{"event":"session.autoclose.no-output"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
