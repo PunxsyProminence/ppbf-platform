@@ -6014,7 +6014,7 @@
     "id": "app/api/pilot/compliance/violations/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/compliance/violations",
-    "gate": "requirePrincipal + requireRole(organization_admin, admin, coach) + assertActorCanAccessAthlete when athlete_id given; coach without athlete_id filtered inline in SQL by athletes.coach_id",
+    "gate": "requirePrincipal + requireRole(organization_admin, admin, coach) + assertActorCanAccessAthlete when athlete_id given; coach without athlete_id scoped to athleteIdsForCoach",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -6024,16 +6024,17 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach list without athlete_id is scoped by athletes.coach_id = account (compliance.ts:559-565), i.e. assigned athletes only, not live coverage, so a covering coach sees a narrower set than assertActorCanAccessAthlete would allow (narrower, not wider).",
-    "confidence": "medium",
-    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; coach scoping is an inline SQL filter rather than the central helper.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; a coach's unfiltered list is the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1), passed to getOrganizationViolations as athleteIds.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -8006,7 +8007,7 @@
     "id": "app/api/pilot/passbook/gaps/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/passbook/gaps",
-    "gate": "requirePrincipal + requireRole + inline coach scope by accountId",
+    "gate": "requirePrincipal + requireRole + athleteIdsForCoach for a coach (null scope for an organization admin)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -8016,15 +8017,16 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach scope is inline SQL on athletes.coach_id = own account (passbook.ts:~766), not a named coach-reach helper, so live coverage athletes are not included (stricter, not wider).",
-    "confidence": "medium",
-    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach only own athletes via SQL filter in getCoachPassbookGapQueue.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -8762,7 +8764,7 @@
     "id": "app/api/pilot/profile/roster/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/profile/roster",
-    "gate": "requirePrincipal + requireRole([coach,organization_admin,admin]) + inline isOrganizationAdminRole for scope=organization",
+    "gate": "requirePrincipal + requireRole([coach,organization_admin,admin]) + athleteIdsForCoach for the coach list + inline isOrganizationAdminRole for scope=organization",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -8772,15 +8774,16 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach reach is an inline SQL filter a.coach_id = principal.accountId (route.ts:49), not assertCoachAssignedToAthlete, so a coach with a live coverage grant does not see covered athletes here (narrower than the rule, not wider).",
-    "confidence": "medium",
-    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the caller own athletes, or the whole gym when scope=organization and caller is org admin (route.ts:25-31, 33-53). dob is selected but only feeds the portrait decision.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the athletes the caller reaches (athleteIdsForCoach: coach of record UNION active coverage, lane P1), or the whole gym when scope=organization and caller is org admin. dob is selected but only feeds the portrait decision; is_mine and coach_of_subject stay coach-of-record.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -8976,9 +8979,9 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Unlike gaps GET (route.ts:25-30), this route does not soften wording for athlete/parent readers; confirm getGapJustifications output is family-safe.",
-    "confidence": "medium",
-    "notes": "Gap justification text built from detection sources for athlete_id (route.ts:13-25); reach check at route.ts:22.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gap justification for athlete_id: staff get the rule and its rollup fields; athlete and parent get one plain sentence per gap (familyGapJustifications, OD-2026-10-08-003 R4, lane P1). Reach check at route.ts:38.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12651,7 +12654,7 @@
     "id": "app/api/pilot/video/list/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/video/list",
-    "gate": "requirePrincipal + requireRole + per-role branches (assertActorCanAccessAthlete for parent and coach-with-athlete_id) + isOrganizationAdminRole for scope=all",
+    "gate": "requirePrincipal + requireRole + per-role branches (assertActorCanAccessAthlete for parent and coach-with-athlete_id; athleteIdsForCoach for coach without athlete_id) + isOrganizationAdminRole for scope=all",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -12663,16 +12666,17 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach list without athlete_id uses roster SQL (pilot.athletes.coach_id = caller) rather than assertActorCanAccessAthlete, so live-coverage athletes are not included and every athlete-less (unassigned) clip in the gym is listed to any coach.",
+    "looksWrong": "Every athlete-less (unassigned) clip in the gym is listed to any coach; owner-confirmed breadth (2026-08-08), see the route comment.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
