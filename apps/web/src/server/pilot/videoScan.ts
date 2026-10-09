@@ -35,6 +35,22 @@ export const VIDEO_SCAN_MAX_FRAMES = 12;
 
 const VIDEO_SCAN_MAX_COMPLETION_TOKENS = 1_024;
 
+// The scan's own cap on one vision call, shorter than Film Study's 120 s
+// (shadowFilmStudy.ts VISION_TIMEOUT_MS). The sweep holds the consent locks
+// for exactly this call (guardVisionCall below), so a guardian's withdrawal
+// or a coach's tag on that child waits at most this long. A slower reply
+// returns null, which is the same reclaimable pending/retry path as any
+// verdict that has not arrived.
+export const VIDEO_SCAN_VISION_TIMEOUT_MS = 30_000;
+
+/**
+ * Wraps the one vision call. It runs after the frames are cut and decides,
+ * immediately before anything leaves the platform, whether `send` runs at
+ * all: null means do not send. The sweep passes one that re-checks consent
+ * and holds it locked until the call returns (videoScanSweep.ts).
+ */
+export type VisionCallGuard = <T>(send: () => Promise<T>) => Promise<T | null>;
+
 // Defender for Storage writes its verdict here. The key is Microsoft's, not
 // ours, and is matched case-insensitively with whitespace collapsed because it
 // is a display-shaped string we do not control.
@@ -121,7 +137,10 @@ export async function readMalwareVerdict(blobPath: string): Promise<MalwareVerdi
  * block, matching the Film Study retention rule (#103 prerequisite 3). Nothing
  * here writes a frame to blob storage or logs frame content.
  */
-export async function runContentScreen(blobPath: string): Promise<ContentVerdict | null> {
+export async function runContentScreen(
+  blobPath: string,
+  options: { guardVisionCall?: VisionCallGuard; onVisionCall?: (timing: VisionCallTiming) => void } = {},
+): Promise<ContentVerdict | null> {
   if (!isFilmStudyVisionConfigured()) {
     return null;
   }
@@ -140,11 +159,29 @@ export async function runContentScreen(blobPath: string): Promise<ContentVerdict
     });
     const frames = await Promise.all(framePaths.map((framePath) => fs.readFile(framePath)));
 
-    const analysis = await analyzeFramesWithVision({
-      frames,
-      prompt: VIDEO_CONTENT_SCREEN_PROMPT,
-      maxCompletionTokens: VIDEO_SCAN_MAX_COMPLETION_TOKENS,
-    });
+    // Timed around the call alone (not the lock wait before it), so the
+    // 30 s cap can be judged from real scans. The abort surfaces as the same
+    // provider-unavailable error as a dropped connection, so a failure at or
+    // past the cap is what counts as timed out.
+    const send = async () => {
+      const sentAt = Date.now();
+      try {
+        const result = await analyzeFramesWithVision({
+          frames,
+          prompt: VIDEO_CONTENT_SCREEN_PROMPT,
+          maxCompletionTokens: VIDEO_SCAN_MAX_COMPLETION_TOKENS,
+          timeoutMs: VIDEO_SCAN_VISION_TIMEOUT_MS,
+        });
+        options.onVisionCall?.({ visionMs: Date.now() - sentAt, visionTimedOut: false });
+        return result;
+      } catch (error) {
+        const visionMs = Date.now() - sentAt;
+        options.onVisionCall?.({ visionMs, visionTimedOut: visionMs >= VIDEO_SCAN_VISION_TIMEOUT_MS });
+        throw error;
+      }
+    };
+    const analysis = options.guardVisionCall ? await options.guardVisionCall(send) : await send();
+    if (analysis === null) return null;
 
     return parseContentScreenVerdict(analysis.content);
   } catch (error) {
@@ -163,6 +200,14 @@ export interface VideoScanResult extends VideoScanOutcome {
   malware: MalwareVerdict | null;
   content: ContentVerdict | null;
   durationMs: number;
+  /** How long the vision call took, or null when none was made. */
+  visionMs: number | null;
+  visionTimedOut: boolean | null;
+}
+
+export interface VisionCallTiming {
+  visionMs: number;
+  visionTimedOut: boolean;
 }
 
 /**
@@ -189,14 +234,20 @@ export async function scanVideoSession(params: {
   config: VideoScanConfig;
   maxAttempts?: number;
   skipContentScreen?: boolean;
+  guardVisionCall?: VisionCallGuard;
 }): Promise<VideoScanResult> {
   const start = Date.now();
   const { config } = params;
 
   const malware = config.malware === 'off' ? null : await readMalwareVerdict(params.blobPath);
+  let timing: VisionCallTiming | null = null;
   const content = config.content === 'off' || params.skipContentScreen
     ? null
-    : await runContentScreen(params.blobPath);
+    : await runContentScreen(params.blobPath, {
+      guardVisionCall: params.guardVisionCall,
+      onVisionCall: (measured) => { timing = measured; },
+    });
+  const vision = timing as VisionCallTiming | null;
 
   const outcome = decideVideoScanOutcome({
     config,
@@ -208,5 +259,12 @@ export async function scanVideoSession(params: {
     maxAttempts: params.maxAttempts,
   });
 
-  return { ...outcome, malware, content, durationMs: Date.now() - start };
+  return {
+    ...outcome,
+    malware,
+    content,
+    durationMs: Date.now() - start,
+    visionMs: vision?.visionMs ?? null,
+    visionTimedOut: vision?.visionTimedOut ?? null,
+  };
 }
