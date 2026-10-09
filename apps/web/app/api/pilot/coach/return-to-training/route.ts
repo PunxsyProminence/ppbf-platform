@@ -46,9 +46,13 @@ const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
  * training hold; a hold has its own route and rule.
  *
  * Creating a plan on an injury links the injury to it (the injury's expected
- * return then reads from the plan, athleteInjuries.ts:24). The plan row and
- * the link are two writes; if the link fails after the plan exists, the plan
- * is still listed as a link candidate on the injury page and nothing is lost.
+ * return then reads from the plan, athleteInjuries.ts:24). The plan row, its
+ * audit row and the link are separate writes, not one transaction (neither
+ * module takes a client). If the link fails after the plan exists, the plan
+ * is audited and listed as a link candidate on the injury page, the caller
+ * sees the error, and a retry would create a second plan: link the existing
+ * one from the injury record instead. Two coaches creating a plan on the same
+ * injury at the same moment can both succeed, the later link winning.
  */
 
 const TRIGGERING_EVENTS: readonly RttTriggeringEvent[] = [
@@ -83,7 +87,7 @@ function oneOf<T extends string>(values: readonly T[], value: unknown, field: st
 function dateOrNull(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'string' && ISO_DATE.test(value) ? new Date(`${value}T00:00:00Z`) : null;
-  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+  if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value || value < '0001-01-01') {
     throw new ValidationError(`${field} must be a date (YYYY-MM-DD).`);
   }
   return value;
@@ -178,9 +182,16 @@ export async function POST(request: NextRequest) {
 
       const authoritySource = text(body, 'authority_source');
       if (!authoritySource) throw new ValidationError('authority_source is required: who set the rest period (rulebook, physician).');
-      const earliestReturnDate = dateOrNull(body.earliest_return_date, 'earliest_return_date');
+      // The plan becomes the one source of the expected return (the link
+      // clears the injury's own), so a date the coach already entered on the
+      // injury carries into the plan rather than being dropped.
+      const earliestReturnDate = dateOrNull(body.earliest_return_date, 'earliest_return_date') ?? injury.expected_return_date;
       if (earliestReturnDate && earliestReturnDate < injury.injury_date) {
         throw new ValidationError("earliest_return_date is before this injury's date.");
+      }
+      const clearanceOnFile = body.medical_clearance_on_file;
+      if (clearanceOnFile !== undefined && clearanceOnFile !== null && typeof clearanceOnFile !== 'boolean') {
+        throw new ValidationError('medical_clearance_on_file must be true or false.');
       }
 
       const plan = await createReturnToTrainingPlan({
@@ -191,10 +202,24 @@ export async function POST(request: NextRequest) {
         authoritySource,
         restPeriodDays: positiveIntOrNull(body.rest_period_days, 'rest_period_days', 3650),
         earliestReturnDate,
-        medicalClearanceOnFile: body.medical_clearance_on_file === true,
+        medicalClearanceOnFile: clearanceOnFile === true,
         enteredByAccountId: principal.accountId,
         enteredByRole: principal.role,
         note: text(body, 'note'),
+      });
+
+      // Audited as soon as the record exists, before the link: a link that
+      // fails must not leave a health record with no audit row.
+      await writePilotAuditEvent({
+        event_type: 'create',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'return_to_training_plan',
+        entity_id: plan.plan_id,
+        // Ids and enums only: authority_source is free text and can name a
+        // physician, and details are mirrored into the shadow event stream.
+        details: { injury_id: injuryId, triggering_event: plan.triggering_event, medical_clearance_on_file: plan.medical_clearance_on_file },
       });
 
       // Link the injury to its plan, keeping every other field as recorded.
@@ -218,16 +243,6 @@ export async function POST(request: NextRequest) {
         },
         updatedByAccountId: principal.accountId,
       });
-
-      await writePilotAuditEvent({
-        event_type: 'create',
-        actor_account_id: principal.accountId,
-        actor_role: principal.role,
-        organization_id: principal.organizationId,
-        entity_type: 'return_to_training_plan',
-        entity_id: plan.plan_id,
-        details: { injury_id: injuryId, triggering_event: plan.triggering_event, authority_source: plan.authority_source },
-      });
       return NextResponse.json({ ok: true, plan: { ...plan, steps: [], current_step_id: null }, injury: linked }, NO_STORE);
     }
 
@@ -245,6 +260,20 @@ export async function POST(request: NextRequest) {
       if (weekNumber === null) throw new ValidationError('week_number must be a whole number from 1 to 520.');
       const intensityLabel = text(body, 'intensity_label');
       if (!intensityLabel) throw new ValidationError("intensity_label is required: the coach's own words for the week's ceiling.");
+
+      // A week at or below one already advanced would become the current
+      // step and move the athlete's ceiling backwards without anyone deciding
+      // that. Weeks are added ahead of where the athlete is.
+      const advancedWeeks = (await listReturnToTrainingSteps(principal.organizationId, planId))
+        .filter((step) => step.advanced_at !== null)
+        .map((step) => step.week_number);
+      const highestAdvanced = advancedWeeks.length > 0 ? Math.max(...advancedWeeks) : 0;
+      if (weekNumber <= highestAdvanced) {
+        throw new ConflictError(
+          `Week ${highestAdvanced} has already been advanced; add a week after it.`,
+          'RTT_STEP_WEEK_ALREADY_PASSED',
+        );
+      }
 
       const step = await addReturnToTrainingStep({
         organizationId: principal.organizationId,
@@ -302,8 +331,10 @@ export async function PATCH(request: NextRequest) {
     }
     const steps = await listReturnToTrainingSteps(principal.organizationId, planId);
     const current = currentStep(steps);
-    if (!steps.some((step) => step.step_id === stepId)) {
-      throw new NotFoundError('Return-to-training step not found.');
+    const named = steps.find((step) => step.step_id === stepId);
+    if (!named) throw new NotFoundError('Return-to-training step not found.');
+    if (named.advanced_at !== null) {
+      throw new ConflictError(`Week ${named.week_number} has already been advanced.`, 'RTT_STEP_ALREADY_ADVANCED');
     }
     if (!current || current.step_id !== stepId) {
       throw new ConflictError(

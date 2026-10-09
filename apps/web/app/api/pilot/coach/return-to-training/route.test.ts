@@ -105,7 +105,14 @@ beforeEach(() => {
   mockBelongs.mockResolvedValue(undefined);
   mockGetInjury.mockResolvedValue(INJURY);
   mockUpdateInjury.mockImplementation(async ({ fields }) => ({ ...INJURY, linked_rtt_plan_id: fields.linkedRttPlanId }));
-  mockCreatePlan.mockImplementation(async (input) => ({ ...PLAN, plan_id: 'plan-new', athlete_id: input.athleteId, ...input }));
+  mockCreatePlan.mockImplementation(async (input) => ({
+    ...PLAN,
+    plan_id: 'plan-new',
+    athlete_id: input.athleteId,
+    triggering_event: input.triggeringEvent,
+    authority_source: input.authoritySource,
+    medical_clearance_on_file: input.medicalClearanceOnFile,
+  }));
   mockListPlans.mockResolvedValue([PLAN]);
   mockListSteps.mockResolvedValue([STEP1, STEP2, STEP3]);
   mockAddStep.mockImplementation(async (input) => ({ step_id: 'step-new', advanced_at: null, ...input, week_number: input.weekNumber, permitted_contact: input.permittedContact }));
@@ -194,6 +201,7 @@ describe('an assigned coach', () => {
         athleteId: 'ATH-OTHER',
         enteredByAccountId: 'someone-else',
         earliest_return_date: '2026-10-01',
+        medical_clearance_on_file: true,
         note: '  Physician letter on file.  ',
       }),
     );
@@ -208,7 +216,7 @@ describe('an assigned coach', () => {
       authoritySource: 'USA Boxing rulebook',
       restPeriodDays: 30,
       earliestReturnDate: '2026-10-01',
-      medicalClearanceOnFile: false,
+      medicalClearanceOnFile: true,
       enteredByAccountId: 'acct-coach-1',
       enteredByRole: 'coach',
       note: 'Physician letter on file.',
@@ -235,10 +243,30 @@ describe('an assigned coach', () => {
         organization_id: ORG,
         entity_type: 'return_to_training_plan',
         entity_id: 'plan-new',
-        details: expect.objectContaining({ injury_id: INJURY.injury_id }),
+        details: { injury_id: INJURY.injury_id, triggering_event: 'injury', medical_clearance_on_file: true },
       }),
     );
+    // The audit row is written before the link, so a failed link never leaves
+    // an unaudited plan; and it carries no free text (authority_source can
+    // name a physician).
+    expect(mockAudit.mock.invocationCallOrder[0]).toBeLessThan(mockUpdateInjury.mock.invocationCallOrder[0]);
+    expect(JSON.stringify(mockAudit.mock.calls[0][0].details)).not.toContain('USA Boxing');
     expect(await res.json()).toMatchObject({ ok: true, plan: { plan_id: 'plan-new', steps: [], current_step_id: null }, injury: { linked_rtt_plan_id: 'plan-new' } });
+  });
+
+  test("an injury's own expected return carries into the plan when the body gives none, instead of being dropped", async () => {
+    expect((await POST(bodyReq('POST', CREATE))).status).toBe(200);
+    expect(mockCreatePlan.mock.calls[0][0]).toMatchObject({ earliestReturnDate: '2026-09-20', medicalClearanceOnFile: false });
+    expect(mockUpdateInjury.mock.calls[0][0].fields).toMatchObject({ expectedReturnDate: null, linkedRttPlanId: 'plan-new' });
+  });
+
+  test('a link that fails after the plan exists surfaces the error; the plan was already audited', async () => {
+    const { NotFoundError } = jest.requireActual('@/src/server/pilot/errors');
+    mockUpdateInjury.mockRejectedValue(new NotFoundError('Injury record not found.'));
+    const res = await POST(bodyReq('POST', CREATE));
+    expect(res.status).toBe(404);
+    expect(mockCreatePlan).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_type: 'return_to_training_plan', entity_id: 'plan-new' }));
   });
 
   test('create_plan refuses an injury that already has a plan, a missing or erroneous injury, and bad fields', async () => {
@@ -259,6 +287,8 @@ describe('an assigned coach', () => {
       { earliest_return_date: '2026-02-31' },
       { earliest_return_date: '2026-08-31' }, // before the injury
       { event_date: 'yesterday' },
+      { event_date: '0000-01-01' }, // Postgres has no year 0
+      { medical_clearance_on_file: 'true' },
       { note: 'x'.repeat(2001) },
     ]) {
       expect((await POST(bodyReq('POST', { ...CREATE, ...bad }))).status).toBe(400);
@@ -287,6 +317,24 @@ describe('an assigned coach', () => {
   test('add_step defaults contact to none and scale level to null', async () => {
     expect((await POST(bodyReq('POST', ADD))).status).toBe(200);
     expect(mockAddStep.mock.calls[0][0]).toMatchObject({ permittedContact: 'none', permittedScaleLevel: null, plannedNote: '' });
+  });
+
+  test('a week at or below one already advanced is refused, so the current step never moves backwards', async () => {
+    // Week 1 advanced; weeks 2 and 3 ahead. Week 1 again would be a duplicate
+    // anyway; week 0 is invalid; so advance week 2 too and try week 2 and 1.
+    mockListSteps.mockResolvedValue([STEP1, { ...STEP2, advanced_at: '2026-09-15' }, STEP3]);
+    for (const week_number of [1, 2]) {
+      const res = await POST(bodyReq('POST', { ...ADD, week_number }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'Week 2 has already been advanced; add a week after it.' });
+    }
+    expect(mockAddStep).not.toHaveBeenCalled();
+    expect((await POST(bodyReq('POST', { ...ADD, week_number: 5 }))).status).toBe(200);
+  });
+
+  test('a plan with no advanced step takes any week', async () => {
+    mockListSteps.mockResolvedValue([STEP2, STEP3]);
+    expect((await POST(bodyReq('POST', { ...ADD, week_number: 1 }))).status).toBe(200);
   });
 
   test("a plan that is not in the named athlete's list is the same 404 as a missing one", async () => {
@@ -347,12 +395,9 @@ describe('an assigned coach', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'Week 2 is the current step; advance it first.' });
 
-    expect((await PATCH(bodyReq('PATCH', { ...ADVANCE, step_id: 'step-1' }))).status).toBe(409);
-
-    mockListSteps.mockResolvedValue([STEP1]);
     res = await PATCH(bodyReq('PATCH', { ...ADVANCE, step_id: 'step-1' }));
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: 'Every step of this plan has been advanced.' });
+    expect(await res.json()).toMatchObject({ error: 'Week 1 has already been advanced.' });
 
     mockListSteps.mockResolvedValue([STEP1, STEP2]);
     expect((await PATCH(bodyReq('PATCH', { ...ADVANCE, step_id: 'step-missing' }))).status).toBe(404);
