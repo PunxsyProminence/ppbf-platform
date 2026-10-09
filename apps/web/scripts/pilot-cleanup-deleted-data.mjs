@@ -21,6 +21,19 @@
  *                   act. A destructive default would mean a mistyped command,
  *                   or a copy-pasted CI step, is unrecoverable.
  *
+ *   ENQUIRIES ONLY  PPBF_RETENTION_APPLY_INQUIRIES=true is the second, narrower
+ *                   switch, and the one the nightly schedule sets. It deletes
+ *                   ONLY expired public interest-form inquiries (12 months,
+ *                   oldest first, under the cap) and writes the audit row;
+ *                   people's records are counted and reported exactly as a dry
+ *                   run reports them, and attemptPurge is never entered. Jason,
+ *                   2026-10-07 (OD-2026-10-07-010, Q2): "Nightly deletes
+ *                   enquiries itself" -- the nightly run deletes public
+ *                   enquiries older than 12 months on its own, with a cap per
+ *                   run; people's records stay manual. When PPBF_RETENTION_APPLY
+ *                   is also true the full apply already covers inquiries and
+ *                   this switch changes nothing.
+ *
  *   BLAST RADIUS    Refuses to proceed if the purge would remove more than
  *                   PPBF_RETENTION_MAX_ROWS rows (default 50). The windows are
  *                   two years and one year, so a correct run in a pilot this
@@ -40,6 +53,7 @@
  *
  * Usage:
  *   npm run pilot:cleanup-deleted-data                     # dry run, reports counts
+ *   PPBF_RETENTION_APPLY_INQUIRIES=true npm run pilot:cleanup-deleted-data   # the nightly mode
  *   PPBF_RETENTION_APPLY=true npm run pilot:cleanup-deleted-data
  */
 
@@ -90,6 +104,14 @@ try {
 }
 
 const apply = process.env.PPBF_RETENTION_APPLY === 'true';
+// Three modes, and the two switches cannot combine into a fourth: a full apply
+// already deletes inquiries, so the narrower switch adds nothing to it.
+//   apply            everything due is deleted (a person typed APPLY)
+//   inquiries_only   expired public inquiries are deleted; people's records
+//                    are reported, never touched (the nightly schedule)
+//   dry_run          nothing is deleted
+const applyInquiries = !apply && process.env.PPBF_RETENTION_APPLY_INQUIRIES === 'true';
+const mode = apply ? 'apply' : applyInquiries ? 'inquiries_only' : 'dry_run';
 // THE BLAST-RADIUS GUARD MUST NOT BE DEFEATABLE BY THE PERSON TRIGGERING THE
 // DELETION. This file's own header sells the cap as the thing that stops a
 // runaway sweep -- "the right response is to stop and let a human look" -- but
@@ -1021,29 +1043,47 @@ async function main() {
     const accounts = expiredAccounts.rows.length;
     const videos = expiredVideos.rows[0].n;
     const inquiries = expiredInquiries.rows[0].n;
-    // Only families can trip the cap (INQUIRY_RETENTION, above).
+    // Only families can trip the cap (INQUIRY_RETENTION, above). In the
+    // inquiries-only mode no family is removed, so none takes room under the
+    // cap: inquiries get all of it, and the whole cap is what bounds the run.
     const families = athletes + accounts;
-    const inquiryRoom = Math.max(0, maxRows - families);
+    const inquiryRoom = applyInquiries ? maxRows : Math.max(0, maxRows - families);
     const total = families + inquiries;
 
     if (families > maxRows) {
-      await client.query('rollback');
+      // The guard protects people's records from a runaway sweep. The
+      // inquiries-only run never sweeps them, so refusing it would only stop
+      // inquiry retention; it reports the number loudly and carries on.
+      if (!applyInquiries) {
+        await client.query('rollback');
+        console.error(JSON.stringify({
+          event: 'retention.cleanup.refused',
+          reason: 'BLAST_RADIUS_EXCEEDED',
+          athletes,
+          accounts,
+          videos,
+          inquiries,
+          total,
+          max_rows: maxRows,
+        }));
+        process.exitCode = 1;
+        return;
+      }
       console.error(JSON.stringify({
-        event: 'retention.cleanup.refused',
-        reason: 'BLAST_RADIUS_EXCEEDED',
+        event: 'retention.cleanup.people_over_cap',
+        mode,
         athletes,
         accounts,
-        videos,
-        inquiries,
-        total,
         max_rows: maxRows,
+        note: 'People\'s records are not touched by this mode. A full APPLY of these would be refused as BLAST_RADIUS_EXCEEDED; a human must look.',
       }));
-      process.exitCode = 1;
-      return;
     }
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
-    const outcome = families === 0
+    // The inquiries-only run never enters attemptPurge, not even the rolled-back
+    // rehearsal a dry run does, and never opens storage: people's records are
+    // candidates it counts, nothing more.
+    const outcome = families === 0 || applyInquiries
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
         videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0,
@@ -1080,15 +1120,21 @@ async function main() {
     const inquiriesDeferred = Math.max(0, inquiries - inquiriesDeleted);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
-    if (!apply) {
+    if (mode === 'dry_run') {
       await client.query('rollback');
       console.log(JSON.stringify({
         event: 'retention.cleanup.dry-run',
+        mode,
         athletes,
         accounts,
         videos,
         inquiries,
         total,
+        // What the next scheduled run deletes on its own, and what waits for
+        // a person to dispatch APPLY. The dry run is the monitor, so it says
+        // which is which.
+        nightly_deletes_inquiries: Math.min(inquiries, maxRows),
+        apply_needed_for: { athletes, accounts, videos },
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
         would_delete_videos: outcome.videosDeleted,
@@ -1103,7 +1149,7 @@ async function main() {
         blocked: blockedCount,
         blocked_by: outcome.blocked,
         guardian_link_lock: outcome.guardianLinkLock,
-        note: 'set PPBF_RETENTION_APPLY=true to delete',
+        note: 'the scheduled run (PPBF_RETENTION_APPLY_INQUIRIES=true) deletes the inquiries; set PPBF_RETENTION_APPLY=true to delete everything due',
       }));
       // A dry run that found rows it CANNOT delete is a failing monitor, not a
       // report. Exiting non-zero is the whole point: retention is not
@@ -1112,10 +1158,19 @@ async function main() {
       return;
     }
 
-    if (total === 0) {
+    // Nothing this mode deletes was due (or, inquiries-only, nothing due was
+    // deletable within this run): no audit row, since nothing happened.
+    const deletedHere = outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted;
+    if (total === 0 || (applyInquiries && deletedHere === 0 && blockedCount === 0)) {
       await client.query('rollback');
       console.log(JSON.stringify({
-        event: 'retention.cleanup.completed', athletes: 0, accounts: 0, inquiries: 0, total: 0,
+        event: 'retention.cleanup.completed',
+        mode,
+        athletes: 0,
+        accounts: 0,
+        inquiries: 0,
+        total: 0,
+        ...(applyInquiries ? { people_due: { athletes, accounts, videos } } : {}),
       }));
       return;
     }
@@ -1126,6 +1181,9 @@ async function main() {
       [
         'data_purged',
         JSON.stringify({
+          mode,
+          // Inquiries-only: the people's records the run saw and left alone.
+          ...(applyInquiries ? { people_due: { athletes, accounts, videos } } : {}),
           athletes_deleted: outcome.athletesDeleted,
           accounts_deleted: outcome.accountsDeleted,
           athlete_logins_unlinked: outcome.loginsUnlinked,
@@ -1149,6 +1207,8 @@ async function main() {
 
     console.log(JSON.stringify({
       event: blockedCount > 0 ? 'retention.cleanup.incomplete' : 'retention.cleanup.completed',
+      mode,
+      ...(applyInquiries ? { people_due: { athletes, accounts, videos } } : {}),
       athletes: outcome.athletesDeleted,
       accounts: outcome.accountsDeleted,
       athlete_logins_unlinked: outcome.loginsUnlinked,
