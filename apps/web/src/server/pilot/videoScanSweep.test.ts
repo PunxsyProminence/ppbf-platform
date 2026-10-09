@@ -132,6 +132,9 @@ beforeEach(() => {
   mockedCheckConsent.mockResolvedValue(consentOf({ status: 'signed', coversVideo: true }));
   mockedTagSubjects.mockReset();
   mockedTagSubjects.mockResolvedValue([]);
+  // Reset so a queued destination can never leak into the next test.
+  mockedResolveSubject.mockReset();
+  mockedResolveSubject.mockResolvedValue({ isTeaching: false, athleteIds: ['ath-1'] });
   mockedMarkUnconfigured.mockReset();
   mockedRearm.mockReset();
   mockedMarkUnconfigured.mockResolvedValue(0);
