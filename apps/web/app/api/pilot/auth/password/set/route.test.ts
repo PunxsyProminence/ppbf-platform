@@ -40,6 +40,7 @@ jest.mock('@/src/server/pilot/rateLimit', () => {
     getClientIp: () => '203.0.113.9',
     checkDurableRateLimit: jest.fn(actual.checkDurableRateLimit),
     recordDurableFailedAttempt: jest.fn(actual.recordDurableFailedAttempt),
+    reserveAttempts: jest.fn(actual.reserveAttempts),
     clearDurableRateLimit: jest.fn(actual.clearDurableRateLimit),
   };
 });
@@ -49,6 +50,7 @@ const mockSetPassword = jest.mocked(setOwnPasswordFromLinkSession);
 const rateLimit = jest.requireMock('@/src/server/pilot/rateLimit') as {
   checkDurableRateLimit: jest.Mock;
   recordDurableFailedAttempt: jest.Mock;
+  reserveAttempts: jest.Mock;
   clearDurableRateLimit: jest.Mock;
   clearRateLimit: (key: string) => void;
   recordFailedAttempt: (key: string) => unknown;
@@ -97,8 +99,9 @@ beforeEach(() => {
     authProvider: 'microsoft' as const,
   } as never);
   mockSetPassword.mockResolvedValue(undefined);
-  // clearAllMocks keeps implementations; put the real durable check back.
+  // clearAllMocks keeps implementations; put the real ones back.
   rateLimit.checkDurableRateLimit.mockImplementation(actualRateLimit.checkDurableRateLimit);
+  rateLimit.reserveAttempts.mockImplementation(actualRateLimit.reserveAttempts);
 });
 
 describe('POST /api/pilot/auth/password/set', () => {
@@ -334,7 +337,8 @@ describe('POST /api/pilot/auth/password/set', () => {
         'password_set_account:parent-1',
         'password_set_ip:203.0.113.9',
       ]);
-      expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).toEqual([HASH_KEY]);
+      expect(rateLimit.reserveAttempts.mock.calls).toEqual([[[HASH_KEY]]]);
+      expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
     });
 
     test('it is per account: another account behind the same address is not slowed by this one', async () => {
@@ -375,8 +379,8 @@ describe('POST /api/pilot/auth/password/set', () => {
 
       expect((await post({ password: GOOD_PASSWORD })).status).toBe(403);
 
+      expect(rateLimit.reserveAttempts.mock.calls).toEqual([[[HASH_KEY]]]);
       expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).toEqual([
-        HASH_KEY,
         'password_set_account:parent-1',
         'password_set_ip:203.0.113.9',
       ]);
@@ -394,10 +398,10 @@ describe('POST /api/pilot/auth/password/set', () => {
     // still on its way to the database.
     test('the hash does not start until its count has been recorded', async () => {
       let finishRecording!: () => void;
-      rateLimit.recordDurableFailedAttempt.mockImplementationOnce(async (key: string) => {
-        const recorded = actualRateLimit.recordFailedAttempt(key);
+      rateLimit.reserveAttempts.mockImplementationOnce(async (keys: string[]) => {
+        const reserved = await actualRateLimit.reserveAttempts(keys);
         await new Promise<void>((resolve) => { finishRecording = resolve; });
-        return recorded;
+        return reserved;
       });
 
       const pending = post({ password: GOOD_PASSWORD });
@@ -412,8 +416,10 @@ describe('POST /api/pilot/auth/password/set', () => {
     });
 
     test('a durable hash limit is honoured: 429 and no hash', async () => {
-      rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
-        key === HASH_KEY ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
+      rateLimit.reserveAttempts.mockImplementation(async (keys: string[]) => (
+        keys.includes(HASH_KEY)
+          ? { isLimited: true, key: HASH_KEY, durable: true, delayMs: 30_000 }
+          : actualRateLimit.reserveAttempts(keys)
       ));
 
       expect((await post({ password: GOOD_PASSWORD })).status).toBe(429);
@@ -427,7 +433,7 @@ describe('POST /api/pilot/auth/password/set', () => {
       mockSetPassword.mockRejectedValueOnce(linkRequired());
       expect((await post({ password: GOOD_PASSWORD })).status).toBe(403);
 
-      expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).not.toContain(HASH_KEY);
+      expect(rateLimit.reserveAttempts).not.toHaveBeenCalled();
       rateLimit.clearRateLimit('password_set_account:parent-1');
       rateLimit.clearRateLimit('password_set_ip:203.0.113.9');
       // And the next good request goes straight through.
