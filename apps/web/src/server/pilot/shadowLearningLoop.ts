@@ -268,10 +268,34 @@ async function queueLibraryChangeForReview(
   }
 }
 
+/**
+ * The outcomes that put a topic on the Library review queue from a client
+ * signal (OD-2026-10-08 GO-RECS-CONFIRMED, O11 = A: "Library review flags come
+ * from negative feedback only; thumbs-up still counts in metrics but makes no
+ * flag"). Until then every durable client signal, praise included, wrote a
+ * 'pending' flag, so the /admin/shadow "Review flags" list and the metrics
+ * route's "concerned topics" were counting thumbs-up as concern.
+ *
+ * These are the same two outcomes handleNegativeOutcome calls baseNegative.
+ * ignored_advice and session_ended are negative there ONLY under the
+ * aggressive_research_generation unlock, which is a human-reviewed path with
+ * an unlock state loaded; this client path loads none and never has, so they
+ * are not flagged here. followed_advice and asked_followup are praise or
+ * engagement. Metrics are recorded for every outcome before this is reached.
+ */
+const CLIENT_SIGNAL_FLAG_OUTCOMES: ReadonlySet<OutcomeSignal> = new Set<OutcomeSignal>([
+  'thumbs_down',
+  'escalated_to_human',
+]);
+
 async function queueClientSignalForReview(
   signal: LearningSignal,
   actions: string[],
 ): Promise<boolean> {
+  if (!CLIENT_SIGNAL_FLAG_OUTCOMES.has(signal.outcome)) {
+    actions.push(`Client feedback recorded in metrics; no Library flag for ${signal.outcome}`);
+    return false;
+  }
   try {
     await query(
       `INSERT INTO pilot.shadow_library_review_flags (
@@ -293,6 +317,10 @@ async function queueClientSignalForReview(
          user_note = EXCLUDED.user_note,
          last_flagged_at = NOW(),
          latest_outcome_signal = EXCLUDED.outcome_signal,
+         -- A fresh negative signal supersedes a pending praise proposal on
+         -- the topic: left in place, a 'promote' here would hide this flag
+         -- from the metrics route's concerned topics.
+         proposed_action = NULL,
          review_state = 'pending'`,
       [
         signal.organizationId,
@@ -477,6 +505,7 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
        user_note = EXCLUDED.user_note,
        last_flagged_at = NOW(),
        latest_outcome_signal = $6,
+       proposed_action = NULL,
        review_state = 'pending'`,
     [
       signal.organizationId,
