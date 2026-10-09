@@ -112,6 +112,9 @@ let row: ProfileRow;
 let onProfileRead: (() => void) | null = null;
 /** Every statement the emulator saw, so a test can assert ordering. */
 let statements: string[];
+/** The 'portrait_review_image_viewed' audit rows on file: who looked, and at
+ * WHICH photograph (its photo_uploaded_at). Seeded per test. */
+let views: Array<{ actor: string; uploadedAt: string }>;
 
 function seedRow(overrides: Partial<ProfileRow> = {}): void {
   row = {
@@ -174,6 +177,16 @@ function installEmulator(): void {
 
   mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
     statements.push(sql);
+    if (/from pilot\.audit_events/.test(sql)) {
+      // The release attestation probe. Evaluated from the predicates the
+      // route actually sent, so a probe that drops one fails here.
+      expect(sql).toMatch(/details->>'action' = 'portrait_review_image_viewed'/);
+      expect(sql).toMatch(/details->>'photo_uploaded_at' = \$4/);
+      const [org, actor, subject, uploadedAt] = params as string[];
+      const hit = org === ORG && subject === SUBJECT
+        && views.some((view) => view.actor === actor && view.uploadedAt === uploadedAt);
+      return hit ? [{ audit_id: 'audit-view-1' }] : [];
+    }
     if (!/update pilot\.account_profiles/.test(sql)) {
       throw new Error(`Unexpected SQL through db.query: ${sql}`);
     }
@@ -208,6 +221,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   seedRow();
   onProfileRead = null;
+  // The reviewer looked at the photograph on file. Tests about the
+  // attestation itself clear or change this.
+  views = [{ actor: 'acct-coach', uploadedAt: FIRST_UPLOAD_AT }];
   installEmulator();
   mockRequirePrincipal.mockResolvedValue(coach());
   mockGetSubjectIdentity.mockResolvedValue({
@@ -290,7 +306,8 @@ describe('POST /api/pilot/profile/photo/review -- the decision is bound to the p
   test('the write actually carries both halves of the guard -- state AND photo identity', async () => {
     await POST(decisionRequest('release'));
 
-    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    const [sql, params] = mockQuery.mock.calls
+      .find(([text]) => /update pilot\.account_profiles/.test(text as string)) as [string, unknown[]];
     // Asserted on the emitted SQL so the emulator above cannot be the only
     // thing enforcing the guard: a vacuous predicate would fail here.
     expect(sql).toMatch(/and photo_review_state = \$\d+/);
@@ -314,5 +331,71 @@ describe('POST /api/pilot/profile/photo/review -- the decision is bound to the p
     expect(response.status).toBe(409);
     expect(row.photo_review_state).toBe('blocked');
     expect(row.photo_reviewed_by_account_id).toBe('acct-other-coach');
+  });
+});
+
+describe('POST /api/pilot/profile/photo/review -- a release rests on a look at THIS photograph (lane W7)', () => {
+  test("a coach who never opened their athlete's portrait cannot release it", async () => {
+    views = [];
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(403);
+    expect(row.photo_review_state).toBe('pending_review');
+    expect(row.photo_reviewed_by_account_id).toBeNull();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a look at the photograph that has since been replaced attests nothing', async () => {
+    // The coach looked at the first upload; the row now holds a replacement.
+    seedRow({ photo_uploaded_at: REPLACEMENT_UPLOAD_AT });
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(403);
+    expect(row.photo_review_state).toBe('pending_review');
+  });
+
+  test("another reviewer's look does not count for this one", async () => {
+    views = [{ actor: 'acct-other-coach', uploadedAt: FIRST_UPLOAD_AT }];
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(403);
+    expect(row.photo_review_state).toBe('pending_review');
+  });
+
+  test('an organization admin releasing from here is held to the same look', async () => {
+    views = [];
+    mockRequirePrincipal.mockResolvedValue(
+      { accountId: 'acct-admin', role: 'organization_admin', organizationId: ORG, athleteId: null } as never,
+    );
+    mockResolveRelationship.mockResolvedValue('organization_staff');
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(403);
+    expect(row.photo_review_state).toBe('pending_review');
+  });
+
+  test('staff releasing their OWN portrait need no look (OD-2026-10-06-005, CL-A20)', async () => {
+    views = [];
+    seedRow({ account_id: SUBJECT });
+    mockResolveRelationship.mockResolvedValue('self');
+
+    const response = await POST(decisionRequest('release'));
+
+    expect(response.status).toBe(200);
+    expect(row.photo_review_state).toBe('released');
+    expect(statements.some((sql) => /from pilot\.audit_events/.test(sql))).toBe(false);
+  });
+
+  test('a block is never gated on a look -- refusing is never slowed', async () => {
+    views = [];
+
+    const response = await POST(decisionRequest('block'));
+
+    expect(response.status).toBe(200);
+    expect(row.photo_review_state).toBe('blocked');
   });
 });

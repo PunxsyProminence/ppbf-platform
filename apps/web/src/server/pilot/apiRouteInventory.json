@@ -1551,10 +1551,11 @@
     "id": "app/api/pilot/admin/portrait-review/photo/[accountId]/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/portrait-review/photo/[accountId]",
-    "gate": "requirePrincipal + requireRole + assertViewerMayReachSubject",
+    "gate": "requirePrincipal + requireRole([organization_admin,admin,coach]) + assertViewerMayReachSubject + resolveRelationship (coach: coach_of_subject or self only)",
     "rolesAdmitted": [
       "organization_admin",
-      "admin"
+      "admin",
+      "coach"
     ],
     "athleteData": true,
     "writes": true,
@@ -1562,7 +1563,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Streams a pending_review profile portrait of one account (route.ts:83-105); writes a portrait_review_image_viewed audit row before returning bytes (route.ts:107). Role gate route.ts:84; assertViewerMayReachSubject route.ts:93 (admits org admin for any athlete). Coach not admitted by role gate, so coach-reach is moot; marked applied because the helper runs.",
+    "notes": "Streams a pending_review profile portrait of one account (route.ts:83-105); writes a portrait_review_image_viewed audit row before returning bytes (route.ts:107). Role gate route.ts:84; assertViewerMayReachSubject route.ts:93 (admits org admin for any athlete). Coach admitted only as coach_of_subject or self (resolveRelationship), the same subjects profile/photo/review lets them decide; any other coach is a hidden 404 (lane W7). Audit source names who looked: admin_portrait_review_console or coach_portrait_review.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8702,7 +8703,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Release or block a pending portrait (route.ts:22-92); deletes the blob on block. Coach reach via assertViewerMayReachSubject (route.ts:40), then org admin or coach_of_subject or self (route.ts:46-48). Audited.",
+    "notes": "Release or block a pending portrait (route.ts:22-92); deletes the blob on block. Coach reach via assertViewerMayReachSubject (route.ts:40), then org admin or coach_of_subject or self (route.ts:46-48). A release by anyone but self requires this reviewer's portrait_review_image_viewed row for the current photo_uploaded_at (lane W7, FT-7); self is exempt per OD-2026-10-06-005 (CL-A20); block is ungated. Audited.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

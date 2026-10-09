@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { downloadPilotProfilePhoto } from '@/src/server/pilot/blob';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -8,6 +8,7 @@ import {
   assertViewerMayReachSubject,
   getAccountProfile,
   getSubjectIdentity,
+  resolveRelationship,
 } from '@/src/server/pilot/profileDb';
 
 export const runtime = 'nodejs';
@@ -41,11 +42,17 @@ export const dynamic = 'force-dynamic';
  * review-only way to see the thing under review. This route is that, for faces:
  *
  *   1. requirePrincipal   -- a real session, not one still on a bootstrap PIN.
- *   2. requireRole         -- organization admin only, the SAME actor set the
+ *   2. requireRole         -- organization admin, the SAME actor set the
  *                             console's queue and decision route already use
- *                             (see ../../route.ts). A coach reviewing their own
- *                             athlete's portrait goes through profile/photo/
- *                             review, and this console is not their door.
+ *                             (see ../../route.ts), plus coach. A coach is
+ *                             admitted ONLY for a subject they may already
+ *                             decide on in profile/photo/review: their own
+ *                             athlete (coach_of_subject) or themselves (self).
+ *                             Lane W7: that route now requires this route's
+ *                             view row before a non-self release, so the coach
+ *                             who may release a child's face must be able to
+ *                             look at it first. Any other coach is the same
+ *                             hidden 404 as every refusal below; no wider.
  *   3. assertViewerMayReachSubject
  *                          -- the existing child-account boundary out of
  *                             access.ts, unchanged and unwidened. Org isolation
@@ -81,7 +88,7 @@ export async function GET(
 ) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
+    requireRole(principal, ['organization_admin', 'admin', 'coach']);
 
     const { accountId } = await params;
     if (!accountId || accountId.length > 128) return hiddenNotFound();
@@ -93,6 +100,12 @@ export async function GET(
       await assertViewerMayReachSubject(principal, identity);
     } catch {
       return hiddenNotFound();
+    }
+
+    const isAdmin = isOrganizationAdminRole(principal.role);
+    if (!isAdmin) {
+      const relationship = await resolveRelationship(principal, identity, principal.organizationId);
+      if (relationship !== 'coach_of_subject' && relationship !== 'self') return hiddenNotFound();
     }
 
     const profile = await getAccountProfile(principal.organizationId, accountId);
@@ -123,7 +136,7 @@ export async function GET(
         // current value, so a view of a photograph that has since been
         // replaced attests nothing.
         photo_uploaded_at: profile.photoUploadedAt,
-        source: 'admin_portrait_review_console',
+        source: isAdmin ? 'admin_portrait_review_console' : 'coach_portrait_review',
       },
       shadow_mirror: false,
     });
