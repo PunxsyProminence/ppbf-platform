@@ -338,16 +338,25 @@ describe('loadHumanReviewExchange: one ticket, one exchange, one audit row', () 
       expect(read.sql).toMatch(/conversation_id = \$\d/);
       expect(read.sql).toMatch(/organization_id = \$\d/);
     }
+    // The assistantCreated Date never reaches a query parameter.
+    expect(statements.some((s) => s.params.includes(assistantCreated))).toBe(false);
     const assistant = messageReads.find((s) => s.sql.includes("role = 'assistant'"));
     expect(assistant?.sql).toContain('where message_id = $1');
     expect(assistant?.sql).toContain('and conversation_id = $2');
     expect(assistant?.sql).toContain('and organization_id = $3');
     expect(assistant?.params).toEqual([ASSISTANT_ID, CONVERSATION_ID, 'org-a']);
     const user = messageReads.find((s) => s.sql.includes("role = 'user'"));
-    expect(user?.sql).toContain('created_at <= $3');
-    expect(user?.sql).toContain('order by created_at desc');
+    // The cutoff is the assistant row's own created_at, resolved in SQL by
+    // the assistant's id within the same conversation and organization --
+    // never the millisecond-truncated Date node-postgres handed back.
+    expect(user?.sql).toMatch(/u\.created_at <= \(\s*select a\.created_at/);
+    expect(user?.sql).toContain('where a.message_id = $3');
+    expect(user?.sql).toContain('and a.conversation_id = $1');
+    expect(user?.sql).toContain('and a.organization_id = $2');
+    expect(user?.sql).not.toContain('<= $');
+    expect(user?.sql).toContain('order by u.created_at desc');
     expect(user?.sql).toContain('limit 1');
-    expect(user?.params).toEqual([CONVERSATION_ID, 'org-a', assistantCreated]);
+    expect(user?.params).toEqual([CONVERSATION_ID, 'org-a', ASSISTANT_ID]);
 
     // The audit row: who read whose exchange, on the transaction's client,
     // and not fanned out to the SHADOW event/telemetry streams.
@@ -410,6 +419,18 @@ describe('loadHumanReviewExchange: one ticket, one exchange, one audit row', () 
     expect(client.query).toHaveBeenCalledTimes(1);
     expect(client.query.mock.calls[0][1]).toEqual([REVIEW_ID, 'org-b']);
     expect(mockedWriteAudit).not.toHaveBeenCalled();
+  });
+
+  it('the age band is the age when the message was sent, not at the time of reading', async () => {
+    // Born 2008-09-01: 17 when the flagged answer was written (2026-08-01),
+    // 18 by the time anyone reads it after 2026-09-01. Still a minor's words.
+    clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: ASSISTANT_ID })]],
+      [/role = 'assistant'/, [{ message_id: ASSISTANT_ID, content: 'answer', response_state: 'ok', created_at: new Date('2026-08-01T12:00:00.000Z') }]],
+      [/from pilot\.accounts a/, [{ role: 'athlete', dob: '2008-09-01' }]],
+    ]);
+    const result = await loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader });
+    expect(result).toMatchObject({ recorded: true, subject: { ageBand: 'under_18' } });
   });
 
   it('a missing date of birth is reported as missing, never read as adult', async () => {

@@ -100,8 +100,21 @@ type ExchangeState =
 const AGE_BAND_LABEL: Record<'under_18' | 'adult' | 'age_not_on_record', string> = {
   under_18: 'under 18',
   adult: '18 or over',
-  age_not_on_record: 'age not on record — treated as under 18',
+  age_not_on_record: 'age not on record',
 };
+
+/**
+ * The age band as a reviewer should read it. An athlete with no date of birth
+ * on record is treated as under 18 (wallDisplay.isMinor), and the label says
+ * so; a coach, parent or other staff account has no athlete record at all,
+ * and "treated as under 18" would be a false statement about an adult.
+ */
+function ageBandLabel(role: string | null, ageBand: 'under_18' | 'adult' | 'age_not_on_record'): string {
+  if (ageBand === 'age_not_on_record' && role === 'athlete') {
+    return 'age not on record — treated as under 18';
+  }
+  return AGE_BAND_LABEL[ageBand];
+}
 
 const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
   { value: 'open', label: 'Open' },
@@ -145,6 +158,12 @@ function ShadowReviewsConsole() {
    * Cleared when the tab changes, so a re-read is a second audited click.
    */
   const [exchanges, setExchanges] = useState<Record<string, ExchangeState>>({});
+  /**
+   * A tab change clears the panels; a read still in flight from before it
+   * must not refill one. The epoch moves on each clear and a response from
+   * an older epoch is dropped (the read was still audited: it was clicked).
+   */
+  const exchangeEpochRef = useRef(0);
 
   /**
    * Which fetch the page is currently willing to believe. Tabs make the reads
@@ -202,6 +221,7 @@ function ShadowReviewsConsole() {
     if (next === status) return;
     setLoading(true);
     setError(null);
+    exchangeEpochRef.current += 1;
     setExchanges({});
     setStatus(next);
   }
@@ -212,6 +232,7 @@ function ShadowReviewsConsole() {
    * the words are not; a second click is a second audited read.
    */
   const openExchange = useCallback(async (reviewId: string) => {
+    const epoch = exchangeEpochRef.current;
     setExchanges((current) => ({ ...current, [reviewId]: { kind: 'loading' } }));
     try {
       const response = await fetch(
@@ -219,6 +240,7 @@ function ShadowReviewsConsole() {
         { credentials: 'include' },
       );
       const payload = await response.json().catch(() => ({})) as { exchange?: ReviewExchange; error?: string };
+      if (epoch !== exchangeEpochRef.current) return;
       if (!response.ok || !payload.exchange) {
         setExchanges((current) => ({
           ...current,
@@ -228,6 +250,7 @@ function ShadowReviewsConsole() {
       }
       setExchanges((current) => ({ ...current, [reviewId]: { kind: 'loaded', exchange: payload.exchange as ReviewExchange } }));
     } catch {
+      if (epoch !== exchangeEpochRef.current) return;
       setExchanges((current) => ({
         ...current,
         [reviewId]: { kind: 'error', message: 'Could not reach the review queue.' },
@@ -410,7 +433,7 @@ function ShadowReviewsConsole() {
                 {exchange?.kind === 'loaded' && exchange.exchange.recorded && (
                   <div className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
                     <p className="t-eyebrow">
-                      Asked by: {(exchange.exchange.subject.role ?? 'unknown role').replace(/_/g, ' ')} · {AGE_BAND_LABEL[exchange.exchange.subject.ageBand]}
+                      Asked by: {(exchange.exchange.subject.role ?? 'unknown role').replace(/_/g, ' ')} · {ageBandLabel(exchange.exchange.subject.role, exchange.exchange.subject.ageBand)}
                     </p>
                     <dl className="mt-[var(--s3)] space-y-[var(--s3)]">
                       <div>

@@ -274,9 +274,9 @@ test('a closed ticket carries no controls', async () => {
 
 test('the page never asks for a conversation, and renders no message text of its own', async () => {
   // A ticket carries a conversation_id. This page does not turn it into a door.
-  // A reviewer needs to know a child raised something the boundary refused to
-  // answer and to act on it in the room; reading the conversation is a separate
-  // audited decision behind its own route.
+  // The one flagged exchange is readable on a click through the reviews route
+  // (tested below, "the flagged exchange behind a ticket"); the conversation
+  // itself is not, and nothing here fetches or links to it.
   //
   // The one channel that would carry words is `metadata`, which is rendered
   // verbatim -- honestly, so the screen shows exactly what was recorded. That
@@ -444,7 +444,21 @@ describe('the flagged exchange behind a ticket', () => {
     expect(screen.queryByRole('button', { name: /read the flagged exchange/i })).toBeNull();
   });
 
-  test('a missing date of birth is shown as missing and treated as under 18', async () => {
+  test('an athlete with no date of birth is shown as missing and treated as under 18', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ reviews: [ticket()] }))
+      .mockResolvedValueOnce(jsonResponse({
+        success: true,
+        exchange: { ...EXCHANGE, subject: { accountId: 'acct-9', role: 'athlete', ageBand: 'age_not_on_record' } },
+      }));
+    render(<ShadowReviewsPage />);
+    await screen.findByText(/withheld by the pre-generation safety boundary/);
+    fireEvent.click(screen.getByRole('button', { name: /read the flagged exchange/i }));
+    const label = await screen.findByText(/asked by: athlete/i);
+    expect(label.textContent).toMatch(/age not on record — treated as under 18/);
+  });
+
+  test('a staff account with no athlete record is "age not on record", never "treated as under 18"', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ reviews: [ticket()] }))
       .mockResolvedValueOnce(jsonResponse({
@@ -455,7 +469,8 @@ describe('the flagged exchange behind a ticket', () => {
     await screen.findByText(/withheld by the pre-generation safety boundary/);
     fireEvent.click(screen.getByRole('button', { name: /read the flagged exchange/i }));
     const label = await screen.findByText(/asked by: coach/i);
-    expect(label.textContent).toMatch(/age not on record — treated as under 18/);
+    expect(label.textContent).toMatch(/age not on record$/);
+    expect(label.textContent).not.toMatch(/treated as under 18/);
   });
 
   test('a ticket that names no stored message says so, and shows no words', async () => {
@@ -487,4 +502,34 @@ describe('the flagged exchange behind a ticket', () => {
     await screen.findByText(/withheld by the pre-generation safety boundary/);
     expect(screen.queryByRole('button', { name: /read the flagged exchange/i })).toBeNull();
   });
+});
+
+test('a read still in flight when the tab changes cannot refill a cleared panel', async () => {
+  let release: (value: Response) => void = () => {};
+  const slowExchange = new Promise<Response>((resolve) => { release = resolve; });
+  fetchMock
+    .mockResolvedValueOnce(jsonResponse({ reviews: [ticket()] }))          // open
+    .mockReturnValueOnce(slowExchange)                                       // the click
+    .mockResolvedValueOnce(jsonResponse({ reviews: [ticket({ status: 'in_review' })] })); // in_review tab
+  render(<ShadowReviewsPage />);
+  await screen.findByText(/withheld by the pre-generation safety boundary/);
+  fireEvent.click(screen.getByRole('button', { name: /read the flagged exchange/i }));
+  fireEvent.click(screen.getByRole('button', { name: 'In review' }));
+  await screen.findByText(/withheld by the pre-generation safety boundary/);
+
+  await act(async () => {
+    release(jsonResponse({
+      success: true,
+      exchange: {
+        recorded: true,
+        subject: { accountId: 'acct-9', role: 'athlete', ageBand: 'under_18' },
+        userMessage: { messageId: 'u1', content: 'my chest hurts when i skip', createdAt: '2026-08-01T12:00:00.000Z' },
+        assistantMessage: { messageId: 'a1', content: 'Tell a coach now.', createdAt: '2026-08-01T12:00:00.001Z', responseState: 'filtered' },
+      },
+    }));
+    await slowExchange;
+  });
+
+  expect(screen.queryByText(/my chest hurts/)).toBeNull();
+  expect(screen.getByRole('button', { name: /read the flagged exchange/i })).toBeTruthy();
 });

@@ -1275,16 +1275,30 @@ export async function loadHumanReviewExchange(input: {
     // the pair in one statement with the user row one microsecond earlier;
     // the async path appends the user message first. Either way it is the
     // latest 'user' row at or before the answer, and only that one.
+    //
+    // THE CUTOFF IS COMPARED IN SQL, against the assistant row's own
+    // created_at, never against the value node-postgres handed back: a JS
+    // Date keeps milliseconds and drops microseconds (db.ts keeps only DATE
+    // as text), so a round-tripped cutoff is up to 999µs EARLY and the paired
+    // user row, one microsecond before the answer, falls outside it in all
+    // but ~0.2% of exchanges -- the previous question would have been shown
+    // as if it drew this answer (found in review before this shipped).
     const user = await client.query<{ message_id: string; content: string; created_at: Date }>(
-      `select message_id, content, created_at
-       from pilot.shadow_chat_messages
-       where conversation_id = $1
-         and organization_id = $2
-         and role = 'user'
-         and created_at <= $3
-       order by created_at desc
+      `select u.message_id, u.content, u.created_at
+       from pilot.shadow_chat_messages u
+       where u.conversation_id = $1
+         and u.organization_id = $2
+         and u.role = 'user'
+         and u.created_at <= (
+           select a.created_at
+           from pilot.shadow_chat_messages a
+           where a.message_id = $3
+             and a.conversation_id = $1
+             and a.organization_id = $2
+         )
+       order by u.created_at desc
        limit 1`,
-      [row.conversation_id, input.organizationId, assistantRow.created_at],
+      [row.conversation_id, input.organizationId, assistantRow.message_id],
     );
     const userRow = user.rows[0] ?? null;
 
@@ -1292,7 +1306,9 @@ export async function loadHumanReviewExchange(input: {
     // it says under 18. No name -- the ticket already shows the account id,
     // and the reviewer acts on the person in the room, not on a profile.
     // A missing date of birth is reported as missing, not read as adult
-    // (wallDisplay.ts isMinor: unknown age is treated as a minor).
+    // (wallDisplay.ts isMinor: unknown age is treated as a minor). The age is
+    // the age WHEN THE MESSAGE WAS SENT, not at the time of reading: a
+    // 17-year-old's words read after their birthday are still a minor's.
     const subject = await client.query<{ role: string; dob: string | null }>(
       `select a.role, to_char(ath.dob, 'YYYY-MM-DD') as dob
        from pilot.accounts a
@@ -1304,7 +1320,7 @@ export async function loadHumanReviewExchange(input: {
     );
     const subjectRow = subject.rows[0];
     const ageBand: ShadowReviewSubjectAgeBand = subjectRow?.dob
-      ? (isMinor(subjectRow.dob, new Date()) ? 'under_18' : 'adult')
+      ? (isMinor(subjectRow.dob, assistantRow.created_at) ? 'under_18' : 'adult')
       : 'age_not_on_record';
 
     await writePilotAuditEvent({
