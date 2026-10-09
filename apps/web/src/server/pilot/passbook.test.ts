@@ -450,7 +450,7 @@ describe('passbookObservationNoteTypes', () => {
 });
 
 describe('getCoachPassbookGapQueue', () => {
-  test('scopes a coach queue to assigned athletes and includes attendance context', async () => {
+  test('scopes a coach queue to the athletes the coach reaches and includes attendance context', async () => {
     mockQuery.mockResolvedValueOnce([
       {
         organization_id: 'org-1', gap_id: 'gap-assigned', gap_type: 'technique', gap_description: 'assigned',
@@ -472,11 +472,11 @@ describe('getCoachPassbookGapQueue', () => {
       },
     ]);
 
-    const result = await getCoachPassbookGapQueue('org-1', 'coach-1');
+    const result = await getCoachPassbookGapQueue('org-1', ['ath-1', 'ath-3']);
 
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('and ($2::text is null or a.coach_id = $2)'),
-      ['org-1', 'coach-1'],
+      expect.stringContaining('and ($2::text[] is null or a.athlete_id = any($2::text[]))'),
+      ['org-1', ['ath-1', 'ath-3']],
     );
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain("g.status not in ('completed', 'deferred')");

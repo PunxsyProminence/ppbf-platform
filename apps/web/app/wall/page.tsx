@@ -14,13 +14,17 @@ import WallDisplay from '@/components/WallDisplay';
  * alternative is thirteen more characters on an on-screen keyboard.
  *
  * There is no session gate here on purpose -- see app/api/pilot/wall/route.ts
- * for why, and for what the payload is allowed to contain because of it.
+ * for why. What the screen shows depends on whether this television has been
+ * paired with a code (OD-2026-10-07-008): unpaired, today's classes and a head
+ * count from the public read; paired, the full board from
+ * GET /api/pilot/tv/session behind the device cookie. components/WallDisplay.tsx
+ * makes that choice on every poll.
  */
 export const metadata: Metadata = {
   title: 'The Wall',
   description: 'Punxsy Prominence Boxing and Fitness — the board on the gym floor.',
   // A display, not a document. Nothing here should be indexed, and the names
-  // on it are gated for the room they are in, not for a search result.
+  // a paired TV shows are gated for the room it is in, not for a search result.
   robots: { index: false, follow: false },
 };
 

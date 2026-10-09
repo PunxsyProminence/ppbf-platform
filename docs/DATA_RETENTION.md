@@ -31,13 +31,13 @@ This policy defines how long PPBF retains data about minors and their families, 
 
 ## Data Categories and Retention Windows
 
-**What enforces these today:** three windows only. The cleanup job, when a person dispatches it
-with `apply=APPLY` (the nightly run is a dry run, Method 1), hard-deletes athlete rows 2 years
-after `deleted_at` (the table below says 1 year for the athlete record), guardian accounts
-1 year after, and public interest-form inquiries 12 months after they were sent
-(`apps/web/scripts/pilot-cleanup-deleted-data.mjs`, `ATHLETE_RETENTION`, `ACCOUNT_RETENTION`,
-`INQUIRY_RETENTION`; *Public interest-form inquiries*, below). No job enforces the other
-windows below, and nothing sets `deleted_at` at age 18.
+**What enforces these today:** three windows only. The cleanup job (Method 1) hard-deletes
+athlete rows 2 years after `deleted_at` (the table below says 1 year for the athlete record)
+and guardian accounts 1 year after, but only when a person dispatches it with `apply=APPLY`;
+and it deletes public interest-form inquiries 12 months after they were sent on its own,
+every night (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`, `ATHLETE_RETENTION`,
+`ACCOUNT_RETENTION`, `INQUIRY_RETENTION`; *Public interest-form inquiries*, below). No job
+enforces the other windows below, and nothing sets `deleted_at` at age 18.
 
 ### Athletes
 
@@ -102,15 +102,25 @@ So every inquiry goes at 12 months, whatever its review state (`new`, `contacted
 and whether or not the person joined. Someone who joins has a member record; the inquiry is not
 part of it, and nothing links the two.
 
-**Enforced by** the cleanup job (Method 1): the same nightly dry run and the same human
-`apply=APPLY` dispatch as the family windows. An inquiry is due when `created_at < now() -
-interval '12 months'`. Inquiries never make a run refuse: the `max_rows` cap is measured on
-families as before, and inquiries are deleted oldest first into whatever room the families
-leave under it. Any still due are reported as `inquiries_deferred` and go on the next applied
-run, so a backlog from the public form can neither block a family's purge nor become
-undeletable. The log and the `data_purged` audit row carry counts only (`inquiries`,
-`inquiries_deleted`, `inquiries_deferred`), never what anyone wrote. Because deletion waits for a dispatch, an
-inquiry can outlive 12 months by however long the dispatch waits.
+**Enforced by** the cleanup job (Method 1), **on its own, every night.** Jason, 2026-10-07
+(OD-2026-10-07-010, question 2): "Nightly deletes enquiries itself" -- the nightly run deletes
+public enquiries older than 12 months on its own, with a cap per run; people's records stay
+manual. The scheduled run sets `PPBF_RETENTION_APPLY_INQUIRIES=true`, the script's narrower
+switch (mode `inquiries_only`): it deletes due inquiries, oldest first, at most `max_rows` (50)
+a night, and writes the `data_purged` audit row; the family windows are counted and reported
+exactly as a dry run reports them, and the purge of people's records is never entered. A
+person can run the same narrower mode by dispatching with `apply=APPLY_INQUIRIES`. A full
+`apply=APPLY` dispatch deletes inquiries too, as before.
+
+An inquiry is due when `created_at < now() - interval '12 months'`. Inquiries never make a run
+refuse: under a full apply the `max_rows` cap is measured on families, and inquiries are
+deleted oldest first into whatever room the families leave under it; under the nightly mode
+no family is removed, so inquiries get the whole cap. Any still due are reported as
+`inquiries_deferred` and go on the next run, so a backlog from the public form can neither
+block a family's purge nor become undeletable. The log and the audit row carry counts only
+(`inquiries`, `inquiries_deleted`, `inquiries_deferred`, and in the nightly mode `people_due`),
+never what anyone wrote. An inquiry can outlive 12 months by at most the nights a backlog
+larger than the cap takes to drain.
 
 ## How Data Gets Deleted
 
@@ -118,15 +128,20 @@ inquiry can outlive 12 months by however long the dispatch waits.
 
 A GitHub Actions workflow (`.github/workflows/retention-cleanup.yml`) runs the
 script `npm run pilot:cleanup-deleted-data` (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`)
-every night at 07:40 UTC. The scheduled run is always a **dry run**: it
-reports what it would delete and hard-deletes nothing. Actually deleting
+every night at 07:40 UTC. The scheduled run deletes **expired public
+interest-form inquiries only** (mode `inquiries_only`, *Public interest-form
+inquiries*, above) and, for people's records, reports what it would delete
+and hard-deletes nothing. Actually deleting a withdrawn family's records
 requires a human to manually dispatch the same workflow with the `apply`
-input set to the literal string `APPLY` (any other value, including the
-default `DRY_RUN`, stays a dry run); the dispatch also lets the operator cap
-the run with `max_rows`. This is deliberate — retention windows here are
-measured in years, so waiting a day for a human to confirm the dry-run
-numbers look right costs nothing, while an automatic purge that is wrong is
-unrecoverable.
+input set to the literal string `APPLY` (`APPLY_INQUIRIES` runs the nightly
+mode by hand; any other value, including the default `DRY_RUN`, is a dry run);
+the dispatch also lets the operator cap the run with `max_rows`. This is
+deliberate — retention windows for people are measured in years, so waiting
+a day for a human to confirm the numbers look right costs nothing, while an
+automatic purge of a child's records that is wrong is unrecoverable. The
+dry run's output says which is which: `nightly_deletes_inquiries` is what the
+next scheduled run removes on its own, `apply_needed_for` what waits for a
+person.
 
 **Preconditions:**
 - Data must have a `created_at` or `deleted_at` timestamp
@@ -138,12 +153,12 @@ unrecoverable.
 **Process:**
 1. Query for rows where `deleted_at + retention_window <= now()`
 2. Log the deletion to the audit trail: `event_type: 'data_purged'`
-3. Hard-delete the row from the database (only when dispatched with `apply=APPLY`; the nightly schedule always dry-runs this step)
+3. Hard-delete the row from the database (people's records only when dispatched with `apply=APPLY`; the nightly schedule dry-runs that step and deletes expired inquiries only)
 4. Log success with count of rows deleted
 
-**Who can trigger:** The nightly dry run needs no human action; the actual
-hard-delete requires a person with repo access to dispatch the workflow with
-`apply=APPLY`  
+**Who can trigger:** The nightly run needs no human action and deletes
+expired inquiries on its own; the hard-delete of people's records requires a
+person with repo access to dispatch the workflow with `apply=APPLY`  
 **Audit trail:** ✅ Logged with timestamp, data type, count deleted
 
 ### Method 2: Manual Deletion by an Organization Admin (On Demand)
@@ -526,7 +541,7 @@ the cascade withdrew (`cascade_deleted_athletes`); the cascade writes no event o
 2. Organization admin verifies the request (identity confirmation)
 3. Admin opens `/admin/data-deletion`, chooses the guardian, enters the reason and confirms twice
 4. System soft-deletes the account, and any linked athlete record left with no other guardian
-5. A cleanup run dispatched with `apply=APPLY` hard-deletes the account once it is past the 1-year window (withdrawn athlete rows past 2 years); the nightly run is a dry run
+5. A cleanup run dispatched with `apply=APPLY` hard-deletes the account once it is past the 1-year window (withdrawn athlete rows past 2 years); the nightly run only reports people's records (it deletes expired public inquiries on its own)
 
 ### Athlete Withdraws
 
@@ -534,7 +549,7 @@ the cascade withdrew (`cascade_deleted_athletes`); the cascade writes no event o
 2. System sets `athletes.deleted_at = now()` and closes the athlete's own login, if there is one
 3. Everything tied to the athlete is marked deleted at the same moment (What deletion marks); coach notes stay in the database, off every screen
 4. Audit logged: `data_deletion_initiated`, with the admin as actor
-5. A cleanup run dispatched with `apply=APPLY` hard-deletes the athlete row once it is past the 2-year window; the nightly run is a dry run
+5. A cleanup run dispatched with `apply=APPLY` hard-deletes the athlete row once it is past the 2-year window; the nightly run only reports people's records (it deletes expired public inquiries on its own)
 
 ### Age of Majority (18th Birthday)
 

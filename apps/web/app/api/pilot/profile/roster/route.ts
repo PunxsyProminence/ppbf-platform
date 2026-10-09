@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getAccountProfiles } from '@/src/server/pilot/profileDb';
@@ -75,15 +75,21 @@ export async function GET(request: NextRequest) {
           order by a.full_name asc`,
         [principal.organizationId],
       )
+      // The coach's own list is athleteIdsForCoach: coach of record UNION
+      // active coverage (OD-2026-10-05-024 item 2). A covering coach gets the
+      // covered athletes' ROWS; the portrait decision below still runs per
+      // row, so coverage changes which rows come back, never what may be
+      // seen on one (is_mine and coach_of_subject stay coach-of-record).
       : await query<RosterRow>(
         `select a.athlete_id, acc.account_id, a.full_name, a.dob, a.coach_id
            from pilot.athletes a
            left join pilot.accounts acc
              on acc.organization_id = a.organization_id and acc.athlete_id = a.athlete_id
-          where a.organization_id = $1 and a.coach_id = $2
+          where a.organization_id = $1
+            and a.athlete_id = any($2::text[])
             and a.deleted_at is null
           order by a.full_name asc`,
-        [principal.organizationId, principal.accountId],
+        [principal.organizationId, await athleteIdsForCoach(principal.organizationId, principal.accountId)],
       );
 
     const accountIds = rows.map((row) => row.account_id).filter((id): id is string => Boolean(id));

@@ -106,7 +106,7 @@ describe('GET /api/pilot/progression/gap-justification', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
-  test('an athlete reading their own confirmed gaps gets only the fields that justify them', async () => {
+  test('an athlete reading their own confirmed gaps gets one plain sentence per gap, never the rule or its numbers', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([
@@ -129,6 +129,62 @@ describe('GET /api/pilot/progression/gap-justification', () => {
 
     expect(byGap.get('gap-readiness')).toEqual({
       gap_id: 'gap-readiness',
+      explanation: 'Your check-ins have been lower lately than they were earlier in the month. Your coach is keeping an eye on it.',
+    });
+    expect(byGap.get('gap-training')).toEqual({
+      gap_id: 'gap-training',
+      explanation: 'You have trained on fewer days lately than you did earlier in the month. Your coach is keeping an eye on it.',
+    });
+    // R4 (OD-2026-10-08-003): the rule name and the analytics numbers behind
+    // a gap are staff's. Asserted on the whole payload, so a field that
+    // sneaks in under any key fails this.
+    const text = JSON.stringify(payload);
+    expect(text).not.toContain('readiness_falling');
+    expect(text).not.toContain('training_days_dropping');
+    expect(text).not.toContain('"rule"');
+    expect(text).not.toContain('"fields"');
+    expect(text).not.toContain('6.1');
+    expect(text).not.toContain('5.5');
+  });
+
+  test('a linked parent reads their child\'s justification the same way', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
+    mockQuery.mockResolvedValueOnce([
+      { gap_id: 'gap-readiness', detected_from: 'deterministic_rule:readiness_falling' },
+    ]);
+    queueRollupQueries();
+
+    const res = await GET(getRequest('athlete_id=ath-1'));
+    const payload = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(payload.items).toHaveLength(1);
+    expect(payload.items[0]).toEqual({
+      gap_id: 'gap-readiness',
+      explanation: 'Your check-ins have been lower lately than they were earlier in the month. Your coach is keeping an eye on it.',
+    });
+    expect(JSON.stringify(payload)).not.toContain('5.5');
+  });
+
+  test('a coach keeps the rule and the fields that justify the gap', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null, accountId: 'coach-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // assertCoachAssignedToAthlete
+    mockQuery.mockResolvedValueOnce([
+      { gap_id: 'gap-manual', detected_from: 'coach_observation' },
+      { gap_id: 'gap-readiness', detected_from: 'deterministic_rule:readiness_falling' },
+      { gap_id: 'gap-training', detected_from: 'deterministic_rule:training_days_dropping' },
+    ]);
+    queueRollupQueries();
+
+    const res = await GET(getRequest('athlete_id=ath-1'));
+    const payload = await res.json();
+
+    expect(res.status).toBe(200);
+    const byGap = new Map(payload.items.map((item: { gap_id: string }) => [item.gap_id, item]));
+    expect(byGap.has('gap-manual')).toBe(false);
+    expect(byGap.get('gap-readiness')).toEqual({
+      gap_id: 'gap-readiness',
       rule: 'readiness_falling',
       fields: {
         avg_readiness: 6.1,
@@ -149,22 +205,6 @@ describe('GET /api/pilot/progression/gap-justification', () => {
     const trainingItem = byGap.get('gap-training') as { fields: Record<string, unknown> };
     expect(readinessItem.fields).not.toHaveProperty('sessions_total');
     expect(trainingItem.fields).not.toHaveProperty('active_assignments');
-  });
-
-  test('a linked parent reads their child\'s justification the same way', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
-    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
-    mockQuery.mockResolvedValueOnce([
-      { gap_id: 'gap-readiness', detected_from: 'deterministic_rule:readiness_falling' },
-    ]);
-    queueRollupQueries();
-
-    const res = await GET(getRequest('athlete_id=ath-1'));
-    const payload = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(payload.items).toHaveLength(1);
-    expect(payload.items[0].fields.readiness_late_avg).toBe(5.5);
   });
 
   test('coach and organization_admin access is unchanged (still allowed, still scoped)', async () => {

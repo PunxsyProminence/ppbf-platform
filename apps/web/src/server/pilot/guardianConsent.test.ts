@@ -536,10 +536,10 @@ describe('listConsentForGuardian', () => {
 });
 
 describe('listOrganizationGuardianNames', () => {
-  test('one query for the whole org, and it never touches account_id', async () => {
+  test('one query for the whole org, and it never filters on account_id', async () => {
     mockQuery.mockResolvedValueOnce([
-      { parent_id: 'p1', full_name: 'Dana Reyes' },
-      { parent_id: 'p2', full_name: 'Sam Okafor' },
+      { parent_id: 'p1', full_name: 'Dana Reyes', has_login: true },
+      { parent_id: 'p2', full_name: 'Sam Okafor', has_login: false },
     ]);
 
     const names = await listOrganizationGuardianNames('org-a');
@@ -549,10 +549,14 @@ describe('listOrganizationGuardianNames', () => {
     expect(params).toEqual(['org-a']);
     // A guardian who signed on paper and never signed in has account_id NULL.
     // Filtering on it would return an empty picker for exactly the people this
-    // screen exists to record consent for.
-    expect(String(sql)).not.toMatch(/account_id/i);
-    expect(names.get('p1')).toBe('Dana Reyes');
-    expect(names.get('p2')).toBe('Sam Okafor');
+    // screen exists to record consent for. The column is READ, as a boolean,
+    // so that guardian can be labelled; it must never reach the WHERE clause.
+    // The outer WHERE (the org prefix scan) never names account_id; the
+    // EXISTS reads it to say whether a live, undeleted login backs the record.
+    expect(String(sql)).toMatch(/where p\.organization_id = \$1\s*$/i);
+    expect(String(sql)).toMatch(/exists \(select 1 from pilot\.accounts a[\s\S]*a\.account_id = p\.account_id and not \(a\.deleted_at is not null\)\)/i);
+    expect(names.get('p1')).toEqual({ fullName: 'Dana Reyes', hasLogin: true });
+    expect(names.get('p2')).toEqual({ fullName: 'Sam Okafor', hasLogin: false });
   });
 });
 
@@ -578,7 +582,7 @@ describe('listOrganizationConsentStatus', () => {
   test('each guardian id is resolved to a name, from one org-wide lookup', async () => {
     mockQuery
       .mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]) // athletes list
-      .mockResolvedValueOnce([{ parent_id: 'p1', full_name: 'Dana Reyes' }]) // org guardian names
+      .mockResolvedValueOnce([{ parent_id: 'p1', full_name: 'Dana Reyes', has_login: false }]) // org guardian names
       .mockResolvedValueOnce([{ parent_id: 'p1' }]) // guardian_links for ath-1
       .mockResolvedValueOnce([
         { parent_id: 'p1', status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' },
@@ -586,7 +590,7 @@ describe('listOrganizationConsentStatus', () => {
 
     const result = await listOrganizationConsentStatus('org-a');
 
-    expect(result[0].guardians).toEqual([{ parentId: 'p1', fullName: 'Dana Reyes' }]);
+    expect(result[0].guardians).toEqual([{ parentId: 'p1', fullName: 'Dana Reyes', hasLogin: false }]);
   });
 
   // page is opt-in and must default to unbounded: this function backs the

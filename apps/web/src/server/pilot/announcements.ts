@@ -162,19 +162,33 @@ export async function listAnnouncements(organizationId: string, limit = 8): Prom
 }
 
 // What a member may actually see on one surface right now. 'everywhere' is
-// included in every placement's read by definition. A null bound is an unset
-// bound, not a closed one, so it reads as always-on in that direction.
+// included in every MEMBER placement's read by definition. A null bound is an
+// unset bound, not a closed one, so it reads as always-on in that direction.
+//
+// includeEverywhere: 'everywhere' means every signed-in surface (athletes,
+// coaches, parents), not every screen in the world (OD-2026-10-07-008, "Members
+// only"). The two anonymous readers -- the login-page Gym Notices panel and the
+// public wall -- pass false, so a notice reaches a signed-out page only when its
+// author placed it on gym_notices in as many words. Defaults to true because
+// every other caller is a session-scoped read.
 export async function listLiveAnnouncements(
   organizationId: string,
-  params: { placement: AnnouncementPlacement; kind: AnnouncementKind; limit?: number },
+  params: {
+    placement: AnnouncementPlacement;
+    kind: AnnouncementKind;
+    limit?: number;
+    includeEverywhere?: boolean;
+  },
 ): Promise<PilotAnnouncement[]> {
   const safeLimit = clampLimit(params.limit);
+  const placementClause =
+    params.includeEverywhere === false ? 'placement = $2' : "(placement = $2 or placement = 'everywhere')";
   return query<PilotAnnouncement>(
     `select ${ANNOUNCEMENT_FIELDS}
      from pilot.announcements
      where organization_id = $1
        and active
-       and (placement = $2 or placement = 'everywhere')
+       and ${placementClause}
        and kind = $3
        and (starts_at is null or starts_at <= now())
        and (ends_at is null or ends_at > now())
