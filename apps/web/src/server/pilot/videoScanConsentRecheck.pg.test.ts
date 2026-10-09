@@ -28,6 +28,39 @@ import { Client } from 'pg';
 
 jest.setTimeout(180_000);
 
+/*
+ * For the end-to-end tests below: the blob download and the frame cutter are
+ * doubled (no storage, no ffmpeg), and the vision call is counted rather than
+ * made. lateCommit runs DURING the download -- after the sweep's first
+ * consent check, before the vision call -- which is the window the finding
+ * names. Everything else, the sweep, the scan and the re-check, is shipped.
+ */
+let lateCommit: (() => Promise<unknown>) | null = null;
+let visionCalls = 0;
+jest.mock('./blob', () => ({
+  ...jest.requireActual('./blob'),
+  downloadPilotVideoFile: jest.fn(async () => {
+    if (lateCommit) await lateCommit();
+    return Buffer.from('clip');
+  }),
+}));
+jest.mock('./shadowFilmStudy', () => {
+  const actual = jest.requireActual('./shadowFilmStudy');
+  return {
+    ...actual,
+    isFilmStudyVisionConfigured: jest.fn(() => true),
+    extractFrames: jest.fn(async ({ directory }: { directory: string }) => {
+      const framePath = require('node:path').join(directory, 'frame-1.jpg');
+      await require('node:fs/promises').writeFile(framePath, Buffer.from([0xff, 0xd8, 0xff]));
+      return { framePaths: [framePath] };
+    }),
+    analyzeFramesWithVision: jest.fn(async () => {
+      visionCalls += 1;
+      return { content: 'SCAN_PASS' };
+    }),
+  };
+});
+
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
 const PG_DATABASE = 'ppbf_test_scan_recheck';
@@ -347,5 +380,102 @@ describe('a change attempted during the vision call waits for it to end', () => 
 
     expect(sent).toBe(0);
     expect(skips).toEqual(['guardian_consent_withdrawn']);
+  });
+});
+
+describe('end to end: the sweep, with the change landing while the frames are pulled', () => {
+  const CONTENT_ON = { PPBF_VIDEO_CONTENT_SCAN: 'vision' };
+
+  beforeEach(async () => {
+    visionCalls = 0;
+    lateCommit = null;
+    await client.query(
+      `update pilot.video_sessions
+          set status = 'quarantined', scan_state = 'pending', scan_attempts = 0,
+              scan_next_attempt_at = now() - interval '1 second', scan_claimed_at = null
+        where organization_id = $1 and video_session_id = $2`,
+      [ORG_ID, VIDEO_SESSION_ID],
+    );
+  });
+
+  async function scanRow() {
+    const row = await client.query<{ status: string; scan_detail: Record<string, unknown> | null }>(
+      'select status, scan_detail from pilot.video_sessions where organization_id = $1 and video_session_id = $2',
+      [ORG_ID, VIDEO_SESSION_ID],
+    );
+    return row.rows[0];
+  }
+
+  test('CONTROL: nothing changes, the frames are sent and the video promoted', async () => {
+    const result = await sweep.sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(result.scanned).toBe(1);
+    expect(visionCalls).toBe(1);
+    expect((await scanRow()).status).toBe('ready');
+  });
+
+  test.each([
+    ['a withdrawal', () => withdraw(), 'guardian_consent_withdrawn'],
+    ['a photo-only change', () => grantPhotoOnly(), 'guardian_consent_excludes_video'],
+    ['a new tag naming a photo-only child', () => tagPhotoOnlyChild(), 'guardian_consent_excludes_video'],
+  ])('%s committed mid-download: no frames are sent', async (_name, change, reason) => {
+    lateCommit = change;
+
+    const result = await sweep.sweepQuarantinedVideos({ env: CONTENT_ON });
+
+    expect(result.scanned).toBe(1);
+    expect(visionCalls).toBe(0);
+    const row = await scanRow();
+    expect(row.status).toBe('quarantined');
+    expect(row.scan_detail?.content_skipped_reason).toBe(reason);
+  });
+
+  test('the athlete the video is filed under, deleted mid-download: no frames are sent', async () => {
+    lateCommit = () => client.query(
+      'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
+      [ORG_ID, ATHLETE_ID],
+    );
+    try {
+      await sweep.sweepQuarantinedVideos({ env: CONTENT_ON });
+    } finally {
+      await client.query(
+        'update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2',
+        [ORG_ID, ATHLETE_ID],
+      );
+    }
+
+    expect(visionCalls).toBe(0);
+    expect((await scanRow()).scan_detail?.content_skipped_reason).toBe('athlete_deleted');
+  });
+
+});
+
+/*
+ * Reviewer A on this change: if Postgres ends the held session during the
+ * call (idle_in_transaction_session_timeout), pg emits 'error' on a client
+ * pg-pool has stopped listening to. Unheard, that is an uncaught exception
+ * in the web server. Ended here by hand, as the timeout would.
+ */
+describe('the session dropped during the vision call', () => {
+  test('fails the scan attempt, and nothing goes unheard', async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => { uncaught.push(error); };
+    process.on('uncaughtException', onUncaught);
+    let outcome: string;
+    try {
+      outcome = await runGuard(async () => {
+        await client.query(
+          `select pg_terminate_backend(pid) from pg_stat_activity
+            where datname = current_database() and pid <> pg_backend_pid()
+              and state = 'idle in transaction'`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }).then(() => 'committed', () => 'failed');
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
+
+    expect(outcome).toBe('failed');
+    expect(uncaught).toEqual([]);
   });
 });

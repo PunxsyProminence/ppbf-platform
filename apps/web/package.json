@@ -460,6 +460,7 @@
     "test:migrations:publication-retraction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationRetraction.pg.test.ts --testTimeout=180000",
     "test:migrations:consent-withdrawal-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentWithdrawalRace.pg.test.ts --testTimeout=180000",
     "test:migrations:consent-set-phantom": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/consentSetPhantom.pg.test.ts --testTimeout=180000",
+    "test:migrations:video-scan-consent-recheck": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanConsentRecheck.pg.test.ts --testTimeout=180000",
     "test:migrations:competition-entry-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competitionEntryRace.pg.test.ts --testTimeout=180000",
     "test:migrations:film-study-consent-race": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyConsentRace.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-link-lock-order": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianLinkLockOrder.pg.test.ts --testTimeout=180000",

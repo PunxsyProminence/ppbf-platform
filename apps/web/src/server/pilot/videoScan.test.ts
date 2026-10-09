@@ -184,6 +184,45 @@ describe('runContentScreen — the guard around the vision call', () => {
     expect(mockedVision).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: VIDEO_SCAN_VISION_TIMEOUT_MS }));
   });
 
+  test('the vision call is timed, and a failure at the cap is recorded as timed out', async () => {
+    const ok = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+    });
+    expect(ok.visionMs).toEqual(expect.any(Number));
+    expect(ok.visionTimedOut).toBe(false);
+
+    const now = jest.spyOn(Date, 'now');
+    let clock = 1_000_000;
+    now.mockImplementation(() => clock);
+    mockedVision.mockImplementation(async () => {
+      clock += VIDEO_SCAN_VISION_TIMEOUT_MS;
+      throw new Error('SHADOW_AI_PROVIDER_UNAVAILABLE');
+    });
+    try {
+      const timedOut = await scanVideoSession({
+        blobPath: 'org-1/vs-1/clip.mp4',
+        attempts: 0,
+        config: { malware: 'off', content: 'vision' },
+      });
+      expect(timedOut.content).toBeNull();
+      expect(timedOut.visionMs).toBe(VIDEO_SCAN_VISION_TIMEOUT_MS);
+      expect(timedOut.visionTimedOut).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
+
+    const refused = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+      guardVisionCall: async () => null,
+    });
+    expect(refused.visionMs).toBeNull();
+    expect(refused.visionTimedOut).toBeNull();
+  });
+
   test('scanVideoSession hands the guard through', async () => {
     const result = await scanVideoSession({
       blobPath: 'org-1/vs-1/clip.mp4',

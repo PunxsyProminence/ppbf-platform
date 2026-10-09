@@ -139,7 +139,7 @@ export async function readMalwareVerdict(blobPath: string): Promise<MalwareVerdi
  */
 export async function runContentScreen(
   blobPath: string,
-  options: { guardVisionCall?: VisionCallGuard } = {},
+  options: { guardVisionCall?: VisionCallGuard; onVisionCall?: (timing: VisionCallTiming) => void } = {},
 ): Promise<ContentVerdict | null> {
   if (!isFilmStudyVisionConfigured()) {
     return null;
@@ -159,12 +159,27 @@ export async function runContentScreen(
     });
     const frames = await Promise.all(framePaths.map((framePath) => fs.readFile(framePath)));
 
-    const send = () => analyzeFramesWithVision({
-      frames,
-      prompt: VIDEO_CONTENT_SCREEN_PROMPT,
-      maxCompletionTokens: VIDEO_SCAN_MAX_COMPLETION_TOKENS,
-      timeoutMs: VIDEO_SCAN_VISION_TIMEOUT_MS,
-    });
+    // Timed around the call alone (not the lock wait before it), so the
+    // 30 s cap can be judged from real scans. The abort surfaces as the same
+    // provider-unavailable error as a dropped connection, so a failure at or
+    // past the cap is what counts as timed out.
+    const send = async () => {
+      const sentAt = Date.now();
+      try {
+        const result = await analyzeFramesWithVision({
+          frames,
+          prompt: VIDEO_CONTENT_SCREEN_PROMPT,
+          maxCompletionTokens: VIDEO_SCAN_MAX_COMPLETION_TOKENS,
+          timeoutMs: VIDEO_SCAN_VISION_TIMEOUT_MS,
+        });
+        options.onVisionCall?.({ visionMs: Date.now() - sentAt, visionTimedOut: false });
+        return result;
+      } catch (error) {
+        const visionMs = Date.now() - sentAt;
+        options.onVisionCall?.({ visionMs, visionTimedOut: visionMs >= VIDEO_SCAN_VISION_TIMEOUT_MS });
+        throw error;
+      }
+    };
     const analysis = options.guardVisionCall ? await options.guardVisionCall(send) : await send();
     if (analysis === null) return null;
 
@@ -185,6 +200,14 @@ export interface VideoScanResult extends VideoScanOutcome {
   malware: MalwareVerdict | null;
   content: ContentVerdict | null;
   durationMs: number;
+  /** How long the vision call took, or null when none was made. */
+  visionMs: number | null;
+  visionTimedOut: boolean | null;
+}
+
+export interface VisionCallTiming {
+  visionMs: number;
+  visionTimedOut: boolean;
 }
 
 /**
@@ -217,9 +240,14 @@ export async function scanVideoSession(params: {
   const { config } = params;
 
   const malware = config.malware === 'off' ? null : await readMalwareVerdict(params.blobPath);
+  let timing: VisionCallTiming | null = null;
   const content = config.content === 'off' || params.skipContentScreen
     ? null
-    : await runContentScreen(params.blobPath, { guardVisionCall: params.guardVisionCall });
+    : await runContentScreen(params.blobPath, {
+      guardVisionCall: params.guardVisionCall,
+      onVisionCall: (measured) => { timing = measured; },
+    });
+  const vision = timing as VisionCallTiming | null;
 
   const outcome = decideVideoScanOutcome({
     config,
@@ -231,5 +259,12 @@ export async function scanVideoSession(params: {
     maxAttempts: params.maxAttempts,
   });
 
-  return { ...outcome, malware, content, durationMs: Date.now() - start };
+  return {
+    ...outcome,
+    malware,
+    content,
+    durationMs: Date.now() - start,
+    visionMs: vision?.visionMs ?? null,
+    visionTimedOut: vision?.visionTimedOut ?? null,
+  };
 }

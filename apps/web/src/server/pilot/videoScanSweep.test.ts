@@ -68,12 +68,15 @@ jest.mock('./escalationLadder', () => ({ fileEscalation: jest.fn() }));
  * coverage in videoScanConsentRecheck.pg.test.ts.
  */
 const txStatements: string[] = [];
-let txVideoRow: { athlete_id: string | null } | null = { athlete_id: 'ath-1' };
+let txVideoRow: { athlete_id: string | null; athlete_deleted?: boolean } | null = { athlete_id: 'ath-1' };
+const txErrorListeners = new Set<() => void>();
 jest.mock('./db', () => {
   const actual = jest.requireActual('./db');
   return {
     ...actual,
     withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({
+      on: (_event: string, listener: () => void) => { txErrorListeners.add(listener); },
+      off: (_event: string, listener: () => void) => { txErrorListeners.delete(listener); },
       query: async (text: string) => {
         txStatements.push(text.replace(/\s+/g, ' ').trim());
         if (/from pilot\.video_sessions/.test(text)) return { rows: txVideoRow ? [txVideoRow] : [] };
@@ -131,6 +134,8 @@ function scanResult(overrides: Partial<Awaited<ReturnType<typeof scanVideoSessio
     malware: null,
     content: null,
     durationMs: 5,
+    visionMs: null,
+    visionTimedOut: null,
     ...overrides,
   };
 }
@@ -813,7 +818,8 @@ describe('sweepQuarantinedVideos', () => {
         if (params.skipContentScreen) return scanResult({ decision: 'retry' });
         const send = async () => { visionCalls += 1; return 'SCAN_PASS'; };
         const guard = (params as { guardVisionCall?: (call: typeof send) => Promise<string | null> }).guardVisionCall;
-        const verdict = guard ? await guard(send) : await send();
+        // runContentScreen turns any throw into null; the double does too.
+        const verdict = guard ? await guard(send).catch(() => null) : await send();
         return verdict === null
           ? scanResult({ decision: 'retry' })
           : scanResult({ decision: 'promote', content: 'pass', gatesPassed: ['content'] });
@@ -868,7 +874,38 @@ describe('sweepQuarantinedVideos', () => {
 
       expect(visionCalls).toBe(0);
       expect((mockedSettle.mock.calls[0][0].detail as Record<string, unknown>).content_skipped_reason)
-        .toBeDefined();
+        .toBe('guardian_consent_excludes_video');
+    });
+
+    test('a tag landing between the re-check choosing whom to lock and the video row lock skips this attempt', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      scanThatReachesVision(() => {
+        // The re-check's first look sees no tag; by the read under the video
+        // row lock, ath-2 is tagged and was never locked.
+        mockedTagSubjects
+          .mockResolvedValueOnce([])
+          .mockResolvedValue([{ athlete_id: 'ath-2', athlete_deleted: false }]);
+      });
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(visionCalls).toBe(0);
+      expect((mockedSettle.mock.calls[0][0].detail as Record<string, unknown>).content_skipped_reason)
+        .toBe('tag_subjects_changed');
+    });
+
+    test('a database fault in the re-check fails closed and says so', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      scanThatReachesVision(() => {
+        mockedCheckConsent.mockRejectedValue(new Error('canceling statement due to lock timeout'));
+      });
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(visionCalls).toBe(0);
+      const settled = mockedSettle.mock.calls[0][0];
+      expect(settled.nextStatus).not.toBe('ready');
+      expect((settled.detail as Record<string, unknown>).content_skipped_reason).toBe('recheck_failed');
     });
 
     test('an untagged unattributed clip tagged with a photo-only child after the first check stops the call', async () => {
@@ -931,6 +968,50 @@ describe('sweepQuarantinedVideos', () => {
       expect(txStatements).toHaveLength(0);
     });
 
+    test('the vision call\'s time and timeout reach scan_detail, and only when a call was made', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan
+        .mockResolvedValueOnce(scanResult({ decision: 'retry', visionMs: 30_000, visionTimedOut: true }))
+        .mockResolvedValueOnce(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON, maxScans: 2 });
+
+      const timed = mockedSettle.mock.calls[0][0].detail as Record<string, unknown>;
+      expect(timed.vision_ms).toBe(30_000);
+      expect(timed.vision_timed_out).toBe(true);
+      const none = mockedSettle.mock.calls[1][0].detail as Record<string, unknown>;
+      expect(none).not.toHaveProperty('vision_ms');
+      expect(none).not.toHaveProperty('vision_timed_out');
+    });
+
+    test('an athlete deleted since the claim stops the call', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      txVideoRow = { athlete_id: 'ath-1', athlete_deleted: true };
+      scanThatReachesVision(() => {});
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(visionCalls).toBe(0);
+      expect((mockedSettle.mock.calls[0][0].detail as Record<string, unknown>).content_skipped_reason)
+        .toBe('athlete_deleted');
+    });
+
+    test('a dropped-session listener is held for the transaction and removed after', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      let heardDuringCall = 0;
+      mockedScan.mockImplementation(async (params) => {
+        const guard = (params as { guardVisionCall?: (call: () => Promise<string>) => Promise<string | null> })
+          .guardVisionCall!;
+        await guard(async () => { heardDuringCall = txErrorListeners.size; return 'SCAN_PASS'; });
+        return scanResult({ decision: 'retry' });
+      });
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(heardDuringCall).toBe(1);
+      expect(txErrorListeners.size).toBe(0);
+    });
+
     test('a video row gone by the re-check stops the call', async () => {
       mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
       txVideoRow = null;
@@ -939,6 +1020,8 @@ describe('sweepQuarantinedVideos', () => {
       await sweepQuarantinedVideos({ env: CONTENT_ON });
 
       expect(visionCalls).toBe(0);
+      expect((mockedSettle.mock.calls[0][0].detail as Record<string, unknown>).content_skipped_reason)
+        .toBe('video_missing');
     });
   });
 });

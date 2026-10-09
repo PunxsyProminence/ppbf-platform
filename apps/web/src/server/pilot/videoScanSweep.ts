@@ -135,52 +135,91 @@ export function recheckBeforeVision(
   claimAthleteId: string | null,
   onSkip: (reason: string) => void,
 ): VisionCallGuard {
-  return <T>(send: () => Promise<T>) => withTransaction(async (client): Promise<T | null> => {
-    await client.query(`set local lock_timeout = '${VIDEO_SCAN_RECHECK_LOCK_TIMEOUT_MS}ms'`);
-    await client.query(
-      `set local idle_in_transaction_session_timeout = '${VIDEO_SCAN_VISION_TIMEOUT_MS + 5_000}ms'`,
-    );
+  return async <T>(send: () => Promise<T>) => {
+    let sent = false;
+    // The transaction sits idle, with no query running, for the whole vision
+    // call. If idle_in_transaction_session_timeout ends the session then, pg
+    // emits 'error' on the client (pg/lib/client.js _handleErrorMessage), and
+    // pg-pool removes its own listener while a client is checked out
+    // (pg-pool _acquireClient): unheard, that is an uncaught exception in the
+    // web server. Heard here until the client is back in the pool, the COMMIT
+    // fails instead, which the content screen turns into a retry.
+    const ignoreDroppedSession = () => {};
+    let held: { off(event: 'error', listener: () => void): unknown } | null = null;
+    try {
+      return await withTransaction(async (client): Promise<T | null> => {
+        client.on('error', ignoreDroppedSession);
+        held = client;
+        await client.query(`set local lock_timeout = '${VIDEO_SCAN_RECHECK_LOCK_TIMEOUT_MS}ms'`);
+        await client.query(
+          `set local idle_in_transaction_session_timeout = '${VIDEO_SCAN_VISION_TIMEOUT_MS + 5_000}ms'`,
+        );
 
-    const firstLook = await listLiveTagSubjects(organizationId, videoSessionId, client);
-    const locked = new Set([
-      ...(claimAthleteId ? [claimAthleteId] : []),
-      ...firstLook.map((tag) => tag.athlete_id),
-    ]);
-    await lockGuardianLinksForAthletes(client, organizationId, [...locked].sort(), 'share');
+        const firstLook = await listLiveTagSubjects(organizationId, videoSessionId, client);
+        const locked = new Set([
+          ...(claimAthleteId ? [claimAthleteId] : []),
+          ...firstLook.map((tag) => tag.athlete_id),
+        ]);
+        await lockGuardianLinksForAthletes(client, organizationId, [...locked].sort(), 'share');
 
-    const video = await client.query<{ athlete_id: string | null }>(
-      `select athlete_id from pilot.video_sessions
-        where organization_id = $1 and video_session_id = $2
-        for share`,
-      [organizationId, videoSessionId],
-    );
-    const row = video.rows[0];
-    if (!row) {
-      onSkip('video_missing');
-      return null;
-    }
+        // The video's own athlete deleted since the claim (Scope B: a deleted
+        // athlete's footage is not sent to the vision screen). Read, not
+        // locked: deletion, the purge and other writers lock the athlete
+        // row FOR UPDATE ahead of their own later locks, and taking it
+        // here, after the consent set and the video row, would risk a
+        // cycle. A deletion landing during the call itself is not held off.
+        const video = await client.query<{ athlete_id: string | null; athlete_deleted: boolean }>(
+          `select v.athlete_id, (a.deleted_at is not null) as athlete_deleted
+             from pilot.video_sessions v
+             left join pilot.athletes a
+               on a.organization_id = v.organization_id and a.athlete_id = v.athlete_id
+            where v.organization_id = $1 and v.video_session_id = $2
+            for share of v`,
+          [organizationId, videoSessionId],
+        );
+        const row = video.rows[0];
+        if (!row) {
+          onSkip('video_missing');
+          return null;
+        }
+        if (row.athlete_deleted) {
+          onSkip('athlete_deleted');
+          return null;
+        }
 
-    const tags = await listLiveTagSubjects(organizationId, videoSessionId, client);
-    if (tags.some((tag) => tag.athlete_deleted)) {
-      onSkip('tagged_athlete_deleted');
-      return null;
-    }
-    const athleteIds = [...new Set([
-      ...(row.athlete_id ? [row.athlete_id] : []),
-      ...tags.map((tag) => tag.athlete_id),
-    ])];
-    if (athleteIds.some((id) => !locked.has(id))) {
-      onSkip('tag_subjects_changed');
-      return null;
-    }
+        const tags = await listLiveTagSubjects(organizationId, videoSessionId, client);
+        if (tags.some((tag) => tag.athlete_deleted)) {
+          onSkip('tagged_athlete_deleted');
+          return null;
+        }
+        const athleteIds = [...new Set([
+          ...(row.athlete_id ? [row.athlete_id] : []),
+          ...tags.map((tag) => tag.athlete_id),
+        ])];
+        if (athleteIds.some((id) => !locked.has(id))) {
+          onSkip('tag_subjects_changed');
+          return null;
+        }
 
-    const reason = await consentSkipReason(organizationId, athleteIds, client);
-    if (reason) {
-      onSkip(reason);
-      return null;
+        const reason = await consentSkipReason(organizationId, athleteIds, client);
+        if (reason) {
+          onSkip(reason);
+          return null;
+        }
+        sent = true;
+        return await send();
+      });
+    } catch (error) {
+      // A lock wait past lock_timeout or a database fault, before anything was
+      // sent: fail closed (the content screen turns the throw into null, the
+      // pending/retry path) and say so in scan_detail rather than looking
+      // like a verdict that has not arrived. A vision failure is not this.
+      if (!sent) onSkip('recheck_failed');
+      throw error;
+    } finally {
+      (held as { off(event: 'error', listener: () => void): unknown } | null)?.off('error', ignoreDroppedSession);
     }
-    return send();
-  });
+  };
 }
 
 function isEscalatingScanDecision(decision: VideoScanDecision): decision is VideoScanEscalationDecision {
@@ -400,6 +439,11 @@ export async function sweepQuarantinedVideos(options: {
         content_verdict: scan.content,
         attempts: claim.scan_attempts,
         duration_ms: scan.durationMs,
+        // Present only when a vision call was made: is the scan's 30 s cap
+        // (VIDEO_SCAN_VISION_TIMEOUT_MS) too tight?
+        ...(scan.visionMs === null || scan.visionMs === undefined
+          ? {}
+          : { vision_ms: scan.visionMs, vision_timed_out: scan.visionTimedOut }),
         scanned_at: new Date().toISOString(),
         ...(contentSkippedReason ? { content_skipped_reason: contentSkippedReason } : {}),
       },
