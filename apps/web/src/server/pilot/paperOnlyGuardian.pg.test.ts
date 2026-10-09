@@ -30,12 +30,16 @@ import type { Readable } from 'node:stream';
 import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
-import { requirePrincipal } from './http';
+import { requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from './http';
 import type { PilotPrincipal } from './auth';
 
+/* requirePrincipal for the consent desk and intake; the staff route's DELETE
+   sits behind requireMicrosoftAuthenticatedPrincipal, which inside the real
+   module calls its own requirePrincipal binding, not the mocked export -- so
+   it is stubbed as well, and set to the same principal where it is used. */
 jest.mock('./http', () => {
   const actual = jest.requireActual('./http');
-  return { ...actual, requirePrincipal: jest.fn() };
+  return { ...actual, requirePrincipal: jest.fn(), requireMicrosoftAuthenticatedPrincipal: jest.fn() };
 });
 
 jest.setTimeout(180_000);
@@ -67,6 +71,7 @@ const COACH = 'acct-paper-only-coach';
 const PAPER_PARENT = 'par-paper-7f1c2a4e-0000-4000-8000-000000000001';
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
+const mockRequireMicrosoft = requireMicrosoftAuthenticatedPrincipal as jest.MockedFunction<typeof requireMicrosoftAuthenticatedPrincipal>;
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -77,6 +82,8 @@ let consentDeskPost: typeof import('@/app/api/pilot/admin/athlete-consent/route'
 let consent: typeof import('./guardianConsent');
 let waiverCompliance: typeof import('./waiverCompliance');
 let staffProvisioning: typeof import('./staffProvisioning');
+let staffDelete: typeof import('@/app/api/pilot/admin/staff/route').DELETE;
+let registerUpsert: typeof import('@/app/api/pilot/intake/domain-upsert/route').POST;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -246,6 +253,8 @@ beforeAll(async () => {
   consent = await import('./guardianConsent');
   waiverCompliance = await import('./waiverCompliance');
   staffProvisioning = await import('./staffProvisioning');
+  staffDelete = (await import('@/app/api/pilot/admin/staff/route')).DELETE;
+  registerUpsert = domainUpsert;
 });
 
 afterAll(async () => {
@@ -277,7 +286,8 @@ test('a coach cannot add a guardian from the desk -- the write is organization_a
 
   const response = await addPaperGuardian();
 
-  expect(response.status).toBeGreaterThanOrEqual(400);
+  expect(response.status).toBe(403);
+  expect(((await response.json()) as { error: string }).error).toMatch(/^Forbidden/);
   expect(await parentRow(PAPER_PARENT)).toBeNull();
   expect(await linkRow(PAPER_PARENT)).toBeNull();
 });
@@ -404,4 +414,114 @@ test('a later invite of a guardian with the same name does not claim the paper-o
       expect.objectContaining({ parent_id: result.guardianLink!.parentId, has_login: true, consented: false }),
     ]),
   );
+});
+
+test('the general register refuses a photo_media row from the API too, so ruling 2 is not UI-only', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
+  const before = await db.query('select count(*)::int as n from pilot.waivers where organization_id = $1', [ORG]);
+
+  const response = await post(registerUpsert, '/api/pilot/intake/domain-upsert', {
+    entity_type: 'waiver',
+    athlete_id: ATHLETE,
+    payload: { waiver_type: 'photo_media', signed_by_name: 'A Parent', status: 'signed' },
+  });
+
+  expect(response.status).toBe(400);
+  const after = await db.query('select count(*)::int as n from pilot.waivers where organization_id = $1', [ORG]);
+  expect(after.rows[0].n).toBe(before.rows[0].n);
+});
+
+test('a guardian whose login was deleted reads as paper only, not as a login', async () => {
+  // The invited guardian from the previous case: mark the login deleted.
+  const invited = await db.query<{ parent_id: string; account_id: string }>(
+    `select parent_id, account_id from pilot.parents where organization_id = $1 and account_id is not null and full_name = 'Lee Paper'`,
+    [ORG],
+  );
+  expect(invited.rowCount).toBe(1);
+  await db.query('update pilot.accounts set deleted_at = now() where account_id = $1', [invited.rows[0].account_id]);
+
+  const row = await deskRowFor(ATHLETE);
+  expect(row.per_guardian).toEqual(
+    expect.arrayContaining([expect.objectContaining({ parent_id: invited.rows[0].parent_id, has_login: false })]),
+  );
+
+  await db.query('update pilot.accounts set deleted_at = null where account_id = $1', [invited.rows[0].account_id]);
+});
+
+/* ---- The undo: unlinking a paper-only guardian by record ---- */
+
+function removeByRecord(parentId: string, as: PilotPrincipal) {
+  mockRequireMicrosoft.mockResolvedValue(as);
+  return staffDelete(new NextRequest('http://localhost/api/pilot/admin/staff', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ parent_id: parentId, athlete_id: ATHLETE }),
+  }));
+}
+
+test('a coach cannot remove a paper-only guardian', async () => {
+  const response = await removeByRecord(PAPER_PARENT, principal(COACH, 'coach'));
+
+  expect(response.status).toBe(403);
+  expect(await linkRow(PAPER_PARENT)).not.toBeNull();
+});
+
+test('the parent_id form is refused for a guardian who has a login', async () => {
+  const invited = await db.query<{ parent_id: string }>(
+    `select parent_id from pilot.parents where organization_id = $1 and account_id is not null and full_name = 'Lee Paper'`,
+    [ORG],
+  );
+  const response = await removeByRecord(invited.rows[0].parent_id, principal(ADMIN, 'organization_admin'));
+
+  expect(response.status).toBe(403);
+  expect(((await response.json()) as { error: string }).error).toMatch(/has a login/);
+});
+
+test('while the paper-only guardian\'s consent stands withdrawn, the link cannot be removed', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
+  const withdrawn = await post(consentDeskPost, '/api/pilot/admin/athlete-consent', {
+    athlete_id: ATHLETE,
+    parent_id: PAPER_PARENT,
+    decision: 'withdraw',
+  });
+  expect(withdrawn.status).toBe(200);
+
+  const response = await removeByRecord(PAPER_PARENT, principal(ADMIN, 'organization_admin'));
+
+  expect(response.status).toBe(403);
+  expect(((await response.json()) as { error: string }).error).toMatch(/withdrawn media consent/);
+  expect(await linkRow(PAPER_PARENT)).not.toBeNull();
+});
+
+test('after a new signed consent, the organization admin removes the paper-only link; the record stays for its waivers', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
+  const granted = await post(consentDeskPost, '/api/pilot/admin/athlete-consent', {
+    athlete_id: ATHLETE,
+    parent_id: PAPER_PARENT,
+    decision: 'grant',
+    covers_video: true,
+  });
+  expect(granted.status).toBe(200);
+
+  const response = await removeByRecord(PAPER_PARENT, principal(ADMIN, 'organization_admin'));
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({ ok: true, account_id: null, parent_id: PAPER_PARENT, athlete_id: ATHLETE });
+
+  expect(await linkRow(PAPER_PARENT)).toBeNull();
+  // The record is kept: pilot.waivers.parent_id references it.
+  expect(await parentRow(PAPER_PARENT)).toEqual({ account_id: null, email: null, full_name: 'Lee Paper' });
+
+  // Audited against the record, not an account.
+  const audit = await db.query(
+    `select 1 from pilot.audit_events
+      where organization_id = $1 and actor_account_id = $2 and entity_type = 'guardian' and entity_id = $3
+        and details->>'action' = 'organization_admin_remove_guardian_link' and details->>'paper_only' = 'true'`,
+    [ORG, ADMIN, PAPER_PARENT],
+  );
+  expect(audit.rowCount).toBe(1);
+
+  // The desk no longer lists them; the invited guardian remains and has not signed.
+  const row = await deskRowFor(ATHLETE);
+  expect(row.guardian_count).toBe(1);
+  expect(row.per_guardian[0]).toMatchObject({ has_login: true, consented: false });
 });

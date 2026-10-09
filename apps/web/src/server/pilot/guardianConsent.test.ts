@@ -551,8 +551,10 @@ describe('listOrganizationGuardianNames', () => {
     // Filtering on it would return an empty picker for exactly the people this
     // screen exists to record consent for. The column is READ, as a boolean,
     // so that guardian can be labelled; it must never reach the WHERE clause.
-    expect(String(sql)).not.toMatch(/where[\s\S]*account_id/i);
-    expect(String(sql)).toMatch(/account_id is not null/i);
+    // The outer WHERE (the org prefix scan) never names account_id; the
+    // EXISTS reads it to say whether a live, undeleted login backs the record.
+    expect(String(sql)).toMatch(/where p\.organization_id = \$1\s*$/i);
+    expect(String(sql)).toMatch(/exists \(select 1 from pilot\.accounts a[\s\S]*a\.account_id = p\.account_id and not \(a\.deleted_at is not null\)\)/i);
     expect(names.get('p1')).toEqual({ fullName: 'Dana Reyes', hasLogin: true });
     expect(names.get('p2')).toEqual({ fullName: 'Sam Okafor', hasLogin: false });
   });

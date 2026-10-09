@@ -176,7 +176,8 @@ test('a guardian with no login is named "(paper only)" in the guardians column a
   render(<AthleteConsentAuditPage />);
   await screen.findByText('Partial Athlete');
 
-  expect(screen.getByText('Sam Okafor · Lee Paper (paper only)')).toBeInTheDocument();
+  expect(screen.getByText('Sam Okafor')).toBeInTheDocument();
+  expect(screen.getByText('Lee Paper (paper only)')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Record' }));
   const picker = await screen.findByRole('combobox', { name: /Guardian/ });
@@ -233,7 +234,7 @@ test('adding a paper-only guardian posts guardian_link to domain-upsert, re-read
   fireEvent.change(screen.getByLabelText(/Relationship to Missing Consent Athlete/), { target: { value: 'father' } });
   fireEvent.click(screen.getByRole('button', { name: 'Add guardian' }));
 
-  await screen.findByText('Guardian added');
+  await screen.findByText('Guardians updated');
 
   const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
   expect(url).toMatch(/\/api\/pilot\/intake\/domain-upsert$/);
@@ -300,5 +301,69 @@ test("a refused add shows the server's own words and sends nothing else", async 
 
   expect(await screen.findByText('Forbidden: this athlete is 18 or over')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(screen.queryByText('Guardian added')).not.toBeInTheDocument();
+  expect(screen.queryByText('Guardians updated')).not.toBeInTheDocument();
+});
+
+/* ---- Removing a paper-only guardian: the undo for a wrong-row add ---- */
+
+test('"Remove" is offered beside a paper-only guardian to an admin, and beside nobody else', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ITEMS })) as unknown as typeof fetch;
+
+  sessionRole = 'coach';
+  const coachView = render(<AthleteConsentAuditPage />);
+  await screen.findByText('Partial Athlete');
+  expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument();
+  coachView.unmount();
+
+  sessionRole = 'admin';
+  render(<AthleteConsentAuditPage />);
+  await screen.findByText('Partial Athlete');
+  // Lee Paper has no login; Sam Okafor has one and is unlinked on People.
+  expect(screen.getByRole('button', { name: 'Remove Lee Paper as a guardian of Partial Athlete' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Remove Sam Okafor/ })).not.toBeInTheDocument();
+});
+
+test('removing is a two-press act that sends DELETE with parent_id and athlete_id, then re-reads', async () => {
+  sessionRole = 'admin';
+  const fetchMock = jest.fn()
+    .mockResolvedValueOnce(jsonResponse({ ok: true, items: ITEMS }))
+    .mockResolvedValueOnce(jsonResponse({ ok: true, parent_id: 'par-paper-3b', athlete_id: 'ath-3' }))
+    .mockResolvedValueOnce(jsonResponse({
+      ok: true,
+      items: [ITEMS[0], ITEMS[1], { ...ITEMS[2], guardian_count: 1, missing_guardian_count: 0, consent_ok: true, per_guardian: [ITEMS[2].per_guardian[0]] }],
+    }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<AthleteConsentAuditPage />);
+  await screen.findByText('Partial Athlete');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Lee Paper as a guardian of Partial Athlete' }));
+  // Armed, not sent.
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm remove Lee Paper' }));
+
+  await screen.findByText('Lee Paper is no longer a guardian of Partial Athlete.');
+  const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+  expect(url).toMatch(/\/api\/pilot\/admin\/staff$/);
+  expect(init.method).toBe('DELETE');
+  expect(JSON.parse(String(init.body))).toEqual({ parent_id: 'par-paper-3b', athlete_id: 'ath-3' });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test('a refused removal (a standing withdrawal) is shown in the server\'s words and the guardian stays listed', async () => {
+  sessionRole = 'admin';
+  const fetchMock = jest.fn()
+    .mockResolvedValueOnce(jsonResponse({ ok: true, items: ITEMS }))
+    .mockResolvedValueOnce(jsonResponse({ error: 'Forbidden: this guardian has withdrawn media consent for this athlete.' }, false));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<AthleteConsentAuditPage />);
+  await screen.findByText('Partial Athlete');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Lee Paper as a guardian of Partial Athlete' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm remove Lee Paper' }));
+
+  expect(await screen.findByText('Forbidden: this guardian has withdrawn media consent for this athlete.')).toBeInTheDocument();
+  expect(screen.getByText('Not removed')).toBeInTheDocument();
+  expect(screen.getByText('Lee Paper (paper only)')).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });

@@ -2,6 +2,7 @@ import type { QueryResultRow } from 'pg';
 
 import { lockConsentSet, lockConsentSets } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { ConflictError } from './errors';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
@@ -770,9 +771,14 @@ export interface OrganizationGuardian {
 export async function listOrganizationGuardianNames(
   organizationId: string,
 ): Promise<Map<string, Omit<OrganizationGuardian, 'parentId'>>> {
+  // A login that exists AND is not marked deleted. A deleted login (waiting
+  // for the retention purge) cannot sign in, so reporting it as a login would
+  // have staff wait for a guardian who cannot come.
   const rows = await query<{ parent_id: string; full_name: string; has_login: boolean }>(
-    `select parent_id, full_name, (account_id is not null) as has_login
-       from pilot.parents where organization_id = $1`,
+    `select p.parent_id, p.full_name,
+            exists (select 1 from pilot.accounts a
+                     where a.account_id = p.account_id and not ${accountDeletedSql('a')}) as has_login
+       from pilot.parents p where p.organization_id = $1`,
     [organizationId],
   );
   return new Map(rows.map((row) => [row.parent_id, { fullName: row.full_name, hasLogin: row.has_login }]));

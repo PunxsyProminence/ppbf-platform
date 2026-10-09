@@ -537,7 +537,18 @@ function ConsentConsole() {
                   <tbody>
                     {waivers.map((waiver) => (
                       <tr key={waiver.waiver_id}>
-                        <td>{labelFor(WAIVER_TYPE_LABELS, waiver.waiver_type)}</td>
+                        <td>
+                          {labelFor(WAIVER_TYPE_LABELS, waiver.waiver_type)}
+                          {/* A row this register can no longer file, and that no
+                              media gate reads (it names no guardian). Said on
+                              the row, so Signed here is not read as consent. */}
+                          {RETIRED_WAIVER_TYPES.some((option) => option.value === waiver.waiver_type) ? (
+                            <span className="ledger-id block">
+                              not counted · record on the{' '}
+                              <Link href="/admin/athlete-consent" className="underline">consent desk</Link>
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="font-bold">{waiver.signed_by_name}</td>
                         <td>{labelFor(SIGNER_ROLES, waiver.signed_by_role)}</td>
                         <td className="whitespace-nowrap">{formatCalendarDay(waiver.signed_at?.slice(0, 10))}</td>

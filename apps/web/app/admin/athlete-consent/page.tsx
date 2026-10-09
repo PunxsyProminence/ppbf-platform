@@ -96,6 +96,13 @@ export default function AthleteConsentAuditPage() {
   const [addError, setAddError] = useState('');
   const [addNotice, setAddNotice] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  /* REMOVING A PAPER-ONLY GUARDIAN. The one undo for a wrong-row add: a
+     guardian with no login is unlinked by record (DELETE /api/pilot/admin/staff
+     with parent_id). The server keeps its refusal while that guardian's media
+     consent stands withdrawn, so this can never turn a "no" into a "yes". */
+  const [removeArmed, setRemoveArmed] = useState<{ athleteId: string; parentId: string } | null>(null);
+  const [removeError, setRemoveError] = useState<{ athleteId: string; message: string } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   // Returns what it loaded, so a caller that needs the fresh rows (the
   // guardian add below) does not have to wait for a render to see them.
@@ -165,14 +172,16 @@ export default function AthleteConsentAuditPage() {
     }
     setIsAdding(true);
     setAddError('');
-    /* The id is minted here because the write below takes one and this
-       record has no account to derive one from (an invited guardian's is
-       par-<account id>, staffProvisioning.ts). pilot.parents.parent_id is
-       plain text with no convention the readers depend on; the "paper"
-       infix keeps it out of the par-<account> space and legible in an audit
-       row. */
-    const parentId = `par-paper-${crypto.randomUUID()}`;
     try {
+      /* The id is minted here because the write below takes one and this
+         record has no account to derive one from (an invited guardian's is
+         par-<account id>, staffProvisioning.ts). pilot.parents.parent_id is
+         plain text with no convention the readers depend on; the "paper"
+         infix keeps it out of the par-<account> space and legible in an
+         audit row. Inside the try: randomUUID throws outside a secure
+         context, and that must read as an error, not a button stuck on
+         "Adding…". */
+      const parentId = `par-paper-${crypto.randomUUID()}`;
       /* THE SAME WRITE INTAKE USES, not a second one: domain-upsert's
          guardian_link (organization_admin only) creates the pilot.parents row
          with no account and no email and the guardian_links row under the
@@ -206,6 +215,33 @@ export default function AthleteConsentAuditPage() {
       setAddError(error instanceof Error ? error.message : 'That guardian could not be added.');
     } finally {
       setIsAdding(false);
+    }
+  }
+
+  async function removePaperGuardian(item: OrganizationConsentRow, guardian: GuardianConsentRow) {
+    setIsRemoving(true);
+    setRemoveError(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: guardian.parent_id, athlete_id: item.athlete_id }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'That guardian could not be removed.');
+      }
+      setRemoveArmed(null);
+      setAddNotice(`${guardian.parent_name} is no longer a guardian of ${item.athlete_name}.`);
+      await load();
+    } catch (error) {
+      setRemoveError({
+        athleteId: item.athlete_id,
+        message: error instanceof Error ? error.message : 'That guardian could not be removed.',
+      });
+    } finally {
+      setIsRemoving(false);
     }
   }
 
@@ -293,7 +329,7 @@ export default function AthleteConsentAuditPage() {
               <div role="status" className="alert alert--success mt-[var(--s3)]">
                 <span className="alert-icon" aria-hidden="true">✓</span>
                 <div className="alert-body">
-                  <p className="alert-title">Guardian added</p>
+                  <p className="alert-title">Guardians updated</p>
                   <p className="alert-msg">{addNotice}</p>
                 </div>
               </div>
@@ -367,9 +403,65 @@ export default function AthleteConsentAuditPage() {
                               a count alone cannot say which guardian is the
                               one nobody can email. */}
                           {item.per_guardian.length > 0 ? (
-                            <span className="block text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
-                              {item.per_guardian.map(guardianLabel).join(' · ')}
-                            </span>
+                            <ul className="mt-[var(--s1)] flex flex-col gap-[var(--s1)] text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
+                              {item.per_guardian.map((guardian) => {
+                                const armed = removeArmed?.athleteId === item.athlete_id && removeArmed.parentId === guardian.parent_id;
+                                return (
+                                  <li key={guardian.parent_id} className="flex flex-wrap items-center gap-[var(--s2)]">
+                                    <span>{guardianLabel(guardian)}</span>
+                                    {/* Only a guardian with no login is removed
+                                        here; one with a login is unlinked from
+                                        their account on People, where the rule
+                                        against stranding an account applies. */}
+                                    {canAddGuardian && !guardian.has_login ? (
+                                      armed ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="btn btn--danger px-[var(--s3)] text-[length:var(--t-xs)]"
+                                            disabled={isRemoving}
+                                            onClick={() => {
+                                              void removePaperGuardian(item, guardian);
+                                            }}
+                                          >
+                                            {isRemoving ? 'Removing…' : `Confirm remove ${guardian.parent_name}`}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn--ghost px-[var(--s3)] text-[length:var(--t-xs)]"
+                                            disabled={isRemoving}
+                                            onClick={() => setRemoveArmed(null)}
+                                          >
+                                            Keep
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="btn btn--ghost px-[var(--s3)] text-[length:var(--t-xs)]"
+                                          aria-label={`Remove ${guardian.parent_name} as a guardian of ${item.athlete_name}`}
+                                          onClick={() => {
+                                            setRemoveArmed({ athleteId: item.athlete_id, parentId: guardian.parent_id });
+                                            setRemoveError(null);
+                                          }}
+                                        >
+                                          Remove
+                                        </button>
+                                      )
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : null}
+                          {removeError?.athleteId === item.athlete_id ? (
+                            <div role="alert" className="alert alert--warning mt-[var(--s2)]">
+                              <span className="alert-icon" aria-hidden="true">▲</span>
+                              <div className="alert-body">
+                                <p className="alert-title">Not removed</p>
+                                <p className="alert-msg">{removeError.message}</p>
+                              </div>
+                            </div>
                           ) : null}
                         </td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
