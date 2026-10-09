@@ -1,33 +1,44 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
-import { getPilotDefaultOrganizationId, getWallDisplayNameMode } from '@/src/server/pilot/env';
-import { loadWallBoard } from '@/src/server/pilot/wallDisplayDb';
+import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
+import type { WallPublicBoard } from '@/src/server/pilot/wallDisplay';
+import { loadPublicWallBoard } from '@/src/server/pilot/wallDisplayDb';
 import { resetWallBudget } from '@/src/server/pilot/wallRateLimit';
 
 jest.mock('@/src/server/pilot/wallDisplayDb', () => ({
+  loadPublicWallBoard: jest.fn(),
+  // Present in the mock only so the test below can prove the public route
+  // never reaches for it. It must stay uncalled.
   loadWallBoard: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/env', () => ({
   getPilotDefaultOrganizationId: jest.fn(() => 'ppbf-default-org'),
-  getWallDisplayNameMode: jest.fn(() => undefined),
+  getWallDisplayNameMode: jest.fn(() => 'consent'),
 }));
 
-const mockLoad = loadWallBoard as jest.MockedFunction<typeof loadWallBoard>;
-const mockMode = getWallDisplayNameMode as jest.MockedFunction<typeof getWallDisplayNameMode>;
+const mockLoad = loadPublicWallBoard as jest.MockedFunction<typeof loadPublicWallBoard>;
 const mockOrg = getPilotDefaultOrganizationId as jest.MockedFunction<typeof getPilotDefaultOrganizationId>;
 
-const EMPTY_BOARD = {
+const PUBLIC_BOARD: WallPublicBoard = {
+  scope: 'public',
   generated_at: '2026-08-03T18:30:00.000Z',
   gym_day: '2026-08-03',
   time_zone: 'America/New_York',
-  name_mode: 'initials' as const,
-  sessions: [],
-  on_floor: [],
-  on_floor_total: 0,
-  marquee: [],
-  notice: null,
+  sessions: [
+    {
+      key: 'c1',
+      title: 'Youth Boxing',
+      start_at: '2026-08-03T22:00:00.000Z',
+      end_at: '2026-08-03T23:00:00.000Z',
+      location: 'Floor',
+      state: 'upcoming',
+      on_floor: 3,
+    },
+  ],
+  on_floor_total: 7,
+  notice: { message: 'Open mat Saturday.', author: 'Coach Dan · coach', posted_at: '2026-08-01T12:00:00.000Z' },
 };
 
 function request(url = 'http://localhost/api/pilot/wall', ip = '10.0.0.1') {
@@ -37,7 +48,7 @@ function request(url = 'http://localhost/api/pilot/wall', ip = '10.0.0.1') {
 beforeEach(() => {
   jest.clearAllMocks();
   resetWallBudget();
-  mockLoad.mockResolvedValue(EMPTY_BOARD);
+  mockLoad.mockResolvedValue(PUBLIC_BOARD);
 });
 
 describe('GET /api/pilot/wall', () => {
@@ -56,21 +67,38 @@ describe('GET /api/pilot/wall', () => {
     expect(mockLoad).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'ppbf-default-org' }));
   });
 
-  it('defaults to initials when the operator has set nothing', async () => {
-    mockMode.mockReturnValue(undefined);
-    await GET(request());
-    expect(mockLoad).toHaveBeenCalledWith(expect.objectContaining({ mode: 'initials' }));
+  // OD-2026-10-07-008, "Paired gym TV only": the public address shows today's
+  // classes and a head count only. Initials and milestones go only to a TV
+  // paired with a code. These three tests are the public half of that ruling.
+  it('serves the PUBLIC shape: classes and a head count, and no person at all', async () => {
+    const response = await GET(request());
+    const body = (await response.json()) as { ok: boolean; board: Record<string, unknown> };
+    expect(body.ok).toBe(true);
+    expect(Object.keys(body.board).sort()).toEqual(
+      ['generated_at', 'gym_day', 'notice', 'on_floor_total', 'scope', 'sessions', 'time_zone'],
+    );
+    expect(body.board.scope).toBe('public');
+    expect(body.board.on_floor_total).toBe(7);
   });
 
-  it('only reaches real names when an operator asked for it in as many words', async () => {
-    mockMode.mockReturnValue('consent');
-    await GET(request());
-    expect(mockLoad).toHaveBeenCalledWith(expect.objectContaining({ mode: 'consent' }));
+  it('carries no name, initials, visibility, milestone or athlete key in the serialized body', async () => {
+    const serialized = JSON.stringify(await (await GET(request())).json());
+    for (const forbidden of ['"on_floor":[', 'marquee', '"name"', 'visibility', 'initials', 'milestone', 'athlete', 'name_mode', 'crossed_on']) {
+      expect({ forbidden, present: serialized.includes(forbidden) }).toEqual({ forbidden, present: false });
+    }
+  });
 
-    resetWallBudget();
-    mockMode.mockReturnValue('yes please');
+  it('reads the public loader only: the name mode and the paired loader are never consulted here', async () => {
+    // The operator's PPBF_WALL_DISPLAY_NAMES setting is for the paired board.
+    // Even set to 'consent' (mocked above), it changes nothing on this route,
+    // because this route has no names to apply it to.
+    const db = jest.requireMock('@/src/server/pilot/wallDisplayDb') as { loadWallBoard: jest.Mock };
+    const env = jest.requireMock('@/src/server/pilot/env') as { getWallDisplayNameMode: jest.Mock };
     await GET(request());
-    expect(mockLoad).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'initials' }));
+    expect(mockLoad).toHaveBeenCalledTimes(1);
+    expect(mockLoad.mock.calls[0][0]).toEqual({ organizationId: 'ppbf-default-org' });
+    expect(db.loadWallBoard).not.toHaveBeenCalled();
+    expect(env.getWallDisplayNameMode).not.toHaveBeenCalled();
   });
 
   it('is never cached, because a wall showing yesterday is worse than a blank one', async () => {
