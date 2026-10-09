@@ -4261,6 +4261,87 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in withdrawCapacityNote (author only)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Withdraws (soft-deletes, deleted_at) one of the caller's OWN capacity notes for an athlete; audit row in the same transaction. Module 013 slice, OD-2026-10-08-002.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in listCapacityNotes",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads an athlete's live coach-written capacity notes, newest first, author by display name (never account id); reach enforced in athleteCapacityNotes.ts assertNoteAccess via membership role + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/athlete-capacity-notes",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in addCapacityNote",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adds one plain-text capacity note for an athlete in the coach's words (no score, nothing parsed); audit row in the same transaction; addCapacityNote runs assertNoteAccess.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-minor-limits/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-minor-limits",

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
 import ProfilePortrait from './ProfilePortrait';
 import WorkAxis from './WorkAxis';
@@ -3971,6 +3972,12 @@ export default function CoachWorkspace() {
                     athleteId={selectedAthleteId}
                     athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'}
                   />
+                )}
+
+                {/* Module 013 slice (lane P9): the coach's plain-text capacity
+                    notes for the selected athlete; the route decides access. */}
+                {athleteChosenByCoach && selectedAthleteId && (
+                  <CapacityNotesPanel key={`capacity-${selectedAthleteId}`} athleteId={selectedAthleteId} athleteName={athletes.find((athlete) => athlete.id === selectedAthleteId)?.name ?? 'this athlete'} />
                 )}
 
                 {/* Open Tasks */}

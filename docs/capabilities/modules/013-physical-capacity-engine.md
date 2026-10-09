@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **claimed, no code** (relabelled 2026-09-28; see audit log) |
+| Status | **slice built** (2026-10-09, lane P9, OD-2026-10-08-002): `pilot.athlete_capacity_notes`, `apps/web/src/server/pilot/athleteCapacityNotes.ts`, `/api/pilot/coach/athlete-capacity-notes`, `apps/web/components/CapacityNotesPanel.tsx` on the coach dashboard; athlete/parent read not built, awaiting Jason's ruling |
 | Active | false |
 | ManualVerification | SIGNED_OFF |
 | Parent | Physical / 8 Sessions |
