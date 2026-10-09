@@ -267,7 +267,7 @@ function blockedBy(error) {
    [makes] the Ai and ML better". An athlete's login outlives the purge
    (retired below, not deleted), so no account cascade ever fires for it, and
    three of these tables have no account foreign key at all, so a purged
-   GUARDIAN's rows survived too. dataDeletion.ts carries the same statements.
+   GUARDIAN's rows survived too.
 
    DELETED, because they are about the person and nothing aggregate reads
    them: shadow_user_profiles (SHADOW's memory of the person: remembered
@@ -751,7 +751,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
                never fires for it, and corrected_value is the child's own
                words. They are read only on that account's own behalf, which
                a retired login no longer has; nothing needs them for
-               audit. dataDeletion.ts carries the same statement. */
+               audit. */
             if (tables.corrections) {
               const corrections = await client.query(
                 'delete from pilot.shadow_chat_memory_corrections where account_id = $1',
@@ -901,8 +901,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          clock at this statement, not the run's start, so a grant recorded
          while this long transaction runs does not count as post-purge.
          'photo_media' is guardianConsent.ts MEDIA_CONSENT_WAIVER_TYPE, which
-         this script cannot import. dataDeletion.ts purgeExpiredDeletedData
-         carries the same statement. */
+         this script cannot import. */
       await client.query(
         `insert into pilot.retained_media_consent_restrictions
            (organization_id, athlete_id, former_parent_key, waiver_id, retained_at)

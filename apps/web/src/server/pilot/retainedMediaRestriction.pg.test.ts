@@ -58,7 +58,6 @@ let client: Client;
 
 let consent: typeof import('./guardianConsent');
 let playback: typeof import('./videoPlaybackConsent');
-let dataDeletion: typeof import('./dataDeletion');
 let withTransaction: typeof import('./db').withTransaction;
 let closePool: () => Promise<void>;
 
@@ -83,13 +82,11 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-type PurgePath = 'script' | 'dataDeletion';
+/* The retention purge: scripts/pilot-cleanup-deleted-data.mjs, as the scheduled
+   job runs it. (dataDeletion.ts's copy, purgeExpiredDeletedData, had no caller
+   and was removed.) */
 
-async function purge(via: PurgePath): Promise<void> {
-  if (via === 'dataDeletion') {
-    await dataDeletion.purgeExpiredDeletedData();
-    return;
-  }
+async function purge(): Promise<void> {
   const output = await new Promise<string>((resolve, reject) => {
     execFile(
       process.execPath,
@@ -181,7 +178,7 @@ async function seedFamily(
     await writeWaiver(athleteId, remainingParentId, 'signed', true, "now() - interval '1 hour'");
   }
 
-  // Past both purge paths' one-year guardian window and short of the two-year
+  // Past the purge's one-year guardian window and short of the two-year
   // athlete window: deleting a child's last guardian soft-deletes the child too
   // (pilot.cascade_parent_deletion), and that child must still be here to ask.
   await client.query(
@@ -302,7 +299,6 @@ beforeAll(async () => {
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   consent = await import('./guardianConsent');
   playback = await import('./videoPlaybackConsent');
-  dataDeletion = await import('./dataDeletion');
   ({ withTransaction, closePool } = await import('./db'));
 });
 
@@ -325,14 +321,14 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes a guardian', (via) => {
+describe('after the script purge removes a guardian', () => {
   test('a withdrawal still refuses publish, playback and the scan, though a second guardian consented', async () => {
     const family = await seedFamily('withdrawn', true);
     // CONTROL: before the purge the withdrawal is what refuses.
     expect(await videoGate(family.athleteId)).toBe('GUARDIAN_CONSENT_WITHDRAWN');
     expect(await consentGate(family.athleteId)).toBe('GUARDIAN_CONSENT_MISSING');
 
-    await purge(via);
+    await purge();
     await guardianRecordGone(family);
 
     expect(await videoGate(family.athleteId)).toBe('GUARDIAN_CONSENT_WITHDRAWN');
@@ -341,7 +337,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
 
   test("a withdrawal still refuses playback when the purged guardian was the child's only one", async () => {
     const family = await seedFamily('withdrawn', false);
-    await purge(via);
+    await purge();
     await guardianRecordGone(family);
 
     // On the empty guardian set the video gate used to find nobody excluding video.
@@ -354,7 +350,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
     expect(await videoGate(family.athleteId)).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
     expect(await consentGate(family.athleteId)).toBe('allowed');
 
-    await purge(via);
+    await purge();
     await guardianRecordGone(family);
 
     expect(await videoGate(family.athleteId)).toBe('GUARDIAN_CONSENT_EXCLUDES_VIDEO');
@@ -364,7 +360,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
 
   test('a remaining guardian granting video after the purge lifts it', async () => {
     const family = await seedFamily('withdrawn', true);
-    await purge(via);
+    await purge();
     // Their grant from before the purge did not (first test); a new one does.
     await writeWaiver(family.athleteId, family.remainingParentId!, 'signed', true);
 
@@ -379,7 +375,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
     await client.query('delete from pilot.guardian_links where parent_id = $1', [family.purgedParentId]);
     expect(await videoGate(family.athleteId)).toBe('allowed');
 
-    await purge(via);
+    await purge();
 
     expect(await videoGate(family.athleteId)).toBe('allowed');
   });
@@ -388,7 +384,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
     // An invited guardian's parent_id is derived from their login, so a
     // re-invite after a purge gets the same id back.
     const family = await seedFamily('signed-video', true);
-    await purge(via);
+    await purge();
     expect(await videoGate(family.athleteId)).toBe('allowed');
 
     await client.query(
@@ -412,7 +408,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
         where account_id = $1`,
       [family.purgedAccountId],
     );
-    await purge(via);
+    await purge();
     await guardianRecordGone(family);
 
     expect(await videoGate(family.athleteId)).toBe('GUARDIAN_CONSENT_WITHDRAWN');
@@ -420,7 +416,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
 
   test('CONTROL: a purged guardian who had consented to video restricts nothing', async () => {
     const family = await seedFamily('signed-video', true);
-    await purge(via);
+    await purge();
     await guardianRecordGone(family);
 
     expect(await videoGate(family.athleteId)).toBe('allowed');
@@ -430,7 +426,7 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('after the %s purge removes
 
 test("the retained restriction goes with the child: deleting the athlete is not refused by it", async () => {
   const family = await seedFamily('withdrawn', false);
-  await purge('script');
+  await purge();
   const before = await client.query(
     'select 1 from pilot.retained_media_consent_restrictions where athlete_id = $1',
     [family.athleteId],

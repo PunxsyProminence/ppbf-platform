@@ -48,7 +48,6 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 
-let dataDeletion: typeof import('./dataDeletion');
 let closePool: () => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -72,7 +71,9 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-type PurgePath = 'script' | 'dataDeletion';
+/* One purge path: scripts/pilot-cleanup-deleted-data.mjs. dataDeletion.ts's
+   copy, purgeExpiredDeletedData, had no caller and was removed. */
+type PurgePath = 'script';
 
 interface ShadowCounts {
   profiles: number;
@@ -85,48 +86,29 @@ interface ShadowCounts {
   scrubbed: number;
 }
 
-async function purgeAuditRows(): Promise<Array<{ details: Record<string, number> }>> {
-  const rows = await client.query<{ details: Record<string, number> }>(
-    `select details from pilot.audit_events
-      where event_type = 'data_purged' and entity_type = 'retention_cleanup'
-      order by created_at`,
-  );
-  return rows.rows;
-}
-
 /** Runs one purge path and returns the SHADOW counts it reports. */
 async function purge(via: PurgePath, apply = true): Promise<ShadowCounts> {
-  let event: Record<string, number>;
-  if (via === 'dataDeletion') {
-    // Exactly one new audit row, read as that row: never an earlier run's.
-    const before = (await purgeAuditRows()).length;
-    await dataDeletion.purgeExpiredDeletedData();
-    const after = await purgeAuditRows();
-    expect(after).toHaveLength(before + 1);
-    event = after[after.length - 1].details;
-  } else {
-    const output = await new Promise<string>((resolve, reject) => {
-      execFile(
-        process.execPath,
-        [CLEANUP_SCRIPT],
-        {
-          env: {
-            ...process.env,
-            AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(PG_DATABASE),
-            PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
-            PPBF_EXPECTED_POSTGRES_DATABASE: PG_DATABASE,
-            PPBF_POSTGRES_DISABLE_SSL: 'true',
-            ...(apply ? { PPBF_RETENTION_APPLY: 'true' } : {}),
-          },
+  const output = await new Promise<string>((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(PG_DATABASE),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: PG_DATABASE,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          ...(apply ? { PPBF_RETENTION_APPLY: 'true' } : {}),
         },
-        (error, stdout, stderr) => (error ? reject(new Error(`${stdout}${stderr}`)) : resolve(`${stdout}${stderr}`)),
-      );
-    });
-    const line = output.split('\n').find((entry) => entry.trim().startsWith('{'));
-    event = JSON.parse(line ?? '{}') as Record<string, number>;
-    // A purge that was refused proves nothing below.
-    expect((event as unknown as { blocked_by?: Record<string, number> }).blocked_by ?? {}).toEqual({});
-  }
+      },
+      (error, stdout, stderr) => (error ? reject(new Error(`${stdout}${stderr}`)) : resolve(`${stdout}${stderr}`)),
+    );
+  });
+  const line = output.split('\n').find((entry) => entry.trim().startsWith('{'));
+  const event = JSON.parse(line ?? '{}') as Record<string, number>;
+  // A purge that was refused proves nothing below.
+  expect((event as unknown as { blocked_by?: Record<string, number> }).blocked_by ?? {}).toEqual({});
   const prefix = apply ? '' : 'would_delete_';
   const suffix = apply ? '_deleted' : '';
   return {
@@ -361,7 +343,6 @@ beforeAll(async () => {
   // Env before import: db.ts builds its pool on first use.
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
-  dataDeletion = await import('./dataDeletion');
   ({ closePool } = await import('./db'));
 });
 
@@ -394,7 +375,7 @@ afterAll(async () => {
 // guardian's, 0. mentions: the coach's profile listed Jordan.
 const EXPECTED: ShadowCounts = { profiles: 2, jobs: 2, buckets: 2, snapshots: 2, mentions: 1, deidentified: 6, deleted: 1, scrubbed: 3 };
 
-describe.each<PurgePath>(['script', 'dataDeletion'])('the %s purge', (via) => {
+describe.each<PurgePath>(['script'])('the %s purge', (via) => {
   test("deletes a purged athlete's and guardian's SHADOW rows, and leaves their chat turns with no one in them", async () => {
     const people = await seed();
     // CONTROL: everything is there before the purge.
@@ -403,13 +384,11 @@ describe.each<PurgePath>(['script', 'dataDeletion'])('the %s purge', (via) => {
     }
     expect(await turnsWhere('user_id = $1', [people.athleteLogin])).toHaveLength(1);
 
-    if (via === 'script') {
-      // The dry run counts them and changes nothing.
-      expect(await purge(via, false)).toEqual(EXPECTED);
-      expect(await operationalRowsOf(people.athleteLogin)).toEqual([1, 1, 1, 1]);
-      expect(await turnsWhere('user_id = $1', [people.athleteLogin])).toHaveLength(1);
-      expect(await turnsWhere('athlete_id = $1', [people.nameless])).toHaveLength(1);
-    }
+    // The dry run counts them and changes nothing.
+    expect(await purge(via, false)).toEqual(EXPECTED);
+    expect(await operationalRowsOf(people.athleteLogin)).toEqual([1, 1, 1, 1]);
+    expect(await turnsWhere('user_id = $1', [people.athleteLogin])).toHaveLength(1);
+    expect(await turnsWhere('athlete_id = $1', [people.nameless])).toHaveLength(1);
 
     expect(await purge(via)).toEqual(EXPECTED);
 

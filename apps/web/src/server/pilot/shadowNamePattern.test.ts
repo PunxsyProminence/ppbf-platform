@@ -1,4 +1,17 @@
-import { namePattern } from './dataDeletion';
+import fs from 'node:fs';
+import path from 'node:path';
+
+/* The copy that runs: scripts/pilot-cleanup-deleted-data.mjs, the only
+   retention purge. The script runs its job on load, so it cannot be imported;
+   namePattern is read out of its source and evaluated on its own (it uses no
+   names from the script around it). */
+const SCRIPT = fs.readFileSync(path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs'), 'utf8');
+const start = SCRIPT.indexOf('\nfunction namePattern(');
+const end = SCRIPT.indexOf('\n}\n', start);
+if (start < 0 || end < 0) throw new Error('namePattern not found in the retention script');
+const namePattern = new Function(`${SCRIPT.slice(start, end + 3)}\nreturn namePattern;`)() as (
+  names: Array<string | null | undefined>,
+) => string | null;
 
 /* The scrub pattern the retention purge hands Postgres (regexp_replace, flags
    'gi') for a purged person's names: whole and by word, longest first, on

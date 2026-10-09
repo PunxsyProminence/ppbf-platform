@@ -10,7 +10,7 @@
  * run changes nothing; the readiness query is honest with pilot on the
  * search_path; and -- the ordering guarantee -- with the migration applied
  * and NO de-identifying code anywhere, the purge as deployed today (a plain
- * delete of the account or the athlete, which is all either purge path does
+ * delete of the account or the athlete, which is all the purge does
  * for these tables) still leaves zero rows that name the person, exactly as
  * the dropped cascades did; a purge that re-keys the rows to tokens first
  * keeps them (a tokened row no longer names anyone), a row held for Q7
@@ -23,7 +23,7 @@
  * migration suites use. It NEVER connects to production or staging.
  */
 
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -44,6 +44,7 @@ const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedd
 const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 const RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-shadow-deidentify-keys-migration.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
 const MIGRATION_FILE = 'pilot_slice_postgres_shadow_deidentify_keys_migration.sql';
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
@@ -65,11 +66,38 @@ let client: Client;
 let runner: Runner;
 let migrationSql: string;
 let laterMigrations: string[];
-let dataDeletion: typeof import('./dataDeletion');
 let closePool: (() => Promise<void>) | undefined;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+/** Runs the retention purge as the scheduled job does: the script, applied. */
+function runCleanupScript(): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(PG_DATABASE),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: PG_DATABASE,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          PPBF_RETENTION_APPLY: 'true',
+        },
+      },
+      (error, stdout, stderr) => {
+        const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+        if (error || !line) {
+          reject(new Error(`${stdout}${stderr}`));
+          return;
+        }
+        resolve(JSON.parse(line) as Record<string, unknown>);
+      },
+    );
+  });
 }
 
 async function findFreePort(): Promise<number> {
@@ -383,7 +411,6 @@ beforeAll(async () => {
   // Env before import: db.ts builds its pool on first use.
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
-  dataDeletion = await import('./dataDeletion');
   ({ closePool } = await import('./db'));
 });
 
@@ -488,7 +515,7 @@ describe('shadow-deidentify-keys migration', () => {
     const person = await seedPerson();
     expect(await identifiedRows(person)).toEqual(SEEDED);
 
-    // What both purge paths do today for these tables, and nothing more
+    // What the purge does today for these tables, and nothing more
     // (the parents row goes first in both, as its key restricts the account delete).
     await client.query('delete from pilot.parents where account_id = $1', [person.guardian]);
     await client.query('delete from pilot.accounts where account_id = $1', [person.guardian]);
@@ -503,14 +530,16 @@ describe('shadow-deidentify-keys migration', () => {
     expect((await client.query('select 1 from pilot.accounts where account_id = $1', [COACH])).rowCount).toBe(1);
   });
 
-  test('ORDERING: the function-path purge in this tree (the same deletes as the job), on the migrated schema, leaves none of these rows naming a purged guardian or child', async () => {
+  test('ORDERING: the retention purge script, applied on the migrated schema, leaves none of these rows naming a purged guardian or child', async () => {
     const person = await seedPerson({ deleted: true });
     expect(await identifiedRows(person)).toEqual(SEEDED);
-    await dataDeletion.purgeExpiredDeletedData();
+    const event = await runCleanupScript();
+    // A purge that was refused proves nothing below.
+    expect(event.blocked_by ?? {}).toEqual({});
     expect(await identifiedRows(person)).toEqual({ byAccount: 0, byAthlete: 0 });
     // PRE-EXISTING GAP, unchanged by this migration and pinned so it is not
     // mistaken for covered: shadow_feedback has never had an account key and
-    // neither purge path touches it, so the guardian's feedback row (their
+    // the purge does not touch it, so the guardian's feedback row (their
     // email, their own comment) survives. PR C tokens it.
     expect((await client.query('select 1 from pilot.shadow_feedback where account_id = $1', [person.guardian])).rowCount).toBe(1);
     expect((await client.query('select 1 from pilot.accounts where account_id = $1', [person.guardian])).rowCount).toBe(0);
