@@ -407,6 +407,25 @@ export async function upsertSchedulerAttendance(organizationId: string, item: Sc
   await bulkUpsertSchedulerAttendance(organizationId, [item]);
 }
 
+/**
+ * The newest class check-in activity for one athlete at or after a moment, as
+ * a scalar subquery another statement embeds: session auto-close's signal 6
+ * (sessionAutoClose.ts). The scheduler owns pilot.scheduler_attendance (CT-13),
+ * so the read lives here rather than in that module. It is a timestamp, not a
+ * participation figure: nothing is counted or summed, and no other attendance
+ * source is touched, so pilot.attendance_reconciled (one row per athlete-day,
+ * no time of day) cannot answer it.
+ *
+ * The three arguments are SQL expressions from the caller's own statement
+ * (column references such as `s.athlete_id`), never request input.
+ */
+export function latestClassCheckInAtSql(organizationIdSql: string, athleteIdSql: string, sinceSql: string): string {
+  return `(select max(greatest(a.checked_in_at, a.updated_at))
+             from pilot.scheduler_attendance a
+            where a.organization_id = ${organizationIdSql} and a.athlete_id = ${athleteIdSql}
+              and greatest(a.checked_in_at, a.updated_at) >= ${sinceSql})`;
+}
+
 /** Athlete ids with a live ('registered') registration for one class. */
 export async function listRegisteredAthleteIdsForClass(organizationId: string, classId: string): Promise<string[]> {
   const rows = await query<{ athlete_id: string }>(

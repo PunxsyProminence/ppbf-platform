@@ -61,6 +61,7 @@ import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
 import { query, withTransaction } from './db';
+import { latestClassCheckInAtSql } from './schedulerDb';
 
 /** The window from the ruling: "give 20 min before auto close". */
 export const SESSION_INACTIVITY_WINDOW_MINUTES = 20;
@@ -158,11 +159,8 @@ const INACTIVE_SESSIONS_SQL = `
              from pilot.shadow_formula_observations o
             where o.organization_id = s.organization_id and o.athlete_id = s.athlete_id
               and greatest(o.observed_at, o.created_at) >= s.created_at),
-          -- 6 class check-in
-          (select max(greatest(a.checked_in_at, a.updated_at))
-             from pilot.scheduler_attendance a
-            where a.organization_id = s.organization_id and a.athlete_id = s.athlete_id
-              and greatest(a.checked_in_at, a.updated_at) >= s.created_at),
+          -- 6 class check-in (read owned by the scheduler; CT-13)
+          ${latestClassCheckInAtSql('s.organization_id', 's.athlete_id', 's.created_at')},
           -- 7 coach note on the athlete
           (select max(greatest(n.created_at, n.updated_at))
              from pilot.coach_observations n
