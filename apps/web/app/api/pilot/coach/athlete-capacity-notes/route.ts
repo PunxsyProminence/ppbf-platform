@@ -33,6 +33,8 @@ export const dynamic = 'force-dynamic';
  * never pass it.
  */
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function actorOf(principal: ActorIdentity): ActorIdentity {
   return {
     accountId: principal.accountId,
@@ -102,7 +104,9 @@ export async function DELETE(request: NextRequest) {
     requireRole(principal, [...CAPACITY_NOTE_ROLES]);
     const athleteId = athleteIdFrom(request);
     const noteId = request.nextUrl.searchParams.get('note_id')?.trim() ?? '';
-    if (!noteId) throw new ValidationError('Missing note_id');
+    // The column is a uuid; a hand-crafted id would otherwise be a database
+    // error (22P02) answered as a 500.
+    if (!UUID_SHAPE.test(noteId)) throw new ValidationError('note_id must be a note id');
 
     await withdrawCapacityNote({ actor: actorOf(principal), athleteId, noteId });
     return NextResponse.json({ ok: true, note_id: noteId });

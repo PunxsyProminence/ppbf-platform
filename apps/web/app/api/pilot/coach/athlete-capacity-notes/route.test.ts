@@ -49,7 +49,7 @@ const COACH = {
 const ACTOR = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null };
 
 const MINE = {
-  note_id: 'note-1',
+  note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f',
   athlete_id: 'ath-1',
   note: 'Held pace through all six rounds',
   author_account_id: 'acct-coach',
@@ -59,7 +59,7 @@ const MINE = {
 };
 const THEIRS = {
   ...MINE,
-  note_id: 'note-2',
+  note_id: '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
   note: 'Gassed after round three',
   author_account_id: 'acct-admin',
   author_role: 'organization_admin',
@@ -93,7 +93,7 @@ describe('roles that can never hold a note are refused before the module runs', 
     mockPrincipal.mockResolvedValue({ ...COACH, role });
     expect((await get('?athlete_id=ath-1')).status).toBe(403);
     expect((await post({ athlete_id: 'ath-1', note: 'x' })).status).toBe(403);
-    expect((await del('?athlete_id=ath-1&note_id=note-1')).status).toBe(403);
+    expect((await del('?athlete_id=ath-1&note_id=4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f')).status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
     expect(mockAdd).not.toHaveBeenCalled();
     expect(mockWithdraw).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe('GET', () => {
     expect(body.note_max).toBe(2000);
     expect(body.notes).toEqual([
       {
-        note_id: 'note-2',
+        note_id: '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
         athlete_id: 'ath-1',
         note: 'Gassed after round three',
         author_name: 'Coach Gym Admin',
@@ -129,7 +129,7 @@ describe('GET', () => {
         own: false,
       },
       {
-        note_id: 'note-1',
+        note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f',
         athlete_id: 'ath-1',
         note: 'Held pace through all six rounds',
         author_name: 'Coach Jason',
@@ -163,7 +163,7 @@ describe('POST', () => {
     expect(mockAdd).toHaveBeenCalledWith({ actor: ACTOR, athleteId: 'ath-1', note: 'Held pace through all six rounds' });
     const body = await response.json();
     expect(body.note).toEqual({
-      note_id: 'note-1',
+      note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f',
       athlete_id: 'ath-1',
       note: 'Held pace through all six rounds',
       author_name: 'Coach Jason',
@@ -206,13 +206,13 @@ describe('DELETE', () => {
   it('withdraws for the session\'s actor by athlete and note id', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     mockWithdraw.mockResolvedValue(undefined);
-    const response = await del('?athlete_id=ath-1&note_id=note-1');
+    const response = await del('?athlete_id=ath-1&note_id=4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f');
     expect(response.status).toBe(200);
-    expect(mockWithdraw).toHaveBeenCalledWith({ actor: ACTOR, athleteId: 'ath-1', noteId: 'note-1' });
-    expect(await response.json()).toEqual({ ok: true, note_id: 'note-1' });
+    expect(mockWithdraw).toHaveBeenCalledWith({ actor: ACTOR, athleteId: 'ath-1', noteId: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f' });
+    expect(await response.json()).toEqual({ ok: true, note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f' });
   });
 
-  it.each([['no athlete', '?note_id=note-1'], ['no note', '?athlete_id=ath-1'], ['a blank note id', '?athlete_id=ath-1&note_id=%20']])(
+  it.each([['no athlete', '?note_id=4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f'], ['no note', '?athlete_id=ath-1'], ['a blank note id', '?athlete_id=ath-1&note_id=%20'], ['a hand-crafted note id', '?athlete_id=ath-1&note_id=abc']])(
     'refuses %s with a 400 and withdraws nothing',
     async (_label, query) => {
       mockPrincipal.mockResolvedValue(COACH);
@@ -225,8 +225,8 @@ describe('DELETE', () => {
     mockPrincipal.mockResolvedValue(COACH);
     const { ForbiddenError, NotFoundError } = jest.requireActual('@/src/server/pilot/errors');
     mockWithdraw.mockRejectedValueOnce(new ForbiddenError('no', 'CAPACITY_NOTE_NOT_AUTHOR'));
-    expect((await del('?athlete_id=ath-1&note_id=note-2')).status).toBe(403);
+    expect((await del('?athlete_id=ath-1&note_id=7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')).status).toBe(403);
     mockWithdraw.mockRejectedValueOnce(new NotFoundError('gone', 'CAPACITY_NOTE_NOT_FOUND'));
-    expect((await del('?athlete_id=ath-1&note_id=note-9')).status).toBe(404);
+    expect((await del('?athlete_id=ath-1&note_id=0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e')).status).toBe(404);
   });
 });

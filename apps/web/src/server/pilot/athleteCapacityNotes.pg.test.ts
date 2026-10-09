@@ -477,6 +477,9 @@ describe('athleteCapacityNotes.ts against real rows', () => {
       // The admin did not write the coach's note: refused, nothing changes.
       await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: first.note_id }))
         .rejects.toBeInstanceOf(ForbiddenError);
+      // Nor may the coach withdraw the admin's: author only, both ways.
+      await expect(withdrawCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, noteId: second.note_id }))
+        .rejects.toBeInstanceOf(ForbiddenError);
       expect(await noteCount(client, { live: true })).toBe(3);
 
       await withdrawCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, noteId: first.note_id });
