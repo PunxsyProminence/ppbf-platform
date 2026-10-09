@@ -210,7 +210,9 @@ export async function sweepQuarantinedVideos(options: {
     // child's consent alone. Same subjects as Film Study (filmStudyConsent.ts):
     // the video's own athlete plus every live tag subject; a tag naming a
     // deleted athlete skips the screen, as Film Study refuses it. A clip
-    // with no athlete and no tags still names nobody and asks nobody.
+    // with no athlete and no tags still names nobody and asks nobody: owner
+    // ruling 2026-10-08 (option B, "keep scanning") -- such team footage is
+    // still screened, unchecked. Tag the children in it and they are asked.
     let contentSkippedForConsent = false;
     let contentSkippedReason: string | null = null;
     if (config.content === 'vision' && !subject.isTeaching) {
