@@ -205,6 +205,7 @@
     "test:migrations:session-duration": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionDuration.pg.test.ts --testTimeout=180000",
     "test:migrations:session-note-writer-only": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionNoteWriterOnly.pg.test.ts --testTimeout=180000",
     "test:migrations:session-close": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionClose.pg.test.ts --testTimeout=180000",
+    "test:migrations:session-autoclose": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionAutoClose.pg.test.ts --testTimeout=180000",
     "test:migrations:weekly-session-load": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/weeklySessionLoad.pg.test.ts --testTimeout=180000",
     "test:migrations:wellness-trend": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/wellnessTrend.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-check-in-measures": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCheckInMeasures.pg.test.ts --testTimeout=180000",

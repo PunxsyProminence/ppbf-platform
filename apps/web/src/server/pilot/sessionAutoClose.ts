@@ -111,9 +111,13 @@ function resolveNow(options: AutoCloseOptions): Date {
  * signal is at least the window ago.
  *
  * greatest() ignores NULLs, so a signal with no rows drops out and
- * created_at (the check-in) is the floor. least(now, ...) caps a future-dated
- * entry at now, so a bad client clock cannot hold a session open past the
- * window it would otherwise earn. The `>= s.created_at` filters are the
+ * created_at (the check-in) is the floor. least(now, ...) caps the result at
+ * the sweep's own clock, so the row never records a last activity or a close
+ * later than the sweep that wrote it; a future-dated save (a client clock
+ * ahead of the server) therefore reads as "just now" on every sweep until its
+ * stamp is past, and the session closes 20 minutes after the stamp. That is
+ * the conservative direction: the app never closes a session something was
+ * saved on "later" than now. The `>= s.created_at` filters are the
  * index-friendly form of "at or after the check-in"; greatest() with
  * created_at already makes an older signal irrelevant.
  *
