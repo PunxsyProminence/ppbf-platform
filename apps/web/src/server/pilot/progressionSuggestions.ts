@@ -680,6 +680,45 @@ export interface GapJustification {
   fields: Partial<Record<keyof AthletePerformanceRow, number | null>>;
 }
 
+/** What an athlete or parent reads behind a gap: the gap and a plain
+ * sentence. No rule name and no analytics fields (OD-2026-10-08-003 R4,
+ * "Family wording only": the rule numbers behind a gap are staff's). */
+export interface FamilyGapJustification {
+  gap_id: string;
+  explanation: string;
+}
+
+const FAMILY_JUSTIFICATION_WORDING: Readonly<Record<SuggestionRule, string | null>> = {
+  readiness_falling:
+    'Your check-ins have been lower lately than they were earlier in the month. Your coach is keeping an eye on it.',
+  training_days_dropping:
+    'You have trained on fewer days lately than you did earlier in the month. Your coach is keeping an eye on it.',
+  // No justification is produced for these (RULE_JUSTIFICATION_FIELDS is
+  // empty), so no family sentence either; the gap's own family wording
+  // (familyGapDescription) is what they read.
+  assignments_stalled: null,
+  transfer_check_failed: null,
+  competition_loss_unresolved: null,
+  load_jumped: null,
+  load_up_wellness_down: null,
+};
+
+/**
+ * The family-facing form of a justification: the same gaps a staff reader
+ * gets a rule and fields for, each reduced to one plain sentence. Same
+ * split as familyGapDescription (Jason 2026-10-05, "A: Plain text"): staff
+ * keep the numbers, the family gets the words. A rule with no family
+ * sentence is dropped rather than leaking its name.
+ */
+export function familyGapJustifications(items: readonly GapJustification[]): FamilyGapJustification[] {
+  const out: FamilyGapJustification[] = [];
+  for (const item of items) {
+    const explanation = FAMILY_JUSTIFICATION_WORDING[item.rule];
+    if (explanation) out.push({ gap_id: item.gap_id, explanation });
+  }
+  return out;
+}
+
 /**
  * Pure projection: given the one performance row for an athlete and the
  * detection source of each of their gaps, returns the allowed-fields-only
