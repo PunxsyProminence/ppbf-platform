@@ -1,7 +1,9 @@
+import { writePilotAuditEvent } from './audit';
 import { query, withTransaction } from './db';
 import {
   appendConversationExchange,
   loadConversationMessages,
+  loadHumanReviewExchange,
   listConversations,
   purgeExpiredShadowChatData,
   requestOwnShadowDataDeletion,
@@ -20,6 +22,11 @@ jest.mock('./db', () => ({
   query: jest.fn(),
   withTransaction: jest.fn(),
 }));
+jest.mock('./audit', () => ({
+  writePilotAuditEvent: jest.fn(),
+}));
+
+const mockedWriteAudit = jest.mocked(writePilotAuditEvent);
 
 const mockedQuery = query as jest.MockedFunction<typeof query>;
 const mockedWithTransaction = withTransaction as jest.MockedFunction<typeof withTransaction>;
@@ -244,5 +251,203 @@ describe('SHADOW durable conversation isolation', () => {
       retentionDays: 30.5,
       confirmed: true,
     })).rejects.toThrow('Invalid SHADOW retention period');
+  });
+});
+
+/**
+ * The one exchange behind a human-review ticket (OD-2026-10-07-009 question
+ * card 2 item 4, "That one exchange"). What is pinned: the ticket is the only
+ * handle, every message read is bounded by the ticket's own organization and
+ * conversation, exactly one assistant row and at most one user row are
+ * selected, and the audit row goes on the same transaction before the words
+ * are returned.
+ *
+ * MUTATION PROOF (run by hand, 2026-10-08): dropping `and conversation_id = $2`
+ * from the assistant read, or `limit 1` / `role = 'user'` from the user read,
+ * or widening either to the whole conversation, fails the predicate
+ * assertions below. A read that answered with a neighbour would need a
+ * statement this test does not permit.
+ */
+describe('loadHumanReviewExchange: one ticket, one exchange, one audit row', () => {
+  const REVIEW_ID = '7b0d2c7e-5c6a-4f8e-9c3d-2a1b4c5d6e7f';
+  const CONVERSATION_ID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  const ASSISTANT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const USER_ID = '11111111-2222-4333-8444-555555555555';
+  const reader = { accountId: 'admin-1', role: 'organization_admin' as const };
+
+  function clientReturning(rowsBySql: Array<[RegExp, unknown[]]>) {
+    const client = {
+      query: jest.fn<Promise<{ rows: unknown[]; rowCount: number }>, [string, unknown[]?]>(async (sql) => {
+        const hit = rowsBySql.find(([pattern]) => pattern.test(sql));
+        return { rows: hit ? hit[1] : [], rowCount: hit ? hit[1].length : 0 };
+      }),
+    };
+    mockedWithTransaction.mockImplementation(async (fn) => fn(client as never));
+    return client;
+  }
+
+  const ticketRow = (metadata: Record<string, unknown>, conversationId: string | null = CONVERSATION_ID) => ({
+    review_id: REVIEW_ID,
+    conversation_id: conversationId,
+    account_id: 'athlete-9',
+    metadata,
+  });
+
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedWithTransaction.mockReset();
+    mockedWriteAudit.mockReset();
+    mockedWriteAudit.mockResolvedValue(undefined);
+  });
+
+  it('returns exactly the flagged answer and the question before it, labelled, and records the read first', async () => {
+    const assistantCreated = new Date('2026-08-01T12:00:00.001Z');
+    const client = clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: ASSISTANT_ID })]],
+      [/role = 'assistant'/, [{ message_id: ASSISTANT_ID, content: 'Sit down and tell a coach now.', response_state: 'filtered', created_at: assistantCreated }]],
+      [/role = 'user'/, [{ message_id: USER_ID, content: 'my chest hurts when i skip', created_at: new Date('2026-08-01T12:00:00.000Z') }]],
+      [/from pilot\.accounts a/, [{ role: 'athlete', dob: '2012-05-04' }]],
+    ]);
+
+    const result = await loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader });
+
+    expect(result).toEqual({
+      recorded: true,
+      subject: { accountId: 'athlete-9', role: 'athlete', ageBand: 'under_18' },
+      userMessage: { messageId: USER_ID, content: 'my chest hurts when i skip', createdAt: '2026-08-01T12:00:00.000Z' },
+      assistantMessage: {
+        messageId: ASSISTANT_ID,
+        content: 'Sit down and tell a coach now.',
+        createdAt: '2026-08-01T12:00:00.001Z',
+        responseState: 'filtered',
+      },
+    });
+
+    const statements = client.query.mock.calls.map(([sql, params]) => ({ sql: String(sql), params: params ?? [] }));
+
+    // The ticket is read by its id AND the caller's organization.
+    const ticket = statements.find((s) => s.sql.includes('from pilot.shadow_human_review_queue'));
+    expect(ticket?.sql).toContain('where review_id = $1 and organization_id = $2');
+    expect(ticket?.params).toEqual([REVIEW_ID, 'org-a']);
+
+    // Every read of the message table is bounded by the ticket's conversation
+    // and the organization. There are exactly two, and neither is open-ended.
+    const messageReads = statements.filter((s) => s.sql.includes('from pilot.shadow_chat_messages'));
+    expect(messageReads).toHaveLength(2);
+    for (const read of messageReads) {
+      expect(read.sql).toMatch(/conversation_id = \$\d/);
+      expect(read.sql).toMatch(/organization_id = \$\d/);
+    }
+    // The assistantCreated Date never reaches a query parameter.
+    expect(statements.some((s) => s.params.includes(assistantCreated))).toBe(false);
+    const assistant = messageReads.find((s) => s.sql.includes("role = 'assistant'"));
+    expect(assistant?.sql).toContain('where message_id = $1');
+    expect(assistant?.sql).toContain('and conversation_id = $2');
+    expect(assistant?.sql).toContain('and organization_id = $3');
+    expect(assistant?.params).toEqual([ASSISTANT_ID, CONVERSATION_ID, 'org-a']);
+    const user = messageReads.find((s) => s.sql.includes("role = 'user'"));
+    // The cutoff is the assistant row's own created_at, resolved in SQL by
+    // the assistant's id within the same conversation and organization --
+    // never the millisecond-truncated Date node-postgres handed back.
+    expect(user?.sql).toMatch(/u\.created_at <= \(\s*select a\.created_at/);
+    expect(user?.sql).toContain('where a.message_id = $3');
+    expect(user?.sql).toContain('and a.conversation_id = $1');
+    expect(user?.sql).toContain('and a.organization_id = $2');
+    expect(user?.sql).not.toContain('<= $');
+    expect(user?.sql).toContain('order by u.created_at desc');
+    expect(user?.sql).toContain('limit 1');
+    expect(user?.params).toEqual([CONVERSATION_ID, 'org-a', ASSISTANT_ID]);
+
+    // The audit row: who read whose exchange, on the transaction's client,
+    // and not fanned out to the SHADOW event/telemetry streams.
+    expect(mockedWriteAudit).toHaveBeenCalledTimes(1);
+    expect(mockedWriteAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'shadow_review_exchange_read',
+        actor_account_id: 'admin-1',
+        actor_role: 'organization_admin',
+        organization_id: 'org-a',
+        entity_type: 'shadow_human_review',
+        entity_id: REVIEW_ID,
+        details: expect.objectContaining({
+          subjectAccountId: 'athlete-9',
+          subjectAgeBand: 'under_18',
+          conversationId: CONVERSATION_ID,
+          assistantMessageId: ASSISTANT_ID,
+          userMessageId: USER_ID,
+        }),
+        shadow_mirror: false,
+      }),
+      client,
+    );
+    // No pooled (autocommit) query at all: everything rides the transaction.
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('a ticket that names no message is "not recorded" and nothing is read or audited', async () => {
+    const client = clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ jobId: 'job-1', jobType: 'heavy_bag_session' })]],
+    ]);
+    await expect(loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader }))
+      .resolves.toEqual({ recorded: false, reason: 'no_message_on_ticket' });
+    expect(client.query.mock.calls.some(([sql]) => String(sql).includes('shadow_chat_messages'))).toBe(false);
+    expect(mockedWriteAudit).not.toHaveBeenCalled();
+  });
+
+  it('a ticket whose conversation is gone is "not recorded", not an error, and not audited', async () => {
+    clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: ASSISTANT_ID })]],
+    ]);
+    await expect(loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader }))
+      .resolves.toEqual({ recorded: false, reason: 'messages_not_found' });
+    expect(mockedWriteAudit).not.toHaveBeenCalled();
+  });
+
+  it('a metadata message id that is not a uuid is not sent to the database', async () => {
+    const client = clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: "x' or 1=1 --" })]],
+    ]);
+    await expect(loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader }))
+      .resolves.toEqual({ recorded: false, reason: 'no_message_on_ticket' });
+    expect(client.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("another organization's ticket is null, and nothing else is read", async () => {
+    const client = clientReturning([]);
+    await expect(loadHumanReviewExchange({ organizationId: 'org-b', reviewId: REVIEW_ID, reader }))
+      .resolves.toBeNull();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query.mock.calls[0][1]).toEqual([REVIEW_ID, 'org-b']);
+    expect(mockedWriteAudit).not.toHaveBeenCalled();
+  });
+
+  it('the age band is the age when the message was sent, not at the time of reading', async () => {
+    // Born 2008-09-01: 17 when the flagged answer was written (2026-08-01),
+    // 18 by the time anyone reads it after 2026-09-01. Still a minor's words.
+    clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: ASSISTANT_ID })]],
+      [/role = 'assistant'/, [{ message_id: ASSISTANT_ID, content: 'answer', response_state: 'ok', created_at: new Date('2026-08-01T12:00:00.000Z') }]],
+      [/from pilot\.accounts a/, [{ role: 'athlete', dob: '2008-09-01' }]],
+    ]);
+    const result = await loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader });
+    expect(result).toMatchObject({ recorded: true, subject: { ageBand: 'under_18' } });
+  });
+
+  it('a missing date of birth is reported as missing, never read as adult', async () => {
+    clientReturning([
+      [/from pilot\.shadow_human_review_queue/, [ticketRow({ assistantMessageId: ASSISTANT_ID })]],
+      [/role = 'assistant'/, [{ message_id: ASSISTANT_ID, content: 'answer', response_state: 'ok', created_at: new Date() }]],
+      [/from pilot\.accounts a/, [{ role: 'coach', dob: null }]],
+    ]);
+    const result = await loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader });
+    expect(result).toMatchObject({ recorded: true, subject: { role: 'coach', ageBand: 'age_not_on_record' }, userMessage: null });
+  });
+
+  it('refuses a reader with no organization or account', async () => {
+    await expect(loadHumanReviewExchange({ organizationId: ' ', reviewId: REVIEW_ID, reader }))
+      .rejects.toThrow('organization-scoped');
+    await expect(loadHumanReviewExchange({ organizationId: 'org-a', reviewId: REVIEW_ID, reader: { accountId: '', role: 'admin' } }))
+      .rejects.toThrow('organization-scoped');
+    expect(mockedWithTransaction).not.toHaveBeenCalled();
   });
 });

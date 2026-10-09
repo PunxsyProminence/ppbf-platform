@@ -87,6 +87,29 @@ const SUGGESTION_RULE_LABEL: Record<string, string> = {
 
 const suggestionKey = (item: GapSuggestionItem) => `${item.athlete_id}:${item.rule}`;
 
+// The staff answer to "Why?" on a confirmed gap: the rule that produced it
+// and the rollup fields that justify it (GET /progression/gap-justification,
+// coach/admin shape). An athlete or parent asking the same route gets one
+// plain sentence instead; this page is staff-only, so the numbers belong
+// here (OD-2026-10-08-003 R4).
+interface GapJustificationItem {
+  gap_id: string;
+  rule: string;
+  fields: Record<string, number | null>;
+}
+
+const JUSTIFICATION_FIELD_LABEL: Record<string, string> = {
+  avg_readiness: 'Average readiness',
+  readiness_count: 'Check-ins',
+  readiness_early_avg: 'Readiness, early window',
+  readiness_late_avg: 'Readiness, late window',
+  readiness_early_count: 'Check-ins, early window',
+  readiness_late_count: 'Check-ins, late window',
+  training_days: 'Training days',
+  training_days_early: 'Training days, early window',
+  training_days_late: 'Training days, late window',
+};
+
 interface DrillLibraryItem {
   drill_id: string;
   name: string;
@@ -223,6 +246,16 @@ export default function CoachProgressionIntelligencePage() {
      errorMessage alone is one line in the header; the lists below must not
      say "(0)" or "none yet" for an athlete nobody could look at. */
   const [progressionUnreadable, setProgressionUnreadable] = useState(false);
+  // "Why?" on a gap card. Read on demand, once per athlete, and stored WITH
+  // the athlete it was read for so a switch mid-flight never shows one
+  // child's numbers under another's gap (the activeHold pattern below).
+  // `items: null` = not read yet or unreadable; the card says which.
+  const [justification, setJustification] = useState<{
+    athleteId: string;
+    items: GapJustificationItem[] | null;
+    unreadable: boolean;
+  }>({ athleteId: '', items: null, unreadable: false });
+  const [openWhy, setOpenWhy] = useState<Set<string>>(new Set());
   const [completionsByAssignment, setCompletionsByAssignment] = useState<Record<string, AssignmentCompletion[]>>({});
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [drills, setDrills] = useState<DrillLibraryItem[]>([]);
@@ -545,6 +578,27 @@ export default function CoachProgressionIntelligencePage() {
     })();
     return () => controller.abort();
   }, [selectedAthlete]);
+
+  const handleWhy = async (gapId: string) => {
+    setOpenWhy((current) => {
+      const next = new Set(current);
+      if (next.has(gapId)) next.delete(gapId); else next.add(gapId);
+      return next;
+    });
+    if (justification.athleteId === selectedAthlete && (justification.items || justification.unreadable)) return;
+    const athleteId = selectedAthlete;
+    try {
+      const res = await fetch(
+        `${apiBase()}/api/pilot/progression/gap-justification?athlete_id=${encodeURIComponent(athleteId)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Unable to read the justification.');
+      const data = (await res.json()) as { items?: GapJustificationItem[] };
+      setJustification({ athleteId, items: data.items ?? [], unreadable: false });
+    } catch {
+      setJustification({ athleteId, items: null, unreadable: true });
+    }
+  };
 
   const handleCreateGap = async () => {
     if (!selectedAthlete || !newGap.gap_description) {
@@ -1189,7 +1243,43 @@ export default function CoachProgressionIntelligencePage() {
                             <span className="t-data text-[color:var(--bone-400)]">{gap.status}</span>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          aria-expanded={openWhy.has(gap.gap_id)}
+                          onClick={() => void handleWhy(gap.gap_id)}
+                        >
+                          Why?
+                        </button>
                       </div>
+                      {openWhy.has(gap.gap_id) ? (() => {
+                        const current = justification.athleteId === selectedAthlete ? justification : null;
+                        const item = current?.items?.find((entry) => entry.gap_id === gap.gap_id);
+                        return (
+                          <div className="mt-[var(--s3)]" data-testid={`gap-why-${gap.gap_id}`}>
+                            {!current || (!current.items && !current.unreadable) ? (
+                              <p className="t-body text-[color:var(--bone-300)]">Reading…</p>
+                            ) : current.unreadable ? (
+                              <p className="t-body text-[color:var(--bone-300)]">The reasons behind this gap could not be read.</p>
+                            ) : !item ? (
+                              <p className="t-body text-[color:var(--bone-300)]">A coach filed this gap by observation; there are no rule numbers behind it.</p>
+                            ) : (
+                              <>
+                                <p className="t-data text-[color:var(--bone-300)]">
+                                  Rule: {SUGGESTION_RULE_LABEL[item.rule] ?? item.rule}
+                                </p>
+                                <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
+                                  {Object.entries(item.fields).map(([field, value]) => (
+                                    <li key={field} className="t-data text-[color:var(--bone-200)]">
+                                      {JUSTIFICATION_FIELD_LABEL[field] ?? field}: {value === null ? 'no reading' : value}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })() : null}
                       <RabbitHole
                         anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }}
                         className={GAP_RABBIT_HOLE_CLASS}

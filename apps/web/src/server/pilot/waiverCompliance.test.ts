@@ -2,19 +2,43 @@ jest.mock('./db', () => ({
   query: jest.fn(),
 }));
 
+/* The media consent check is the one read this module does not make itself
+   (see MEDIA_CONSENT_TRACKED_TYPE). Mocked whole: the real module imports
+   this one, and the point here is what the rollup does with the answer. */
+jest.mock('./guardianConsent', () => ({
+  checkGuardianMediaConsent: jest.fn(),
+  MEDIA_CONSENT_WAIVER_TYPE: jest.requireActual('./guardianConsent').MEDIA_CONSENT_WAIVER_TYPE,
+}));
+
 import fs from 'node:fs';
 import path from 'node:path';
 
 import {
   getAthleteWaiverStatus,
   getOrganizationWaiverStatus,
+  MEDIA_CONSENT_TRACKED_TYPE,
+  mediaConsentAsWaiverStatus,
   requireWaiverStatus,
   TRACKED_WAIVER_TYPES,
   WAIVER_STATUSES,
+  type WaiverStatus,
 } from './waiverCompliance';
 import { query } from './db';
+import { checkGuardianMediaConsent, MEDIA_CONSENT_WAIVER_TYPE, type ConsentCheckResult } from './guardianConsent';
 
 const mockQuery = jest.mocked(query);
+const mockMediaConsent = jest.mocked(checkGuardianMediaConsent);
+
+/** A consent answer with no guardians at all: the check's "unverifiable". */
+const NO_GUARDIANS: ConsentCheckResult = { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] };
+
+function guardian(status: string | null, parentId = 'p1') {
+  return { parentId, status, coversVideo: status === 'signed', publicUseAllowed: false, signedAt: null };
+}
+
+beforeEach(() => {
+  mockMediaConsent.mockResolvedValue(NO_GUARDIANS);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -44,7 +68,7 @@ describe('getOrganizationWaiverStatus', () => {
   test('multiple waiver-type rows for the same athlete collapse into one entry', async () => {
     mockQuery.mockResolvedValueOnce([
       { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: 'signed' },
-      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'photo_media', status: 'withdrawn' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'travel', status: 'withdrawn' },
     ]);
 
     const result = await getOrganizationWaiverStatus('org-1');
@@ -53,8 +77,81 @@ describe('getOrganizationWaiverStatus', () => {
     expect(result[0].waivers).toEqual({
       general: 'signed',
       medical_release: 'missing',
-      photo_media: 'withdrawn',
-      travel: 'missing',
+      photo_media: 'missing',
+      travel: 'withdrawn',
+    });
+  });
+
+  /* PHOTO_MEDIA IS THE CONSENT CHECK'S ANSWER, NOT THE NEWEST ROW (Jason
+     2026-10-07, OD-2026-10-07-009). The register form used to file a
+     photo_media row with no parent_id, which this rollup read as Signed while
+     every media gate -- which reads guardian by guardian -- refused. */
+  describe('photo_media', () => {
+    test('the row read does not fetch photo_media at all, so a stored register row cannot be read as Signed', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: null, status: null },
+      ]);
+
+      await getOrganizationWaiverStatus('org-1');
+
+      const [, params] = mockQuery.mock.calls[0];
+      expect(params).toEqual(['org-1', ['general', 'medical_release', 'travel']]);
+    });
+
+    test('is read through checkGuardianMediaConsent, once per athlete, for this organization', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: null, status: null },
+        { athlete_id: 'ath-2', full_name: 'Sam R.', active_flag: true, waiver_type: null, status: null },
+      ]);
+      mockMediaConsent
+        .mockResolvedValueOnce({ ok: true, guardianIds: ['p1'], missingParentIds: [], perGuardian: [guardian('signed')], retained: [] })
+        .mockResolvedValueOnce(NO_GUARDIANS);
+
+      const result = await getOrganizationWaiverStatus('org-1');
+
+      expect(mockMediaConsent.mock.calls).toEqual([['org-1', 'ath-1'], ['org-1', 'ath-2']]);
+      expect(result[0].waivers.photo_media).toBe('signed');
+      expect(result[1].waivers.photo_media).toBe('missing');
+    });
+
+    test('a failed consent read fails the rollup rather than falling back to a stored row', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: null, status: null },
+      ]);
+      mockMediaConsent.mockRejectedValueOnce(new Error('relation does not exist'));
+
+      await expect(getOrganizationWaiverStatus('org-1')).rejects.toThrow('relation does not exist');
+    });
+
+    // The two spellings of the waiver type live in two modules on purpose
+    // (an import cycle, see MEDIA_CONSENT_TRACKED_TYPE); this is what keeps them equal.
+    test('names the same waiver type the consent module does', () => {
+      expect(MEDIA_CONSENT_TRACKED_TYPE).toBe(MEDIA_CONSENT_WAIVER_TYPE);
+      expect(TRACKED_WAIVER_TYPES).toContain(MEDIA_CONSENT_TRACKED_TYPE);
+    });
+  });
+
+  describe('mediaConsentAsWaiverStatus', () => {
+    const cases: Array<[string, ConsentCheckResult, WaiverStatus]> = [
+      ['ok is signed', { ok: true, guardianIds: ['p1'], missingParentIds: [], perGuardian: [guardian('signed')], retained: [] }, 'signed'],
+      // A photo-only consent is still a signed one here; /parent/safety has
+      // the extra word for it, this worklist does not.
+      ['ok with photo-only is still signed', { ok: true, guardianIds: ['p1'], missingParentIds: [], perGuardian: [{ ...guardian('signed'), coversVideo: false }], retained: [] }, 'signed'],
+      ['no guardians is missing, never signed', NO_GUARDIANS, 'missing'],
+      ['a guardian with nothing on file is missing', { ok: false, guardianIds: ['p1'], missingParentIds: ['p1'], perGuardian: [guardian(null)], retained: [] }, 'missing'],
+      ['one signed, one unanswered is missing -- consent is not on file', { ok: false, guardianIds: ['p1', 'p2'], missingParentIds: ['p2'], perGuardian: [guardian('signed'), guardian(null, 'p2')], retained: [] }, 'missing'],
+      ['a withdrawal outranks a signature from the other guardian', { ok: false, guardianIds: ['p1', 'p2'], missingParentIds: ['p2'], perGuardian: [guardian('signed'), guardian('withdrawn', 'p2')], retained: [] }, 'withdrawn'],
+      ['a withdrawal outranks a decline', { ok: false, guardianIds: ['p1', 'p2'], missingParentIds: ['p1', 'p2'], perGuardian: [guardian('declined'), guardian('withdrawn', 'p2')], retained: [] }, 'withdrawn'],
+      ['a decline reads as declined', { ok: false, guardianIds: ['p1'], missingParentIds: ['p1'], perGuardian: [guardian('declined')], retained: [] }, 'declined'],
+      // A purged former guardian's "no" is kept (Jason 2026-10-05) and is what
+      // every media gate reads; "missing" would say the gym holds no form.
+      ['a retained withdrawal from a purged guardian reads as withdrawn', { ok: false, guardianIds: ['p1'], missingParentIds: [], perGuardian: [guardian('signed')], retained: [guardian('withdrawn', 'former')] }, 'withdrawn'],
+      ['statuses are normalised the way the gates normalise them', { ok: false, guardianIds: ['p1'], missingParentIds: ['p1'], perGuardian: [guardian(' Declined ')], retained: [] }, 'declined'],
+      ['an unrecognised status is missing, never signed', { ok: false, guardianIds: ['p1'], missingParentIds: ['p1'], perGuardian: [guardian('pending')], retained: [] }, 'missing'],
+    ];
+
+    test.each(cases)('%s', (_name, consent, expected) => {
+      expect(mediaConsentAsWaiverStatus(consent)).toBe(expected);
     });
   });
 
@@ -110,7 +207,7 @@ describe('getOrganizationWaiverStatus', () => {
   test('every value it returns is in the declared vocabulary', async () => {
     mockQuery.mockResolvedValueOnce([
       { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: 'Approved' },
-      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'photo_media', status: ' declined' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'travel', status: ' declined' },
     ]);
 
     const result = await getOrganizationWaiverStatus('org-1');
@@ -118,7 +215,7 @@ describe('getOrganizationWaiverStatus', () => {
     for (const value of Object.values(result[0].waivers)) {
       expect(WAIVER_STATUSES).toContain(value);
     }
-    expect(result[0].waivers.photo_media).toBe('declined');
+    expect(result[0].waivers.travel).toBe('declined');
   });
 
   test('a declined waiver reads as declined, not missing -- a decision was made, and it was no', async () => {
@@ -143,14 +240,14 @@ describe('getOrganizationWaiverStatus', () => {
     expect(result[1].activeFlag).toBe(false);
   });
 
-  test('queries only the tracked waiver-type vocabulary, org-scoped', async () => {
+  test('queries only the row-read tracked waiver-type vocabulary, org-scoped', async () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await getOrganizationWaiverStatus('org-1');
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain('pilot.waivers');
-    expect(params).toEqual(['org-1', TRACKED_WAIVER_TYPES]);
+    expect(params).toEqual(['org-1', TRACKED_WAIVER_TYPES.filter((type) => type !== 'photo_media')]);
   });
 
   test('no athletes at all returns an empty array', async () => {

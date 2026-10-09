@@ -505,7 +505,8 @@
     "test:migrations:audit-entity-owners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEntityOwners.pg.test.ts --testTimeout=180000",
     "test:migrations:audit-reader-calibration": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditReaderCalibration.pg.test.ts --testTimeout=180000",
     "test:migrations:community-service-reach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/communityServiceReach.pg.test.ts --testTimeout=180000",
-    "test:migrations:audit-events-entity-index": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEventsEntityIndex.pg.test.ts --testTimeout=180000"
+    "test:migrations:audit-events-entity-index": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEventsEntityIndex.pg.test.ts --testTimeout=180000",
+    "test:migrations:paper-only-guardian": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/paperOnlyGuardian.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",

@@ -17,7 +17,10 @@ export const runtime = 'nodejs';
  * Placement and kind are fixed here rather than accepted from the query, so
  * the only announcements an anonymous caller can reach are the ones an author
  * placed on the signed-out Gym Notices panel. Copy written for a workspace
- * placement stays behind the session-scoped read.
+ * placement stays behind the session-scoped read -- and so does 'everywhere':
+ * that placement means every signed-in surface, not the public internet
+ * (OD-2026-10-07-008, "Members only"), so includeEverywhere is false here and
+ * only here and on the public wall.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +33,7 @@ export async function GET(request: NextRequest) {
       placement: 'gym_notices',
       kind: 'notice',
       limit,
+      includeEverywhere: false,
     });
 
     return NextResponse.json({

@@ -211,6 +211,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     let outputForCompletion: Record<string, unknown> = rawOutput;
     let bindingFiltered = false;
     let bindingRequiresHumanReview = false;
+    let appendedAssistantMessageId: string | null = null;
     if (binding) {
       const decision = validateShadowResponse(
         typeof rawOutput.response === 'string' ? rawOutput.response : '',
@@ -286,6 +287,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
             }
           : undefined,
       });
+      appendedAssistantMessageId = assistantMessageId;
       outputForCompletion = {
         ...rawOutput,
         response: decision.message,
@@ -319,6 +321,11 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       const reviewTicket = {
         organizationId: job.organizationId,
         accountId: job.accountId,
+        // The conversation and the answer this ticket is about, as the
+        // route's rows carry them: the review desk reads the one flagged
+        // exchange through these (W5), and a ticket without them reads
+        // "exchange not recorded".
+        conversationId: binding?.conversationId,
         category: 'async_response_safety',
         severity: 'high' as const,
         summary: finalSafetyStatus === 'filtered'
@@ -328,6 +335,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
           jobId: job.jobId,
           jobType: job.jobType,
           subjectScoped: Boolean(job.subjectId),
+          ...(appendedAssistantMessageId ? { assistantMessageId: appendedAssistantMessageId } : {}),
           // A reviewer opening this ticket saw "replaced by the
           // post-generation safety boundary" and nothing about which boundary.
           safetyReasons: (checkedOutput.output.safetyReasons as string[] | undefined) ?? [],

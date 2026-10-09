@@ -565,3 +565,43 @@ describe('the record and its three accounting rows are one transaction', () => {
     expect(order).toEqual(['account-read', 'transaction']);
   });
 });
+
+/* Jason 2026-10-07, OD-2026-10-07-009 "Remove it, send to consent screen".
+   The register page stopped offering photo_media; this is the server saying
+   the same thing, so a direct API call cannot file a media "consent" that
+   names no guardian and that no media gate reads. */
+describe('photo and media consent is refused on the general register', () => {
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+    mockAccess.mockResolvedValue(undefined);
+    mockUpsertWaiver.mockResolvedValue('waiver-1');
+  });
+
+  test('a photo_media waiver is a 400 pointing at the consent desk, and nothing is written', async () => {
+    const response = await POST(postRequest({
+      entity_type: 'waiver',
+      athlete_id: 'ath-1',
+      payload: { waiver_type: 'photo_media', signed_by_name: 'Pat Guardian', status: 'signed' },
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/^Unsupported waiver_type: photo and media consent is recorded guardian by guardian/);
+    expect(String(payload.error)).toContain('/admin/athlete-consent');
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the other register types are still written', async () => {
+    for (const waiverType of ['general', 'medical_release', 'travel']) {
+      mockUpsertWaiver.mockClear();
+      const response = await POST(postRequest({
+        entity_type: 'waiver',
+        athlete_id: 'ath-1',
+        payload: { waiver_type: waiverType, signed_by_name: 'Pat Guardian' },
+      }));
+      expect(response.status).toBe(200);
+      expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ waiverType }), TX_CLIENT);
+    }
+  });
+});

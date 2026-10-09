@@ -204,19 +204,23 @@ export async function DELETE(request: NextRequest) {
 
     const body = (await request.json()) as {
       account_id?: string;
+      // A guardian with no login (OD-2026-10-07-009) is named by record
+      // instead; removeGuardianLink refuses this form for one that has a login.
+      parent_id?: string;
       athlete_id?: string;
     };
 
     const accountId = body.account_id?.trim() || '';
+    const parentId = body.parent_id?.trim() || '';
     const athleteId = body.athlete_id?.trim() || '';
 
-    if (!accountId || !athleteId) {
-      throw new Error('Missing account_id or athlete_id');
+    if ((!accountId && !parentId) || !athleteId) {
+      throw new Error('Missing athlete_id and one of account_id or parent_id');
     }
 
     const removed = await removeGuardianLink({
       organizationId: principal.organizationId,
-      accountId,
+      ...(accountId ? { accountId } : { parentId }),
       athleteId,
     });
 
@@ -225,18 +229,20 @@ export async function DELETE(request: NextRequest) {
       actor_account_id: principal.accountId,
       actor_role: principal.role,
       organization_id: principal.organizationId,
-      entity_type: 'account',
-      entity_id: accountId,
+      // A paper-only guardian has no account; the record id is the entity then.
+      entity_type: accountId ? 'account' : 'guardian',
+      entity_id: accountId || removed.parentId,
       details: {
         action: 'organization_admin_remove_guardian_link',
         guardian_parent_id: removed.parentId,
         guardian_athlete_id: removed.athleteId,
+        ...(accountId ? {} : { paper_only: true }),
       },
     });
 
     return NextResponse.json({
       ok: true,
-      account_id: accountId,
+      account_id: accountId || null,
       parent_id: removed.parentId,
       athlete_id: removed.athleteId,
     });
