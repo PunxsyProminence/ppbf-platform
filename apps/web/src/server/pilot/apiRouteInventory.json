@@ -11468,12 +11468,12 @@
       "admin"
     ],
     "athleteData": true,
-    "writes": false,
+    "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "reviews/route.ts:30-31 gate; listHumanReviews (shadowConversations.ts:1152) returns shadow_human_review_queue rows (conversation_id, account_id, category, severity, summary) for the org. Per-account chat safety/filter escalations. Coach not admitted.",
+    "notes": "reviews/route.ts:30-31 gate; listHumanReviews (shadowConversations.ts) returns shadow_human_review_queue rows (conversation_id, account_id, category, severity, summary) for the org. Per-account chat safety/filter escalations. Coach not admitted. ?reviewId=<uuid> (W5, OD-2026-10-07-009 card 2 item 4): loadHumanReviewExchange returns the one flagged user message + assistant reply behind that ticket, bounded by the ticket's org and conversation, and WRITES an audit_events row 'shadow_review_exchange_read' (who read whose) on the same transaction -- a member's (often a minor's) words, no neighbours, no transcript.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

@@ -378,12 +378,15 @@ function ShadowReviewsConsole() {
               )}
 
               {/*
-                The one exchange. Opened by a click, never on render; the
-                server records the read against the signed-in admin before it
+                The one exchange. A triage control, so it is offered on open
+                and in-review tickets only: a closed ticket carries no controls
+                and no door. Opened by a click, never on render; the server
+                records the read against the signed-in admin before it
                 returns a word. What is rendered is exactly the two messages
                 the route returned and the asker's role and age band -- no
                 conversation link, no neighbours, no transcript.
               */}
+              {(review.status === 'open' || review.status === 'in_review') && (
               <section className="mt-[var(--s3)]" aria-label="Flagged exchange">
                 {!exchange && (
                   <button
@@ -433,6 +436,7 @@ function ShadowReviewsConsole() {
                   </div>
                 )}
               </section>
+              )}
 
               {(review.status === 'open' || review.status === 'in_review') && (
                 <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
