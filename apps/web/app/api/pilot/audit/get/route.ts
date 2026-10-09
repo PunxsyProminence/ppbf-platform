@@ -6,28 +6,20 @@ import {
   auditEntityOwnersOf,
   resolveAuditEntityOwners,
 } from '@/src/server/pilot/auditEntityOwners';
+import {
+  COACH_ALLOWED_AUDIT_ENTITY_TYPES,
+  WITHHELD_AUDIT_ENTITY_TYPE_PREFIX,
+} from '@/src/server/pilot/auditReadAllowlist';
 import { query } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-// A coach's view of the org-wide audit trace is an ALLOW-list, not a
-// deny-list. This route shipped excluding exactly one type (training_hold),
-// and the 2026-08-25 audit found the rot that shape guarantees: by then
-// parent_barrier_report, guardian_media_consent, guardian_link,
-// athlete_check_in, intake_case and intake_document had all joined the
-// vocabulary, and any coach could enumerate them org-wide for children they
-// never coach. A deny-list must be re-curated every time a writer adds a
-// type; this list fails CLOSED instead -- a new entity type is invisible to
-// coaches until someone deliberately adds it here, under review.
-//
-// What belongs here: training-floor operational records. What never does:
-// guardian/consent, intake, medical, account/credential, payment, platform,
-// board, or safety-scoped types -- each of those has a dedicated route whose
-// own gate decides what a coach may see of it (training-holds/route.ts is
-// the model), and this general-purpose reader must not become the back door
-// around any of them.
+// Which entity types a coach may read here, and which calibration rows no
+// caller may, live in auditReadAllowlist.ts: the SHADOW event feed applies
+// the same lists to the audit rows mirrored into pilot.shadow_events, so
+// neither reader is the way around the other. Read the reasons there.
 //
 // The type allow-list is necessary but NOT sufficient: several allow-listed
 // operational types (goal, session, intervention_*, recognition, ...) still
@@ -39,46 +31,12 @@ export const runtime = 'nodejs';
 // (accessibleAthleteIds, the same central relationship gate the intervention
 // reads use); org-wide rows that name no athlete are kept. Org admins keep
 // organization-wide reach.
-const COACH_ALLOWED_ENTITY_TYPES = new Set([
-  'announcement',
-  'athlete_milestone',
-  'athlete_program',
-  'behavior_standard',
-  'coach_coverage',
-  'coach_note',
-  'coach_review',
-  'drill',
-  'external_competition_entry',
-  'floor_plan',
-  'goal',
-  'intervention_evidence_link',
-  'intervention_execution',
-  'intervention_outcome_review',
-  'intervention_protocol',
-  'mentorship',
-  'one_percent_nomination',
-  'program_phase',
-  'rabbit_hole',
-  'recognition',
-  'scheduler_coaching_request',
-  'session',
-  'video_session',
-  'wrestling_league_roster_entry',
-]);
+const COACH_ALLOWED_ENTITY_TYPES = COACH_ALLOWED_AUDIT_ENTITY_TYPES;
 
-// Calibration audit rows are served to NOBODY here, organization admins
-// included. Calibration labelling is blinded -- two annotators, or one
-// annotator's two passes, must not see each other's work -- and its audit
-// rows say what was marked and when: an event's class and time span, which
-// moment of it holds body marks, how many events a set was submitted with.
-// An organization admin may also be an annotator, so "admins see everything"
-// made this reader a way around the blinding. The calibration routes are the
-// only surfaces that decide who may read that work.
-//
 // Withheld in the SQL, for every caller, so a page still fills to its limit
 // and a filter that names such a type (or one of its entity ids) answers
 // exactly as a type with no rows does. The rows themselves are untouched.
-const WITHHELD_ENTITY_TYPE_PREFIX = 'calibration_';
+const WITHHELD_ENTITY_TYPE_PREFIX = WITHHELD_AUDIT_ENTITY_TYPE_PREFIX;
 
 /**
  * A present-but-non-string filter is a bad request, not a server fault:

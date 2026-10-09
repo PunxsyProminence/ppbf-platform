@@ -1,4 +1,10 @@
 import { accessibleAthleteIds, athleteIdsForCoach, isOrganizationAdminRole } from './access';
+import { auditEntityOwnersOf, resolveAuditEntityOwners } from './auditEntityOwners';
+import {
+  ATHLETE_OWNED_AUDIT_ENTITY_TYPES,
+  COACH_ALLOWED_AUDIT_ENTITY_TYPES,
+  WITHHELD_AUDIT_ENTITY_TYPE_PREFIX,
+} from './auditReadAllowlist';
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
@@ -220,6 +226,82 @@ async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteS
   return { restrictToAthleteIds: [], includeUnscopedRows: true };
 }
 
+/**
+ * Which of the audit rows writePilotAuditEvent mirrors into shadow_events
+ * (event_name SHADOW_AUDIT_..., payload { event_type, details }) this actor
+ * may read. The athlete scope above is not enough for them: a mirrored row
+ * naming no athlete fell into the athlete-free disjunct and reached every
+ * coach, staff member, volunteer and the platform owner -- payment accounts,
+ * board seats, consent changes, safety flags -- while audit/get, the reader
+ * built for those rows, admits organization admins and coaches only and
+ * holds coaches to an entity-type allow-list. The same lists apply here
+ * (auditReadAllowlist.ts), so this feed is not the way around audit/get:
+ *   'admin'  every mirror except calibration rows, as audit/get;
+ *   'coach'  allow-listed types only; an athlete-owned type additionally
+ *            needs the coach to reach every athlete it names (the athlete
+ *            scope, in SQL) and every athlete its entity belongs to now
+ *            (coachMayReadOwnedMirrors), and is hidden when it is about
+ *            nobody either way, as audit/get;
+ *   'own'    athletes and parents: unchanged, already held to their own
+ *            athlete's rows by the athlete scope (Overwatch 2026-10-09:
+ *            "Athlete/parent: leave unchanged");
+ *   'none'   staff, volunteers, the platform owner and any role added later:
+ *            audit/get refuses them, so no mirror reaches them. Fails closed.
+ */
+type AuditMirrorReach = 'admin' | 'coach' | 'own' | 'none';
+
+// The event_name prefix audit.ts (and contentImport/auditRow.ts) give a mirror.
+const AUDIT_MIRROR_EVENT_PREFIX = 'SHADOW_AUDIT_';
+
+/**
+ * audit/get's athlete-owned rule for a coach, applied to the mirrors: a row
+ * of an athlete-owned type is about the athletes its details name AND the
+ * one(s) its entity belongs to now, resolved from entity_id through the
+ * entity's own table (auditEntityOwners.ts). A session or goal moved to
+ * another athlete is about that athlete too, so the coach of the athlete the
+ * details name no longer reads it unless they reach the new one as well. The
+ * named athletes were already checked in SQL; the owners are checked here
+ * through accessibleAthleteIds, the gate audit/get uses. A row that names
+ * nobody and resolves to nobody is hidden: it fails CLOSED, as audit/get.
+ * Rows filtered here can leave a page short of its limit; nothing extra
+ * becomes visible.
+ */
+async function coachMayReadOwnedMirrors<Row extends ShadowEventRow & { named_athlete_count: number }>(
+  context: ShadowReadContext,
+  rows: Row[],
+): Promise<Row[]> {
+  const isOwnedMirror = (row: Row) =>
+    (row.event_name ?? '').startsWith(AUDIT_MIRROR_EVENT_PREFIX) && ATHLETE_OWNED_AUDIT_ENTITY_TYPES.has(row.entity_type);
+  const owned = rows.filter(isOwnedMirror);
+  if (owned.length === 0) return rows;
+
+  const owners = await resolveAuditEntityOwners(context.organizationId, owned);
+  const ownerIds = owned.flatMap((row) => auditEntityOwnersOf(owners, row.entity_type, row.entity_id) ?? []);
+  const reachable = await accessibleAthleteIds(
+    {
+      accountId: context.actorAccountId,
+      role: context.actorRole,
+      organizationId: context.organizationId,
+      athleteId: context.athleteId ?? null,
+    },
+    ownerIds,
+  );
+
+  return rows.filter((row) => {
+    if (!isOwnedMirror(row)) return true;
+    const rowOwners = auditEntityOwnersOf(owners, row.entity_type, row.entity_id) ?? [];
+    if (rowOwners.length === 0) return Number(row.named_athlete_count) > 0;
+    return rowOwners.every((id) => reachable.has(id));
+  });
+}
+
+function auditMirrorReach(role: PilotRole): AuditMirrorReach {
+  if (isOrganizationAdminRole(role)) return 'admin';
+  if (role === 'coach') return 'coach';
+  if (role === 'athlete' || role === 'parent') return 'own';
+  return 'none';
+}
+
 function roleCanViewSensitivePayload(role: PilotRole): boolean {
   return role === 'platform_owner' || role === 'organization_admin' || role === 'admin' || role === 'coach';
 }
@@ -424,7 +506,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
   const offset = clampOffset(filters.offset);
   const scope = await resolveAthleteScope(context);
 
-  const rows = await query<ShadowEventRow>(
+  const rows = await query<ShadowEventRow & { named_athlete_count: number }>(
     `select
        shadow_event_id,
        organization_id,
@@ -434,7 +516,8 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
        actor_account_id,
        actor_role,
        payload,
-       created_at
+       created_at,
+       cardinality(tie.athlete_ids)::int as named_athlete_count
      from pilot.shadow_events e
      ${SHADOW_EVENT_ATHLETE_TIE_SQL}
      where organization_id = $1
@@ -468,6 +551,16 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
          or (cardinality(tie.athlete_ids) > 0 and tie.athlete_ids <@ $9::text[] and not tie.unresolved_athlete)
          or ($10::boolean and cardinality(tie.athlete_ids) = 0 and not tie.mentions_athlete and not tie.unresolved_athlete)
        )
+       -- Mirrored audit rows also pass audit/get's role and entity-type gate
+       -- (auditMirrorReach). The role and type tests are in SQL, so a page
+       -- fills to its limit; a coach's athlete-owned rows are then checked
+       -- against the entity's live owner below (coachMayReadOwnedMirrors).
+       and (
+         left(coalesce(e.event_name, ''), length('${AUDIT_MIRROR_EVENT_PREFIX}')) <> '${AUDIT_MIRROR_EVENT_PREFIX}'
+         or $11::text = 'own'
+         or ($11::text = 'admin' and left(e.entity_type, length($13::text)) <> $13::text)
+         or ($11::text = 'coach' and e.entity_type = any($12::text[]))
+       )
      order by created_at desc
      limit $7
      offset $8`,
@@ -482,11 +575,23 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
       offset,
       scope.restrictToAthleteIds,
       scope.includeUnscopedRows,
+      auditMirrorReach(context.actorRole),
+      [...COACH_ALLOWED_AUDIT_ENTITY_TYPES],
+      WITHHELD_AUDIT_ENTITY_TYPE_PREFIX,
     ],
   );
 
-  return rows.map((row) => ({
-    ...row,
+  const readable = auditMirrorReach(context.actorRole) === 'coach' ? await coachMayReadOwnedMirrors(context, rows) : rows;
+
+  // named_athlete_count is the reader's own working column; it is not returned.
+  return readable.map((row) => ({
+    shadow_event_id: row.shadow_event_id,
+    organization_id: row.organization_id,
+    event_name: row.event_name,
+    entity_type: row.entity_type,
+    entity_id: row.entity_id,
+    actor_role: row.actor_role,
+    created_at: row.created_at,
     // The row's own actor column is the identifier of whoever wrote the event,
     // usually staff. The payload sanitizer never touched it, so every
     // non-staff caller received staff account ids (intake lane review,

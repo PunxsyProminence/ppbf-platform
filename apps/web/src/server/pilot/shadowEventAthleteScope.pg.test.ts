@@ -420,16 +420,22 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
     );
   });
 
+  // A coach no longer reads the audit mirrors here (LOGIN_*, LOGOUT_B,
+  // FILM_B) even for their own athlete: 'account' and
+  // 'shadow_film_study_proposal' are not on audit/get's coach allow-list, and
+  // the feed now applies it to mirrors (shadowAuditMirrorScope.pg.test.ts).
+  // The athletes and parent below still prove those mirrors are tied to the
+  // right athlete.
   test("a coach reads their own athlete's rows and the operational feed, not another coach's athlete", async () => {
-    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, PAIN_A, LOGIN_A]));
+    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, PAIN_A]));
   });
 
-  test("the other coach reads B's rows, including the nested, Library, sign-out and camel-cased ones, but not a row that also names A", async () => {
-    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, NESTED_B, CAMEL_B]));
+  test("the other coach reads B's rows, including the nested, Library and camel-cased ones, but not a row that also names A", async () => {
+    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, CLAIM_B, NESTED_B, CAMEL_B]));
   });
 
   test('a coach covering athlete A reads what the assigned coach reads', async () => {
-    expect(await visibleTo(COACH_COVER, 'coach')).toEqual(sorted([OPS, PAIN_A, LOGIN_A]));
+    expect(await visibleTo(COACH_COVER, 'coach')).toEqual(sorted([OPS, PAIN_A]));
   });
 
   test('the platform owner reads no athlete-tied row', async () => {
@@ -442,6 +448,12 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
 
   test('an athlete reads only their own rows', async () => {
     expect(await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A)).toEqual(sorted([PAIN_A, LOGIN_A]));
+  });
+
+  test("athlete B reads B's rows, the audit mirrors (sign-in, sign-out, film study) included", async () => {
+    expect(await visibleTo(ATHLETE_B_ACCOUNT, 'athlete', ATHLETE_B)).toEqual(
+      sorted([LOGIN_B, LOGOUT_B, FILM_B, CLAIM_B, NESTED_B, CAMEL_B]),
+    );
   });
 
   test("a parent reads only their child's rows", async () => {
