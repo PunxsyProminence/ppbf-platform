@@ -14,7 +14,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -77,19 +77,11 @@ interface ParentMessage {
 }
 
 /* A due date is a bare calendar date ('2026-10-20', Postgres date::text).
-   NOT run through the gym-time formatters: they read a bare date as UTC
-   midnight and, in the gym's zone, print the day before. Rendered as the
-   calendar day it names, or as typed if it is not in that shape. */
+   formatGymDay keeps a bare date on the calendar day it names (it does not
+   shift it into the gym's zone, which would print the day before). Anything
+   it cannot read is shown as typed. */
 function formatDueDate(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return value;
-  const [, year, month, day] = match;
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return formatGymDay(value) ?? value;
 }
 
 /** A task is open until the family ticks it. */

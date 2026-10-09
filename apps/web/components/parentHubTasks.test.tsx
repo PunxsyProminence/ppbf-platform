@@ -114,9 +114,9 @@ describe('a message with a due date on the Messages tab', () => {
     await renderHub();
     await openTab('Messages');
 
-    // Oct 20, not Oct 19: a bare date must not go through the gym-zone
-    // formatters, which read it as UTC midnight and print the day before.
-    expect(screen.getByText('Due Oct 20, 2026')).toBeInTheDocument();
+    // October 20, not 19: a bare date must stay on the day it names, not be
+    // read as UTC midnight and shifted into the gym's zone (the day before).
+    expect(screen.getByText('Due October 20, 2026')).toBeInTheDocument();
     expect(screen.getByText('Still to do')).toBeInTheDocument();
     const box = screen.getByRole('checkbox', { name: 'Done' });
     expect(box).not.toBeChecked();
