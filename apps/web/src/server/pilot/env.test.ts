@@ -1,5 +1,6 @@
 import { PilotError, ServiceUnavailableError, SERVICE_UNAVAILABLE_MESSAGE } from './errors';
-import { getAzurePostgresConnectionString, getAzureStorageConnectionString } from './env';
+import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+import { getAzurePostgresConnectionString, getAzureStorageConnectionString, getWallTimeZone } from './env';
 
 /*
   WHAT AN ABSENT CONNECTION STRING IS ALLOWED TO SAY.
@@ -109,5 +110,20 @@ describe('required runtime configuration', () => {
       'required-environment-unavailable',
       { missingEnvVar: POSTGRES },
     );
+  });
+});
+
+/* ONE ZONE (N8): the board's day is the gym's day, the same constant the client
+   bundle uses. A server variable the client cannot see would split them. */
+describe('getWallTimeZone', () => {
+  const saved = process.env.PPBF_WALL_TIMEZONE;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.PPBF_WALL_TIMEZONE;
+    else process.env.PPBF_WALL_TIMEZONE = saved;
+  });
+
+  it('is the gym constant, and ignores the retired PPBF_WALL_TIMEZONE', () => {
+    process.env.PPBF_WALL_TIMEZONE = 'Europe/London';
+    expect(getWallTimeZone()).toBe(GYM_TIME_ZONE);
   });
 });

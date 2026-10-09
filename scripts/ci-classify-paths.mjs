@@ -249,6 +249,13 @@ const isCoachE2ePath = (file) => {
          reports as "no browser suite exercised them" and tells the reader to
          widen the predicate that should have matched. This is that widening. */
       'apps/web/src/lib/visualization/',
+      /* THE SCHEDULE'S SERVER HALF AND THE GYM CLOCK. coach-journey.spec.ts
+         visits /schedule, which reads api/pilot/scheduler/ and renders every
+         time through src/lib/gymTime.ts. A change to either reached no
+         predicate and classified `unknown_code`, so a wrong-zone time on the
+         schedule shipped with no browser suite attending it. */
+      'apps/web/app/api/pilot/scheduler/',
+      'apps/web/src/lib/gymTime.ts',
     ]) ||
     component.includes('Coach')
   );

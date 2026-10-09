@@ -1,3 +1,4 @@
+import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
 import { ServiceUnavailableError, SERVICE_UNAVAILABLE_MESSAGE } from './errors';
 
 export const PILOT_SESSION_COOKIE = 'ppbf_pilot_session';
@@ -75,9 +76,16 @@ export function getWallDisplayNameMode(): string | undefined {
   return process.env.PPBF_WALL_DISPLAY_NAMES?.trim();
 }
 
-/** Where the gym is, so the board's "today" is the gym's day, not the server's. */
+/**
+ * Where the gym is, so the board's "today" is the gym's day, not the server's.
+ *
+ * ONE ZONE. This used to read PPBF_WALL_TIMEZONE, defaulting to the same
+ * literal gymTime.ts holds. The client bundle cannot see a server variable, so
+ * setting it would have split the board's day from every date the app shows.
+ * No workflow ever set it; the zone is gymTime.GYM_TIME_ZONE and nothing else.
+ */
 export function getWallTimeZone(): string {
-  return process.env.PPBF_WALL_TIMEZONE?.trim() || 'America/New_York';
+  return GYM_TIME_ZONE;
 }
 
 /**

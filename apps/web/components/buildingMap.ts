@@ -388,7 +388,7 @@ export const BUILDING: readonly Door[] = [
     keywords: 'film footage review video' },
   { href: '/coach/review-queue', label: 'Review Queue', room: 'floor', roles: ['coach'],
     keywords: 'layer 10 queue approve deny triage decisions pending',
-    hint: 'Layer 10 — the decision queue.' },
+    hint: 'Planned — the decision queue. Nothing is built behind this door yet.' },
   { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
