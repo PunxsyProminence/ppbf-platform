@@ -360,6 +360,15 @@ describe('every direct reader of a consent status is registered', () => {
         + 'to signed. Display only, no gate; the gates read guardianConsent.ts.',
     ],
     [
+      'app/api/pilot/parent/consent/route.ts',
+      "coGuardianStatus: the status-only label a guardian sees for a co-guardian "
+        + '(owner ruling 2026-10-05). Normalises first; only a normalised '
+        + "'signed' reads as granted or photo_only, 'declined'/'withdrawn' pass "
+        + "through, and anything else -- missing or unrecognised -- is "
+        + "'not_on_file', never granted. Display only, no gate; consent_ok "
+        + 'comes from guardianConsent.ts.',
+    ],
+    [
       'src/server/pilot/staffProvisioning.ts',
       'removeGuardianLink refuses an unlink while that guardian\'s media '
         + 'consent stands withdrawn. Arrives with the unlink-withdrawal change '
