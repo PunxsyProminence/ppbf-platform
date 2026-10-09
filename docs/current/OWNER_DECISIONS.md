@@ -164,6 +164,20 @@ and should not try to.
 
 ---
 
+## OD-2026-10-08-014 -- Untagged team video: "B: keep scanning"; untagged, unattributed non-teaching video keeps going to the automated vision safety scan
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_01BNhWdtZjVUmnbsJEzdsyiw` in the "Overwatch" session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; asked line 2090, 2026-10-09T01:25:10.250Z; answered line 2092, 2026-10-09T01:25:43.672Z). Read by script (records lane, 2026-10-09). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-08 because these UTC times are the evening of 2026-10-08 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
+
+- "Official: team video uploaded with no athlete and no clip tags — should the automated safety scan (frames sent to Azure vision) (A) skip it until a coach tags who is in it, then check each tagged child's consent; untagged footage lands in admin review instead of auto-releasing, or (B) keep scanning it unchecked because it names nobody? Plain English: today a whole-team clip can go to Microsoft's image checker even if a parent said 'photos only'. A stops that, but a coach must tag the kids before the clip clears on its own." Options: "A: skip until tagged (Recommended)" -- "No consent check possible = no scan. Coach tags the kids, or an admin reviews it."; "B: keep scanning" -- "Easier for coaches; leaves the photo-only gap open for untagged team footage.". Jason: *"B: keep scanning"*
+- "Official: the handover names the other account's session "Overwatch: plan and lead the app-wide build" (local_3daf0161) as LEAD, with earlier overwatch threads standing down. Which session leads lanes and merges now? Plain English: two 'bosses' would fight over the same lanes; which one is in charge?" Options: "This session leads" -- "I take over lanes, merges and releases from here; the other account's overwatch stands down."; "Other account leads" -- "I finish only these 4 lanes you just started, then stand down and hand them over.". Jason: *"[No preference]"*
+
+**Rulings:**
+1. Team video (first question): Jason chose "B: keep scanning", which is not the recommended option ("A: skip until tagged (Recommended)"). Untagged, unattributed non-teaching video (no athlete and no clip tags) keeps going to the automated vision safety scan. Children who are tagged still have their consent checked before their video is scanned, per OD-2026-10-05-022 (photo-only consent means the scan skips that child's video). PR #1369 (merged) locks both behaviours with tests in `apps/web/src/server/pilot/videoScanSweep.test.ts`.
+
+**Not ruled here:** who leads lanes and merges (second question); Jason answered "[No preference]", which is recorded as given and is not a ruling. The option's own description says B "leaves the photo-only gap open for untagged team footage"; this entry records that gap as accepted by the choice, not closed.
+
+---
+
 ## OD-2026-10-08-013 -- "Build all" scope re-answered: "2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing" (row Q-E); SUPERSEDES OD-2026-10-07-012 ruling 4
 
 **Provenance: RECONSTRUCTED.** Quoted from `Documents\PPBF-overwatch\OWNER-QUESTIONS-LIVE.md`, row Q-E (dated 2026-10-08), as copied by overwatch; the records lane did not re-read the transcript. New; edits no earlier entry. Overwatch (session "Overwatch: plan and lead the app-wide build") directed this entry be filed as superseding, 2026-10-08.
