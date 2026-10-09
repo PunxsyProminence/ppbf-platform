@@ -429,6 +429,19 @@ function familyAttendance(row: SchedulerAttendance): FamilyAttendance {
   };
 }
 
+/* A register row for an athlete the coach running the class does not
+   otherwise reach: who, which class, what status -- nothing a coach or a
+   family wrote, and no family account identifier (an account_id can be a
+   login email). */
+function registerOnlyRegistration(row: SchedulerRegistration): SchedulerRegistration {
+  // undefined, so JSON drops the field rather than sending an empty one.
+  return { ...row, requested_by_account_id: '', parent_reviewer_account_id: undefined };
+}
+
+function registerOnlyAttendance(row: SchedulerAttendance): SchedulerAttendance {
+  return { ...row, note: '', checked_in_by_account_id: '' };
+}
+
 function filterStateForActor(
   actor: SchedulerActor,
   store: SchedulerStore,
@@ -444,12 +457,7 @@ function filterStateForActor(
   if (actor.role === 'coach') {
     const coachOwnedClassIds = new Set(
       store.classes
-        .filter(
-          (item) =>
-            item.coach_account_id === actor.accountId ||
-            item.scheduled_by_account_id === actor.accountId ||
-            item.covering_coach_account_id === actor.accountId,
-        )
+        .filter((item) => actorRunsClass(actor, item))
         .map((item) => item.class_id),
     );
 
@@ -457,37 +465,34 @@ function filterStateForActor(
 
     return {
       classes,
-      /* Class ownership AND athlete-reachability, not class ownership alone.
-         These rows name individual athletes, so they need the same dimension
-         coaching_requests below already uses.
+      /* THE CLASS REGISTER, AND WHAT STAYS WITH THE ATHLETE'S OWN COACH.
 
-         Ownership by itself was self-granting. cover_class checks only that the
-         caller is a coach, then writes their own accountId as the covering
-         coach -- no approval, no check that the class's coach is unavailable,
-         no time bound, no audit row -- and covering_coach_account_id is one of
-         the three things this filter counts as ownership. So one POST bought
-         any coach every registration and attendance row, including free-text
-         notes, for any class in the organization, covering athletes they hold
-         no assignment and no coverage grant for.
+         History: ownership alone used to be the whole filter, and cover_class
+         lets any coach make themselves covering coach with one POST, so one
+         POST bought every registration and attendance row -- notes included --
+         for any class. The fix scoped both collections to reachable athletes.
 
-         The write side was never the hole: assertCanActOnAthlete still gates
-         per-athlete writes. This was a read leak, and the fix is the filter the
-         next property down already had. */
-      registrations: store.registrations.filter(
-        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
-      ),
+         OD-2026-10-07-008 ruling 4 then made the class the unit of reach for
+         the register: the coach, cover or scheduler marks every athlete
+         registered to it, and cannot take a register they cannot see. Overwatch
+         option B (2026-10-09) settled how much of it they see: on a class they
+         run, every registration and every attendance STATUS (names-and-status,
+         OD-2026-10-07-011 ruling 1). What a coach wrote about a child -- the
+         attendance note -- and the family's account identifiers stay with
+         athletes the reader reaches (CL-A2, #1266). A self-granted cover is now
+         visible as an audit row (cover_class, route-survey B6). */
+      registrations: store.registrations
+        .filter((row) => coachOwnedClassIds.has(row.class_id))
+        .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyRegistration(row))),
       // Coaching requests carry an athlete_id and no class_id, so they are
       // scoped by athlete-reachability -- the same dimension the parent and
       // athlete branches use -- not by class ownership. Returning
       // store.coaching_requests unfiltered leaked every athlete's 1:1 request
       // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
       coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
-      // Same reasoning as registrations above. Attendance rows carry an
-      // athlete_id and a free-text note, so class ownership alone is not a
-      // sufficient scope for them either.
-      attendance: store.attendance.filter(
-        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
-      ),
+      attendance: store.attendance
+        .filter((row) => coachOwnedClassIds.has(row.class_id))
+        .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyAttendance(row))),
     };
   }
 

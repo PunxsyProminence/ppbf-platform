@@ -1265,29 +1265,49 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
     };
   }
 
-  test('covering a class does not disclose registrations for unreachable athletes', async () => {
+  /* OD-2026-10-07-008 ruling 4 + Overwatch option B (2026-10-09): the coach
+     running a class takes its whole register, so they SEE every registration
+     and every attendance STATUS on it. Attendance note text -- free text a
+     coach wrote about a child -- stays with athletes they reach, so a
+     self-granted cover still reads no other coach's notes (CL-A2, #1266). */
+  test('the coach running a class sees every registration on it', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    const athleteIds = body.registrations.map((row: { athlete_id: string }) => row.athlete_id);
-    expect(athleteIds).toEqual(['ath-mine']);
-    expect(athleteIds).not.toContain('ath-other');
+    const athleteIds = body.registrations.map((row: { athlete_id: string }) => row.athlete_id).sort();
+    expect(athleteIds).toEqual(['ath-mine', 'ath-other']);
   });
 
-  test('covering a class does not disclose attendance notes for unreachable athletes', async () => {
+  test('the coach running a class sees every attendance status, but notes only for athletes they reach', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    const athleteIds = body.attendance.map((row: { athlete_id: string }) => row.athlete_id);
-    expect(athleteIds).toEqual(['ath-mine']);
+    const byAthlete = Object.fromEntries(
+      body.attendance.map((row: { athlete_id: string; status: string; note: string }) => [row.athlete_id, row]),
+    );
+    expect(byAthlete['ath-other'].status).toBe('present');
+    expect(byAthlete['ath-mine'].note).toBe('mine');
     // The note is the part that matters: free text a coach wrote about a child.
     expect(JSON.stringify(body.attendance)).not.toContain('private other');
+  });
+
+  test('a class the coach does not run discloses no registration or attendance', async () => {
+    mockRequirePrincipal.mockResolvedValue(coachPrincipal());
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    const store = storeWithCoveredClass();
+    store.classes[0].covering_coach_account_id = 'acct-someone-else';
+    mockListStore.mockResolvedValue(store);
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+    expect(body.registrations).toEqual([]);
+    expect(body.attendance).toEqual([]);
   });
 
   test('a reachable athlete on an owned class is still returned', async () => {
@@ -1298,8 +1318,8 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    expect(body.registrations).toHaveLength(1);
-    expect(body.attendance).toHaveLength(1);
+    expect(body.registrations.some((row: { athlete_id: string }) => row.athlete_id === 'ath-mine')).toBe(true);
+    expect(body.attendance.some((row: { athlete_id: string }) => row.athlete_id === 'ath-mine')).toBe(true);
   });
 });
 
@@ -1650,7 +1670,10 @@ describe('GET /api/pilot/scheduler reports the true seat count without widening 
     expect(body.registrations).toHaveLength(1);
   });
 
-  test('a coach sees the true count, while their rows stay limited to athletes they can reach', async () => {
+  test('the coach running the class sees the true count and its whole register, without family account ids', async () => {
+    // OD-2026-10-07-008 ruling 4 + Overwatch option B: the register is the
+    // class's, so every row on it comes back; the family's account id on an
+    // athlete this coach does not otherwise reach does not.
     arrangeFullClass();
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach' }));
@@ -1658,7 +1681,11 @@ describe('GET /api/pilot/scheduler reports the true seat count without widening 
     const body = await (await schedulerGet()).json();
 
     expect(body.classes[0].registered_count).toBe(2);
-    expect(body.registrations.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
+    const rows = body.registrations as Array<{ athlete_id: string; requested_by_account_id: string }>;
+    expect(rows.map((row) => row.athlete_id)).toContain('ath-other-family');
+    const other = rows.find((row) => row.athlete_id === 'ath-other-family');
+    expect(other?.requested_by_account_id).toBe('');
+    expect(JSON.stringify(body.registrations)).not.toContain('ath-other-family-guardian');
   });
 });
 
