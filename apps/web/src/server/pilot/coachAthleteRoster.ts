@@ -40,25 +40,26 @@ export async function coachAuthorizedRoster(
 /**
  * The athletes an ORGANIZATION ADMIN may act on.
  *
- * getAthletesByOrganization is the obvious call here and is the wrong one:
- * it is `select * from pilot.athletes where organization_id = $1` with no
+ * getAthletesByOrganization was the obvious call here and was the wrong one:
+ * it was `select * from pilot.athletes where organization_id = $1` with no
  * deletion predicate, while assertAthleteBelongsToOrganization -- the gate
  * every write then passes through -- refuses an athlete whose deleted_at is
- * set. Built on the unfiltered read, a picker offers archived children whose
- * every subsequent read and write is refused, and the refusal arrives after
- * the admin has typed something in.
+ * set. Built on the unfiltered read, a picker offered archived children whose
+ * every subsequent read and write was refused, and the refusal arrived after
+ * the admin had typed something in.
  *
  * The coach half has never had this problem: athleteIdsForCoach carries
  * `deleted_at is null` in both branches of its union. This is that same
  * predicate, applied to the other role, so the two halves of
  * /api/pilot/coach/athletes agree with the gate and with each other.
  *
- * Deliberately NOT fixed by adding the predicate to getAthletesByOrganization
- * itself: that function has many callers with different questions -- an
- * administrator reconciling a roster may well need to see an archived
- * athlete -- and silently narrowing it from here would change surfaces this
- * change has no business touching. "Which athletes may I act on" is its own
- * question and gets its own read.
+ * Written before getAthletesByOrganization took the same predicate (audit
+ * finding ADMIN-01, 2026-10-08): at the time that function had many callers
+ * with different questions, and narrowing it from here would have changed
+ * surfaces this change had no business touching. By 2026-10-08 it had one
+ * caller left and took the filter itself. This read stays: "which athletes
+ * may I act on" is its own question, and the two halves of
+ * /api/pilot/coach/athletes are read side by side here.
  */
 export async function organizationActionableRoster(
   organizationId: string,

@@ -23,6 +23,7 @@
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
+import { guardianLinkEnded } from './guardianAccess';
 import {
   normalizeCorner,
   normalizeProgram,
@@ -272,6 +273,11 @@ export async function resolveRelationship(
       return 'coach_of_subject';
     }
     if (viewer.role === 'parent') {
+      // The link goes dormant at 18 (OD-2026-10-07-008; guardianAccess.ts
+      // holds the rule). Decided from the subject's own dob before the link
+      // is even asked: an adult's guardian is another family here, and the
+      // portrait stays inside the circle the adult now controls.
+      if (guardianLinkEnded(subject.dob)) return 'none';
       const linked = await queryOne<{ athlete_id: string }>(
         `select gl.athlete_id
          from pilot.guardian_links gl
@@ -305,8 +311,14 @@ export async function resolveRelationship(
     return mine ? 'subject_is_my_staff' : 'none';
   }
   if (viewer.role === 'parent') {
-    const mine = await queryOne<{ athlete_id: string }>(
-      `select a.athlete_id
+    // Every child this guardian is linked to that this staff member coaches,
+    // with each child's dob: the link goes dormant at 18 (OD-2026-10-07-008),
+    // so an adult child makes nobody the guardian's staff any more, exactly as
+    // a deleted one does. Decided in guardianLinkEnded, not in SQL, so the
+    // rule has one home; dob read as to_char for the reason guardianAccess.ts
+    // gives.
+    const mine = await query<{ athlete_id: string; dob: string | null }>(
+      `select a.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as dob
        from pilot.athletes a
        join pilot.guardian_links gl
          on gl.organization_id = a.organization_id and gl.athlete_id = a.athlete_id
@@ -315,11 +327,10 @@ export async function resolveRelationship(
        where a.organization_id = $1 and a.coach_id = $2 and p.account_id = $3
          -- Scope B: a link to a child who has been deleted is marked deleted
          -- with them, and makes nobody the guardian's staff any more.
-         and a.deleted_at is null
-       limit 1`,
+         and a.deleted_at is null`,
       [subjectOrganizationId, subject.accountId, viewer.accountId],
     );
-    return mine ? 'subject_is_my_staff' : 'none';
+    return mine.some((row) => !guardianLinkEnded(row.dob)) ? 'subject_is_my_staff' : 'none';
   }
   if (isOrganizationAdminRole(viewer.role) || viewer.role === 'coach' || viewer.role === 'staff') {
     return 'organization_staff';

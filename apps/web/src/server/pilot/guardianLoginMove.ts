@@ -24,7 +24,7 @@ import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
-import { guardianAthleteIds } from './guardianAccess';
+import { linkedAthleteIdsIncludingAdults } from './guardianAccess';
 
 export interface GuardianLoginMove {
   organizationId: string;
@@ -289,11 +289,15 @@ async function moveInTransaction(
     // guard". It reads committed rows outside this transaction; the target
     // login's row is locked above, and an invite locks it before writing a
     // guardian record, so none can be added to it meanwhile.
+    // The staff variant, deliberately: guardianAthleteIds drops a child who is
+    // 18 (OD-2026-10-07-008, the guardian's own reach), but a second guardian
+    // record for an adult child is still a second slot on one login, and the
+    // slot comes back the day a date of birth is corrected.
     const recordChildren = await client.query<{ athlete_id: string }>(
       'select athlete_id from pilot.guardian_links where organization_id = $1 and parent_id = $2',
       [organizationId, parentId],
     );
-    const targetGuards = new Set(await guardianAthleteIds(organizationId, toAccountId));
+    const targetGuards = new Set(await linkedAthleteIdsIncludingAdults(organizationId, toAccountId));
     const overlap = recordChildren.rows.map((row) => row.athlete_id).filter((id) => targetGuards.has(id)).sort();
     if (overlap.length > 0) {
       throw new ConflictError(
