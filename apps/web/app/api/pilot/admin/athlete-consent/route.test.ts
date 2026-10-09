@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import {
   checkGuardianMediaConsent,
   grantMediaConsent,
+  GuardianLinkEndedError,
   guardianDisplayName,
   listOrganizationConsentStatus,
   withdrawMediaConsent,
@@ -263,6 +264,60 @@ describe('POST /api/pilot/admin/athlete-consent -- validation', () => {
     expect(response.status).toBe(400);
     expect(mockGrant).not.toHaveBeenCalled();
     expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * OD-2026-10-07-008: a guardian's consent for an athlete who is 18 or older is
+ * refused whoever types it (overwatch 2026-10-08: the staff writer too). This
+ * route is where that refusal is normally met, so it is audited here.
+ */
+describe('POST /api/pilot/admin/athlete-consent -- the guardian link has ended at 18', () => {
+  const refusal = () => Promise.reject(new GuardianLinkEndedError());
+
+  test('a direct grant answers 403 GUARDIAN_LINK_ENDED and writes one guardian_link_ended audit row naming the staff actor', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-front-desk' }));
+    mockGrant.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: true }));
+
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(await response.json())).toContain('18 or older; guardian access has ended');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'update',
+      actor_account_id: 'acct-front-desk',
+      actor_role: 'organization_admin',
+      organization_id: 'org-a',
+      entity_type: 'guardian_media_consent',
+      entity_id: 'ath-1',
+      details: { action: 'guardian_link_ended', parent_id: 'p1' },
+    }));
+  });
+
+  test('a photo-only grant (the sweep path) is the same 403 and single audit row, never a "failed sweep"', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockGrant.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: false }));
+
+    expect(response.status).toBe(403);
+    expect(mockSweep).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'guardian_link_ended', parent_id: 'p1' });
+  });
+
+  test('a withdrawal (the other sweep path) is the same 403 and single audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockWithdraw.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, decision: 'withdraw' }));
+
+    expect(response.status).toBe(403);
+    expect(mockGrant).not.toHaveBeenCalled();
+    expect(mockSweep).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'guardian_link_ended', parent_id: 'p1' });
   });
 });
 

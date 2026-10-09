@@ -6,6 +6,7 @@ import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import {
   callerParentIdSet,
   grantMediaConsent,
+  GuardianLinkEndedError,
   listConsentForGuardian,
   resolveActingParent,
   withdrawMediaConsent,
@@ -24,7 +25,10 @@ jest.mock('@/src/server/pilot/entities', () => ({
   getAthleteById: jest.fn(),
 }));
 
+/* requireActual so GuardianLinkEndedError keeps its real message: the error
+   class in guardianConsent.ts reads GUARDIAN_LINK_ENDED_MESSAGE from here. */
 jest.mock('@/src/server/pilot/guardianAccess', () => ({
+  ...jest.requireActual('@/src/server/pilot/guardianAccess'),
   guardianAthleteIds: jest.fn(),
 }));
 
@@ -367,6 +371,49 @@ describe('POST /api/pilot/parent/consent', () => {
   // The whole reason for this route to check guardianAthleteIds itself:
   // a caller-supplied athlete_id being well-formed proves nothing about
   // whose child it is.
+  /**
+   * OD-2026-10-07-008: the guardian link goes dormant at 18. On this route the
+   * adult child is normally already out of guardianAthleteIds and the POST
+   * answers the same hidden 404 as for any unlinked athlete (the case below).
+   * The in-transaction refusal is reached only when the birthday falls between
+   * that read and the write; when it does, it is audited and specific.
+   */
+  describe('the guardian link has ended at 18 between the scope read and the write', () => {
+    const refusal = () => Promise.reject(new GuardianLinkEndedError());
+
+    test('a direct grant answers 403 GUARDIAN_LINK_ENDED and writes one guardian_link_ended audit row', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+      mockGrant.mockImplementationOnce(refusal);
+
+      const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant', covers_video: true }));
+
+      expect(response.status).toBe(403);
+      expect(JSON.stringify(await response.json())).toContain('18 or older; guardian access has ended');
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+        event_type: 'update',
+        actor_account_id: 'acct-parent',
+        actor_role: 'parent',
+        organization_id: 'org-a',
+        entity_type: 'guardian_media_consent',
+        entity_id: 'ath-1',
+        details: { action: 'guardian_link_ended', parent_id: 'p1' },
+      }));
+    });
+
+    test('a withdrawal inside the sweep is the same 403 and the same single audit row, not a "failed sweep"', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+      mockWithdraw.mockImplementationOnce(refusal);
+
+      const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'withdraw' }));
+
+      expect(response.status).toBe(403);
+      expect(mockSweep).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'guardian_link_ended', parent_id: 'p1' });
+    });
+  });
+
   test('a parent cannot act on an athlete they do not guard -- hidden 404, not a 403 that would confirm the athlete exists', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
     mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']); // caller guards only ath-1

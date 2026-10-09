@@ -294,6 +294,40 @@ export default function WrestlingLeagueManagementPage() {
     }
   };
 
+  // Withdrawal shares the roster PATCH ({ entry_id, status: 'inactive' }). The
+  // entry stays on the roster, marked inactive, rather than being deleted.
+  const handleRosterInactive = async (entry: RosterRow) => {
+    if (!selectedSeasonId) return;
+    const confirmed = window.confirm(
+      `Mark ${entry.athlete_name} inactive on this season roster? They stay listed as inactive.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/operations/wrestling-league/roster`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entry_id: entry.entry_id, status: 'inactive' }),
+      });
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('This roster entry could not be marked inactive. It may already be inactive; reload the list.');
+        }
+        if (response.status === 403) {
+          throw new Error('Only an admin role can mark an athlete inactive on the roster.');
+        }
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Update failed (${response.status})`);
+      }
+      await reloadAfterWrite(selectedSeasonId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to mark the athlete inactive.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Lists (or "none") are printed only when the page holds a good read of the
   // season that is open. Otherwise each list slot says it could not load --
   // the shared alert may since have been replaced or cleared by another action.
@@ -459,7 +493,15 @@ export default function WrestlingLeagueManagementPage() {
                               <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
                                 {detail.roster.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                                    {entry.athlete_name} · {entry.status}
+                                    <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
+                                      {entry.athlete_name} · {entry.status}
+                                      {entry.status === 'active' && (
+                                        <button type="button" className="btn btn--ghost" disabled={busy}
+                                          onClick={() => void handleRosterInactive(entry)}>
+                                          Mark inactive
+                                        </button>
+                                      )}
+                                    </span>
                                   </li>
                                 ))}
                               </ul>

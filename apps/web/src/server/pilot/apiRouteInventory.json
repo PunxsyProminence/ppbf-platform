@@ -9658,7 +9658,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "board refused (route.ts:~468); normalizeRole (route.ts:106) throws for platform_owner/volunteer/staff. filterStateForActor (route.ts:377): coach rows limited to owned classes AND athleteIdsForCoach; parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design (comment ~212).",
+    "notes": "board refused; normalizeRole throws for platform_owner/volunteer/staff. filterStateForActor: on classes a coach runs (teach/scheduled/cover, actorRunsClass) every registration and attendance STATUS comes back (OD-2026-10-07-008 ruling 4, Overwatch option B); attendance note, checked_in_by_account_id and family account ids are blanked for athletes outside athleteIdsForCoach; no rows for classes the coach does not run. Parent to guardianAthleteIds; athlete to self; admin all. Class registered_count is org-wide by design.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9673,7 +9673,7 @@
     "id": "app/api/pilot/scheduler/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/scheduler",
-    "gate": "requirePrincipal + inline board refusal + normalizeRole + per-action role checks + assertCanActOnAthlete",
+    "gate": "requirePrincipal + inline board refusal + normalizeRole + per-action role checks + assertActorCanMarkClassAthlete (coach/admin register marks) + assertCanActOnAthlete (athlete/parent and other athlete-targeted actions)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -9685,15 +9685,16 @@
     "writes": true,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "cover_class lets any coach set themselves as covering coach of any class with no approval or audit (route.ts:586-598), widening their class ownership; per-athlete reads/writes are still gated by athlete reach.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only, route.ts:793), attendance_checkin, bulk_attendance_checkin. Athlete-targeted actions call assertCanActOnAthlete (route.ts:170): assertActorCanAccessAthlete for coach/parent, org membership for admin, self-only for athlete.",
+    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside athleteIdsForCoach the hold warning carries scope only and the stored note is kept, a note from them refused. cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "assertActorCanAccessAthlete",
+        "athleteIdsForCoach",
         "assertCoachAssignedToAthlete"
       ],
       "roleLiterals": []

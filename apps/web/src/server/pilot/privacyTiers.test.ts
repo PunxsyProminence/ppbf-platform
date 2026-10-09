@@ -165,6 +165,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.intake_cases',
       'pilot.medical_intake',
       'pilot.readiness',
+      // A coach's own note on a child's session, in the coach's name (OD-2026-10-06-025 ruling 4).
+      'pilot.session_staff_notes',
       'pilot.shadow_medical',
       'pilot.shadow_near_misses',
       // Head-contact exposure per child: a safety record.

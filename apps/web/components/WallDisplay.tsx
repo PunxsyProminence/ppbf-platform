@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
@@ -92,7 +92,8 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
  * refused by the server; wallDisplay.test.tsx pins that.
  */
 interface PairedResponse {
-  board?: WallBoard;
+  board?: WallBoard | null;
+  board_status?: 'ok' | 'unavailable';
 }
 
 interface PublicResponse {
@@ -148,6 +149,8 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
   if (paired.status !== 401) {
     if (!paired.ok) throw new Error('unavailable');
     const payload = (await paired.json()) as PairedResponse;
+    // board: null is the server's best-effort miss (gymTvs.ts): the session
+    // read worked, the board read did not. The last board stays up, dated.
     if (!payload.board) throw new Error('unavailable');
     return { board: payload.board, paired: true };
   }
@@ -181,7 +184,13 @@ export default function WallDisplay() {
   const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
   const [connected, setConnected] = useState(true);
   const [now, setNow] = useState<number | null>(null);
+  // null until the first poll has answered: the pair box must not flash up
+  // on a paired screen while the first read is still in flight.
+  const [paired, setPaired] = useState<boolean | null>(null);
   const mounted = useRef(true);
+  // Lets the pair box ask for a fresh read the moment a code is accepted,
+  // instead of waiting out the thirty-second timer with "Nobody" on screen.
+  const refreshRef = useRef<() => void>(() => {});
 
   /* The clock is read from the browser, not from the payload and not from the
      server. The television is in the room; its clock is the gym's clock, and it
@@ -219,11 +228,12 @@ export default function WallDisplay() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const { board: next } = await readBoard(apiBase());
+        const { board: next, paired: isPaired } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
         setBoard(next);
+        setPaired(isPaired);
         setLastGoodAt(Date.now());
         setConnected(true);
       } catch (error) {
@@ -235,6 +245,7 @@ export default function WallDisplay() {
         // except for the people on it, once the server has said this screen
         // is not paired (withoutPeople).
         if (error instanceof UnpairedReadError) {
+          setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
         }
       } finally {
@@ -257,6 +268,10 @@ export default function WallDisplay() {
     }
 
     void poll();
+    refreshRef.current = () => {
+      if (timer) clearTimeout(timer);
+      void poll();
+    };
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', refreshNow);
@@ -289,7 +304,116 @@ export default function WallDisplay() {
       )}
 
       <FootRule board={showLive ? board : null} health={health} connected={connected} zone={zone} />
+      {paired === false && <PairBox onPaired={() => refreshRef.current()} />}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- pair box --- */
+
+/**
+ * THE ONE CONTROL ON THE WALL, and only while the screen is not paired.
+ *
+ * A coach presses "Pair a TV" on the dashboard and reads a six-character code
+ * off it; somebody types that code here with the TV remote. POST
+ * /api/pilot/tv/pair answers with the device cookie, scoped to /api/pilot/tv,
+ * and from the next poll this screen is paired: initials and the marquee go
+ * up (OD-2026-10-07-008). Until then the public board is what shows, so the
+ * box sits under it, small, in the foot rule's register, and goes away the
+ * moment the pairing lands. It never comes back on a paired screen; a
+ * disconnect brings it back on the next 401.
+ *
+ * What the room is told on a miss is one of four fixed lines. Never the
+ * server's text: this is a screen in a public room and the responses are
+ * documented codes, not prose for forty people.
+ */
+export const PAIR_CODE_LENGTH = 6;
+
+export type PairOutcome = 'paired' | 'invalid' | 'rejected' | 'limited' | 'unavailable';
+
+export const PAIR_MESSAGES: Record<Exclude<PairOutcome, 'paired'>, string> = {
+  invalid: 'Six letters or numbers.',
+  rejected: 'That code was not accepted. Ask for a fresh one.',
+  limited: 'Too many tries. Wait a minute.',
+  unavailable: 'Could not reach the gym right now.',
+};
+
+export async function submitPairCode(base: string, code: string): Promise<PairOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/pilot/tv/pair`, {
+      method: 'POST',
+      // The reply SETS the device cookie; include is what lets the browser keep it.
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+  } catch {
+    return 'unavailable';
+  }
+  if (response.ok) return 'paired';
+  if (response.status === 400) return 'invalid';
+  if (response.status === 404) return 'rejected';
+  if (response.status === 429) return 'limited';
+  return 'unavailable';
+}
+
+function PairBox({ onPaired }: { onPaired: () => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    const outcome = await submitPairCode(apiBase(), code);
+    setBusy(false);
+    if (outcome === 'paired') {
+      setCode('');
+      onPaired();
+      return;
+    }
+    setNote(PAIR_MESSAGES[outcome]);
+  }
+
+  return (
+    <form
+      className="wall-pair flex shrink-0 items-center justify-end gap-[var(--s4)] px-[var(--s7)] pb-[var(--s4)]"
+      onSubmit={(event) => void submit(event)}
+      aria-label="Pair this TV"
+    >
+      <label className="wall-stamp" htmlFor="wall-pair-code">
+        Pair this TV
+      </label>
+      <input
+        id="wall-pair-code"
+        type="text"
+        // No .input class: globals.css styles input[type=text] itself, and the
+        // kiosk modifiers only exist in the legacy sheet. 55px is the gym-floor
+        // floor (globals.css, the kiosk note), and the type is a wall size.
+        className="wall-pair-input min-h-[55px] w-[9ch] text-center text-2xl tracking-[0.3em]"
+        value={code}
+        onChange={(event) => setCode(event.target.value.toUpperCase().slice(0, PAIR_CODE_LENGTH + 2))}
+        inputMode="text"
+        autoComplete="off"
+        autoCapitalize="characters"
+        spellCheck={false}
+        maxLength={PAIR_CODE_LENGTH + 2}
+        placeholder="CODE"
+        aria-label="Pairing code"
+        disabled={busy}
+      />
+      <button type="submit" className="btn min-h-[55px] px-[var(--s5)] text-2xl" disabled={busy || code.trim().length === 0}>
+        Pair
+      </button>
+      {note && (
+        <p className="wall-stamp" role="status">
+          {note}
+        </p>
+      )}
+    </form>
   );
 }
 

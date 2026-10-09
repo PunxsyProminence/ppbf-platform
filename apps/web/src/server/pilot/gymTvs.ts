@@ -624,7 +624,15 @@ export async function readGymTvSession(deviceKey: string): Promise<GymTvRead | n
  * the name mode is the operator's setting, applied by wallDisplay.ts exactly as before.
  */
 export interface GymTvScreen extends GymTvRead {
-  board: WallBoard;
+  /**
+   * BEST-EFFORT (overwatch, W1 PR 2). The board is four to six more reads than the session, and
+   * a coach's live countdown must not go dark because the milestone ladder timed out. So a
+   * board load failure is reported as board: null with board_status 'unavailable', and the
+   * session is still served; the TV keeps its last board and polls again. 'ok' means the board
+   * is the live read.
+   */
+  board: WallBoard | null;
+  board_status: 'ok' | 'unavailable';
 }
 
 export async function readGymTvScreen(deviceKey: string, options: { mode: WallNameMode }): Promise<GymTvScreen | null> {
@@ -632,9 +640,20 @@ export async function readGymTvScreen(deviceKey: string, options: { mode: WallNa
   if (!tv) return null;
   const [read, board] = await Promise.all([
     readSessionForTv(tv),
-    loadWallBoard({ organizationId: tv.organization_id, mode: options.mode }),
+    loadWallBoard({ organizationId: tv.organization_id, mode: options.mode }).then(
+      (loaded): Pick<GymTvScreen, 'board' | 'board_status'> => ({ board: loaded, board_status: 'ok' }),
+      (error: unknown): Pick<GymTvScreen, 'board' | 'board_status'> => {
+        // Class and driver code only, as the TV routes log: this path is reachable by an
+        // unauthenticated caller and a pg message can carry the host name or SQL text.
+        console.error('tv-board-read-failed', {
+          name: error instanceof Error ? error.constructor.name : typeof error,
+          code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : undefined,
+        });
+        return { board: null, board_status: 'unavailable' };
+      },
+    ),
   ]);
-  return { ...read, board };
+  return { ...read, ...board };
 }
 
 async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {

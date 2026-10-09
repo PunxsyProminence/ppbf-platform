@@ -65,9 +65,19 @@ type SchedulerAttendance = {
   class_id: string;
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
-  method: 'self' | 'parent' | 'coach_override' | 'admin_override';
+  method: 'self' | 'parent' | 'coach_override' | 'admin_override' | 'walk_in';
   note: string;
   checked_in_at: string;
+};
+
+// How a mark was made, in the words a coach reads on the floor -- the list
+// used to print the stored value ("coach_override") verbatim.
+const ATTENDANCE_METHOD_LABEL: Record<SchedulerAttendance['method'], string> = {
+  self: 'self check-in',
+  parent: 'parent',
+  coach_override: 'coach',
+  admin_override: 'admin',
+  walk_in: 'walk-in',
 };
 
 type SchedulerResponse = {
@@ -113,6 +123,10 @@ type CheckInHoldWarning = {
   reason_category: string;
   athlete_explanation: string;
   lift_condition_text: string;
+  // The coach marked an athlete on their class register whom they do not
+  // otherwise coach: the route says the athlete is held and at what scope,
+  // and keeps the reason and the lift condition with the athlete's own coach.
+  details_withheld: boolean;
 };
 
 const HOLD_SCOPE_LABEL: Record<CheckInHoldWarning['scope'], string> = {
@@ -139,6 +153,7 @@ function checkInHoldWarningFrom(value: unknown): CheckInHoldWarning | 'unreadabl
     reason_category: hold.reason_category,
     athlete_explanation: hold.athlete_explanation,
     lift_condition_text: typeof hold.lift_condition_text === 'string' ? hold.lift_condition_text.trim() : '',
+    details_withheld: hold.details_withheld === true,
   };
 }
 
@@ -318,6 +333,7 @@ export default function SchedulerPage() {
         lift_condition?: unknown;
         status?: string;
         hold_warning?: unknown;
+        method?: string;
       };
       if (!response.ok || !result.ok) {
         showError(result.error || 'Action failed', holdRefusalDetailFrom(result));
@@ -334,7 +350,11 @@ export default function SchedulerPage() {
       // who was waitlisted told them they had a seat.
       const message = payload.action === 'register_class' && result.status === 'waitlisted'
         ? 'The class is full, so this athlete was added to the waitlist.'
-        : successMessage;
+        // The route says when a mark went in as a walk-in (OD-2026-10-07-008
+        // ruling 4); the screen does not guess it from the picker.
+        : payload.action === 'attendance_checkin' && result.method === 'walk_in'
+          ? 'Marked present as a walk-in (not registered for this class).'
+          : successMessage;
       if (payload.action === 'attendance_checkin') {
         const warned = checkInHoldWarningFrom(result.hold_warning);
         setCheckInHold(warned ? { athleteId: String(payload.athlete_id ?? ''), hold: warned } : null);
@@ -357,6 +377,12 @@ export default function SchedulerPage() {
       setActionInFlight(false);
     }
   }
+
+  const registeredForSelectedClass = new Set(
+    registrations
+      .filter((row) => row.class_id === selectedClassId && row.status === 'registered')
+      .map((row) => row.athlete_id),
+  );
 
   const targetAthleteForAthleteRole = athleteId;
   const targetAthleteForOthers = selectedAthleteId;
@@ -671,8 +697,37 @@ export default function SchedulerPage() {
                     ))}
                   </select>
 
-                  {(roleCanOverrideAttendance(role) || role === 'parent') && athletes.length > 0 ? (
+                  {/* The class register (OD-2026-10-07-008 ruling 4): the coach,
+                      cover or scheduler marks everyone registered to the
+                      selected class, and may mark any other athlete of the gym
+                      present as a walk-in. The groups say which is which before
+                      the tap, not after a refusal. A parent's list is their own
+                      children and stays flat. */}
+                  {roleCanOverrideAttendance(role) && athletes.length > 0 ? (
                     <select
+                      aria-label="Athlete to mark"
+                      value={selectedAthleteId}
+                      onChange={(e) => setSelectedAthleteId(e.target.value)}
+                      className="select"
+                    >
+                      <optgroup label="Registered for this class">
+                        {athletes.filter((item) => registeredForSelectedClass.has(item.athlete_id)).map((item) => (
+                          <option key={item.athlete_id} value={item.athlete_id}>
+                            {item.full_name || item.athlete_id}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Walk-in (marks present only)">
+                        {athletes.filter((item) => !registeredForSelectedClass.has(item.athlete_id)).map((item) => (
+                          <option key={item.athlete_id} value={item.athlete_id}>
+                            {item.full_name || item.athlete_id}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  ) : role === 'parent' && athletes.length > 0 ? (
+                    <select
+                      aria-label="Athlete to mark"
                       value={selectedAthleteId}
                       onChange={(e) => setSelectedAthleteId(e.target.value)}
                       className="select"
@@ -739,13 +794,22 @@ export default function SchedulerPage() {
                     <div className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]" role="status">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">
-                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete ({shownCheckInHold.reason_category}).
-                        The check-in was NOT blocked.
+                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete
+                        {shownCheckInHold.details_withheld ? '.' : ` (${shownCheckInHold.reason_category}).`}
+                        {' '}The check-in was NOT blocked.
                       </p>
-                      <p className="t-body mt-[var(--s3)]">{shownCheckInHold.athlete_explanation}</p>
-                      <p className="t-body mt-[var(--s3)]">
-                        To lift it: {shownCheckInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
-                      </p>
+                      {shownCheckInHold.details_withheld ? (
+                        <p className="t-body mt-[var(--s3)]">
+                          The reason and what lifts it are with this athlete&apos;s own coach.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="t-body mt-[var(--s3)]">{shownCheckInHold.athlete_explanation}</p>
+                          <p className="t-body mt-[var(--s3)]">
+                            To lift it: {shownCheckInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
+                          </p>
+                        </>
+                      )}
                     </div>
                   ) : null}
                   {shownCheckInHold === 'unreadable' ? (
@@ -796,7 +860,7 @@ export default function SchedulerPage() {
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
                           Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}

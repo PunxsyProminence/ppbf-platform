@@ -30,6 +30,8 @@ const STATS = [
 // family side.
 const QUICK_LINKS = [
   { label: 'Progress Visibility', href: '/parent/progression-visibility' },
+  { label: 'Photo & Video Consent', href: '/parent/consent' },
+  { label: 'Safety Status', href: '/parent/safety' },
   { label: 'SHADOW Intel', href: '/shadow' },
   { label: 'Member Access', href: '/login' },
 ] as const;

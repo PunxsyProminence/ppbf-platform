@@ -105,11 +105,11 @@ test.describe('Guardian journey', () => {
     await expect(page.getByText('Consent needed')).toBeVisible();
 
     // The scope controls a guardian is entitled to set BEFORE consenting.
-    // Public use is unchecked by default and must stay that way: a guardian
-    // who grants consent without touching anything has not agreed to their
-    // child appearing on social media.
-    const publicUse = page.getByRole('checkbox', { name: /Allow public use/ });
-    await expect(publicUse).not.toBeChecked();
+    // There is no public-use choice on this page (A-Q14, OD-2026-10-08-005,
+    // "Hide until used"): a grant here never agrees to the child appearing
+    // on social media, and the page says so in words.
+    await expect(page.getByRole('checkbox', { name: /public use/i })).toHaveCount(0);
+    await expect(page.getByText(/Nothing is posted publicly on this consent/)).toBeVisible();
     await expect(page.getByRole('checkbox', { name: /Include video/ })).toBeChecked();
 
     await page.getByRole('button', { name: 'Grant Consent' }).click();

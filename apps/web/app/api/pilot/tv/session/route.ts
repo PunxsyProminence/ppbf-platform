@@ -28,7 +28,8 @@ export const runtime = 'nodejs';
  *            'everywhere'. OD-2026-10-07-008 (Jason, "Paired gym TV only"): this is the only
  *            place that board is served. The public address, GET /api/pilot/wall, serves classes
  *            and a head count and nothing about anyone. The board's organization is the paired TV
- *            row's, never the caller's.
+ *            row's, never the caller's. Best-effort: when its read fails, board is null and
+ *            board_status is 'unavailable', and the session is still served (gymTvs.ts).
  *
  *   401 TV_NOT_PAIRED  no key, an unknown key, or a disconnected TV. The cookie is left alone: a
  *                      stale poll answered after a re-pair must not wipe the key the TV just

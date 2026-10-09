@@ -39,7 +39,6 @@ export default function GuardianMediaConsentPage() {
   const [actionMessage, setActionMessage] = useState('');
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [videoByAthlete, setVideoByAthlete] = useState<Record<string, boolean>>({});
-  const [publicByAthlete, setPublicByAthlete] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
@@ -83,7 +82,11 @@ export default function GuardianMediaConsentPage() {
           athlete_id: athleteId,
           decision,
           covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : undefined,
-          public_use_allowed: decision === 'grant' ? (publicByAthlete[athleteId] ?? false) : undefined,
+          /* A-Q14 (OD-2026-10-08-005, "Hide until used"): the "Allow public
+             use" box is not shown. The API field stays and a grant always
+             sends false. Public use is recorded only from a guardian's own
+             signed paper form (admin/athlete-consent), never from here. */
+          public_use_allowed: decision === 'grant' ? false : undefined,
         }),
       });
       if (!response.ok) {
@@ -206,14 +209,17 @@ export default function GuardianMediaConsentPage() {
                           />
                           Include video (unchecked = photos only)
                         </label>
-                        <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
-                          <input
-                            type="checkbox"
-                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
-                            onChange={(event) => setPublicByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
-                          />
-                          Allow public use (website, social media) &mdash; unchecked means internal/gym use only
-                        </label>
+                        {/* No "Allow public use" box here (A-Q14, hide until
+                            used). What is granted on this page is gym-only
+                            use; the sentence below names who inside the gym
+                            can see it (the clip library is gym-wide,
+                            OD-2026-10-08-004; its readers are coaches, staff
+                            and athletes, publications/library/route.ts). */}
+                        <p className="t-muted">
+                          Photos and video stay inside the gym: coaches review them, and a clip the gym publishes goes in
+                          its clip library, which coaches and athletes signed in at this gym can browse. Nothing is posted
+                          publicly on this consent.
+                        </p>
                       </div>
                     ) : null}
                     {/* .btn .btn--kiosk, not `.btn--lever min-h-[44px]`.

@@ -647,3 +647,76 @@ export function assertAthleteUpdateAllowed(
     );
   }
 }
+
+/**
+ * CLASS-SCOPED REACH (OD-2026-10-07-008, question card 1 item 4: "Whole class
+ * plus walk-ins"). The coach who teaches, scheduled, or is covering a class
+ * runs its register: they may mark attendance for EVERY athlete registered to
+ * that class, and may mark a walk-in -- an athlete of the gym who is not
+ * registered -- present. Nothing else widens: outside the class register a
+ * coach still reaches only their assigned and covered athletes
+ * (assertActorCanAccessAthlete; OD-2026-10-05-024 item 2).
+ *
+ * The three ownership fields are the same ones the scheduler GET uses to
+ * decide which classes a coach "owns"; a class the coach does not run gives
+ * them nothing here, whoever the athlete is.
+ */
+export interface ClassOwnership {
+  coach_account_id: string;
+  scheduled_by_account_id: string;
+  covering_coach_account_id?: string | null;
+}
+
+export function actorRunsClass(actor: Pick<ActorIdentity, 'accountId'>, classItem: ClassOwnership): boolean {
+  return (
+    classItem.coach_account_id === actor.accountId
+    || classItem.scheduled_by_account_id === actor.accountId
+    || classItem.covering_coach_account_id === actor.accountId
+  );
+}
+
+export type ClassRegisterReach = 'registered' | 'walk_in';
+
+/**
+ * May this actor write a register mark for `athleteId` on `classItem`?
+ * Resolves to how the athlete stands on the class ('registered' or
+ * 'walk_in'); throws Forbidden otherwise.
+ *
+ *   organization admin  every live athlete of the gym, on every class.
+ *   coach               must run the class (teach / scheduled / cover); then
+ *                       a registered athlete is reachable by the register
+ *                       alone, and an unregistered one only as a live athlete
+ *                       of the same gym -- a walk-in. Assignment is NOT
+ *                       consulted: the ruling makes the class, not the
+ *                       coach-athlete link, the unit of reach here.
+ *   any other role      refused; athlete self and parent marks are governed
+ *                       by assertActorCanAccessAthlete at the call site.
+ *
+ * `registeredAthleteIds` is the class's live roster, read once by the caller
+ * (listRegisteredAthleteIdsForClass) so a bulk mark pays one read, not one
+ * per athlete.
+ */
+export async function assertActorCanMarkClassAthlete(
+  actor: ActorIdentity,
+  classItem: ClassOwnership,
+  athleteId: string,
+  registeredAthleteIds: ReadonlySet<string>,
+): Promise<ClassRegisterReach> {
+  if (isOrganizationAdminRole(actor.role)) {
+    // Nothing more to check for a registered athlete: the roster the caller
+    // read (listRegisteredAthleteIdsForClass) already excludes deleted ones.
+  } else if (actor.role !== 'coach') {
+    throw new Error('Forbidden: role not allowed');
+  } else if (!actorRunsClass(actor, classItem)) {
+    throw new Error('Forbidden: only the coach, cover or scheduler of this class can mark its register');
+  }
+
+  if (registeredAthleteIds.has(athleteId)) {
+    return 'registered';
+  }
+
+  // A walk-in is still a live athlete of THIS gym; the live-row rule is the
+  // same one every other arm of this file applies.
+  await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
+  return 'walk_in';
+}

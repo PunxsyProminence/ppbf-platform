@@ -6,6 +6,7 @@ import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/s
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
+import { assertConsentCoversVideo } from '@/src/server/pilot/videoPlaybackConsent';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -226,6 +227,24 @@ describe('POST /api/pilot/publications/publish', () => {
     expect(body.code).toBe('VIDEO_NOT_ATTRIBUTED');
     expect(body.error).toMatch(/isn't linked to an athlete/);
     expect(mockGetVideoSession).toHaveBeenCalledWith('org-1', 'vid-1');
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  // A publication drafted before create compared the two (f8729bf4,
+  // 2026-07-31) can name one child on another child's video; its consent
+  // checks would read the named child and skip the one on film.
+  test('a publication whose video belongs to a different athlete is refused before any consent check or claim', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow({ athlete_id: 'ath-1' }));
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vid-1', athlete_id: 'ath-2', status: 'ready' });
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('VIDEO_ATHLETE_MISMATCH');
+    expect(mockAssertConsent).not.toHaveBeenCalled();
+    expect(assertConsentCoversVideo).not.toHaveBeenCalled();
     expect(mockPublish).not.toHaveBeenCalled();
   });
 

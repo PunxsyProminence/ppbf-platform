@@ -20,6 +20,7 @@ import {
 import { roleRoutes } from '@/components/roleRoutes';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { parseInstantAsGymTime } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
 
 /**
@@ -51,16 +52,16 @@ const EMPTY_DRAFT = {
   ends_at: '',
 };
 
-// A datetime-local field carries no offset, so it is converted against the
-// author's own clock here. What is stored and compared is the absolute
-// instant, not the wall-clock string.
+// A datetime-local field carries no offset and means the gym's clock, not the
+// author's device clock. What is stored and compared is the absolute instant,
+// not the wall-clock string.
 function localInputToIso(value: string): string | null {
   if (!value) {
     return null;
   }
 
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+  const parsed = parseInstantAsGymTime(value);
+  return parsed ? parsed.toISOString() : null;
 }
 
 function describeWindow(startsAt: string | null, endsAt: string | null): string {

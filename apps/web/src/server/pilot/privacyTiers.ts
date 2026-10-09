@@ -480,6 +480,20 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'session_staff_notes.note': {
+    tier: 'organization',
+    enforcedBy: ['sessionStaffNotes.ts#assertStaffNoteAccess'],
+    note:
+      'A coach\'s or organization admin\'s own note on one athlete\'s session, in the author\'s name '
+      + '(OD-2026-10-06-025 ruling 4; overwatch ruling B 2026-10-07). This is where staff write instead '
+      + 'of rewriting the athlete\'s sessions.notes, and unlike that column it HAS an author '
+      + '(author_account_id, author_role): the author alone may change or remove it, enforced in the '
+      + 'UPDATE\'s own WHERE. Staff only: an active coach or admin membership here AND '
+      + 'assertActorCanAccessAthlete for that athlete, run with the membership role; athletes, guardians, '
+      + 'volunteers, board and platform_owner are refused. Whether the athlete or family should see '
+      + 'staff notes on their session is not decided, so nothing shows it to them. The list returns no '
+      + 'account id, only written_by_me; showing the author\'s display name is the route\'s job.',
+  },
   'athlete_pathway_minor_allowances.reason': {
     tier: 'organization',
     enforcedBy: ['adultPathway.ts#assertPathwayAccess'],
@@ -551,6 +565,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_contact_caps',
   // A coach's heat, weight-cut and supervision limits for one child.
   'pilot.athlete_minor_limits',
+  // A coach's own note on a child's session, in the coach's name.
+  'pilot.session_staff_notes',
   // A coach's plain-text capacity notes for one athlete (module 013 slice).
   'pilot.athlete_capacity_notes',
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).

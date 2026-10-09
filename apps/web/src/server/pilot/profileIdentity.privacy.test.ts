@@ -46,6 +46,7 @@ const FORBIDDEN_TABLES = [
   'pilot.training_holds',
   'pilot.athlete_contact_caps',
   'pilot.athlete_minor_limits',
+  'pilot.session_staff_notes',
   'pilot.athlete_capacity_notes',
   'pilot.sparring_exposure',
 ];

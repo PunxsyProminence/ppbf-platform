@@ -9,7 +9,7 @@
  * is in the room once its data is too old to be true.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import WallDisplay, {
@@ -20,8 +20,10 @@ import WallDisplay, {
   floorDensity,
   formatClock,
   nextPollDelayMs,
+  PAIR_MESSAGES,
   parseTimestamp,
   publicToBoard,
+  submitPairCode,
   withoutPeople,
 } from './WallDisplay';
 import type { WallBoard, WallPublicBoard } from '@/src/server/pilot/wallDisplay';
@@ -485,6 +487,107 @@ describe('paired or public', () => {
   });
 });
 
+/* ------------------------------------------------------------ pair box --- */
+
+/* The one control on the wall, and only while the screen is not paired. */
+describe('the pair box', () => {
+  /** Unpaired until a code is accepted; then the paired read answers. */
+  function respondPairable(pairStatus = 200) {
+    let pairedNow = false;
+    return jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes('/api/pilot/tv/pair')) {
+        if (pairStatus === 200) pairedNow = true;
+        return { ok: pairStatus === 200, status: pairStatus, json: async () => ({ error: 'TV_PAIR_CODE_REJECTED: internal detail' }) } as unknown as Response;
+      }
+      if (url.includes('/api/pilot/tv/session')) {
+        if (!pairedNow) return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tv: { tv_name: 'Gym main' },
+            session: null,
+            board: board({ on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }], on_floor_total: 1 }),
+            board_status: 'ok',
+          }),
+        } as unknown as Response;
+      }
+      void init;
+      return { ok: true, status: 200, json: async () => ({ ok: true, board: publicBoard({ on_floor_total: 1 }) }) } as unknown as Response;
+    });
+  }
+
+  it('is absent before the first read answers, and on a paired screen', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { container, unmount } = render(<WallDisplay />);
+    expect(container.querySelector('form')).toBeNull();
+    unmount();
+
+    fetchMock = respondWith({ tv: { tv_name: 'Gym main' }, session: null, board: board(), board_status: 'ok' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const paired = render(<WallDisplay />);
+    await settle();
+    expect(paired.container.querySelector('form')).toBeNull();
+  });
+
+  it('on an unpaired screen it is exactly one code field and one button', async () => {
+    fetchMock = respondByUrl({ ok: true, board: publicBoard() });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(container.querySelectorAll('input')).toHaveLength(1);
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.getByLabelText('Pairing code')).toBeTruthy();
+  });
+
+  it('an accepted code posts with the cookie, re-reads at once, and the box goes away with the names up', async () => {
+    fetchMock = respondPairable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    fireEvent.change(screen.getByLabelText('Pairing code'), { target: { value: 'ab3-4cd' } });
+    fireEvent.click(screen.getByText('Pair'));
+    await settle();
+    await settle();
+
+    const pairCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/pilot/tv/pair'));
+    expect(pairCall).toBeDefined();
+    expect(pairCall?.[1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(JSON.parse(String((pairCall?.[1] as RequestInit).body))).toEqual({ code: 'AB3-4CD' });
+
+    await waitFor(() => expect(screen.getByText('M.R.')).toBeTruthy());
+    expect(container.querySelector('form')).toBeNull();
+  });
+
+  it('a refused code says one fixed line, never the server\'s text', async () => {
+    fetchMock = respondPairable(404);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    fireEvent.change(screen.getByLabelText('Pairing code'), { target: { value: 'ZZZZZZ' } });
+    fireEvent.click(screen.getByText('Pair'));
+    await settle();
+    await settle();
+
+    expect(screen.getByRole('status').textContent).toBe(PAIR_MESSAGES.rejected);
+    expect(container.textContent).not.toMatch(/internal detail|TV_PAIR|error/i);
+    // Still unpaired, still the box.
+    expect(container.querySelector('form')).not.toBeNull();
+  });
+
+  it('submitPairCode maps every answer to a fixed outcome', async () => {
+    const answers: Array<[number, string]> = [[200, 'paired'], [400, 'invalid'], [404, 'rejected'], [429, 'limited'], [500, 'unavailable']];
+    for (const [status, outcome] of answers) {
+      global.fetch = jest.fn().mockResolvedValue({ ok: status === 200, status, json: async () => ({}) }) as unknown as typeof fetch;
+      expect(await submitPairCode('', 'ABC234')).toBe(outcome);
+    }
+    global.fetch = jest.fn().mockRejectedValue(new Error('network')) as unknown as typeof fetch;
+    expect(await submitPairCode('', 'ABC234')).toBe('unavailable');
+  });
+});
+
 /* --------------------------------------------------------- empty states -- */
 
 describe('empty states', () => {
@@ -647,7 +750,9 @@ describe('empty states', () => {
    touch --------------------------------------------------------------- */
 
 describe('it is a display, not an interface', () => {
-  it('renders no control of any kind', async () => {
+  // On a PAIRED screen. The unpaired screen carries exactly one control, the
+  // pair box, pinned above; once paired there is nothing to touch.
+  it('renders no control of any kind once paired', async () => {
     fetchMock = respondWith({
       ok: true,
       board: board({

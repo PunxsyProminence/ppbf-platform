@@ -17,6 +17,8 @@ import {
   createNomination,
   getTally,
   isEligibleVoterRole,
+  listNominations,
+  listVotes,
   resolveActorDisplayName,
   withdrawNomination,
 } from './onePercentClub';
@@ -358,5 +360,32 @@ describe('resolveActorDisplayName', () => {
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(String(sql)).toContain('deleted_account.deleted_at is not null');
     expect(params).toEqual(['org-1', 'acct-gone']);
+  });
+});
+
+/**
+ * Finding N7 (OD-2026-10-06-025 r2, scope B): the frozen nominator and voter
+ * name copies are not read back for a deleted person. SQL-shape pins; the
+ * rows themselves are proven in w2IdentityReach.pg.test.ts.
+ */
+describe('a deleted nominator or voter is not named from the stored copy', () => {
+  test('listNominations wraps nominated_by_display_name in the deletion-mark CASE, by stored role', async () => {
+    mockQuery.mockResolvedValue([]);
+    await listNominations('org-1');
+    const sql = String(mockQuery.mock.calls.at(-1)?.[0]);
+    expect(sql).toMatch(/case when not exists \([\s\S]*deleted_account\.account_id = n\.nominated_by_account_id[\s\S]*then n\.nominated_by_display_name/);
+    expect(sql).toContain("when n.nominated_by_role = 'athlete' then 'An athlete'");
+    expect(sql).toContain("when n.nominated_by_role = 'coach' then 'Your coach'");
+    expect(sql).toContain("else 'An administrator' end as nominated_by_display_name");
+    // The mark on the athlete behind the login counts too (accountNotDeletedSql).
+    expect(sql).toContain('deleted_athlete.deleted_at is not null');
+  });
+
+  test('listVotes wraps voter_display_name the same way', async () => {
+    mockQuery.mockResolvedValue([]);
+    await listVotes('org-1', 'nom-1');
+    const sql = String(mockQuery.mock.calls.at(-1)?.[0]);
+    expect(sql).toMatch(/deleted_account\.account_id = v\.voter_account_id[\s\S]*then v\.voter_display_name/);
+    expect(sql).toContain("else 'An administrator' end as voter_display_name");
   });
 });

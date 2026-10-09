@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 /**
  * THE WALL DISPLAY — the board the gym's TV points at.
@@ -201,7 +201,11 @@ export function ageInYears(dob: string | null | undefined, now: Date): number | 
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
-  const [yearNow, monthNow, dayNow] = formatYmdInZone(now, GYM_TIME_ZONE).split('-').map(Number);
+  // An unusable `now` throws, as it did before: a null age reads as "no date
+  // of birth", which is not what happened.
+  const today = gymDayIso(now);
+  if (!today) throw new RangeError('Invalid time value');
+  const [yearNow, monthNow, dayNow] = today.split('-').map(Number);
   let age = yearNow - year;
   if (monthNow < month || (monthNow === month && dayNow < day)) {
     age -= 1;
