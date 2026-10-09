@@ -448,6 +448,16 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s sparring limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'athlete_capacity_notes.note': {
+    tier: 'organization',
+    enforcedBy: ['athleteCapacityNotes.ts#assertNoteAccess'],
+    note:
+      'A coach\'s plain-text physical capacity note for one athlete (module 013 slice, OD-2026-10-08-002); '
+      + 'it may carry what the coach saw of the athlete\'s condition, which can be health-adjacent. Staff only: an '
+      + 'active coach or admin membership here AND assertActorCanAccessAthlete for that athlete, run with the '
+      + 'membership role; athletes, guardians, board and platform_owner are refused. Whether the athlete or family '
+      + 'should see these notes is not decided, so nothing shows them one.',
+  },
   'athlete_minor_limits.value_number': {
     tier: 'organization',
     enforcedBy: ['athleteMinorLimits.ts#assertLimitAccess'],
@@ -557,6 +567,8 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.athlete_minor_limits',
   // A coach's own note on a child's session, in the coach's name.
   'pilot.session_staff_notes',
+  // A coach's plain-text capacity notes for one athlete (module 013 slice).
+  'pilot.athlete_capacity_notes',
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',
