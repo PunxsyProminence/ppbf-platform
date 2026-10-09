@@ -12,6 +12,7 @@ import {
   clearDurableRateLimit,
   getClientIp,
   recordDurableFailedAttempt,
+  reserveAttempts,
 } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
@@ -106,19 +107,14 @@ export async function POST(request: NextRequest) {
         sessionToken: principal.sessionToken,
         password,
         beforeHash: async () => {
-          const durableHashCheck = await checkDurableRateLimit(hashKey);
-          // NOTHING MAY AWAIT BETWEEN THIS CHECK AND THE RECORD BELOW. The
-          // in-memory check and the in-memory record (the first thing
-          // recordDurableFailedAttempt does, before its own first await) run
-          // in one tick, so of any number of requests arriving together on
-          // this process exactly one passes and the rest wait. An await in
-          // between would let every one of them through to the hash.
-          if (checkRateLimit(hashKey).isLimited || durableHashCheck.isLimited) {
+          // Counts a hash about to run, whatever becomes of the request, and
+          // admits it only if the bucket was open -- in one step, in memory
+          // and in Postgres (reserveAttempts, CL-A4). The durable half used to
+          // read and then write, so requests arriving together on different
+          // replicas all passed the read and all reached the hash.
+          if ((await reserveAttempts([hashKey])).isLimited) {
             throw new PasswordHashAllowanceSpent();
           }
-          // "Failed attempt" is the limiter's name for a counted one. This
-          // counts a hash about to run, whatever becomes of the request.
-          await recordDurableFailedAttempt(hashKey);
         },
       });
     } catch (error) {
