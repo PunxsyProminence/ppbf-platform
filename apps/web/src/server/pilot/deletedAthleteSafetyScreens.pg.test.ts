@@ -99,7 +99,7 @@ import { GET as safetyFlagsGET } from '@/app/api/pilot/safety-flags/route';
 import { GET as trainingHoldsGET } from '@/app/api/pilot/training-holds/route';
 
 import type { PilotPrincipal } from './auth';
-import { deleteAthleteRecord, purgeExpiredDeletedData } from './dataDeletion';
+import { deleteAthleteRecord } from './dataDeletion';
 import { insertAthleteIfAbsent } from './entities';
 import { assertAthleteAccountIdProvisionable } from './intake';
 import { requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from './http';
@@ -860,6 +860,12 @@ describe('after deleteAthleteRecord(GONE)', () => {
         },
       );
     });
+  /** The scheduled purge, applied; a run that refused anyone proves nothing. */
+  const purgeByScript = async () => {
+    const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.blocked_by ?? {}).toEqual({});
+  };
   const expire = (org: string, athleteId: string) =>
     run(
       `update pilot.athletes set deleted_at = now() - interval '3 years' where organization_id = $1 and athlete_id = $2`,
@@ -886,11 +892,11 @@ describe('after deleteAthleteRecord(GONE)', () => {
       expect(names.get(item)).toBe(REUSED);
     }
 
-    // Deleted, then purged by the application's own purge once the retention
-    // window has passed.
+    // Deleted, then purged by the retention script once the retention window
+    // has passed.
     await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, REUSED, 'Left the gym');
     await expire(ORG, REUSED);
-    await purgeExpiredDeletedData();
+    await purgeByScript();
     expect(await athleteExists(ORG, REUSED)).toBe(false);
     const oldLogin = await loginOf(REUSED_ACCOUNT);
     // The tombstone: the deleted login is kept, and names nobody.
@@ -989,7 +995,7 @@ describe('after deleteAthleteRecord(GONE)', () => {
       )).rows[0] as { session: boolean; code: boolean };
     expect(await usable(ORPHANED_ACCOUNT)).toEqual({ session: true, code: true });
 
-    await purgeExpiredDeletedData();
+    await purgeByScript();
 
     // The athlete's own login: unlinked AND retired, so nothing can bind it to another child.
     const retired = await loginOf(ORPHANED_ACCOUNT);
@@ -1015,189 +1021,6 @@ describe('after deleteAthleteRecord(GONE)', () => {
     for (const item of ids('ORPHANED-OLD', FEEDBACK_RESOLVED)) {
       expect(names.has(item)).toBe(false);
     }
-  });
-
-  test("purgeExpiredDeletedData: a login moved into the gym while its athlete_id is being purged is not touched", async () => {
-    /* The same race as the script's (dataRetentionDeletion.pg.test.ts): which
-       login is unlinked is decided before the athlete is deleted. The purged
-       athlete has no login and one goal; a rival locks the goal row, so the
-       purge -- having locked the athlete and looked for its login -- waits in
-       its delete. Meanwhile the second gym's present child, whose login
-       carries the same athlete_id, is moved into this gym. Every statement
-       outside the purge runs on its own connection: the purge holds this
-       suite's shared one inside its transaction. */
-    const COLLIDING = 'ATH-L2-COLLIDING';
-    const PRESENT_CHILD_LOGIN = 'acct-l2-present-child';
-    for (const [org, coach] of [[ORG, COACH], [OTHER_ORG, OTHER_COACH]] as const) {
-      await run(
-        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
-           emergency_contact, active_flag, coach_id, created_at, updated_at)
-         values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now())`,
-        [org, COLLIDING, coach],
-      );
-    }
-    await run(
-      `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
-       values ($1, 'goal-l2-colliding', $2, 'x', now(), 'x', 'active', now(), now())`,
-      [ORG, COLLIDING],
-    );
-    await run(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
-       values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
-      [PRESENT_CHILD_LOGIN, OTHER_ORG, COLLIDING],
-    );
-    await run(`insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('session-l2-present-child', $1, $2)`, [
-      PRESENT_CHILD_LOGIN, OTHER_ORG,
-    ]);
-    await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, COLLIDING]);
-    await expire(ORG, COLLIDING);
-
-    const rival = new Client({ connectionString: connectionStringFor(DATABASE) });
-    const other = new Client({ connectionString: connectionStringFor(DATABASE) });
-    await rival.connect();
-    await other.connect();
-    let purge: Promise<unknown> | undefined;
-    try {
-      await rival.query('begin');
-      await rival.query(`select 1 from pilot.goals where organization_id = $1 and goal_id = 'goal-l2-colliding' for update`, [ORG]);
-
-      purge = purgeExpiredDeletedData();
-      let waiting = 0;
-      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        const blocked = await other.query(
-          `select count(*)::int as n from pg_stat_activity
-            where datname = $1 and wait_event_type = 'Lock' and query like 'delete from pilot.athletes%'`,
-          [DATABASE],
-        );
-        waiting = blocked.rows[0].n;
-      }
-      expect(waiting).toBe(1);
-
-      // The move, as upsertOrganizationMembership writes it: the gym changes, athlete_id does not.
-      await other.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [PRESENT_CHILD_LOGIN, ORG]);
-      await rival.query('commit');
-      await purge;
-    } finally {
-      // Release the rival, then let a purge that was started finish before
-      // anything else uses the suite's shared connection.
-      await rival.query('rollback').catch(() => {});
-      await purge?.catch(() => {});
-      await rival.end().catch(() => {});
-      await other.end().catch(() => {});
-    }
-
-    expect(await athleteExists(ORG, COLLIDING)).toBe(false);
-    // The present child's login: still theirs, still live, still signed in.
-    expect(await loginOf(PRESENT_CHILD_LOGIN)).toMatchObject({ athlete_id: COLLIDING, organization_id: ORG, active_flag: true, deleted_at: null });
-    const session = await run(
-      `select count(*)::int as n from pilot.session_tokens where account_id = $1 and revoked_at is null`,
-      [PRESENT_CHILD_LOGIN],
-    );
-    expect(session.rows[0].n).toBe(1);
-    // Put back, so the id is free of a login in this gym for the tests after this one.
-    await run(`update pilot.accounts set organization_id = $2 where account_id = $1`, [PRESENT_CHILD_LOGIN, OTHER_ORG]);
-  });
-
-  /** Runs purgeExpiredDeletedData while `rival` holds a lock it must wait for; resolves once `release` has run. */
-  const purgeAgainstRival = async (
-    hold: (rival: Client) => Promise<void>,
-    waitingOn: string,
-    meanwhile: (other: Client) => Promise<void> = async () => {},
-  ) => {
-    const rival = new Client({ connectionString: connectionStringFor(DATABASE) });
-    const other = new Client({ connectionString: connectionStringFor(DATABASE) });
-    await rival.connect();
-    await other.connect();
-    let purge: Promise<{ rowsDeleted: number }> | undefined;
-    try {
-      await rival.query('begin');
-      await hold(rival);
-      purge = purgeExpiredDeletedData();
-      let waiting = 0;
-      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        const blocked = await other.query(
-          `select count(*)::int as n from pg_stat_activity
-            where datname = $1 and wait_event_type = 'Lock' and query like $2`,
-          [DATABASE, waitingOn],
-        );
-        waiting = blocked.rows[0].n;
-      }
-      expect(waiting).toBe(1);
-      await meanwhile(other);
-      await rival.query('commit');
-      return await purge;
-    } finally {
-      await rival.query('rollback').catch(() => {});
-      await purge?.catch(() => {});
-      await rival.end().catch(() => {});
-      await other.end().catch(() => {});
-    }
-  };
-  const purgeAuditCount = async () =>
-    (await run(`select count(*)::int as n from pilot.audit_events where event_type = 'data_purged'`)).rows[0].n as number;
-
-  test('purgeExpiredDeletedData: a purge that removes no row unlinks nothing and audits nothing', async () => {
-    // Somebody else's transaction deletes the expired athlete first. The
-    // purge's own lock on the athlete rows waits for it and then finds none.
-    const RACED = 'ATH-L2-RACED';
-    const RACED_LOGIN = 'acct-l2-raced';
-    await run(
-      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
-         emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
-       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now(), now() - interval '3 years')`,
-      [ORG, RACED, COACH],
-    );
-    await run(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email, deleted_at)
-       values ($1, 'athlete', $2, $3, 'ppbf_local', false, null, now() - interval '3 years')`,
-      [RACED_LOGIN, ORG, RACED],
-    );
-    const auditsBefore = await purgeAuditCount();
-
-    const result = await purgeAgainstRival(
-      (rival) => rival.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, RACED]).then(() => {}),
-      'select organization_id, athlete_id%',
-    );
-
-    expect(result).toEqual({ rowsDeleted: 0 });
-    expect(await purgeAuditCount()).toBe(auditsBefore);
-    // Still naming the athlete: this purge removed nobody.
-    expect((await loginOf(RACED_LOGIN)).athlete_id).toBe(RACED);
-    // (That login now names no row: what a purge before the unlinking left. Not reused below.)
-  });
-
-  test("purgeExpiredDeletedData: a login moved OUT of the gym while its athlete is being purged is not touched", async () => {
-    // The capture locks the login it reads, so it waits for a move already
-    // under way and re-reads: the login is no longer this gym's.
-    const LEFT = 'ATH-L2-LEFT';
-    const LEAVING_LOGIN = 'acct-l2-leaving';
-    await run(
-      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
-         emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
-       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now(), now() - interval '3 years')`,
-      [ORG, LEFT, COACH],
-    );
-    await run(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
-       values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
-      [LEAVING_LOGIN, ORG, LEFT],
-    );
-    await run(`insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('session-l2-leaving', $1, $2)`, [
-      LEAVING_LOGIN, ORG,
-    ]);
-
-    const result = await purgeAgainstRival(
-      (rival) => rival.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [LEAVING_LOGIN, OTHER_ORG]).then(() => {}),
-      'select acct.account_id%',
-    );
-
-    expect(result).toEqual({ rowsDeleted: 1 });
-    expect(await athleteExists(ORG, LEFT)).toBe(false);
-    expect(await loginOf(LEAVING_LOGIN)).toMatchObject({ athlete_id: LEFT, organization_id: OTHER_ORG, active_flag: true, deleted_at: null });
-    const session = await run(`select count(*)::int as n from pilot.session_tokens where account_id = $1 and revoked_at is null`, [LEAVING_LOGIN]);
-    expect(session.rows[0].n).toBe(1);
   });
 
   test('a login that writes before its athlete record exists is that athlete once the record is added', async () => {
@@ -1229,13 +1052,13 @@ describe('after deleteAthleteRecord(GONE)', () => {
     }
   });
 
-  test('the two purge paths leave the same thing behind: the scheduled script and purgeExpiredDeletedData', async () => {
-    // Two athletes that differ only in which purge removes them, each with a
-    // deleted login; the second gym has live athletes, with live logins, under
-    // the same two ids.
+  test('the retention script purges a deleted athlete: unlinked, signed out, audited, and the second gym untouched', async () => {
+    // A deleted athlete with a deleted login; the second gym has a live
+    // athlete, with a live login, under the same id. (This was a parity test
+    // against dataDeletion.ts's purgeExpiredDeletedData, removed: the script
+    // is the one purge.)
     const BY_SCRIPT = 'ATH-L2-PARITY-SCRIPT';
-    const BY_FUNCTION = 'ATH-L2-PARITY-FUNCTION';
-    for (const athleteId of [BY_SCRIPT, BY_FUNCTION]) {
+    for (const athleteId of [BY_SCRIPT]) {
       for (const [org, coach] of [[ORG, COACH], [OTHER_ORG, OTHER_COACH]] as const) {
         await run(
           `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -1270,16 +1093,12 @@ describe('after deleteAthleteRecord(GONE)', () => {
                   where c.account_id = $1 and c.consumed_at is null and c.superseded_at is null) as codes`,
         [accountId],
       )).rows[0] as { sessions: number; codes: number };
-    for (const athleteId of [BY_SCRIPT, BY_FUNCTION]) {
+    for (const athleteId of [BY_SCRIPT]) {
       expect(await openAccess(`acct-${ORG}-${athleteId}`)).toEqual({ sessions: 1, codes: 1 });
     }
     const lastAuditBefore = (await run(`select coalesce(max(audit_id), 0)::int as id from pilot.audit_events`)).rows[0].id as number;
-    const before = {
-      script: await loginOf(`acct-${ORG}-${BY_SCRIPT}`),
-      fn: await loginOf(`acct-${ORG}-${BY_FUNCTION}`),
-    };
-    expect(before.script.athlete_id).toBe(BY_SCRIPT);
-    expect(before.fn.athlete_id).toBe(BY_FUNCTION);
+    const before = await loginOf(`acct-${ORG}-${BY_SCRIPT}`);
+    expect(before.athlete_id).toBe(BY_SCRIPT);
 
     // The script: a dry run performs the purge and rolls it back, so the login
     // must come out of it still linked.
@@ -1307,38 +1126,23 @@ describe('after deleteAthleteRecord(GONE)', () => {
       live_athlete_logins_retired: 0,
     });
 
-    // The function.
-    await expire(ORG, BY_FUNCTION);
-    await purgeExpiredDeletedData();
+    expect(await athleteExists(ORG, BY_SCRIPT)).toBe(false);
+    // Unlinked, and otherwise exactly the login it was: still deleted, on
+    // its original date, still this gym's athlete login.
+    expect(await loginOf(`acct-${ORG}-${BY_SCRIPT}`)).toEqual({ ...before, athlete_id: null });
+    // Signed out: no session resolves, no code can be redeemed.
+    expect(await openAccess(`acct-${ORG}-${BY_SCRIPT}`)).toEqual({ sessions: 0, codes: 0 });
+    // The second gym's athlete and login under the same id are untouched.
+    expect(await athleteExists(OTHER_ORG, BY_SCRIPT)).toBe(true);
+    expect(await loginOf(`acct-${OTHER_ORG}-${BY_SCRIPT}`)).toMatchObject({ athlete_id: BY_SCRIPT, deleted_at: null });
 
-    const after = {
-      script: await loginOf(`acct-${ORG}-${BY_SCRIPT}`),
-      fn: await loginOf(`acct-${ORG}-${BY_FUNCTION}`),
-    };
-    for (const [athleteId, was, is] of [
-      [BY_SCRIPT, before.script, after.script],
-      [BY_FUNCTION, before.fn, after.fn],
-    ] as const) {
-      expect(await athleteExists(ORG, athleteId)).toBe(false);
-      // Unlinked, and otherwise exactly the login it was: still deleted, on
-      // its original date, still this gym's athlete login.
-      expect(is).toEqual({ ...was, athlete_id: null });
-      // Signed out by either path: no session resolves, no code can be redeemed.
-      expect(await openAccess(`acct-${ORG}-${athleteId}`)).toEqual({ sessions: 0, codes: 0 });
-      // The second gym's athlete and login under the same id are untouched.
-      expect(await athleteExists(OTHER_ORG, athleteId)).toBe(true);
-      expect(await loginOf(`acct-${OTHER_ORG}-${athleteId}`)).toMatchObject({ athlete_id: athleteId, deleted_at: null });
-    }
-    // Same end state from both paths.
-    expect({ ...after.script, deleted_at: null }).toEqual({ ...after.fn, deleted_at: null });
-
-    // Both record it in the audit row that is the only trace of a purge:
-    // exactly two new rows, one per path.
+    // It is recorded in the audit row that is the only trace of a purge:
+    // exactly one new row.
     const audits = await run(
       `select details from pilot.audit_events where event_type = 'data_purged' and audit_id > $1 order by audit_id`,
       [lastAuditBefore],
     );
-    expect(audits.rows).toHaveLength(2);
+    expect(audits.rows).toHaveLength(1);
     for (const row of audits.rows as Array<{ details: Record<string, unknown> }>) {
       expect(row.details).toMatchObject({
         athletes_deleted: 1,
@@ -1348,9 +1152,9 @@ describe('after deleteAthleteRecord(GONE)', () => {
       });
     }
 
-    // And the queue reads the script's purge exactly as it reads the function's.
+    // And the queue reads the purged athlete's rows as nobody's.
     const names = await feedbackNames();
-    for (const tag of [BY_SCRIPT, BY_FUNCTION]) {
+    for (const tag of [BY_SCRIPT]) {
       for (const item of ids(tag, FEEDBACK_UNRESOLVED)) {
         expect(names.has(item)).toBe(true);
         expect(names.get(item)).toBeNull();
@@ -1359,52 +1163,6 @@ describe('after deleteAthleteRecord(GONE)', () => {
         expect(names.has(item)).toBe(false);
       }
     }
-  });
-
-  test('a purge the database refuses unlinks nothing: purgeExpiredDeletedData is all or nothing', async () => {
-    // A foreign key onto pilot.athletes with no delete action refuses the
-    // athlete delete. Every real one now cascades (the last, the 1% Club
-    // nominations, since OD-2026-08-29-007), so the refusal is staged with a
-    // table of this test's own: the case is the next foreign key that ships
-    // without a delete action. In the function that aborts the whole
-    // transaction, so the purgeable athlete beside it is not removed either,
-    // and neither login is unlinked.
-    const NOMINATED = 'ATH-L2-HELD';
-    const BESIDE = 'ATH-L2-BESIDE-HELD';
-    for (const athleteId of [NOMINATED, BESIDE]) {
-      await run(
-        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
-           emergency_contact, active_flag, coach_id, created_at, updated_at)
-         values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now())`,
-        [ORG, athleteId, COACH],
-      );
-      await run(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
-         values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
-        [`acct-${athleteId}`, ORG, athleteId],
-      );
-    }
-    await run(
-      `create table pilot.l2_test_holds_athlete (
-         organization_id text not null,
-         athlete_id text not null,
-         foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id)
-       )`,
-    );
-    await run(`insert into pilot.l2_test_holds_athlete (organization_id, athlete_id) values ($1, $2)`, [ORG, NOMINATED]);
-    for (const athleteId of [NOMINATED, BESIDE]) {
-      await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, athleteId]);
-      await run(`update pilot.accounts set deleted_at = now(), active_flag = false where account_id = $1`, [`acct-${athleteId}`]);
-      await expire(ORG, athleteId);
-    }
-
-    await expect(purgeExpiredDeletedData()).rejects.toThrow(/l2_test_holds_athlete/);
-
-    for (const athleteId of [NOMINATED, BESIDE]) {
-      expect(await athleteExists(ORG, athleteId)).toBe(true);
-      expect((await loginOf(`acct-${athleteId}`)).athlete_id).toBe(athleteId);
-    }
-    // Left unpurgeable on purpose; nothing after this test purges.
   });
 
   test("the second gym's athlete with GONE's id keeps its resolved items", async () => {

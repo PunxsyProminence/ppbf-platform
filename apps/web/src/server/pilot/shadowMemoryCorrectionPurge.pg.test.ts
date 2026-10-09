@@ -44,7 +44,6 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 
-let dataDeletion: typeof import('./dataDeletion');
 let closePool: () => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -68,16 +67,9 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-type PurgePath = 'script' | 'dataDeletion';
-
-async function purgeAuditRows(): Promise<Array<{ details: { shadow_memory_corrections_deleted?: number } }>> {
-  const rows = await client.query<{ details: { shadow_memory_corrections_deleted?: number } }>(
-    `select details from pilot.audit_events
-      where event_type = 'data_purged' and entity_type = 'retention_cleanup'
-      order by created_at`,
-  );
-  return rows.rows;
-}
+/* One purge path: scripts/pilot-cleanup-deleted-data.mjs. dataDeletion.ts's
+   copy, purgeExpiredDeletedData, had no caller and was removed. */
+type PurgePath = 'script';
 
 /**
  * Runs one purge path and returns the count it reports for corrections. The
@@ -85,14 +77,6 @@ async function purgeAuditRows(): Promise<Array<{ details: { shadow_memory_correc
  * everything back.
  */
 async function purge(via: PurgePath, apply = true): Promise<number> {
-  if (via === 'dataDeletion') {
-    // Exactly one new audit row, read as that row: never an earlier run's.
-    const before = (await purgeAuditRows()).length;
-    await dataDeletion.purgeExpiredDeletedData();
-    const after = await purgeAuditRows();
-    expect(after).toHaveLength(before + 1);
-    return after[after.length - 1].details.shadow_memory_corrections_deleted ?? -1;
-  }
   const output = await new Promise<string>((resolve, reject) => {
     execFile(
       process.execPath,
@@ -252,7 +236,6 @@ beforeAll(async () => {
   // Env before import: db.ts builds its pool on first use.
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
-  dataDeletion = await import('./dataDeletion');
   ({ closePool } = await import('./db'));
 });
 
@@ -275,19 +258,17 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
 });
 
-describe.each<PurgePath>(['script', 'dataDeletion'])('the %s purge', (via) => {
+describe.each<PurgePath>(['script'])('the %s purge', (via) => {
   test("deletes a purged athlete's and a purged guardian's SHADOW memory corrections, and no one else's", async () => {
     const people = await seed();
     // CONTROL: every correction is there before the purge.
     expect(await correctionsOf(people.athleteLogin)).toBe(2);
     expect(await correctionsOf(people.guardian)).toBe(2);
 
-    if (via === 'script') {
-      // The dry run counts them and deletes nothing.
-      expect(await purge(via, false)).toBe(4);
-      expect(await correctionsOf(people.athleteLogin)).toBe(2);
-      expect(await correctionsOf(people.guardian)).toBe(2);
-    }
+    // The dry run counts them and deletes nothing.
+    expect(await purge(via, false)).toBe(4);
+    expect(await correctionsOf(people.athleteLogin)).toBe(2);
+    expect(await correctionsOf(people.guardian)).toBe(2);
 
     const reported = await purge(via);
 

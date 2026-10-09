@@ -1,4 +1,4 @@
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -25,6 +25,7 @@ const PG_PASSWORD = 'postgres';
 const PG_DATABASE = 'ppbf_test_waiver_recorded_by';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-waiver-recorded-by-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
 const BASE_SCHEMA_PATH = path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres.sql');
 
 const ORG_ID = 'org-waiver-rec';
@@ -38,12 +39,38 @@ let client: Client;
 
 type IntakeModule = typeof import('./intake');
 let intake: IntakeModule;
-type DataDeletionModule = typeof import('./dataDeletion');
-let dataDeletion: DataDeletionModule;
 let closePool: () => Promise<void>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+/** Runs the retention purge as the scheduled job does: the script, applied. */
+function runCleanupScript(): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(PG_DATABASE),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: PG_DATABASE,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          PPBF_RETENTION_APPLY: 'true',
+        },
+      },
+      (error, stdout, stderr) => {
+        const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+        if (error || !line) {
+          reject(new Error(`${stdout}${stderr}`));
+          return;
+        }
+        resolve(JSON.parse(line) as Record<string, unknown>);
+      },
+    );
+  });
 }
 
 async function findFreePort(): Promise<number> {
@@ -121,7 +148,7 @@ beforeAll(async () => {
 
   /* pilot.accounts.deleted_at, which the retention purge selects on, arrives
      with the data-retention migration. Applied so the retention test below
-     can run the REAL purgeExpiredDeletedData() rather than a hand-written
+     can run the REAL retention script rather than a hand-written
      delete that resembles it. */
   await client.query(
     await fs.readFile(
@@ -167,7 +194,6 @@ beforeAll(async () => {
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   intake = await import('./intake');
-  dataDeletion = await import('./dataDeletion');
   ({ closePool } = await import('./db'));
 });
 
@@ -386,11 +412,12 @@ describe('what happens when the recording account is purged', () => {
       [PURGED_PARENT],
     );
 
-    const result = await dataDeletion.purgeExpiredDeletedData();
+    const result = await runCleanupScript();
 
     // Not vacuous: the purge really did remove the account. Without this, a
     // purge that silently matched nothing would pass every assertion below.
-    expect(result.rowsDeleted).toBeGreaterThanOrEqual(1);
+    expect(result.blocked_by ?? {}).toEqual({});
+    expect(result.accounts).toBeGreaterThanOrEqual(1);
     const account = await client.query(
       `select 1 from pilot.accounts where account_id = $1`,
       [PURGED_PARENT],

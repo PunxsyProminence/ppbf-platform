@@ -23,9 +23,9 @@
 //     is a no-op rather than a duplicate row or an error;
 //   * a link cannot join a session in one gym to a block in another -- not
 //     "should not", cannot;
-//   * A LINK DOES NOT BLOCK THE RETENTION PURGE. dataDeletion.ts hard-deletes
+//   * A LINK DOES NOT BLOCK THE RETENTION PURGE. The retention script hard-deletes
 //     pilot.athletes and relies entirely on cascades; a NO ACTION foreign key
-//     here would roll that transaction back and leave a soft-deleted minor's
+//     here would roll that athlete's purge back and leave a soft-deleted minor's
 //     record past its retention date. This is the single most important case
 //     in the file and it is asserted against the real purge behaviour, not
 //     against a comment;
@@ -436,11 +436,11 @@ describe('the session block link migration itself', () => {
   });
 
   /* THE MOST IMPORTANT TEST IN THIS FILE.
-     dataDeletion.ts's purgeExpiredDeletedData issues a bare
-     `delete from pilot.athletes where deleted_at < now() - interval '2 years'`
-     inside one transaction and relies ENTIRELY on cascades to carry the
-     children. A NO ACTION or RESTRICT foreign key on this link table would
-     make that delete fail, roll the whole transaction back, and leave a
+     The retention purge (scripts/pilot-cleanup-deleted-data.mjs) issues a
+     bare `delete from pilot.athletes` per expired athlete and relies
+     ENTIRELY on cascades to carry the children. A NO ACTION or RESTRICT
+     foreign key on this link table would make that delete fail, roll the
+     athlete's savepoint back, and leave a
      soft-deleted minor's record in the database past the retention period it
      was scheduled for -- a retention failure caused by a link table, found two
      years after the migration shipped.
@@ -462,7 +462,8 @@ describe('the session block link migration itself', () => {
         [ORG_ID, ATHLETE_ID],
       );
 
-      // The exact statement the purge runs.
+      // A bare athlete delete, relying on cascades as the purge's own
+      // per-athlete delete does (scripts/pilot-cleanup-deleted-data.mjs).
       const purged = await client.query(
         `delete from pilot.athletes
          where deleted_at is not null

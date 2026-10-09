@@ -375,12 +375,12 @@ athlete's account is kept but no longer names the athlete record that was remove
 marked deleted if it was not already (*Safety screens*, above). The SHADOW memory corrections
 that account typed (`pilot.shadow_chat_memory_corrections`, whose `corrected_value` is the
 person's own words) are deleted in the same transaction (in the cleanup job, the same
-per-person savepoint), as are a purged guardian's; both purge paths count them as
+per-person savepoint), as are a purged guardian's; the purge counts them as
 `shadow_memory_corrections_deleted`. Until the purge they stay behind the account, read only on
 that account's own behalf (its export), so unreadable once the account is marked deleted. Pinned by
 `shadowMemoryCorrectionPurge.pg.test.ts`. The rest of the person's SHADOW data follows the
 owner's ruling (Jason 2026-10-06: "delete any thing that personally Identifys the person but we
-keep data that [makes] the Ai and ML better"), on both purge paths, for a purged athlete's login
+keep data that [makes] the Ai and ML better"), for a purged athlete's login
 and a purged guardian: SHADOW's memory of the person (`pilot.shadow_user_profiles`), their
 queued jobs, rate-limit buckets and feature-unlock snapshots are deleted (counted as
 `shadow_profiles_deleted`, `shadow_jobs_deleted`, `shadow_rate_limit_buckets_deleted`,
@@ -406,8 +406,8 @@ chat sessions and messages until those are de-identified too (**not yet built**:
 messages / evidence / review-queue de-identification has its migration, shadow-deidentify-keys, and awaits the purge code; `shadow_feedback` has never had an account key and needs no migration). A
 person with no usable name on record cannot be scrubbed, so the turns of or about them are
 deleted (`shadow_chat_audit_deleted`; the rest `shadow_chat_audit_deidentified`). Pinned by
-`shadowDeidentifyPurge.pg.test.ts`; the two paths' statements by
-`shadowDeidentifySource.test.ts`. A playback
+`shadowDeidentifyPurge.pg.test.ts`; the name pattern by `shadowNamePattern.test.ts`, which
+reads the script's own copy. The script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.
@@ -498,7 +498,7 @@ guardian in the organization is not withdrawn by a different adult's account del
 withdrawing that child stays a separate, explicit action (see *Athlete Withdraws* below).
 
 **A guardian's media "no" outlives their record** (Jason 2026-10-05: "Keep the 'no'
-(Recommended)"). When Method 1 hard-deletes a guardian, both purge paths first record that
+(Recommended)"). When Method 1 hard-deletes a guardian, the purge first records that
 guardian's current photo/video consent against each child in
 `pilot.retained_media_consent_restrictions` (a pointer to the surviving waiver, keyed by a
 hash of the guardian record's id, never the id itself, since that is usually their email).

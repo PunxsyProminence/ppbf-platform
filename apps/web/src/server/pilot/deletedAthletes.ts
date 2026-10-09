@@ -100,8 +100,8 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
  *  1. the athlete this gym's login names is marked deleted;
  *  2. the login is deleted and names no athlete row. That is what the
  *     retention purge leaves: when it removes an athlete row it clears
- *     athlete_id on the login that named it (pilot-cleanup-deleted-data.mjs,
- *     purgeExpiredDeletedData), because that is the one moment an athlete_id
+ *     athlete_id on the login that named it (pilot-cleanup-deleted-data.mjs),
+ *     because that is the one moment an athlete_id
  *     can come free -- before it, the deleted row still holds the primary key.
  *     A new child later given the same athlete_id therefore has no link to
  *     the old login, and nothing here compares a date to tell them apart. A
@@ -115,7 +115,7 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
  *     logins. No retention purge had ever run when this was written. OBSERVED
  *     by the read-only check `membership-orphans` (run-checks.yml), which
  *     counts audit rows with event_type 'data_purged' and entity_type
- *     'retention_cleanup' -- the row both purge paths write: staging run
+ *     'retention_cleanup' -- the row the purge writes: staging run
  *     36936795333 (2026-10-01T22:44Z) and production run 36936798184
  *     (2026-10-02T01:20Z) each reported "retention purge history: 0 run(s),
  *     0 account(s) ever purged". (The deletion

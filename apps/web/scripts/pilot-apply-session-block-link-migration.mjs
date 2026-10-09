@@ -68,7 +68,7 @@ function resolveSslConfig() {
 //
 // THE DELETE ACTIONS ARE PART OF READINESS, and that is not decoration. If
 // either key shipped as NO ACTION, this table would silently block
-// dataDeletion.ts's retention purge -- a bare `delete from pilot.athletes`
+// the retention purge (pilot-cleanup-deleted-data.mjs) -- a bare `delete from pilot.athletes`
 // that relies on cascades to carry every child. confdeltype = 'c' is
 // Postgres's code for ON DELETE CASCADE, so a migration applied without it is
 // refused here rather than discovered by a failed purge two years from now.
