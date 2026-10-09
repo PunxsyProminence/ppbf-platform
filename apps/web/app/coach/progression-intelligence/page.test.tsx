@@ -2658,13 +2658,17 @@ describe('"Why?" on a gap card (staff shape of gap-justification)', () => {
     expect(within(why).getByText('Readiness, late window: 5.5')).toBeTruthy();
   });
 
-  test('a gap a coach filed by observation says so instead of showing nothing', async () => {
+  test('a gap with no justification row says no rule numbers are kept, without claiming who filed it', async () => {
     await renderWithAthlete(mockFetchWithJustification([], []));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
     });
     const why = await screen.findByTestId('gap-why-gap-1');
-    expect(within(why).getByText(/filed this gap by observation/)).toBeTruthy();
+    // Five of the seven rules keep no rollup fields (RULE_JUSTIFICATION_FIELDS)
+    // and the gaps list strips detected_from, so "no row" does not mean "a
+    // coach filed it by hand". The sentence must not claim that.
+    expect(within(why).getByText(/No rule numbers are kept for this gap/)).toBeTruthy();
+    expect(within(why).queryByText(/A coach filed this gap/)).toBeNull();
   });
 
   test('a refused read is reported as unreadable, never as "no reasons"', async () => {
@@ -2674,6 +2678,6 @@ describe('"Why?" on a gap card (staff shape of gap-justification)', () => {
     });
     const why = await screen.findByTestId('gap-why-gap-1');
     expect(within(why).getByText(/could not be read/)).toBeTruthy();
-    expect(within(why).queryByText(/by observation/)).toBeNull();
+    expect(within(why).queryByText(/No rule numbers are kept/)).toBeNull();
   });
 });

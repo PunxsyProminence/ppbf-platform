@@ -71,6 +71,21 @@ const ATHLETES: readonly AthleteFixture[] = [
   },
 ];
 
+// A minor another coach is coach of record for. Returned by the reach fake
+// only when a test puts the id in COVERED, standing in for a live coverage
+// grant to this coach (athleteIdsForCoach's second half).
+const OTHER_COACH = 'coach-ortiz@punxsyprominence.org';
+const COVERED_MINOR: AthleteFixture = {
+  organization_id: 'org-1',
+  athlete_id: 'ATH-COVERED',
+  account_id: 'acct-covered',
+  full_name: 'Tomas Reyes',
+  dob: '2012-11-20',
+  coach_id: OTHER_COACH,
+  deleted_at: null,
+};
+let covered: readonly string[] = [];
+
 /**
  * A stand-in for Postgres that actually honours the predicate.
  *
@@ -83,16 +98,19 @@ const ATHLETES: readonly AthleteFixture[] = [
  * route.ts and these tests fail.
  */
 function answerAthletesQuery(sql: string, params: readonly unknown[]) {
-  // athleteIdsForCoach's own select: assigned athletes for this coach.
+  // athleteIdsForCoach's own select: assigned athletes for this coach, UNION
+  // the ids a test has placed under coverage.
   if (/select athlete_id from pilot\.athletes/.test(sql) && !/left join pilot\.accounts/.test(sql)) {
-    return ATHLETES.filter((row) => row.organization_id === params[0] && row.coach_id === params[1])
+    return [...ATHLETES, COVERED_MINOR]
+      .filter((row) => row.organization_id === params[0])
+      .filter((row) => row.coach_id === params[1] || covered.includes(row.athlete_id))
       .filter((row) => row.deleted_at === null)
       .map((row) => ({ athlete_id: row.athlete_id }));
   }
   const excludesSoftDeleted = /and\s+a\.deleted_at\s+is\s+null/i.test(sql);
   const scopedToReach = sql.includes('a.athlete_id = any($2::text[])');
 
-  return ATHLETES.filter((row) => row.organization_id === params[0])
+  return [...ATHLETES, COVERED_MINOR].filter((row) => row.organization_id === params[0])
     .filter((row) => (scopedToReach ? (params[1] as string[]).includes(row.athlete_id) : true))
     .filter((row) => (excludesSoftDeleted ? row.deleted_at === null : true))
     // The real select list does not carry deleted_at, so neither does this.
@@ -147,6 +165,7 @@ async function rosterItems(search = '') {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  covered = [];
   mockRequirePrincipal.mockResolvedValue(principal());
   mockQuery.mockImplementation(async (sql: string, params: readonly unknown[] = []) =>
     (sql.includes('pilot.athletes') ? answerAthletesQuery(sql, params) : []));
@@ -173,7 +192,8 @@ describe('a withdrawn athlete leaves the coach roster', () => {
 
     const items = await rosterItems('?scope=organization');
 
-    expect(items.map((item) => item.athlete_id)).toEqual(['ATH-ACTIVE']);
+    // The other coach's active child is on the gym-wide list, the withdrawn one is not.
+    expect(items.map((item) => item.athlete_id)).toEqual(['ATH-ACTIVE', 'ATH-COVERED']);
   });
 
   // Not just absent from the id list: none of the three things the finding named
@@ -226,7 +246,7 @@ describe('a withdrawn athlete leaves the coach roster', () => {
       `select a.athlete_id from pilot.athletes a where a.organization_id = $1 and a.coach_id = $2`,
       ['org-1', COACH],
     );
-    expect(unfiltered.map((row) => row.athlete_id)).toEqual(['ATH-ACTIVE', 'ATH-WITHDRAWN']);
+    expect(unfiltered.map((row) => row.athlete_id)).toEqual(['ATH-ACTIVE', 'ATH-WITHDRAWN', 'ATH-COVERED']);
   });
 });
 
@@ -316,5 +336,41 @@ describe('the role gate is untouched', () => {
 
     expect(response.status).toBe(403);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+// OD-2026-10-05-024 item 2: a covering coach reaches the covered athletes, so
+// the row comes back. What may be seen ON the row is decided per row and does
+// not move with coverage: a minor's photograph and ring name stay inside the
+// coach-of-record circle (profileVisibility MINOR_CIRCLE), and is_mine stays
+// coach of record. Nothing in this file pinned that before coverage rows
+// existed here, and the relationship is computed inline in the route.
+describe('a covered minor is listed, as a plate', () => {
+  test('the covered child arrives as a row; the face, ring name and is_mine do not come with coverage', async () => {
+    covered = ['ATH-COVERED'];
+
+    const items = await rosterItems();
+
+    expect(items.map((item) => item.athlete_id)).toEqual(['ATH-ACTIVE', 'ATH-COVERED']);
+    const own = items.find((item) => item.athlete_id === 'ATH-ACTIVE');
+    const theirs = items.find((item) => item.athlete_id === 'ATH-COVERED');
+    expect(own).toMatchObject({ is_mine: true, photo_available: true, ring_name: 'Sparks' });
+    expect(theirs).toMatchObject({
+      athlete_id: 'ATH-COVERED',
+      full_name: 'Tomas Reyes',
+      is_mine: false,
+      photo_available: false,
+      ring_name: null,
+    });
+    // The reach list, not a coach_id predicate, is what the roster query ran on.
+    const [sql, params] = mockQuery.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain('a.athlete_id = any($2::text[])');
+    expect(params[1]).toEqual(['ATH-ACTIVE', 'ATH-COVERED']);
+  });
+
+  test('without a grant the other coach\'s child is not on this roster at all', async () => {
+    const items = await rosterItems();
+    expect(items.map((item) => item.athlete_id)).toEqual(['ATH-ACTIVE']);
+    expect(JSON.stringify(items)).not.toContain('Tomas Reyes');
   });
 });

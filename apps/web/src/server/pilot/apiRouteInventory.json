@@ -7909,7 +7909,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2).",
+    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12, reach list route.ts:16-18; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12558,7 +12558,7 @@
     "missingGate": false,
     "looksWrong": "Every athlete-less (unassigned) clip in the gym is listed to any coach; owner-confirmed breadth (2026-08-08), see the route comment.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts:96 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

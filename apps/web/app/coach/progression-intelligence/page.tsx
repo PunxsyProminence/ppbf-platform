@@ -1262,7 +1262,7 @@ export default function CoachProgressionIntelligencePage() {
                             ) : current.unreadable ? (
                               <p className="t-body text-[color:var(--bone-300)]">The reasons behind this gap could not be read.</p>
                             ) : !item ? (
-                              <p className="t-body text-[color:var(--bone-300)]">A coach filed this gap by observation; there are no rule numbers behind it.</p>
+                              <p className="t-body text-[color:var(--bone-300)]">No rule numbers are kept for this gap: it was filed by observation, or by a rule whose evidence is not in the analytics rollup.</p>
                             ) : (
                               <>
                                 <p className="t-data text-[color:var(--bone-300)]">
