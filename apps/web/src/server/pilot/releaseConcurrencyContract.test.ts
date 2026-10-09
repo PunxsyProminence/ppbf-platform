@@ -158,6 +158,8 @@ const OUTSIDE_THE_LOCK = [
   'rescope-library-baseline.yml',
   'retention-cleanup.yml',
   'seed-reference-data.yml',
+  // A tenth writer (P3 PR 1b): the nightly session auto-close, with a group of its own.
+  'session-autoclose.yml',
   // Three more that take a target. Not classified here as writers or readers.
   'backup.yml',
   'check-database.yml',
