@@ -600,7 +600,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Always throws 'Unsupported bootstrap path' (:52) even with a correct key; only effect is rate-limit counter writes (recordDurableFailedAttempt :44, clearDurableRateLimit :51). No account or data created.",
+    "notes": "Always throws 'Unsupported bootstrap path' (:50) even with a correct key; only effect is rate-limit counter writes (reserveAttempts :33, clearDurableRateLimit :48). No account or data created.",
     "mechanical": {
       "sessionGates": [],
       "authorizationGates": [],
@@ -9023,7 +9023,7 @@
     "id": "app/api/pilot/public-interest/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/public-interest",
-    "gate": "none (unauthenticated by design; IP rate limit checkRateLimit/checkDurableRateLimit + honeypot field)",
+    "gate": "none (unauthenticated by design; IP rate limit reserveAttempts, counted before the body is read + honeypot field)",
     "rolesAdmitted": [],
     "athleteData": false,
     "writes": true,

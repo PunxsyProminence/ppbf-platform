@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { readPaymentPlatformConfig } from '@/src/server/pilot/paymentConnect';
+import { CONNECT_NONCE_COOKIE, readPaymentPlatformConfig } from '@/src/server/pilot/paymentConnect';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -75,5 +75,26 @@ test('a configured platform redirects to Stripe with the org-bound state', async
   // The state is verifiable with the same key and names the caller's org.
   const { verifyConnectState } = jest.requireActual('@/src/server/pilot/paymentConnect');
   const claims = verifyConnectState(location.searchParams.get('state') ?? '', 'sk_signing');
-  expect(claims).toMatchObject({ organizationId: 'org-1', lane: 'giving' });
+  expect(claims).toMatchObject({ organizationId: 'org-1', lane: 'giving', accountId: 'acct-1' });
+});
+
+test('the redirect sets a one-time httpOnly nonce cookie that matches the state and binds this session', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockConfig.mockReturnValue({ connectClientId: 'ca_1', platformSecretKey: 'sk_signing', webhookSecret: null });
+
+  const response = await GET(getRequest('lane=giving'));
+
+  const cookie = response.cookies.get(CONNECT_NONCE_COOKIE);
+  expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+  expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/api/pilot/payments/connect/callback' });
+  const state = new URL(response.headers.get('location') ?? '').searchParams.get('state') ?? '';
+  const { verifyConnectState, connectStateBindsTo } = jest.requireActual('@/src/server/pilot/paymentConnect');
+  const claims = verifyConnectState(state, 'sk_signing');
+  const caller = { organizationId: 'org-1', accountId: 'acct-1', sessionToken: 'token', cookieNonce: cookie?.value ?? null };
+  expect(connectStateBindsTo(claims, caller)).toBe(true);
+  expect(connectStateBindsTo(claims, { ...caller, sessionToken: 'other' })).toBe(false);
+
+  // Two starts never share a nonce.
+  const again = await GET(getRequest('lane=giving'));
+  expect(again.cookies.get(CONNECT_NONCE_COOKIE)?.value).not.toBe(cookie?.value);
 });
