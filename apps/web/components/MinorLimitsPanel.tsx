@@ -14,10 +14,11 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // /coach/athlete-limits; it reads nothing until a coach opens it.
 //
 // COACH-SET, NEVER APP-MADE. With no limit set the field is empty and the app
-// offers no suggested number; "No limit set" is said as exactly that, and the
-// AI is told the same (OD-2026-09-21-001: a missing limit means ask the coach).
-// Each type is saved or cleared ON ITS OWN, with the coach's reason, so
-// touching one limit can never erase another.
+// offers no suggested number; "No limit set" is said as exactly that. Each
+// type is saved or cleared ON ITS OWN, with the coach's reason for THAT write
+// (the reason field starts empty; the old reason is shown beside the limit),
+// so touching one limit can never erase another, and a reason given for one
+// write is never recorded against the next.
 //
 // WHO IS A MINOR comes from the server (date of birth; unknown counts as a
 // minor), shown as a label. An adult's limits are recorded the same way and
@@ -47,6 +48,8 @@ export const LIMIT_LABELS: Readonly<Record<LimitType, string>> = {
 /** Mirrors the server's SUPERVISION_TEXT_MAX and NOTE_MAX; the server refuses longer. */
 const SUPERVISION_MAX = 500;
 const NOTE_MAX = 1000;
+/** numeric(8,2): the column's own bound, as the server's NUMBER_MAX. */
+const NUMBER_MAX = 999999.99;
 
 interface LimitRow {
   limit_id: string;
@@ -135,24 +138,31 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
   const [notes, setNotes] = useState<Record<LimitType, string>>(EMPTY);
   const [busy, setBusy] = useState<LimitType | null>(null);
   const [refusal, setRefusal] = useState<{ type: LimitType; message: string } | null>(null);
+  const [saved, setSaved] = useState<LimitType | null>(null);
   // Each read gets a number; only the newest read of an OPEN panel may land,
   // so a reply that arrives after the coach closed the panel, or after a
   // newer read started, is dropped and a panel never reopens itself.
   const latestRead = useRef(0);
   const isOpen = useRef(false);
 
-  const fillForm = useCallback((limits: Record<LimitType, LimitRow | null>) => {
-    // The form starts from the coach's own numbers, never from a suggestion.
-    const next = { ...EMPTY };
-    const nextNotes = { ...EMPTY };
-    for (const type of LIMIT_TYPES) {
-      const row = limits[type];
-      if (!row) continue;
-      next[type] = row.value_text ?? (row.value_number === null ? '' : String(row.value_number));
-      nextNotes[type] = row.note;
-    }
-    setValues(next);
-    setNotes(nextNotes);
+  // The value field starts from the coach's own saved value, never from a
+  // suggestion; the reason field starts empty. After a save only THAT type is
+  // refilled, so typing in the other two is not thrown away.
+  const fillForm = useCallback((limits: Record<LimitType, LimitRow | null>, only?: LimitType) => {
+    const types = only ? [only] : LIMIT_TYPES;
+    setValues((prev) => {
+      const next = { ...prev };
+      for (const type of types) {
+        const row = limits[type];
+        next[type] = row ? row.value_text ?? (row.value_number === null ? '' : String(row.value_number)) : '';
+      }
+      return next;
+    });
+    setNotes((prev) => {
+      const next = { ...prev };
+      for (const type of types) next[type] = '';
+      return next;
+    });
   }, []);
 
   const readCap = useCallback(async (landed: () => boolean) => {
@@ -172,11 +182,13 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
     }
   }, [athleteId]);
 
-  const read = useCallback(async () => {
+  const read = useCallback(async (only?: LimitType) => {
     const ticket = latestRead.current + 1;
     latestRead.current = ticket;
     isOpen.current = true;
-    setReading({ state: 'loading' });
+    // A re-read after a save keeps the sections on screen (no "Reading…"
+    // flash, no lost focus); only the first read of an open shows it.
+    if (!only) setReading({ state: 'loading' });
     const landed = () => isOpen.current && latestRead.current === ticket;
     void readCap(landed);
     try {
@@ -201,7 +213,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
       if (!landed()) return;
       const inForce = limits as Record<LimitType, LimitRow | null>;
       setReading({ state: 'loaded', isMinor: payload.athlete_is_minor, limits: inForce, history: payload.history as LimitRow[] });
-      fillForm(inForce);
+      fillForm(inForce, only);
     } catch {
       // Unknown is never shown as "no limit set".
       if (landed()) setReading({ state: 'unavailable' });
@@ -210,6 +222,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
 
   const toggle = useCallback(() => {
     setRefusal(null);
+    setSaved(null);
     if (isOpen.current) {
       isOpen.current = false;
       setReading({ state: 'closed' });
@@ -221,6 +234,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
   const save = useCallback(
     async (type: LimitType, clear: boolean) => {
       setRefusal(null);
+      setSaved(null);
       let value: number | string | null = null;
       if (!clear) {
         const typed = values[type].trim();
@@ -231,13 +245,20 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
           }
           value = typed;
         } else {
-          // Plain decimal digits only: "1e2" is not a limit a coach typed.
-          // No ceiling of the app's own; the server holds the column's bounds.
-          if (!/^\d+(\.\d{1,2})?$/.test(typed)) {
+          // Plain decimal digits only ("1e2" is not a limit a coach typed);
+          // ".5" and "5." are what a thumb on a tablet produces, so both pass.
+          // No ceiling of the app's own: the only bound is the column's
+          // (numeric(8,2)), said in words here so the server's shape message
+          // is not the coach's only clue.
+          if (!/^(\d+\.?\d{0,2}|\.\d{1,2})$/.test(typed)) {
             setRefusal({ type, message: 'Enter a number, 0 or more, with at most two decimal places — or use Clear to remove the limit.' });
             return;
           }
           value = Number(typed);
+          if (value > NUMBER_MAX) {
+            setRefusal({ type, message: `The record holds numbers up to ${NUMBER_MAX}.` });
+            return;
+          }
         }
       }
       setBusy(type);
@@ -258,7 +279,10 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
         }
         // The read that follows fills the form from the limits now in force,
         // only if the coach has not closed the panel meanwhile.
-        if (isOpen.current) await read();
+        if (isOpen.current) {
+          await read(type);
+          setSaved(type);
+        }
       } catch {
         setRefusal({ type, message: 'The limit was not saved — the connection failed. Nothing changed.' });
       } finally {
@@ -286,7 +310,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
           {reading.state === 'unavailable' ? (
             <div className="mt-[var(--s2)]" role="alert">
               <p className="t-body">
-                This athlete’s limits could not be read just now. Unknown is not “no limit set” — check again before training.
+                <span aria-hidden="true">▲ </span>This athlete’s limits could not be read just now. Unknown is not “no limit set” — check again before training.
               </p>
               <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => void read()}>Check again</button>
             </div>
@@ -304,16 +328,16 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
                 <p className="t-label">Contact level (sparring cap)</p>
                 {capReading.state === 'loading' ? <p className="t-body" role="status">Reading the sparring cap…</p> : null}
                 {capReading.state === 'unavailable' ? (
-                  <p className="t-body" role="alert">The sparring cap could not be read just now. Unknown is not “no cap set”.</p>
+                  <p className="t-body" role="alert"><span aria-hidden="true">▲ </span>The sparring cap could not be read just now. Unknown is not “no cap set”.</p>
                 ) : null}
                 {capReading.state === 'loaded' ? (
                   <p className="t-body">
                     {capReading.cap ? `Cap in force: ${describeCap(capReading.cap)}.` : 'No sparring cap set.'}
                   </p>
                 ) : null}
-                <p className="t-body mt-[var(--s1)]">
-                  Contact level is set on <Link href="/coach/sparring-caps" className="underline">Sparring Caps</Link>, not here.
-                </p>
+                <p className="t-body mt-[var(--s1)]">Contact level is set on the Sparring Caps page, not here.</p>
+                {/* An anchor is outside the kiosk attribute's selector list, so the 55px floor is asked for by class. */}
+                <Link href="/coach/sparring-caps" className="btn btn--ghost min-h-[var(--tap)] mt-[var(--s2)]">Sparring Caps</Link>
               </div>
 
               {LIMIT_TYPES.map((type) => {
@@ -342,13 +366,13 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
                           className="input"
                           inputMode={type === 'supervision' ? 'text' : 'decimal'}
                           maxLength={type === 'supervision' ? SUPERVISION_MAX : 12}
-                          placeholder={type === 'supervision' ? 'In your own words' : 'Blank = no limit'}
+                          placeholder={type === 'supervision' ? 'In your own words' : undefined}
                           value={values[type]}
                           onChange={(event) => setValues((prev) => ({ ...prev, [type]: event.target.value }))}
                         />
                       </div>
                       <div className="field">
-                        <label className="t-label" htmlFor={`${fieldId}-note`}>Reason (staff only)</label>
+                        <label className="t-label" htmlFor={`${fieldId}-note`}>Reason for this change (staff only)</label>
                         <input
                           id={`${fieldId}-note`}
                           type="text"
@@ -369,6 +393,9 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
                         </button>
                       ) : null}
                     </div>
+                    {saved === type && refusal?.type !== type ? (
+                      <p className="t-body mt-[var(--s2)] font-semibold" role="status"><span aria-hidden="true">✓ </span>Saved</p>
+                    ) : null}
                     {refusal?.type === type ? (
                       <div className="mt-[var(--s2)]" role="alert">
                         {/* ▲ is the CANNOT_BE_DONE glyph, never the medical red. */}

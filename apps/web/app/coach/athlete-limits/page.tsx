@@ -104,8 +104,10 @@ export default function AthleteLimitsPage() {
         )}
 
         <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
-          <Link href="/coach/sparring-caps" className="btn btn--ghost">Sparring Caps</Link>
-          <Link href="/coach/sports-medicine" className="btn btn--ghost">Clearance Board</Link>
+          {/* Anchors are outside the kiosk attribute's selector list, so the
+              55px floor is asked for by class (min-h, as the session bar does). */}
+          <Link href="/coach/sparring-caps" className="btn btn--ghost min-h-[var(--tap)]">Sparring Caps</Link>
+          <Link href="/coach/sports-medicine" className="btn btn--ghost min-h-[var(--tap)]">Clearance Board</Link>
         </div>
         <WorkAxis />
       </div>

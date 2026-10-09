@@ -6,12 +6,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import MinorLimitsPanel, { LIMIT_TYPES, describeLimit } from './MinorLimitsPanel';
-// athleteMinorLimits.ts imports pg through db.ts, which jsdom cannot load, so
-// its three constants are pinned here; the server module's values are the
-// same strings (MINOR_LIMIT_TYPES, SUPERVISION_TEXT_MAX = 500, NOTE_MAX = 1000).
-const MINOR_LIMIT_TYPES = ['heat_exposure_minutes_per_session', 'weight_cut_max_percent_body_weight', 'supervision'];
-const SUPERVISION_TEXT_MAX = 500;
-const NOTE_MAX = 1000;
+// The server's own constants, so a fourth type or a changed bound fails here.
+// athleteMinorLimits.ts reaches pg through db.ts, which jsdom cannot load, so
+// db is stubbed; nothing below calls it.
+jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn(), withTransaction: jest.fn() }));
+import { MINOR_LIMIT_TYPES, NOTE_MAX, SUPERVISION_TEXT_MAX } from '@/src/server/pilot/athleteMinorLimits';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -134,6 +133,47 @@ test('an adult is labelled adult, from the server, and limits still show', async
   expect(screen.getAllByRole('button', { name: 'Clear' })).toHaveLength(1);
 });
 
+test('with a limit in force the value field starts from it, but the reason field starts EMPTY, so an old reason is never recorded against a new write', async () => {
+  serve({
+    limits: () => respond({ ok: true, athlete_is_minor: true, limits: { ...NONE, heat_exposure_minutes_per_session: HEAT }, history: [HEAT] }),
+  });
+  openPanel();
+  await screen.findByText('Reason: Asthma; parent asked');
+  expect((document.getElementById('minor-limits-ath-1-heat_exposure_minutes_per_session') as HTMLInputElement).value).toBe('20');
+  expect((document.getElementById('minor-limits-ath-1-heat_exposure_minutes_per_session-note') as HTMLInputElement).value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(bodies[0]).toEqual({ athlete_id: 'ath-1', limit_type: 'heat_exposure_minutes_per_session', value: null, note: '' });
+});
+
+test('saving one type keeps what the coach has typed, unsaved, in the other two, says Saved, and shows no Reading flash', async () => {
+  serve();
+  openPanel();
+  await screen.findByText(/Minor — these limits/);
+  const heat = document.getElementById('minor-limits-ath-1-heat_exposure_minutes_per_session') as HTMLInputElement;
+  const heatNote = document.getElementById('minor-limits-ath-1-heat_exposure_minutes_per_session-note') as HTMLInputElement;
+  fireEvent.change(heat, { target: { value: '30' } });
+  fireEvent.change(heatNote, { target: { value: 'not saved yet' } });
+  fireEvent.change(document.getElementById('minor-limits-ath-1-supervision')!, { target: { value: 'In view' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save supervision' }));
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(screen.queryByText('Reading…')).toBeNull();
+  expect(await screen.findByText('Saved')).toBeTruthy();
+  expect(calls.filter((c) => c.url === `${LIMITS_URL}?athlete_id=ath-1`)).toHaveLength(2);
+  expect(heat.value).toBe('30');
+  expect(heatNote.value).toBe('not saved yet');
+});
+
+test.each([['.5', 0.5], ['5.', 5], ['007', 7], ['2.50', 2.5]])('accepts %s as a coach would type it on a tablet', async (typed, sent) => {
+  serve();
+  openPanel();
+  await screen.findByText(/Minor — these limits/);
+  fireEvent.change(document.getElementById('minor-limits-ath-1-weight_cut_max_percent_body_weight')!, { target: { value: typed } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Save limit' })[1]);
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(bodies[0].value).toBe(sent);
+});
+
 test('the contact cap is shown read-only with a link to its own page, and is never set here', async () => {
   serve({
     caps: () => respond({ ok: true, cap: { cap_id: 'cap-1', highest_allowed_stage: 'controlled_sparring', max_hard_open_sessions_per_7_days: 1 }, history: [] }),
@@ -186,6 +226,7 @@ test.each([
   ['three decimals', 'weight_cut_max_percent_body_weight', '2.555', /at most two decimal places/],
   ['a negative', 'heat_exposure_minutes_per_session', '-5', /Enter a number, 0 or more/],
   ['blank supervision', 'supervision', '   ', /Write the supervision you require/],
+  ['a number past the column', 'heat_exposure_minutes_per_session', '1000000', /holds numbers up to 999999\.99/],
 ])('refuses %s on screen and sends nothing', async (_label, type, typed, message) => {
   serve();
   openPanel();
@@ -228,6 +269,8 @@ test.each([
   openPanel();
   expect(await screen.findByText(/could not be read just now\. Unknown is not “no limit set”/)).toBeTruthy();
   expect(screen.queryByText(/No limit set/)).toBeNull();
+  // Law 3: the state carries a glyph as well as words.
+  expect(screen.getByRole('alert').textContent).toContain('▲');
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
   await waitFor(() => expect(calls.filter((c) => c.url.startsWith(LIMITS_URL))).toHaveLength(2));
 });
