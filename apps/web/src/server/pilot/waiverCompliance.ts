@@ -1,6 +1,7 @@
 import type { PoolClient, QueryResultRow } from 'pg';
 
 import { query } from './db';
+import { checkGuardianMediaConsent, type ConsentCheckResult } from './guardianConsent';
 
 /**
  * Capability #151: an org-wide compliance rollup over pilot.waivers.
@@ -21,6 +22,28 @@ import { query } from './db';
  */
 export const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 export type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
+
+/**
+ * The one tracked type NOT read from the newest pilot.waivers row.
+ *
+ * photo_media is guardian media consent: the gates that decide whether a
+ * child's footage may be approved, published or played read it guardian by
+ * guardian (guardianConsent.ts checkGuardianMediaConsent -- every linked
+ * guardian's own latest row must be signed) and ignore rows with no
+ * parent_id. The register form at /admin/consent used to file exactly such
+ * rows, so this rollup read them as Signed while every media gate refused.
+ * Owner ruling (Jason 2026-10-07, OD-2026-10-07-009, "Remove it, send to
+ * consent screen"): that form no longer offers photo_media, and this rollup
+ * reads the real consent check instead. Rows already stored that way stop
+ * reading Signed here; they are not deleted.
+ *
+ * Spelled here rather than imported from guardianConsent.ts: that module
+ * imports normalizeWaiverStatusText from this one, and a top-level use of a
+ * value from a module in an import cycle reads undefined on one of the two
+ * load orders. waiverCompliance.test.ts pins the two spellings equal.
+ */
+export const MEDIA_CONSENT_TRACKED_TYPE: TrackedWaiverType = 'photo_media';
+const ROW_READ_WAIVER_TYPES = TRACKED_WAIVER_TYPES.filter((type) => type !== MEDIA_CONSENT_TRACKED_TYPE);
 
 /**
  * The status vocabulary, as a runtime list rather than a bare union, so
@@ -97,7 +120,7 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
        -- permanent red row on a worklist nobody can ever clear.
        and a.deleted_at is null
      order by a.full_name, a.athlete_id`,
-    [organizationId, TRACKED_WAIVER_TYPES],
+    [organizationId, ROW_READ_WAIVER_TYPES],
   );
 
   const byAthlete = new Map<string, AthleteWaiverStatus>();
@@ -135,7 +158,47 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
     }
   }
 
-  return Array.from(byAthlete.values());
+  const entries = Array.from(byAthlete.values());
+  // One consent check per athlete, the same fan-out the consent desk's own
+  // audit makes (guardianConsent.ts listOrganizationConsentStatus). The row
+  // read above deliberately did not fetch photo_media, so nothing here can
+  // fall back to a stored row if this read fails: it throws, as the header on
+  // getAthleteWaiverStatus says a consent read must.
+  await Promise.all(
+    entries.map(async (entry) => {
+      const consent = await checkGuardianMediaConsent(organizationId, entry.athleteId);
+      entry.waivers[MEDIA_CONSENT_TRACKED_TYPE] = mediaConsentAsWaiverStatus(consent);
+    }),
+  );
+
+  return entries;
+}
+
+/**
+ * The media consent check, as one word from this module's vocabulary.
+ *
+ * `ok` is the gates' own answer (every linked guardian signed, retained
+ * restrictions lifted), so it is 'signed' -- including a photo-only consent,
+ * which the worklist does not distinguish; /parent/safety does, with its
+ * extra 'photo_only' word. When not ok, a refusal somebody made outranks
+ * nothing on file: 'withdrawn' if any guardian, or a purged former guardian
+ * whose choice still stands, withdrew; 'declined' if any declined; otherwise
+ * 'missing' -- which covers an athlete with no guardians on file (the check
+ * reads that as unverifiable, never as consented) and a guardian who has not
+ * answered. Statuses are normalised the way the gates normalise them.
+ */
+export function mediaConsentAsWaiverStatus(consent: ConsentCheckResult): WaiverStatus {
+  if (consent.ok) {
+    return 'signed';
+  }
+  const answers = [...consent.perGuardian, ...consent.retained].map((guardian) => normalizeWaiverStatusText(guardian.status));
+  if (answers.includes('withdrawn')) {
+    return 'withdrawn';
+  }
+  if (answers.includes('declined')) {
+    return 'declined';
+  }
+  return 'missing';
 }
 
 /**
