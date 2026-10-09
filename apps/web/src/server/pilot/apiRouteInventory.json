@@ -390,6 +390,32 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/accounts/deactivate/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/accounts/deactivate",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer + not self + same organization",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Owner ruling OD-2026-10-07-009: an organization admin deactivates/reactivates a coach, staff or volunteer in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, athlete, parent, board and the caller's own account are refused (403), an unknown account 404. setAccountActiveStatus revokes the target's sessions; audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/admin/accounts/revoke/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/accounts/revoke",
