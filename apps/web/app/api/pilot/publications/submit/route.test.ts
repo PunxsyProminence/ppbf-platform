@@ -232,6 +232,22 @@ describe('POST /api/pilot/publications/submit', () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
+  // A draft made before create compared the two (f8729bf4, 2026-07-31) can
+  // name one child on another child's video. Every later consent check reads
+  // the child the publication names, so the child on film would be skipped.
+  test('a draft whose video belongs to a different athlete cannot enter the queue', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(draftRow({ athlete_id: 'ath-1' }));
+    mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vid-1', athlete_id: 'ath-2', status: 'ready' });
+
+    const res = await POST(postRequest({ publication_id: 'pub-1' }));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; code?: string };
+    expect(body.code).toBe('VIDEO_ATHLETE_MISMATCH');
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
   test('a failed audit write does not fail a submit that already committed', async () => {
     // The CAS has committed by the time the audit insert runs. A lost audit
     // row is an operator gap, not a reason to tell the coach their submit

@@ -469,6 +469,32 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect(mockDecide).not.toHaveBeenCalled();
     });
 
+    // A publication drafted before create compared the two (f8729bf4,
+    // 2026-07-31) can name one child on another child's video. Approval's
+    // consent checks read the named child, so the child on film is skipped.
+    test('approve is refused with 409 when the video belongs to a different athlete, before any consent check', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValueOnce({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-2', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { code?: string }).code).toBe('VIDEO_ATHLETE_MISMATCH');
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+      expect(mockCoversVideo).not.toHaveBeenCalled();
+      expect(mockDecide).not.toHaveBeenCalled();
+    });
+
+    test('reject still works on a mismatched item, so the queue can be cleared', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-2', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Wrong athlete named.' }));
+
+      expect(response.status).toBe(200);
+      expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'rejected' }));
+    });
+
     test('reject still works on an unattributed item, so the queue can be cleared', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: null, blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
