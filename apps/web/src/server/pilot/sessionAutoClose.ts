@@ -258,6 +258,44 @@ export async function closeInactiveSessions(
   });
 }
 
+/** What one scheduled run did, for the one JSON line the workflow log keeps. No ids: counts only. */
+export interface AutoCloseSweepSummary {
+  readonly mode: 'dry_run' | 'applied';
+  readonly window_minutes: number;
+  readonly organizations: number;
+  /** Sessions the run would close (dry run) or closed (applied). */
+  readonly sessions: number;
+  readonly per_organization: ReadonlyArray<{ readonly organization_id: string; readonly sessions: number }>;
+}
+
+/**
+ * The scheduled trigger: every organization, one after another, each in its
+ * own transaction, so one organization's failure cannot hold or undo
+ * another's. Dry run reads the candidates and writes nothing; applied closes
+ * them. The summary carries counts and organization ids only -- never a
+ * session or athlete id, because it is printed into a CI log.
+ */
+export async function runAutoCloseSweep(options: { readonly apply: boolean; readonly now?: Date }): Promise<AutoCloseSweepSummary> {
+  const now = resolveNow(options);
+  const organizations = await query<{ organization_id: string }>(
+    'select organization_id from pilot.organizations order by organization_id',
+  );
+  const perOrganization: Array<{ organization_id: string; sessions: number }> = [];
+  for (const { organization_id } of organizations) {
+    const rows = options.apply
+      ? await closeInactiveSessions(organization_id, { now, trigger: 'scheduled' })
+      : await findInactiveSessions(organization_id, { now });
+    perOrganization.push({ organization_id, sessions: rows.length });
+  }
+  return {
+    mode: options.apply ? 'applied' : 'dry_run',
+    window_minutes: SESSION_INACTIVITY_WINDOW_MINUTES,
+    organizations: organizations.length,
+    sessions: perOrganization.reduce((sum, entry) => sum + entry.sessions, 0),
+    per_organization: perOrganization,
+  };
+}
+
 /**
  * The lazy trigger for a read path. Sweeps and swallows: a failed sweep is
  * logged as one structured line and the read it sits in front of still

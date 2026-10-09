@@ -107,6 +107,7 @@
     "pilot:backfill-chunk-embeddings": "node scripts/pilot-backfill-chunk-embeddings.mjs",
     "pilot:apply-scheduler-race": "node scripts/pilot-apply-scheduler-race-migration.mjs",
     "session:cleanup": "tsx scripts/pilot-cleanup-sessions.ts",
+    "pilot:close-inactive-sessions": "tsx scripts/pilot-close-inactive-sessions.ts",
     "calibration:bootstrap": "tsx scripts/pilot-bootstrap-calibration-clip.ts",
     "content:validate": "tsx scripts/pilot-content-import.ts validate",
     "content:prepare": "tsx scripts/pilot-content-import.ts prepare",

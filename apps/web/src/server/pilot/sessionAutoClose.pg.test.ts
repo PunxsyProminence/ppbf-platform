@@ -61,6 +61,7 @@ import {
   SESSION_INACTIVITY_WINDOW_MINUTES,
   closeInactiveSessions,
   findInactiveSessions,
+  runAutoCloseSweep,
 } from './sessionAutoClose';
 
 jest.setTimeout(180_000);
@@ -574,6 +575,41 @@ describe('what the sweep leaves alone', () => {
       expect(await closeInactiveSessions(ORG_A, { now: minutesAfter(5 + WINDOW), trigger: 'scheduled' })).toHaveLength(1);
       expectAutoClosed(await readSession(client, ORG_A, 'sess-re'), reopenedAt);
       expect(await autoCloseAuditRows(client, ORG_A, 'sess-re')).toHaveLength(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the scheduled run covers every organization: dry run counts, apply closes, and the summary carries no ids', async () => {
+    const client = await freshDatabase('autoclose_scheduled');
+    try {
+      await checkIn(client, ORG_A, ATHLETE_A1, 'sess-s1', minutesBefore(40));
+      await checkIn(client, ORG_A, ATHLETE_A2, 'sess-s2', minutesBefore(5));
+      await checkIn(client, ORG_B, ATHLETE_B1, 'sess-s3', minutesBefore(25));
+
+      const dry = await runAutoCloseSweep({ apply: false, now: NOW });
+      expect(dry).toEqual({
+        mode: 'dry_run',
+        window_minutes: WINDOW,
+        organizations: 2,
+        sessions: 2,
+        per_organization: [
+          { organization_id: ORG_A, sessions: 1 },
+          { organization_id: ORG_B, sessions: 1 },
+        ],
+      });
+      expectOpen(await readSession(client, ORG_A, 'sess-s1'));
+      expectOpen(await readSession(client, ORG_B, 'sess-s3'));
+
+      const applied = await runAutoCloseSweep({ apply: true, now: NOW });
+      expect(applied).toEqual({ ...dry, mode: 'applied' });
+      expect(JSON.stringify(applied)).not.toMatch(/sess-|ath-/);
+      expectAutoClosed(await readSession(client, ORG_A, 'sess-s1'), minutesBefore(40));
+      expectAutoClosed(await readSession(client, ORG_B, 'sess-s3'), minutesBefore(25));
+      expectOpen(await readSession(client, ORG_A, 'sess-s2'));
+      expect((await autoCloseAuditRows(client, ORG_B, 'sess-s3'))[0]?.details).toMatchObject({ trigger: 'scheduled' });
+
+      expect(await runAutoCloseSweep({ apply: true, now: NOW })).toMatchObject({ sessions: 0 });
     } finally {
       await client.end();
     }
