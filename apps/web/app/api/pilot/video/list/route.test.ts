@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -15,6 +16,15 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+// The coach's reach list is faked at the access contract (athleteIdsForCoach:
+// coach of record UNION active coverage); every other access.ts gate stays
+// real. Empty by default so the tests that only read the SQL shape need not
+// set it.
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, athleteIdsForCoach: jest.fn(async () => []) };
+});
+
 // The tagged-clip predicate (videoClipTags.ts). Doubled with a sentinel so
 // these tests can see WHERE it lands; the embedded-pg suite proves the real
 // predicate, and that it is empty before the migration is applied.
@@ -25,6 +35,7 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
+const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -135,21 +146,28 @@ describe('GET /api/pilot/video/list', () => {
     expect(res.status).toBe(403);
   });
 
-  test('coach without athlete_id sees their assigned athletes AND unassigned video', async () => {
+  test('coach without athlete_id sees the athletes they reach (own and covered) AND unassigned video', async () => {
     // The old name for this test said "scoped to assigned athletes only",
     // which the query has never done -- it also returns athlete_id is null.
     // A test name is where the next reader forms their belief about scope, so
     // it now says what the SQL actually does. The breadth is intended and
     // owner-confirmed (2026-08-08); see the route's own comment for why.
+    //
+    // The assigned half is athleteIdsForCoach's list (coach of record UNION
+    // active coverage), passed as an array parameter: the covered athlete's
+    // footage is in, and the SQL no longer narrows on coach_id by itself.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockAthleteIdsForCoach.mockResolvedValueOnce(['ath-own', 'ath-covered']);
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(request());
     expect(res.status).toBe(200);
 
+    expect(mockAthleteIdsForCoach).toHaveBeenCalledWith('org-1', 'acct-1');
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toEqual(expect.stringContaining('coach_id = $2'));
+    expect(sql).toEqual(expect.stringContaining('athlete_id = any($2::text[])'));
+    expect(sql).not.toEqual(expect.stringContaining('coach_id = $2'));
     expect(sql).toEqual(expect.stringContaining('athlete_id is null'));
-    expect(params).toEqual(['org-1', 'acct-1', 50]);
+    expect(params).toEqual(['org-1', ['ath-own', 'ath-covered'], 50]);
   });
 
   test('the coach listing deliberately does NOT pin status, unlike athlete and parent', async () => {

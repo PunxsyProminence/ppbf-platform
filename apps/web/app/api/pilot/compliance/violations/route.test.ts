@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
+import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -25,7 +26,18 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
 
+// The coach's reach list is faked at the access contract (athleteIdsForCoach:
+// coach of record UNION active coverage); every other access.ts gate stays
+// real. Before this mock the coach-scope test below passed by accident: the
+// helper's own `coach_id = $2` select satisfied an assertion meant for the
+// violations query.
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, athleteIdsForCoach: jest.fn(async () => []) };
+});
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockWithTransaction = withTransaction as jest.Mock;
@@ -87,15 +99,18 @@ describe('GET /api/pilot/compliance/violations', () => {
     expect(res.status).toBe(403);
   });
 
-  test('unfiltered coach request is scoped to assigned athletes only', async () => {
+  test('unfiltered coach request is scoped to the athletes the coach reaches: own and covered', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockAthleteIdsForCoach.mockResolvedValueOnce(['ath-own', 'ath-covered']);
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(getRequest());
     expect(res.status).toBe(200);
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('coach_id ='),
-      expect.arrayContaining(['acct-1']),
-    );
+    expect(mockAthleteIdsForCoach).toHaveBeenCalledWith('org-1', 'acct-1');
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('athlete_id = any($2::text[])');
+    expect(sql).not.toContain('coach_id');
+    expect(params[1]).toEqual(['ath-own', 'ath-covered']);
   });
 
   test('unfiltered organization_admin request is org-wide, not coach-scoped', async () => {
@@ -103,7 +118,8 @@ describe('GET /api/pilot/compliance/violations', () => {
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(getRequest());
     expect(res.status).toBe(200);
-    expect(mockQuery).toHaveBeenCalledWith(expect.not.stringContaining('coach_id ='), expect.anything());
+    expect(mockAthleteIdsForCoach).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledWith(expect.not.stringContaining('any($'), expect.anything());
   });
 
   describe('limit validation', () => {

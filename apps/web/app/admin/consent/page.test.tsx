@@ -386,3 +386,27 @@ it('puts no ghost button on the paper', async () => {
     .filter((value) => value.split(/\s+/).includes('btn--ghost'));
   expect(ghostClasses).toEqual(['btn btn--ghost']);
 });
+
+/* ---- Photo and media leaves the register (Jason 2026-10-07, OD-2026-10-07-009) ---- */
+
+it('no longer offers "Photo and media" as something to record, and says where it is recorded', async () => {
+  await renderAndPickAthlete(mockApi());
+
+  const what = screen.getByLabelText('What was signed') as HTMLSelectElement;
+  const offered = Array.from(what.options).map((option) => option.value);
+  expect(offered).toEqual(['general', 'medical_release', 'travel']);
+  expect(offered).not.toContain('photo_media');
+
+  const pointer = screen.getByRole('link', { name: 'Guardian Media Consent desk' });
+  expect(pointer.getAttribute('href')).toBe('/admin/athlete-consent');
+});
+
+it('still names an old photo_media row in the register, marked as not counted', async () => {
+  await renderAndPickAthlete(mockApi({
+    waivers: [{ ...WAIVER_ON_FILE, waiver_type: 'photo_media', status: 'signed' }],
+  }));
+
+  expect(await screen.findByText('Photo and media')).toBeTruthy();
+  expect(screen.getByText(/not counted/)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'consent desk' }).getAttribute('href')).toBe('/admin/athlete-consent');
+});

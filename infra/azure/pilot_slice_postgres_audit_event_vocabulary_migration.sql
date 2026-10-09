@@ -6,6 +6,12 @@
 -- since the SHADOW research-requirement upload path was built but the constraint
 -- never allowed.
 --
+-- Re-run (idempotent) whenever the vocabulary grows. Latest addition:
+-- 'shadow_review_exchange_read' (W5, 2026-10-08) -- the audit row written when
+-- an organization admin reads the one flagged exchange behind a SHADOW
+-- human-review ticket. Apply this before deploying that code, or every such
+-- read fails on 23514 and the reviewer sees nothing.
+--
 -- THE BUG THIS FIXES, concretely: apps/web/app/api/pilot/shadow/upload/route.ts
 -- classifies an upload as a research requirement, writes the requirement row,
 -- and then calls writePilotAuditEvent with event_type
@@ -67,7 +73,8 @@ alter table pilot.audit_events
     'data_purged',
     'payment_account_connected',
     'payment_account_disconnected',
-    'microsoft_identity_mismatch'
+    'microsoft_identity_mismatch',
+    'shadow_review_exchange_read'
   ));
 
 comment on column pilot.audit_events.event_type is

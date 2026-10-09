@@ -300,7 +300,7 @@ describe('verifyCompletion', () => {
   test('scopes the update by organization, not by completion id alone', async () => {
     await verifyCompletion('c-1', 'coach-1', true, 'org-1');
 
-    const [sql, params] = mockQuery.mock.calls[0];
+    const [sql, params] = currentClient.query.mock.calls[0];
     expect(sql).toContain('organization_id = $5');
     expect(params).toContain('org-1');
   });
@@ -310,7 +310,7 @@ describe('verifyCompletion', () => {
 
     // The unscoped statement was a single line ending at the completion id.
     // If it ever comes back, this fails rather than waiting for a breach.
-    const [sql] = mockQuery.mock.calls[0];
+    const [sql] = currentClient.query.mock.calls[0];
     expect(sql).not.toMatch(/where\s+completion_id\s*=\s*\$4\s*(returning|$)/i);
   });
 
@@ -318,9 +318,40 @@ describe('verifyCompletion', () => {
   // not exist, so a probe cannot enumerate another gym's records by comparing
   // "not found" against "not yours".
   test('returns null when no row matched, so the route can hide the difference', async () => {
-    mockQuery.mockResolvedValueOnce([]);
-
     await expect(verifyCompletion('c-other-gym', 'coach-1', true, 'org-1')).resolves.toBeNull();
+    // Nothing matched, so no assignment is touched.
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+  });
+
+  // Owner ruling 2026-10-05: a disputed completion does not count toward its
+  // assignment until resolved. The flip must recompute the assignment in the
+  // same transaction, and the recount must leave disputed logs out.
+  test('a dispute recomputes the assignment in the same transaction, counting no disputed log', async () => {
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [{ completion_id: 'c-1', assignment_id: 'a-1', verification_status: 'disputed' }] })
+      .mockResolvedValueOnce({ rows: [{ frequency_per_week: 1, status: 'completed' }] })
+      .mockResolvedValueOnce({ rows: [{ n: '0' }] });
+
+    await verifyCompletion('c-1', 'coach-1', false, 'org-1');
+
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    const [countSql] = currentClient.query.mock.calls[2];
+    expect(countSql).toMatch(/verification_status\s*<>\s*'disputed'/);
+    const [updateSql, updateParams] = currentClient.query.mock.calls[3];
+    expect(updateSql).toContain('update pilot.drill_assignments');
+    // Completed work with nothing counted left reopens as assigned at 0%.
+    expect(updateParams).toEqual([0, 'assigned', 'org-1', 'a-1']);
+  });
+
+  test('completed work a dispute drops under 100% reopens as in progress', async () => {
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [{ completion_id: 'c-2', assignment_id: 'a-1', verification_status: 'disputed' }] })
+      .mockResolvedValueOnce({ rows: [{ frequency_per_week: 2, status: 'completed' }] })
+      .mockResolvedValueOnce({ rows: [{ n: '1' }] });
+
+    await verifyCompletion('c-2', 'coach-1', false, 'org-1');
+
+    expect(currentClient.query.mock.calls[3][1]).toEqual([50, 'in_progress', 'org-1', 'a-1']);
   });
 });
 
