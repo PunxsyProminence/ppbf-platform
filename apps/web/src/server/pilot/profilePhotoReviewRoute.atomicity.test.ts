@@ -182,6 +182,13 @@ function installEmulator(): void {
       // route actually sent, so a probe that drops one fails here.
       expect(sql).toMatch(/details->>'action' = 'portrait_review_image_viewed'/);
       expect(sql).toMatch(/details->>'photo_uploaded_at' = \$4/);
+      // Every predicate the decision rests on, read from the SQL itself: the
+      // emulator below decides from the params, so a probe that dropped one
+      // of these would otherwise still pass.
+      expect(sql).toMatch(/organization_id = \$1/);
+      expect(sql).toMatch(/actor_account_id = \$2/);
+      expect(sql).toMatch(/entity_type = 'account_profile_photo'/);
+      expect(sql).toMatch(/entity_id = \$3/);
       const [org, actor, subject, uploadedAt] = params as string[];
       const hit = org === ORG && subject === SUBJECT
         && views.some((view) => view.actor === actor && view.uploadedAt === uploadedAt);
@@ -380,7 +387,18 @@ describe('POST /api/pilot/profile/photo/review -- a release rests on a look at T
 
   test('staff releasing their OWN portrait need no look (OD-2026-10-06-005, CL-A20)', async () => {
     views = [];
-    seedRow({ account_id: SUBJECT });
+    // A staff member's own portrait: an adult login with no athlete record.
+    mockRequirePrincipal.mockResolvedValue(
+      { accountId: SUBJECT, role: 'coach', organizationId: ORG, athleteId: null } as never,
+    );
+    mockGetSubjectIdentity.mockResolvedValue({
+      accountId: SUBJECT,
+      fullName: 'Sample Coach',
+      athleteId: null,
+      dob: null,
+      coachAccountId: null,
+      memberSince: null,
+    });
     mockResolveRelationship.mockResolvedValue('self');
 
     const response = await POST(decisionRequest('release'));

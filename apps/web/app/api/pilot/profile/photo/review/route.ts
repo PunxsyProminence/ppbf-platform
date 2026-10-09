@@ -161,8 +161,10 @@ export async function POST(request: NextRequest) {
     //
     // 'self' is exempt: a staff member releasing their OWN portrait has
     // already seen it, and OD-2026-10-06-005 (CL-A20, "Leave as is") keeps
-    // that. Only staff roles pass requireRole above, so 'self' is never a
-    // child. Block is never gated: refusing is never slowed.
+    // that. Only staff roles pass requireRole above, so 'self' is a staff
+    // login. That login is a child only if a minor athlete's account was
+    // given a staff role, which the account writes are meant to refuse.
+    // Block is never gated: refusing is never slowed.
     if (decision === 'release' && relationship !== 'self') {
       const viewed = await query<{ audit_id: string }>(
         `select audit_id
