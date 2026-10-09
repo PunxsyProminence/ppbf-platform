@@ -21,7 +21,7 @@ import {
   updateShadowUserProfile,
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
-import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
+import { buildShadowContext, loadAthleteLimitsForShadow } from '@/src/server/pilot/shadowContextBuilder';
 import { personalizationAllowed } from '@/src/server/pilot/shadowPersonalizationGate';
 import { describeDeployment, sessionTypeToTier, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
@@ -1160,11 +1160,22 @@ async function handleShadowChat(
     // takes only role/id/org/athlete fields), so awaiting them one after
     // another on every chat turn -- the platform's highest-traffic path --
     // was paying their summed latency instead of their max.
-    const [userProfile, unlockState, roleBasedContext] = await Promise.all([
+    // The coach-set limits read joins the same batch: it takes the same
+    // role/id/org/athlete fields and nothing else, gates on role BEFORE
+    // reading (athlete and parent chats cause no read: OD-2026-10-08-007 Q6),
+    // and never throws.
+    const [userProfile, unlockState, roleBasedContext, athleteLimits] = await Promise.all([
       getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole),
       evaluateShadowUnlockState({ organizationId, accountId: userId }).catch(() => null),
       retrieveShadowContext({
         userRole,
+        userId,
+        organizationId,
+        actorAthleteId: principal.athleteId,
+        athleteId,
+      }),
+      loadAthleteLimitsForShadow({
+        userRole: userRole as PilotRole,
         userId,
         organizationId,
         actorAthleteId: principal.athleteId,
@@ -1185,6 +1196,7 @@ async function handleShadowChat(
       // `.catch(() => null)` above -- resolves to false: "could not determine"
       // is not "unlocked".
       personalizationEnabled: personalizationAllowed(unlockState),
+      athleteLimits,
     });
 
     if (!roleBasedContext.authorized) {
