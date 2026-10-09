@@ -5,6 +5,10 @@ import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   buildAuthorizeUrl,
+  CONNECT_NONCE_COOKIE,
+  CONNECT_NONCE_COOKIE_PATH,
+  CONNECT_STATE_TTL_SECONDS,
+  newConnectNonce,
   readPaymentPlatformConfig,
   signConnectState,
 } from '@/src/server/pilot/paymentConnect';
@@ -41,16 +45,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Bound to this admin and session, plus a one-time nonce only this
+    // browser holds (see paymentConnect.ts). SameSite=Lax still sends the
+    // cookie on Stripe's top-level redirect back to the callback.
+    const nonce = newConnectNonce();
     const state = signConnectState(
-      { organizationId: principal.organizationId, lane },
+      {
+        organizationId: principal.organizationId,
+        lane,
+        accountId: principal.accountId,
+        sessionToken: principal.sessionToken,
+        nonce,
+      },
       config.platformSecretKey,
     );
     const redirectUri = `${request.nextUrl.origin}/api/pilot/payments/connect/callback`;
 
-    return NextResponse.redirect(
+    const response = NextResponse.redirect(
       buildAuthorizeUrl({ connectClientId: config.connectClientId, state, redirectUri }),
       { status: 302 },
     );
+    response.cookies.set({
+      name: CONNECT_NONCE_COOKIE,
+      value: nonce,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: CONNECT_NONCE_COOKIE_PATH,
+      maxAge: CONNECT_STATE_TTL_SECONDS,
+    });
+    return response;
   } catch (error) {
     return jsonError(error);
   }

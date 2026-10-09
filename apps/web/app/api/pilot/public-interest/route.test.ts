@@ -18,10 +18,7 @@ jest.mock('@/src/server/pilot/publicInterest', () => {
 
 jest.mock('@/src/server/pilot/rateLimit', () => ({
   getClientIp: () => '203.0.113.1',
-  checkRateLimit: () => ({ isLimited: false }),
-  recordFailedAttempt: jest.fn(),
-  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
-  recordDurableFailedAttempt: jest.fn(async () => ({ delayMs: 1000 })),
+  reserveAttempts: jest.fn(async () => ({ isLimited: false })),
 }));
 
 const create = createPublicInterestSubmission as jest.Mock;

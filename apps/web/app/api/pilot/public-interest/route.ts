@@ -4,13 +4,7 @@ import {
   createPublicInterestSubmission,
   PublicInterestValidationError,
 } from '@/src/server/pilot/publicInterest';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  getClientIp,
-  recordDurableFailedAttempt,
-  recordFailedAttempt,
-} from '@/src/server/pilot/rateLimit';
+import { getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -56,28 +50,24 @@ export async function POST(request: NextRequest) {
   const ipKey = `public_interest_ip:${clientIp}`;
 
   try {
-    const volatileLimit = checkRateLimit(ipKey);
-    const durableLimit = await checkDurableRateLimit(ipKey);
-    if (volatileLimit.isLimited || durableLimit.isLimited) {
-      return NextResponse.json(
-        { ok: false, error: 'Too many submissions from this address. Please try again later.' },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(
-              Math.ceil((Math.max(volatileLimit.delayMs ?? 0, durableLimit.delayMs ?? 0)) / 1000) || 1,
-            ),
-          },
-        },
-      );
-    }
-
     // Every call to this endpoint consumes rate-limit budget, valid or not --
     // unlike a login/activation attempt, there is no "self-correctable
     // mistake" exemption here, since anyone hostile enough to script this
     // endpoint can just as easily send well-formed junk.
-    recordFailedAttempt(ipKey);
-    await recordDurableFailedAttempt(ipKey);
+    //
+    // Counted and checked in one step (reserveAttempts, CL-A4). Reading the
+    // bucket, awaiting the durable read and only then recording let every
+    // request in a burst past the read before the first one was counted.
+    const reservation = await reserveAttempts([ipKey]);
+    if (reservation.isLimited) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many submissions from this address. Please try again later.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(Math.ceil(reservation.delayMs / 1000) || 1) },
+        },
+      );
+    }
 
     const body = (await request.json().catch(() => null)) as PublicInterestRequestBody | null;
     if (!body || typeof body !== 'object') {
