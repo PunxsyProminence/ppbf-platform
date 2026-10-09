@@ -310,7 +310,7 @@ describe('guardian media consent: rendered target geometry', () => {
   it('gives each consent checkbox a target at or above the tap token', async () => {
     const { container } = await renderConsentPage();
     const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-    expect(boxes).toHaveLength(2);
+    expect(boxes).toHaveLength(1); // the public-use box is hidden (A-Q14)
 
     for (const box of Array.from(boxes)) {
       // The label wraps the input, so the label's box is the target -- which is
@@ -400,12 +400,12 @@ describe('guardian media consent: rendered target geometry', () => {
 /* ---------------------------------------------------- semantics stay put */
 
 describe('geometry only', () => {
-  it('keeps the video checkbox pre-checked and the public-use checkbox not', async () => {
+  it('keeps the video checkbox pre-checked, and shows no public-use checkbox at all (A-Q14)', async () => {
     const { container } = await renderConsentPage();
-    const [video, publicUse] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const boxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
 
     // Pre-existing owner decision, deliberately untouched by the size fix.
-    expect(video.checked).toBe(true);
-    expect(publicUse.checked).toBe(false);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].checked).toBe(true);
   });
 });

@@ -96,9 +96,9 @@ export default function RosterExportPage() {
             <p className="t-eyebrow">Admin Workspace</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Take Your Roster With You</h1>
             <p className="t-body max-w-3xl">
-              Downloads every athlete in your gym as a spreadsheet file. It is your record, readable
-              without this platform, and it is what you hand a family who asks for their own
-              information back.
+              Downloads every athlete in your gym as a spreadsheet file. It is the gym&apos;s own record,
+              readable without this platform. It holds every family&apos;s details at once, so it is not
+              the copy you hand one family who asks for their own information back.
             </p>
           </header>
 

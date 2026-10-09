@@ -186,7 +186,15 @@ export async function GET(request: NextRequest) {
        that answer rather than one that reads as "your child has no plan". */
     await assertActorCanAccessAthlete(principal, athleteId);
 
-    const blocks = await listDevelopmentBlocksForAthlete(principal, athleteId);
+    /* ONLY WHAT THE COACH HAS PUT IN FRONT OF THE FAMILY. A draft is a plan
+       the coach is still writing; a cancelled block is one they took back.
+       Neither is the family's to read (A-Q20 "Only active/completed", PLAN-4
+       "Both athlete and parent": the same cut for the athlete and the
+       guardian). Filtered here, before objectives are read, so a draft's
+       objectives are never fetched for a family either. */
+    const blocks = (await listDevelopmentBlocksForAthlete(principal, athleteId)).filter(
+      (block) => block.status === 'active' || block.status === 'completed',
+    );
 
     /* Objectives attached per block, in one response. Sequential rather than
        parallel: this is a handful of blocks for one athlete, and each call is

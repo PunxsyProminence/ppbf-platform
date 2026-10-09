@@ -56,6 +56,7 @@ const BOARD: WallBoard = {
 const LIVE: GymTvScreen = {
   tv: { tv_name: 'Gym main' },
   board: BOARD,
+  board_status: 'ok',
   session: {
     run_id: 'ssrun_1',
     script_name: 'Tuesday fundamentals',
@@ -118,7 +119,7 @@ it('the body is exactly the module result: nothing added by the route', async ()
   mockRead.mockResolvedValue(LIVE);
   const body = (await (await read(KEY)).json()) as GymTvScreen;
   expect(body).toEqual(LIVE);
-  expect(Object.keys(body).sort()).toEqual(['board', 'session', 'tv']);
+  expect(Object.keys(body).sort()).toEqual(['board', 'board_status', 'session', 'tv']);
   const serialized = JSON.stringify(body);
   for (const forbidden of [KEY, 'tv_id', 'error', 'what_to', 'account', 'athlete', 'hash', 'organization']) {
     expect(serialized).not.toContain(forbidden);
@@ -131,8 +132,21 @@ it('the body is exactly the module result: nothing added by the route', async ()
 it('the paired board, with initials and milestones, is served on this channel', async () => {
   mockRead.mockResolvedValue(LIVE);
   const body = (await (await read(KEY)).json()) as GymTvScreen;
-  expect(body.board.on_floor).toEqual([{ key: 'ab12cd34ef56', name: 'M.R.', visibility: 'initials' }]);
-  expect(body.board.marquee[0]).toMatchObject({ name: 'M.R.', milestone: 13 });
+  expect(body.board?.on_floor).toEqual([{ key: 'ab12cd34ef56', name: 'M.R.', visibility: 'initials' }]);
+  expect(body.board?.marquee[0]).toMatchObject({ name: 'M.R.', milestone: 13 });
+});
+
+// Best-effort (PR 2): the board read failed, the session is still served, and the body says so
+// in a fixed word rather than in the failure's own text.
+it('a board read failure still serves the session, with board: null and board_status unavailable', async () => {
+  mockRead.mockResolvedValue({ ...LIVE, board: null, board_status: 'unavailable' });
+  const response = await read(KEY);
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as GymTvScreen;
+  expect(body.session?.run_id).toBe('ssrun_1');
+  expect(body.board).toBeNull();
+  expect(body.board_status).toBe('unavailable');
+  expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.maxAge).toBe(400 * 24 * 60 * 60);
 });
 
 it("the operator's name mode reaches the paired board exactly as before; nothing unrecognised reaches 'consent'", async () => {
@@ -151,10 +165,10 @@ it("the operator's name mode reaches the paired board exactly as before; nothing
 });
 
 it('a paired TV with nothing on it gets session: null, still the board, and still the slide', async () => {
-  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null, board: BOARD });
+  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
   const response = await read(KEY);
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD });
+  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
   expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.maxAge).toBe(400 * 24 * 60 * 60);
 });
 

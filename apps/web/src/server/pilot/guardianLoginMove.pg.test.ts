@@ -470,6 +470,26 @@ describe('moveGuardianToLogin', () => {
         [ORG, KID_B],
       );
     }, {}, 409, 'GUARDIAN_MOVE_TARGET_ALREADY_GUARDIAN'],
+    ['a target that already guards one of the same children, who turned 18 today', async () => {
+      // The guardian link goes dormant at 18 (OD-2026-10-07-008) for the
+      // guardian's own reach; this staff guard must still see the overlap, or
+      // one login ends up holding two guardian records for the same child.
+      await client.query(
+        `update pilot.athletes
+            set dob = ((now() at time zone 'America/New_York')::date - interval '18 years')::date
+          where organization_id = $1 and athlete_id = $2`,
+        [ORG, KID_B],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'par-dup', $2, 'Dup')`,
+        [ORG, NEW_LOGIN],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, 'par-dup', $2, 'parent')`,
+        [ORG, KID_B],
+      );
+    }, {}, 409, 'GUARDIAN_MOVE_TARGET_ALREADY_GUARDIAN'],
     ['a PIN parent login', async () => {
       await client.query(`update pilot.accounts set auth_provider = 'ppbf_local' where account_id = $1`, [NEW_LOGIN]);
     }, {}, 409, 'GUARDIAN_MOVE_TARGET_PIN_LOGIN'],
