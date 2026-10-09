@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { listObjectivesForBlock } from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
-import { listDevelopmentBlocksForAthlete } from '@/src/server/pilot/athleteDevelopmentBlocks';
+import { DEVELOPMENT_BLOCK_STATUSES, listDevelopmentBlocksForAthlete } from '@/src/server/pilot/athleteDevelopmentBlocks';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -94,7 +94,9 @@ function block(overrides: Record<string, unknown> = {}) {
     training_emphasis: 'Guard recovery off the jab.',
     starts_on: '2026-09-01',
     ends_on: '2026-10-13',
-    status: 'draft',
+    // 'active', not 'draft': a draft never reaches a family (see "which
+    // blocks a family sees" below), so a fixture the family reads is live.
+    status: 'active',
     created_by_account_id: 'acct-coach-a',
     created_at: '2026-08-28T00:00:00.000Z',
     updated_at: '2026-08-28T00:00:00.000Z',
@@ -248,6 +250,48 @@ describe('a guardian reads their child\'s plan', () => {
     expect(response.status).toBe(400);
     expect(mockAssertAccess).not.toHaveBeenCalled();
     expect(mockListBlocks).not.toHaveBeenCalled();
+  });
+});
+
+/* A-Q20 "Only active/completed" + PLAN-4 "Both athlete and parent"
+   (OD-2026-10-08-007): a draft is still the coach's; a cancelled block was
+   taken back. The cut is the same for the athlete and the guardian, and it
+   happens before any objective is read. */
+describe('which blocks a family sees', () => {
+  test.each(['athlete', 'parent'])('the %s is shown active and completed blocks only, and no objectives are read for the rest', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([
+      block({ block_id: 'blk-draft', status: 'draft' }),
+      block({ block_id: 'blk-active', status: 'active' }),
+      block({ block_id: 'blk-done', status: 'completed' }),
+      block({ block_id: 'blk-cancelled', status: 'cancelled' }),
+    ]);
+    mockListObjectives.mockImplementation(async (_actor: unknown, blockId: string) => [
+      objective({ objective_id: `obj-${blockId}`, block_id: blockId }),
+    ]);
+
+    const payload = await (await GET(getRequest(role === 'parent' ? '?athlete_id=ath-1' : ''))).json();
+
+    expect(payload.blocks.map((row: { block_id: string; status: string }) => [row.block_id, row.status])).toEqual([
+      ['blk-active', 'active'],
+      ['blk-done', 'completed'],
+    ]);
+    expect(mockListObjectives.mock.calls.map((call) => call[1])).toEqual(['blk-active', 'blk-done']);
+  });
+
+  test('every status the store knows is either shown or cut -- a new status is a decision, not a leak', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue(
+      DEVELOPMENT_BLOCK_STATUSES.map((status) => block({ block_id: `blk-${status}`, status })),
+    );
+    mockListObjectives.mockResolvedValue([]);
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(payload.blocks.map((row: { status: string }) => row.status).sort()).toEqual(['active', 'completed']);
+    expect(DEVELOPMENT_BLOCK_STATUSES).toEqual(['draft', 'active', 'completed', 'cancelled']);
   });
 });
 

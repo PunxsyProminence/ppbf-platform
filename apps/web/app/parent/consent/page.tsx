@@ -39,7 +39,6 @@ export default function GuardianMediaConsentPage() {
   const [actionMessage, setActionMessage] = useState('');
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [videoByAthlete, setVideoByAthlete] = useState<Record<string, boolean>>({});
-  const [publicByAthlete, setPublicByAthlete] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
@@ -83,7 +82,11 @@ export default function GuardianMediaConsentPage() {
           athlete_id: athleteId,
           decision,
           covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : undefined,
-          public_use_allowed: decision === 'grant' ? (publicByAthlete[athleteId] ?? false) : undefined,
+          /* A-Q14 (OD-2026-10-08-007, "Hide until used"): the "Allow public
+             use" box is not shown. The API field stays and a grant always
+             sends false; the gym turns public use on elsewhere when it is
+             ready to use it, never from this page by default. */
+          public_use_allowed: decision === 'grant' ? false : undefined,
         }),
       });
       if (!response.ok) {
@@ -206,14 +209,14 @@ export default function GuardianMediaConsentPage() {
                           />
                           Include video (unchecked = photos only)
                         </label>
-                        <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
-                          <input
-                            type="checkbox"
-                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
-                            onChange={(event) => setPublicByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
-                          />
-                          Allow public use (website, social media) &mdash; unchecked means internal/gym use only
-                        </label>
+                        {/* No "Allow public use" box here (A-Q14, hide until
+                            used). What is granted on this page is internal,
+                            gym-only use; the sentence below says so, since
+                            the absent box no longer can. */}
+                        <p className="t-muted">
+                          Photos and video stay inside the gym (coaching review, the gym&apos;s own screens). Nothing is
+                          posted publicly on this consent.
+                        </p>
                       </div>
                     ) : null}
                     {/* .btn .btn--kiosk, not `.btn--lever min-h-[44px]`.
