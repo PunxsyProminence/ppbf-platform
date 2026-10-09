@@ -50,8 +50,8 @@ jest.mock('./shadowFilmStudy', () => {
     ...actual,
     isFilmStudyVisionConfigured: jest.fn(() => true),
     extractFrames: jest.fn(async ({ directory }: { directory: string }) => {
-      const framePath = require('node:path').join(directory, 'frame-1.jpg');
-      await require('node:fs/promises').writeFile(framePath, Buffer.from([0xff, 0xd8, 0xff]));
+      const framePath = jest.requireActual<typeof import('node:path')>('node:path').join(directory, 'frame-1.jpg');
+      await jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises').writeFile(framePath, Buffer.from([0xff, 0xd8, 0xff]));
       return { framePaths: [framePath] };
     }),
     analyzeFramesWithVision: jest.fn(async () => {
