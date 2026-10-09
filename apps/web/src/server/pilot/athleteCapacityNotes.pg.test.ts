@@ -102,6 +102,8 @@ const SECOND_ATHLETE_ID = 'ath-capnotes-2';
 const OTHER_ATHLETE_ID = 'ath-capnotes-other'; // the other gym's
 // The same athlete id in BOTH gyms (pilot.athletes' key is composite).
 const SHARED_ATHLETE_ID = 'ath-capnotes-shared';
+// Coach of record: the LAPSED coach. Only the membership check refuses them.
+const THIRD_ATHLETE_ID = 'ath-capnotes-3';
 
 // login_email, from which getCoachDisplayName derives the name shown.
 const COACH_EMAIL = 'jason.neale@example.org'; // -> Coach Jason Neale
@@ -214,6 +216,7 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
     [ORG_ID, ATHLETE_ID, COACH_ID],
     [ORG_ID, SECOND_ATHLETE_ID, COACH_ID],
     [ORG_ID, SHARED_ATHLETE_ID, COACH_ID],
+    [ORG_ID, THIRD_ATHLETE_ID, LAPSED_COACH_ID],
     [OTHER_ORG_ID, OTHER_ATHLETE_ID, VISITING_COACH_ID],
     [OTHER_ORG_ID, SHARED_ATHLETE_ID, VISITING_COACH_ID],
   ] as const) {
@@ -642,6 +645,25 @@ describe('athleteCapacityNotes.ts against real rows', () => {
         .rejects.toBeInstanceOf(ForbiddenError);
       expect(await noteCount(client, { live: true })).toBe(1);
       expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach of record whose membership here lapsed is refused -- the membership check alone does this', async () => {
+    const client = await migratedDatabase('capnotes_lapsed_of_record');
+    try {
+      await insertRaw(client, { athlete_id: THIRD_ATHLETE_ID, author_account_id: LAPSED_COACH_ID });
+      const { rows } = await client.query('select note_id from pilot.athlete_capacity_notes');
+      await expect(listCapacityNotes(LAPSED_COACH, THIRD_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(addCapacityNote({ actor: LAPSED_COACH, athleteId: THIRD_ATHLETE_ID, note: 'x' }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      await expect(withdrawCapacityNote({ actor: LAPSED_COACH, athleteId: THIRD_ATHLETE_ID, noteId: rows[0].note_id }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      // The athlete is reachable for the gym's admin, so the refusal above is
+      // the lapsed membership and not a missing athlete.
+      expect(await listCapacityNotes(ADMIN, THIRD_ATHLETE_ID)).toHaveLength(1);
+      expect(await noteCount(client, { live: true })).toBe(1);
     } finally {
       await client.end();
     }
