@@ -101,6 +101,12 @@ export async function POST(request: NextRequest) {
     if (!videoSession.athlete_id) {
       throw new ConflictError("This video isn't linked to an athlete, so it can't be published. Link it to an athlete in Video Analysis first.", 'VIDEO_NOT_ATTRIBUTED');
     }
+    // Create has refused a video attributed to another athlete since f8729bf4
+    // (2026-07-31); a row drafted before then can name one child on another
+    // child's video, and every consent check reads the child it names.
+    if (videoSession.athlete_id !== publication.athlete_id) {
+      throw new ConflictError("This video is linked to a different athlete than the one this publication names, so it can't be published. Create a new publication for the athlete on the video instead.", 'VIDEO_ATHLETE_MISMATCH');
+    }
 
     // The CAS inside re-checks 'draft', so a submit racing an admin decision
     // (or its own double-click) applies nothing rather than re-queueing a
