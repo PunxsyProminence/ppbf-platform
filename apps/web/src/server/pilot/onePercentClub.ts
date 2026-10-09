@@ -80,8 +80,29 @@ export interface VoteTally {
   majority_reached: boolean;
 }
 
+/**
+ * THE STORED NAME COPY IS NOT READ BACK FOR A DELETED PERSON (account-small-
+ * bugs finding N7; OD-2026-10-06-025 r2 and deletion scope B). The nominator's
+ * and voter's display names are frozen into the row at write time (see
+ * resolveActorDisplayName), so a person deleted since kept being named from
+ * the copy. On read, when the account carries the deletion mark -- its own
+ * deleted_at, or the mark on the athlete row behind it (accountNotDeletedSql,
+ * the same predicate the write-time read uses) -- the row shows the phrase
+ * resolveActorDisplayName already uses for a record with no name, chosen by
+ * the role stored beside the copy. The copy itself is not touched: nothing
+ * is deleted, and the frozen name is still there for the deletion's own
+ * records.
+ */
+function actorDisplayNameSql(row: string, accountColumn: string, roleColumn: string, nameColumn: string): string {
+  return `case when ${accountNotDeletedSql(row, accountColumn)} then ${row}.${nameColumn}
+    when ${row}.${roleColumn} = 'athlete' then 'An athlete'
+    when ${row}.${roleColumn} = 'coach' then 'Your coach'
+    else 'An administrator' end as ${nameColumn}`;
+}
+
 const NOMINATION_FIELDS = `n.organization_id, n.nomination_id, n.athlete_id, a.full_name as athlete_name,
-  n.source, n.nominated_by_account_id, n.nominated_by_role, n.nominated_by_display_name,
+  n.source, n.nominated_by_account_id, n.nominated_by_role,
+  ${actorDisplayNameSql('n', 'nominated_by_account_id', 'nominated_by_role', 'nominated_by_display_name')},
   n.nominator_note, n.milestone_key, n.status, n.withdrawal_reason,
   n.expires_at::text, n.decided_at::text, n.created_at::text`;
 
@@ -405,11 +426,12 @@ export async function getTally(organizationId: string, nominationId: string): Pr
 
 export async function listVotes(organizationId: string, nominationId: string): Promise<VoteRow[]> {
   return query<VoteRow>(
-    `select organization_id, nomination_id, voter_account_id, voter_role, voter_display_name,
-            vote, voted_at::text
-     from pilot.one_percent_votes
-     where organization_id = $1 and nomination_id = $2
-     order by voted_at asc`,
+    `select v.organization_id, v.nomination_id, v.voter_account_id, v.voter_role,
+            ${actorDisplayNameSql('v', 'voter_account_id', 'voter_role', 'voter_display_name')},
+            v.vote, v.voted_at::text
+     from pilot.one_percent_votes v
+     where v.organization_id = $1 and v.nomination_id = $2
+     order by v.voted_at asc`,
     [organizationId, nominationId],
   );
 }

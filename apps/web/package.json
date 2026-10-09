@@ -107,6 +107,7 @@
     "pilot:backfill-chunk-embeddings": "node scripts/pilot-backfill-chunk-embeddings.mjs",
     "pilot:apply-scheduler-race": "node scripts/pilot-apply-scheduler-race-migration.mjs",
     "session:cleanup": "tsx scripts/pilot-cleanup-sessions.ts",
+    "pilot:close-inactive-sessions": "tsx scripts/pilot-close-inactive-sessions.ts",
     "calibration:bootstrap": "tsx scripts/pilot-bootstrap-calibration-clip.ts",
     "content:validate": "tsx scripts/pilot-content-import.ts validate",
     "content:prepare": "tsx scripts/pilot-content-import.ts prepare",
@@ -162,6 +163,7 @@
     "test:migrations:release-restrictions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/releaseRestrictions.pg.test.ts --testTimeout=180000",
     "test:migrations:goal-category-progress": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/goalCategoryProgress.pg.test.ts --testTimeout=180000",
     "test:migrations:attendance-parent-method": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendanceParentMethod.pg.test.ts --testTimeout=180000",
+    "test:migrations:attendance-walk-in-method": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendanceWalkInMethod.pg.test.ts --testTimeout=180000",
     "test:migrations:progression-gap-recovery": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/progressionGapRecovery.pg.test.ts --testTimeout=180000",
     "test:migrations:safety-gate-matrix": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/safetyGateMatrix.pg.test.ts --testTimeout=180000",
     "test:migrations:safety-escalations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/escalationLadder.pg.test.ts --testTimeout=180000",
@@ -205,6 +207,7 @@
     "test:migrations:session-duration": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionDuration.pg.test.ts --testTimeout=180000",
     "test:migrations:session-note-writer-only": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionNoteWriterOnly.pg.test.ts --testTimeout=180000",
     "test:migrations:session-close": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionClose.pg.test.ts --testTimeout=180000",
+    "test:migrations:session-autoclose": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionAutoClose.pg.test.ts --testTimeout=180000",
     "test:migrations:weekly-session-load": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/weeklySessionLoad.pg.test.ts --testTimeout=180000",
     "test:migrations:wellness-trend": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/wellnessTrend.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-check-in-measures": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCheckInMeasures.pg.test.ts --testTimeout=180000",
@@ -328,6 +331,7 @@
     "pilot:apply-achievements": "node scripts/pilot-apply-achievements-migration.mjs",
     "pilot:apply-goal-category-progress": "node scripts/pilot-apply-goal-category-progress-migration.mjs",
     "pilot:apply-attendance-parent-method": "node scripts/pilot-apply-attendance-parent-method-migration.mjs",
+    "pilot:apply-attendance-walk-in-method": "node scripts/pilot-apply-attendance-walk-in-method-migration.mjs",
     "pilot:apply-progression-gap-recovery": "node scripts/pilot-apply-progression-gap-recovery-migration.mjs",
     "pilot:apply-safety-gate-matrix": "node scripts/pilot-apply-safety-gate-matrix-migration.mjs",
     "pilot:apply-safety-escalations": "node scripts/pilot-apply-safety-escalations-migration.mjs",
@@ -506,7 +510,8 @@
     "test:migrations:audit-reader-calibration": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditReaderCalibration.pg.test.ts --testTimeout=180000",
     "test:migrations:community-service-reach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/communityServiceReach.pg.test.ts --testTimeout=180000",
     "test:migrations:audit-events-entity-index": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEventsEntityIndex.pg.test.ts --testTimeout=180000",
-    "test:migrations:paper-only-guardian": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/paperOnlyGuardian.pg.test.ts --testTimeout=180000"
+    "test:migrations:paper-only-guardian": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/paperOnlyGuardian.pg.test.ts --testTimeout=180000",
+    "test:migrations:w2-identity-reach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/w2IdentityReach.pg.test.ts --testTimeout=240000"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",

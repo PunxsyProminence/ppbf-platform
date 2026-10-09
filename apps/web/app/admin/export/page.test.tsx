@@ -93,6 +93,13 @@ describe('the roster export screen', () => {
     expect(screen.getByText('Emergency contact phone')).toBeTruthy();
   });
 
+  test('does not describe the whole-roster file as a family\'s own data copy (A-Q21)', () => {
+    render(<RosterExportPage />);
+
+    expect(screen.queryByText(/it is what you hand a family/)).toBeNull();
+    expect(screen.getByText(/so it is not the copy you hand one family/)).toBeTruthy();
+  });
+
   test('saves the file under the name the server sent and reports the count', async () => {
     global.fetch = jest.fn(async () => csvResponse({
       'content-disposition': 'attachment; filename="ppbf-roster-org-ppbf-2026-08-01.csv"',

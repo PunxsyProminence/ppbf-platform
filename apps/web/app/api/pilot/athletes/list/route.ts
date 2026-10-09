@@ -5,6 +5,7 @@ import { assertAthleteBelongsToOrganization, isOrganizationAdminRole, requireRol
 import type { PilotAthlete } from '@/src/server/pilot/contracts';
 import { query } from '@/src/server/pilot/db';
 import { toFamilyAthletes } from '@/src/server/pilot/familyRecordView';
+import { guardianLinkEnded } from '@/src/server/pilot/guardianAccess';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -56,7 +57,13 @@ export async function GET(request: NextRequest) {
         [principal.organizationId, principal.accountId],
       );
 
-      return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, linkedAthletes) });
+      // The link goes dormant at 18 (OD-2026-10-07-008): the same rule
+      // guardianAccess.ts applies to every other guardian read, restated here
+      // for the same reason the deletion filter is -- this branch keeps its
+      // join inline. The adult child simply leaves the picker.
+      const minors = linkedAthletes.filter((athlete) => !guardianLinkEnded(athlete.dob));
+
+      return NextResponse.json({ items: await toFamilyAthletes(principal.organizationId, minors) });
     }
 
     // Coaches and organization admins both read the whole roster, and they do

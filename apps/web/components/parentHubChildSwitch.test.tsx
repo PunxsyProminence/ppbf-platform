@@ -594,13 +594,16 @@ describe('summary tile honesty', () => {
     return tile?.textContent?.replace(label, '').trim() ?? '';
   }
 
-  test('Home Tasks and Upcoming say Unavailable -- they have no backend feed to count from', async () => {
+  test('Upcoming says Unavailable -- it has no backend feed to count from; Home Tasks counts from the answered messages read (a real zero here)', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('Home Tasks')).toBe('Unavailable');
+    // Home Tasks reads the messages feed (lane P6): zero tasks with a due
+    // date is an observation once that read answered. The unanswered case
+    // is pinned in parentHubTasks.test.tsx.
+    expect(tileValue('Home Tasks')).toBe('0');
     expect(tileValue('Upcoming')).toBe('Unavailable');
   });
 

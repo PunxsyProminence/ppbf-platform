@@ -275,6 +275,42 @@ export default function ExternalCompetitionPlatformPage() {
     }
   };
 
+  // Withdrawal shares the entries PATCH ({ entry_id, status: 'withdrawn' }).
+  // The route only moves an entry that is still 'entered', and answers 404 for
+  // anything else, so a refusal is explained here instead of shown as "Not found".
+  const handleWithdraw = async (entry: EntryRow) => {
+    if (!selectedCompetitionId) return;
+    const confirmed = window.confirm(
+      `Withdraw ${entry.athlete_name} from this competition? The entry stays on record as withdrawn.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/operations/external-competition/entries`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entry_id: entry.entry_id, status: 'withdrawn' }),
+      });
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('This entry could not be withdrawn. It may already be withdrawn; reload the list.');
+        }
+        if (response.status === 403) {
+          throw new Error('Only an admin role can withdraw an athlete from a competition.');
+        }
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Withdraw failed (${response.status})`);
+      }
+      await reloadEntries(selectedCompetitionId);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to withdraw the entry.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
       {/* Front office: forms and tables recording where the gym is taking
@@ -416,6 +452,12 @@ export default function ExternalCompetitionPlatformPage() {
                                         <button type="button" className="btn btn--ghost" disabled={busy}
                                           onClick={() => setResultFor(entry.entry_id)}>
                                           {entry.result ? 'Correct result' : 'Record result'}
+                                        </button>
+                                      )}
+                                      {entry.status === 'entered' && (
+                                        <button type="button" className="btn btn--ghost" disabled={busy}
+                                          onClick={() => void handleWithdraw(entry)}>
+                                          Withdraw
                                         </button>
                                       )}
                                     </span>

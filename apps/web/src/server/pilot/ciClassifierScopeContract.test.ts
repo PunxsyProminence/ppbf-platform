@@ -295,6 +295,8 @@ describe('the coach E2E command attends every coach spec on disk', () => {
     'apps/web/src/lib/visualization/pf001Scenario.ts',
     'apps/web/src/lib/visualization/guidedSession.ts',
     'apps/web/e2e/coach-visualization.spec.ts',
+    'apps/web/app/api/pilot/scheduler/route.ts',
+    'apps/web/src/lib/gymTime.ts',
   ])('sends %s to the coach suite on its own', (file) => {
     const flags = classify([file]);
 

@@ -35,6 +35,12 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/access', () => ({
+  // The class-register rule (OD-2026-10-07-008 question card 1 item 4) runs
+  // REAL here: the register tests below pin it, and the PR's mutation proof
+  // loosens it in access.ts and watches those tests fail. Its one database
+  // read, the walk-in live-row check, goes through the mocked ./db queryOne.
+  actorRunsClass: jest.requireActual('@/src/server/pilot/access').actorRunsClass,
+  assertActorCanMarkClassAthlete: jest.requireActual('@/src/server/pilot/access').assertActorCanMarkClassAthlete,
   assertActiveCoachAccount: jest.fn(),
   assertActorCanAccessAthlete: jest.fn(),
   // The athlete arm's live-row check. Resolves (a live athlete) unless a
@@ -67,6 +73,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   markSchedulerRegistrationReviewed: jest.fn(),
   getSchedulerCoachingRequestById: jest.fn(),
   resolveSchedulerCoachingRequest: jest.fn(),
+  setSchedulerClassCover: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
@@ -112,6 +119,9 @@ beforeEach(() => {
   mockUpsertAttendance.mockResolvedValue(undefined);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
   mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
+  // The athletes a coach reaches outside any class register (assignment or
+  // coverage). Tests about reach beyond the register override this.
+  (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ATH-1', 'ATH-2']);
 });
 
 afterEach(() => {
@@ -444,7 +454,7 @@ describe('attendance check-in warns on an active training hold and does not bloc
     const response = await POST(checkIn());
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1' });
+    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'coach_override' });
   });
 
   test('a failed hold read never fails the check-in; it is "unreadable", not "no hold"', async () => {
@@ -471,10 +481,10 @@ describe('attendance check-in warns on an active training hold and does not bloc
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent', { accountId: 'acct-parent-1' }));
     const parent = await POST(checkIn());
 
-    for (const response of [own, parent]) {
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1' });
-    }
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'self' });
+    expect(parent.status).toBe(200);
+    expect(await parent.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'parent' });
     expect(mockUpsertAttendance).toHaveBeenCalledTimes(2);
     expect(mockQueryOne).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
@@ -557,7 +567,9 @@ describe('bulk_attendance_checkin', () => {
     const [, records] = mockBulkUpsertAttendance.mock.calls[0];
     expect(records).toHaveLength(2);
     expect(records.map((r: { method: string }) => r.method)).toEqual(['coach_override', 'coach_override']);
-    expect(mockAssertCanAct).toHaveBeenCalledTimes(2);
+    // Reach comes from the class register, not from per-athlete assignment
+    // (OD-2026-10-07-008 question card 1 item 4).
+    expect(mockAssertCanAct).not.toHaveBeenCalled();
   });
 
   test('athlete and parent roles are refused -- bulk marking is a coach/admin action', async () => {
@@ -598,11 +610,11 @@ describe('bulk_attendance_checkin', () => {
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
   });
 
-  test("one athlete outside the coach's reach fails the whole batch before any write", async () => {
+  test('one athlete who is neither registered nor a live athlete of the gym fails the whole batch before any write', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
-    mockAssertCanAct
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    // The walk-in live-row read (assertAthleteBelongsToOrganization) finds
+    // nobody: a stranger's id, or a deleted athlete's.
+    (queryOne as jest.Mock).mockResolvedValueOnce(null);
 
     const response = await POST(
       jsonRequest({
@@ -610,7 +622,7 @@ describe('bulk_attendance_checkin', () => {
         class_id: 'class-1',
         entries: [
           { athlete_id: 'ATH-1', status: 'present' },
-          { athlete_id: 'ATH-OUTSIDE', status: 'present' },
+          { athlete_id: 'ATH-STRANGER', status: 'present' },
         ],
       }),
     );
@@ -636,7 +648,9 @@ describe('coach class-ownership on attendance writes', () => {
     );
 
     expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('does not own this class') });
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining('only the coach, cover or scheduler of this class'),
+    });
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
   });
 
@@ -685,8 +699,30 @@ describe('attendance requires registration', () => {
   // An unregistered mark counts in the org summary but appears on no class
   // roster -- a number no drill-down can explain -- and it is what let an
   // athlete self-mark 'present' in every class in the gym.
-  test('single check-in for an unregistered athlete is refused', async () => {
+  // Since OD-2026-10-07-008 (question card 1 item 4) a coach running the
+  // class may mark an unregistered athlete of the gym PRESENT as a walk-in;
+  // absent and excused stay registered-only -- nobody is absent from a class
+  // they were never on. The walk-in cases are pinned in the class-register
+  // describe below.
+  test('single check-in marking an unregistered athlete absent is refused', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-2']);
+    // A live athlete of the gym -- so the refusal below is the status rule, not the live-row check.
+    (queryOne as jest.Mock).mockResolvedValueOnce({ athlete_id: 'ATH-1' });
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'absent' }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining('not registered for this class; a walk-in can only be marked present'),
+    });
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test("a parent's mark on an unregistered child is still refused outright", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent', { accountId: 'acct-parent-1' }));
     mockListRegistered.mockResolvedValueOnce(['ATH-2']);
 
     const response = await POST(
@@ -708,9 +744,10 @@ describe('attendance requires registration', () => {
     expect(mockUpsertAttendance).not.toHaveBeenCalled();
   });
 
-  test('a bulk batch containing one unregistered athlete fails whole before any write', async () => {
+  test('a bulk batch marking one unregistered athlete absent fails whole before any write', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
     mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ athlete_id: 'ATH-2' });
 
     const response = await POST(
       jsonRequest({
@@ -718,13 +755,399 @@ describe('attendance requires registration', () => {
         class_id: 'class-1',
         entries: [
           { athlete_id: 'ATH-1', status: 'present' },
-          { athlete_id: 'ATH-2', status: 'present' },
+          { athlete_id: 'ATH-2', status: 'absent' },
         ],
       }),
     );
 
     expect(response.status).toBe(400);
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+});
+
+/* THE CLASS REGISTER: WHOLE CLASS PLUS WALK-INS (OD-2026-10-07-008, question
+   card 1 item 4). The coach who teaches, scheduled, or is covering a class
+   marks every athlete registered to it, assigned to them or not, and may mark
+   an unregistered athlete of the gym present as a walk-in. A coach who does
+   not run the class gets nothing from it. Everything outside the register
+   stays assigned-coach only (OD-2026-10-05-024 item 2).
+
+   assertActorCanAccessAthlete is mocked and watched: the register path must
+   never consult it, or the rule has quietly fallen back to assignment. The
+   walk-in live-row read is the mocked queryOne. */
+describe('the class register: whole class plus walk-ins', () => {
+  const mockQueryOne = queryOne as jest.Mock;
+  const mockQuery = query as jest.Mock;
+  const mockAudit = writePilotAuditEvent as jest.Mock;
+  afterEach(() => {
+    mockQueryOne.mockReset();
+    mockQuery.mockReset();
+  });
+
+  // class-1: coach_account_id and scheduled_by_account_id are acct-coach-1.
+  const runs = {
+    teaches: { accountId: 'acct-coach-1', cls: classRecord },
+    scheduled: { accountId: 'acct-scheduler', cls: { ...classRecord, coach_account_id: 'acct-other', scheduled_by_account_id: 'acct-scheduler' } },
+    covers: { accountId: 'acct-cover', cls: { ...classRecord, covering_coach_account_id: 'acct-cover' } },
+  };
+
+  test.each(Object.entries(runs))(
+    'a coach who %s the class marks a registered athlete they are not assigned to',
+    async (_label, who) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: who.accountId }));
+      mockGetClass.mockResolvedValueOnce(who.cls);
+      mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+      // The hold read after the mark: no hold.
+      mockQueryOne.mockResolvedValueOnce(null);
+
+      const response = await POST(
+        jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'absent' }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(mockAssertCanAct).not.toHaveBeenCalled();
+      const [, record] = mockUpsertAttendance.mock.calls[0];
+      expect(record).toMatchObject({ athlete_id: 'ATH-NOT-MINE', status: 'absent', method: 'coach_override' });
+      // A registered athlete needs no live-row read: the roster already excludes deleted athletes.
+      expect(mockQueryOne.mock.calls.some(([sql]) => String(sql).includes('pilot.athletes'))).toBe(false);
+    },
+  );
+
+  test('a coach who does not run the class is refused for a registered athlete, even one assigned to them', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'present' }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Forbidden: only the coach, cover or scheduler of this class can mark its register',
+    });
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+    // The class decides; assignment is not consulted either way.
+    expect(mockAssertCanAct).not.toHaveBeenCalled();
+  });
+
+  test('a walk-in: the coach running the class marks an unregistered athlete of the gym present, stored as walk_in', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+    // The live-row read finds the athlete in this gym; the hold read after
+    // the mark finds no hold.
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ATH-WALKIN' }).mockResolvedValueOnce(null);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-WALKIN', status: 'present' }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-WALKIN', method: 'walk_in' });
+    const [, record] = mockUpsertAttendance.mock.calls[0];
+    expect(record).toMatchObject({ athlete_id: 'ATH-WALKIN', status: 'present', method: 'walk_in', checked_in_by_role: 'coach' });
+    // The live-row read is scoped to this gym and to live athletes.
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('deleted_at is null');
+    expect(params).toEqual(['ATH-WALKIN', 'org-1']);
+    expect(mockAssertCanAct).not.toHaveBeenCalled();
+  });
+
+  test('a walk-in who is not a live athlete of this gym is refused, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-ELSEWHERE', status: 'present' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('a coach who does not run the class cannot mark a walk-in on it either', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+    mockListRegistered.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ATH-WALKIN' });
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-WALKIN', status: 'present' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('an admin marks a walk-in too, stored as walk_in, not admin_override', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ATH-WALKIN' }).mockResolvedValueOnce(null);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-WALKIN', status: 'present' }),
+    );
+
+    expect(response.status).toBe(200);
+    const [, record] = mockUpsertAttendance.mock.calls[0];
+    expect(record.method).toBe('walk_in');
+  });
+
+  test('bulk: a registered athlete and a walk-in in one batch keep their own methods', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ATH-WALKIN' });
+    // readStaffHoldWarnings' list read: nobody held.
+    mockQuery.mockResolvedValueOnce([]);
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'excused' },
+          { athlete_id: 'ATH-WALKIN', status: 'present' },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const [, records] = mockBulkUpsertAttendance.mock.calls[0];
+    expect(records.map((r: { athlete_id: string; method: string }) => [r.athlete_id, r.method])).toEqual([
+      ['ATH-1', 'coach_override'],
+      ['ATH-WALKIN', 'walk_in'],
+    ]);
+    expect(mockAssertCanAct).not.toHaveBeenCalled();
+  });
+
+  test('cover_class writes an audit row naming the class, the previous cover and the new one (route-survey B6)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, covering_coach_account_id: 'acct-before' });
+
+    const response = await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      event_type: 'update',
+      actor_account_id: 'acct-coach-2',
+      actor_role: 'coach',
+      organization_id: 'org-1',
+      entity_type: 'scheduler_class',
+      entity_id: 'class-1',
+      details: {
+        action: 'cover_class',
+        class_id: 'class-1',
+        previous_covering_coach_account_id: 'acct-before',
+        covering_coach_account_id: 'acct-coach-2',
+      },
+    });
+  });
+
+  test('cover_class on a class nobody covered records the previous cover as null', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+
+    await POST(jsonRequest({ action: 'cover_class', class_id: 'class-1' }));
+
+    expect(mockAudit.mock.calls[0][0].details).toMatchObject({ previous_covering_coach_account_id: null });
+  });
+});
+
+// Audit s3: a mistyped date on the schedule screen answered 500 with the
+// field name replaced by "Internal server error". Caller-fixable input is a
+// 400 that names the field.
+/* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
+
+   The register lets the coach running a class mark athletes they do not
+   otherwise reach. Two things must not come with it:
+   - the hold's explanation, reason and lift condition -- the training-holds
+     route refuses those to an unassigned coach, so the check-in answer must
+     not become a way round it (only "on hold" and its scope come back);
+   - the note: they cannot read it (Overwatch option B), so their mark must
+     not overwrite it, and they cannot write one either. */
+describe('the class register does not reach past the register', () => {
+  const mockQueryOne = queryOne as jest.Mock;
+  const mockQuery = query as jest.Mock;
+  const mockReach = athleteIdsForCoach as jest.Mock;
+  afterEach(() => {
+    mockQueryOne.mockReset();
+    mockQuery.mockReset();
+  });
+
+  const HOLD_ROW = {
+    hold_id: 'hold-9',
+    athlete_id: 'ATH-NOT-MINE',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    reason_text: 'STAFF-ONLY',
+    athlete_explanation: 'PRIVATE EXPLANATION',
+    lift_condition_text: 'PRIVATE LIFT CONDITION',
+    placed_by_account_id: 'acct-other',
+    placed_by_role: 'coach',
+    placed_at: '2026-10-01 10:00:00+00',
+    expires_at: null,
+    status: 'active',
+  };
+
+  test('a held athlete the coach does not reach: the answer says on hold and the scope, nothing more', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce(HOLD_ROW);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present' }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.hold_warning).toMatchObject({ scope: 'contact_only', details_withheld: true });
+    const text = JSON.stringify(body);
+    expect(text).not.toContain('PRIVATE EXPLANATION');
+    expect(text).not.toContain('PRIVATE LIFT CONDITION');
+    expect(text).not.toContain('medical');
+  });
+
+  test('bulk: hold details are withheld for athletes beyond reach and kept for athletes the coach reaches', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1', 'ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQuery.mockImplementation(async (sql: string) =>
+      (String(sql).includes('training_holds')
+        ? [HOLD_ROW, { ...HOLD_ROW, hold_id: 'hold-1', athlete_id: 'ATH-1', athlete_explanation: 'OWN ATHLETE EXPLANATION' }]
+        : []));
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-NOT-MINE', status: 'present' },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const byAthlete = Object.fromEntries(
+      (body.hold_warnings as Array<{ athlete_id: string }>).map((row) => [row.athlete_id, row]),
+    );
+    expect(byAthlete['ATH-1']).toMatchObject({ athlete_explanation: 'OWN ATHLETE EXPLANATION' });
+    expect(byAthlete['ATH-NOT-MINE']).toMatchObject({ scope: 'contact_only', details_withheld: true });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE EXPLANATION');
+  });
+
+  test('a mark on an athlete beyond reach keeps the stored note instead of erasing it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present' }));
+
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ athlete_id: 'ATH-NOT-MINE' }), {
+      keepExistingNote: true,
+    });
+  });
+
+  test('a mark on an athlete the coach reaches writes the note as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'present', note: 'late' }));
+
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ athlete_id: 'ATH-1', note: 'late' }), {
+      keepExistingNote: false,
+    });
+  });
+
+  test('bulk keeps the stored note for every athlete beyond reach, and only those', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1', 'ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQuery.mockResolvedValue([]);
+
+    await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-NOT-MINE', status: 'absent' },
+        ],
+      }),
+    );
+
+    expect(mockBulkUpsertAttendance).toHaveBeenCalledWith('org-1', expect.any(Array), {
+      keepExistingNoteFor: ['ATH-NOT-MINE'],
+    });
+  });
+
+  test('a note on an athlete beyond reach is refused, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present', note: 'x' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin reaches every athlete: full hold details and notes, no reach read', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockQueryOne.mockResolvedValueOnce(HOLD_ROW);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present', note: 'n' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).hold_warning).toMatchObject({ athlete_explanation: 'PRIVATE EXPLANATION' });
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ note: 'n' }), { keepExistingNote: false });
+    expect(mockReach).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/pilot/scheduler answers bad input with 400 and the field name', () => {
+  const mockCreateClass = createSchedulerClass as jest.Mock;
+
+  const cases: Array<[string, Record<string, unknown>, string]> = [
+    ['an unparseable start_at', { start_at: 'next tuesday' }, 'start_at must be a valid date string'],
+    ['a missing end_at', { end_at: undefined }, 'end_at must be a non-empty string'],
+    ['a blank title', { title: '   ' }, 'title must be a non-empty string'],
+    ['a fractional capacity', { capacity: 12.5 }, 'capacity must be an integer'],
+    ['a capacity over 200', { capacity: 500 }, 'capacity must be between 1 and 200'],
+  ];
+
+  test.each(cases)('%s', async (_label, patch, message) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const response = await POST(jsonRequest({
+      action: 'create_class',
+      title: 'Evening boxing',
+      start_at: '2026-07-15T18:00',
+      end_at: '2026-07-15T19:30',
+      location: 'Main Floor',
+      capacity: 20,
+      ...patch,
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: message });
+    expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+
+  test('a bad attendance status names the field', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'here' }),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'status must be present, absent, or excused' });
   });
 });
 
@@ -1002,29 +1425,49 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
     };
   }
 
-  test('covering a class does not disclose registrations for unreachable athletes', async () => {
+  /* OD-2026-10-07-008 ruling 4 + Overwatch option B (2026-10-09): the coach
+     running a class takes its whole register, so they SEE every registration
+     and every attendance STATUS on it. Attendance note text -- free text a
+     coach wrote about a child -- stays with athletes they reach, so a
+     self-granted cover still reads no other coach's notes (CL-A2, #1266). */
+  test('the coach running a class sees every registration on it', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    const athleteIds = body.registrations.map((row: { athlete_id: string }) => row.athlete_id);
-    expect(athleteIds).toEqual(['ath-mine']);
-    expect(athleteIds).not.toContain('ath-other');
+    const athleteIds = body.registrations.map((row: { athlete_id: string }) => row.athlete_id).sort();
+    expect(athleteIds).toEqual(['ath-mine', 'ath-other']);
   });
 
-  test('covering a class does not disclose attendance notes for unreachable athletes', async () => {
+  test('the coach running a class sees every attendance status, but notes only for athletes they reach', async () => {
     mockRequirePrincipal.mockResolvedValue(coachPrincipal());
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockListStore.mockResolvedValue(storeWithCoveredClass());
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    const athleteIds = body.attendance.map((row: { athlete_id: string }) => row.athlete_id);
-    expect(athleteIds).toEqual(['ath-mine']);
+    const byAthlete = Object.fromEntries(
+      body.attendance.map((row: { athlete_id: string; status: string; note: string }) => [row.athlete_id, row]),
+    );
+    expect(byAthlete['ath-other'].status).toBe('present');
+    expect(byAthlete['ath-mine'].note).toBe('mine');
     // The note is the part that matters: free text a coach wrote about a child.
     expect(JSON.stringify(body.attendance)).not.toContain('private other');
+  });
+
+  test('a class the coach does not run discloses no registration or attendance', async () => {
+    mockRequirePrincipal.mockResolvedValue(coachPrincipal());
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    const store = storeWithCoveredClass();
+    store.classes[0].covering_coach_account_id = 'acct-someone-else';
+    mockListStore.mockResolvedValue(store);
+
+    const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+
+    expect(body.registrations).toEqual([]);
+    expect(body.attendance).toEqual([]);
   });
 
   test('a reachable athlete on an owned class is still returned', async () => {
@@ -1035,8 +1478,8 @@ describe('GET /api/pilot/scheduler scopes athlete-linked rows, not just classes'
 
     const body = await (await GET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
 
-    expect(body.registrations).toHaveLength(1);
-    expect(body.attendance).toHaveLength(1);
+    expect(body.registrations.some((row: { athlete_id: string }) => row.athlete_id === 'ath-mine')).toBe(true);
+    expect(body.attendance.some((row: { athlete_id: string }) => row.athlete_id === 'ath-mine')).toBe(true);
   });
 });
 
@@ -1387,7 +1830,10 @@ describe('GET /api/pilot/scheduler reports the true seat count without widening 
     expect(body.registrations).toHaveLength(1);
   });
 
-  test('a coach sees the true count, while their rows stay limited to athletes they can reach', async () => {
+  test('the coach running the class sees the true count and its whole register, without family account ids', async () => {
+    // OD-2026-10-07-008 ruling 4 + Overwatch option B: the register is the
+    // class's, so every row on it comes back; the family's account id on an
+    // athlete this coach does not otherwise reach does not.
     arrangeFullClass();
     mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
     mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach' }));
@@ -1395,7 +1841,11 @@ describe('GET /api/pilot/scheduler reports the true seat count without widening 
     const body = await (await schedulerGet()).json();
 
     expect(body.classes[0].registered_count).toBe(2);
-    expect(body.registrations.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
+    const rows = body.registrations as Array<{ athlete_id: string; requested_by_account_id: string }>;
+    expect(rows.map((row) => row.athlete_id)).toContain('ath-other-family');
+    const other = rows.find((row) => row.athlete_id === 'ath-other-family');
+    expect(other?.requested_by_account_id).toBe('');
+    expect(JSON.stringify(body.registrations)).not.toContain('ath-other-family-guardian');
   });
 });
 
