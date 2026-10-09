@@ -15,11 +15,17 @@
 import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
 import { resolveScanSubject } from './captureParticipants';
 import { PilotError } from './errors';
-import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
+import { withTransaction } from './db';
+import {
+  assertGuardianMediaConsent,
+  GuardianConsentMissingError,
+  lockGuardianLinksForAthletes,
+  type QueryExecutor,
+} from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
 import { listLiveTagSubjects } from './videoClipTags';
 import { assertConsentCoversVideo } from './videoPlaybackConsent';
-import { scanVideoSession } from './videoScan';
+import { scanVideoSession, VIDEO_SCAN_VISION_TIMEOUT_MS, type VisionCallGuard } from './videoScan';
 import {
   claimNextVideoSessionForScan,
   isTerminalScanDecision,
@@ -52,6 +58,130 @@ const COVERAGE_SKIP_REASONS: Record<string, string> = {
   GUARDIAN_CONSENT_EXCLUDES_VIDEO: 'guardian_consent_excludes_video',
   GUARDIAN_CONSENT_UNREADABLE: 'guardian_consent_unreadable',
 };
+
+/*
+ * The skip reason for the first athlete whose consent refuses the screen, or
+ * null. Both checks run for each athlete, as CL-B1 requires; the coverage
+ * refusal, when there is one, is the reason recorded. With a client, every
+ * read holds that athlete's guardian links FOR SHARE until the transaction
+ * ends (guardianConsent.ts).
+ */
+async function consentSkipReason(
+  organizationId: string,
+  athleteIds: readonly string[],
+  client?: QueryExecutor,
+): Promise<string | null> {
+  const inTx: [] | [QueryExecutor] = client ? [client] : [];
+  let reason: string | null = null;
+  for (const athleteId of athleteIds) {
+    if (reason) break;
+    try {
+      await assertGuardianMediaConsent(organizationId, athleteId, ...inTx);
+    } catch (error) {
+      if (!(error instanceof GuardianConsentMissingError)) throw error;
+      reason = 'guardian_consent_missing';
+    }
+    try {
+      await assertConsentCoversVideo(organizationId, athleteId, ...inTx);
+    } catch (error) {
+      const coverage = error instanceof PilotError && error.code ? COVERAGE_SKIP_REASONS[error.code] : undefined;
+      if (!coverage) throw error;
+      reason = coverage;
+    }
+  }
+  return reason;
+}
+
+/*
+ * How long the re-check below may wait for any one lock before it gives up.
+ * A give-up throws inside the content screen, which returns null: the
+ * ordinary pending/retry path, never a send.
+ */
+const VIDEO_SCAN_RECHECK_LOCK_TIMEOUT_MS = 10_000;
+
+/*
+ * REVIEWER B ON #1369: THE FIRST CHECK IS NOT THE LAST WORD.
+ *
+ * The check in the sweep loop is plain reads, and then the blob is downloaded
+ * and cut into frames, which takes seconds. A guardian's withdrawal, a
+ * photo-only change or a coach's tag naming a photo-only child, committed in
+ * that window, was never seen: the frames went out on consent that no longer
+ * stood.
+ *
+ * So the vision call itself runs inside this transaction, after a second
+ * check made under locks that every one of those writes has to wait for:
+ *   1. the consent-set lock SHARED and the guardian links FOR SHARE, for every
+ *      athlete the video can name (consentSetLock.ts, #1270's order). A
+ *      withdrawal or photo-only grant (recordMediaConsentAndSuppress, links
+ *      FOR UPDATE) and a new guardian link (consent set EXCLUSIVE) wait;
+ *   2. then the video row FOR SHARE. addClipTag locks that row FOR UPDATE
+ *      before it inserts, so a new tag waits. The row comes after the consent
+ *      locks, the order scan-review's approve already takes them in.
+ * A tag that landed before the row lock but after the athletes were chosen
+ * names someone not locked in step 1; that skips this attempt, and the next
+ * retry asks them.
+ *
+ * Held through the vision call (Overwatch's ruling for this fix, option b),
+ * so nothing can commit between the check and the send. The cost is that
+ * those writers wait for the call: at most VIDEO_SCAN_VISION_TIMEOUT_MS, and
+ * idle_in_transaction_session_timeout ends the session (dropping the locks)
+ * shortly after that if the call somehow outlives its own abort. The sweep
+ * runs one scan at a time and the worker chains its ticks
+ * (shadowJobWorker.ts), so this holds one pooled connection at most.
+ */
+export function recheckBeforeVision(
+  organizationId: string,
+  videoSessionId: string,
+  claimAthleteId: string | null,
+  onSkip: (reason: string) => void,
+): VisionCallGuard {
+  return <T>(send: () => Promise<T>) => withTransaction(async (client): Promise<T | null> => {
+    await client.query(`set local lock_timeout = '${VIDEO_SCAN_RECHECK_LOCK_TIMEOUT_MS}ms'`);
+    await client.query(
+      `set local idle_in_transaction_session_timeout = '${VIDEO_SCAN_VISION_TIMEOUT_MS + 5_000}ms'`,
+    );
+
+    const firstLook = await listLiveTagSubjects(organizationId, videoSessionId, client);
+    const locked = new Set([
+      ...(claimAthleteId ? [claimAthleteId] : []),
+      ...firstLook.map((tag) => tag.athlete_id),
+    ]);
+    await lockGuardianLinksForAthletes(client, organizationId, [...locked].sort(), 'share');
+
+    const video = await client.query<{ athlete_id: string | null }>(
+      `select athlete_id from pilot.video_sessions
+        where organization_id = $1 and video_session_id = $2
+        for share`,
+      [organizationId, videoSessionId],
+    );
+    const row = video.rows[0];
+    if (!row) {
+      onSkip('video_missing');
+      return null;
+    }
+
+    const tags = await listLiveTagSubjects(organizationId, videoSessionId, client);
+    if (tags.some((tag) => tag.athlete_deleted)) {
+      onSkip('tagged_athlete_deleted');
+      return null;
+    }
+    const athleteIds = [...new Set([
+      ...(row.athlete_id ? [row.athlete_id] : []),
+      ...tags.map((tag) => tag.athlete_id),
+    ])];
+    if (athleteIds.some((id) => !locked.has(id))) {
+      onSkip('tag_subjects_changed');
+      return null;
+    }
+
+    const reason = await consentSkipReason(organizationId, athleteIds, client);
+    if (reason) {
+      onSkip(reason);
+      return null;
+    }
+    return send();
+  });
+}
 
 function isEscalatingScanDecision(decision: VideoScanDecision): decision is VideoScanEscalationDecision {
   return decision === 'infected' || decision === 'blocked' || decision === 'needs_human_review';
@@ -225,25 +355,23 @@ export async function sweepQuarantinedVideos(options: {
         ...(claim.athlete_id ? [claim.athlete_id] : []),
         ...tagSubjects.map((tag) => tag.athlete_id),
       ])];
-      for (const athleteId of athleteIds) {
-        if (contentSkippedForConsent) break;
-        try {
-          await assertGuardianMediaConsent(claim.organization_id, athleteId);
-        } catch (error) {
-          if (!(error instanceof GuardianConsentMissingError)) throw error;
-          contentSkippedForConsent = true;
-          contentSkippedReason = 'guardian_consent_missing';
-        }
-        try {
-          await assertConsentCoversVideo(claim.organization_id, athleteId);
-        } catch (error) {
-          const reason = error instanceof PilotError && error.code ? COVERAGE_SKIP_REASONS[error.code] : undefined;
-          if (!reason) throw error;
+      if (!contentSkippedForConsent) {
+        const reason = await consentSkipReason(claim.organization_id, athleteIds);
+        if (reason) {
           contentSkippedForConsent = true;
           contentSkippedReason = reason;
         }
       }
     }
+
+    // The check above passed on plain reads; it is asked again, under lock,
+    // immediately before the frames are sent (recheckBeforeVision). Teaching
+    // footage names nobody and gets no guard, as above.
+    const guardVisionCall = config.content === 'vision' && !subject.isTeaching && !contentSkippedForConsent
+      ? recheckBeforeVision(claim.organization_id, claim.video_session_id, claim.athlete_id, (reason) => {
+        contentSkippedReason = reason;
+      })
+      : undefined;
 
     const scan = await scanVideoSession({
       blobPath: claim.blob_path,
@@ -251,6 +379,7 @@ export async function sweepQuarantinedVideos(options: {
       config,
       maxAttempts: DEFAULT_MAX_SCAN_ATTEMPTS,
       skipContentScreen: contentSkippedForConsent,
+      ...(guardVisionCall ? { guardVisionCall } : {}),
     });
 
     const nextStatus = videoStatusForDecision(scan.decision);
