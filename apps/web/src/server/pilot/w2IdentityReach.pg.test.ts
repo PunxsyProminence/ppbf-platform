@@ -135,9 +135,22 @@ const NOM_CONTROL = 'nom-w2-control';
    either side of the boundary whatever clock the test runs on. */
 const gymYmd = (date: Date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-const minus18 = (ymd: string) => `${Number(ymd.slice(0, 4)) - 18}${ymd.slice(4)}`;
-const ADULT_DOB = minus18(gymYmd(new Date()));
-const MINOR_DOB = minus18(gymYmd(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+/* Calendar arithmetic on the gym-date STRING, not on Date.now() + 24h: in the
+   hour the clocks fall back, now + 24h is still the same New York day. */
+const nextDay = (ymd: string) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+};
+/* 18 years earlier. A Feb 29 has no birthday 18 years back: the adult fixture
+   takes Feb 28 (18 by today either way), the minor fixture Mar 1 (still 17). */
+const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+  const year = Number(ymd.slice(0, 4)) - 18;
+  const monthDay = ymd.slice(5);
+  return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+};
+const GYM_TODAY = gymYmd(new Date());
+const ADULT_DOB = minus18(GYM_TODAY, '02-28');
+const MINOR_DOB = minus18(nextDay(GYM_TODAY), '03-01');
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -366,7 +379,7 @@ describe('1. the guardian link goes dormant at 18', () => {
       });
 
     await expect(grant()).rejects.toThrow(GuardianLinkEndedError);
-    await expect(withdraw()).rejects.toThrow('this athlete is 18; guardian access has ended');
+    await expect(withdraw()).rejects.toThrow('this athlete is 18 or older; guardian access has ended');
     expect(await waiverCount(ADULT)).toBe(before);
     // The transaction is closed either way: a later statement runs normally.
     await expect(client.query('select 1')).resolves.toBeDefined();

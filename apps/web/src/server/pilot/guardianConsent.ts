@@ -621,10 +621,13 @@ export class GuardianLinkEndedError extends ForbiddenError {
 /*
  * THE 18 RULE ON THE WRITE SIDE. OD-2026-10-07-008: the guardian link stops
  * for every consent change once the athlete is an adult. Decided INSIDE the
- * write transaction, after the link row is locked, from the athlete row as it
- * is at that moment -- so a date-of-birth correction committing in the gap
- * cannot admit a write the corrected row refuses, and the same instant that
- * answers the readers answers here.
+ * write transaction, after the link row is locked, from the athlete row as
+ * committed at that moment. That closes the gap between a route's earlier
+ * scope read (guardianAthleteIds) and the write; it is a plain read-committed
+ * select with no row lock, so a date-of-birth correction that commits after
+ * it and before this transaction's COMMIT is not serialised against it
+ * (locking the athlete row here would need a lock-order review against the
+ * deletion transaction, and the window is a birthday midnight).
  *
  * Both writers meet it, and so does the staff writer (admin/athlete-consent),
  * which records a guardian's paper consent under a parent_id: a guardian's

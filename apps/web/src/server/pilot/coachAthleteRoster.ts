@@ -40,13 +40,13 @@ export async function coachAuthorizedRoster(
 /**
  * The athletes an ORGANIZATION ADMIN may act on.
  *
- * getAthletesByOrganization is the obvious call here and is the wrong one:
- * it is `select * from pilot.athletes where organization_id = $1` with no
+ * getAthletesByOrganization was the obvious call here and was the wrong one:
+ * it was `select * from pilot.athletes where organization_id = $1` with no
  * deletion predicate, while assertAthleteBelongsToOrganization -- the gate
  * every write then passes through -- refuses an athlete whose deleted_at is
- * set. Built on the unfiltered read, a picker offers archived children whose
- * every subsequent read and write is refused, and the refusal arrives after
- * the admin has typed something in.
+ * set. Built on the unfiltered read, a picker offered archived children whose
+ * every subsequent read and write was refused, and the refusal arrived after
+ * the admin had typed something in.
  *
  * The coach half has never had this problem: athleteIdsForCoach carries
  * `deleted_at is null` in both branches of its union. This is that same

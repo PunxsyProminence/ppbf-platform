@@ -378,8 +378,9 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       await write();
 
       // The 18 rule's age read sits between them, on the same transaction:
-      // after the lock so a concurrent dob correction is seen, before the
-      // insert so a refused write records nothing.
+      // after the lock, so it reads the row as committed once the writer
+      // holds its place in line; before the insert, so a refused write
+      // records nothing.
       expect(seen).toEqual(['lock', 'age', 'insert']);
       expect(mockUpsertWaiverWithClient.mock.calls[0][0]).toBe(mockTxClient);
     });
@@ -391,16 +392,23 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
      * guardianAccess.guardianLinkEnded (wallDisplay.isMinor, gym-day).
      */
     describe('the guardian link has ended at 18', () => {
-      const today = new Date();
       const gymYmd = (date: Date) =>
         new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+      /* Calendar arithmetic on the gym-date string (the fall-back hour makes
+         now + 24h the same day); a Feb 29 falls to Feb 28 / Mar 1. */
+      const nextDay = (ymd: string) => {
+        const [y, m, d] = ymd.split('-').map(Number);
+        return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+      };
+      const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+        const monthDay = ymd.slice(5);
+        return `${Number(ymd.slice(0, 4)) - 18}-${monthDay === '02-29' ? leapDay : monthDay}`;
+      };
+      const GYM_TODAY = gymYmd(new Date());
       /** Turned 18 on the gym's calendar day today. */
-      const ADULT_DOB = `${Number(gymYmd(today).slice(0, 4)) - 18}${gymYmd(today).slice(4)}`;
+      const ADULT_DOB = minus18(GYM_TODAY, '02-28');
       /** Turns 18 tomorrow at the gym: still a minor until local midnight. */
-      const MINOR_DOB = (() => {
-        const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-        return `${Number(gymYmd(tomorrow).slice(0, 4)) - 18}${gymYmd(tomorrow).slice(4)}`;
-      })();
+      const MINOR_DOB = minus18(nextDay(GYM_TODAY), '03-01');
 
       function athleteRowReads(dob: string | null) {
         mockTxClient.query.mockImplementation(((sql: string) =>
@@ -414,7 +422,7 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
         athleteRowReads(ADULT_DOB);
 
         await expect(write()).rejects.toThrow(GuardianLinkEndedError);
-        await expect(write()).rejects.toThrow('this athlete is 18; guardian access has ended');
+        await expect(write()).rejects.toThrow('this athlete is 18 or older; guardian access has ended');
         expect(mockUpsertWaiverWithClient).not.toHaveBeenCalled();
         // The age read is bound to this athlete in this organization.
         const ageRead = mockTxClient.query.mock.calls.find(([sql]) => String(sql).includes('from pilot.athletes'));

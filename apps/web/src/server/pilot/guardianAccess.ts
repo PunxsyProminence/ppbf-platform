@@ -60,7 +60,7 @@ function calendarDay(value: Date): string | null {
 }
 
 /** The refusal a guardian's consent write meets once the link has ended. */
-export const GUARDIAN_LINK_ENDED_MESSAGE = 'Forbidden: this athlete is 18; guardian access has ended';
+export const GUARDIAN_LINK_ENDED_MESSAGE = 'Forbidden: this athlete is 18 or older; guardian access has ended';
 
 /**
  * True when the account holds a guardian link to the athlete inside this
@@ -109,7 +109,34 @@ export async function isGuardianLinkedToAthlete(
  * widen it to undefined (matches everything).
  */
 export async function guardianAthleteIds(organizationId: string, accountId: string): Promise<string[]> {
-  const rows = await query<{ athlete_id: string; dob: string | null }>(
+  const rows = await linkedAthleteRows(organizationId, accountId);
+
+  // An adult child drops out of the scope list quietly: to every caller this
+  // is the same shape as "not linked", which is what the ruling asks for.
+  return rows.filter((row) => !guardianLinkEnded(row.dob)).map((row) => row.athlete_id);
+}
+
+/**
+ * The same link rows WITHOUT the 18 rule: every live athlete this account's
+ * guardian records are linked to, adult or not. For STAFF integrity checks
+ * only -- guardianLoginMove's "one login, one guardian slot per child" guard
+ * asks which children a login already guards so a second record for the same
+ * child cannot be moved onto it, and that invariant has to hold for an adult
+ * child too (the slot comes back the day a date of birth is corrected). It is
+ * not a guardian read: nothing here is shown to, or reached by, the guardian.
+ * Reviewer finding on #1363: the guard read guardianAthleteIds and stopped
+ * seeing the adult overlap the moment the rule landed.
+ */
+export async function linkedAthleteIdsIncludingAdults(organizationId: string, accountId: string): Promise<string[]> {
+  const rows = await linkedAthleteRows(organizationId, accountId);
+  return rows.map((row) => row.athlete_id);
+}
+
+async function linkedAthleteRows(
+  organizationId: string,
+  accountId: string,
+): Promise<Array<{ athlete_id: string; dob: string | null }>> {
+  return query<{ athlete_id: string; dob: string | null }>(
     `select distinct gl.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as dob
      from pilot.guardian_links gl
      join pilot.parents p
@@ -122,10 +149,6 @@ export async function guardianAthleteIds(organizationId: string, accountId: stri
      where gl.organization_id = $1 and p.account_id = $2`,
     [organizationId, accountId],
   );
-
-  // An adult child drops out of the scope list quietly: to every caller this
-  // is the same shape as "not linked", which is what the ruling asks for.
-  return rows.filter((row) => !guardianLinkEnded(row.dob)).map((row) => row.athlete_id);
 }
 
 /**

@@ -2,7 +2,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { queryOne, query } from './db';
-import { guardianAthleteIds, guardianLinkEnded, guardianParentIdForAthlete, guardianParentIds, isGuardianLinkedToAthlete } from './guardianAccess';
+import {
+  guardianAthleteIds,
+  guardianLinkEnded,
+  guardianParentIdForAthlete,
+  guardianParentIds,
+  isGuardianLinkedToAthlete,
+  linkedAthleteIdsIncludingAdults,
+} from './guardianAccess';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -232,9 +239,22 @@ describe('consolidation holds: no new hand-written viewer-scoped guardian join a
    until local midnight. */
 const gymYmd = (date: Date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-const minus18 = (ymd: string) => `${Number(ymd.slice(0, 4)) - 18}${ymd.slice(4)}`;
-const ADULT_DOB = minus18(gymYmd(new Date()));
-const MINOR_DOB = minus18(gymYmd(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+/* Calendar arithmetic on the gym-date STRING, not on Date.now() + 24h: in the
+   hour the clocks fall back, now + 24h is still the same New York day. */
+const nextDay = (ymd: string) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+};
+/* 18 years earlier. A Feb 29 has no birthday 18 years back: the adult fixture
+   takes Feb 28 (18 by today either way), the minor fixture Mar 1 (still 17). */
+const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+  const year = Number(ymd.slice(0, 4)) - 18;
+  const monthDay = ymd.slice(5);
+  return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+};
+const GYM_TODAY = gymYmd(new Date());
+const ADULT_DOB = minus18(GYM_TODAY, '02-28');
+const MINOR_DOB = minus18(nextDay(GYM_TODAY), '03-01');
 
 /**
  * OD-2026-10-07-008, question card 1 item 3 ("Goes dormant at 18"): every
@@ -277,6 +297,19 @@ describe('the guardian link goes dormant at 18', () => {
     ]);
     await expect(guardianAthleteIds('org-1', 'parent-acct-1')).resolves.toEqual(['ath-minor', 'ath-unknown']);
     expect(String(mockQuery.mock.calls[0][0])).toContain("to_char(a.dob, 'YYYY-MM-DD') as dob");
+  });
+
+  test('the staff variant keeps the adult: the login-move guard still sees a second slot for an adult child', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-minor', dob: MINOR_DOB },
+      { athlete_id: 'ath-adult', dob: ADULT_DOB },
+    ]);
+    await expect(linkedAthleteIdsIncludingAdults('org-1', 'parent-acct-1')).resolves.toEqual(['ath-minor', 'ath-adult']);
+    // Same rows, same deletion filter, same tenancy: one query, not a second copy.
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('a.deleted_at is null');
+    expect(String(sql).match(/organization_id = \$1/g)?.length).toBe(1);
+    expect(params).toEqual(['org-1', 'parent-acct-1']);
   });
 
   test('guardianParentIdForAthlete is null for an adult, so no consent write can resolve an acting parent', async () => {
