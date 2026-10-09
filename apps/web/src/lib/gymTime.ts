@@ -12,13 +12,11 @@
  *   - A grandparent watching from another timezone sees different dates than
  *     the coach who wrote them, for the same events.
  *
- * The server already settled this question: env.ts resolves PPBF_WALL_TIMEZONE
- * and defaults to America/New_York, and wallDisplay.ts does all of its day
- * arithmetic in that zone. This is the client-side half of the same rule.
- *
- * The zone is a literal rather than a read of PPBF_WALL_TIMEZONE because that
- * variable is server-only; a client bundle cannot see it. If the gym ever moves
- * zones, both this constant and the server default have to change together.
+ * This constant is the ONE source of the gym's zone, for client and server
+ * alike: env.ts getWallTimeZone() returns it, and wallDisplay.ts does all of
+ * its day arithmetic in it. It is a literal, not an environment variable,
+ * because a client bundle cannot read a server-only variable and two sources
+ * would let the board's day drift from every other date shown.
  */
 export const GYM_TIME_ZONE = 'America/New_York';
 

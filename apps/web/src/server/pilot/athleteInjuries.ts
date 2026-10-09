@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { query, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { NotFoundError, ValidationError } from './errors';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 // The athlete injury record (map item 11): date, body area, type, training or
 // competition, time lost. The table is owned by
@@ -364,6 +364,53 @@ export async function updateInjury(input: {
     }
     const row = await selectInjury(client, input.organizationId, input.injuryId);
     if (!row) throw new Error('Updated injury could not be read back.');
+    return row;
+  });
+}
+
+/**
+ * Links an injury to a return-to-training plan and nothing else: no field
+ * replay, so an edit made since the caller read the row is kept, and the row
+ * lock plus the `linked_rtt_plan_id is null` guard mean two coaches creating
+ * a plan on the same injury at once cannot both link -- the second gets the
+ * ConflictError and its plan stays unlinked. The plan takes over the expected
+ * return, so the row's own is cleared (the one-return-source constraint). The
+ * plan must be this athlete's and must not end before the injury, the same
+ * checks every other link path makes.
+ */
+export async function linkInjuryToPlan(input: {
+  organizationId: string;
+  injuryId: string;
+  planId: string;
+  updatedByAccountId: string;
+}): Promise<AthleteInjuryRow> {
+  if (!UUID.test(input.injuryId)) throw new NotFoundError('Injury record not found.');
+  const planId = idOrNull(input.planId, 'planId', false);
+  if (!planId) throw new ValidationError('planId is required.');
+  return withTransaction(async (client) => {
+    const existing = await selectInjury(client, input.organizationId, input.injuryId, true);
+    if (!existing || existing.entered_in_error) {
+      throw new NotFoundError('Injury record not found.');
+    }
+    if (existing.linked_rtt_plan_id) {
+      throw new ConflictError('This injury already has a return-to-training plan.', 'RTT_PLAN_ALREADY_LINKED');
+    }
+    await assertLinksBelongToAthlete(client, input.organizationId, existing.athlete_id, {
+      injuryDate: existing.injury_date,
+      linkedRttPlanId: planId,
+    } as InjuryFields);
+    const updated = await client.query(
+      `update pilot.athlete_injuries
+          set linked_rtt_plan_id = $3, expected_return_date = null, updated_by_account_id = $4, updated_at = now()
+        where organization_id = $1 and injury_id = $2::uuid and entered_in_error = false
+          and linked_rtt_plan_id is null`,
+      [input.organizationId, input.injuryId, planId, input.updatedByAccountId],
+    );
+    if (updated.rowCount !== 1) {
+      throw new ConflictError('This injury already has a return-to-training plan.', 'RTT_PLAN_ALREADY_LINKED');
+    }
+    const row = await selectInjury(client, input.organizationId, input.injuryId);
+    if (!row) throw new Error('Linked injury could not be read back.');
     return row;
   });
 }

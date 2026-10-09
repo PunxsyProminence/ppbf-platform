@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import {
   checkGuardianMediaConsent,
   grantMediaConsent,
+  GuardianLinkEndedError,
   guardianDisplayName,
   listOrganizationConsentStatus,
   withdrawMediaConsent,
@@ -126,7 +127,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
           perGuardian: [{ parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
           retained: [],
         },
-        guardians: [{ parentId: 'p1', fullName: 'Dana Reyes' }],
+        guardians: [{ parentId: 'p1', fullName: 'Dana Reyes', hasLogin: true }],
       },
     ]);
 
@@ -148,6 +149,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
             {
               parent_id: 'p1',
               parent_name: 'Dana Reyes',
+              has_login: true,
               status: 'signed',
               consented: true,
               covers_video: true,
@@ -158,6 +160,36 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
         },
       ],
     });
+  });
+
+  // A guardian recorded from paper alone (OD-2026-10-07-009) has no login.
+  // The desk must say so: nothing can be emailed to this guardian, and they
+  // will never see the parent console. A guardian the lookup cannot resolve
+  // at all is reported the same way -- never as one who can be reached.
+  test('a paper-only guardian is reported as has_login false, and so is an unresolved one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    const row = { status: null, coversVideo: null, publicUseAllowed: null, signedAt: null };
+    mockList.mockResolvedValueOnce([
+      {
+        athleteId: 'ath-1',
+        athleteName: 'Sample Athlete',
+        consent: {
+          ok: false,
+          guardianIds: ['paper', 'ghost'],
+          missingParentIds: ['paper', 'ghost'],
+          perGuardian: [{ parentId: 'paper', ...row }, { parentId: 'ghost', ...row }],
+          retained: [],
+        },
+        guardians: [{ parentId: 'paper', fullName: 'Lee Paper', hasLogin: false }],
+      },
+    ]);
+
+    const payload = await (await GET(request())).json();
+
+    expect(payload.items[0].per_guardian).toEqual([
+      expect.objectContaining({ parent_id: 'paper', parent_name: 'Lee Paper', has_login: false }),
+      expect.objectContaining({ parent_id: 'ghost', parent_name: 'ghost', has_login: false }),
+    ]);
   });
 
   test('a coach reaches the audit -- they record consent from it, so they must be able to read it', async () => {
@@ -232,6 +264,60 @@ describe('POST /api/pilot/admin/athlete-consent -- validation', () => {
     expect(response.status).toBe(400);
     expect(mockGrant).not.toHaveBeenCalled();
     expect(mockWithdraw).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * OD-2026-10-07-008: a guardian's consent for an athlete who is 18 or older is
+ * refused whoever types it (overwatch 2026-10-08: the staff writer too). This
+ * route is where that refusal is normally met, so it is audited here.
+ */
+describe('POST /api/pilot/admin/athlete-consent -- the guardian link has ended at 18', () => {
+  const refusal = () => Promise.reject(new GuardianLinkEndedError());
+
+  test('a direct grant answers 403 GUARDIAN_LINK_ENDED and writes one guardian_link_ended audit row naming the staff actor', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-front-desk' }));
+    mockGrant.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: true }));
+
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(await response.json())).toContain('18 or older; guardian access has ended');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'update',
+      actor_account_id: 'acct-front-desk',
+      actor_role: 'organization_admin',
+      organization_id: 'org-a',
+      entity_type: 'guardian_media_consent',
+      entity_id: 'ath-1',
+      details: { action: 'guardian_link_ended', parent_id: 'p1' },
+    }));
+  });
+
+  test('a photo-only grant (the sweep path) is the same 403 and single audit row, never a "failed sweep"', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockGrant.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, covers_video: false }));
+
+    expect(response.status).toBe(403);
+    expect(mockSweep).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'guardian_link_ended', parent_id: 'p1' });
+  });
+
+  test('a withdrawal (the other sweep path) is the same 403 and single audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockWithdraw.mockImplementationOnce(refusal);
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, decision: 'withdraw' }));
+
+    expect(response.status).toBe(403);
+    expect(mockGrant).not.toHaveBeenCalled();
+    expect(mockSweep).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0].details).toEqual({ action: 'guardian_link_ended', parent_id: 'p1' });
   });
 });
 

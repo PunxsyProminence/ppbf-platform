@@ -94,7 +94,7 @@ const DEFAULTS: ReadonlyArray<readonly [prefix: RegExp, classes: string]> = [
 export function buttonClasses(className?: string): string {
   const caller = className ?? '';
   const base = [
-    'inline-flex min-h-[44px] items-center justify-center gap-2 border-2 px-3',
+    'inline-flex min-h-[var(--tap)] items-center justify-center gap-2 border-2 px-3',
     'text-xs font-mono font-bold uppercase tracking-[0.12em] transition',
     'focus-visible:outline-none focus-visible:shadow-[var(--focus)]',
   ];

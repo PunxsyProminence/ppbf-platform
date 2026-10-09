@@ -1,4 +1,4 @@
-import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 import { query, queryOne } from './db';
 
@@ -239,18 +239,18 @@ export function ageOnGymDay(dob: string, gymDay: string): number | null {
  * Today in the gym's timezone, as YYYY-MM-DD.
  *
  * Not formatGymDay, which renders "June 16, 2026" for people to read. This
- * needs the sortable, parseable form, so it goes through en-CA -- the locale
- * whose short date IS YYYY-MM-DD -- pinned to the gym's zone. Using
- * toISOString() instead would name the wrong day every evening, because UTC is
- * already tomorrow while the gym is still training.
+ * needs the sortable, parseable form. Using toISOString() instead would name
+ * the wrong day every evening, because UTC is already tomorrow while the gym
+ * is still training.
+ *
+ * One "today" for the whole platform: this is gymTime.gymDayIso under the name
+ * its callers already use. It throws on an unusable date, as it always has,
+ * because every caller here needs a day and has no honest fallback.
  */
 export function gymToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: GYM_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
+  const day = gymDayIso(now);
+  if (!day) throw new RangeError('Invalid time value');
+  return day;
 }
 
 /**

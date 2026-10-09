@@ -7,6 +7,7 @@ import {
   isAnnouncementPlacement,
   type AnnouncementAuthorRole,
 } from '@/src/server/pilot/announcements';
+import { parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getBoardSeatLabel, listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 import { jsonError, requireStaffSessionPrincipal } from '@/src/server/pilot/http';
@@ -68,12 +69,13 @@ function parseScheduleBound(raw: unknown, field: string): string | null {
     throw new Error(`Unsupported ${field}`);
   }
 
-  const parsed = Date.parse(raw);
-  if (Number.isNaN(parsed)) {
+  // A zone-less time means the gym's clock; a string with an offset is kept.
+  const parsed = parseInstantAsGymTime(raw);
+  if (!parsed) {
     throw new Error(`Unsupported ${field}`);
   }
 
-  return new Date(parsed).toISOString();
+  return parsed.toISOString();
 }
 
 export async function POST(request: NextRequest) {

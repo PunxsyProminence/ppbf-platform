@@ -45,3 +45,12 @@ test('names no colour for the words themselves', () => {
     expect(word?.className).not.toMatch(/text-\[color:/);
   }
 });
+
+/* Law 5, OD-2026-10-02-004/-007: gym-floor text is 19.1px (--t-md). A clamp
+   whose floor is --t-sm resolved to 15px on tablets and phones. */
+test('holds the gym-floor type size at every viewport', () => {
+  render(<WorkAxis />);
+
+  const list = screen.getByRole('list', { name: 'The work axis' });
+  expect(list.style.fontSize).toBe('var(--t-md)');
+});

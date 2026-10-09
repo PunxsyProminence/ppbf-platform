@@ -202,14 +202,46 @@ describe('getOrganizationWaiverStatus against real Postgres', () => {
       // A withdrawn waiver is the append-only record of a decision that
       // supersedes an earlier signed one; picking the older row would show
       // a parent's withdrawal as if it never happened.
+      //
+      // travel, not photo_media: photo_media is no longer read from these
+      // rows at all (see MEDIA_CONSENT_TRACKED_TYPE and the case below).
       await insertWaiver(client, {
         organizationId: ORG_A,
         athleteId: ATHLETE_ID,
-        waiverType: 'photo_media',
+        waiverType: 'travel',
         status: 'withdrawn',
         signedAt: '2026-08-05T00:00:00Z',
         createdAt: '2026-08-05T00:00:00Z',
       });
+      await insertWaiver(client, {
+        organizationId: ORG_A,
+        athleteId: ATHLETE_ID,
+        waiverType: 'travel',
+        status: 'signed',
+        signedAt: '2026-08-01T00:00:00Z',
+        createdAt: '2026-08-01T00:00:00Z',
+      });
+
+      const statuses = await getOrganizationWaiverStatus(ORG_A);
+      expect(statuses).toHaveLength(1);
+      expect(statuses[0].waivers.travel).toBe('withdrawn');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  /* THE REGISTER ROW THAT USED TO READ AS SIGNED (OD-2026-10-07-009). A
+     photo_media row with no parent_id -- what /admin/consent filed before the
+     type left its dropdown -- is not consent to any media gate, and this
+     rollup now agrees: with no guardian linked it is missing, and with a
+     guardian linked it is that guardian's own answer that counts. The full
+     paper-only flow is paperOnlyGuardian.pg.test.ts. */
+  test('photo_media ignores a register row with no guardian and reads the linked guardian instead', async () => {
+    const client = await freshDatabase('ppbf_test_waiver_compliance_media');
+    activeClient = client;
+    try {
+      await insertAthlete(client, ORG_A, ATHLETE_ID, 'Compliance Athlete');
       await insertWaiver(client, {
         organizationId: ORG_A,
         athleteId: ATHLETE_ID,
@@ -219,9 +251,37 @@ describe('getOrganizationWaiverStatus against real Postgres', () => {
         createdAt: '2026-08-01T00:00:00Z',
       });
 
-      const statuses = await getOrganizationWaiverStatus(ORG_A);
-      expect(statuses).toHaveLength(1);
-      expect(statuses[0].waivers.photo_media).toBe('withdrawn');
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.photo_media).toBe('missing');
+
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, full_name) values ($1, 'par-paper-1', 'Lee Paper')`,
+        [ORG_A],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, 'par-paper-1', $2, 'mother')`,
+        [ORG_A, ATHLETE_ID],
+      );
+      // Still missing: the register row names no guardian, and the one
+      // guardian on file has not answered.
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.photo_media).toBe('missing');
+
+      await client.query(
+        `insert into pilot.waivers (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+           signed_by_role, signed_at, consent_version, status, covers_video, created_at, updated_at)
+         values ($1, $2, $3, 'par-paper-1', 'photo_media', 'Lee Paper', 'parent', now(), 'v1', 'withdrawn', false, now(), now())`,
+        [ORG_A, randomUUID(), ATHLETE_ID],
+      );
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.photo_media).toBe('withdrawn');
+
+      await client.query(
+        `insert into pilot.waivers (organization_id, waiver_id, athlete_id, parent_id, waiver_type, signed_by_name,
+           signed_by_role, signed_at, consent_version, status, covers_video, created_at, updated_at)
+         values ($1, $2, $3, 'par-paper-1', 'photo_media', 'Lee Paper', 'parent', now(), 'v1', 'signed', true,
+                 now() + interval '1 second', now() + interval '1 second')`,
+        [ORG_A, randomUUID(), ATHLETE_ID],
+      );
+      expect((await getOrganizationWaiverStatus(ORG_A))[0].waivers.photo_media).toBe('signed');
     } finally {
       activeClient = null;
       await client.end();

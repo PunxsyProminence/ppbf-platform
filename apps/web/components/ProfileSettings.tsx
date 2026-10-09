@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import FightCard from './FightCard';
+import { requiresDocumentLoad } from './cameraDocuments';
+import { clearRoleSession } from './roleSession';
 import {
   CORNER_OPTIONS,
   downscalePhoto,
@@ -51,6 +54,10 @@ export default function ProfileSettings() {
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const [signOutEverywhereError, setSignOutEverywhereError] = useState<string | null>(null);
+  const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
 
   const load = useCallback(async () => {
     try {
@@ -145,6 +152,41 @@ export default function ProfileSettings() {
       setPhotoError('That photo could not be removed.');
     }
   }, [load]);
+
+  /* SIGN OUT OF EVERY DEVICE (OD-2026-10-06-025 r3 "Build all", feature C7).
+     POST /api/pilot/auth/logout-all has existed with no control calling it:
+     it ends every session THIS account holds in this gym, the caller's own
+     included, and clears the cookie. The account acted on is the session's --
+     the route takes no account id, and this button sends none. After it, the
+     exit is the one GlobalRoleHeader makes for an ordinary sign-out: the
+     client role cache is cleared and the login page is loaded, by document
+     load when leaving a camera page so camera permission does not travel.
+
+     Not the People page's "Sign Out Everywhere": that is an admin acting on
+     somebody else's account. This acts on your own, so it is worded as yours. */
+  const signOutEverywhere = useCallback(async () => {
+    setSigningOutEverywhere(true);
+    setSignOutEverywhereError(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/logout-all`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        setSignOutEverywhereError(payload.error ?? 'That did not sign you out. You are still signed in here.');
+        setSigningOutEverywhere(false);
+        return;
+      }
+    } catch {
+      setSignOutEverywhereError('That did not sign you out. You are still signed in here.');
+      setSigningOutEverywhere(false);
+      return;
+    }
+    clearRoleSession();
+    if (requiresDocumentLoad(pathname, '/login')) window.location.replace('/login');
+    else router.replace('/login');
+  }, [pathname, router]);
 
   if (loadError) {
     return (
@@ -319,6 +361,29 @@ export default function ProfileSettings() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* -------------------------------------------------------- SIGN-IN -- */}
+      <section className={PANEL} aria-labelledby="signin-heading">
+        <h2 id="signin-heading" className={HEADING}>Your sign-in</h2>
+        <p className={HELP}>
+          If you left yourself signed in on a gym tablet or a phone you no longer have, this ends
+          every session you hold here, including this one. Your sign-in still works: you sign back
+          in on the device you want.
+        </p>
+        <div className="flex flex-wrap items-center gap-[var(--s4)]">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={signingOutEverywhere}
+            onClick={() => void signOutEverywhere()}
+          >
+            {signingOutEverywhere ? 'Signing out…' : 'Sign out of every device'}
+          </button>
+        </div>
+        {signOutEverywhereError && (
+          <p role="alert" className="text-[length:var(--t-xs)] text-[color:var(--locked-ink)]">{signOutEverywhereError}</p>
+        )}
       </section>
 
       <p className="t-muted text-[length:var(--t-xs)]" aria-live="polite">

@@ -70,10 +70,12 @@ export async function createMembership(input: {
 }): Promise<MembershipRow | null> {
   // The athlete lookup doubles as the tenancy check: an id from another
   // organization reads as "no such athlete" and the caller answers with a
-  // hidden not-found.
+  // hidden not-found. A deleted athlete reads the same way (ADMIN-01, scope
+  // B): the FROM every read here uses already drops them, so a membership
+  // created for one would be a row no screen could ever show.
   const athlete = await queryOne<{ athlete_id: string }>(
     `select athlete_id from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [input.organizationId, input.athleteId],
   );
   if (!athlete) return null;

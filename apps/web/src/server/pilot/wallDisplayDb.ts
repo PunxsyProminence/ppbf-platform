@@ -2,6 +2,7 @@ import { query } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { getWallTimeZone } from './env';
 import {
+  buildPublicWallBoard,
   buildWallBoard,
   gymDayBounds,
   MARQUEE_WINDOW_DAYS,
@@ -9,10 +10,12 @@ import {
   type WallAthleteRow,
   type WallAttendanceRow,
   type WallBoard,
+  type WallClassCountRow,
   type WallClassRow,
   type WallCrossingRow,
   type WallNameMode,
   type WallNoticeRow,
+  type WallPublicBoard,
   type WallWaiverRow,
 } from './wallDisplay';
 
@@ -37,6 +40,102 @@ import {
  * infra/azure migrations (httpRoutesCarryNoDdl.test.ts pins that).
  */
 
+/**
+ * THE PUBLIC READ -- behind GET /api/pilot/wall, which anyone can call.
+ *
+ * OD-2026-10-07-008: the public address shows today's classes and a head
+ * count only. So this function reads three things and nothing else:
+ *
+ *   - today's classes (scheduler_classes: title, times, room, status);
+ *   - head counts, computed in SQL as count(distinct athlete_id) per class and
+ *     in total, so no athlete id crosses the wire at all -- not even to be
+ *     hashed. Deleted athletes are left out (Scope B), the same filter the
+ *     paired read applies, so the two screens agree about the room;
+ *   - notices placed on gym_notices in as many words. NOT 'everywhere': that
+ *     placement means every signed-in surface, and this caller is signed out.
+ *
+ * It selects no column from pilot.athletes (the deleted-athlete filter is a
+ * NOT EXISTS on deleted_at and returns nothing), and never touches
+ * pilot.waivers or pilot.sessions. That is pinned by wallDisplayPrivacy.test.ts
+ * against this function's own text, so a join added here fails a test rather
+ * than waiting for a reviewer to notice.
+ */
+export async function loadPublicWallBoard(input: {
+  organizationId: string;
+  now?: Date;
+  timeZone?: string;
+}): Promise<WallPublicBoard> {
+  const now = input.now ?? new Date();
+  const timeZone = input.timeZone ?? getWallTimeZone();
+  const { startUtc, endUtc } = gymDayBounds(now, timeZone);
+  const startIso = startUtc.toISOString();
+  const endIso = endUtc.toISOString();
+
+  const [classes, classCounts, totals, notices] = await Promise.all([
+    query<WallClassRow>(
+      `select class_id, title, start_at::text, end_at::text, location, status
+       from pilot.scheduler_classes
+       where organization_id = $1
+         and start_at >= $2::timestamptz
+         and start_at <  $3::timestamptz
+       order by start_at asc
+       limit 24`,
+      [input.organizationId, startIso, endIso],
+    ),
+    query<WallClassCountRow>(
+      `select class_id, count(distinct athlete_id)::int as on_floor
+       from pilot.scheduler_attendance
+       where organization_id = $1
+         and status = 'present'
+         and checked_in_at >= $2::timestamptz
+         and checked_in_at <  $3::timestamptz
+         -- Scope B: a deleted athlete is not counted on the wall, public or
+         -- paired, so the two screens never disagree about the room.
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
+       group by class_id`,
+      [input.organizationId, startIso, endIso],
+    ),
+    query<{ on_floor_total: number }>(
+      `select count(distinct athlete_id)::int as on_floor_total
+       from pilot.scheduler_attendance
+       where organization_id = $1
+         and status = 'present'
+         and checked_in_at >= $2::timestamptz
+         and checked_in_at <  $3::timestamptz
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}`,
+      [input.organizationId, startIso, endIso],
+    ),
+    query<WallNoticeRow>(
+      `select message, author_name, author_role, created_at::text, kind
+       from pilot.announcements
+       where organization_id = $1
+         and active
+         and placement = 'gym_notices'
+         and (starts_at is null or starts_at <= now())
+         and (ends_at is null or ends_at > now())
+       order by created_at desc
+       limit 5`,
+      [input.organizationId],
+    ),
+  ]);
+
+  return buildPublicWallBoard({
+    now,
+    timeZone,
+    classes,
+    classCounts,
+    onFloorTotal: totals[0]?.on_floor_total ?? 0,
+    notices,
+  });
+}
+
+/**
+ * THE PAIRED READ -- behind GET /api/pilot/tv/session, which only a television
+ * holding a device key minted by a coach's pairing code can call (gymTvs.ts).
+ * This is the board with people on it: initials (or more, per the name mode
+ * and the consent gate), milestone crossings, and 'everywhere' notices. It is
+ * never served on the public address (OD-2026-10-07-008).
+ */
 export async function loadWallBoard(input: {
   organizationId: string;
   mode: WallNameMode;

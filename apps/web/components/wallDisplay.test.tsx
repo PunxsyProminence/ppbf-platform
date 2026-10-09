@@ -9,7 +9,7 @@
  * is in the room once its data is too old to be true.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import WallDisplay, {
@@ -20,9 +20,13 @@ import WallDisplay, {
   floorDensity,
   formatClock,
   nextPollDelayMs,
+  PAIR_MESSAGES,
   parseTimestamp,
+  publicToBoard,
+  submitPairCode,
+  withoutPeople,
 } from './WallDisplay';
-import type { WallBoard } from '@/src/server/pilot/wallDisplay';
+import type { WallBoard, WallPublicBoard } from '@/src/server/pilot/wallDisplay';
 import * as sayings from './gymSayings';
 import { GYM_SAYINGS } from './gymSayings';
 
@@ -41,11 +45,39 @@ function board(over: Partial<WallBoard> = {}): WallBoard {
   };
 }
 
+/* One answer for every URL. The paired read, GET /api/pilot/tv/session, is
+   asked first on every poll, and a response with no status is not a 401 -- so
+   a fixture built this way stands in for a PAIRED television, and the board it
+   carries is rendered in full. The unpaired path is exercised by respondByUrl
+   below. */
 function respondWith(payload: unknown, ok = true) {
   return jest.fn().mockResolvedValue({
     ok,
     json: async () => payload,
   } as unknown as Response);
+}
+
+function publicBoard(over: Partial<WallPublicBoard> = {}): WallPublicBoard {
+  return {
+    scope: 'public',
+    generated_at: '2026-08-03T18:30:00.000Z',
+    gym_day: '2026-08-03',
+    time_zone: 'America/New_York',
+    sessions: [],
+    on_floor_total: 0,
+    notice: null,
+    ...over,
+  };
+}
+
+/** An UNPAIRED television: the paired read answers 401, the public read answers with `pub`. */
+function respondByUrl(pub: unknown, pubOk = true) {
+  return jest.fn().mockImplementation(async (url: string) => {
+    if (url.includes('/api/pilot/tv/session')) {
+      return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+    }
+    return { ok: pubOk, status: pubOk ? 200 : 503, json: async () => pub } as unknown as Response;
+  });
 }
 
 let fetchMock: jest.Mock;
@@ -129,7 +161,9 @@ describe('WallDisplay', () => {
     render(<WallDisplay />);
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain('/api/pilot/wall');
+    // The paired read goes first, with the device cookie.
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/pilot/tv/session');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'include' });
 
     await act(async () => {
       jest.advanceTimersByTime(WALL_POLL_MS);
@@ -284,6 +318,273 @@ describe('WallDisplay', () => {
       jest.advanceTimersByTime(WALL_POLL_MS * 4);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ------------------------------------------------- paired, or public --- */
+
+/* OD-2026-10-07-008 (Jason, "Paired gym TV only"): the public address shows
+   today's classes and a head count only; initials and milestones go only to a
+   TV paired with a code. The server enforces that (wall/route.test.ts,
+   tv/session/route.test.ts). These pin the screen's half: which read it makes,
+   and that nothing on the public channel can put a name up even if it tried. */
+describe('paired or public', () => {
+  it('an unpaired television falls back to the public read and shows a head count, no names, no marquee', async () => {
+    fetchMock = respondByUrl({ ok: true, board: publicBoard({ on_floor_total: 7 }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/pilot/tv/session');
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/pilot/wall');
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ credentials: 'omit' });
+
+    expect(screen.getByText(/7 people training/i)).toBeTruthy();
+    expect(container.querySelector('.wall-floor-list')).toBeNull();
+    expect(container.querySelector('.marquee-run')).toBeNull();
+    // A 401 is "not paired", not "down": the board is live.
+    expect(screen.getByText('Live')).toBeTruthy();
+  });
+
+  it('a name that somehow arrives on the public channel is never rendered', async () => {
+    // Belt and braces. The server cannot produce this payload (the type has no
+    // on_floor, and wall/route.test.ts proves the serialized body carries no
+    // name); if it ever did, the fold drops it here as well.
+    const smuggled = { ...publicBoard({ on_floor_total: 1 }), on_floor: [{ key: 'k1', name: 'Marcus Ruiz', visibility: 'full_name' }], marquee: [{ key: 'k1-34', name: 'Marcus Ruiz', visibility: 'full_name', milestone: 34, crossed_on: '2026-08-03' }] };
+    fetchMock = respondByUrl({ ok: true, board: smuggled });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    expect(container.textContent).not.toContain('Marcus');
+    expect(screen.getByText(/1 person training/i)).toBeTruthy();
+  });
+
+  it('a public payload without scope: public is refused as a board', async () => {
+    fetchMock = respondByUrl({ ok: true, board: board({ on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }], on_floor_total: 1 }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(container.textContent).not.toContain('M.R.');
+    expect(screen.getByText(/coming up/i)).toBeTruthy();
+  });
+
+  it('a paired television renders the full board, initials and marquee included', async () => {
+    fetchMock = respondWith({
+      tv: { tv_name: 'Gym main' },
+      session: null,
+      board: board({
+        on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }],
+        on_floor_total: 1,
+        marquee: [{ key: 'k1-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-08-02' }],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<WallDisplay />);
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText('M.R.').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('13').length).toBeGreaterThan(0);
+  });
+
+  it('an unpaired television whose public read fails is a failure, not a blank claim', async () => {
+    fetchMock = respondByUrl({ ok: false, error: 'The board is unavailable.' }, false);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(container.textContent).not.toContain('unavailable');
+    expect(screen.getByText(/coming up/i)).toBeTruthy();
+  });
+
+  it('a television that is told it is no longer paired drops the people at once, even when the public read fails', async () => {
+    // Paired first: names and a marquee are up.
+    fetchMock = respondWith({
+      tv: { tv_name: 'Gym main' },
+      session: null,
+      board: board({
+        sessions: [{ key: 'c1', title: 'Youth Boxing', start_at: '2026-08-03T22:00:00.000Z', end_at: '2026-08-03T23:00:00.000Z', location: 'Floor', state: 'upcoming', on_floor: 1 }],
+        on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }],
+        on_floor_total: 1,
+        marquee: [{ key: 'k1-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-08-02' }],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(screen.getAllByText('M.R.').length).toBeGreaterThan(0);
+
+    // Then a coach presses Disconnect: 401, and the public read is down too.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes('/api/pilot/tv/session')) {
+        return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+      }
+      throw new Error('network');
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+
+    expect(container.textContent).not.toContain('M.R.');
+    expect(container.querySelector('.marquee-run')).toBeNull();
+    // The rest of the last board stays, dated: classes, count, and the age.
+    expect(screen.getByText('Youth Boxing')).toBeTruthy();
+    expect(screen.getByText(/1 person training/i)).toBeTruthy();
+    expect(screen.getByText(/^As of /)).toBeTruthy();
+  });
+
+  it('a plain failure of the paired read keeps the last paired board, people included', async () => {
+    // Not a 401: the server did not say "not paired", it said nothing. A
+    // paired screen that flipped to the public board on one dropped packet
+    // would blink names on and off all evening.
+    fetchMock = respondWith({
+      tv: { tv_name: 'Gym main' },
+      session: null,
+      board: board({ on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }], on_floor_total: 1 }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+
+    fetchMock.mockRejectedValue(new Error('network'));
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_POLL_MS);
+    });
+    await settle();
+    expect(screen.getByText('M.R.')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('withoutPeople keeps everything but the people', () => {
+    const full = board({
+      on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }],
+      on_floor_total: 3,
+      marquee: [{ key: 'k1-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-08-02' }],
+      notice: { message: 'Open mat.', author: 'Coach', posted_at: '2026-08-01T12:00:00.000Z' },
+    });
+    expect(withoutPeople(full)).toEqual({ ...full, name_mode: 'off', on_floor: [], marquee: [] });
+  });
+
+  it('publicToBoard carries the public fields and nothing else', () => {
+    const folded = publicToBoard(publicBoard({ on_floor_total: 4, notice: { message: 'Open mat.', author: 'Coach', posted_at: '2026-08-01T12:00:00.000Z' } }));
+    expect(folded).toEqual({
+      generated_at: '2026-08-03T18:30:00.000Z',
+      gym_day: '2026-08-03',
+      time_zone: 'America/New_York',
+      name_mode: 'off',
+      sessions: [],
+      on_floor: [],
+      on_floor_total: 4,
+      marquee: [],
+      notice: { message: 'Open mat.', author: 'Coach', posted_at: '2026-08-01T12:00:00.000Z' },
+    });
+  });
+});
+
+/* ------------------------------------------------------------ pair box --- */
+
+/* The one control on the wall, and only while the screen is not paired. */
+describe('the pair box', () => {
+  /** Unpaired until a code is accepted; then the paired read answers. */
+  function respondPairable(pairStatus = 200) {
+    let pairedNow = false;
+    return jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes('/api/pilot/tv/pair')) {
+        if (pairStatus === 200) pairedNow = true;
+        return { ok: pairStatus === 200, status: pairStatus, json: async () => ({ error: 'TV_PAIR_CODE_REJECTED: internal detail' }) } as unknown as Response;
+      }
+      if (url.includes('/api/pilot/tv/session')) {
+        if (!pairedNow) return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tv: { tv_name: 'Gym main' },
+            session: null,
+            board: board({ on_floor: [{ key: 'k1', name: 'M.R.', visibility: 'initials' }], on_floor_total: 1 }),
+            board_status: 'ok',
+          }),
+        } as unknown as Response;
+      }
+      void init;
+      return { ok: true, status: 200, json: async () => ({ ok: true, board: publicBoard({ on_floor_total: 1 }) }) } as unknown as Response;
+    });
+  }
+
+  it('is absent before the first read answers, and on a paired screen', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { container, unmount } = render(<WallDisplay />);
+    expect(container.querySelector('form')).toBeNull();
+    unmount();
+
+    fetchMock = respondWith({ tv: { tv_name: 'Gym main' }, session: null, board: board(), board_status: 'ok' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const paired = render(<WallDisplay />);
+    await settle();
+    expect(paired.container.querySelector('form')).toBeNull();
+  });
+
+  it('on an unpaired screen it is exactly one code field and one button', async () => {
+    fetchMock = respondByUrl({ ok: true, board: publicBoard() });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(container.querySelectorAll('input')).toHaveLength(1);
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.getByLabelText('Pairing code')).toBeTruthy();
+  });
+
+  it('an accepted code posts with the cookie, re-reads at once, and the box goes away with the names up', async () => {
+    fetchMock = respondPairable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    fireEvent.change(screen.getByLabelText('Pairing code'), { target: { value: 'ab3-4cd' } });
+    fireEvent.click(screen.getByText('Pair'));
+    await settle();
+    await settle();
+
+    const pairCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/pilot/tv/pair'));
+    expect(pairCall).toBeDefined();
+    expect(pairCall?.[1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(JSON.parse(String((pairCall?.[1] as RequestInit).body))).toEqual({ code: 'AB3-4CD' });
+
+    await waitFor(() => expect(screen.getByText('M.R.')).toBeTruthy());
+    expect(container.querySelector('form')).toBeNull();
+  });
+
+  it('a refused code says one fixed line, never the server\'s text', async () => {
+    fetchMock = respondPairable(404);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    fireEvent.change(screen.getByLabelText('Pairing code'), { target: { value: 'ZZZZZZ' } });
+    fireEvent.click(screen.getByText('Pair'));
+    await settle();
+    await settle();
+
+    expect(screen.getByRole('status').textContent).toBe(PAIR_MESSAGES.rejected);
+    expect(container.textContent).not.toMatch(/internal detail|TV_PAIR|error/i);
+    // Still unpaired, still the box.
+    expect(container.querySelector('form')).not.toBeNull();
+  });
+
+  it('submitPairCode maps every answer to a fixed outcome', async () => {
+    const answers: Array<[number, string]> = [[200, 'paired'], [400, 'invalid'], [404, 'rejected'], [429, 'limited'], [500, 'unavailable']];
+    for (const [status, outcome] of answers) {
+      global.fetch = jest.fn().mockResolvedValue({ ok: status === 200, status, json: async () => ({}) }) as unknown as typeof fetch;
+      expect(await submitPairCode('', 'ABC234')).toBe(outcome);
+    }
+    global.fetch = jest.fn().mockRejectedValue(new Error('network')) as unknown as typeof fetch;
+    expect(await submitPairCode('', 'ABC234')).toBe('unavailable');
   });
 });
 
@@ -449,7 +750,9 @@ describe('empty states', () => {
    touch --------------------------------------------------------------- */
 
 describe('it is a display, not an interface', () => {
-  it('renders no control of any kind', async () => {
+  // On a PAIRED screen. The unpaired screen carries exactly one control, the
+  // pair box, pinned above; once paired there is nothing to touch.
+  it('renders no control of any kind once paired', async () => {
     fetchMock = respondWith({
       ok: true,
       board: board({

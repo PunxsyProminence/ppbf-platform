@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { GYM_TIME_ZONE } from '@/src/lib/gymTime';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 /**
  * THE WALL DISPLAY — the board the gym's TV points at.
@@ -201,7 +201,11 @@ export function ageInYears(dob: string | null | undefined, now: Date): number | 
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
-  const [yearNow, monthNow, dayNow] = formatYmdInZone(now, GYM_TIME_ZONE).split('-').map(Number);
+  // An unusable `now` throws, as it did before: a null age reads as "no date
+  // of birth", which is not what happened.
+  const today = gymDayIso(now);
+  if (!today) throw new RangeError('Invalid time value');
+  const [yearNow, monthNow, dayNow] = today.split('-').map(Number);
   let age = yearNow - year;
   if (monthNow < month || (monthNow === month && dayNow < day)) {
     age -= 1;
@@ -477,6 +481,12 @@ export interface WallNotice {
   readonly posted_at: string;
 }
 
+/**
+ * The full board. Served ONLY to a television that has been paired with a
+ * code (GET /api/pilot/tv/session, device-cookie gate in gymTvs.ts). Never to
+ * the public address: OD-2026-10-07-008, "Paired gym TV only" -- initials and
+ * milestones go only to a TV paired with a code.
+ */
 export interface WallBoard {
   readonly generated_at: string;
   readonly gym_day: string;
@@ -486,6 +496,31 @@ export interface WallBoard {
   readonly on_floor: readonly WallPerson[];
   readonly on_floor_total: number;
   readonly marquee: readonly WallMilestone[];
+  readonly notice: WallNotice | null;
+}
+
+/**
+ * THE PUBLIC BOARD -- what GET /api/pilot/wall serves to anyone at all.
+ *
+ * OD-2026-10-07-008 (Jason, question card 1): "the public address shows
+ * today's classes and a head count only". So this shape has no person in it:
+ * no name at any visibility, no initials, no milestone, no opaque per-athlete
+ * key. The one number about people is a count. The notice is gym_notices only
+ * (never 'everywhere', which is for members).
+ *
+ * It is a separate type rather than a WallBoard with empty lists so that the
+ * TYPE forbids the fields: a public route that returns WallPublicBoard cannot
+ * carry an on_floor list by accident, and wallDisplayPrivacy.test.ts pins the
+ * shape by name. `scope` is the discriminant the television uses to tell the
+ * two apart in one poll loop.
+ */
+export interface WallPublicBoard {
+  readonly scope: 'public';
+  readonly generated_at: string;
+  readonly gym_day: string;
+  readonly time_zone: string;
+  readonly sessions: readonly WallSession[];
+  readonly on_floor_total: number;
   readonly notice: WallNotice | null;
 }
 
@@ -586,6 +621,57 @@ export function buildWallBoard(sources: WallBoardSources): WallBoard {
   };
 }
 
+/** A class and how many distinct people have checked in to it today. */
+export interface WallClassCountRow {
+  readonly class_id: string;
+  readonly on_floor: number;
+}
+
+export interface WallPublicBoardSources {
+  readonly now: Date;
+  readonly timeZone: string;
+  readonly classes: readonly WallClassRow[];
+  /** Per-class distinct head counts, computed in SQL. No athlete id reaches here. */
+  readonly classCounts: readonly WallClassCountRow[];
+  /** Distinct people checked in today, computed in SQL. */
+  readonly onFloorTotal: number;
+  readonly notices: readonly WallNoticeRow[];
+}
+
+/**
+ * The public board is built from counts and classes only. There is no athlete
+ * row, no waiver row and no crossing row in its inputs, so there is nothing
+ * for a later edit to "helpfully" surface: the function cannot name a person
+ * because it is never handed one.
+ */
+export function buildPublicWallBoard(sources: WallPublicBoardSources): WallPublicBoard {
+  const { now, timeZone } = sources;
+  const { ymd } = gymDayBounds(now, timeZone);
+  const perClass = new Map(sources.classCounts.map((row) => [row.class_id, Number(row.on_floor) || 0]));
+
+  const sessions = [...sources.classes]
+    .sort((a, b) => a.start_at.localeCompare(b.start_at))
+    .map<WallSession>((row) => ({
+      key: row.class_id,
+      title: row.title,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      location: row.location,
+      state: sessionState(row, now),
+      on_floor: perClass.get(row.class_id) ?? 0,
+    }));
+
+  return {
+    scope: 'public',
+    generated_at: now.toISOString(),
+    gym_day: ymd,
+    time_zone: timeZone,
+    sessions,
+    on_floor_total: Math.max(0, Number(sources.onFloorTotal) || 0),
+    notice: pickNotice(sources.notices),
+  };
+}
+
 function sessionState(row: WallClassRow, now: Date): WallSessionState {
   if (normalize(row.status) === 'cancelled') return 'cancelled';
   const start = Date.parse(row.start_at);
@@ -633,10 +719,12 @@ export function selectMarquee(
 
 /**
  * The gym's own voice. A 'notice' is the standing operational line and wins; a
- * 'motivation' is what goes up when there is no notice. Both are already
- * written for the gym_notices placement, which is the same copy the signed-out
- * login page shows the public -- so nothing reaches this screen that was not
- * already meant for people who are not signed in.
+ * 'motivation' is what goes up when there is no notice. On the public board the
+ * rows are gym_notices only, the same copy the signed-out login page shows the
+ * public, so nothing reaches that screen that was not already meant for people
+ * who are not signed in. The paired board also takes 'everywhere', because a
+ * paired TV is inside the gym and that placement is for members
+ * (OD-2026-10-07-008).
  */
 export function pickNotice(rows: readonly WallNoticeRow[]): WallNotice | null {
   const byRecency = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));

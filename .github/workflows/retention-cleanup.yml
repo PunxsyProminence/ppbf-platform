@@ -24,17 +24,26 @@
 #     * it refuses to remove more than PPBF_RETENTION_MAX_ROWS rows at once
 #     * deletes and the audit row commit as one transaction
 #
-# THE SCHEDULED RUN IS A DRY RUN
-#   Deliberately. The nightly run reports what it WOULD delete and deletes
-#   nothing; enacting it requires a human to dispatch with apply=true. Retention
-#   deadlines here are measured in years, so a purge that waits a day for a
-#   person costs nothing, while an automatic purge that is wrong is
-#   unrecoverable -- there is no undo, and the backup is the only path back.
-#   When the dry run reports a number that looks right, dispatch it.
+# THE SCHEDULED RUN DELETES EXPIRED PUBLIC ENQUIRIES, AND NOTHING ELSE
+#   Jason, 2026-10-07 (OD-2026-10-07-010, question 2): "Nightly deletes
+#   enquiries itself" -- the nightly run deletes public interest-form enquiries
+#   older than 12 months on its own, with a cap per run; people's records stay
+#   manual. The schedule therefore sets PPBF_RETENTION_APPLY_INQUIRIES=true,
+#   the script's narrower switch: expired enquiries go, oldest first, at most
+#   max_rows (50) a night, with the audit row; a withdrawn family's records are
+#   COUNTED and reported exactly as a dry run reports them, and the purge code
+#   for them is never entered. Enacting those still requires a human to
+#   dispatch with apply=APPLY. Retention deadlines for people are measured in
+#   years, so a purge that waits for a person costs nothing, while an automatic
+#   purge of a child's records that is wrong is unrecoverable -- there is no
+#   undo, and the backup is the only path back. When the nightly report shows
+#   people's numbers that look right, dispatch it.
 #
-#   The dry run is not busywork: it is the monitor. A number that climbs
+#   The nightly report is not busywork: it is the monitor. A number that climbs
 #   unexpectedly means a bad deleted_at backfill or a cascade that fired too
 #   widely, and it surfaces before anything is destroyed rather than after.
+#   Enquiries are the one category the website promises to delete at 12
+#   months, and a public form's rows are nobody's record of a child.
 #
 # WHAT NEVER REACHES THE LOG
 #   No row content and no identifiers. The script emits one JSON line of counts.
@@ -59,7 +68,7 @@ on:
           - staging
           - production
       apply:
-        description: Type APPLY to actually delete. Anything else is a dry run.
+        description: Type APPLY to actually delete. APPLY_INQUIRIES runs the nightly mode by hand (expired public enquiries only). Anything else is a dry run.
         required: true
         default: DRY_RUN
         type: string
@@ -203,12 +212,16 @@ jobs:
           test -n "$URL"
           echo "PPBF_RETENTION_STORAGE_ACCOUNT_URL=$URL" >> "$GITHUB_ENV"
 
-      # A scheduled run has no inputs, so `inputs.apply` is empty and this
-      # resolves to false. Deleting can therefore only ever be a deliberate
-      # dispatch by a person who typed APPLY.
+      # A scheduled run has no inputs, so `inputs.apply` is empty and the full
+      # apply resolves to false. Deleting people's records can therefore only
+      # ever be a deliberate dispatch by a person who typed APPLY. The schedule
+      # sets ONLY the enquiries switch (header: THE SCHEDULED RUN DELETES
+      # EXPIRED PUBLIC ENQUIRIES); a person can run that same narrower mode by
+      # typing APPLY_INQUIRIES.
       - name: Sweep Expired Records
         env:
           PPBF_RETENTION_APPLY: ${{ inputs.apply == 'APPLY' }}
+          PPBF_RETENTION_APPLY_INQUIRIES: ${{ github.event_name == 'schedule' || inputs.apply == 'APPLY_INQUIRIES' }}
           PPBF_RETENTION_MAX_ROWS: ${{ inputs.max_rows || '50' }}
         # `shell: bash` for the pipefail it brings. Without it GitHub runs
         # `bash -e {0}` -- errexit but NOT pipefail -- so the exit code of a
@@ -226,12 +239,15 @@ jobs:
           # becomes commands. target and mode are `type: choice` and cannot
           # carry one; this input is unconstrained.
           APPLY: ${{ inputs.apply }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           {
             echo "### Retention sweep -- \`$TARGET\`"
             echo ''
             if [ "$APPLY" = "APPLY" ]; then
               echo '- mode: **APPLY** (rows were deleted)'
+            elif [ "$SCHEDULED" = "true" ] || [ "$APPLY" = "APPLY_INQUIRIES" ]; then
+              echo '- mode: **enquiries only** (expired public enquiries deleted; people'"'"'s records reported, not touched)'
             else
               echo '- mode: dry run (nothing deleted)'
             fi

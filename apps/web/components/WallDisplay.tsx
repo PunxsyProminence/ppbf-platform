@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import type { WallBoard, WallSession } from '@/src/server/pilot/wallDisplay';
+import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
 import { pickSaying } from './gymSayings';
 
@@ -70,9 +70,113 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
   return 'fresh';
 }
 
-interface WallResponse {
+/**
+ * WHICH BOARD THIS SCREEN GETS (OD-2026-10-07-008, Jason: "Paired gym TV
+ * only"). Two reads, one poll:
+ *
+ *   1. GET /api/pilot/tv/session, with the device cookie a pairing code set
+ *      (path /api/pilot/tv, so it rides with this request and no other). 200
+ *      means this television is paired: the body carries the full board --
+ *      initials per the name mode, milestone crossings, 'everywhere' notices.
+ *   2. 401 TV_NOT_PAIRED means it is not. The screen then reads the public
+ *      board from GET /api/pilot/wall: today's classes and a head count. No
+ *      names, no initials, no milestones, gym_notices only.
+ *
+ * A 401 is not a failure for the board's health: an unpaired wall that read
+ * its public board is a wall that is up. Any other non-2xx is.
+ *
+ * The public board is folded into the WallBoard shape with EMPTY people lists
+ * (publicToBoard) so one render tree serves both. The fold is built from the
+ * public fields by name, never by spreading the payload, so a name that
+ * somehow arrived on the public channel would be dropped here as well as
+ * refused by the server; wallDisplay.test.tsx pins that.
+ */
+interface PairedResponse {
+  board?: WallBoard | null;
+  board_status?: 'ok' | 'unavailable';
+}
+
+interface PublicResponse {
   ok?: boolean;
-  board?: WallBoard;
+  board?: WallPublicBoard;
+}
+
+export function publicToBoard(board: WallPublicBoard): WallBoard {
+  return {
+    generated_at: board.generated_at,
+    gym_day: board.gym_day,
+    time_zone: board.time_zone,
+    // 'off' is the mode whose rendering is "N people training": the count is
+    // real, the names are withheld. Exactly the public rule.
+    name_mode: 'off',
+    sessions: board.sessions,
+    on_floor: [],
+    on_floor_total: board.on_floor_total,
+    marquee: [],
+    notice: board.notice,
+  };
+}
+
+/**
+ * What stays on screen when this television has just been told it is NOT
+ * paired and the public read then failed too. The last board may have been a
+ * paired one, with initials and a marquee on it, and a 401 is the server
+ * saying this screen may no longer show those: a coach pressed Disconnect, or
+ * the key was revoked. So the people come off at once -- the classes, the
+ * count and the notice stay, dated like any other last-good board -- rather
+ * than riding out the twenty-minute abandon window (reviewer A).
+ */
+export function withoutPeople(board: WallBoard): WallBoard {
+  return { ...board, name_mode: 'off', on_floor: [], marquee: [] };
+}
+
+/** Thrown by readBoard when the paired read answered 401 and the public read then failed. */
+export class UnpairedReadError extends Error {
+  constructor() {
+    super('unavailable');
+    this.name = 'UnpairedReadError';
+  }
+}
+
+/** One poll: the paired read first, the public read if this screen is not paired. */
+export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean }> {
+  const paired = await fetch(`${base}/api/pilot/tv/session`, {
+    cache: 'no-store',
+    // The device cookie is the credential. It is httpOnly and scoped to
+    // /api/pilot/tv; there is no session cookie on a television to leak.
+    credentials: 'include',
+  });
+  if (paired.status !== 401) {
+    if (!paired.ok) throw new Error('unavailable');
+    const payload = (await paired.json()) as PairedResponse;
+    // board: null is the server's best-effort miss (gymTvs.ts): the session
+    // read worked, the board read did not. The last board stays up, dated.
+    if (!payload.board) throw new Error('unavailable');
+    return { board: payload.board, paired: true };
+  }
+
+  /* credentials: 'omit' is stated rather than left to the default, and
+     rather than taking a line in the convention test's allowlist. The gear
+     shop established that pattern (#193): an explicit omission at the call
+     site is a claim the reader can check, where an allowlist entry is a claim
+     in another file that drifts away from the fetch it describes. Nobody
+     signs in to a television, so there is no session cookie here to send --
+     and /api/pilot/wall is built to be safe as a public document anyway: the
+     organization is never taken from the caller, and the payload has no
+     person in it at all (WallPublicBoard). */
+  let payload: PublicResponse;
+  try {
+    const response = await fetch(`${base}/api/pilot/wall`, {
+      cache: 'no-store',
+      credentials: 'omit',
+    });
+    if (!response.ok) throw new Error('unavailable');
+    payload = (await response.json()) as PublicResponse;
+  } catch {
+    throw new UnpairedReadError();
+  }
+  if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
+  return { board: publicToBoard(payload.board), paired: false };
 }
 
 export default function WallDisplay() {
@@ -80,7 +184,13 @@ export default function WallDisplay() {
   const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
   const [connected, setConnected] = useState(true);
   const [now, setNow] = useState<number | null>(null);
+  // null until the first poll has answered: the pair box must not flash up
+  // on a paired screen while the first read is still in flight.
+  const [paired, setPaired] = useState<boolean | null>(null);
   const mounted = useRef(true);
+  // Lets the pair box ask for a fresh read the moment a code is accepted,
+  // instead of waiting out the thirty-second timer with "Nobody" on screen.
+  const refreshRef = useRef<() => void>(() => {});
 
   /* The clock is read from the browser, not from the payload and not from the
      server. The television is in the room; its clock is the gym's clock, and it
@@ -118,35 +228,26 @@ export default function WallDisplay() {
       if (inFlight) return;
       inFlight = true;
       try {
-        /* credentials: 'omit' is stated rather than left to the default, and
-           rather than taking a line in the convention test's allowlist. The
-           gear shop established that pattern (#193): an explicit omission at
-           the call site is a claim the reader can check, where an allowlist
-           entry is a claim in another file that drifts away from the fetch it
-           describes. Nobody signs in to a television, so there is no session
-           cookie here to send -- and /api/pilot/wall is built to be safe as a
-           public document anyway: the organization is never taken from the
-           caller, raw athlete ids never leave the server, and every name is
-           gated per athlete in src/server/pilot/wallDisplay.ts. */
-        const response = await fetch(`${apiBase()}/api/pilot/wall`, {
-          cache: 'no-store',
-          credentials: 'omit',
-        });
-        if (!response.ok) throw new Error('unavailable');
-        const payload = (await response.json()) as WallResponse;
-        if (!payload.ok || !payload.board) throw new Error('unavailable');
+        const { board: next, paired: isPaired } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
-        setBoard(payload.board);
+        setBoard(next);
+        setPaired(isPaired);
         setLastGoodAt(Date.now());
         setConnected(true);
-      } catch {
+      } catch (error) {
         if (!mounted.current) return;
         failures += 1;
         setConnected(false);
         // The last good board deliberately stays on screen, dated. A wall that
-        // blanks on a dropped packet is worse than one that admits its age.
+        // blanks on a dropped packet is worse than one that admits its age --
+        // except for the people on it, once the server has said this screen
+        // is not paired (withoutPeople).
+        if (error instanceof UnpairedReadError) {
+          setPaired(false);
+          setBoard((previous) => (previous ? withoutPeople(previous) : previous));
+        }
       } finally {
         // In `finally` so the early returns above cannot leave the display
         // holding a lock it never releases -- a wall that stops asking is a
@@ -167,6 +268,10 @@ export default function WallDisplay() {
     }
 
     void poll();
+    refreshRef.current = () => {
+      if (timer) clearTimeout(timer);
+      void poll();
+    };
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', refreshNow);
@@ -199,7 +304,116 @@ export default function WallDisplay() {
       )}
 
       <FootRule board={showLive ? board : null} health={health} connected={connected} zone={zone} />
+      {paired === false && <PairBox onPaired={() => refreshRef.current()} />}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- pair box --- */
+
+/**
+ * THE ONE CONTROL ON THE WALL, and only while the screen is not paired.
+ *
+ * A coach presses "Pair a TV" on the dashboard and reads a six-character code
+ * off it; somebody types that code here with the TV remote. POST
+ * /api/pilot/tv/pair answers with the device cookie, scoped to /api/pilot/tv,
+ * and from the next poll this screen is paired: initials and the marquee go
+ * up (OD-2026-10-07-008). Until then the public board is what shows, so the
+ * box sits under it, small, in the foot rule's register, and goes away the
+ * moment the pairing lands. It never comes back on a paired screen; a
+ * disconnect brings it back on the next 401.
+ *
+ * What the room is told on a miss is one of four fixed lines. Never the
+ * server's text: this is a screen in a public room and the responses are
+ * documented codes, not prose for forty people.
+ */
+export const PAIR_CODE_LENGTH = 6;
+
+export type PairOutcome = 'paired' | 'invalid' | 'rejected' | 'limited' | 'unavailable';
+
+export const PAIR_MESSAGES: Record<Exclude<PairOutcome, 'paired'>, string> = {
+  invalid: 'Six letters or numbers.',
+  rejected: 'That code was not accepted. Ask for a fresh one.',
+  limited: 'Too many tries. Wait a minute.',
+  unavailable: 'Could not reach the gym right now.',
+};
+
+export async function submitPairCode(base: string, code: string): Promise<PairOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/pilot/tv/pair`, {
+      method: 'POST',
+      // The reply SETS the device cookie; include is what lets the browser keep it.
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+  } catch {
+    return 'unavailable';
+  }
+  if (response.ok) return 'paired';
+  if (response.status === 400) return 'invalid';
+  if (response.status === 404) return 'rejected';
+  if (response.status === 429) return 'limited';
+  return 'unavailable';
+}
+
+function PairBox({ onPaired }: { onPaired: () => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    const outcome = await submitPairCode(apiBase(), code);
+    setBusy(false);
+    if (outcome === 'paired') {
+      setCode('');
+      onPaired();
+      return;
+    }
+    setNote(PAIR_MESSAGES[outcome]);
+  }
+
+  return (
+    <form
+      className="wall-pair flex shrink-0 items-center justify-end gap-[var(--s4)] px-[var(--s7)] pb-[var(--s4)]"
+      onSubmit={(event) => void submit(event)}
+      aria-label="Pair this TV"
+    >
+      <label className="wall-stamp" htmlFor="wall-pair-code">
+        Pair this TV
+      </label>
+      <input
+        id="wall-pair-code"
+        type="text"
+        // No .input class: globals.css styles input[type=text] itself, and the
+        // kiosk modifiers only exist in the legacy sheet. 55px is the gym-floor
+        // floor (globals.css, the kiosk note), and the type is a wall size.
+        className="wall-pair-input min-h-[55px] w-[9ch] text-center text-2xl tracking-[0.3em]"
+        value={code}
+        onChange={(event) => setCode(event.target.value.toUpperCase().slice(0, PAIR_CODE_LENGTH + 2))}
+        inputMode="text"
+        autoComplete="off"
+        autoCapitalize="characters"
+        spellCheck={false}
+        maxLength={PAIR_CODE_LENGTH + 2}
+        placeholder="CODE"
+        aria-label="Pairing code"
+        disabled={busy}
+      />
+      <button type="submit" className="btn min-h-[55px] px-[var(--s5)] text-2xl" disabled={busy || code.trim().length === 0}>
+        Pair
+      </button>
+      {note && (
+        <p className="wall-stamp" role="status">
+          {note}
+        </p>
+      )}
+    </form>
   );
 }
 

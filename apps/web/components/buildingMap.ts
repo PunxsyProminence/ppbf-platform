@@ -388,7 +388,7 @@ export const BUILDING: readonly Door[] = [
     keywords: 'film footage review video' },
   { href: '/coach/review-queue', label: 'Review Queue', room: 'floor', roles: ['coach'],
     keywords: 'layer 10 queue approve deny triage decisions pending',
-    hint: 'Layer 10 — the decision queue.' },
+    hint: 'Planned — the decision queue. Nothing is built behind this door yet.' },
   { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
@@ -680,6 +680,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/sparring-caps', label: 'Sparring Caps', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'sparring cap caps limit contact stage open controlled hard sessions week youth',
     hint: 'Set each athlete\'s highest sparring stage and most hard or open sessions in 7 days. Never blocks; the coach decides.' },
+  { href: '/coach/athlete-limits', label: 'Athlete Limits', room: 'clinic', roles: ['coach', 'admin'],
+    keywords: 'limits minor child heat exposure minutes weight cut percent body weight supervision coach-set',
+    hint: 'Set each athlete\'s heat exposure, weight-cut and supervision limits. The app never picks one; the coach decides.' },
   { href: '/admin/compliance-center', label: 'Compliance Center', room: 'clinic', roles: ['admin'],
     keywords: 'compliance safeguarding policy certification safety' },
 

@@ -11,8 +11,10 @@
  * taken out of all four (see AthleteWorkspace, CoachWorkspace, ParentHub,
  * RevenueFundingCenter) because it was small, repeated, and standing in front
  * of the work. Both objections are addressed here rather than argued with:
- * this renders at the FOOT of a page, after the work, and it never goes below
- * --t-sm -- it scales up toward the Law 5 kiosk size as the viewport allows.
+ * this renders at the FOOT of a page, after the work, and it sits at --t-md,
+ * the Law 5 gym-floor size (19.1px). It used to be clamp(--t-sm, 1.6vw,
+ * --t-md), which resolves to --t-sm (15px) on every tablet and phone, i.e.
+ * on the screens it is read from across a gym.
  *
  * NO STEP IS EVER MARKED CURRENT. One mockup tints DECIDE. Highlighting a step
  * would be a claim about where somebody is in their day, and nothing in this
@@ -47,7 +49,7 @@ export default function WorkAxis({ className = '' }: { readonly className?: stri
         className="flex flex-wrap items-center justify-center gap-x-[var(--s3)] gap-y-[var(--s2)]"
         style={{
           fontFamily: 'var(--font-ui)',
-          fontSize: 'clamp(var(--t-sm), 1.6vw, var(--t-md))',
+          fontSize: 'var(--t-md)',
           letterSpacing: '.14em',
         }}
       >

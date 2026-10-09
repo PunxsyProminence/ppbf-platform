@@ -39,6 +39,13 @@ test('signposts the Family Dashboard as the working surface', () => {
   expect(screen.getByText(/The place you actually see your child/)).toBeInTheDocument();
 });
 
+test('quick links reach the consent and safety pages, named as those pages name themselves', () => {
+  render(<GuardianPortalPage />);
+
+  expect(screen.getByRole('link', { name: 'Photo & Video Consent' })).toHaveAttribute('href', '/parent/consent');
+  expect(screen.getByRole('link', { name: 'Safety Status' })).toHaveAttribute('href', '/parent/safety');
+});
+
 test('no link on this page circles back to /guardian itself', () => {
   render(<GuardianPortalPage />);
 

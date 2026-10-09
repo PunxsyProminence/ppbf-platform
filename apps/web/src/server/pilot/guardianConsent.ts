@@ -2,8 +2,15 @@ import type { QueryResultRow } from 'pg';
 
 import { lockConsentSet, lockConsentSets } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
-import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
+import { accountDeletedSql } from './deletedAccountSignIn';
+import { ConflictError, ForbiddenError } from './errors';
+import {
+  GUARDIAN_LINK_ENDED_MESSAGE,
+  guardianAthleteIds,
+  guardianLinkEnded,
+  guardianParentIdForAthlete,
+  guardianParentIds,
+} from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
 
@@ -588,6 +595,7 @@ async function writeMediaConsentUnderLock(
 ): Promise<string> {
   const write = async (client: QueryExecutor) => {
     await lockGuardianLink(client, organizationId, parentId, athleteId);
+    await assertGuardianLinkNotEnded(client, organizationId, athleteId);
 
     return upsertWaiverWithClient(client, {
       ...waiver,
@@ -598,6 +606,56 @@ async function writeMediaConsentUnderLock(
     });
   };
   return transaction ? write(transaction) : withTransaction(write);
+}
+
+/**
+ * The guardian's consent change refused because the link has gone dormant
+ * (guardianAccess.guardianLinkEnded). Its own class so the two consent routes
+ * can audit the refusal by name and still answer 403 through jsonError.
+ */
+export class GuardianLinkEndedError extends ForbiddenError {
+  constructor() {
+    super(GUARDIAN_LINK_ENDED_MESSAGE, 'GUARDIAN_LINK_ENDED');
+  }
+}
+
+/*
+ * THE 18 RULE ON THE WRITE SIDE. OD-2026-10-07-008: the guardian link stops
+ * for every consent change once the athlete is an adult. Decided INSIDE the
+ * write transaction, after the link row is locked, from the athlete row as
+ * committed at that moment. That closes the gap between a route's earlier
+ * scope read (guardianAthleteIds) and the write; it is a plain read-committed
+ * select with no row lock, so a date-of-birth correction that commits after
+ * it and before this transaction's COMMIT is not serialised against it
+ * (locking the athlete row here would need a lock-order review against the
+ * deletion transaction, and the window is a birthday midnight).
+ *
+ * Both writers meet it, and so does the staff writer (admin/athlete-consent),
+ * which records a guardian's paper consent under a parent_id: a guardian's
+ * consent for an adult is a change under the guardian link, whoever types it
+ * (overwatch, 2026-10-08, on the ruling's "every consent change"). The
+ * refusal is specific and names the reason; nothing is deleted.
+ *
+ * A MISSING ATHLETE ROW IS NOT REFUSED HERE. The write already tolerates a
+ * missing link row (see above) and a missing athlete trips the waivers
+ * foreign key as before; this check only ever adds the one refusal it is for.
+ * dob is read as to_char, never ::text, whose shape follows the session
+ * DateStyle (adultPathway.ts carries the same note).
+ */
+async function assertGuardianLinkNotEnded(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteId: string,
+): Promise<void> {
+  const { rows } = await client.query<{ dob: string | null }>(
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  const athlete = rows[0];
+  if (athlete && guardianLinkEnded(athlete.dob)) {
+    throw new GuardianLinkEndedError();
+  }
 }
 
 /*
@@ -741,16 +799,23 @@ export async function callerParentIdSet(organizationId: string, accountId: strin
 export interface OrganizationGuardian {
   parentId: string;
   fullName: string;
+  /* false = a guardian who exists only as a name on paper (pilot.parents
+     account_id NULL): recorded so a paper-only family's consent can be filed
+     (Jason 2026-10-07, OD-2026-10-07-009 "Yes, name and relationship"). The
+     consent desk labels them, so staff know this guardian will never see the
+     parent console and cannot be emailed a link. */
+  hasLogin: boolean;
 }
 
 /*
  * PARENT_ID -> NAME, FOR THE WHOLE ORGANIZATION, IN ONE QUERY.
  *
- * DOES NOT TOUCH pilot.accounts, and that is the whole point. pilot.parents
+ * DOES NOT FILTER ON account_id, and that is the whole point. pilot.parents
  * has `account_id text null` -- a guardian who signed on paper and never
  * signed in has NULL there. Every read in guardianAccess.ts is viewer-scoped
  * and filters on account_id, so reusing any of them would return an empty
- * picker for exactly the population an admin is recording consent FOR.
+ * picker for exactly the population an admin is recording consent FOR. It
+ * does READ the column, as one boolean, so that population can be labelled.
  *
  * It does not live in guardianAccess.ts either: that module's header says in
  * writing that the athlete->guardians direction is staff-facing roster data
@@ -760,12 +825,20 @@ export interface OrganizationGuardian {
  * resolves hundreds of athletes and would otherwise issue a query per row.
  * (organization_id, parent_id) is the primary key, so this is a prefix scan.
  */
-export async function listOrganizationGuardianNames(organizationId: string): Promise<Map<string, string>> {
-  const rows = await query<{ parent_id: string; full_name: string }>(
-    `select parent_id, full_name from pilot.parents where organization_id = $1`,
+export async function listOrganizationGuardianNames(
+  organizationId: string,
+): Promise<Map<string, Omit<OrganizationGuardian, 'parentId'>>> {
+  // A login that exists AND is not marked deleted. A deleted login (waiting
+  // for the retention purge) cannot sign in, so reporting it as a login would
+  // have staff wait for a guardian who cannot come.
+  const rows = await query<{ parent_id: string; full_name: string; has_login: boolean }>(
+    `select p.parent_id, p.full_name,
+            exists (select 1 from pilot.accounts a
+                     where a.account_id = p.account_id and not ${accountDeletedSql('a')}) as has_login
+       from pilot.parents p where p.organization_id = $1`,
     [organizationId],
   );
-  return new Map(rows.map((row) => [row.parent_id, row.full_name]));
+  return new Map(rows.map((row) => [row.parent_id, { fullName: row.full_name, hasLogin: row.has_login }]));
 }
 
 // ONE guardian's name. The map above is for the audit, which resolves hundreds
@@ -838,7 +911,10 @@ export async function listOrganizationConsentStatus(
         // of the fallback.
         guardians: consent.guardianIds.map((parentId) => ({
           parentId,
-          fullName: guardianNames.get(parentId) ?? parentId,
+          fullName: guardianNames.get(parentId)?.fullName ?? parentId,
+          // The fallback is the defensive side: an unknown row is reported as
+          // a guardian with no login, never as one who can be emailed.
+          hasLogin: guardianNames.get(parentId)?.hasLogin ?? false,
         })),
       };
     }),

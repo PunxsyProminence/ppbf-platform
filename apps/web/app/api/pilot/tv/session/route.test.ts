@@ -1,21 +1,29 @@
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { getWallDisplayNameMode } from '@/src/server/pilot/env';
 import {
   GYM_TV_DEVICE_COOKIE,
   GYM_TV_READ_MAX_PER_ADDRESS,
   GYM_TV_READ_MAX_PER_KEY,
-  type GymTvRead,
-  readGymTvSession,
+  type GymTvScreen,
+  readGymTvScreen,
   resetGymTvReadBudget,
 } from '@/src/server/pilot/gymTvs';
+import type { WallBoard } from '@/src/server/pilot/wallDisplay';
 
 jest.mock('@/src/server/pilot/gymTvs', () => ({
   ...jest.requireActual('@/src/server/pilot/gymTvs'),
-  readGymTvSession: jest.fn(),
+  readGymTvScreen: jest.fn(),
 }));
 
-const mockRead = jest.mocked(readGymTvSession);
+jest.mock('@/src/server/pilot/env', () => ({
+  ...jest.requireActual('@/src/server/pilot/env'),
+  getWallDisplayNameMode: jest.fn(() => undefined),
+}));
+
+const mockRead = jest.mocked(readGymTvScreen);
+const mockMode = jest.mocked(getWallDisplayNameMode);
 
 const KEY = 'k'.repeat(64);
 const IP = '10.0.0.9';
@@ -31,8 +39,24 @@ const BLOCK = {
   end_offset_min: 10,
 };
 
-const LIVE: GymTvRead = {
+// The paired board: the one with people on it (OD-2026-10-07-008). Initials
+// here, as the default name mode produces; the route passes it through.
+const BOARD: WallBoard = {
+  generated_at: '2026-10-07T18:04:00.000Z',
+  gym_day: '2026-10-07',
+  time_zone: 'America/New_York',
+  name_mode: 'initials',
+  sessions: [],
+  on_floor: [{ key: 'ab12cd34ef56', name: 'M.R.', visibility: 'initials' }],
+  on_floor_total: 1,
+  marquee: [{ key: 'ab12cd34ef56-13', name: 'M.R.', visibility: 'initials', milestone: 13, crossed_on: '2026-10-06' }],
+  notice: null,
+};
+
+const LIVE: GymTvScreen = {
   tv: { tv_name: 'Gym main' },
+  board: BOARD,
+  board_status: 'ok',
   session: {
     run_id: 'ssrun_1',
     script_name: 'Tuesday fundamentals',
@@ -55,6 +79,7 @@ function read(key: string | null, ip = IP) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMode.mockReturnValue(undefined);
   resetGymTvReadBudget();
 });
 
@@ -62,7 +87,7 @@ it('a paired TV with a live session gets the session, and its cookie expiry slid
   mockRead.mockResolvedValue(LIVE);
   const response = await read(KEY);
   expect(response.status).toBe(200);
-  expect(mockRead).toHaveBeenCalledWith(KEY);
+  expect(mockRead).toHaveBeenCalledWith(KEY, { mode: 'initials' });
   expect(response.headers.get('cache-control')).toBe('no-store');
   expect(await response.json()).toEqual(LIVE);
   // THE SLIDE: the same key, re-set with a fresh 400-day Max-Age, httpOnly, scoped to the TV routes.
@@ -92,29 +117,70 @@ it('under NODE_ENV=production the re-set cookie is Secure', async () => {
 // result and nothing more (no error field, no tv_id, no key).
 it('the body is exactly the module result: nothing added by the route', async () => {
   mockRead.mockResolvedValue(LIVE);
-  const body = (await (await read(KEY)).json()) as GymTvRead;
+  const body = (await (await read(KEY)).json()) as GymTvScreen;
   expect(body).toEqual(LIVE);
+  expect(Object.keys(body).sort()).toEqual(['board', 'board_status', 'session', 'tv']);
   const serialized = JSON.stringify(body);
   for (const forbidden of [KEY, 'tv_id', 'error', 'what_to', 'account', 'athlete', 'hash', 'organization']) {
     expect(serialized).not.toContain(forbidden);
   }
 });
 
-it('a paired TV with nothing on it gets session: null and still the slide', async () => {
-  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null });
+// OD-2026-10-07-008, "Paired gym TV only": initials and milestones go only to a TV paired with a
+// code. This route is that channel, and this test is the paired half of the ruling: the board with
+// people on it rides here, behind the device key, and nowhere else.
+it('the paired board, with initials and milestones, is served on this channel', async () => {
+  mockRead.mockResolvedValue(LIVE);
+  const body = (await (await read(KEY)).json()) as GymTvScreen;
+  expect(body.board?.on_floor).toEqual([{ key: 'ab12cd34ef56', name: 'M.R.', visibility: 'initials' }]);
+  expect(body.board?.marquee[0]).toMatchObject({ name: 'M.R.', milestone: 13 });
+});
+
+// Best-effort (PR 2): the board read failed, the session is still served, and the body says so
+// in a fixed word rather than in the failure's own text.
+it('a board read failure still serves the session, with board: null and board_status unavailable', async () => {
+  mockRead.mockResolvedValue({ ...LIVE, board: null, board_status: 'unavailable' });
   const response = await read(KEY);
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null });
+  const body = (await response.json()) as GymTvScreen;
+  expect(body.session?.run_id).toBe('ssrun_1');
+  expect(body.board).toBeNull();
+  expect(body.board_status).toBe('unavailable');
   expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.maxAge).toBe(400 * 24 * 60 * 60);
 });
 
-it('no cookie is a 401 (the empty key is looked up and refused), no-store, no cookie set', async () => {
+it("the operator's name mode reaches the paired board exactly as before; nothing unrecognised reaches 'consent'", async () => {
+  mockRead.mockResolvedValue(LIVE);
+  mockMode.mockReturnValue('consent');
+  await read(KEY);
+  expect(mockRead).toHaveBeenLastCalledWith(KEY, { mode: 'consent' });
+
+  mockMode.mockReturnValue('yes please');
+  await read(KEY);
+  expect(mockRead).toHaveBeenLastCalledWith(KEY, { mode: 'initials' });
+
+  mockMode.mockReturnValue('off');
+  await read(KEY);
+  expect(mockRead).toHaveBeenLastCalledWith(KEY, { mode: 'off' });
+});
+
+it('a paired TV with nothing on it gets session: null, still the board, and still the slide', async () => {
+  mockRead.mockResolvedValue({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
+  const response = await read(KEY);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ tv: { tv_name: 'House' }, session: null, board: BOARD, board_status: 'ok' });
+  expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)?.maxAge).toBe(400 * 24 * 60 * 60);
+});
+
+it('no cookie is a 401 (the empty key is looked up and refused), no-store, no cookie set, no board', async () => {
   mockRead.mockResolvedValue(null);
   const response = await read(null);
   expect(response.status).toBe(401);
+  // Exactly the error: no board, public or otherwise, rides on an unpaired answer. The unpaired
+  // screen goes to GET /api/pilot/wall for the public shape.
   expect(await response.json()).toEqual({ error: 'TV_NOT_PAIRED' });
   expect(response.headers.get('cache-control')).toBe('no-store');
-  expect(mockRead).toHaveBeenCalledWith('');
+  expect(mockRead).toHaveBeenCalledWith('', { mode: 'initials' });
   expect(response.cookies.get(GYM_TV_DEVICE_COOKIE)).toBeUndefined();
 });
 

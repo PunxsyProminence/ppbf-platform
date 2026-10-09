@@ -42,7 +42,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-test('concerned topics exclude pending promote proposals, so praise is never listed as concern', async () => {
+test('concerned topics exclude pending promote and retain proposals, so praise and neutral are never listed as concern', async () => {
   mockRequirePrincipal.mockResolvedValueOnce({
     accountId: 'acct-admin',
     role: 'organization_admin',
@@ -90,7 +90,10 @@ test('concerned topics exclude pending promote proposals, so praise is never lis
     .filter((sql) => sql.includes('shadow_library_review_flags'));
   expect(flagReads).toHaveLength(1);
   expect(flagReads[0]).toContain("review_state = 'pending'");
-  expect(flagReads[0]).toContain("proposed_action IS DISTINCT FROM 'promote'");
+  // NULL = a plain negative flag; 'demote' = a negative proposal. 'promote'
+  // (praise) and 'retain' (neutral) are proposals, not concern.
+  expect(flagReads[0]).toContain("(proposed_action IS NULL OR proposed_action = 'demote')");
+  expect(flagReads[0]).not.toContain("DISTINCT FROM 'promote'");
   expect(mockQuery.mock.calls.find(([sql]) => String(sql).includes('shadow_library_review_flags'))?.[1])
     .toEqual(['org-a']);
 });
