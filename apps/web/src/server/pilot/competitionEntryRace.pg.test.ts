@@ -446,3 +446,68 @@ describe.each<EventKind>(['external_competition', 'wrestling_league_season'])('%
     expect(await entryRows(kind)).toBe(0);
   });
 });
+
+// RE-ENTRY (owner ruling 2026-10-05): a withdrawn competition entry can be
+// entered again, and re-entry re-runs every safety gate. Driven through the
+// shipped POST and PATCH so the gates and the lock are the real ones.
+describe('external competition re-entry after withdrawal', () => {
+  async function withdraw(): Promise<number> {
+    const entry = await client.query<{ entry_id: string }>(
+      `select entry_id from pilot.external_competition_entries where athlete_id = $1`,
+      [ATHLETE_ID],
+    );
+    const response = await entriesRoute.PATCH(
+      new NextRequest('http://localhost/api/pilot/operations/external-competition/entries', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ entry_id: entry.rows[0].entry_id, status: 'withdrawn' }),
+      }),
+    );
+    return response.status;
+  }
+
+  async function entryState(): Promise<Array<{ status: string; result: string | null; lesson_note: string }>> {
+    const result = await client.query<{ status: string; result: string | null; lesson_note: string }>(
+      `select status, result, lesson_note from pilot.external_competition_entries where athlete_id = $1`,
+      [ATHLETE_ID],
+    );
+    return result.rows;
+  }
+
+  test('a withdrawn athlete with every gate clear is entered again on the same row, result cleared', async () => {
+    expect(await enter('external_competition')).toBe(200);
+    // A result recorded before the withdrawal must not ride into the new entry.
+    await client.query(
+      `update pilot.external_competition_entries set result = 'lost', lesson_note = 'Kept my hands low.' where athlete_id = $1`,
+      [ATHLETE_ID],
+    );
+    expect(await withdraw()).toBe(200);
+
+    expect(await enter('external_competition')).toBe(200);
+    expect(await entryState()).toEqual([{ status: 'entered', result: null, lesson_note: '' }]);
+  });
+
+  test('an athlete still entered cannot be entered twice', async () => {
+    expect(await enter('external_competition')).toBe(200);
+    expect(await enter('external_competition')).toBe(409);
+    expect(await entryRows('external_competition')).toBe(1);
+  });
+
+  test('re-entry is refused while a contact hold is active', async () => {
+    expect(await enter('external_competition')).toBe(200);
+    expect(await withdraw()).toBe(200);
+    await placeHold();
+
+    expect(await enter('external_competition')).toBe(403);
+    expect(await entryState()).toEqual([{ status: 'withdrawn', result: null, lesson_note: '' }]);
+  });
+
+  test('re-entry is refused once travel consent is withdrawn', async () => {
+    expect(await enter('external_competition')).toBe(200);
+    expect(await withdraw()).toBe(200);
+    await writeTravelWaiver('withdrawn');
+
+    expect(await enter('external_competition')).toBe(409);
+    expect(await entryState()).toEqual([{ status: 'withdrawn', result: null, lesson_note: '' }]);
+  });
+});
