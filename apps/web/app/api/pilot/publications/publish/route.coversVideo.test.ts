@@ -5,6 +5,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /*
@@ -303,9 +304,11 @@ describe('publish refuses video a guardian has not consented to', () => {
 
   test("consent on file for another athlete is not this athlete's consent", async () => {
     // The fake answers only for org-1 / ath-1, so a publication naming ath-2
-    // finds no guardians and is refused as missing.
+    // finds no guardians and is refused as missing. The video is ath-2's too,
+    // or the athlete-mismatch check would refuse it first.
     mockRequirePrincipal.mockResolvedValueOnce(principal);
     mockGetPublication.mockResolvedValueOnce({ ...publicationRow, athlete_id: 'ath-2' });
+    jest.mocked(getVideoSessionById).mockResolvedValueOnce({ video_session_id: 'vid-1', athlete_id: 'ath-2', status: 'ready' } as never);
     mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => consentState([signed()])(sql, params));
 
     const res = await POST(postRequest());
