@@ -335,6 +335,7 @@ interface Drafts {
   incidentOccurredAt: string;
   behaviorNoteText: string;
   messageHomeText: string;
+  messageHomeDueDate: string;
   outcomeDecisionId: string;
   outcomeObservationIds: string;
   outcomeMatchState: MatchState;
@@ -355,6 +356,7 @@ const EMPTY_DRAFTS: Drafts = {
   incidentOccurredAt: '',
   behaviorNoteText: '',
   messageHomeText: '',
+  messageHomeDueDate: '',
   outcomeDecisionId: '',
   outcomeObservationIds: '',
   outcomeMatchState: 'match',
@@ -464,6 +466,7 @@ export default function DecisionLoopReviewPage() {
     incidentOccurredAt,
     behaviorNoteText,
     messageHomeText,
+    messageHomeDueDate,
     outcomeObservationIds,
     outcomeMatchState,
     outcomeNotes,
@@ -741,8 +744,8 @@ export default function DecisionLoopReviewPage() {
      the `athleteId` its closure captured. A write for athlete A that lands
      after the switch to B used to print its result under B: a refusal that
      quotes A's medical status ("this athlete's medical administrative status
-     is 'restricted'"), or "Incident filed" / "Sent to the family" for a child
-     nobody is looking at.
+     is 'restricted'"), or "Incident filed" / "Posted to the family's page"
+     for a child nobody is looking at.
 
      On a late SUCCESS the submitted draft is still cleared, in the draft of
      the athlete it was sent for (it was sent; left in their box it reads as
@@ -1001,17 +1004,80 @@ export default function DecisionLoopReviewPage() {
       });
       // intake/domain-upsert answers { ok: true, entity_type, entity_id,
       // athlete_id }, with the athlete id TRIMMED (the route trims it).
-      await confirmWriteOrThrow(response, 'Failed to send the message.', (envelope) =>
-        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
-      );
-      clearSentDrafts(athleteId, { messageHomeText });
-      if (athleteId !== selectedAthleteRef.current) return;
+      let noteId = '';
+      await confirmWriteOrThrow(response, 'Failed to post the message.', (envelope) => {
+        if (envelope.entity_type !== 'coach_note' || !isFilled(envelope.entity_id) || envelope.athlete_id !== athleteId.trim()) {
+          return false;
+        }
+        noteId = envelope.entity_id;
+        return true;
+      });
+      clearSentDrafts(athleteId, { messageHomeText, messageHomeDueDate });
+      // The due date is attached BEFORE the athlete guard: it is bound to the
+      // acknowledged note and to the athlete this handler captured, so a
+      // switch cannot send it anywhere else, and skipping it would drop a
+      // date the coach set with nothing said.
+      const due = messageHomeDueDate ? await attachDueDate(noteId, athleteId, messageHomeDueDate) : null;
+      if (athleteId !== selectedAthleteRef.current) {
+        if (due && due.outcome !== 'saved') setPreviousAthleteNotice(PREVIOUS_ATHLETE_WRITE_FAILED);
+        return;
+      }
       writeConfirmed();
-      setMessageHomeMessage('Sent to the family.');
+      setMessageHomeMessage(due ? due.text : "Posted to the family's page.");
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to send the message.');
+      reportWriteError(athleteId, error, 'Failed to post the message.');
     } finally {
       markSubmitting('messageHome', athleteId, false);
+    }
+  }
+
+  /* THE DUE DATE IS A SECOND WRITE, and it is reported as one. The message is
+     a coach_note the family's page already reads; the deadline lives in
+     pilot.parent_task_state and is set through /api/pilot/parent-tasks after
+     the note exists. Whatever happens to that second write the note has
+     landed and the family will read it, so this never throws: a refusal and
+     a not-confirmed answer are each told as what they are (the page's rule
+     at confirmWriteOrThrow: not confirmed is not failed, the date may well
+     have saved), and neither is reported as a failed post, which would
+     invite the coach to post it twice. Nothing on this page can re-attach a
+     date to a posted message; a coach who needs the deadline posts a short
+     follow-up with the date set.
+
+     The date is printed as typed (YYYY-MM-DD), not through the gym-time
+     formatters: those read a bare date as UTC midnight and would show the
+     day before. */
+  async function attachDueDate(
+    noteId: string,
+    forAthleteId: string,
+    dueDate: string,
+  ): Promise<{ outcome: 'saved' | 'refused' | 'unconfirmed'; text: string }> {
+    // A refusal is an answer the server gave; a dropped connection or an
+    // unreadable 200 is not, and the date may have saved.
+    let answered = false;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent-tasks`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: noteId, athlete_id: forAthleteId, due_date: dueDate }),
+      });
+      answered = true;
+      await confirmWriteOrThrow(response, 'the due date was refused.', (envelope) => {
+        const task = returnedRow(envelope, 'task');
+        return task !== null && task.due_date === dueDate;
+      });
+      return { outcome: 'saved', text: `Posted to the family's page, due ${dueDate}.` };
+    } catch (error) {
+      if (answered && error instanceof Error && error.message !== WRITE_NOT_CONFIRMED) {
+        return {
+          outcome: 'refused',
+          text: `Posted to the family's page, but without the due date -- ${error.message}`,
+        };
+      }
+      return {
+        outcome: 'unconfirmed',
+        text: "Posted to the family's page, but the due date was not confirmed -- it may or may not have saved.",
+      };
     }
   }
 
@@ -1472,11 +1538,12 @@ export default function DecisionLoopReviewPage() {
                 </form>
               </section>
 
-              {/* Message Home */}
+              {/* Post to the family's page */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                <h2 className="t-command text-[length:var(--t-lg)]">Message Home</h2>
+                <h2 className="t-command text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
                 <p className="t-muted mt-[var(--s2)]">
                   A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
+                  Give it a due date to mark it as something the family needs to do by then.
                   There&apos;s no reply yet; call the family directly for anything that needs a conversation.
                 </p>
 
@@ -1493,8 +1560,18 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
+                  <label className="field block">
+                    <span className="t-label">Due by (optional)</span>
+                    <input
+                      type="date"
+                      value={messageHomeDueDate}
+                      onChange={(event) => editDraft('messageHomeDueDate', event.target.value)}
+                      disabled={messageHomeSubmitting}
+                      className="input"
+                    />
+                  </label>
                   <button type="submit" className="btn btn--ghost" disabled={messageHomeSubmitting}>
-                    {messageHomeSubmitting ? 'Sending…' : 'Send to Family'}
+                    {messageHomeSubmitting ? 'Posting…' : 'Post to Family'}
                   </button>
                 </form>
               </section>
