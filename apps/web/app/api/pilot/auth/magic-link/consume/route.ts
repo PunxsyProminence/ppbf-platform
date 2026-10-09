@@ -69,6 +69,14 @@ export async function POST(request: NextRequest) {
     // resolving it is the expensive part -- so the limiter has to sit in front
     // of the lookup rather than after it. Guards against someone grinding
     // random tokens against the endpoint.
+    //
+    // CHECK-THEN-RECORD ON PURPOSE, unlike the routes that count an attempt
+    // before checking it (reserveAttempts, CL-A4). A burst can slip past this
+    // read before its first failure lands, but what it guesses is a 256-bit
+    // token (createOpaqueToken), so the slip buys nothing. Counting first
+    // would charge every valid redemption to the IP, and the only key here is
+    // the IP: parents opening their links together on the gym's one address
+    // would wait on each other (see the record below).
     const clientIp = getClientIp(request);
     const ipKey = `magic_link_consume_ip:${clientIp}`;
     if (checkRateLimit(ipKey).isLimited) {

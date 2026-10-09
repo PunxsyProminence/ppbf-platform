@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { query, queryOne } from './db';
 import type { PaymentLane } from './paymentSetup';
@@ -27,7 +27,12 @@ const STRIPE_NETWORK_TIMEOUT_MS = 10_000;
 /** How long a connect attempt's state token stays valid. Long enough to
  * complete Stripe onboarding in one sitting, short enough that a leaked link
  * goes stale. */
-const CONNECT_STATE_TTL_SECONDS = 30 * 60;
+export const CONNECT_STATE_TTL_SECONDS = 30 * 60;
+
+/** The one-time nonce cookie the start route sets and the callback consumes
+ * (always cleared there, whatever the outcome). Path-scoped to the callback. */
+export const CONNECT_NONCE_COOKIE = 'ppbf_payments_connect_nonce';
+export const CONNECT_NONCE_COOKIE_PATH = '/api/pilot/payments/connect/callback';
 
 /** How much clock skew the webhook signature check tolerates. Stripe's own
  * SDK default. */
@@ -61,16 +66,51 @@ const ACCOUNT_FIELDS = `organization_id, lane, stripe_account_id, status,
   connected_by_account_id, connected_at, revoked_at`;
 
 // ---------------------------------------------------------------------------
-// OAuth state: an HMAC-signed claim that THIS org's admin started THIS
-// lane's connect attempt, with an expiry. Verified on the callback so a
-// forged or replayed redirect cannot attach a Stripe account to an
-// organization that never asked for it.
+// OAuth state: an HMAC-signed claim that THIS admin, on THIS browser session,
+// started THIS lane's connect attempt, with an expiry and a one-time nonce.
+// Verified on the callback so a forged, replayed or hand-carried redirect
+// cannot attach a Stripe account: same organization is not enough (audit
+// slice A, Q5). Single use comes from the nonce cookie, which only the
+// starting browser holds and the callback always clears. No server-side
+// used-nonce table on purpose (Overwatch 2026-10-08: no migration).
 // ---------------------------------------------------------------------------
 
 interface ConnectStateClaims {
   organizationId: string;
   lane: PaymentLane;
+  accountId: string;
+  /** sha256 of the session token -- the token itself never leaves its cookie. */
+  sessionHash: string;
+  nonce: string;
   expiresAtEpochSeconds: number;
+}
+
+function hashSessionToken(sessionToken: string): string {
+  return createHash('sha256').update(sessionToken).digest('base64url');
+}
+
+export function newConnectNonce(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function equalStrings(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/** True only when the verified state was started by this caller: same
+ * organization, same account, same session, and the nonce cookie the start
+ * route set in this browser. */
+export function connectStateBindsTo(
+  claims: ConnectStateClaims,
+  caller: { organizationId: string; accountId: string; sessionToken: string; cookieNonce: string | null },
+): boolean {
+  if (!caller.cookieNonce) return false;
+  return claims.organizationId === caller.organizationId
+    && claims.accountId === caller.accountId
+    && equalStrings(claims.sessionHash, hashSessionToken(caller.sessionToken))
+    && equalStrings(claims.nonce, caller.cookieNonce);
 }
 
 function stateSignature(payload: string, key: string): string {
@@ -78,13 +118,16 @@ function stateSignature(payload: string, key: string): string {
 }
 
 export function signConnectState(
-  claims: { organizationId: string; lane: PaymentLane },
+  claims: { organizationId: string; lane: PaymentLane; accountId: string; sessionToken: string; nonce: string },
   signingKey: string,
   nowEpochSeconds: number = Math.floor(Date.now() / 1000),
 ): string {
   const payload = Buffer.from(JSON.stringify({
     organizationId: claims.organizationId,
     lane: claims.lane,
+    accountId: claims.accountId,
+    sessionHash: hashSessionToken(claims.sessionToken),
+    nonce: claims.nonce,
     expiresAtEpochSeconds: nowEpochSeconds + CONNECT_STATE_TTL_SECONDS,
   } satisfies ConnectStateClaims)).toString('base64url');
   return `${payload}.${stateSignature(payload, signingKey)}`;
@@ -113,6 +156,9 @@ export function verifyConnectState(
   }
   if (typeof claims.organizationId !== 'string' || !claims.organizationId) return null;
   if (claims.lane !== 'giving' && claims.lane !== 'program') return null;
+  if (typeof claims.accountId !== 'string' || !claims.accountId) return null;
+  if (typeof claims.sessionHash !== 'string' || !claims.sessionHash) return null;
+  if (typeof claims.nonce !== 'string' || !claims.nonce) return null;
   if (typeof claims.expiresAtEpochSeconds !== 'number' || claims.expiresAtEpochSeconds < nowEpochSeconds) {
     return null;
   }
