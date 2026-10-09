@@ -96,7 +96,7 @@ import { GET as floorPlansGET } from '@/app/api/pilot/floor-plans/route';
 import { GET as researchRequirementsGET } from '@/app/api/pilot/shadow/research-requirements/route';
 import { GET as videoListGET } from '@/app/api/pilot/video/list/route';
 
-import { listActiveCoachCoverage } from './access';
+import { athleteIdsForCoach, listActiveCoachCoverage } from './access';
 import { listMentorshipsForAthlete } from './achievements';
 import { listActivityLog } from './activityLog';
 import { getClassAttendanceRoster, getWeeklyAttendanceTrend } from './attendanceReporting';
@@ -747,7 +747,7 @@ const READERS: Reader[] = [
   },
   {
     name: 'compliance violations, the coach arm',
-    read: async () => athleteIdsOf(await getOrganizationViolations(ORG, { coachAccountId: COACH })),
+    read: async () => athleteIdsOf(await getOrganizationViolations(ORG, { athleteIds: await athleteIdsForCoach(ORG, COACH) })),
   },
   {
     name: 'floor plans, coach',
