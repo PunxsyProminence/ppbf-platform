@@ -254,7 +254,7 @@ describe('a guardian reads their child\'s plan', () => {
 });
 
 /* A-Q20 "Only active/completed" + PLAN-4 "Both athlete and parent"
-   (OD-2026-10-08-007): a draft is still the coach's; a cancelled block was
+   (OD-2026-10-08-006): a draft is still the coach's; a cancelled block was
    taken back. The cut is the same for the athlete and the guardian, and it
    happens before any objective is read. */
 describe('which blocks a family sees', () => {

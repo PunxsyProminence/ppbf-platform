@@ -82,10 +82,10 @@ export default function GuardianMediaConsentPage() {
           athlete_id: athleteId,
           decision,
           covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : undefined,
-          /* A-Q14 (OD-2026-10-08-007, "Hide until used"): the "Allow public
+          /* A-Q14 (OD-2026-10-08-005, "Hide until used"): the "Allow public
              use" box is not shown. The API field stays and a grant always
-             sends false; the gym turns public use on elsewhere when it is
-             ready to use it, never from this page by default. */
+             sends false. Public use is recorded only from a guardian's own
+             signed paper form (admin/athlete-consent), never from here. */
           public_use_allowed: decision === 'grant' ? false : undefined,
         }),
       });
@@ -210,12 +210,15 @@ export default function GuardianMediaConsentPage() {
                           Include video (unchecked = photos only)
                         </label>
                         {/* No "Allow public use" box here (A-Q14, hide until
-                            used). What is granted on this page is internal,
-                            gym-only use; the sentence below says so, since
-                            the absent box no longer can. */}
+                            used). What is granted on this page is gym-only
+                            use; the sentence below names who inside the gym
+                            can see it (the clip library is gym-wide,
+                            OD-2026-10-08-004; its readers are coaches, staff
+                            and athletes, publications/library/route.ts). */}
                         <p className="t-muted">
-                          Photos and video stay inside the gym (coaching review, the gym&apos;s own screens). Nothing is
-                          posted publicly on this consent.
+                          Photos and video stay inside the gym: coaches review them, and a clip the gym publishes goes in
+                          its clip library, which coaches and athletes signed in at this gym can browse. Nothing is posted
+                          publicly on this consent.
                         </p>
                       </div>
                     ) : null}
