@@ -1,4 +1,5 @@
 import {
+  bodyMassCorrectionAuditEvent,
   bodyMassInputError,
   recordCheckInBodyMass,
   summarizeBodyMass,
@@ -208,5 +209,31 @@ describe('option B: any two weigh-ins within the 7 days up to the latest (Jason 
     const summary = await summarizeBodyMass('org-1', 'ath-1', NOW);
     expect(summary.largest_change_in_window).toBeNull();
     expect(summary.flagged).toBe(false);
+  });
+});
+
+describe('bodyMassCorrectionAuditEvent', () => {
+  test('names the athlete, carries no weight, and is never mirrored into the SHADOW feed', () => {
+    const event = bodyMassCorrectionAuditEvent({
+      actor: { accountId: 'acct-coach', role: 'coach' },
+      organizationId: 'org-1',
+      athleteId: 'ath-1',
+      observationId: 'obs-2',
+      supersedesObservationId: 'obs-1',
+    });
+    expect(event).toEqual({
+      event_type: 'update',
+      actor_account_id: 'acct-coach',
+      actor_role: 'coach',
+      organization_id: 'org-1',
+      entity_type: 'athlete_body_mass',
+      entity_id: 'obs-2',
+      details: { athlete_id: 'ath-1', supersedes_observation_id: 'obs-1' },
+      // The athlete and their guardians read /api/pilot/shadow/events; a
+      // child's weight record is not decided to belong there. The pg suite
+      // (shadowEventAthleteScope.pg.test.ts) proves the flag holds end to end.
+      shadow_mirror: false,
+    });
+    expect(JSON.stringify(event)).not.toMatch(/kilogram|lb|\d+\.\d/);
   });
 });

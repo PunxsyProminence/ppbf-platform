@@ -10,18 +10,25 @@
 // counting the footage, and does NOT delete the media.
 //
 // THE SAME AUTHORITY SHAPE AS RELEASE, deliberately. A coach may withdraw
-// footage they uploaded; an organization admin may withdraw any of the
-// organization's. Release already draws that line for the opposite transition,
-// and a coach who may put their own footage INTO circulation should not need to
-// find an administrator to take it back out -- that asymmetry is how a gym ends
-// up with test footage nobody can remove.
+// footage they uploaded, provided they still reach an athlete in it; an
+// organization admin may withdraw any of the organization's. Release already
+// draws that line for the opposite transition, and a coach who may put their
+// own footage INTO circulation should not need to find an administrator to take
+// it back out -- that asymmetry is how a gym ends up with test footage nobody
+// can remove.
 //
 // ENTITLEMENT FAILURES RETURN hiddenNotFound(), matching the sibling read and
 // release routes: a coach whose list does not include a session must not learn
 // it exists by trying to archive it.
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import {
+  accessibleAthleteIds,
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+  isOrganizationAdminRole,
+  requireRole,
+} from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -32,6 +39,7 @@ import {
   setVideoArchiveState,
   type VideoArchiveAction,
 } from '@/src/server/pilot/videoArchive';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 
 export const runtime = 'nodejs';
 
@@ -96,6 +104,50 @@ export async function POST(
         } catch {
           return hiddenNotFound();
         }
+      }
+    }
+
+    /*
+     * EVERY CHILD THE CLIP SHOWS (videoClipTags.ts). The uploader rule above
+     * cannot see the tags: a coach who uploaded untagged team footage that
+     * another coach then tagged with a child the uploader does not coach was
+     * entitled on the upload alone, and could take that child's clip out of
+     * circulation or put it back. Playback's rule for a tagged clip
+     * (video/[videoId]/route.ts; release holds it too): a coach must reach at
+     * least one athlete in it, own athlete included; an organization admin
+     * reaches every athlete in the organization and is not asked. Read after
+     * the entitlement refusals above, so a tag's not-found never confirms a
+     * video exists to a caller those already refused, and before the state
+     * refusal below, with the other entitlement refusals.
+     *
+     * RESTORE IS A RELEASE, so it also asks whether the athletes are still
+     * here: a deleted athlete's footage reads as not found everywhere else
+     * (deletedAthletes.ts) and restoring it would bring it back into
+     * circulation. ARCHIVE DOES NOT ASK THAT. Withdrawing footage of a child
+     * the gym has deleted is the protective direction, and refusing it would
+     * leave that footage the one kind nobody could take down.
+     */
+    const tagged = await listLiveTagSubjects(principal.organizationId, videoId);
+    if (action === 'restore') {
+      if (tagged.some((subject) => subject.athlete_deleted)) {
+        return hiddenNotFound();
+      }
+      if (row.athlete_id) {
+        try {
+          await assertAthleteBelongsToOrganization(principal.organizationId, row.athlete_id);
+        } catch {
+          return hiddenNotFound();
+        }
+      }
+    }
+    if (tagged.length > 0 && !isOrganizationAdminRole(principal.role)) {
+      const subjects = [...new Set([
+        ...(row.athlete_id ? [row.athlete_id] : []),
+        ...tagged.map((subject) => subject.athlete_id),
+      ])];
+      const reach = await accessibleAthleteIds(principal, subjects);
+      if (reach.size === 0) {
+        return hiddenNotFound();
       }
     }
 

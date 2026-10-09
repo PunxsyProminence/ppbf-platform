@@ -8,12 +8,14 @@ import {
   assertViewerMayReachSubject,
   getAccountProfile,
   getSubjectIdentity,
+  resolveRelationship,
 } from '@/src/server/pilot/profileDb';
 
 jest.mock('@/src/server/pilot/profileDb', () => ({
   getSubjectIdentity: jest.fn(),
   getAccountProfile: jest.fn(),
   assertViewerMayReachSubject: jest.fn(),
+  resolveRelationship: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/blob', () => ({
@@ -36,6 +38,7 @@ const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockIdentity = jest.mocked(getSubjectIdentity);
 const mockGetProfile = jest.mocked(getAccountProfile);
 const mockAssertReach = jest.mocked(assertViewerMayReachSubject);
+const mockRelationship = jest.mocked(resolveRelationship);
 const mockDownload = jest.mocked(downloadPilotProfilePhoto);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 
@@ -164,7 +167,7 @@ describe('GET /api/pilot/admin/portrait-review/photo/[accountId]', () => {
   });
 
   test('every other role is refused, including the ones that can read the athlete record', async () => {
-    for (const role of ['coach', 'athlete', 'parent', 'board', 'platform_owner', 'volunteer', 'staff']) {
+    for (const role of ['athlete', 'parent', 'board', 'platform_owner', 'volunteer', 'staff']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
       const response = await GET(request(), routeParams());
       expect(response.status).toBe(403);
@@ -241,5 +244,67 @@ describe('GET /api/pilot/admin/portrait-review/photo/[accountId]', () => {
 
     expect(response.status).toBe(404);
     expect(mockIdentity).not.toHaveBeenCalled();
+  });
+
+  describe('a coach, only for a portrait they may already decide on (lane W7)', () => {
+    test("their own athlete's pending portrait is served, and the look is recorded as the coach's", async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach' }));
+      mockRelationship.mockResolvedValueOnce('coach_of_subject');
+
+      const response = await GET(request(), routeParams());
+
+      expect(response.status).toBe(200);
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor_account_id: 'acct-coach',
+          details: expect.objectContaining({
+            action: 'portrait_review_image_viewed',
+            photo_uploaded_at: '2026-08-10 09:00:00.123456+00',
+            source: 'coach_portrait_review',
+          }),
+        }),
+      );
+    });
+
+    test('their own pending portrait is served (self)', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-athlete' }));
+      mockRelationship.mockResolvedValueOnce('self');
+
+      const response = await GET(request(), routeParams());
+
+      expect(response.status).toBe(200);
+    });
+
+    test('a coach without reach to this athlete is refused as the same hidden 404, before any bytes', async () => {
+      for (const relationship of ['organization_staff', 'none', 'guardian_of_subject'] as const) {
+        mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-other-coach' }));
+        mockRelationship.mockResolvedValueOnce(relationship as never);
+
+        const response = await GET(request(), routeParams());
+
+        expect(response.status).toBe(404);
+      }
+      expect(mockDownload).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('the child-account boundary still refuses a coach first', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach' }));
+      mockAssertReach.mockRejectedValueOnce(new Error('Forbidden'));
+
+      const response = await GET(request(), routeParams());
+
+      expect(response.status).toBe(404);
+      expect(mockRelationship).not.toHaveBeenCalled();
+      expect(mockDownload).not.toHaveBeenCalled();
+    });
+
+    test('an admin is not put through the coach relationship check', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+      await GET(request(), routeParams());
+
+      expect(mockRelationship).not.toHaveBeenCalled();
+    });
   });
 });

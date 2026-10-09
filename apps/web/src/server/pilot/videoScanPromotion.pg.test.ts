@@ -56,6 +56,8 @@ let client: Client;
 type VideoSessionsModule = typeof import('./videoSessions');
 let videoSessions: VideoSessionsModule;
 let closePool: () => Promise<void>;
+let withTransaction: typeof import('./db').withTransaction;
+let fileEscalation: typeof import('./escalationLadder').fileEscalation;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -169,7 +171,8 @@ beforeAll(async () => {
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(PG_DATABASE);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   videoSessions = await import('./videoSessions');
-  ({ closePool } = await import('./db'));
+  ({ closePool, withTransaction } = await import('./db'));
+  ({ fileEscalation } = await import('./escalationLadder'));
 });
 
 afterAll(async () => {
@@ -483,6 +486,135 @@ describe('settleVideoSessionScan', () => {
     expect(after.scan_detail).toMatchObject({
       late_scan_after_human_block: { scan_state: 'passed' },
     });
+  });
+});
+
+/*
+ * AUDIT A15 / AUTO-02. The sweep settles the verdict and files its safety
+ * escalation inside ONE transaction (videoScanSweep.ts). Settled on the pool
+ * and escalated afterwards, a filing failure left the row at scan_state
+ * 'blocked' or 'infected' -- which claimNextVideoSessionForScan never
+ * reclaims -- with no escalation and no path that would ever file one. These
+ * cases prove the settle really rides the caller's transaction: the part a
+ * mocked database cannot show.
+ */
+describe('settleVideoSessionScan on a transaction (the verdict and its escalation commit together)', () => {
+  test('a transaction that settles and then fails rolls the settle back; the claim goes stale and is scanned again', async () => {
+    await insertQuarantined('vs-1');
+    const claim = await videoSessions.claimNextVideoSessionForScan();
+    expect(claim?.video_session_id).toBe('vs-1');
+
+    await expect(withTransaction(async (tx) => {
+      const settled = await videoSessions.settleVideoSessionScan({
+        videoSessionId: 'vs-1',
+        scanState: 'infected',
+        nextStatus: 'infected',
+        detail: { decision: 'infected', reason: 'MALWARE_DETECTED' },
+        retryInSeconds: 0,
+        terminal: true,
+      }, tx);
+      // Inside the transaction the settle took: this is the state that must
+      // NOT survive the failure below.
+      expect(settled).toBe(true);
+      throw new Error('escalation ladder unavailable');
+    })).rejects.toThrow('escalation ladder unavailable');
+
+    // Nothing of the settle remains: still quarantined, still claimed, no
+    // verdict recorded.
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('quarantined');
+    expect(row.scan_state).toBe('scanning');
+    expect(row.scan_claimed_at).not.toBeNull();
+    expect(row.scanned_at).toBeNull();
+    expect(row.scan_detail).toEqual({});
+
+    // A live claim is not handed out twice ...
+    expect(await videoSessions.claimNextVideoSessionForScan()).toBeNull();
+    // ... but once the claim is stale the row is scanned again, which is
+    // where the escalation gets its second chance.
+    await client.query(
+      `update pilot.video_sessions set scan_claimed_at = now() - interval '1 hour' where video_session_id = 'vs-1'`,
+    );
+    const again = await videoSessions.claimNextVideoSessionForScan();
+    expect(again?.video_session_id).toBe('vs-1');
+    expect(again?.scan_attempts).toBe(2);
+  });
+
+  test('a transaction that settles and files commits both, and the row is never claimed again', async () => {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ('org-1', 'org-1', 'active') on conflict do nothing`,
+    );
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-coach', 'coach', 'org-1', 'microsoft') on conflict do nothing`,
+    );
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+         gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ('org-1', 'ath-1', 'Scanned Athlete', '2011-05-06', 'fly', 'active', 'contact', true, 'acct-coach', now(), now())
+       on conflict do nothing`,
+    );
+    await insertQuarantined('vs-1');
+    await videoSessions.claimNextVideoSessionForScan();
+
+    await withTransaction(async (tx) => {
+      await videoSessions.settleVideoSessionScan({
+        videoSessionId: 'vs-1',
+        scanState: 'blocked',
+        nextStatus: null,
+        detail: { decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' },
+        retryInSeconds: 0,
+        terminal: true,
+      }, tx);
+      await fileEscalation({
+        organizationId: 'org-1',
+        sourceType: 'video_scan',
+        sourceId: 'vs-1',
+        athleteId: 'ath-1',
+        severity: 'critical',
+        reason: 'The content screen refused this upload.',
+        triggeredBy: 'system',
+        metadata: { video_session_id: 'vs-1', decision: 'blocked' },
+      }, tx);
+    });
+
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('quarantined');
+    expect(row.scan_state).toBe('blocked');
+    expect(row.scan_claimed_at).toBeNull();
+    const filed = await client.query(
+      `select severity, status from pilot.safety_escalations
+        where organization_id = 'org-1' and source_type = 'video_scan' and source_id = 'vs-1'`,
+    );
+    expect(filed.rows).toEqual([{ severity: 'critical', status: 'open' }]);
+    expect(await videoSessions.claimNextVideoSessionForScan()).toBeNull();
+  });
+
+  test('a late scan after a human block still appends its note on a transaction without poisoning it', async () => {
+    await insertQuarantined('vs-1');
+    await client.query(`update pilot.video_sessions set scan_state = 'blocked'`);
+
+    const outcome = await withTransaction(async (tx) => {
+      const settled = await videoSessions.settleVideoSessionScan({
+        videoSessionId: 'vs-1',
+        scanState: 'passed',
+        nextStatus: 'ready',
+        detail: { decision: 'promote' },
+        retryInSeconds: 0,
+        terminal: true,
+      }, tx);
+      // The transaction is still usable after the refused settle: a later
+      // statement on it succeeds.
+      const probe = await tx.query('select 1 as ok');
+      return { settled, ok: probe.rows[0].ok };
+    });
+
+    expect(outcome).toEqual({ settled: false, ok: 1 });
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('quarantined');
+    expect(row.scan_state).toBe('blocked');
+    expect(row.scan_detail).toMatchObject({ late_scan_after_human_block: { scan_state: 'passed' } });
   });
 });
 

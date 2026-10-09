@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { deletePilotProfilePhoto } from '@/src/server/pilot/blob';
+import { query } from '@/src/server/pilot/db';
+import { ForbiddenError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertViewerMayReachSubject,
@@ -142,6 +144,43 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 },
       );
+    }
+
+    // A RELEASE BY ANYONE BUT THE PORTRAIT'S OWNER IS ATTESTED (lane W7, FT-7).
+    //
+    // Releasing a portrait of somebody else -- a coach releasing their own
+    // athlete's face, an admin deciding from here instead of the console --
+    // has to rest on the reviewer having LOOKED at this photograph. The only
+    // server-verifiable record of a look is the 'portrait_review_image_viewed'
+    // row admin/portrait-review/photo/[accountId] writes before serving the
+    // bytes, carrying the exact photo_uploaded_at it served. The probe is the
+    // console's own (admin/portrait-review/route.ts): same actor, same
+    // subject, EQUALITY on the photograph's identity, so a look at a
+    // replaced photo attests nothing. photo_uploaded_at then rides into
+    // releasePhoto's CAS below, closing the gap after the probe.
+    //
+    // 'self' is exempt: a staff member releasing their OWN portrait has
+    // already seen it, and OD-2026-10-06-005 (CL-A20, "Leave as is") keeps
+    // that. Only staff roles pass requireRole above, so 'self' is a staff
+    // login. That login is a child only if a minor athlete's account was
+    // given a staff role, which the account writes are meant to refuse.
+    // Block is never gated: refusing is never slowed.
+    if (decision === 'release' && relationship !== 'self') {
+      const viewed = await query<{ audit_id: string }>(
+        `select audit_id
+         from pilot.audit_events
+         where organization_id = $1
+           and actor_account_id = $2
+           and entity_type = 'account_profile_photo'
+           and entity_id = $3
+           and details->>'action' = 'portrait_review_image_viewed'
+           and details->>'photo_uploaded_at' = $4
+         limit 1`,
+        [principal.organizationId, principal.accountId, accountId, profile.photoUploadedAt],
+      );
+      if (viewed.length === 0) {
+        throw new ForbiddenError('Forbidden: release requires viewing the current photo first');
+      }
     }
 
     const applied = decision === 'release'

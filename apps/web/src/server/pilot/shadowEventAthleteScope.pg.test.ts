@@ -66,6 +66,7 @@ jest.mock('./db', () => {
 });
 
 import type { PilotRole } from './contracts';
+import { bodyMassCorrectionAuditEvent } from './athleteBodyMass';
 import { writePilotAuditEvent } from './audit';
 import { emitShadowEvent } from './shadowEvents';
 import { listShadowEvents } from './shadowReadModels';
@@ -108,6 +109,7 @@ const NAME_ONLY = 'name-only';               // names an athlete without any id
 const LOGOUT_B = `logout:${ATHLETE_B_ACCOUNT}`; // audit mirror naming only B's account (details {})
 const CAMEL_B = 'camel-b';                   // athleteId = B
 const OBJECTS_AB = 'objects-a-b';            // athlete_id = A plus athletes: [{ id: B }]
+const BODY_MASS_A = 'obs-a-corrected';      // audit row only: body-mass correction, never mirrored
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -322,6 +324,18 @@ async function seed(client: Client): Promise<void> {
     actorRole: 'organization_admin',
     payload: { athlete_name: 'Scoped Athlete' },
   });
+
+  // A body-mass correction on athlete A, the exact event athleteBodyMass.ts
+  // writes (its own builder, through the real writer). Health data: it must
+  // land in pilot.audit_events and in NO reader's SHADOW feed, the athlete's
+  // and parent's included (lane W7, from the minor-limits review).
+  await writePilotAuditEvent(bodyMassCorrectionAuditEvent({
+    actor: { accountId: COACH_A, role: 'coach' },
+    organizationId: ORG_ID,
+    athleteId: ATHLETE_A,
+    observationId: BODY_MASS_A,
+    supersedesObservationId: 'obs-a-superseded',
+  }));
 }
 
 beforeAll(async () => {
@@ -412,6 +426,36 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
       [ORG_ID],
     );
     expect(stored.rows).toHaveLength(12);
+  });
+
+  test('a body-mass correction is audited and reaches no SHADOW feed at all', async () => {
+    // The audit row is there, so the writer ran and the record is kept.
+    const audited = await activeClient!.query(
+      `select details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'athlete_body_mass' and entity_id = $2`,
+      [ORG_ID, BODY_MASS_A],
+    );
+    expect(audited.rows).toHaveLength(1);
+    expect(audited.rows[0].details).toMatchObject({ athlete_id: ATHLETE_A });
+
+    // No mirror row exists -- the proof does not rest on the read model's
+    // scoping, which would still hand the row to the athlete and parent.
+    const mirrored = await activeClient!.query(
+      `select 1 from pilot.shadow_events where organization_id = $1 and entity_id = $2`,
+      [ORG_ID, BODY_MASS_A],
+    );
+    expect(mirrored.rows).toHaveLength(0);
+
+    // And the family feed, read as the athlete and as the parent, never
+    // lists it; nor does the admin's, which reads everything that exists.
+    for (const feed of [
+      await visibleTo(ATHLETE_A_ACCOUNT, 'athlete', ATHLETE_A),
+      await visibleTo(PARENT_A, 'parent'),
+      await visibleTo(COACH_A, 'coach'),
+      await visibleTo(ADMIN, 'organization_admin'),
+    ]) {
+      expect(feed).not.toContain(BODY_MASS_A);
+    }
   });
 
   test('control: the organization admin reads every row', async () => {

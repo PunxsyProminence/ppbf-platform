@@ -1,5 +1,5 @@
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
-import { writePilotAuditEvent } from './audit';
+import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { queryOne, query } from './db';
 import { ForbiddenError, NotFoundError, PilotError } from './errors';
 import { calculateSevenDayWeightChange } from './formulas/engine';
@@ -490,15 +490,47 @@ export async function correctBodyMass(
     throw error;
   }
 
-  // The weights themselves stay out of the audit row; the observations hold them.
-  await writePilotAuditEvent({
-    event_type: 'update',
-    actor_account_id: actor.accountId,
-    actor_role: actor.role,
-    organization_id: organizationId,
-    entity_type: 'athlete_body_mass',
-    entity_id: saved.observationId,
-    details: { athlete_id: input.athleteId, supersedes_observation_id: input.observationId },
-  });
+  await writePilotAuditEvent(bodyMassCorrectionAuditEvent({
+    actor,
+    organizationId,
+    athleteId: input.athleteId,
+    observationId: saved.observationId,
+    supersedesObservationId: input.observationId,
+  }));
   return { observation_id: saved.observationId, supersedes_observation_id: input.observationId };
+}
+
+/**
+ * The audit row a body-mass correction writes. Exported so the SHADOW feed
+ * suite (shadowEventAthleteScope.pg.test.ts) can prove that THIS event, not a
+ * hand-written likeness of it, reaches pilot.audit_events and nothing else.
+ *
+ * The weights themselves stay out of the audit row; the observations hold
+ * them.
+ *
+ * shadow_mirror: false -- writePilotAuditEvent otherwise mirrors the row into
+ * pilot.shadow_events, and listShadowEvents ties that mirror to the athlete
+ * through details.athlete_id, so the athlete and their guardians would read
+ * "body mass corrected, <time>" in /api/pilot/shadow/events. A child's weight
+ * record is health data (OD-2026-10-04-029: the athlete or their coach), and
+ * whether the family feed carries it is not decided; athleteMinorLimits.ts
+ * holds the same line for a child's limits. The audit table keeps the record.
+ */
+export function bodyMassCorrectionAuditEvent(input: {
+  actor: Pick<ActorIdentity, 'accountId' | 'role'>;
+  organizationId: string;
+  athleteId: string;
+  observationId: string;
+  supersedesObservationId: string;
+}): PilotAuditEvent {
+  return {
+    event_type: 'update',
+    actor_account_id: input.actor.accountId,
+    actor_role: input.actor.role,
+    organization_id: input.organizationId,
+    entity_type: 'athlete_body_mass',
+    entity_id: input.observationId,
+    details: { athlete_id: input.athleteId, supersedes_observation_id: input.supersedesObservationId },
+    shadow_mirror: false,
+  };
 }

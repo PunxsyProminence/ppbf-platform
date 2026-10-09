@@ -98,7 +98,14 @@ function isStaff(role: string): boolean {
  */
 async function auditHoldEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
   try {
-    await writePilotAuditEvent(event);
+    // shadow_mirror: false -- the mirrored shadow_events row would carry the
+    // hold's reason_category ('medical' among them) and the lift to every
+    // reader of /api/pilot/shadow/events tied to this athlete, the athlete and
+    // their guardians included. A hold is a safety record about a child's
+    // health and conduct; the hold itself is what the family is shown, by the
+    // routes built for that, and the audit table keeps the record of who
+    // placed or lifted it. Set here so no caller can forget it.
+    await writePilotAuditEvent({ ...event, shadow_mirror: false });
   } catch (error) {
     const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
     const code = sanitizedSqlState(rawCode);

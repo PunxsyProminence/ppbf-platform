@@ -70,19 +70,23 @@ jest.mock('./escalationLadder', () => ({ fileEscalation: jest.fn() }));
 const txStatements: string[] = [];
 let txVideoRow: { athlete_id: string | null; athlete_deleted?: boolean } | null = { athlete_id: 'ath-1' };
 const txErrorListeners = new Set<() => void>();
+// One fake client for every withTransaction in the sweep: the vision
+// re-check's and, after it, the settle-plus-escalation's. Named so the suite
+// can assert that both of those writes rode the SAME transaction client.
+const TX_CLIENT = {
+  on: (_event: string, listener: () => void) => { txErrorListeners.add(listener); },
+  off: (_event: string, listener: () => void) => { txErrorListeners.delete(listener); },
+  query: async (text: string) => {
+    txStatements.push(text.replace(/\s+/g, ' ').trim());
+    if (/from pilot\.video_sessions/.test(text)) return { rows: txVideoRow ? [txVideoRow] : [] };
+    return { rows: [] };
+  },
+};
 jest.mock('./db', () => {
   const actual = jest.requireActual('./db');
   return {
     ...actual,
-    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({
-      on: (_event: string, listener: () => void) => { txErrorListeners.add(listener); },
-      off: (_event: string, listener: () => void) => { txErrorListeners.delete(listener); },
-      query: async (text: string) => {
-        txStatements.push(text.replace(/\s+/g, ' ').trim());
-        if (/from pilot\.video_sessions/.test(text)) return { rows: txVideoRow ? [txVideoRow] : [] };
-        return { rows: [] };
-      },
-    })),
+    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(TX_CLIENT)),
   };
 });
 
@@ -227,7 +231,7 @@ describe('sweepQuarantinedVideos', () => {
       nextStatus: 'ready',
       terminal: true,
       retryInSeconds: 0,
-    }));
+    }), TX_CLIENT);
   });
 
   test('a malware hit marks the video infected and files a high-severity escalation', async () => {
@@ -241,7 +245,7 @@ describe('sweepQuarantinedVideos', () => {
     expect(result).toMatchObject({ scanned: 1, promoted: 0, blocked: 1 });
     expect(mockedSettle).toHaveBeenCalledWith(expect.objectContaining({
       scanState: 'infected', nextStatus: 'infected', terminal: true,
-    }));
+    }), TX_CLIENT);
     expect(mockedFileEscalation).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'org-1',
       sourceType: 'video_scan',
@@ -250,7 +254,7 @@ describe('sweepQuarantinedVideos', () => {
       severity: 'high',
       triggeredBy: 'system',
       metadata: expect.objectContaining({ video_session_id: 'vs-1', decision: 'infected', reason: 'MALWARE_DETECTED' }),
-    }));
+    }), TX_CLIENT);
   });
 
   test('a refusal and an uncertain verdict both leave status alone and escalate at their own severity', async () => {
@@ -269,7 +273,7 @@ describe('sweepQuarantinedVideos', () => {
       // three readers already refuse.
       expect(mockedSettle).toHaveBeenCalledWith(expect.objectContaining({
         scanState, nextStatus: null, terminal: true,
-      }));
+      }), TX_CLIENT);
       // The escalation ladder is the surface this closes: a blocked or
       // needs_human_review video used to be visible only on the video-review
       // page's own filtered list.
@@ -278,8 +282,65 @@ describe('sweepQuarantinedVideos', () => {
         athleteId: 'ath-1',
         severity,
         triggeredBy: 'system',
-      }));
+      }), TX_CLIENT);
     }
+  });
+
+  /*
+   * AUDIT A15 / AUTO-02: THE VERDICT AND ITS ESCALATION COMMIT TOGETHER.
+   *
+   * The settle used to run on the pool and the escalation after it. A filing
+   * failure then left a row settled as 'blocked' or 'infected' -- outside the
+   * claim predicate for good -- with no escalation and no path that would ever
+   * file one, while the comment said the next tick retried it. Both orders of
+   * failure are pinned here against the sweep; the rollback itself is proven
+   * against Postgres in videoScanPromotion.pg.test.ts.
+   */
+  describe('the verdict and its escalation commit together', () => {
+    test('the settle and the escalation ride one transaction client, settle first', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedSettle).toHaveBeenCalledTimes(1);
+      expect(mockedFileEscalation).toHaveBeenCalledTimes(1);
+      // The same client object, not merely "a" client: that is what makes
+      // them one transaction.
+      expect(mockedSettle.mock.calls[0][1]).toBe(TX_CLIENT);
+      expect(mockedFileEscalation.mock.calls[0][1]).toBe(TX_CLIENT);
+      expect(mockedSettle.mock.invocationCallOrder[0]).toBeLessThan(mockedFileEscalation.mock.invocationCallOrder[0]);
+    });
+
+    test('an escalation that fails to file throws out of the sweep, inside the transaction, and emits nothing', async () => {
+      const { withTransaction } = jest.requireMock('./db') as { withTransaction: jest.Mock };
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'infected', reason: 'MALWARE_DETECTED', malware: 'malicious' }));
+      mockedFileEscalation.mockRejectedValueOnce(new Error('ladder unavailable'));
+
+      // Not swallowed: the worker's onError log is how a lost escalation is
+      // seen, and the real withTransaction rolls the settle back on the way
+      // out (videoScanPromotion.pg.test.ts), so the row is claimable again.
+      await expect(sweepQuarantinedVideos({ env: CONTENT_ON })).rejects.toThrow('ladder unavailable');
+
+      expect(mockedSettle).toHaveBeenCalledTimes(1);
+      // The failure happened INSIDE the last transaction the sweep opened (the
+      // settle's), which is what lets the real withTransaction roll it back.
+      await expect(withTransaction.mock.results.at(-1)?.value).rejects.toThrow('ladder unavailable');
+      // No "scan settled" event for a verdict that did not commit.
+      expect(mockedEmit).not.toHaveBeenCalled();
+    });
+
+    test('a settle that fails files no escalation', async () => {
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
+      mockedSettle.mockRejectedValueOnce(new Error('connection reset'));
+
+      await expect(sweepQuarantinedVideos({ env: CONTENT_ON })).rejects.toThrow('connection reset');
+
+      expect(mockedFileEscalation).not.toHaveBeenCalled();
+      expect(mockedEmit).not.toHaveBeenCalled();
+    });
   });
 
   test('does not escalate a promoted video', async () => {
@@ -328,7 +389,7 @@ describe('sweepQuarantinedVideos', () => {
     // Real scanRetryBackoffSeconds: 30 * 2^(3-1) = 120.
     expect(mockedSettle).toHaveBeenCalledWith(expect.objectContaining({
       scanState: 'pending', nextStatus: null, terminal: false, retryInSeconds: 120,
-    }));
+    }), TX_CLIENT);
   });
 
   test('only terminal decisions emit an event', async () => {
@@ -792,7 +853,7 @@ describe('sweepQuarantinedVideos', () => {
       await sweepQuarantinedVideos({ env: CONTENT_ON });
 
       expect(mockedFileEscalation).toHaveBeenCalledWith(
-        expect.objectContaining({ athleteId: 'ath-1' }),
+        expect.objectContaining({ athleteId: 'ath-1' }), TX_CLIENT,
       );
     });
   });

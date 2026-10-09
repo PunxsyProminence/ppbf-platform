@@ -1,11 +1,16 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import {
+  accessibleAthleteIds,
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+} from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { setVideoArchiveState } from '@/src/server/pilot/videoArchive';
+import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -15,12 +20,18 @@ jest.mock('@/src/server/pilot/http', () => {
 
 // requireRole and isOrganizationAdminRole stay REAL, so the authority rules
 // under test are the shipped ones rather than a doubled approximation.
-// Only the athlete-reach check is doubled, because its real form reads the
-// assignment tables.
+// Only the athlete checks are doubled, because their real forms read the
+// assignment and athlete tables: the single reach check, the batched one a
+// tagged clip asks (reaches everyone unless a test says otherwise), and the
+// live-row check restore asks (still here unless a test says otherwise).
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined),
+  assertAthleteBelongsToOrganization: jest.fn().mockResolvedValue(undefined),
+  accessibleAthleteIds: jest.fn(async (_actor: unknown, ids: readonly string[]) => new Set(ids)),
 }));
+// Untagged unless a test tags the clip; the SQL has its own pg suite.
+jest.mock('@/src/server/pilot/videoClipTags', () => ({ listLiveTagSubjects: jest.fn(async () => []) }));
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -42,6 +53,9 @@ const mockQueryOne = queryOne as jest.Mock;
 const mockArchive = setVideoArchiveState as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
+const mockLiveRow = assertAthleteBelongsToOrganization as jest.Mock;
+const mockReach = accessibleAthleteIds as jest.Mock;
+const mockTags = listLiveTagSubjects as jest.Mock;
 
 afterEach(() => { jest.clearAllMocks(); });
 
@@ -312,5 +326,163 @@ describe('POST /api/pilot/video/[videoId]/archive', () => {
         reason: 'test footage of a desk',
       }),
     }));
+  });
+});
+
+/*
+ * EVERY CHILD THE CLIP SHOWS (lane W7, from #1326's reviewers). The uploader
+ * rule cannot see the tags, so a coach who uploaded untagged team footage that
+ * another coach then tagged with a child the uploader does not coach could
+ * archive or restore that child's clip on the upload alone. Playback's rule
+ * for a tagged clip, applied here: a coach must reach at least one athlete in
+ * it; an organization admin is not asked.
+ */
+describe('archiving or restoring a tagged clip', () => {
+  const taggedClip = (overrides: Record<string, unknown> = {}) => {
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: null, capture_take_id: null, ...overrides }));
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-tagged', athlete_deleted: false }]);
+  };
+
+  test.each(['archive', 'restore'] as const)(
+    'a coach who reaches nobody in the clip cannot %s it, and is not told it exists',
+    async (action) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      taggedClip({ status: action === 'archive' ? 'ready' : 'archived' });
+      mockReach.mockResolvedValueOnce(new Set());
+
+      const res = await call({ action });
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Not found' });
+      expect(mockReach).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'coach-1', role: 'coach' }), ['ath-tagged']);
+      expect(mockArchive).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test('the reach question names every athlete the clip shows, own athlete included, once each', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null }));
+    mockTags.mockResolvedValueOnce([
+      { athlete_id: 'ath-tagged', athlete_deleted: false },
+      { athlete_id: 'ath-1', athlete_deleted: false },
+    ]);
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: 'ath-1', capture_take_id: null }), status: 'archived' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockReach).toHaveBeenCalledWith(expect.anything(), ['ath-1', 'ath-tagged']);
+  });
+
+  test('a coach who reaches one athlete in the clip may archive it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    taggedClip();
+    mockReach.mockResolvedValueOnce(new Set(['ath-tagged']));
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: null, capture_take_id: null }), status: 'archived' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockArchive).toHaveBeenCalled();
+  });
+
+  test('an organization admin is not asked: they reach every athlete in the organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    taggedClip({ uploaded_by_account_id: 'coach-2' });
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: null, capture_take_id: null }), status: 'archived' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockReach).not.toHaveBeenCalled();
+  });
+
+  test('an untagged clip is not asked: the uploader rule decided it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockArchive.mockResolvedValueOnce({ ...videoRow(), status: 'archived' });
+
+    expect((await call()).status).toBe(200);
+    expect(mockTags).toHaveBeenCalledWith('org-1', 'vid-1');
+    expect(mockReach).not.toHaveBeenCalled();
+  });
+
+  test('tags are read only after the entitlement refusals, so a tag\'s not-found never confirms a video exists', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockQueryOne.mockResolvedValueOnce(videoRow({ uploaded_by_account_id: 'coach-2' }));
+
+    expect((await call()).status).toBe(404);
+    expect(mockTags).not.toHaveBeenCalled();
+  });
+
+  test('the reach refusal comes with the other entitlement refusals, before the state 409', async () => {
+    // Held footage: an entitled coach gets the 409 naming the status. A coach
+    // who reaches nobody in the clip must get the 404 instead.
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    taggedClip({ status: 'quarantined' });
+    mockReach.mockResolvedValueOnce(new Set());
+
+    const res = await call();
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  test('a reach read that fails is a failure, not a reach: nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    taggedClip();
+    mockReach.mockRejectedValueOnce(new Error('assignment read failed'));
+
+    const res = await call();
+
+    expect(res.status).toBe(500);
+    expect(mockArchive).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * RESTORE IS A RELEASE: it puts footage back into circulation, so it also
+ * asks whether the athletes in it are still here, as playback and release do.
+ * ARCHIVE DOES NOT: withdrawing footage of a child the gym has deleted is the
+ * protective direction, and refusing it would leave that footage the one kind
+ * nobody could take down.
+ */
+describe('restoring footage of a deleted athlete', () => {
+  test('restore of footage whose own athlete is deleted is not found, for an administrator too', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null, status: 'archived', uploaded_by_account_id: 'coach-2' }));
+    mockLiveRow.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
+
+    const res = await call({ action: 'restore' });
+
+    expect(res.status).toBe(404);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockArchive).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('restore of a clip tagged with a deleted athlete is not found, for an administrator too', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ status: 'archived', uploaded_by_account_id: 'coach-2' }));
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-gone', athlete_deleted: true }]);
+
+    const res = await call({ action: 'restore' });
+
+    expect(res.status).toBe(404);
+    expect(mockArchive).not.toHaveBeenCalled();
+  });
+
+  test('archive is not asked whether the athlete is still here: withdrawing a deleted child\'s footage must stay possible', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null, uploaded_by_account_id: 'coach-2' }));
+    mockTags.mockResolvedValueOnce([{ athlete_id: 'ath-gone', athlete_deleted: true }]);
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: 'ath-1', capture_take_id: null }), status: 'archived' });
+
+    expect((await call({ action: 'archive' })).status).toBe(200);
+    expect(mockLiveRow).not.toHaveBeenCalled();
+  });
+
+  test('restore of a live athlete\'s footage asks the live-row check and proceeds', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'admin-1', role: 'organization_admin' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ athlete_id: 'ath-1', capture_take_id: null, status: 'archived', uploaded_by_account_id: 'coach-2' }));
+    mockArchive.mockResolvedValueOnce({ ...videoRow({ athlete_id: 'ath-1', capture_take_id: null }), status: 'ready' });
+
+    expect((await call({ action: 'restore' })).status).toBe(200);
+    expect(mockLiveRow).toHaveBeenCalledWith('org-1', 'ath-1');
   });
 });

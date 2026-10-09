@@ -424,47 +424,11 @@ export async function sweepQuarantinedVideos(options: {
     const nextStatus = videoStatusForDecision(scan.decision);
     const terminal = isTerminalScanDecision(scan.decision);
 
-    await settleVideoSessionScan({
-      videoSessionId: claim.video_session_id,
-      scanState: scanStateForDecision(scan.decision),
-      nextStatus,
-      detail: {
-        decision: scan.decision,
-        reason: scan.reason,
-        gates_enabled: scan.gatesEnabled,
-        gates_passed: scan.gatesPassed,
-        // Verdicts, never the model's prose. Whatever the screen said about
-        // the footage stays out of the database and out of the logs.
-        malware_verdict: scan.malware,
-        content_verdict: scan.content,
-        attempts: claim.scan_attempts,
-        duration_ms: scan.durationMs,
-        // Present only when a vision call was made: is the scan's 30 s cap
-        // (VIDEO_SCAN_VISION_TIMEOUT_MS) too tight?
-        ...(scan.visionMs === null || scan.visionMs === undefined
-          ? {}
-          : { vision_ms: scan.visionMs, vision_timed_out: scan.visionTimedOut }),
-        scanned_at: new Date().toISOString(),
-        ...(contentSkippedReason ? { content_skipped_reason: contentSkippedReason } : {}),
-      },
-      retryInSeconds: terminal ? 0 : scanRetryBackoffSeconds(claim.scan_attempts),
-      terminal,
-    });
-
-    result.scanned += 1;
-    if (scan.decision === 'promote') result.promoted += 1;
-    if (scan.decision === 'infected' || scan.decision === 'blocked') result.blocked += 1;
-
-    // File a safety escalation for every negative terminal verdict -- this is
-    // the gap this block closes: a blocked, infected, or needs_human_review
-    // video used to sit only in the video-review page's own filtered list,
-    // with no other surface (this ladder, the compliance center, the board)
-    // aware it existed. Unlike emitShadowEvent below, this call is NOT
-    // swallowed: a safety escalation failing to file silently is exactly the
-    // kind of gap this closes, so a filing failure surfaces through the
-    // worker's onError log and the sweep tick retries, rather than looking
-    // like it succeeded. The row itself is already durably settled by this
-    // point, so a failure here costs a delayed escalation, never data loss.
+    // A safety escalation is filed for every negative terminal verdict -- the
+    // gap this closes: a blocked, infected, or needs_human_review video used
+    // to sit only in the video-review page's own filtered list, with no other
+    // surface (this ladder, the compliance center, the board) aware it
+    // existed.
     //
     // Skipped when nobody can be resolved -- safety_escalations.athlete_id is
     // not-null with a foreign key to pilot.athletes, so there is nothing to
@@ -476,22 +440,76 @@ export async function sweepQuarantinedVideos(options: {
     // identity arriving by a side door, and there is no identity to carry.
     // Film Study is untouched and still escalates against its own athlete.
     const escalationAthleteId = subject.isTeaching ? null : claim.athlete_id;
-    if (terminal && isEscalatingScanDecision(scan.decision) && escalationAthleteId) {
-      await fileEscalation({
-        organizationId: claim.organization_id,
-        sourceType: 'video_scan',
-        sourceId: claim.video_session_id,
-        athleteId: escalationAthleteId,
-        severity: escalationSeverityForScanDecision(scan.decision),
-        reason: escalationReasonForScanDecision(scan.decision, scan.reason),
-        triggeredBy: 'system',
-        metadata: {
-          video_session_id: claim.video_session_id,
+    const escalation = terminal && isEscalatingScanDecision(scan.decision) && escalationAthleteId
+      ? {
+          organizationId: claim.organization_id,
+          sourceType: 'video_scan' as const,
+          sourceId: claim.video_session_id,
+          athleteId: escalationAthleteId,
+          severity: escalationSeverityForScanDecision(scan.decision),
+          reason: escalationReasonForScanDecision(scan.decision, scan.reason),
+          triggeredBy: 'system' as const,
+          metadata: {
+            video_session_id: claim.video_session_id,
+            decision: scan.decision,
+            reason: scan.reason,
+          },
+        }
+      : null;
+
+    // THE VERDICT AND ITS ESCALATION COMMIT TOGETHER (audit A15 / AUTO-02).
+    // Settled first and escalated second on the pool, a filing failure left
+    // the row settled -- scan_state 'blocked' or 'infected', outside
+    // claimNextVideoSessionForScan's predicate for good -- with no escalation
+    // and nothing that would ever file one: the comment here used to say the
+    // sweep tick retried it, and it did not. One transaction: if the
+    // escalation does not file, the settle rolls back with it and the row
+    // stays claimed; the stale-claim path (SCAN_CLAIM_STALE_SECONDS) hands it
+    // to a later sweep, which scans again and files again. The throw itself
+    // is NOT swallowed, so the failure surfaces through the worker's onError
+    // log rather than looking like a verdict that was acted on. Unlike
+    // emitShadowEvent below, which is best-effort because the verdict is
+    // durable without it.
+    //
+    // The escalation is filed whether or not the settle won its
+    // compare-and-set, as before: a scanner finding malware in footage a
+    // person has since blocked is still something the ladder should hold.
+    await withTransaction(async (client) => {
+      await settleVideoSessionScan({
+        videoSessionId: claim.video_session_id,
+        scanState: scanStateForDecision(scan.decision),
+        nextStatus,
+        detail: {
           decision: scan.decision,
           reason: scan.reason,
+          gates_enabled: scan.gatesEnabled,
+          gates_passed: scan.gatesPassed,
+          // Verdicts, never the model's prose. Whatever the screen said about
+          // the footage stays out of the database and out of the logs.
+          malware_verdict: scan.malware,
+          content_verdict: scan.content,
+          attempts: claim.scan_attempts,
+          duration_ms: scan.durationMs,
+          // Present only when a vision call was made: is the scan's 30 s cap
+          // (VIDEO_SCAN_VISION_TIMEOUT_MS) too tight?
+          ...(scan.visionMs === null || scan.visionMs === undefined
+            ? {}
+            : { vision_ms: scan.visionMs, vision_timed_out: scan.visionTimedOut }),
+          scanned_at: new Date().toISOString(),
+          ...(contentSkippedReason ? { content_skipped_reason: contentSkippedReason } : {}),
         },
-      });
-    }
+        retryInSeconds: terminal ? 0 : scanRetryBackoffSeconds(claim.scan_attempts),
+        terminal,
+      }, client);
+
+      if (escalation) {
+        await fileEscalation(escalation, client);
+      }
+    });
+
+    result.scanned += 1;
+    if (scan.decision === 'promote') result.promoted += 1;
+    if (scan.decision === 'infected' || scan.decision === 'blocked') result.blocked += 1;
 
     // Emit only on decisions a human would want to know about. A 'retry' every
     // few minutes while Defender thinks would otherwise flood the event feed.
