@@ -38,16 +38,20 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * So the escalation fired, the record was durable and correct, and no human was
  * ever shown it. This page is the missing half.
  *
- * WHAT IT DELIBERATELY DOES NOT SHOW. The queue stores a category, a severity,
- * a one-line summary and a small metadata object -- classification, safety
- * reasons, whether the session was athlete-scoped. It does NOT store the
- * member's words, and this page does not go looking for them. A reviewer needs
- * to know that a child raised something high-risk, or that an answer had to be
- * replaced, and to act on it in the room; they do not need the transcript to do
- * that, and
- * putting a door to it here would turn a safeguarding queue into a reading
- * surface. If a conversation genuinely has to be read, that is a separate,
- * audited decision and belongs behind its own route.
+ * WHAT IT SHOWS OF THE MEMBER'S WORDS: THE ONE EXCHANGE, ON REQUEST, AUDITED.
+ * The queue row itself stores a category, a severity, a one-line summary and a
+ * small metadata object -- classification, safety reasons, whether the session
+ * was athlete-scoped -- and not the member's words. Behind a ticket the
+ * reviewer may open exactly the flagged question and its answer
+ * (OD-2026-10-07-009 question card 2 item 4, Jason: "That one exchange"),
+ * labelled with the asker's role and age band, and nothing else from the chat.
+ * The server bounds that read to the one ticket (GET ?reviewId=) and records
+ * who read whose exchange in pilot.audit_events before returning it; this page
+ * never fetches a conversation, never links to one, and says on the control
+ * that the read is recorded. A ticket that cannot name its exchange (written
+ * when the request was throttled or queued, or before the async processor
+ * recorded its message, or after the chat was purged) says "exchange not
+ * recorded".
  *
  * ORDERING is the server's, not this page's: listHumanReviews sorts
  * critical -> high -> moderate, then oldest first within a severity. The oldest
@@ -70,6 +74,46 @@ interface HumanReview {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+}
+
+interface ExchangeMessage {
+  messageId: string;
+  content: string;
+  createdAt: string;
+}
+
+/** Mirrors ShadowReviewExchange in shadowConversations.ts. */
+type ReviewExchange =
+  | {
+      recorded: true;
+      subject: { accountId: string; role: string | null; ageBand: 'under_18' | 'adult' | 'age_not_on_record' };
+      userMessage: ExchangeMessage | null;
+      assistantMessage: ExchangeMessage & { responseState: 'ok' | 'filtered' | null };
+    }
+  | { recorded: false; reason: string };
+
+type ExchangeState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'loaded'; exchange: ReviewExchange };
+
+const AGE_BAND_LABEL: Record<'under_18' | 'adult' | 'age_not_on_record', string> = {
+  under_18: 'under 18',
+  adult: '18 or over',
+  age_not_on_record: 'age not on record',
+};
+
+/**
+ * The age band as a reviewer should read it. An athlete with no date of birth
+ * on record is treated as under 18 (wallDisplay.isMinor), and the label says
+ * so; a coach, parent or other staff account has no athlete record at all,
+ * and "treated as under 18" would be a false statement about an adult.
+ */
+function ageBandLabel(role: string | null, ageBand: 'under_18' | 'adult' | 'age_not_on_record'): string {
+  if (ageBand === 'age_not_on_record' && role === 'athlete') {
+    return 'age not on record — treated as under 18';
+  }
+  return AGE_BAND_LABEL[ageBand];
 }
 
 const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
@@ -107,6 +151,19 @@ function ShadowReviewsConsole() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  /**
+   * The one exchange behind a ticket, keyed by ticket, loaded only when the
+   * reviewer asks for it. Never pre-fetched: each open is an audited read of
+   * a member's words, so it happens on a deliberate click and not on render.
+   * Cleared when the tab changes, so a re-read is a second audited click.
+   */
+  const [exchanges, setExchanges] = useState<Record<string, ExchangeState>>({});
+  /**
+   * A tab change clears the panels; a read still in flight from before it
+   * must not refill one. The epoch moves on each clear and a response from
+   * an older epoch is dropped (the read was still audited: it was clicked).
+   */
+  const exchangeEpochRef = useRef(0);
 
   /**
    * Which fetch the page is currently willing to believe. Tabs make the reads
@@ -164,8 +221,42 @@ function ShadowReviewsConsole() {
     if (next === status) return;
     setLoading(true);
     setError(null);
+    exchangeEpochRef.current += 1;
+    setExchanges({});
     setStatus(next);
   }
+
+  /**
+   * One ticket, one request, by ticket id only. The route takes nothing else:
+   * no message id, no conversation id. A failure is shown on the ticket and
+   * the words are not; a second click is a second audited read.
+   */
+  const openExchange = useCallback(async (reviewId: string) => {
+    const epoch = exchangeEpochRef.current;
+    setExchanges((current) => ({ ...current, [reviewId]: { kind: 'loading' } }));
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/reviews?reviewId=${encodeURIComponent(reviewId)}`,
+        { credentials: 'include' },
+      );
+      const payload = await response.json().catch(() => ({})) as { exchange?: ReviewExchange; error?: string };
+      if (epoch !== exchangeEpochRef.current) return;
+      if (!response.ok || !payload.exchange) {
+        setExchanges((current) => ({
+          ...current,
+          [reviewId]: { kind: 'error', message: payload.error ?? 'Could not read this exchange.' },
+        }));
+        return;
+      }
+      setExchanges((current) => ({ ...current, [reviewId]: { kind: 'loaded', exchange: payload.exchange as ReviewExchange } }));
+    } catch {
+      if (epoch !== exchangeEpochRef.current) return;
+      setExchanges((current) => ({
+        ...current,
+        [reviewId]: { kind: 'error', message: 'Could not reach the review queue.' },
+      }));
+    }
+  }, []);
 
   /**
    * The three transitions the route accepts. 'open' is not among them: a ticket
@@ -263,6 +354,7 @@ function ShadowReviewsConsole() {
         {reviews.map((review) => {
           const severity = SEVERITY_STYLE[review.severity] ?? SEVERITY_STYLE.moderate;
           const busy = pending === review.review_id;
+          const exchange = exchanges[review.review_id];
           return (
             <li
               key={review.review_id}
@@ -306,6 +398,67 @@ function ShadowReviewsConsole() {
                   <summary className="t-eyebrow cursor-pointer">What the boundary recorded</summary>
                   <pre className="t-data mt-[var(--s2)] overflow-x-auto">{JSON.stringify(review.metadata, null, 2)}</pre>
                 </details>
+              )}
+
+              {/*
+                The one exchange. A triage control, so it is offered on open
+                and in-review tickets only: a closed ticket carries no controls
+                and no door. Opened by a click, never on render; the server
+                records the read against the signed-in admin before it
+                returns a word. What is rendered is exactly the two messages
+                the route returned and the asker's role and age band -- no
+                conversation link, no neighbours, no transcript.
+              */}
+              {(review.status === 'open' || review.status === 'in_review') && (
+              <section className="mt-[var(--s3)]" aria-label="Flagged exchange">
+                {!exchange && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => void openExchange(review.review_id)}
+                  >
+                    Read the flagged exchange — this read is recorded against your account
+                  </button>
+                )}
+                {exchange?.kind === 'loading' && <p className="t-muted">Reading the flagged exchange…</p>}
+                {exchange?.kind === 'error' && (
+                  <p role="alert" className="alert alert--critical">
+                    <span className="alert-icon" aria-hidden="true">✕</span>
+                    <span className="alert-msg">{exchange.message}</span>
+                  </p>
+                )}
+                {exchange?.kind === 'loaded' && !exchange.exchange.recorded && (
+                  <p className="t-muted">Exchange not recorded — this ticket does not name a stored message.</p>
+                )}
+                {exchange?.kind === 'loaded' && exchange.exchange.recorded && (
+                  <div className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-eyebrow">
+                      Asked by: {(exchange.exchange.subject.role ?? 'unknown role').replace(/_/g, ' ')} · {ageBandLabel(exchange.exchange.subject.role, exchange.exchange.subject.ageBand)}
+                    </p>
+                    <dl className="mt-[var(--s3)] space-y-[var(--s3)]">
+                      <div>
+                        <dt className="t-eyebrow">The question</dt>
+                        <dd className="t-body whitespace-pre-wrap">
+                          {exchange.exchange.userMessage
+                            ? exchange.exchange.userMessage.content
+                            : 'The question is not stored.'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="t-eyebrow">
+                          {exchange.exchange.assistantMessage.responseState === 'filtered'
+                            ? 'What SHADOW sent instead (the answer was withheld)'
+                            : 'What SHADOW answered'}
+                        </dt>
+                        <dd className="t-body whitespace-pre-wrap">{exchange.exchange.assistantMessage.content}</dd>
+                      </div>
+                    </dl>
+                    <p className="t-muted mt-[var(--s3)]">
+                      {formatWhen(exchange.exchange.assistantMessage.createdAt)} · Only this exchange is shown. This read has been recorded.
+                    </p>
+                  </div>
+                )}
+              </section>
               )}
 
               {(review.status === 'open' || review.status === 'in_review') && (
