@@ -5,13 +5,7 @@ import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
 import { loginWithEmailAndPassword, MAX_LOGIN_EMAIL_LENGTH } from '@/src/server/pilot/parentPasswordSignIn';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  clearDurableRateLimit,
-  getClientIp,
-  recordDurableFailedAttempt,
-} from '@/src/server/pilot/rateLimit';
+import { clearDurableRateLimit, getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
@@ -85,36 +79,22 @@ export async function POST(request: NextRequest) {
     // caller's IP bucket like any other attempt -- made to wait when that is
     // full, counted when it is not -- and refused like a wrong credential.
     if (email.length > MAX_LOGIN_EMAIL_LENGTH) {
-      const durableIpOnlyCheck = await checkDurableRateLimit(ipKey);
-      if (checkRateLimit(ipKey).isLimited || durableIpOnlyCheck.isLimited) {
+      if ((await reserveAttempts([ipKey])).isLimited) {
         return tooManyAttempts();
       }
-      await recordDurableFailedAttempt(ipKey);
       return invalidCredentials();
     }
 
     const emailKey = `password_login_email:${email}`;
 
-    const durableEmailCheck = await checkDurableRateLimit(emailKey);
-    const durableIpCheck = await checkDurableRateLimit(ipKey);
-    // NOTHING MAY AWAIT BETWEEN THESE CHECKS AND THE TWO RECORDS BELOW. The
-    // in-memory checks and the in-memory records (the first thing
-    // recordDurableFailedAttempt does, before its own first await) run in one
-    // tick, so of any number of requests arriving together on this process
-    // one passes and the rest wait. Hence both records are STARTED before
-    // either is awaited.
-    if (
-      checkRateLimit(emailKey).isLimited
-      || checkRateLimit(ipKey).isLimited
-      || durableEmailCheck.isLimited
-      || durableIpCheck.isLimited
-    ) {
+    // Counted and checked in one step (reserveAttempts, CL-A4). In memory
+    // this route already did both in one tick; the durable half read every
+    // bucket and only then wrote, so requests arriving together on different
+    // replicas all passed the read. Each durable reservation is now one
+    // conditional upsert that exactly one concurrent writer wins.
+    if ((await reserveAttempts([emailKey, ipKey])).isLimited) {
       return tooManyAttempts();
     }
-    const emailRecorded = recordDurableFailedAttempt(emailKey);
-    const ipRecorded = recordDurableFailedAttempt(ipKey);
-    await emailRecorded;
-    await ipRecorded;
 
     const loginResult = await loginWithEmailAndPassword(email, password);
 

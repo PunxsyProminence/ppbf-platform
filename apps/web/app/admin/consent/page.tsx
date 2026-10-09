@@ -62,9 +62,25 @@ interface WaiverRow {
 const WAIVER_TYPES = [
   { value: 'general', label: 'General participation' },
   { value: 'medical_release', label: 'Medical release' },
-  { value: 'photo_media', label: 'Photo and media' },
   { value: 'travel', label: 'Travel and competition' },
 ];
+
+/**
+ * Photo and media is NOT offered here (Jason 2026-10-07, OD-2026-10-07-009:
+ * "Remove it, send to consent screen"). A row filed from this form carried no
+ * parent_id, and the gates that decide whether a child's footage may be shown
+ * (guardianConsent.ts checkGuardianMediaConsent) read consent guardian by
+ * guardian and ignore such rows -- so the register could say Signed while
+ * every media gate refused. That consent is recorded on the Guardian Media
+ * Consent desk instead, against the named guardian who signed.
+ *
+ * Rows filed under photo_media before this change stay in the register below
+ * and keep their label; only the way to file a NEW one moved.
+ */
+const RETIRED_WAIVER_TYPES = [
+  { value: 'photo_media', label: 'Photo and media' },
+];
+const WAIVER_TYPE_LABELS = [...WAIVER_TYPES, ...RETIRED_WAIVER_TYPES];
 
 /** Who signed, in what capacity. Same reasoning as the type list above. */
 const SIGNER_ROLES = [
@@ -339,6 +355,16 @@ function ConsentConsole() {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
+                  {/* The pointer for the one form this list no longer offers.
+                      Sits under the dropdown, where the person looking for
+                      "Photo and media" will look. */}
+                  <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)]">
+                    Photo and video consent is recorded guardian by guardian on the{' '}
+                    <Link href="/admin/athlete-consent" className="underline">
+                      Guardian Media Consent desk
+                    </Link>
+                    , not here.
+                  </p>
                 </div>
 
                 <div className="field">
@@ -511,7 +537,18 @@ function ConsentConsole() {
                   <tbody>
                     {waivers.map((waiver) => (
                       <tr key={waiver.waiver_id}>
-                        <td>{labelFor(WAIVER_TYPES, waiver.waiver_type)}</td>
+                        <td>
+                          {labelFor(WAIVER_TYPE_LABELS, waiver.waiver_type)}
+                          {/* A row this register can no longer file, and that no
+                              media gate reads (it names no guardian). Said on
+                              the row, so Signed here is not read as consent. */}
+                          {RETIRED_WAIVER_TYPES.some((option) => option.value === waiver.waiver_type) ? (
+                            <span className="ledger-id block">
+                              not counted · record on the{' '}
+                              <Link href="/admin/athlete-consent" className="underline">consent desk</Link>
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="font-bold">{waiver.signed_by_name}</td>
                         <td>{labelFor(SIGNER_ROLES, waiver.signed_by_role)}</td>
                         <td className="whitespace-nowrap">{formatCalendarDay(waiver.signed_at?.slice(0, 10))}</td>

@@ -24,6 +24,11 @@ jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
 }));
 
+// The reach list is access.ts's real athleteIdsForCoach (coach of record
+// UNION active coverage) running against the faked db: both children are
+// this coach's own, and the stand-in below answers that query by
+// returning every fixture row filed under the coach.
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetAccountProfiles = getAccountProfiles as jest.Mock;
 const mockQuery = query as jest.Mock;
@@ -78,11 +83,17 @@ const ATHLETES: readonly AthleteFixture[] = [
  * route.ts and these tests fail.
  */
 function answerAthletesQuery(sql: string, params: readonly unknown[]) {
+  // athleteIdsForCoach's own select: assigned athletes for this coach.
+  if (/select athlete_id from pilot\.athletes/.test(sql) && !/left join pilot\.accounts/.test(sql)) {
+    return ATHLETES.filter((row) => row.organization_id === params[0] && row.coach_id === params[1])
+      .filter((row) => row.deleted_at === null)
+      .map((row) => ({ athlete_id: row.athlete_id }));
+  }
   const excludesSoftDeleted = /and\s+a\.deleted_at\s+is\s+null/i.test(sql);
-  const scopedToOneCoach = sql.includes('a.coach_id = $2');
+  const scopedToReach = sql.includes('a.athlete_id = any($2::text[])');
 
   return ATHLETES.filter((row) => row.organization_id === params[0])
-    .filter((row) => (scopedToOneCoach ? row.coach_id === params[1] : true))
+    .filter((row) => (scopedToReach ? (params[1] as string[]).includes(row.athlete_id) : true))
     .filter((row) => (excludesSoftDeleted ? row.deleted_at === null : true))
     // The real select list does not carry deleted_at, so neither does this.
     .map((row) => ({
@@ -223,15 +234,15 @@ describe('the soft-delete exclusion is in the SQL on every branch', () => {
   test('the coach-scoped query asks the database to exclude soft-deleted athletes', async () => {
     await rosterItems();
 
-    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    const [sql, params] = mockQuery.mock.calls[1] as [string, unknown[]];
     expect(sql).toContain('from pilot.athletes');
     // The coach-scope clause, asserted on the SQL text itself rather than only
     // on `params` -- the fixture puts both athletes on the same coach, so a
     // params-only check would still pass if this clause were ever accidentally
     // dropped from the query (Copilot review, PR #471).
-    expect(sql).toContain('a.coach_id = $2');
+    expect(sql).toContain('a.athlete_id = any($2::text[])');
     expect(sql).toContain('and a.deleted_at is null');
-    expect(params).toEqual(['org-1', COACH]);
+    expect(params).toEqual(['org-1', ['ATH-ACTIVE']]);
   });
 
   test('the organization-wide query asks for it as well', async () => {

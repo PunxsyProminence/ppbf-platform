@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { getAthleteGapDetectionSources } from '@/src/server/pilot/progression';
-import { getGapJustifications } from '@/src/server/pilot/progressionSuggestions';
+import { familyGapJustifications, getGapJustifications } from '@/src/server/pilot/progressionSuggestions';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -38,7 +38,13 @@ export async function GET(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, athleteId);
 
     const sources = await getAthleteGapDetectionSources(principal.organizationId, athleteId, status || undefined);
-    const items = await getGapJustifications(principal.organizationId, athleteId, sources);
+    const justifications = await getGapJustifications(principal.organizationId, athleteId, sources);
+    // Athletes and parents read one plain sentence per gap; the rule name
+    // and the analytics fields behind it stay with staff (OD-2026-10-08-003
+    // R4, "Family wording only"), the same split GET /progression/gaps makes
+    // with familyGapDescription.
+    const familyReader = principal.role === 'athlete' || principal.role === 'parent';
+    const items = familyReader ? familyGapJustifications(justifications) : justifications;
 
     return NextResponse.json({ items });
   } catch (error) {

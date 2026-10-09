@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import type { WallBoard, WallSession } from '@/src/server/pilot/wallDisplay';
+import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
 import { pickSaying } from './gymSayings';
 
@@ -70,9 +70,110 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
   return 'fresh';
 }
 
-interface WallResponse {
-  ok?: boolean;
+/**
+ * WHICH BOARD THIS SCREEN GETS (OD-2026-10-07-008, Jason: "Paired gym TV
+ * only"). Two reads, one poll:
+ *
+ *   1. GET /api/pilot/tv/session, with the device cookie a pairing code set
+ *      (path /api/pilot/tv, so it rides with this request and no other). 200
+ *      means this television is paired: the body carries the full board --
+ *      initials per the name mode, milestone crossings, 'everywhere' notices.
+ *   2. 401 TV_NOT_PAIRED means it is not. The screen then reads the public
+ *      board from GET /api/pilot/wall: today's classes and a head count. No
+ *      names, no initials, no milestones, gym_notices only.
+ *
+ * A 401 is not a failure for the board's health: an unpaired wall that read
+ * its public board is a wall that is up. Any other non-2xx is.
+ *
+ * The public board is folded into the WallBoard shape with EMPTY people lists
+ * (publicToBoard) so one render tree serves both. The fold is built from the
+ * public fields by name, never by spreading the payload, so a name that
+ * somehow arrived on the public channel would be dropped here as well as
+ * refused by the server; wallDisplay.test.tsx pins that.
+ */
+interface PairedResponse {
   board?: WallBoard;
+}
+
+interface PublicResponse {
+  ok?: boolean;
+  board?: WallPublicBoard;
+}
+
+export function publicToBoard(board: WallPublicBoard): WallBoard {
+  return {
+    generated_at: board.generated_at,
+    gym_day: board.gym_day,
+    time_zone: board.time_zone,
+    // 'off' is the mode whose rendering is "N people training": the count is
+    // real, the names are withheld. Exactly the public rule.
+    name_mode: 'off',
+    sessions: board.sessions,
+    on_floor: [],
+    on_floor_total: board.on_floor_total,
+    marquee: [],
+    notice: board.notice,
+  };
+}
+
+/**
+ * What stays on screen when this television has just been told it is NOT
+ * paired and the public read then failed too. The last board may have been a
+ * paired one, with initials and a marquee on it, and a 401 is the server
+ * saying this screen may no longer show those: a coach pressed Disconnect, or
+ * the key was revoked. So the people come off at once -- the classes, the
+ * count and the notice stay, dated like any other last-good board -- rather
+ * than riding out the twenty-minute abandon window (reviewer A).
+ */
+export function withoutPeople(board: WallBoard): WallBoard {
+  return { ...board, name_mode: 'off', on_floor: [], marquee: [] };
+}
+
+/** Thrown by readBoard when the paired read answered 401 and the public read then failed. */
+export class UnpairedReadError extends Error {
+  constructor() {
+    super('unavailable');
+    this.name = 'UnpairedReadError';
+  }
+}
+
+/** One poll: the paired read first, the public read if this screen is not paired. */
+export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean }> {
+  const paired = await fetch(`${base}/api/pilot/tv/session`, {
+    cache: 'no-store',
+    // The device cookie is the credential. It is httpOnly and scoped to
+    // /api/pilot/tv; there is no session cookie on a television to leak.
+    credentials: 'include',
+  });
+  if (paired.status !== 401) {
+    if (!paired.ok) throw new Error('unavailable');
+    const payload = (await paired.json()) as PairedResponse;
+    if (!payload.board) throw new Error('unavailable');
+    return { board: payload.board, paired: true };
+  }
+
+  /* credentials: 'omit' is stated rather than left to the default, and
+     rather than taking a line in the convention test's allowlist. The gear
+     shop established that pattern (#193): an explicit omission at the call
+     site is a claim the reader can check, where an allowlist entry is a claim
+     in another file that drifts away from the fetch it describes. Nobody
+     signs in to a television, so there is no session cookie here to send --
+     and /api/pilot/wall is built to be safe as a public document anyway: the
+     organization is never taken from the caller, and the payload has no
+     person in it at all (WallPublicBoard). */
+  let payload: PublicResponse;
+  try {
+    const response = await fetch(`${base}/api/pilot/wall`, {
+      cache: 'no-store',
+      credentials: 'omit',
+    });
+    if (!response.ok) throw new Error('unavailable');
+    payload = (await response.json()) as PublicResponse;
+  } catch {
+    throw new UnpairedReadError();
+  }
+  if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
+  return { board: publicToBoard(payload.board), paired: false };
 }
 
 export default function WallDisplay() {
@@ -118,35 +219,24 @@ export default function WallDisplay() {
       if (inFlight) return;
       inFlight = true;
       try {
-        /* credentials: 'omit' is stated rather than left to the default, and
-           rather than taking a line in the convention test's allowlist. The
-           gear shop established that pattern (#193): an explicit omission at
-           the call site is a claim the reader can check, where an allowlist
-           entry is a claim in another file that drifts away from the fetch it
-           describes. Nobody signs in to a television, so there is no session
-           cookie here to send -- and /api/pilot/wall is built to be safe as a
-           public document anyway: the organization is never taken from the
-           caller, raw athlete ids never leave the server, and every name is
-           gated per athlete in src/server/pilot/wallDisplay.ts. */
-        const response = await fetch(`${apiBase()}/api/pilot/wall`, {
-          cache: 'no-store',
-          credentials: 'omit',
-        });
-        if (!response.ok) throw new Error('unavailable');
-        const payload = (await response.json()) as WallResponse;
-        if (!payload.ok || !payload.board) throw new Error('unavailable');
+        const { board: next } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
-        setBoard(payload.board);
+        setBoard(next);
         setLastGoodAt(Date.now());
         setConnected(true);
-      } catch {
+      } catch (error) {
         if (!mounted.current) return;
         failures += 1;
         setConnected(false);
         // The last good board deliberately stays on screen, dated. A wall that
-        // blanks on a dropped packet is worse than one that admits its age.
+        // blanks on a dropped packet is worse than one that admits its age --
+        // except for the people on it, once the server has said this screen
+        // is not paired (withoutPeople).
+        if (error instanceof UnpairedReadError) {
+          setBoard((previous) => (previous ? withoutPeople(previous) : previous));
+        }
       } finally {
         // In `finally` so the early returns above cannot leave the display
         // holding a lock it never releases -- a wall that stops asking is a

@@ -48,14 +48,27 @@ describe('the retention policy is actually enforced by something', () => {
     expect(scheduled.map((workflow) => workflow.name)).not.toEqual([]);
   });
 
-  test('the scheduled sweep cannot delete without a person asking it to', () => {
-    // The schedule reports; deleting requires a dispatch that typed APPLY. A
+  test("the scheduled sweep cannot delete people's records without a person asking it to", () => {
+    // Deleting a family's records requires a dispatch that typed APPLY. A
     // scheduled run supplies no inputs, so inputs.apply is empty and the
     // comparison below is false. If this ever becomes unconditionally true, an
     // unattended job gained the ability to permanently erase minors' records.
     const sweep = workflows.find((workflow) => workflow.source.includes(CLEANUP_INVOCATION));
     expect(sweep).toBeDefined();
     expect(sweep!.source).toContain("PPBF_RETENTION_APPLY: ${{ inputs.apply == 'APPLY' }}");
+  });
+
+  test('the scheduled sweep deletes expired public enquiries on its own, and only those', () => {
+    // Jason, 2026-10-07 (OD-2026-10-07-010, Q2): "Nightly deletes enquiries
+    // itself". The schedule sets the script's NARROWER switch, which deletes
+    // only interest-form inquiries past 12 months and never enters the purge
+    // of people's records (the script's own pg tests prove that part). It is
+    // the schedule, not an input, that turns it on: a dispatch that typed
+    // nothing stays a dry run.
+    const sweep = workflows.find((workflow) => workflow.source.includes(CLEANUP_INVOCATION))!;
+    expect(sweep.source).toContain(
+      "PPBF_RETENTION_APPLY_INQUIRIES: ${{ github.event_name == 'schedule' || inputs.apply == 'APPLY_INQUIRIES' }}",
+    );
   });
 
   test('the sweep gets a storage account URL, and never the storage key', () => {

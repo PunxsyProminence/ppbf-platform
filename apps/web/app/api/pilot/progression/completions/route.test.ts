@@ -370,10 +370,12 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
     expect(inserts()).toHaveLength(1);
   });
 
-  test('verifying or disputing a completion already logged on cancelled work is unchanged: it never asks about the work', async () => {
+  test('verifying or disputing a completion already logged on cancelled work is unchanged: cancelling never blocks it or reopens the work', async () => {
     // Those logs are the cancelled work's history, and a coach still reviews
-    // them. The verify branch reads the completion and flips it; it does not
-    // read the assignment's status at all, so cancelling cannot block it.
+    // them. The verify branch reads the completion and flips it. The flip
+    // then recomputes the assignment's progress (a dispute stops counting,
+    // owner ruling 2026-10-05); that recompute leaves cancelled work alone,
+    // so nothing is written to the assignment.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
     mockQuery
       .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-cancelled', athlete_id: 'ath-1' }]) // getCompletionById
@@ -387,7 +389,8 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
           verification_status: 'disputed',
           verified_at: '2026-09-22T01:00:00.000Z',
         },
-      ]); // verifyCompletion
+      ]) // verifyCompletion
+      .mockResolvedValueOnce([{ frequency_per_week: 4, status: 'cancelled' }]); // recompute: lock assignment
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // assertCoachAssignedToAthlete
 
     const res = await POST(postRequest({ completion_id: 'c1', athlete_id: 'ath-1', verify: true, verified: false }));
@@ -395,7 +398,7 @@ describe('POST /api/pilot/progression/completions -- no new logs on cancelled wo
     expect(res.status).toBe(200);
     expect((await res.json()).verification_status).toBe('disputed');
     const everySql = [...mockQuery.mock.calls, ...mockQueryOne.mock.calls].map(([sql]) => String(sql));
-    expect(everySql.some((sql) => sql.includes('pilot.drill_assignments'))).toBe(false);
+    expect(everySql.some((sql) => sql.includes('update pilot.drill_assignments'))).toBe(false);
     expect(inserts()).toHaveLength(0);
   });
 });

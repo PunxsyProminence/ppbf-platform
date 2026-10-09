@@ -160,7 +160,7 @@ create table if not exists pilot.audit_events (
   -- auditEventVocabulary.test.ts asserts this constraint matches it -- these
   -- two previously drifted, and the missing value failed every SHADOW
   -- research-requirement upload at the audit write.
-  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted', 'consent_granted', 'consent_withdrawn', 'data_deletion_initiated', 'data_purged', 'payment_account_connected', 'payment_account_disconnected', 'microsoft_identity_mismatch')),
+  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted', 'consent_granted', 'consent_withdrawn', 'data_deletion_initiated', 'data_purged', 'payment_account_connected', 'payment_account_disconnected', 'microsoft_identity_mismatch', 'shadow_review_exchange_read')),
   actor_account_id text null,
   actor_role text null,
   organization_id text null references pilot.organizations(organization_id),

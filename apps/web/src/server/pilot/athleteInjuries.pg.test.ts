@@ -455,6 +455,52 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     });
   });
 
+  test('linking a plan changes the link and the expected return only, keeps a concurrent edit, and links once', async () => {
+    const row = await record(ORG_A, ATHLETE, { expectedReturnDate: '2026-09-20' });
+    // An edit made after a caller read the row: the link must not replay stale fields over it.
+    await injuries.updateInjury({
+      organizationId: ORG_A,
+      injuryId: row.injury_id,
+      fields: { ...base, staffNote: 'Doctor: sprain, two weeks.', expectedReturnDate: '2026-09-20' },
+      updatedByAccountId: 'admin-injuries',
+    });
+    const plan = await addPlan(ORG_A, ATHLETE, '2026-09-30');
+    const linked = await injuries.linkInjuryToPlan({ organizationId: ORG_A, injuryId: row.injury_id, planId: plan, updatedByAccountId: COACH });
+    expect(linked).toMatchObject({
+      linked_rtt_plan_id: plan,
+      expected_return_date: null,
+      plan_earliest_return_date: '2026-09-30',
+      staff_note: 'Doctor: sprain, two weeks.',
+      updated_by_account_id: COACH,
+    });
+
+    // A second plan cannot take the link; the first stands.
+    const second = await addPlan(ORG_A, ATHLETE, '2026-10-05');
+    await expect(
+      injuries.linkInjuryToPlan({ organizationId: ORG_A, injuryId: row.injury_id, planId: second, updatedByAccountId: COACH }),
+    ).rejects.toThrow('This injury already has a return-to-training plan.');
+    expect((await injuries.getInjuryById(ORG_A, row.injury_id))?.linked_rtt_plan_id).toBe(plan);
+
+    // Another athlete's plan, a plan that ended before the injury, another gym, a voided row: refused, nothing linked.
+    const fresh = await record(ORG_A, ATHLETE);
+    const othersPlan = await addPlan(ORG_A, OTHER_ATHLETE, '2026-09-30');
+    await expect(
+      injuries.linkInjuryToPlan({ organizationId: ORG_A, injuryId: fresh.injury_id, planId: othersPlan, updatedByAccountId: COACH }),
+    ).rejects.toThrow("The linked return-to-training plan is not one of this athlete's records.");
+    const oldPlan = await addPlan(ORG_A, ATHLETE, '2026-08-15');
+    await expect(
+      injuries.linkInjuryToPlan({ organizationId: ORG_A, injuryId: fresh.injury_id, planId: oldPlan, updatedByAccountId: COACH }),
+    ).rejects.toThrow("earliest return date is before this injury's date");
+    await expect(
+      injuries.linkInjuryToPlan({ organizationId: ORG_B, injuryId: fresh.injury_id, planId: plan, updatedByAccountId: COACH }),
+    ).rejects.toThrow('Injury record not found.');
+    await injuries.markInjuryEnteredInError({ organizationId: ORG_A, injuryId: fresh.injury_id, updatedByAccountId: COACH });
+    await expect(
+      injuries.linkInjuryToPlan({ organizationId: ORG_A, injuryId: fresh.injury_id, planId: plan, updatedByAccountId: COACH }),
+    ).rejects.toThrow('Injury record not found.');
+    expect((await injuries.getInjuryById(ORG_A, fresh.injury_id))?.linked_rtt_plan_id).toBeNull();
+  });
+
   test('a row entered in error leaves the list, cannot be edited, and a second mark changes nothing', async () => {
     const row = await record(ORG_A, ATHLETE);
     await injuries.markInjuryEnteredInError({ organizationId: ORG_A, injuryId: row.injury_id, updatedByAccountId: COACH });
