@@ -335,6 +335,7 @@ interface Drafts {
   incidentOccurredAt: string;
   behaviorNoteText: string;
   messageHomeText: string;
+  messageHomeDueDate: string;
   outcomeDecisionId: string;
   outcomeObservationIds: string;
   outcomeMatchState: MatchState;
@@ -355,6 +356,7 @@ const EMPTY_DRAFTS: Drafts = {
   incidentOccurredAt: '',
   behaviorNoteText: '',
   messageHomeText: '',
+  messageHomeDueDate: '',
   outcomeDecisionId: '',
   outcomeObservationIds: '',
   outcomeMatchState: 'match',
@@ -464,6 +466,7 @@ export default function DecisionLoopReviewPage() {
     incidentOccurredAt,
     behaviorNoteText,
     messageHomeText,
+    messageHomeDueDate,
     outcomeObservationIds,
     outcomeMatchState,
     outcomeNotes,
@@ -741,7 +744,7 @@ export default function DecisionLoopReviewPage() {
      the `athleteId` its closure captured. A write for athlete A that lands
      after the switch to B used to print its result under B: a refusal that
      quotes A's medical status ("this athlete's medical administrative status
-     is 'restricted'"), or "Incident filed" / "Sent to the family" for a child
+     is 'restricted'"), or "Incident filed" / "Posted to the family's page" for a child
      nobody is looking at.
 
      On a late SUCCESS the submitted draft is still cleared, in the draft of
@@ -1001,17 +1004,50 @@ export default function DecisionLoopReviewPage() {
       });
       // intake/domain-upsert answers { ok: true, entity_type, entity_id,
       // athlete_id }, with the athlete id TRIMMED (the route trims it).
-      await confirmWriteOrThrow(response, 'Failed to send the message.', (envelope) =>
-        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
-      );
-      clearSentDrafts(athleteId, { messageHomeText });
+      let noteId = '';
+      await confirmWriteOrThrow(response, 'Failed to post the message.', (envelope) => {
+        if (envelope.entity_type !== 'coach_note' || !isFilled(envelope.entity_id) || envelope.athlete_id !== athleteId.trim()) {
+          return false;
+        }
+        noteId = envelope.entity_id;
+        return true;
+      });
+      clearSentDrafts(athleteId, { messageHomeText, messageHomeDueDate });
       if (athleteId !== selectedAthleteRef.current) return;
       writeConfirmed();
-      setMessageHomeMessage('Sent to the family.');
+      setMessageHomeMessage(
+        messageHomeDueDate ? await attachDueDate(noteId, athleteId, messageHomeDueDate) : "Posted to the family's page.",
+      );
     } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to send the message.');
+      reportWriteError(athleteId, error, 'Failed to post the message.');
     } finally {
       markSubmitting('messageHome', athleteId, false);
+    }
+  }
+
+  /* THE DUE DATE IS A SECOND WRITE, and it is reported as one. The message is
+     a coach_note the family's page already reads; the deadline lives in
+     pilot.parent_task_state and is set through /api/pilot/parent-tasks after
+     the note exists. If that second write fails the note has still landed and
+     the family will read it, so the confirmation says exactly that rather
+     than reporting a failure that would invite the coach to post it twice.
+     Nothing on this page can re-attach a date to a posted message; a coach
+     who needs the deadline posts a short follow-up with the date set. */
+  async function attachDueDate(noteId: string, forAthleteId: string, dueDate: string): Promise<string> {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent-tasks`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: noteId, athlete_id: forAthleteId, due_date: dueDate }),
+      });
+      await confirmWriteOrThrow(response, 'Failed to set the due date.', (envelope) => {
+        const task = returnedRow(envelope, 'task');
+        return task !== null && task.due_date === dueDate;
+      });
+      return `Posted to the family's page, due ${dueDate}.`;
+    } catch {
+      return "Posted to the family's page, but without the due date -- the date did not save. Post a short follow-up with the date if the family needs it.";
     }
   }
 
@@ -1472,11 +1508,12 @@ export default function DecisionLoopReviewPage() {
                 </form>
               </section>
 
-              {/* Message Home */}
+              {/* Post to the family's page (was "Message Home"; reworded under A-Q17) */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-                <h2 className="t-command text-[length:var(--t-lg)]">Message Home</h2>
+                <h2 className="t-command text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
                 <p className="t-muted mt-[var(--s2)]">
                   A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
+                  Give it a due date and it also shows as something to do, with a box the family ticks when it is done.
                   There&apos;s no reply yet; call the family directly for anything that needs a conversation.
                 </p>
 
@@ -1493,8 +1530,17 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
+                  <label className="field block">
+                    <span className="t-label">Due by (optional)</span>
+                    <input
+                      type="date"
+                      value={messageHomeDueDate}
+                      onChange={(event) => editDraft('messageHomeDueDate', event.target.value)}
+                      className="input"
+                    />
+                  </label>
                   <button type="submit" className="btn btn--ghost" disabled={messageHomeSubmitting}>
-                    {messageHomeSubmitting ? 'Sending…' : 'Send to Family'}
+                    {messageHomeSubmitting ? 'Posting…' : 'Post to Family'}
                   </button>
                 </form>
               </section>

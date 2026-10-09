@@ -138,6 +138,12 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       const handler = overrides.incidents as ((init?: RequestInit) => Response) | undefined;
       return handler ? answer(key, init, handler(init)) : acknowledge(key, init);
     }
+    if (key.includes('/api/pilot/parent-tasks')) {
+      const handler = overrides.parentTasks as ((init?: RequestInit) => Response) | undefined;
+      if (handler) return handler(init);
+      const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      return jsonResponse({ ok: true, task: { due_date: sent.due_date, completed_at: null } });
+    }
     throw new Error(`Unexpected fetch: ${key}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -222,7 +228,7 @@ describe('Message Home (#90)', () => {
     await selectAthlete();
 
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Great effort at practice this week!' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'));
@@ -237,7 +243,7 @@ describe('Message Home (#90)', () => {
       payload: { note_type: 'parent_message', note_text: 'Great effort at practice this week!' },
     });
 
-    await screen.findByText('Sent to the family.');
+    await screen.findByText("Posted to the family's page.");
   });
 
   test('the textarea clears after a successful send', async () => {
@@ -246,7 +252,7 @@ describe('Message Home (#90)', () => {
 
     const textarea = screen.getByLabelText('Message') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'A message.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     await waitFor(() => expect(textarea.value).toBe(''));
   });
@@ -255,7 +261,7 @@ describe('Message Home (#90)', () => {
     const fetchMock = installFetch();
     await selectAthlete();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'))).toBe(false);
   });
@@ -265,10 +271,72 @@ describe('Message Home (#90)', () => {
     await selectAthlete();
 
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'A message.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     await screen.findByText('Forbidden');
-    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(screen.queryByText("Posted to the family's page.")).toBeNull();
+  });
+
+  // Lane P6 (OD-2026-10-08-006/-007): a due date makes the message a task the
+  // family ticks off. It is a SECOND write to /api/pilot/parent-tasks, made
+  // only after the note is acknowledged and carrying that note's id.
+  test('a due date posts the note first, then the task with the acknowledged note id', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Medical form is due.' } });
+    fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    await screen.findByText("Posted to the family's page, due 2026-10-20.");
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/domain-upsert') || u.includes('/parent-tasks'));
+    expect(urls.map((u) => u.replace(/^.*\/api\/pilot/, ''))).toEqual(['/intake/domain-upsert', '/parent-tasks']);
+    const task = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent-tasks'));
+    expect(JSON.parse(String((task?.[1] as RequestInit).body))).toEqual({
+      note_id: 'obs-1',
+      athlete_id: 'ath-1',
+      due_date: '2026-10-20',
+    });
+    expect((task?.[1] as RequestInit).credentials).toBe('include');
+    expect((screen.getByLabelText('Due by (optional)') as HTMLInputElement).value).toBe('');
+  });
+
+  test('no due date: no task write at all', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Great week.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    await screen.findByText("Posted to the family's page.");
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/parent-tasks'))).toBe(false);
+  });
+
+  test('the task write failing says the message posted without its due date, not that the post failed', async () => {
+    installFetch({ parentTasks: () => jsonResponse({ error: 'Forbidden: role may not set a parent task' }, false) });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Medical form is due.' } });
+    fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    await screen.findByText(/^Posted to the family's page, but without the due date/);
+    expect(screen.queryByText(/^Failed to /)).toBeNull();
+    expect(screen.queryByText('Forbidden: role may not set a parent task')).toBeNull();
+    // The note is on the family's page; the box must not hold it for a second post.
+    expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('a task acknowledgement for a different date is not this write’s', async () => {
+    installFetch({ parentTasks: () => jsonResponse({ ok: true, task: { due_date: '2026-10-21', completed_at: null } }) });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Medical form is due.' } });
+    fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    await screen.findByText(/^Posted to the family's page, but without the due date/);
   });
 });
 
@@ -897,8 +965,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     }, confirmation: 'Note logged.', draft: () => (screen.getByLabelText('Note') as HTMLTextAreaElement).value },
     { name: 'Message Home', route: '/intake/domain-upsert', submit: () => {
       fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'message for A family' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
-    }, confirmation: 'Sent to the family.', draft: () => (screen.getByLabelText('Message') as HTMLTextAreaElement).value },
+      fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+    }, confirmation: "Posted to the family's page.", draft: () => (screen.getByLabelText('Message') as HTMLTextAreaElement).value },
     { name: 'Evaluate Outcome', route: '/shadow/decision-outcomes', submit: () => {
       fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'dec-a' } });
       fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'outcome notes for A' } });
@@ -1053,7 +1121,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       fill: () => type('Message', A_TEXT),
       values: () => [field<HTMLTextAreaElement>('Message').value],
       defaults: [''],
-      press: () => fireEvent.click(screen.getByRole('button', { name: 'Send to Family' })),
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Post to Family' })),
     },
     {
       name: 'Behavior & Habit Note',
@@ -1230,9 +1298,9 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
-    await screen.findByText('Sent to the family.');
+    await screen.findByText("Posted to the family's page.");
     expect(posts(fetchMock)).toEqual([
       {
         url: expect.stringContaining('/api/pilot/intake/domain-upsert'),
@@ -1249,12 +1317,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const idBox = await screen.findByPlaceholderText('athlete-id');
 
     fireEvent.change(idBox, { target: { value: 'ath-a' } });
-    await screen.findByText('Message Home');
+    await screen.findByText("Post to the Family's Page");
     type('Message', A_TEXT);
 
     fireEvent.change(idBox, { target: { value: 'ath-ab' } });
     expect(field<HTMLTextAreaElement>('Message').value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
     await settle();
     expect(posts(fetchMock)).toHaveLength(0);
 
@@ -1265,7 +1333,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(idBox, { target: { value: 'ath-ab' } });
     expect(field<HTMLTextAreaElement>('Message').value).toBe('written for ath-ab');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
     await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
     expect(posts(fetchMock)[0].body).toEqual({
       entity_type: 'coach_note',
@@ -1279,7 +1347,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ post: () => held.promise });
     await openAthleteA();
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
@@ -1289,7 +1357,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await settle();
 
     expect(field<HTMLTextAreaElement>('Message').value).toBe('written for B');
-    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(screen.queryByText("Posted to the family's page.")).toBeNull();
   });
 
   test('a late success clears only what it sent: text retyped for the same athlete since is kept', async () => {
@@ -1309,7 +1377,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test.each([
     ['Report Incident', 'What happened', 'File Incident Report', 'Filing…', 'Incident filed -- it is now in the escalation queue.'],
     ['Behavior Note', 'Note', 'Log Note', 'Logging…', 'Note logged.'],
-    ['Message Home', 'Message', 'Send to Family', 'Sending…', 'Sent to the family.'],
+    ['Message Home', 'Message', 'Post to Family', 'Posting…', "Posted to the family's page."],
   ])('%s still out for the previous athlete does not lock the new athlete’s form, and stays locked for its own', async (_name, label, button, busyLabel, confirmation) => {
     const held = heldResponse();
     const fetchMock = installSwitchFetch({ post: () => held.promise });
@@ -1983,7 +2051,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const fetchMock = installSwitchFetch({ post: () => held.promise });
     await openAthleteA();
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
@@ -1993,7 +2061,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
     await screen.findByText(/ref-for-athlete-a/);
     expect(field<HTMLTextAreaElement>('Message').value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
     await settle();
     expect(posts(fetchMock)).toHaveLength(1);
   });
@@ -2112,7 +2180,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
       // Typing under the odd id and sending carries only what was typed there.
       type('Message', 'for the odd id');
-      fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
       await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
       expect(posts(fetchMock)[0].body).toEqual({
         entity_type: 'coach_note',
@@ -2285,7 +2353,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
   test.each([
     ['Behavior Note', 'Note', 'Log Note', 'Note logged.'],
-    ['Message Home', 'Message', 'Send to Family', 'Sent to the family.'],
+    ['Message Home', 'Message', 'Post to Family', "Posted to the family's page."],
   ])('%s: an acknowledgement for some other kind of record is not this write’s', async (_name, label, button, confirmation) => {
     installSwitchFetch({ post: () => jsonResponse({ ok: true, entity_type: 'something_else', entity_id: 'obs-1', athlete_id: 'ath-a' }) });
     await openAthleteA();
@@ -2349,7 +2417,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     // The verification read has failed: the panels say so...
     expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
@@ -2360,7 +2428,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(
       screen.getByText('The server did not confirm this. It may or may not have gone through: check before sending it again.'),
     ).toBeTruthy();
-    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(screen.queryByText("Posted to the family's page.")).toBeNull();
     expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
     expectNothingOfAthleteA();
   });
@@ -2394,14 +2462,14 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ post: (url, init) => (confirming ? acknowledge(url, init) : unreadable200()) });
     await openAthleteA();
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
 
     // The coach checks, and sends again; this time the server answers.
     confirming = true;
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
-    await screen.findByText('Sent to the family.');
+    await screen.findByText("Posted to the family's page.");
     expect(screen.queryByText(NOT_CONFIRMED)).toBeNull();
   });
 
@@ -2410,7 +2478,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ post: () => held.promise });
     await openAthleteA();
     type('Message', A_TEXT);
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
@@ -2418,7 +2486,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     expect(await screen.findByText(PREVIOUS_FAILED)).toBeTruthy();
     expect(screen.queryByText(NOT_CONFIRMED)).toBeNull();
-    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(screen.queryByText("Posted to the family's page.")).toBeNull();
     expect(field<HTMLTextAreaElement>('Message').value).toBe('');
 
     fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
@@ -2501,7 +2569,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
   test.each([
     ['Note', 'Log Note', 'Note logged.'],
-    ['Message', 'Send to Family', 'Sent to the family.'],
+    ['Message', 'Post to Family', "Posted to the family's page."],
   ])('an id typed with a trailing space: the route trims it, and its acknowledgement for the trimmed id still counts (%s)', async (label, button, confirmation) => {
     const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       const key = String(url);
