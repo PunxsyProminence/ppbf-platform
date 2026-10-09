@@ -1,9 +1,23 @@
-import { readMalwareVerdict, scanVideoSession, VIDEO_CONTENT_SCREEN_PROMPT, VIDEO_SCAN_MAX_FRAMES } from './videoScan';
+import {
+  readMalwareVerdict,
+  runContentScreen,
+  scanVideoSession,
+  VIDEO_CONTENT_SCREEN_PROMPT,
+  VIDEO_SCAN_MAX_FRAMES,
+  VIDEO_SCAN_VISION_TIMEOUT_MS,
+} from './videoScan';
 import { getPilotVideoBlobTags, downloadPilotVideoFile } from './blob';
+import { analyzeFramesWithVision, extractFrames, isFilmStudyVisionConfigured } from './shadowFilmStudy';
 
 jest.mock('./blob', () => ({
   getPilotVideoBlobTags: jest.fn(),
   downloadPilotVideoFile: jest.fn(),
+}));
+jest.mock('./shadowFilmStudy', () => ({
+  ...jest.requireActual('./shadowFilmStudy'),
+  analyzeFramesWithVision: jest.fn(),
+  extractFrames: jest.fn(),
+  isFilmStudyVisionConfigured: jest.fn(() => false),
 }));
 
 const mockedTags = getPilotVideoBlobTags as jest.MockedFunction<typeof getPilotVideoBlobTags>;
@@ -114,5 +128,111 @@ describe('scanVideoSession — skipContentScreen (guardian consent missing)', ()
     });
 
     expect(result.decision).toBe('hold');
+  });
+});
+
+/*
+ * REVIEWER B ON #1369: the guard the sweep passes wraps the vision call
+ * itself, after the frames are cut, so a consent change landing during the
+ * download and ffmpeg is still seen. A guard answer of null means "do not
+ * send": no vision call, and content stays null (the pending/retry path).
+ */
+describe('runContentScreen — the guard around the vision call', () => {
+  const mockedDownload = downloadPilotVideoFile as jest.MockedFunction<typeof downloadPilotVideoFile>;
+  const mockedVision = analyzeFramesWithVision as jest.MockedFunction<typeof analyzeFramesWithVision>;
+  const mockedExtract = extractFrames as jest.MockedFunction<typeof extractFrames>;
+  const mockedConfigured = isFilmStudyVisionConfigured as jest.MockedFunction<typeof isFilmStudyVisionConfigured>;
+
+  beforeEach(() => {
+    mockedDownload.mockReset();
+    mockedVision.mockReset();
+    mockedExtract.mockReset();
+    mockedConfigured.mockReset();
+    mockedConfigured.mockReturnValue(true);
+    mockedDownload.mockResolvedValue(Buffer.from('clip'));
+    mockedExtract.mockResolvedValue({ framePaths: [] } as unknown as Awaited<ReturnType<typeof extractFrames>>);
+    mockedVision.mockResolvedValue({ content: 'SCAN_PASS' } as Awaited<ReturnType<typeof analyzeFramesWithVision>>);
+  });
+
+  test('a guard that refuses stops the call after the frames are cut', async () => {
+    const order: string[] = [];
+    mockedExtract.mockImplementation(async () => {
+      order.push('frames');
+      return { framePaths: [] } as unknown as Awaited<ReturnType<typeof extractFrames>>;
+    });
+    const result = await runContentScreen('org-1/vs-1/clip.mp4', {
+      guardVisionCall: async () => { order.push('guard'); return null; },
+    });
+
+    expect(order).toEqual(['frames', 'guard']);
+    expect(mockedVision).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  test('a guard that allows makes the call inside it, with the scan timeout', async () => {
+    const order: string[] = [];
+    mockedVision.mockImplementation(async () => {
+      order.push('vision');
+      return { content: 'SCAN_PASS' } as Awaited<ReturnType<typeof analyzeFramesWithVision>>;
+    });
+    const result = await runContentScreen('org-1/vs-1/clip.mp4', {
+      guardVisionCall: async (send) => { order.push('guard-in'); const out = await send(); order.push('guard-out'); return out; },
+    });
+
+    expect(order).toEqual(['guard-in', 'vision', 'guard-out']);
+    expect(result).toBe('pass');
+    expect(mockedVision).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: VIDEO_SCAN_VISION_TIMEOUT_MS }));
+  });
+
+  test('the vision call is timed, and a failure at the cap is recorded as timed out', async () => {
+    const ok = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+    });
+    expect(ok.visionMs).toEqual(expect.any(Number));
+    expect(ok.visionTimedOut).toBe(false);
+
+    const now = jest.spyOn(Date, 'now');
+    let clock = 1_000_000;
+    now.mockImplementation(() => clock);
+    mockedVision.mockImplementation(async () => {
+      clock += VIDEO_SCAN_VISION_TIMEOUT_MS;
+      throw new Error('SHADOW_AI_PROVIDER_UNAVAILABLE');
+    });
+    try {
+      const timedOut = await scanVideoSession({
+        blobPath: 'org-1/vs-1/clip.mp4',
+        attempts: 0,
+        config: { malware: 'off', content: 'vision' },
+      });
+      expect(timedOut.content).toBeNull();
+      expect(timedOut.visionMs).toBe(VIDEO_SCAN_VISION_TIMEOUT_MS);
+      expect(timedOut.visionTimedOut).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
+
+    const refused = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+      guardVisionCall: async () => null,
+    });
+    expect(refused.visionMs).toBeNull();
+    expect(refused.visionTimedOut).toBeNull();
+  });
+
+  test('scanVideoSession hands the guard through', async () => {
+    const result = await scanVideoSession({
+      blobPath: 'org-1/vs-1/clip.mp4',
+      attempts: 0,
+      config: { malware: 'off', content: 'vision' },
+      guardVisionCall: async () => null,
+    });
+
+    expect(mockedVision).not.toHaveBeenCalled();
+    expect(result.content).toBeNull();
+    expect(result.decision).not.toBe('hold');
   });
 });
