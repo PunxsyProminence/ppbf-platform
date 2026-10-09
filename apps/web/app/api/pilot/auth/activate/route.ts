@@ -1,21 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { redeemActivationCode } from '@/src/server/pilot/activation';
-import { ValidationError } from '@/src/server/pilot/errors';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  clearDurableRateLimit,
-  clearRateLimit,
-  getClientIp,
-  recordDurableFailedAttempt,
-  recordFailedAttempt,
-} from '@/src/server/pilot/rateLimit';
+import { assertChosenPinAllowed, validatePinPolicy } from '@/src/server/pilot/pinPolicy';
+import { clearDurableRateLimit, getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
@@ -52,27 +44,20 @@ async function auditActivationEvent(event: Parameters<typeof writePilotAuditEven
  * On success the athlete is signed straight in via the ordinary
  * athlete PIN login path, so no session is minted by any logic other than the
  * one already covering normal logins.
+ *
+ * EVERY CODE GUESS IS COUNTED BEFORE IT IS CHECKED (CL-A4). Reading the
+ * bucket, awaiting the redemption and recording the failure afterwards let
+ * every guess in a burst past the read before the first failure landed. The
+ * IP is the only key there is -- no account exists until the code resolves --
+ * so it is reserved, as the TV pairing code's is. The cost, accepted: of two
+ * athletes activating in the same second from the gym's one IP, the second is
+ * told to wait (Retry-After). A success clears the bucket.
  */
 export async function POST(request: NextRequest) {
   const clientIp = getClientIp(request);
   const ipKey = `activate_ip:${clientIp}`;
 
   try {
-    // Checked before parsing so a limited caller cannot keep the endpoint busy.
-    const volatileLimit = checkRateLimit(ipKey);
-    const durableLimit = await checkDurableRateLimit(ipKey);
-    if (volatileLimit.isLimited || durableLimit.isLimited) {
-      return NextResponse.json(
-        { error: 'Too many activation attempts. Please try again later.' },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(Math.ceil((Math.max(volatileLimit.delayMs ?? 0, durableLimit.delayMs ?? 0)) / 1000) || 1),
-          },
-        },
-      );
-    }
-
     const body = (await request.json()) as { code?: string; pin?: string };
     const code = body.code?.trim() || '';
     const pin = body.pin?.trim() || '';
@@ -81,35 +66,35 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing code or pin');
     }
 
-    let redeemed;
-    try {
-      redeemed = await redeemActivationCode(code, pin);
-    } catch (error) {
-      /* A malformed PIN is the athlete's own correctable mistake and does not
-         consume the code, so it must not count toward the brute-force budget
-         or the athlete locks themselves out while fixing a typo. Anything
-         else is a failed guess at the code.
+    /* A malformed PIN is the athlete's own correctable mistake and does not
+       consume the code, so it must not count toward the brute-force budget or
+       the athlete locks themselves out while fixing a typo. So the PIN's rules
+       run BEFORE the attempt is counted: the same two checks
+       redeemActivationCode runs first, pure and synchronous, each throwing
+       ValidationError (a 400).
 
-         Discriminated BY TYPE, not by message prefix. The prefix test this
-         replaces missed PIN_TRIVIALLY_GUESSABLE, whose message begins "That
-         PIN is too easy to guess" -- errors.ts documents that exact escape in
-         its own header. The consequence was not cosmetic: an athlete trying
-         111111, then 123123, then 112233 was charged three failed CODE
-         guesses and could rate-limit themselves out of their own activation
-         without ever mistyping the code.
+       This used to be decided after the redemption failed, by error type, and
+       before that by message prefix -- which missed PIN_TRIVIALLY_GUESSABLE
+       ("That PIN is too easy to guess") and charged an athlete trying 111111,
+       then 123123, then 112233 three failed CODE guesses. Deciding before
+       counting removes the question. */
+    validatePinPolicy(pin);
+    assertChosenPinAllowed(pin);
 
-         validatePinPolicy and assertChosenPinAllowed both throw
-         ValidationError, so the type is the contract and a reworded message
-         can no longer break it. */
-      if (!(error instanceof ValidationError)) {
-        recordFailedAttempt(ipKey);
-        await recordDurableFailedAttempt(ipKey);
-      }
-
-      throw error;
+    const reservation = await reserveAttempts([ipKey]);
+    if (reservation.isLimited) {
+      return NextResponse.json(
+        { error: 'Too many activation attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(Math.ceil(reservation.delayMs / 1000) || 1) },
+        },
+      );
     }
 
-    clearRateLimit(ipKey);
+    // Already counted above: a failed redemption records nothing more.
+    const redeemed = await redeemActivationCode(code, pin);
+
     await clearDurableRateLimit(ipKey);
 
     await auditActivationEvent({

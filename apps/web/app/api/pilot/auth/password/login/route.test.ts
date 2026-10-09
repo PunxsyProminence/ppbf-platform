@@ -29,19 +29,18 @@ jest.mock('@/src/server/pilot/rateLimit', () => {
   return {
     ...actual,
     getClientIp: () => '203.0.113.9',
-    checkDurableRateLimit: jest.fn(actual.checkDurableRateLimit),
-    recordDurableFailedAttempt: jest.fn(actual.recordDurableFailedAttempt),
+    reserveAttempts: jest.fn(actual.reserveAttempts),
     clearDurableRateLimit: jest.fn(actual.clearDurableRateLimit),
   };
 });
 
 const mockLogin = jest.mocked(loginWithEmailAndPassword);
 const rateLimit = jest.requireMock('@/src/server/pilot/rateLimit') as {
-  checkDurableRateLimit: jest.Mock;
-  recordDurableFailedAttempt: jest.Mock;
+  reserveAttempts: jest.Mock;
   clearDurableRateLimit: jest.Mock;
   clearRateLimit: (key: string) => void;
   recordFailedAttempt: (key: string) => unknown;
+  getRateLimitStatus: (key: string) => { count: number };
 };
 const actualRateLimit = jest.requireActual('@/src/server/pilot/rateLimit') as typeof import('@/src/server/pilot/rateLimit');
 
@@ -89,9 +88,17 @@ beforeEach(() => {
     return ADMITTED as never;
   });
   // clearAllMocks keeps implementations; put the real ones back.
-  rateLimit.checkDurableRateLimit.mockImplementation(actualRateLimit.checkDurableRateLimit);
-  rateLimit.recordDurableFailedAttempt.mockImplementation(actualRateLimit.recordDurableFailedAttempt);
+  rateLimit.reserveAttempts.mockImplementation(actualRateLimit.reserveAttempts);
 });
+
+/** The durable store refusing one bucket: the route answers it exactly as it answers the in-memory one. */
+function durableRefuses(limitedKey: string) {
+  rateLimit.reserveAttempts.mockImplementation(async (keys: string[]) => (
+    keys.includes(limitedKey)
+      ? { isLimited: true, key: limitedKey, durable: true, delayMs: 30_000 }
+      : actualRateLimit.reserveAttempts(keys)
+  ));
+}
 
 afterEach(() => {
   clock.mockRestore();
@@ -180,7 +187,7 @@ describe('POST /api/pilot/auth/password/login', () => {
 
     expect(res.status).toBe(400);
     expect(mockLogin).not.toHaveBeenCalled();
-    expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
+    expect(rateLimit.reserveAttempts).not.toHaveBeenCalled();
   });
 
   test('a password of only spaces is a password: it is not trimmed away into a 400', async () => {
@@ -198,36 +205,32 @@ describe('POST /api/pilot/auth/password/login', () => {
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Invalid credentials' });
     expect(mockLogin).not.toHaveBeenCalled();
-    expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).toEqual([IP_KEY]);
+    expect(rateLimit.reserveAttempts.mock.calls).toEqual([[[IP_KEY]]]);
   });
 
   test('and it is held to the IP bucket like any other attempt: the second one waits, and is not counted', async () => {
     const tooLong = { email: `${'a'.repeat(300)}@example.com`, password: PASSWORD };
     expect((await post(tooLong)).status).toBe(401);
-    rateLimit.recordDurableFailedAttempt.mockClear();
     now += 200;
 
     const res = await post(tooLong);
 
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: 'Too many sign-in attempts. Please wait a few minutes.' });
-    expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
+    expect(rateLimit.getRateLimitStatus(IP_KEY).count).toBe(1);
 
-    // The durable bucket alone is enough, as it is for an ordinary attempt.
+    // The durable store alone is enough, as it is for an ordinary attempt.
     rateLimit.clearRateLimit(IP_KEY);
-    rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
-      key === IP_KEY ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
-    ));
+    durableRefuses(IP_KEY);
     expect((await post(tooLong)).status).toBe(429);
-    expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
   });
 
   describe('the attempt limit', () => {
     test('every attempt is counted on both buckets BEFORE the password is verified', async () => {
       const order: string[] = [];
-      rateLimit.recordDurableFailedAttempt.mockImplementation(async (key: string) => {
-        order.push(`count:${key}`);
-        return actualRateLimit.recordDurableFailedAttempt(key);
+      rateLimit.reserveAttempts.mockImplementation(async (keys: string[]) => {
+        order.push(`count:${keys.join('+')}`);
+        return actualRateLimit.reserveAttempts(keys);
       });
       mockLogin.mockImplementation(async () => {
         order.push('verify');
@@ -236,31 +239,25 @@ describe('POST /api/pilot/auth/password/login', () => {
 
       await post({ email: EMAIL, password: PASSWORD });
 
-      expect(order).toEqual([`count:${EMAIL_KEY}`, `count:${IP_KEY}`, 'verify']);
+      expect(order).toEqual([`count:${EMAIL_KEY}+${IP_KEY}`, 'verify']);
     });
 
-    test('the verification does not start until both counts have been recorded', async () => {
-      const finish: Array<() => void> = [];
-      rateLimit.recordDurableFailedAttempt.mockImplementation(async (key: string) => {
-        const recorded = actualRateLimit.recordFailedAttempt(key);
-        await new Promise<void>((resolve) => { finish.push(resolve); });
-        return recorded;
+    test('the verification does not start until the count has been recorded', async () => {
+      let finish: (() => void) | undefined;
+      rateLimit.reserveAttempts.mockImplementation(async (keys: string[]) => {
+        const reserved = await actualRateLimit.reserveAttempts(keys);
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return reserved;
       });
 
       const pending = post({ email: EMAIL, password: PASSWORD });
       for (let tick = 0; tick < 20; tick += 1) {
         await new Promise((resolve) => setImmediate(resolve));
       }
-      expect(finish).toHaveLength(2);
+      expect(finish).toBeDefined();
       expect(mockLogin).not.toHaveBeenCalled();
 
-      finish[0]();
-      for (let tick = 0; tick < 20; tick += 1) {
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-      expect(mockLogin).not.toHaveBeenCalled();
-
-      finish[1]();
+      finish?.();
       expect((await pending).status).toBe(200);
     });
 
@@ -296,14 +293,14 @@ describe('POST /api/pilot/auth/password/login', () => {
     test('being made to wait is one 429 body whichever bucket is full, and is not counted again', async () => {
       refuseEveryone();
       await post({ email: EMAIL, password: 'a wrong guess' });
-      rateLimit.recordDurableFailedAttempt.mockClear();
       now += 200;
 
       const res = await post({ email: EMAIL, password: 'a wrong guess' });
 
       expect(res.status).toBe(429);
       expect(await res.json()).toEqual({ error: 'Too many sign-in attempts. Please wait a few minutes.' });
-      expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
+      expect(rateLimit.getRateLimitStatus(EMAIL_KEY).count).toBe(1);
+      expect(rateLimit.getRateLimitStatus(IP_KEY).count).toBe(1);
       expect(verifyRan).toHaveBeenCalledTimes(1);
     });
 
@@ -315,9 +312,7 @@ describe('POST /api/pilot/auth/password/login', () => {
       ['the in-memory IP bucket', 'volatile', IP_KEY],
     ])('%s alone is enough for a 429, with the same body, before the password is verified', async (_label, store, limitedKey) => {
       if (store === 'durable') {
-        rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
-          key === limitedKey ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
-        ));
+        durableRefuses(limitedKey);
       } else {
         rateLimit.recordFailedAttempt(limitedKey);
       }
