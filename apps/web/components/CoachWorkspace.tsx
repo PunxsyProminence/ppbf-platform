@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import GymTvPanel from './GymTvPanel';
 import ProfilePortrait from './ProfilePortrait';
 import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
@@ -3389,6 +3390,15 @@ export default function CoachWorkspace() {
                     )}
                   </div>
                 </div>
+
+                {/* Gym TVs (lane N1a): pair, list, disconnect, send the live
+                    session. Reads nothing until opened. */}
+                <GymTvPanel
+                  liveRun={liveRunState === 'loaded' && liveRun ? { run_id: liveRun.run_id, show_on_wall: liveRun.show_on_wall } : null}
+                  liveRunKnown={liveRunState === 'loaded'}
+                  coachAccountId={coachAccountId}
+                  onRunStale={loadLiveRun}
+                />
 
                 {/* Athlete Roster */}
                 <div className={ui.panelSpaced}>

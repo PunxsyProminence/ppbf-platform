@@ -8,6 +8,7 @@ import { createHmac } from 'node:crypto';
 
 import {
   buildAuthorizeUrl,
+  connectStateBindsTo,
   exchangeCodeForAccountId,
   signConnectState,
   verifyConnectState,
@@ -16,17 +17,24 @@ import {
 
 const KEY = 'sk_test_signing_key';
 const NOW = 1_800_000_000;
+const BINDING_GIVING = {
+  organizationId: 'org-1',
+  lane: 'giving',
+  accountId: 'acct-1',
+  sessionToken: 'session-token-1',
+  nonce: 'nonce-1',
+} as const;
 
 describe('connect state', () => {
   test('round-trips the organization and lane', () => {
-    const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, KEY, NOW);
+    const state = signConnectState(BINDING_GIVING, KEY, NOW);
     const claims = verifyConnectState(state, KEY, NOW);
 
     expect(claims).toMatchObject({ organizationId: 'org-1', lane: 'giving' });
   });
 
   test('a tampered payload is refused, not partially trusted', () => {
-    const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, KEY, NOW);
+    const state = signConnectState(BINDING_GIVING, KEY, NOW);
     const [payload, signature] = state.split('.');
     const forged = `${Buffer.from(
       JSON.stringify({ organizationId: 'org-attacker', lane: 'giving', expiresAtEpochSeconds: NOW + 999 }),
@@ -37,15 +45,44 @@ describe('connect state', () => {
   });
 
   test('an expired state is refused -- a leaked link goes stale', () => {
-    const state = signConnectState({ organizationId: 'org-1', lane: 'program' }, KEY, NOW);
+    const state = signConnectState({ ...BINDING_GIVING, lane: 'program' }, KEY, NOW);
 
     expect(verifyConnectState(state, KEY, NOW + 31 * 60)).toBeNull();
   });
 
   test('a state signed with a different key is refused', () => {
-    const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, 'other-key', NOW);
+    const state = signConnectState(BINDING_GIVING, 'other-key', NOW);
 
     expect(verifyConnectState(state, KEY, NOW)).toBeNull();
+  });
+
+  test('the state never carries the raw session token', () => {
+    const state = signConnectState(BINDING_GIVING, KEY, NOW);
+    const payload = Buffer.from(state.split('.')[0], 'base64url').toString('utf8');
+
+    expect(payload).not.toContain('session-token-1');
+  });
+});
+
+// Standard OAuth state handling: the state is bound to the admin and the
+// browser session that started the connect, and to a one-time nonce held in
+// that browser's cookie. Same organization is not enough.
+describe('connect state binding', () => {
+  const claims = () => verifyConnectState(signConnectState(BINDING_GIVING, KEY, NOW), KEY, NOW)!;
+  const caller = { organizationId: 'org-1', accountId: 'acct-1', sessionToken: 'session-token-1', cookieNonce: 'nonce-1' };
+
+  test('binds to the account, session and nonce that started it', () => {
+    expect(connectStateBindsTo(claims(), caller)).toBe(true);
+  });
+
+  test.each([
+    ['another organization', { organizationId: 'org-2' }],
+    ['another admin of the same organization', { accountId: 'acct-2' }],
+    ['another session of the same admin', { sessionToken: 'session-token-2' }],
+    ['no nonce cookie (already used, or another browser)', { cookieNonce: null }],
+    ['a different nonce cookie', { cookieNonce: 'nonce-2' }],
+  ])('refuses %s', (_label, override) => {
+    expect(connectStateBindsTo(claims(), { ...caller, ...override })).toBe(false);
   });
 });
 

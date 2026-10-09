@@ -4,11 +4,7 @@ import { POST } from './route';
 
 jest.mock('@/src/server/pilot/rateLimit', () => ({
   getClientIp: jest.fn(() => '127.0.0.1'),
-  checkRateLimit: jest.fn(() => ({ isLimited: false })),
-  recordFailedAttempt: jest.fn(),
-  clearRateLimit: jest.fn(),
-  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
-  recordDurableFailedAttempt: jest.fn(async () => ({ delayMs: 1000 })),
+  reserveAttempts: jest.fn(async () => ({ isLimited: false })),
   clearDurableRateLimit: jest.fn(async () => undefined),
 }));
 

@@ -5,6 +5,9 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  CONNECT_NONCE_COOKIE,
+  CONNECT_NONCE_COOKIE_PATH,
+  connectStateBindsTo,
   exchangeCodeForAccountId,
   readPaymentPlatformConfig,
   upsertConnectedAccount,
@@ -14,10 +17,12 @@ import {
 export const runtime = 'nodejs';
 
 // The connect round trip's landing leg: Stripe sends the admin back here
-// with a code. The signed state must verify AND name the calling admin's own
-// organization -- a forged or replayed redirect cannot attach a Stripe
-// account to an organization that never asked for it, and an admin of one
-// gym cannot complete a connect another gym started.
+// with a code. The signed state must verify AND bind to the caller: same
+// organization, same admin, same session, and the one-time nonce cookie the
+// start route set in this browser. A forged, replayed or hand-carried
+// redirect cannot attach a Stripe account -- not from another gym, not from
+// another admin of this gym, not a second time. The nonce cookie is cleared
+// on every response from here, so a state completes at most once.
 //
 // The exchange happens server-side with the ONE platform secret; the only
 // thing stored from it is the connected ACCOUNT ID, as a row.
@@ -50,7 +55,21 @@ async function auditConnectionEvent(event: Parameters<typeof writePilotAuditEven
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const response = await handleCallback(request);
+  response.cookies.set({
+    name: CONNECT_NONCE_COOKIE,
+    value: '',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: CONNECT_NONCE_COOKIE_PATH,
+    maxAge: 0,
+  });
+  return response;
+}
+
+async function handleCallback(request: NextRequest): Promise<NextResponse> {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...CONNECT_ROLES]);
@@ -68,7 +87,13 @@ export async function GET(request: NextRequest) {
 
     const state = request.nextUrl.searchParams.get('state') ?? '';
     const claims = verifyConnectState(state, config.platformSecretKey);
-    if (!claims || claims.organizationId !== principal.organizationId) {
+    const cookieNonce = request.cookies.get(CONNECT_NONCE_COOKIE)?.value ?? null;
+    if (!claims || !connectStateBindsTo(claims, {
+      organizationId: principal.organizationId,
+      accountId: principal.accountId,
+      sessionToken: principal.sessionToken,
+      cookieNonce,
+    })) {
       return settingsRedirect(request, 'state-mismatch');
     }
 
