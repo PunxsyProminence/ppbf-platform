@@ -98,6 +98,9 @@ function acknowledge(url: string, init?: RequestInit): Response {
   if (url.includes('/shadow/decision-outcomes')) {
     return jsonResponse({ ok: true, outcome: { outcome_id: 'out-1', decision_id: sent.decisionId, match_state: sent.matchState } });
   }
+  if (url.includes('/parent-tasks')) {
+    return jsonResponse({ ok: true, task: { due_date: sent.due_date, completed_at: null } });
+  }
   throw new Error(`No acknowledgement known for ${url}`);
 }
 
@@ -321,11 +324,27 @@ describe('Message Home (#90)', () => {
     fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
-    await screen.findByText(/^Posted to the family's page, but without the due date/);
+    await screen.findByText("Posted to the family's page, but without the due date -- Forbidden: role may not set a parent task");
     expect(screen.queryByText(/^Failed to /)).toBeNull();
-    expect(screen.queryByText('Forbidden: role may not set a parent task')).toBeNull();
-    // The note is on the family's page; the box must not hold it for a second post.
+    // The note is on the family's page; the boxes must not hold it for a second post.
     expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText('Due by (optional)') as HTMLInputElement).value).toBe('');
+  });
+
+  test.each([
+    ['a 200 without the task envelope', () => jsonResponse({ ok: true })],
+    ['a dropped connection', () => { throw new Error('Failed to fetch'); }],
+  ])('%s on the task write is "not confirmed", never "did not save"', async (_name, parentTasks) => {
+    installFetch({ parentTasks });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Medical form is due.' } });
+    fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+
+    await screen.findByText("Posted to the family's page, but the due date was not confirmed -- it may or may not have saved.");
+    expect(screen.queryByText(/without the due date/)).toBeNull();
+    expect(screen.queryByText(/^Failed to /)).toBeNull();
   });
 
   test('a task acknowledgement for a different date is not this write’s', async () => {
@@ -336,7 +355,7 @@ describe('Message Home (#90)', () => {
     fireEvent.change(screen.getByLabelText('Due by (optional)'), { target: { value: '2026-10-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
 
-    await screen.findByText(/^Posted to the family's page, but without the due date/);
+    await screen.findByText(/but the due date was not confirmed/);
   });
 });
 
@@ -1118,9 +1137,15 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     {
       name: 'Message Home',
       whatCouldGoWrong: 'a message about A is sent to B’s family',
-      fill: () => type('Message', A_TEXT),
-      values: () => [field<HTMLTextAreaElement>('Message').value],
-      defaults: [''],
+      fill: () => {
+        type('Message', A_TEXT);
+        type('Due by (optional)', '2026-08-05');
+      },
+      values: () => [
+        field<HTMLTextAreaElement>('Message').value,
+        field<HTMLInputElement>('Due by (optional)').value,
+      ],
+      defaults: ['', ''],
       press: () => fireEvent.click(screen.getByRole('button', { name: 'Post to Family' })),
     },
     {
@@ -1227,6 +1252,82 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(sent).not.toContain('2026-08-05');
     }
   }
+
+  /* THE DUE DATE IS A SECOND WRITE, and a switch can land between or during
+     the two. In both cases the date still goes up for A (it is bound to A's
+     acknowledged note), and nothing about it is printed under B. */
+  describe('a family message with a due date, and a switch mid-flight', () => {
+    function postsTo(fetchMock: jest.Mock, path: string) {
+      return posts(fetchMock).filter((p) => p.url.includes(path));
+    }
+
+    test('switch while the NOTE write is out: the due date is still attached to A’s note, and nothing is printed under B', async () => {
+      const held = heldResponse();
+      const fetchMock = installSwitchFetch({
+        post: (url) => (url.includes('/domain-upsert') ? held.promise : ACK),
+      });
+      await openAthleteA();
+      type('Message', A_TEXT);
+      type('Due by (optional)', '2026-08-05');
+      fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+      await screen.findByRole('button', { name: 'Posting…' });
+
+      switchToB();
+      await screen.findByText('No medical administrative status recorded yet.');
+      held.release(ACK);
+      await settle();
+
+      expect(postsTo(fetchMock, '/parent-tasks').map((p) => p.body)).toEqual([
+        { note_id: 'obs-1', athlete_id: 'ath-a', due_date: '2026-08-05' },
+      ]);
+      expect(screen.queryByText(/Posted to the family/)).toBeNull();
+      expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+      // A's drafts are cleared for A, not left to be posted again.
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      await screen.findByText(/ref-for-athlete-a/);
+      expect(field<HTMLTextAreaElement>('Message').value).toBe('');
+      expect(field<HTMLInputElement>('Due by (optional)').value).toBe('');
+    });
+
+    test('switch while the TASK write is out: its answer is not printed under B; a refusal is flagged as the previous athlete’s', async () => {
+      const held = heldResponse();
+      installSwitchFetch({
+        post: (url) => (url.includes('/parent-tasks') ? held.promise : ACK),
+      });
+      await openAthleteA();
+      type('Message', A_TEXT);
+      type('Due by (optional)', '2026-08-05');
+      fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+      await screen.findByRole('button', { name: 'Posting…' });
+
+      switchToB();
+      await screen.findByText('No medical administrative status recorded yet.');
+      held.release(jsonResponse({ error: 'Forbidden: role may not set a parent task' }, false));
+
+      await screen.findByText(PREVIOUS_FAILED);
+      expect(screen.queryByText(/Posted to the family/)).toBeNull();
+    });
+
+    test('switch while the TASK write is out and it saves: nothing is printed under B and no notice is raised', async () => {
+      const held = heldResponse();
+      installSwitchFetch({
+        post: (url) => (url.includes('/parent-tasks') ? held.promise : ACK),
+      });
+      await openAthleteA();
+      type('Message', A_TEXT);
+      type('Due by (optional)', '2026-08-05');
+      fireEvent.click(screen.getByRole('button', { name: 'Post to Family' }));
+      await screen.findByRole('button', { name: 'Posting…' });
+
+      switchToB();
+      await screen.findByText('No medical administrative status recorded yet.');
+      held.release(jsonResponse({ ok: true, task: { due_date: '2026-08-05', completed_at: null } }));
+      await settle();
+
+      expect(screen.queryByText(/Posted to the family/)).toBeNull();
+      expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+    });
+  });
 
   describe.each(FORMS)('$name: so that never $whatCouldGoWrong', ({ fill, values, defaults, press, keptForItsAthlete }) => {
     test('after a switch that succeeds, the form is empty and pressing its button sends nothing of the previous athlete', async () => {

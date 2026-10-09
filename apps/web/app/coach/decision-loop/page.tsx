@@ -744,8 +744,8 @@ export default function DecisionLoopReviewPage() {
      the `athleteId` its closure captured. A write for athlete A that lands
      after the switch to B used to print its result under B: a refusal that
      quotes A's medical status ("this athlete's medical administrative status
-     is 'restricted'"), or "Incident filed" / "Posted to the family's page" for a child
-     nobody is looking at.
+     is 'restricted'"), or "Incident filed" / "Posted to the family's page"
+     for a child nobody is looking at.
 
      On a late SUCCESS the submitted draft is still cleared, in the draft of
      the athlete it was sent for (it was sent; left in their box it reads as
@@ -1013,11 +1013,17 @@ export default function DecisionLoopReviewPage() {
         return true;
       });
       clearSentDrafts(athleteId, { messageHomeText, messageHomeDueDate });
-      if (athleteId !== selectedAthleteRef.current) return;
+      // The due date is attached BEFORE the athlete guard: it is bound to the
+      // acknowledged note and to the athlete this handler captured, so a
+      // switch cannot send it anywhere else, and skipping it would drop a
+      // date the coach set with nothing said.
+      const due = messageHomeDueDate ? await attachDueDate(noteId, athleteId, messageHomeDueDate) : null;
+      if (athleteId !== selectedAthleteRef.current) {
+        if (due && due.outcome !== 'saved') setPreviousAthleteNotice(PREVIOUS_ATHLETE_WRITE_FAILED);
+        return;
+      }
       writeConfirmed();
-      setMessageHomeMessage(
-        messageHomeDueDate ? await attachDueDate(noteId, athleteId, messageHomeDueDate) : "Posted to the family's page.",
-      );
+      setMessageHomeMessage(due ? due.text : "Posted to the family's page.");
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to post the message.');
     } finally {
@@ -1028,12 +1034,26 @@ export default function DecisionLoopReviewPage() {
   /* THE DUE DATE IS A SECOND WRITE, and it is reported as one. The message is
      a coach_note the family's page already reads; the deadline lives in
      pilot.parent_task_state and is set through /api/pilot/parent-tasks after
-     the note exists. If that second write fails the note has still landed and
-     the family will read it, so the confirmation says exactly that rather
-     than reporting a failure that would invite the coach to post it twice.
-     Nothing on this page can re-attach a date to a posted message; a coach
-     who needs the deadline posts a short follow-up with the date set. */
-  async function attachDueDate(noteId: string, forAthleteId: string, dueDate: string): Promise<string> {
+     the note exists. Whatever happens to that second write the note has
+     landed and the family will read it, so this never throws: a refusal and
+     a not-confirmed answer are each told as what they are (the page's rule
+     at confirmWriteOrThrow: not confirmed is not failed, the date may well
+     have saved), and neither is reported as a failed post, which would
+     invite the coach to post it twice. Nothing on this page can re-attach a
+     date to a posted message; a coach who needs the deadline posts a short
+     follow-up with the date set.
+
+     The date is printed as typed (YYYY-MM-DD), not through the gym-time
+     formatters: those read a bare date as UTC midnight and would show the
+     day before. */
+  async function attachDueDate(
+    noteId: string,
+    forAthleteId: string,
+    dueDate: string,
+  ): Promise<{ outcome: 'saved' | 'refused' | 'unconfirmed'; text: string }> {
+    // A refusal is an answer the server gave; a dropped connection or an
+    // unreadable 200 is not, and the date may have saved.
+    let answered = false;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent-tasks`, {
         method: 'POST',
@@ -1041,13 +1061,23 @@ export default function DecisionLoopReviewPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ note_id: noteId, athlete_id: forAthleteId, due_date: dueDate }),
       });
-      await confirmWriteOrThrow(response, 'Failed to set the due date.', (envelope) => {
+      answered = true;
+      await confirmWriteOrThrow(response, 'the due date was refused.', (envelope) => {
         const task = returnedRow(envelope, 'task');
         return task !== null && task.due_date === dueDate;
       });
-      return `Posted to the family's page, due ${dueDate}.`;
-    } catch {
-      return "Posted to the family's page, but without the due date -- the date did not save. Post a short follow-up with the date if the family needs it.";
+      return { outcome: 'saved', text: `Posted to the family's page, due ${dueDate}.` };
+    } catch (error) {
+      if (answered && error instanceof Error && error.message !== WRITE_NOT_CONFIRMED) {
+        return {
+          outcome: 'refused',
+          text: `Posted to the family's page, but without the due date -- ${error.message}`,
+        };
+      }
+      return {
+        outcome: 'unconfirmed',
+        text: "Posted to the family's page, but the due date was not confirmed -- it may or may not have saved.",
+      };
     }
   }
 
@@ -1508,12 +1538,12 @@ export default function DecisionLoopReviewPage() {
                 </form>
               </section>
 
-              {/* Post to the family's page (was "Message Home"; reworded under A-Q17) */}
+              {/* Post to the family's page */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-command text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
                 <p className="t-muted mt-[var(--s2)]">
                   A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
-                  Give it a due date and it also shows as something to do, with a box the family ticks when it is done.
+                  Give it a due date to mark it as something the family needs to do by then.
                   There&apos;s no reply yet; call the family directly for anything that needs a conversation.
                 </p>
 
@@ -1536,6 +1566,7 @@ export default function DecisionLoopReviewPage() {
                       type="date"
                       value={messageHomeDueDate}
                       onChange={(event) => editDraft('messageHomeDueDate', event.target.value)}
+                      disabled={messageHomeSubmitting}
                       className="input"
                     />
                   </label>
