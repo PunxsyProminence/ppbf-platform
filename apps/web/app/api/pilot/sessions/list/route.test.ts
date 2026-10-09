@@ -3,7 +3,15 @@ import { NextRequest } from 'next/server';
 import { GET } from './route';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { sweepInactiveSessionsOnRead } from '@/src/server/pilot/sessionAutoClose';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+
+// The lazy auto-close sweep is faked here: its rule has its own real-Postgres
+// suite (sessionAutoClose.pg.test.ts). What this file pins is WHEN the route
+// runs it -- after authorization, before the read -- and for whose organization.
+jest.mock('@/src/server/pilot/sessionAutoClose', () => ({
+  sweepInactiveSessionsOnRead: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -23,6 +31,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockSweep = sweepInactiveSessionsOnRead as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -157,5 +166,36 @@ describe('GET /api/pilot/sessions/list', () => {
     const res = await GET(listRequest('ath-someone-else'));
     expect(res.status).toBe(403);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/pilot/sessions/list sweeps inactive sessions before it reads', () => {
+  test("sweeps the caller's organization once, after the access check and before the sessions read", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    const order: string[] = [];
+    mockQueryOne.mockImplementationOnce(async () => { order.push('access'); return { athlete_id: 'ath-1' }; });
+    mockSweep.mockImplementationOnce(async () => { order.push('sweep'); });
+    mockQuery.mockImplementationOnce(async () => { order.push('read'); return []; });
+
+    const res = await GET(listRequest('ath-1'));
+
+    expect(res.status).toBe(200);
+    expect(mockSweep).toHaveBeenCalledTimes(1);
+    expect(mockSweep).toHaveBeenCalledWith('org-1');
+    expect(order).toEqual(['access', 'sweep', 'read']);
+  });
+
+  test('a refused caller never triggers a sweep', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-self' }));
+    const res = await GET(listRequest('ath-someone-else'));
+    expect(res.status).toBe(403);
+    expect(mockSweep).not.toHaveBeenCalled();
+  });
+
+  test('an invalid request never triggers a sweep', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    const res = await GET(listRequest());
+    expect(res.status).toBe(400);
+    expect(mockSweep).not.toHaveBeenCalled();
   });
 });
