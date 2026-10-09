@@ -148,6 +148,11 @@ describe('role gates in source', () => {
       reason: "list names both 'organization_admin' and 'admin'",
     },
     {
+      file: 'src/server/pilot/sessionStaffNotes.ts',
+      expression: 'STAFF_NOTE_ROLES',
+      reason: "list names both 'organization_admin' and 'admin'",
+    },
+    {
       file: 'src/server/pilot/contentImport/actor.ts',
       expression: 'GYM_CONTENT_ROLES',
       reason: "list names both 'organization_admin' and 'admin'",
