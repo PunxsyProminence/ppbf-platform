@@ -100,6 +100,24 @@ test('granting posts decision=grant with the checkbox defaults (video included, 
   await waitFor(() => expect(screen.getByText('Consent granted.')).toBeInTheDocument());
 });
 
+/* A-Q14 "Hide until used" (OD-2026-10-08-005): the public-use choice is not
+   offered on this page. The API field is still sent, always false, so the
+   server contract and its default are unchanged. */
+test('no "Allow public use" control is offered; the page says the consent is gym-internal', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: NEEDS_CONSENT })) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+  await screen.findByText('Consent needed');
+
+  expect(screen.queryByText(/Allow public use/)).not.toBeInTheDocument();
+  expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  expect(screen.getByRole('checkbox', { name: /Include video/ })).toBeInTheDocument();
+  expect(screen.getByText(/Nothing is posted publicly on this consent/)).toBeInTheDocument();
+  // Who inside the gym can see it is named, not implied: the clip library is
+  // gym-wide (OD-2026-10-08-004) and coaches and athletes can browse it.
+  expect(screen.getByText(/clip library, which coaches and athletes signed in at this gym can browse/)).toBeInTheDocument();
+});
+
 test('withdrawing asks for confirmation first and sends nothing if declined', async () => {
   window.confirm = jest.fn().mockReturnValue(false);
   const fetchMock = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ALREADY_SIGNED }));
