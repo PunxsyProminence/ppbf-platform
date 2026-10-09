@@ -488,8 +488,9 @@ describe('sessionStaffNotes.ts against real rows', () => {
       const listed = await listSessionStaffNotes(ADMIN, SESSION_ID, ATHLETE_ID);
       expect(listed.map((row) => row.note_id)).toEqual([first.note_id, second.note_id, admin.note_id]);
       // The list never carries an account id; it says whether the reader wrote each note.
-      const { author_account_id: _firstAuthor, ...firstShown } = first;
-      expect(listed[0]).toEqual({ ...firstShown, written_by_me: false });
+      const firstShown: Record<string, unknown> = { ...first, written_by_me: false };
+      delete firstShown.author_account_id;
+      expect(listed[0]).toEqual(firstShown);
       expect(listed.map((row) => row.written_by_me)).toEqual([false, false, true]);
       expect(listed.some((row) => 'author_account_id' in row)).toBe(false);
       expect((await listSessionStaffNotes(COACH, SESSION_ID, ATHLETE_ID)).map((row) => row.written_by_me)).toEqual([true, true, false]);
