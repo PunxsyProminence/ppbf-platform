@@ -112,17 +112,32 @@ async function withAuthorNames(organizationId: string, rows: StoredRow[]): Promi
   return rows.map((row) => ({ ...row, author_name: names.get(row.author_account_id) ?? 'Your coach' }));
 }
 
-/** This athlete's live notes, newest first (the last 100). One access check. */
-export async function listCapacityNotes(actor: ActorIdentity, athleteId: string): Promise<AthleteCapacityNoteRow[]> {
+/**
+ * This athlete's live notes, newest first (the last 100), and whether older
+ * live notes exist past them -- so a reader is never left to take the newest
+ * 100 for the whole history. One access check; one extra row read to tell.
+ */
+export async function readCapacityNotes(
+  actor: ActorIdentity,
+  athleteId: string,
+): Promise<{ notes: AthleteCapacityNoteRow[]; olderNotes: boolean }> {
   await assertNoteAccess(actor, athleteId);
   const rows = await query<StoredRow>(
     `select ${FIELDS} from pilot.athlete_capacity_notes
       where organization_id = $1 and athlete_id = $2 and deleted_at is null
       order by note_seq desc
-      limit ${LIST_LIMIT}`,
+      limit ${LIST_LIMIT + 1}`,
     [actor.organizationId, athleteId],
   );
-  return withAuthorNames(actor.organizationId, rows);
+  return {
+    notes: await withAuthorNames(actor.organizationId, rows.slice(0, LIST_LIMIT)),
+    olderNotes: rows.length > LIST_LIMIT,
+  };
+}
+
+/** This athlete's live notes, newest first (the last 100). One access check. */
+export async function listCapacityNotes(actor: ActorIdentity, athleteId: string): Promise<AthleteCapacityNoteRow[]> {
+  return (await readCapacityNotes(actor, athleteId)).notes;
 }
 
 /** Adds one note, in the coach's words, with its audit row on the same transaction. */

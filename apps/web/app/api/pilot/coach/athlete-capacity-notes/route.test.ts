@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { DELETE, GET, POST } from './route';
 import {
   addCapacityNote,
-  listCapacityNotes,
+  readCapacityNotes,
   withdrawCapacityNote,
 } from '@/src/server/pilot/athleteCapacityNotes';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -28,13 +28,13 @@ jest.mock('@/src/server/pilot/athleteCapacityNotes', () => {
   return {
     ...actual,
     addCapacityNote: jest.fn(),
-    listCapacityNotes: jest.fn(),
+    readCapacityNotes: jest.fn(),
     withdrawCapacityNote: jest.fn(),
   };
 });
 
 const mockPrincipal = requirePrincipal as jest.Mock;
-const mockList = listCapacityNotes as jest.Mock;
+const mockList = readCapacityNotes as jest.Mock;
 const mockAdd = addCapacityNote as jest.Mock;
 const mockWithdraw = withdrawCapacityNote as jest.Mock;
 
@@ -110,7 +110,7 @@ describe('GET', () => {
 
   it('hands the module the session identity without the token, marks own notes, names authors, and keeps account ids out', async () => {
     mockPrincipal.mockResolvedValue(COACH);
-    mockList.mockResolvedValue([THEIRS, MINE]);
+    mockList.mockResolvedValue({ notes: [THEIRS, MINE], olderNotes: false });
     const response = await get('?athlete_id=ath-1');
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -118,6 +118,7 @@ describe('GET', () => {
     const body = await response.json();
     expect(body.ok).toBe(true);
     expect(body.note_max).toBe(2000);
+    expect(body.older_notes).toBe(false);
     expect(body.notes).toEqual([
       {
         note_id: '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
@@ -228,5 +229,15 @@ describe('DELETE', () => {
     expect((await del('?athlete_id=ath-1&note_id=7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')).status).toBe(403);
     mockWithdraw.mockRejectedValueOnce(new NotFoundError('gone', 'CAPACITY_NOTE_NOT_FOUND'));
     expect((await del('?athlete_id=ath-1&note_id=0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e')).status).toBe(404);
+  });
+});
+
+describe('GET, older notes', () => {
+  it('says when older notes exist beyond the ones listed', async () => {
+    mockPrincipal.mockResolvedValue(COACH);
+    mockList.mockResolvedValue({ notes: [MINE], olderNotes: true });
+    const body = await (await get('?athlete_id=ath-1')).json();
+    expect(body.older_notes).toBe(true);
+    expect(body.notes).toHaveLength(1);
   });
 });

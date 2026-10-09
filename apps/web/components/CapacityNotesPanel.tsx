@@ -36,7 +36,7 @@ type Reading =
   | { state: 'closed' }
   | { state: 'loading' }
   | { state: 'unavailable' }
-  | { state: 'loaded'; notes: NoteRow[]; noteMax: number };
+  | { state: 'loaded'; notes: NoteRow[]; noteMax: number; olderNotes: boolean };
 
 function isNoteRow(value: unknown): value is NoteRow {
   if (!value || typeof value !== 'object') return false;
@@ -52,7 +52,9 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // The heading names the action that failed: a refused withdrawal is not
+  // "not saved".
+  const [refusal, setRefusal] = useState<{ heading: string; text: string } | null>(null);
   // Each read gets a number; only the newest read of an OPEN panel may land.
   // A reply that arrives after the coach closed the panel, or after a newer
   // read started, is dropped -- so a panel never reopens itself.
@@ -82,7 +84,12 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
         throw new Error('unreadable');
       }
       if (!landed()) return;
-      setReading({ state: 'loaded', notes: payload.notes as NoteRow[], noteMax: payload.note_max });
+      setReading({
+        state: 'loaded',
+        notes: payload.notes as NoteRow[],
+        noteMax: payload.note_max,
+        olderNotes: payload.older_notes === true,
+      });
     } catch {
       // Unknown is never shown as "no notes".
       if (landed()) setReading({ state: 'unavailable' });
@@ -105,7 +112,7 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
   const add = useCallback(async () => {
     setRefusal(null);
     if (draft.trim() === '') {
-      setRefusal('Write the note first.');
+      setRefusal({ heading: 'NOT SAVED', text: 'Write the note first.' });
       return;
     }
     setBusy(true);
@@ -118,7 +125,7 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
       });
       const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
       if (!response.ok || !payload || payload.ok !== true) {
-        setRefusal(describeFailure(payload, response.status, 'saved'));
+        setRefusal({ heading: 'NOT SAVED', text: describeFailure(payload, response.status, 'saved') });
         return;
       }
       setDraft('');
@@ -127,7 +134,7 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
       // panel, and a save must never reopen what the coach closed.
       if (isOpen.current) await read();
     } catch {
-      setRefusal('The note was not saved — the connection failed. Nothing changed.');
+      setRefusal({ heading: 'NOT SAVED', text: 'The note was not saved — the connection failed. Nothing changed.' });
     } finally {
       setBusy(false);
     }
@@ -144,12 +151,12 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
         );
         const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
         if (!response.ok || !payload || payload.ok !== true) {
-          setRefusal(describeFailure(payload, response.status, 'withdrawn'));
+          setRefusal({ heading: 'NOT WITHDRAWN', text: describeFailure(payload, response.status, 'withdrawn') });
           return;
         }
         if (isOpen.current) await read();
       } catch {
-        setRefusal('The note was not withdrawn — the connection failed. Nothing changed.');
+        setRefusal({ heading: 'NOT WITHDRAWN', text: 'The note was not withdrawn — the connection failed. Nothing changed.' });
       } finally {
         setBusy(false);
       }
@@ -226,9 +233,9 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                       paper panel reads below text contrast. ▲ is the
                       CANNOT_BE_DONE glyph, never the medical red. */}
                   <p className="t-body font-semibold">
-                    <span aria-hidden="true">▲ </span>NOT SAVED
+                    <span aria-hidden="true">▲ </span>{refusal.heading}
                   </p>
-                  <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
+                  <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal.text}</p>
                 </div>
               ) : null}
 
@@ -258,6 +265,11 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                     ))}
                   </ul>
                 )}
+                {reading.olderNotes ? (
+                  <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>
+                    Older notes are kept but not listed here; this shows the newest {reading.notes.length}.
+                  </p>
+                ) : null}
               </div>
             </>
           ) : null}

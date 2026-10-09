@@ -6,7 +6,7 @@ import {
   CAPACITY_NOTE_ROLES,
   type AthleteCapacityNoteRow,
   addCapacityNote,
-  listCapacityNotes,
+  readCapacityNotes,
   withdrawCapacityNote,
 } from '@/src/server/pilot/athleteCapacityNotes';
 import { ValidationError } from '@/src/server/pilot/errors';
@@ -19,7 +19,8 @@ export const dynamic = 'force-dynamic';
  * A coach's physical capacity notes for one athlete (module 013 slice,
  * OD-2026-10-08-002).
  *
- *   GET    ?athlete_id=            this athlete's live notes, newest first
+ *   GET    ?athlete_id=            this athlete's live notes, newest first (newest 100;
+ *                                  older_notes says whether older live notes exist)
  *   POST   { athlete_id, note }    adds one note in the coach's words
  *   DELETE ?athlete_id=&note_id=   withdraws one of the caller's OWN notes
  *
@@ -67,9 +68,14 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...CAPACITY_NOTE_ROLES]);
     const athleteId = athleteIdFrom(request);
-    const notes = await listCapacityNotes(actorOf(principal), athleteId);
+    const { notes, olderNotes } = await readCapacityNotes(actorOf(principal), athleteId);
     return NextResponse.json(
-      { ok: true, note_max: CAPACITY_NOTE_MAX, notes: notes.map((row) => present(row, principal.accountId)) },
+      {
+        ok: true,
+        note_max: CAPACITY_NOTE_MAX,
+        notes: notes.map((row) => present(row, principal.accountId)),
+        older_notes: olderNotes,
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

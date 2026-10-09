@@ -64,7 +64,7 @@ jest.mock('./db', () => ({
 import * as accessModule from './access';
 import type { ActorIdentity } from './access';
 import * as auditModule from './audit';
-import { addCapacityNote, listCapacityNotes, withdrawCapacityNote } from './athleteCapacityNotes';
+import { addCapacityNote, listCapacityNotes, readCapacityNotes, withdrawCapacityNote } from './athleteCapacityNotes';
 import type { PilotRole } from './contracts';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
 
@@ -518,6 +518,33 @@ describe('athleteCapacityNotes.ts against real rows', () => {
         );
       }
       expect((await listCapacityNotes(COACH, ATHLETE_ID)).map((row) => row.note)).toEqual(['newer', 'older']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('past the newest 100 the read says older notes exist; at exactly 100 it says the list is complete', async () => {
+    const client = await migratedDatabase('capnotes_older');
+    try {
+      await client.query(
+        `insert into pilot.athlete_capacity_notes
+           (organization_id, note_id, athlete_id, note, author_account_id, author_role)
+         select $1, gen_random_uuid(), $2, 'Note ' || n, $3, 'coach' from generate_series(1, 101) n`,
+        [ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+      const over = await readCapacityNotes(COACH, ATHLETE_ID);
+      expect(over.notes).toHaveLength(100);
+      expect(over.olderNotes).toBe(true);
+      expect(over.notes[0].note).toBe('Note 101');
+      expect(over.notes[99].note).toBe('Note 2');
+      expect(await listCapacityNotes(COACH, ATHLETE_ID)).toEqual(over.notes);
+
+      // Withdrawn notes do not count: one withdrawal leaves exactly 100 live.
+      await withdrawCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, noteId: over.notes[0].note_id });
+      const exact = await readCapacityNotes(COACH, ATHLETE_ID);
+      expect(exact.notes).toHaveLength(100);
+      expect(exact.olderNotes).toBe(false);
+      expect(exact.notes[99].note).toBe('Note 1');
     } finally {
       await client.end();
     }

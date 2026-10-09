@@ -203,3 +203,97 @@ test('closing the panel drops a read that lands afterwards', async () => {
   expect(screen.queryByText('Held pace through all six rounds')).toBeNull();
   expect(screen.getByRole('button', { name: 'Capacity notes' })).toBeTruthy();
 });
+
+test('a refused withdrawal says NOT WITHDRAWN, never NOT SAVED, and keeps the note listed', async () => {
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes: [MINE] }),
+    undefined,
+    () => respond({ ok: false, error: 'Only the coach who wrote a note may withdraw it.' }, 403),
+  );
+  openPanel();
+  await screen.findByText('Held pace through all six rounds');
+  fireEvent.click(screen.getByRole('button', { name: /^Withdraw your note/ }));
+  expect(await screen.findByText('Only the coach who wrote a note may withdraw it.')).toBeTruthy();
+  expect(screen.getByText('NOT WITHDRAWN')).toBeTruthy();
+  expect(screen.queryByText('NOT SAVED')).toBeNull();
+  expect(screen.getByText('Held pace through all six rounds')).toBeTruthy();
+});
+
+test('an older read that lands after a newer one is dropped -- the newest read wins', async () => {
+  const releases: Array<() => void> = [];
+  const replies = [[MINE], [THEIRS]];
+  let n = 0;
+  serve(() => {
+    const notes = replies[n++];
+    return new Promise<Response>((resolve) => {
+      releases.push(() => resolve(respond({ ok: true, note_max: 2000, notes })));
+    });
+  });
+  openPanel();
+  fireEvent.click(screen.getByRole('button', { name: 'Hide capacity notes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+  await waitFor(() => expect(releases).toHaveLength(2));
+  releases[1]();
+  await screen.findByText('Gassed after round three');
+  releases[0]();
+  await waitFor(() => expect(gets).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByText('Held pace through all six rounds')).toBeNull();
+  expect(screen.getByText('Gassed after round three')).toBeTruthy();
+});
+
+test('a save that finishes after the coach closed the panel does not reopen it', async () => {
+  let release: (() => void) | null = null;
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes: [] }),
+    () => new Promise<Response>((resolve) => {
+      release = () => resolve(respond({ ok: true, note: MINE }));
+    }),
+  );
+  openPanel();
+  await screen.findByText('No capacity notes yet for this athlete.');
+  fireEvent.change(draftField(), { target: { value: 'Held pace' } });
+  fireEvent.click(addButton());
+  await waitFor(() => expect(release).not.toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Hide capacity notes' }));
+  release!();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(gets).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Capacity notes' })).toBeTruthy();
+});
+
+test('a withdrawal that finishes after the coach closed the panel does not reopen it', async () => {
+  let release: (() => void) | null = null;
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes: [MINE] }),
+    undefined,
+    () => new Promise<Response>((resolve) => {
+      release = () => resolve(respond({ ok: true, note_id: 'note-1' }));
+    }),
+  );
+  openPanel();
+  await screen.findByText('Held pace through all six rounds');
+  fireEvent.click(screen.getByRole('button', { name: /^Withdraw your note/ }));
+  await waitFor(() => expect(release).not.toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Hide capacity notes' }));
+  release!();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitFor(() => expect(deletes).toHaveLength(1));
+  expect(gets).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Capacity notes' })).toBeTruthy();
+});
+
+test('when older notes exist beyond the listed ones, the panel says so instead of implying this is all', async () => {
+  serve(() => respond({ ok: true, note_max: 2000, notes: [MINE], older_notes: true }));
+  openPanel();
+  await screen.findByText('Held pace through all six rounds');
+  expect(screen.getByText(/Older notes are kept but not listed here/)).toBeTruthy();
+});
+
+test('no older-notes line when the list is complete', async () => {
+  serve(() => respond({ ok: true, note_max: 2000, notes: [MINE], older_notes: false }));
+  openPanel();
+  await screen.findByText('Held pace through all six rounds');
+  expect(screen.queryByText(/Older notes are kept/)).toBeNull();
+});
