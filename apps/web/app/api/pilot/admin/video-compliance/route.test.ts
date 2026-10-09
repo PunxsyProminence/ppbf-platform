@@ -485,14 +485,17 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect(mockDecide).not.toHaveBeenCalled();
     });
 
-    test('reject still works on a mismatched item, so the queue can be cleared', async () => {
+    test.each([
+      ['reject', 'rejected'],
+      ['request_changes', 'pending_review'],
+    ])('%s still works on a mismatched item, so the queue can be cleared', async (decision, newStatus) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetVideoSession.mockResolvedValue({ video_session_id: 'vs-1', organization_id: 'org-a', athlete_id: 'ath-2', blob_path: '/blob/vs-1.mp4', status: 'ready' } as never);
 
-      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Wrong athlete named.' }));
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision, note: 'Wrong athlete named.' }));
 
       expect(response.status).toBe(200);
-      expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'rejected' }));
+      expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ newStatus }));
     });
 
     test('reject still works on an unattributed item, so the queue can be cleared', async () => {
