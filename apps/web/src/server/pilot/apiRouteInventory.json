@@ -8687,6 +8687,34 @@
     }
   },
   {
+    "id": "app/api/pilot/profile/photo/review/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/profile/photo/review",
+    "gate": "requirePrincipal + requireRole([organization_admin,admin,coach]) + assertViewerMayReachSubject + resolveRelationship",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Release or block a pending portrait (route.ts:22-92); deletes the blob on block. Coach reach via assertViewerMayReachSubject (route.ts:40), then org admin or coach_of_subject or self (route.ts:46-48). Audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertViewerMayReachSubject"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/profile/photo/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/profile/photo",

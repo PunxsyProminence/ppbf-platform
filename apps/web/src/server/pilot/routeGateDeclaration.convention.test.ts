@@ -516,7 +516,7 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
     'app/api/pilot/profile/photo/route.ts#DELETE',
     'SELF-SCOPED. Removes the caller\'s own portrait, keyed on '
       + 'principal.accountId, bytes and all. Staff takedown of somebody else\'s '
-      + 'portrait is a different route (/admin/portrait-review) with its own gate.',
+      + 'portrait is a different route (/photo/review) with its own gate.',
   ],
   [
     'app/api/pilot/shadow/data/route.ts#GET',
