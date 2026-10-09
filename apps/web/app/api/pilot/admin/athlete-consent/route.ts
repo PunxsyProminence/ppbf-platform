@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
 
     const rows = await listOrganizationConsentStatus(principal.organizationId);
     const guardianNames = new Map(
-      rows.flatMap((row) => row.guardians.map((g) => [g.parentId, g.fullName] as const)),
+      rows.flatMap((row) => row.guardians.map((g) => [g.parentId, g] as const)),
     );
 
     return NextResponse.json({
@@ -222,7 +222,10 @@ export async function GET(request: NextRequest) {
             // The name is what makes the picker usable: choosing which guardian
             // a paper form belongs to from a list of opaque ids is how the wrong
             // guardian gets recorded.
-            parent_name: guardianNames.get(g.parentId) ?? g.parentId,
+            parent_name: guardianNames.get(g.parentId)?.fullName ?? g.parentId,
+            // false = a name on paper with no login (OD-2026-10-07-009): the
+            // desk labels them, since nothing can be emailed to this guardian.
+            has_login: guardianNames.get(g.parentId)?.hasLogin ?? false,
             status: g.status,
             /* THE ANSWER, not the raw word, so no client has to re-derive it.
                Whether a stored status counts as consent is one rule, applied

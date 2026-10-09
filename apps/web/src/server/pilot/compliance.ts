@@ -535,7 +535,7 @@ export async function getOrganizationViolations(
     status?: string;
     severity?: string;
     limit?: number;
-    coachAccountId?: string;
+    athleteIds?: readonly string[];
   },
 ): Promise<ComplianceViolation[]> {
   // A deleted athlete's violation leaves once it is closed -- resolved or
@@ -556,13 +556,14 @@ export async function getOrganizationViolations(
     params.push(filters.athleteId);
   }
 
-  if (filters?.coachAccountId) {
-    // deleted_at is null: the coach's own view, which elsewhere has always
-    // left a deleted athlete out (athleteIdsForCoach), and a deleted
-    // athlete's rows are marked deleted with them (scope B). The org-admin
-    // view keeps a deleted athlete's OPEN violations (the filter above).
-    sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1 and deleted_at is null)`;
-    params.push(filters.coachAccountId);
+  if (filters?.athleteIds) {
+    // A coach's view: the caller passes athleteIdsForCoach -- coach of record
+    // UNION active coverage, deleted athletes already left out (a deleted
+    // athlete's rows are marked deleted with them, scope B). The org-admin
+    // view passes no list and keeps a deleted athlete's OPEN violations (the
+    // filter above).
+    sql += ` and athlete_id = any($${params.length + 1}::text[])`;
+    params.push(filters.athleteIds);
   }
 
   if (filters?.status) {

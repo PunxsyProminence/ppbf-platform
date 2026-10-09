@@ -14,6 +14,7 @@ import {
   createComplianceViolation,
   escalateViolation,
   getComplianceRulesByCategory,
+  getOrganizationViolations,
   getOrganizationViolationSummary,
   transitionComplianceViolation,
 } from './compliance';
@@ -408,5 +409,30 @@ describe('getComplianceRulesByCategory', () => {
     expect(sql).not.toContain('order by severity desc');
     expect(sql).toContain("when 'critical' then 1");
     expect(sql).toContain("when 'low' then 4");
+  });
+});
+
+describe('getOrganizationViolations', () => {
+  test('athleteIds narrows the list to exactly those athletes, as an array parameter', async () => {
+    await getOrganizationViolations('org-1', { athleteIds: ['ath-own', 'ath-covered'] });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('athlete_id = any($2::text[])');
+    expect(sql).not.toContain('coach_id');
+    expect(params).toEqual(['org-1', ['ath-own', 'ath-covered'], 50]);
+  });
+
+  test('an empty reach list is an empty list, not the whole organization', async () => {
+    await getOrganizationViolations('org-1', { athleteIds: [] });
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('athlete_id = any($2::text[])');
+    expect(params[1]).toEqual([]);
+  });
+
+  test('no athleteIds means the organization view, with no per-athlete narrowing', async () => {
+    await getOrganizationViolations('org-1', {});
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toContain('any($');
+    expect(params).toEqual(['org-1', 50]);
   });
 });

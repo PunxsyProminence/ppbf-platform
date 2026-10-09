@@ -420,11 +420,16 @@ export async function assignDrill(params: {
 
 /**
  * Recompute assignment completion_percentage and status from the completion
+ * count. A DISPUTED completion is not counted (owner ruling 2026-10-05): a
+ * coach saying "that did not happen as logged" takes it off the work until a
+ * coach verifies it, and then it counts again. Pending and verified logs
  * count. frequency_per_week is the intended session cadence for the week; when
  * set, percentage is count / frequency capped at 100. When unset, each log is
  * worth 25% so four sessions close the loop without requiring a frequency.
  * Status advances assigned → in_progress on the first log, and to completed at
- * 100%. Cancelled assignments are left alone.
+ * 100%. A dispute that drops completed work under 100% reopens it
+ * (in_progress, or assigned when nothing counted is left). Cancelled
+ * assignments are left alone.
  */
 async function touchAssignmentProgress(
   client: { query: <T = unknown>(sql: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount: number | null }> },
@@ -449,7 +454,8 @@ async function touchAssignmentProgress(
   const countRows = await client.query<{ n: string }>(
     `select count(*)::text as n
      from pilot.assignment_completions
-     where organization_id = $1 and assignment_id = $2`,
+     where organization_id = $1 and assignment_id = $2
+       and verification_status <> 'disputed'`,
     [organizationId, assignmentId],
   );
   const count = Number(countRows.rows[0]?.n ?? 0);
@@ -466,6 +472,8 @@ async function touchAssignmentProgress(
     nextStatus = 'completed';
   } else if (count > 0 && assignment.status === 'assigned') {
     nextStatus = 'in_progress';
+  } else if (assignment.status === 'completed') {
+    nextStatus = count > 0 ? 'in_progress' : 'assigned';
   }
 
   await client.query(
@@ -602,14 +610,24 @@ export async function verifyCompletion(
   const now = new Date().toISOString();
   const status = verified ? 'verified' : 'disputed';
 
-  const result = await query<AssignmentCompletion>(
-    `update pilot.assignment_completions
-     set verification_status = $1, verified_by_account_id = $2, verified_at = $3
-     where completion_id = $4 and organization_id = $5
-     returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
-    [status, verifiedByAccountId, now, completionId, organizationId],
-  );
-  return result[0] ?? null;
+  // The flip and the assignment's progress commit together: a dispute takes
+  // the log off the work's count, and a later verify puts it back
+  // (touchAssignmentProgress). No lock cycle: no other writer holds the
+  // assignment lock while waiting on an existing completion row.
+  return withTransaction(async (client) => {
+    const result = await client.query<AssignmentCompletion>(
+      `update pilot.assignment_completions
+       set verification_status = $1, verified_by_account_id = $2, verified_at = $3
+       where completion_id = $4 and organization_id = $5
+       returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
+      [status, verifiedByAccountId, now, completionId, organizationId],
+    );
+    const row = result.rows[0] ?? null;
+    if (row) {
+      await touchAssignmentProgress(client, organizationId, row.assignment_id);
+    }
+    return row;
+  });
 }
 
 /**

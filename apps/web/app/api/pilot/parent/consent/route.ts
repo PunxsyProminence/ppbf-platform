@@ -7,8 +7,10 @@ import {
   listConsentForGuardian,
   resolveActingParent,
   withdrawMediaConsent,
+  type GuardianConsentStatus,
   type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
+import { normalizeWaiverStatusText } from '@/src/server/pilot/waiverCompliance';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
@@ -195,19 +197,41 @@ export async function GET(request: NextRequest) {
         consent_ok: consent.ok,
         guardian_count: consent.guardianIds.length,
         missing_guardian_count: consent.missingParentIds.length,
-        per_guardian: consent.perGuardian.map((g) => ({
-          parent_id: g.parentId,
-          you: ownParentIds.has(g.parentId),
-          status: g.status,
-          covers_video: g.coversVideo,
-          public_use_allowed: g.publicUseAllowed,
-          signed_at: g.signedAt,
-        })),
+        // Owner ruling, Jason 2026-10-05 ("Go with all reco,endations"): a
+        // co-guardian sees the other guardian's consent STATUS only -- not
+        // their record id, signed date or scope flags. The caller's own rows
+        // keep full detail.
+        per_guardian: consent.perGuardian.map((g) =>
+          ownParentIds.has(g.parentId)
+            ? {
+                parent_id: g.parentId,
+                you: true,
+                status: g.status,
+                covers_video: g.coversVideo,
+                public_use_allowed: g.publicUseAllowed,
+                signed_at: g.signedAt,
+              }
+            : { you: false, status: coGuardianStatus(g) },
+        ),
       })),
     });
   } catch (error) {
     return jsonError(error);
   }
+}
+
+type CoGuardianStatus = 'granted' | 'photo_only' | 'declined' | 'withdrawn' | 'not_on_file';
+
+// Status as the consent gate reads it (normalised the way guardianConsent
+// compares it): signed without video is photo-only. The stored values are
+// signed/declined/withdrawn/missing (pilot_waivers_status_check); missing or
+// anything unrecognised reads as nothing on file, never as a decision the
+// other guardian did not make.
+function coGuardianStatus(g: GuardianConsentStatus): CoGuardianStatus {
+  const status = normalizeWaiverStatusText(g.status);
+  if (status === 'signed') return g.coversVideo === false ? 'photo_only' : 'granted';
+  if (status === 'declined' || status === 'withdrawn') return status;
+  return 'not_on_file';
 }
 
 type ConsentDecision = 'grant' | 'withdraw';

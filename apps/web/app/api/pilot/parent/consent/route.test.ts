@@ -177,9 +177,59 @@ describe('GET /api/pilot/parent/consent', () => {
     const body = await response.json();
 
     expect(body.items[0].per_guardian).toEqual([
-      expect.objectContaining({ parent_id: 'p2', you: false }),
+      { you: false, status: 'not_on_file' },
       expect.objectContaining({ parent_id: 'p3', you: true }),
     ]);
+  });
+
+  // Owner ruling, Jason 2026-10-05 ("Go with all reco,endations"): a
+  // co-guardian of the same child sees the other guardian's media-consent
+  // STATUS only -- no record id, no signed date, no scope flags.
+  test("a co-guardian's row carries consent status only, never their id, date or scope flags", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockCallerParentIdSet.mockResolvedValueOnce(new Set(['p1']));
+    const other = (parentId: string, status: string | null, coversVideo: boolean | null) => ({
+      parentId,
+      status,
+      coversVideo,
+      publicUseAllowed: status ? true : null,
+      signedAt: status ? '2026-08-02T00:00:00Z' : null,
+    });
+    mockList.mockResolvedValueOnce([
+      {
+        athleteId: 'ath-1',
+        consent: {
+          ok: false,
+          guardianIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'],
+          missingParentIds: ['p3', 'p4', 'p6', 'p7', 'p8'],
+          perGuardian: [
+            { parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' },
+            other('p2', ' Signed ', true),
+            other('p3', 'withdrawn', true),
+            other('p4', null, null),
+            other('p5', 'signed', false),
+            other('p6', 'declined', true),
+            other('p7', 'missing', true),
+            other('p8', 'approved', true),
+          ],
+          retained: [],
+        },
+      },
+    ]);
+
+    const body = await (await GET(request('/api/pilot/parent/consent'))).json();
+
+    expect(body.items[0].per_guardian).toEqual([
+      { parent_id: 'p1', you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' },
+      { you: false, status: 'granted' },
+      { you: false, status: 'withdrawn' },
+      { you: false, status: 'not_on_file' },
+      { you: false, status: 'photo_only' },
+      { you: false, status: 'declined' },
+      { you: false, status: 'not_on_file' },
+      { you: false, status: 'not_on_file' },
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/p[2-8]|2026-08-02/);
   });
 
   test('non-parent roles are refused', async () => {

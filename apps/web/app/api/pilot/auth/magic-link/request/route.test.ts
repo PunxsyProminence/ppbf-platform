@@ -5,10 +5,7 @@ import { POST } from './route';
 
 jest.mock('@/src/server/pilot/rateLimit', () => ({
   getClientIp: () => '203.0.113.9',
-  checkRateLimit: jest.fn(() => ({ isLimited: false })),
-  recordFailedAttempt: jest.fn(),
-  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
-  recordDurableFailedAttempt: jest.fn(async () => undefined),
+  reserveAttempts: jest.fn(async () => ({ isLimited: false })),
 }));
 
 jest.mock('@/src/server/pilot/magicLink', () => ({
@@ -21,11 +18,15 @@ jest.mock('@/src/server/pilot/magicLinkStore', () => ({
 
 import { issueMagicLink } from '@/src/server/pilot/magicLink';
 import { magicLinkDependencies } from '@/src/server/pilot/magicLinkStore';
-import {
-  checkDurableRateLimit,
-  checkRateLimit,
-  recordDurableFailedAttempt,
-} from '@/src/server/pilot/rateLimit';
+import { reserveAttempts } from '@/src/server/pilot/rateLimit';
+
+/** A reservation refused on the bucket whose key starts with `prefix`, by either store. */
+function refuseOn(prefix: string, durable: boolean) {
+  (reserveAttempts as jest.Mock).mockImplementation(async (keys: string[]) => {
+    const key = keys.find((k) => k.startsWith(prefix));
+    return key ? { isLimited: true, key, durable, delayMs: 1000 } : { isLimited: false };
+  });
+}
 
 function post(body: unknown) {
   return POST({
@@ -37,8 +38,7 @@ function post(body: unknown) {
 describe('POST /api/pilot/auth/magic-link/request', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: false });
-    (checkDurableRateLimit as jest.Mock).mockResolvedValue({ isLimited: false });
+    (reserveAttempts as jest.Mock).mockResolvedValue({ isLimited: false });
     (issueMagicLink as jest.Mock).mockResolvedValue(undefined);
     (magicLinkDependencies as jest.Mock).mockImplementation(() => ({}));
   });
@@ -121,7 +121,7 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
   });
 
   test('a rate-limited request never reaches issuance', async () => {
-    (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: true });
+    refuseOn('magic_link_email:', false);
     await post({ email: 'coach@example.com' });
     expect(issueMagicLink).not.toHaveBeenCalled();
   });
@@ -154,25 +154,23 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     // Recording only real addresses would make "no rate-limit entry" a signal
     // that the address does not exist -- the leak this route exists to close.
     await post({ email: 'nobody-at-all@example.com' });
-    expect(recordDurableFailedAttempt).toHaveBeenCalledWith(
-      expect.stringContaining('magic_link_email:nobody-at-all@example.com'),
-    );
-    expect(recordDurableFailedAttempt).toHaveBeenCalledWith(
-      expect.stringContaining('magic_link_ip:203.0.113.9'),
-    );
+    expect(reserveAttempts).toHaveBeenCalledWith([
+      'magic_link_email:nobody-at-all@example.com',
+      'magic_link_ip:203.0.113.9',
+    ]);
   });
 
   test('normalizes the address before keying the limiter', async () => {
     // Otherwise Coach@ and coach@ get independent budgets and the per-address
     // limit is trivially bypassed by varying case.
     await post({ email: '  COACH@Example.com ' });
-    expect(recordDurableFailedAttempt).toHaveBeenCalledWith('magic_link_email:coach@example.com');
+    expect(reserveAttempts).toHaveBeenCalledWith(['magic_link_email:coach@example.com', 'magic_link_ip:203.0.113.9']);
   });
 
   test('refuses a malformed address with 400, without touching the limiter', async () => {
     const response = await post({ email: 'not-an-address' });
     expect(response.status).toBe(400);
-    expect(recordDurableFailedAttempt).not.toHaveBeenCalled();
+    expect(reserveAttempts).not.toHaveBeenCalled();
   });
 
   test('refuses a missing body the same way', async () => {
@@ -180,11 +178,9 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
   });
 
   test.each([
-    ['per-address durable', () => (checkDurableRateLimit as jest.Mock)
-      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_email:') }))],
-    ['per-IP durable', () => (checkDurableRateLimit as jest.Mock)
-      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_ip:') }))],
-    ['volatile', () => (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: true })],
+    ['per-address durable', () => refuseOn('magic_link_email:', true)],
+    ['per-IP durable', () => refuseOn('magic_link_ip:', true)],
+    ['volatile', () => refuseOn('magic_link_', false)],
   ])('%s limit returns 429', async (_label, arrange) => {
     arrange();
     const response = await post({ email: 'coach@example.com' });
@@ -194,12 +190,10 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
   test('both limit axes give the identical 429 body', async () => {
     // A different message per axis tells the caller which limit they hit, and
     // a per-ADDRESS limit firing is itself a hint the address is worth probing.
-    (checkDurableRateLimit as jest.Mock)
-      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_email:') }));
+    refuseOn('magic_link_email:', true);
     const byEmail = await (await post({ email: 'coach@example.com' })).json();
 
-    (checkDurableRateLimit as jest.Mock)
-      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_ip:') }));
+    refuseOn('magic_link_ip:', true);
     const byIp = await (await post({ email: 'coach@example.com' })).json();
 
     expect(byEmail).toEqual(byIp);
@@ -230,7 +224,7 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
       expect(response.status).toBe(503);
       expect(await response.json()).toEqual({ error: 'Sign-in links are not available right now.' });
       expect(issueMagicLink).not.toHaveBeenCalled();
-      expect(recordDurableFailedAttempt).not.toHaveBeenCalled();
+      expect(reserveAttempts).not.toHaveBeenCalled();
       expect(JSON.parse(logged[0])).toEqual({
         event: 'magic_link.config_invalid',
         error_type: 'Error',

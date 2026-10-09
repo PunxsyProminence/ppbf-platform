@@ -179,21 +179,28 @@ export async function addCompetitionEntry(input: {
   ))[0] ?? null;
   if (!athlete) return null;
 
-  try {
-    const row = (await rowsOn<{ entry_id: string }>(
-      client,
-      `insert into pilot.external_competition_entries
-         (organization_id, entry_id, competition_id, athlete_id, created_by_account_id)
-       values ($1, $2, $3, $4, $5)
-       returning entry_id`,
-      [input.organizationId, randomUUID(), input.competitionId, input.athleteId, input.createdByAccountId],
-    ))[0] ?? null;
-    if (!row) throw new Error('Unable to add the entry.');
-  } catch (error) {
-    if (error instanceof Error && /pilot_external_competition_entries_unique/.test(error.message)) {
-      throw new Error('COMPETITION_DUPLICATE_ENTRY: athlete already entered in this competition');
-    }
-    throw error;
+  // RE-ENTRY (owner ruling 2026-10-05): a withdrawn athlete can be entered
+  // again. The unique key holds one row per athlete per competition, so
+  // re-entry flips that row back to 'entered' rather than adding a second.
+  // It reaches here only through the same POST as a first entry, so every
+  // safety gate has just run again under the per-athlete lock. The old
+  // result and lesson are cleared: a withdrawn entry carries no result, and
+  // the new entry has not been fought yet. An athlete still entered matches
+  // nothing in the update and stays a duplicate.
+  const row = (await rowsOn<{ entry_id: string }>(
+    client,
+    `insert into pilot.external_competition_entries
+       (organization_id, entry_id, competition_id, athlete_id, created_by_account_id)
+     values ($1, $2, $3, $4, $5)
+     on conflict (organization_id, competition_id, athlete_id) do update
+       set status = 'entered', result = null, lesson_note = '',
+           created_by_account_id = excluded.created_by_account_id, updated_at = now()
+       where pilot.external_competition_entries.status = 'withdrawn'
+     returning entry_id`,
+    [input.organizationId, randomUUID(), input.competitionId, input.athleteId, input.createdByAccountId],
+  ))[0] ?? null;
+  if (!row) {
+    throw new Error('COMPETITION_DUPLICATE_ENTRY: athlete already entered in this competition');
   }
 
   const listed = await listCompetitionEntries(input.organizationId, input.competitionId, client);
@@ -231,7 +238,8 @@ export async function recordEntryResult(input: {
 /** Withdraws an entered athlete from a competition. Only an entered entry
  * can withdraw -- an already-withdrawn entry reads as not-found, same as a
  * result write refuses a withdrawn entry. There is no path back from
- * withdrawn here; re-entering is a fresh entry via addCompetitionEntry. */
+ * withdrawn here; re-entering goes back through addCompetitionEntry, which
+ * reopens this same row after the safety gates pass again. */
 export async function withdrawCompetitionEntry(input: {
   organizationId: string;
   entryId: string;
