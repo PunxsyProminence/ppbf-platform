@@ -8,6 +8,7 @@ import {
   buildGapJustifications,
   deriveSuggestions,
   familyGapDescription,
+  familyGapJustifications,
   READINESS_DROP_POINTS,
   READINESS_MIN_CHECKINS_PER_HALF,
   RULE_JUSTIFICATION_FIELDS,
@@ -627,5 +628,26 @@ describe('familyGapDescription', () => {
       detected_from,
       detection_data: { ratio: 2.4, ratio_shown: '2.4' },
     })).toBe('stored coach text');
+  });
+});
+
+describe('familyGapJustifications', () => {
+  test('each justified gap becomes one plain sentence; the rule and the fields do not travel', () => {
+    const items = familyGapJustifications([
+      { gap_id: 'g-r', rule: 'readiness_falling', fields: { avg_readiness: 6.1, readiness_late_avg: 5.5 } },
+      { gap_id: 'g-t', rule: 'training_days_dropping', fields: { training_days: 10 } },
+    ]);
+    expect(items).toEqual([
+      { gap_id: 'g-r', explanation: 'Your check-ins have been lower lately than they were earlier in the month. Your coach is keeping an eye on it.' },
+      { gap_id: 'g-t', explanation: 'You have trained on fewer days lately than you did earlier in the month. Your coach is keeping an eye on it.' },
+    ]);
+    const text = JSON.stringify(items);
+    expect(text).not.toContain('rule');
+    expect(text).not.toContain('fields');
+    expect(text).not.toContain('6.1');
+  });
+
+  test('a rule with no family sentence is dropped rather than named', () => {
+    expect(familyGapJustifications([{ gap_id: 'g-6', rule: 'load_jumped', fields: {} }])).toEqual([]);
   });
 });

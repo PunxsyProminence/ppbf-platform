@@ -9,6 +9,7 @@ import {
 } from '@/src/server/pilot/http';
 import {
   listHumanReviews,
+  loadHumanReviewExchange,
   type ShadowReviewStatus,
   updateHumanReview,
 } from '@/src/server/pilot/shadowConversations';
@@ -29,6 +30,25 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SHADOW_REVIEW_QUEUE_ROLES]);
+
+    // ?reviewId=<uuid>: the one exchange behind that ticket, and nothing else
+    // from the chat (OD-2026-10-07-009 question card 2 item 4, "That one
+    // exchange"). The read is recorded against the caller in
+    // pilot.audit_events before the words are returned. The ticket is the
+    // only handle: there is no message or conversation parameter, and a
+    // ticket outside the caller's organization is a 404 that says nothing.
+    const reviewId = request.nextUrl.searchParams.get('reviewId');
+    if (reviewId !== null) {
+      if (!isUuid(reviewId)) return hiddenNotFound();
+      const exchange = await loadHumanReviewExchange({
+        organizationId: principal.organizationId,
+        reviewId,
+        reader: { accountId: principal.accountId, role: principal.role },
+      });
+      if (!exchange) return hiddenNotFound();
+      return NextResponse.json({ success: true, exchange });
+    }
+
     const rawStatus = request.nextUrl.searchParams.get('status') ?? 'open';
     if (!REVIEW_STATUSES.has(rawStatus as ShadowReviewStatus)) {
       return NextResponse.json({ error: 'Unsupported review status' }, { status: 400 });

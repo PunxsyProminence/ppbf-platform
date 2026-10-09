@@ -126,7 +126,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
           perGuardian: [{ parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
           retained: [],
         },
-        guardians: [{ parentId: 'p1', fullName: 'Dana Reyes' }],
+        guardians: [{ parentId: 'p1', fullName: 'Dana Reyes', hasLogin: true }],
       },
     ]);
 
@@ -148,6 +148,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
             {
               parent_id: 'p1',
               parent_name: 'Dana Reyes',
+              has_login: true,
               status: 'signed',
               consented: true,
               covers_video: true,
@@ -158,6 +159,36 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
         },
       ],
     });
+  });
+
+  // A guardian recorded from paper alone (OD-2026-10-07-009) has no login.
+  // The desk must say so: nothing can be emailed to this guardian, and they
+  // will never see the parent console. A guardian the lookup cannot resolve
+  // at all is reported the same way -- never as one who can be reached.
+  test('a paper-only guardian is reported as has_login false, and so is an unresolved one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    const row = { status: null, coversVideo: null, publicUseAllowed: null, signedAt: null };
+    mockList.mockResolvedValueOnce([
+      {
+        athleteId: 'ath-1',
+        athleteName: 'Sample Athlete',
+        consent: {
+          ok: false,
+          guardianIds: ['paper', 'ghost'],
+          missingParentIds: ['paper', 'ghost'],
+          perGuardian: [{ parentId: 'paper', ...row }, { parentId: 'ghost', ...row }],
+          retained: [],
+        },
+        guardians: [{ parentId: 'paper', fullName: 'Lee Paper', hasLogin: false }],
+      },
+    ]);
+
+    const payload = await (await GET(request())).json();
+
+    expect(payload.items[0].per_guardian).toEqual([
+      expect.objectContaining({ parent_id: 'paper', parent_name: 'Lee Paper', has_login: false }),
+      expect.objectContaining({ parent_id: 'ghost', parent_name: 'ghost', has_login: false }),
+    ]);
   });
 
   test('a coach reaches the audit -- they record consent from it, so they must be able to read it', async () => {

@@ -232,25 +232,30 @@ const NO_SESSION_GATE_ALLOWLIST = new Map<string, string>([
     'What the paired gym television shows, so there is no session by '
       + 'construction: the client is the TV, which never signs in. The '
       + 'credential is the device key in the httpOnly cookie that tv/pair set, '
-      + 'resolved by hash in gymTvs.ts readGymTvSession, where a disconnected '
+      + 'resolved by hash in gymTvs.ts readGymTvScreen, where a disconnected '
       + 'TV answers exactly like an unknown key (401). The key opens only this '
-      + 'read, and the read is a fixed allowlist (GYM_TV_SESSION_FIELDS / '
-      + 'GYM_TV_BLOCK_FIELDS): the plan blocks, times and drill names of the '
-      + 'one live session a coach sent to that TV, with no person field (no '
-      + 'coach notes, no names, no account ids, no athlete data); the pg suite '
-      + 'asserts the whole serialized body. Budgeted per address and per key on '
-      + 'fixed windows (consumeGymTvReadBudget), sized for several TVs polling.',
+      + 'read. The read is two things: the session, a fixed allowlist '
+      + '(GYM_TV_SESSION_FIELDS / GYM_TV_BLOCK_FIELDS) of the plan blocks, '
+      + 'times and drill names of the one live session a coach sent to that '
+      + 'TV, with no person field; and the wall board WITH people on it '
+      + '(initials or more per the name mode and consent gate in '
+      + 'wallDisplay.ts, milestone crossings, everywhere notices), which '
+      + 'OD-2026-10-07-008 confines to a paired TV and which is served here '
+      + 'and nowhere else, for the paired row\'s organization only. Budgeted '
+      + 'per address and per key on fixed windows (consumeGymTvReadBudget).',
   ],
   [
     'app/api/pilot/wall/route.ts#GET',
     'Unauthenticated by product decision: the client is a browser on the gym\'s '
       + 'television that nobody signs into, and a 24-hour session token would '
-      + 'take the screen dark every morning. So the payload is built to be safe '
-      + 'as a PUBLIC document rather than trusted to stay behind a wall -- '
-      + 'organization_id fixed to the default org, athlete names resolved to '
-      + 'initials by wallDisplay.ts, athlete_id replaced by an opaque hash so '
-      + 'it cannot be scraped for a roster, and nothing medical, injury-related '
-      + 'or disciplinary read at all. Budgeted per IP.',
+      + 'take the screen dark every morning. So the payload is a PUBLIC '
+      + 'document: OD-2026-10-07-008 (Paired gym TV only) limits it to today\'s '
+      + 'classes and a head count (WallPublicBoard, loadPublicWallBoard) -- no '
+      + 'name at any visibility, no initials, no milestone, no athlete key, '
+      + 'notices from gym_notices only; organization_id fixed to the default '
+      + 'org; nothing medical, injury-related or disciplinary read at all. The '
+      + 'board with people on it is served only to a paired TV through '
+      + '/api/pilot/tv/session. Budgeted per IP.',
   ],
   [
     'app/api/public/store/route.ts#GET',

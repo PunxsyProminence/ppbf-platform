@@ -2619,3 +2619,61 @@ describe('drill assignment warns on an active training hold and does not block',
     expect(screen.queryByText(/Drill assigned\. This athlete has an active training hold/)).toBeNull();
   });
 });
+
+describe('"Why?" on a gap card (staff shape of gap-justification)', () => {
+  function mockFetchWithJustification(items: Array<Record<string, unknown>> | 'refuse', asked: string[]) {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/progression/gap-justification')) {
+        asked.push(url);
+        if (items === 'refuse') return { ok: false, status: 403, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      if (url.includes('/api/pilot/training-holds')) {
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  test('nothing is read until the coach asks; then the rule and its fields show under the gap', async () => {
+    const asked: string[] = [];
+    await renderWithAthlete(mockFetchWithJustification([
+      { gap_id: 'gap-1', rule: 'readiness_falling', fields: { avg_readiness: 6.1, readiness_late_avg: 5.5 } },
+    ], asked));
+    expect(asked).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    });
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('athlete_id=athlete-001');
+    const why = await screen.findByTestId('gap-why-gap-1');
+    expect(within(why).getByText('Rule: Readiness falling')).toBeTruthy();
+    expect(within(why).getByText('Average readiness: 6.1')).toBeTruthy();
+    expect(within(why).getByText('Readiness, late window: 5.5')).toBeTruthy();
+  });
+
+  test('a gap a coach filed by observation says so instead of showing nothing', async () => {
+    await renderWithAthlete(mockFetchWithJustification([], []));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    });
+    const why = await screen.findByTestId('gap-why-gap-1');
+    expect(within(why).getByText(/filed this gap by observation/)).toBeTruthy();
+  });
+
+  test('a refused read is reported as unreadable, never as "no reasons"', async () => {
+    await renderWithAthlete(mockFetchWithJustification('refuse', []));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    });
+    const why = await screen.findByTestId('gap-why-gap-1');
+    expect(within(why).getByText(/could not be read/)).toBeTruthy();
+    expect(within(why).queryByText(/by observation/)).toBeNull();
+  });
+});

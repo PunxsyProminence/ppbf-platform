@@ -390,6 +390,32 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/accounts/deactivate/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/accounts/deactivate",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer + not self + same organization",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Owner ruling OD-2026-10-07-009: an organization admin deactivates/reactivates a coach, staff or volunteer in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, athlete, parent, board and the caller's own account are refused (403), an unknown account 404. setAccountActiveStatus revokes the target's sessions; audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/admin/accounts/revoke/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/accounts/revoke",
@@ -5125,6 +5151,90 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": false,
+    "notes": "Lists a minor's return-to-training plans with their steps and the current step for athlete_id (return-to-training/route.ts GET); assertStanding runs on the athlete first. SHADOW_PHI_ROLES = coach, organization_admin, admin (shadowRoleSets.ts:48-52). Lane P8.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Actions: create_plan (on an injury: injuryWithStanding on the injury's own athlete, refusal collapsed to 404, then links the injury to the plan), add_step (assertStanding on athlete_id, then the plan must be in that athlete's list or it is a 404). Writes plan and step rows (health) and audits each.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Advances the current step of a plan as the signed-in coach's recorded decision with a note (not a medical clearance): assertStanding on athlete_id, plan must be in that athlete's list, step must be the earliest not yet advanced. Audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/coach/intelligence/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/intelligence",
@@ -5904,7 +6014,7 @@
     "id": "app/api/pilot/compliance/violations/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/compliance/violations",
-    "gate": "requirePrincipal + requireRole(organization_admin, admin, coach) + assertActorCanAccessAthlete when athlete_id given; coach without athlete_id filtered inline in SQL by athletes.coach_id",
+    "gate": "requirePrincipal + requireRole(organization_admin, admin, coach) + assertActorCanAccessAthlete when athlete_id given; coach without athlete_id scoped to athleteIdsForCoach",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -5914,16 +6024,17 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach list without athlete_id is scoped by athletes.coach_id = account (compliance.ts:559-565), i.e. assigned athletes only, not live coverage, so a covering coach sees a narrower set than assertActorCanAccessAthlete would allow (narrower, not wider).",
-    "confidence": "medium",
-    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; coach scoping is an inline SQL filter rather than the central helper.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists compliance violations (each names an athlete). Role gate route.ts:42; per-athlete gate route.ts:52; a coach's unfiltered list is the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1), passed to getOrganizationViolations as athleteIds.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -7896,7 +8007,7 @@
     "id": "app/api/pilot/passbook/gaps/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/passbook/gaps",
-    "gate": "requirePrincipal + requireRole + inline coach scope by accountId",
+    "gate": "requirePrincipal + requireRole + athleteIdsForCoach for a coach (null scope for an organization admin)",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -7906,15 +8017,16 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach scope is inline SQL on athletes.coach_id = own account (passbook.ts:~766), not a named coach-reach helper, so live coverage athletes are not included (stricter, not wider).",
-    "confidence": "medium",
-    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach only own athletes via SQL filter in getCoachPassbookGapQueue.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Progression-gap queue with athlete names; gate passbook/gaps/route.ts:12-13; org admin sees all (null scope), coach sees the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage), passed as an id list to getCoachPassbookGapQueue (lane P1, OD-2026-10-05-024 item 2).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -8624,7 +8736,7 @@
     "id": "app/api/pilot/profile/roster/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/profile/roster",
-    "gate": "requirePrincipal + requireRole([coach,organization_admin,admin]) + inline isOrganizationAdminRole for scope=organization",
+    "gate": "requirePrincipal + requireRole([coach,organization_admin,admin]) + athleteIdsForCoach for the coach list + inline isOrganizationAdminRole for scope=organization",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -8634,15 +8746,16 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach reach is an inline SQL filter a.coach_id = principal.accountId (route.ts:49), not assertCoachAssignedToAthlete, so a coach with a live coverage grant does not see covered athletes here (narrower than the rule, not wider).",
-    "confidence": "medium",
-    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the caller own athletes, or the whole gym when scope=organization and caller is org admin (route.ts:25-31, 33-53). dob is selected but only feeds the portrait decision.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Roster of athlete id, account id, full name, ring name, corner, photo availability for the athletes the caller reaches (athleteIdsForCoach: coach of record UNION active coverage, lane P1), or the whole gym when scope=organization and caller is org admin. dob is selected but only feeds the portrait decision; is_mine and coach_of_subject stay coach-of-record.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
-        "requireRole"
+        "requireRole",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -8838,9 +8951,9 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Unlike gaps GET (route.ts:25-30), this route does not soften wording for athlete/parent readers; confirm getGapJustifications output is family-safe.",
-    "confidence": "medium",
-    "notes": "Gap justification text built from detection sources for athlete_id (route.ts:13-25); reach check at route.ts:22.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Gap justification for athlete_id: staff get the rule and its rollup fields; athlete and parent get one plain sentence per gap (familyGapJustifications, OD-2026-10-08-003 R4, lane P1). Reach check at route.ts:38.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11440,12 +11553,12 @@
       "admin"
     ],
     "athleteData": true,
-    "writes": false,
+    "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "reviews/route.ts:30-31 gate; listHumanReviews (shadowConversations.ts:1152) returns shadow_human_review_queue rows (conversation_id, account_id, category, severity, summary) for the org. Per-account chat safety/filter escalations. Coach not admitted.",
+    "notes": "reviews/route.ts:30-31 gate; listHumanReviews (shadowConversations.ts) returns shadow_human_review_queue rows (conversation_id, account_id, category, severity, summary) for the org. Per-account chat safety/filter escalations. Coach not admitted. ?reviewId=<uuid> (W5, OD-2026-10-07-009 card 2 item 4): loadHumanReviewExchange returns the one flagged user message + assistant reply behind that ticket, bounded by the ticket's org and conversation, and WRITES an audit_events row 'shadow_review_exchange_read' (who read whose) on the same transaction -- a member's (often a minor's) words, no neighbours, no transcript.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12210,15 +12323,15 @@
     "id": "app/api/pilot/tv/session/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/tv/session",
-    "gate": "none by construction (the TV has no session); the device key in the httpOnly cookie ppbf_gym_tv is the credential, resolved by hash in readGymTvSession, behind a fixed-window per-IP budget (consumeGymTvReadBudget)",
+    "gate": "none by construction (the TV has no session); the device key in the httpOnly cookie ppbf_gym_tv is the credential, resolved by hash in readGymTvScreen, behind a fixed-window per-IP budget (consumeGymTvReadBudget)",
     "rolesAdmitted": [],
-    "athleteData": false,
+    "athleteData": true,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": true,
-    "looksWrong": "Unauthenticated by design: a television cannot sign in. The credential is the device key the TV received at pairing, which opens only this read. The payload is a fixed allowlist (GYM_TV_SESSION_FIELDS, GYM_TV_BLOCK_FIELDS in gymTvs.ts) with no person field: no coach notes, no names, no account ids and no athlete data (free text staff typed into a script name, block label, drill name or TV name is shown as written); the pg suite asserts the whole serialized body. By the literal definition it has no session gate.",
+    "looksWrong": "Unauthenticated by design: a television cannot sign in. The credential is the device key the TV received at pairing, which opens only this read. The session part is a fixed allowlist (GYM_TV_SESSION_FIELDS, GYM_TV_BLOCK_FIELDS in gymTvs.ts) with no person field; the pg suite asserts that body. The board part (added for OD-2026-10-07-008, Paired gym TV only) is the wall board with people on it: initials or more per the name mode and consent gate, milestone crossings, everywhere notices -- confined to a paired TV by that ruling and served here and nowhere else, for the paired row's organization. By the literal definition it has no session gate.",
     "confidence": "high",
-    "notes": "Gym TV (S2b). What the paired TV shows: the one live, show_on_wall session a coach sent to it (plan blocks with times and drill names, current and next block, server clock), or session: null when nothing is on it. 401 for no, unknown or disconnected key (cookie left alone; pairing overwrites it). writes: each keyed read touches last_seen_at and re-sets the cookie's Max-Age (the 'until disconnected' slide). Budgeted per address and per key. No athlete data.",
+    "notes": "Gym TV (S2b + W1). What the paired TV shows: the one live, show_on_wall session a coach sent to it (plan blocks with times and drill names, current and next block, server clock), or session: null when nothing is on it; plus board, the full wall board (loadWallBoard, org from the paired TV row). 401 for no, unknown or disconnected key (cookie left alone; pairing overwrites it); no board on a 401. writes: each keyed read touches last_seen_at and re-sets the cookie's Max-Age (the 'until disconnected' slide). Budgeted per address and per key.",
     "mechanical": {
       "sessionGates": [],
       "authorizationGates": [],
@@ -12514,7 +12627,7 @@
     "id": "app/api/pilot/video/list/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/video/list",
-    "gate": "requirePrincipal + requireRole + per-role branches (assertActorCanAccessAthlete for parent and coach-with-athlete_id) + isOrganizationAdminRole for scope=all",
+    "gate": "requirePrincipal + requireRole + per-role branches (assertActorCanAccessAthlete for parent and coach-with-athlete_id; athleteIdsForCoach for coach without athlete_id) + isOrganizationAdminRole for scope=all",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
@@ -12526,16 +12639,17 @@
     "writes": false,
     "coachReachRule": "applied",
     "missingGate": false,
-    "looksWrong": "Coach list without athlete_id uses roster SQL (pilot.athletes.coach_id = caller) rather than assertActorCanAccessAthlete, so live-coverage athletes are not included and every athlete-less (unassigned) clip in the gym is listed to any coach.",
+    "looksWrong": "Every athlete-less (unassigned) clip in the gym is listed to any coach; owner-confirmed breadth (2026-08-08), see the route comment.",
     "confidence": "high",
-    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
+    "notes": "Lists video_session metadata rows (title, notes, file name, scan state, athlete_id); athlete and parent callers get the family shape (videoFamilyView.ts: no notes, no uploaded_by_account_id). requireRole at route.ts ~L121 (organization_admin/admin/coach/athlete/parent). Athlete sees own only (principal.athleteId); parent needs athlete_id + assertActorCanAccessAthlete; coach with athlete_id uses assertActorCanAccessAthlete; coach without athlete_id lists unassigned footage plus the athletes they reach (athleteIdsForCoach: coach of record UNION active coverage, lane P1); admin lists all org rows; scope=all refused to non-admins. Intentionally has no guardian-consent gate (comment block at top, metadata only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete"
+        "assertActorCanAccessAthlete",
+        "athleteIdsForCoach"
       ],
       "roleLiterals": []
     }
@@ -12651,15 +12765,15 @@
     "id": "app/api/pilot/wall/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/wall",
-    "gate": "none (IP rate limit consumeWallBudget only)",
+    "gate": "none (IP rate limit consumeWallBudget only); payload is the public shape WallPublicBoard",
     "rolesAdmitted": [],
-    "athleteData": true,
+    "athleteData": false,
     "writes": false,
     "coachReachRule": "n/a",
     "missingGate": true,
-    "looksWrong": "Unauthenticated by design wall-display endpoint; it serves athlete-derived data (check-ins, session-milestone crossings) with names reduced by the same wall name gate. By the literal definition it has no session gate or credential.",
-    "confidence": "medium",
-    "notes": "Public wall display: loadWallBoard (wallDisplayDb.ts) for getPilotDefaultOrganizationId(), classes, attendance, crossings, announcements; names via resolveWallNameMode (default initials). Only protection is per-IP rate limit (route.ts L14). Treated as public by design, flagged because it exposes athlete-linked data.",
+    "looksWrong": "Unauthenticated by design wall-display endpoint for an UNPAIRED television. By the literal definition it has no session gate or credential. Since OD-2026-10-07-008 (Paired gym TV only) it serves today's classes and a head count only: no names at any visibility, no initials, no milestones, no athlete key; notices from gym_notices only.",
+    "confidence": "high",
+    "notes": "Public wall display: loadPublicWallBoard (wallDisplayDb.ts) for getPilotDefaultOrganizationId(); reads scheduler_classes, count(distinct athlete_id) from scheduler_attendance, gym_notices announcements. Never pilot.athletes/waivers/sessions (wallDisplayPrivacy.test.ts pins the function text). The board with people on it is served only to a paired TV via /api/pilot/tv/session. Per-IP rate limit only.",
     "mechanical": {
       "sessionGates": [],
       "authorizationGates": [],

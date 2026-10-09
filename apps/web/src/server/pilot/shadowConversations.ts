@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
+import { writePilotAuditEvent } from './audit';
+import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
+import { isMinor } from './wallDisplay';
 
 export type ShadowConversationSessionType =
   | 'quick_round'
@@ -1167,6 +1170,190 @@ export async function listHumanReviews(
      limit 200`,
     [organizationId, status],
   );
+}
+
+export type ShadowReviewSubjectAgeBand = 'under_18' | 'adult' | 'age_not_on_record';
+
+export interface ShadowReviewExchangeMessage {
+  messageId: string;
+  content: string;
+  createdAt: string;
+}
+
+/**
+ * What a reviewer may read behind one human-review ticket: the single flagged
+ * question and answer, labelled with who asked, and nothing else from the chat
+ * (OD-2026-10-07-009 question card 2 item 4, Jason: "That one exchange").
+ *
+ * `recorded: false` is the honest answer for a ticket that cannot name its
+ * exchange: a ticket written when the request was throttled, queued or met by
+ * an unready runtime stores no message; a ticket written before the async job
+ * processor recorded its message id has none; and a conversation purged under
+ * retention leaves the ticket but not the rows.
+ */
+export type ShadowReviewExchange =
+  | {
+      recorded: true;
+      subject: { accountId: string; role: string | null; ageBand: ShadowReviewSubjectAgeBand };
+      userMessage: ShadowReviewExchangeMessage | null;
+      assistantMessage: ShadowReviewExchangeMessage & { responseState: ShadowStoredResponseState | null };
+    }
+  | { recorded: false; reason: 'no_message_on_ticket' | 'messages_not_found' };
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Reads the one exchange a ticket points at, and records the read.
+ *
+ * BOUNDED BY CONSTRUCTION. Every row this touches is reached through the
+ * ticket: the ticket's own organization and conversation bound the assistant
+ * message, which is the one id the ticket's metadata names; the user message
+ * is the single latest 'user' row in that same conversation at or before it.
+ * A caller cannot supply a message id, a conversation id, or an offset. The
+ * neighbours of the exchange, and the rest of the conversation, are not
+ * selected by any statement here -- shadowConversations.test.ts widens these
+ * predicates and watches the suite go red.
+ *
+ * THE AUDIT ROW IS ON THE SAME TRANSACTION as the reads: a read that happened
+ * is recorded, and a read whose record could not be written did not happen
+ * (the transaction rolls back and the caller gets the error, not the words).
+ * The row is a plain pilot.audit_events entry and is not mirrored into the
+ * SHADOW event or telemetry streams: who read a member's words belongs in the
+ * audit table and nowhere that fans out.
+ *
+ * Returns null when the ticket is not this organization's (the route answers
+ * 404 and says nothing about whether it exists elsewhere).
+ */
+export async function loadHumanReviewExchange(input: {
+  organizationId: string;
+  reviewId: string;
+  reader: { accountId: string; role: PilotRole };
+}): Promise<ShadowReviewExchange | null> {
+  if (!input.organizationId.trim() || !input.reader.accountId.trim()) {
+    throw new Error('Forbidden: SHADOW review requires an organization-scoped account');
+  }
+  return withTransaction(async (client) => {
+    const ticket = await client.query<{
+      review_id: string;
+      conversation_id: string | null;
+      account_id: string;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `select review_id, conversation_id, account_id, metadata
+       from pilot.shadow_human_review_queue
+       where review_id = $1 and organization_id = $2`,
+      [input.reviewId, input.organizationId],
+    );
+    const row = ticket.rows[0];
+    if (!row) return null;
+
+    const namedMessageId = row.metadata?.assistantMessageId;
+    if (!row.conversation_id || typeof namedMessageId !== 'string' || !UUID_SHAPE.test(namedMessageId)) {
+      return { recorded: false, reason: 'no_message_on_ticket' };
+    }
+
+    const assistant = await client.query<{
+      message_id: string;
+      content: string;
+      response_state: ShadowStoredResponseState | null;
+      created_at: Date;
+    }>(
+      `select message_id, content, response_state, created_at
+       from pilot.shadow_chat_messages
+       where message_id = $1
+         and conversation_id = $2
+         and organization_id = $3
+         and role = 'assistant'`,
+      [namedMessageId, row.conversation_id, input.organizationId],
+    );
+    const assistantRow = assistant.rows[0];
+    if (!assistantRow) {
+      return { recorded: false, reason: 'messages_not_found' };
+    }
+
+    // The question that drew this answer: appendConversationExchange writes
+    // the pair in one statement with the user row one microsecond earlier;
+    // the async path appends the user message first. Either way it is the
+    // latest 'user' row at or before the answer, and only that one.
+    //
+    // THE CUTOFF IS COMPARED IN SQL, against the assistant row's own
+    // created_at, never against the value node-postgres handed back: a JS
+    // Date keeps milliseconds and drops microseconds (db.ts keeps only DATE
+    // as text), so a round-tripped cutoff is up to 999µs EARLY and the paired
+    // user row, one microsecond before the answer, falls outside it in all
+    // but ~0.2% of exchanges -- the previous question would have been shown
+    // as if it drew this answer (found in review before this shipped).
+    const user = await client.query<{ message_id: string; content: string; created_at: Date }>(
+      `select u.message_id, u.content, u.created_at
+       from pilot.shadow_chat_messages u
+       where u.conversation_id = $1
+         and u.organization_id = $2
+         and u.role = 'user'
+         and u.created_at <= (
+           select a.created_at
+           from pilot.shadow_chat_messages a
+           where a.message_id = $3
+             and a.conversation_id = $1
+             and a.organization_id = $2
+         )
+       order by u.created_at desc
+       limit 1`,
+      [row.conversation_id, input.organizationId, assistantRow.message_id],
+    );
+    const userRow = user.rows[0] ?? null;
+
+    // Who asked: the account's role, and whether the athlete record behind
+    // it says under 18. No name -- the ticket already shows the account id,
+    // and the reviewer acts on the person in the room, not on a profile.
+    // A missing date of birth is reported as missing, not read as adult
+    // (wallDisplay.ts isMinor: unknown age is treated as a minor). The age is
+    // the age WHEN THE MESSAGE WAS SENT, not at the time of reading: a
+    // 17-year-old's words read after their birthday are still a minor's.
+    const subject = await client.query<{ role: string; dob: string | null }>(
+      `select a.role, to_char(ath.dob, 'YYYY-MM-DD') as dob
+       from pilot.accounts a
+       left join pilot.athletes ath
+         on ath.organization_id = a.organization_id
+        and ath.athlete_id = a.athlete_id
+       where a.account_id = $1 and a.organization_id = $2`,
+      [row.account_id, input.organizationId],
+    );
+    const subjectRow = subject.rows[0];
+    const ageBand: ShadowReviewSubjectAgeBand = subjectRow?.dob
+      ? (isMinor(subjectRow.dob, assistantRow.created_at) ? 'under_18' : 'adult')
+      : 'age_not_on_record';
+
+    await writePilotAuditEvent({
+      event_type: 'shadow_review_exchange_read',
+      actor_account_id: input.reader.accountId,
+      actor_role: input.reader.role,
+      organization_id: input.organizationId,
+      entity_type: 'shadow_human_review',
+      entity_id: row.review_id,
+      details: {
+        subjectAccountId: row.account_id,
+        subjectAgeBand: ageBand,
+        conversationId: row.conversation_id,
+        assistantMessageId: assistantRow.message_id,
+        userMessageId: userRow?.message_id ?? null,
+      },
+      shadow_mirror: false,
+    }, client);
+
+    return {
+      recorded: true,
+      subject: { accountId: row.account_id, role: subjectRow?.role ?? null, ageBand },
+      userMessage: userRow
+        ? { messageId: userRow.message_id, content: userRow.content, createdAt: userRow.created_at.toISOString() }
+        : null,
+      assistantMessage: {
+        messageId: assistantRow.message_id,
+        content: assistantRow.content,
+        createdAt: assistantRow.created_at.toISOString(),
+        responseState: assistantRow.response_state,
+      },
+    };
+  });
 }
 
 export async function updateHumanReview(input: {

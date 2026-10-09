@@ -725,7 +725,7 @@ describe('guardian link provisioning', () => {
 });
 
 function unlinkClient(options: {
-  parentRows?: Array<{ parent_id: string }>;
+  parentRows?: Array<{ parent_id: string; account_id?: string | null }>;
   linkRows?: Array<{ parent_id: string; athlete_id: string }>;
   // The guardian's CURRENT photo_media status for the athlete being
   // unlinked. Undefined is the default and the honest one: no consent row on
@@ -837,9 +837,79 @@ describe('removeGuardianLink', () => {
 
     await expect(
       removeGuardianLink({ organizationId: 'org-1', accountId: '  ', athleteId: 'ath-1' }),
-    ).rejects.toThrow('Missing organization_id, account_id, or athlete_id');
+    ).rejects.toThrow('Missing organization_id, athlete_id, and one of account_id or parent_id');
 
     expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  /* THE PAPER-ONLY GUARDIAN (Jason 2026-10-07, OD-2026-10-07-009). A record
+     with no login is named by parent_id. It signs in to nothing, so removing
+     its only link strands nobody and the last-link rule does not apply; the
+     withdrawn-consent refusal applies exactly as for a login. */
+  describe('by parent_id, for a guardian with no login', () => {
+    test('removes the only link a paper-only guardian holds -- nobody is stranded by it', async () => {
+      currentClient = unlinkClient({
+        parentRows: [{ parent_id: 'par-paper-1', account_id: null }],
+        linkRows: [{ parent_id: 'par-paper-1', athlete_id: 'ath-1' }],
+      });
+
+      const result = await removeGuardianLink({ organizationId: 'org-1', parentId: 'par-paper-1', athleteId: 'ath-1' });
+
+      expect(result).toEqual({ parentId: 'par-paper-1', athleteId: 'ath-1' });
+      expect(deleteCalls()).toHaveLength(1);
+      expect(deleteCalls()[0][1]).toEqual(['org-1', 'par-paper-1', 'ath-1']);
+      // Looked up by record, never by account.
+      const lookup = currentClient.query.mock.calls.find(([sql]) => String(sql).includes('from pilot.parents'));
+      expect(String(lookup?.[0])).toContain('parent_id = $2');
+      expect(lookup?.[1]).toEqual(['org-1', 'par-paper-1']);
+    });
+
+    test('refuses the parent_id form for a record that has a login -- that guardian is removed by account', async () => {
+      currentClient = unlinkClient({
+        parentRows: [{ parent_id: 'par-1', account_id: 'dana@example.com' }],
+        linkRows: [{ parent_id: 'par-1', athlete_id: 'ath-1' }, { parent_id: 'par-1', athlete_id: 'ath-2' }],
+      });
+
+      await expect(
+        removeGuardianLink({ organizationId: 'org-1', parentId: 'par-1', athleteId: 'ath-1' }),
+      ).rejects.toThrow('Forbidden: this guardian has a login');
+
+      expect(deleteCalls()).toHaveLength(0);
+    });
+
+    test('still refuses while that guardian\'s media consent stands withdrawn', async () => {
+      currentClient = unlinkClient({
+        parentRows: [{ parent_id: 'par-paper-1', account_id: null }],
+        linkRows: [{ parent_id: 'par-paper-1', athlete_id: 'ath-1' }],
+        consentStatus: 'withdrawn',
+      });
+
+      await expect(
+        removeGuardianLink({ organizationId: 'org-1', parentId: 'par-paper-1', athleteId: 'ath-1' }),
+      ).rejects.toThrow('Forbidden: this guardian has withdrawn media consent');
+
+      expect(deleteCalls()).toHaveLength(0);
+    });
+
+    test('reports a record id that exists in no guardian record', async () => {
+      currentClient = unlinkClient({ parentRows: [] });
+
+      await expect(
+        removeGuardianLink({ organizationId: 'org-1', parentId: 'par-paper-nobody', athleteId: 'ath-1' }),
+      ).rejects.toThrow('Not found: no guardian record with that id');
+
+      expect(deleteCalls()).toHaveLength(0);
+    });
+
+    test('refuses both identifiers at once, before touching the database', async () => {
+      currentClient = unlinkClient({});
+
+      await expect(
+        removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', parentId: 'par-1', athleteId: 'ath-1' }),
+      ).rejects.toThrow('Unsupported: name the guardian by account_id or by parent_id, not both');
+
+      expect(currentClient.query).not.toHaveBeenCalled();
+    });
   });
 
   /*
