@@ -313,11 +313,18 @@ async function getOperationalMetrics(organizationId: string, days: number): Prom
   };
 }
 
+// "Concerned" means a pending flag that is not praise. A human-reviewed
+// thumbs-up queues a 'promote' proposal on the same table, in the same
+// 'pending' state (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview),
+// and this list used to count it as a topic in trouble. The proposal row is
+// untouched; it is simply not a concern (OD-2026-10-08 GO-RECS-CONFIRMED,
+// O11 = A: thumbs-up counts in metrics but makes no flag).
 async function getConcernedTopics(organizationId: string): Promise<string[]> {
   const rows = await query<{ topic: string }>(
     `SELECT topic
      FROM pilot.shadow_library_review_flags
      WHERE organization_id = $1 AND review_state = 'pending'
+       AND proposed_action IS DISTINCT FROM 'promote'
      ORDER BY last_flagged_at DESC
      LIMIT 20`,
     [organizationId],

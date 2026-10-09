@@ -70,6 +70,7 @@ describe('SHADOW learning-loop trust gates', () => {
   test('records durable client feedback but only queues a human review', async () => {
     const result = await processLearningSignal({
       ...baseSignal,
+      outcome: 'thumbs_down',
       verificationState: 'durable_client',
     });
     expect(result.metricsRecorded).toBe(true);
@@ -92,6 +93,56 @@ describe('SHADOW learning-loop trust gates', () => {
       && sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id')
     )).toBe(true);
     expect(result.actions.join(' ')).toContain('no learning was promoted');
+  });
+
+  // O11 = A (GO-RECS-CONFIRMED, Jason 2026-10-08): a Library review flag comes
+  // from negative feedback only. Every outcome is tried, because the old code
+  // flagged all seven and a test that only tried thumbs_down would have passed
+  // against it.
+  describe('a durable client signal flags the Library only for negative feedback', () => {
+    const FLAG_SQL = 'review_state, flagged_at';
+    const flagWritten = () => mockQuery.mock.calls.some(([sql]) =>
+      typeof sql === 'string' && sql.includes(FLAG_SQL));
+
+    test.each([
+      ['thumbs_down', true],
+      ['escalated_to_human', true],
+      ['thumbs_up', false],
+      ['followed_advice', false],
+      ['asked_followup', false],
+      ['session_ended', false],
+      // Negative only under the aggressive_research_generation unlock, which
+      // is a human-reviewed path with an unlock state loaded; this path has
+      // neither, so it is not negative here.
+      ['ignored_advice', false],
+    ] as const)('%s -> flag written: %s', async (outcome, flagged) => {
+      const result = await processLearningSignal({
+        ...baseSignal,
+        outcome,
+        verificationState: 'durable_client',
+      });
+      // Metrics are recorded for every outcome, praise included.
+      expect(mockRecordMetrics).toHaveBeenCalledWith(expect.objectContaining({
+        feedbackId: 12,
+        verificationState: 'durable_client',
+      }));
+      expect(result.metricsRecorded).toBe(true);
+      expect(result.libraryFlagged).toBe(flagged);
+      expect(flagWritten()).toBe(flagged);
+      if (flagged) {
+        // One row per (organization, topic): a negative flag landing on a
+        // topic that holds a pending 'promote' proposal must clear it, or the
+        // metrics route's promote exclusion would hide this flag.
+        const flagSql = mockQuery.mock.calls.map(([sql]) => String(sql)).find((sql) => sql.includes(FLAG_SQL));
+        expect(flagSql).toContain('proposed_action = NULL');
+      } else {
+        expect(result.actions.join(' ')).toContain(`no Library flag for ${outcome}`);
+      }
+      // Nothing on this path promotes learning, whatever the outcome.
+      expect(result.humanReviewRequired).toBe(true);
+      expect(mockRememberFact).not.toHaveBeenCalled();
+      expect(mockResearch).not.toHaveBeenCalled();
+    });
   });
 
   test('human-reviewed feedback may update personalization but still queues library changes', async () => {
@@ -155,6 +206,20 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(trail).toContain('Library entry flagged for review');
     expect(trail).toContain('Research requirement creation failed');
     expect(trail).not.toContain('Library review flag failed');
+  });
+
+  test('a human-reviewed negative flag clears a pending promote proposal on the topic', async () => {
+    mockFeatureEnabled.mockReturnValue(false);
+    await processLearningSignal({
+      ...baseSignal,
+      outcome: 'escalated_to_human' as const,
+      verificationState: 'human_reviewed',
+    });
+    const flagSql = mockQuery.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes('latest_outcome_signal = $6'));
+    expect(flagSql).toBeDefined();
+    expect(flagSql).toContain('proposed_action = NULL');
   });
 
   // communication_style was unwritable in production: the inference required
