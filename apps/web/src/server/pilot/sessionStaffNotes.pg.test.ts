@@ -487,7 +487,12 @@ describe('sessionStaffNotes.ts against real rows', () => {
 
       const listed = await listSessionStaffNotes(ADMIN, SESSION_ID, ATHLETE_ID);
       expect(listed.map((row) => row.note_id)).toEqual([first.note_id, second.note_id, admin.note_id]);
-      expect(listed[0]).toEqual(first);
+      // The list never carries an account id; it says whether the reader wrote each note.
+      const { author_account_id: _firstAuthor, ...firstShown } = first;
+      expect(listed[0]).toEqual({ ...firstShown, written_by_me: false });
+      expect(listed.map((row) => row.written_by_me)).toEqual([false, false, true]);
+      expect(listed.some((row) => 'author_account_id' in row)).toBe(false);
+      expect((await listSessionStaffNotes(COACH, SESSION_ID, ATHLETE_ID)).map((row) => row.written_by_me)).toEqual([true, true, false]);
 
       // The athlete's own note on the session is untouched.
       const { rows } = await client.query('select notes from pilot.sessions where organization_id = $1 and session_id = $2', [ORG_ID, SESSION_ID]);
@@ -502,6 +507,9 @@ describe('sessionStaffNotes.ts against real rows', () => {
     try {
       await expect(createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: ' \n ' })).rejects.toBeInstanceOf(ValidationError);
       await expect(createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'x'.repeat(2001) })).rejects.toBeInstanceOf(ValidationError);
+      // A request body with no text (or a non-string) is a refusal, not a crash.
+      await expect(createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: undefined as unknown as string })).rejects.toBeInstanceOf(ValidationError);
+      await expect(createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 42 as unknown as string })).rejects.toBeInstanceOf(ValidationError);
       expect(await allRows(client)).toEqual([]);
       expect(await auditRows(client)).toEqual([]);
     } finally {
@@ -557,18 +565,48 @@ describe('sessionStaffNotes.ts against real rows', () => {
     }
   });
 
-  test("the UPDATE itself refuses another author: the module's SQL run as the admin against the coach's note changes nothing", async () => {
+  test("the UPDATE itself refuses another author: the admin's change and removal of the coach's note write nothing", async () => {
     const client = await migratedDatabase('notes_update_where');
     try {
       const mine = await createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'first words' });
-      // Skip the module's pre-checks and run its statement shape directly.
-      const direct = await client.query(
-        `update pilot.session_staff_notes set note = $4, updated_at = clock_timestamp()
-          where organization_id = $1 and note_id = $2 and author_account_id = $3 and deleted_at is null`,
-        [ORG_ID, mine.note_id, ADMIN_ID, 'rewritten'],
+      // The module runs the UPDATE first and names the refusal only after it
+      // matched nothing, so this goes through the module's own WHERE.
+      await expect(updateOwnSessionStaffNote({ actor: ADMIN, noteId: mine.note_id, note: 'rewritten' })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(removeOwnSessionStaffNote({ actor: ADMIN, noteId: mine.note_id })).rejects.toBeInstanceOf(ForbiddenError);
+      expect(await allRows(client)).toEqual([
+        { organization_id: ORG_ID, session_id: SESSION_ID, athlete_id: ATHLETE_ID, author_account_id: COACH_ID, note: 'first words', removed: false },
+      ]);
+      expect((await auditRows(client)).map((row) => row.event_type)).toEqual(['create']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a session moved to another athlete does not carry the first athlete's staff notes with it", async () => {
+    const client = await migratedDatabase('notes_moved_session');
+    try {
+      await createSessionStaffNote({ actor: ADMIN, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'about the first athlete' });
+      await client.query('update pilot.sessions set athlete_id = $3 where organization_id = $1 and session_id = $2', [ORG_ID, SESSION_ID, SECOND_ATHLETE_ID]);
+      expect(await listSessionStaffNotes(ADMIN, SESSION_ID, SECOND_ATHLETE_ID)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a session with more notes than the list holds shows the newest ones, oldest of those first', async () => {
+    const client = await migratedDatabase('notes_list_limit');
+    try {
+      await client.query(
+        `insert into pilot.session_staff_notes
+           (organization_id, note_id, session_id, athlete_id, author_account_id, author_role, note, created_at, updated_at)
+         select $1, gen_random_uuid(), $2, $3, $4, 'coach', 'n' || i, now() - make_interval(secs => 200 - i), now() - make_interval(secs => 200 - i)
+           from generate_series(1, 101) as i`,
+        [ORG_ID, SESSION_ID, ATHLETE_ID, COACH_ID],
       );
-      expect(direct.rowCount).toBe(0);
-      expect((await allRows(client))[0].note).toBe('first words');
+      const listed = (await listSessionStaffNotes(COACH, SESSION_ID, ATHLETE_ID)).map((row) => row.note);
+      expect(listed).toHaveLength(100);
+      expect(listed[0]).toBe('n2');
+      expect(listed[99]).toBe('n101');
     } finally {
       await client.end();
     }

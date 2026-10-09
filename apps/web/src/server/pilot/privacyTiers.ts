@@ -481,8 +481,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'UPDATE\'s own WHERE. Staff only: an active coach or admin membership here AND '
       + 'assertActorCanAccessAthlete for that athlete, run with the membership role; athletes, guardians, '
       + 'volunteers, board and platform_owner are refused. Whether the athlete or family should see '
-      + 'staff notes on their session is not decided, so nothing shows it to them. Readers see the '
-      + 'author\'s display name, never the account id.',
+      + 'staff notes on their session is not decided, so nothing shows it to them. The list returns no '
+      + 'account id, only written_by_me; showing the author\'s display name is the route\'s job.',
   },
   'athlete_pathway_minor_allowances.reason': {
     tier: 'organization',

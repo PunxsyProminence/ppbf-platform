@@ -65,10 +65,18 @@ export interface SessionStaffNoteRow {
   updated_at: string;
 }
 
+/**
+ * A note as a reader sees it: no account id (an id can be an email address);
+ * written_by_me says whether the reader may change it. The author's display
+ * name is for the route that shows the list to resolve.
+ */
+export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & { written_by_me: boolean };
+
 const FIELDS = 'note_id, session_id, athlete_id, author_account_id, author_role, note, created_at, updated_at';
 
 /** The text to store, or the reason it is refused. Pure. */
-export function staffNoteShapeError(note: string): string | null {
+export function staffNoteShapeError(note: unknown): string | null {
+  if (typeof note !== 'string') return 'The note must be text.';
   const text = note.trim();
   if (text.length === 0) return 'The note cannot be blank.';
   if (text.length > STAFF_NOTE_MAX) return `The note must be ${STAFF_NOTE_MAX} characters or fewer.`;
@@ -117,15 +125,18 @@ function noSuchSession(): NotFoundError {
 }
 
 /**
- * Every live staff note on one session, oldest first, for a staff member who
- * reaches that athlete. The athlete is the one the caller names; a session
- * that is not theirs reads as no session.
+ * The live staff notes on one session ABOUT one athlete -- the newest
+ * LIST_LIMIT, shown oldest first -- for a staff member who reaches that
+ * athlete. The athlete is the one the caller names; a session that is not
+ * theirs reads as no session. Notes are filtered on athlete_id too, because a
+ * session can be moved to another athlete and its earlier notes stay about the
+ * first one.
  */
 export async function listSessionStaffNotes(
   actor: ActorIdentity,
   sessionId: string,
   athleteId: string,
-): Promise<SessionStaffNoteRow[]> {
+): Promise<ListedSessionStaffNote[]> {
   await assertStaffNoteAccess(actor, athleteId);
   const session = await queryOne<{ session_id: string }>(
     `select session_id from pilot.sessions
@@ -133,13 +144,17 @@ export async function listSessionStaffNotes(
     [actor.organizationId, sessionId, athleteId],
   );
   if (!session) throw noSuchSession();
-  return query<SessionStaffNoteRow>(
+  const newest = await query<SessionStaffNoteRow>(
     `select ${FIELDS} from pilot.session_staff_notes
-      where organization_id = $1 and session_id = $2 and deleted_at is null
-      order by created_at, note_id
+      where organization_id = $1 and session_id = $2 and athlete_id = $3 and deleted_at is null
+      order by created_at desc, note_id desc
       limit ${LIST_LIMIT}`,
-    [actor.organizationId, sessionId],
+    [actor.organizationId, sessionId, athleteId],
   );
+  return newest.reverse().map(({ author_account_id, ...shown }) => ({
+    ...shown,
+    written_by_me: author_account_id === actor.accountId,
+  }));
 }
 
 /**
@@ -195,9 +210,10 @@ export async function createSessionStaffNote(input: {
 
 /**
  * The live note to change or remove, or the refusal. The actor must still
- * reach the athlete (a coach who no longer does cannot edit old notes), and
- * must be the author: any other staff member is refused by name, since the
- * note's existence is already known to anyone who can list the session.
+ * reach the athlete (a coach who no longer does cannot edit old notes). The
+ * AUTHOR check is not here: the UPDATE's own WHERE is the only thing that
+ * decides it, and authorRefusal names the refusal after that UPDATE matched
+ * nothing.
  */
 async function ownLiveNote(actor: ActorIdentity, noteId: string): Promise<{ row: SessionStaffNoteRow; role: StaffNoteRole }> {
   const row = await queryOne<SessionStaffNoteRow>(
@@ -207,10 +223,19 @@ async function ownLiveNote(actor: ActorIdentity, noteId: string): Promise<{ row:
   );
   if (!row) throw new NotFoundError('No such staff note.', 'SESSION_STAFF_NOTE_NOT_FOUND');
   const role = await assertStaffNoteAccess(actor, row.athlete_id);
-  if (row.author_account_id !== actor.accountId) {
-    throw new ForbiddenError('Only the coach who wrote this note may change it.', 'SESSION_STAFF_NOTE_AUTHOR_ONLY');
-  }
   return { row, role };
+}
+
+/**
+ * Why an author-scoped UPDATE matched nothing: another staff member's note is
+ * refused by name (its existence is already known to anyone who can list the
+ * session); otherwise it was removed in between.
+ */
+function authorRefusal(actor: ActorIdentity, before: SessionStaffNoteRow): Error {
+  if (before.author_account_id !== actor.accountId) {
+    return new ForbiddenError('Only the coach who wrote this note may change it.', 'SESSION_STAFF_NOTE_AUTHOR_ONLY');
+  }
+  return new NotFoundError('No such staff note.', 'SESSION_STAFF_NOTE_NOT_FOUND');
 }
 
 /** Changes the text of the actor's OWN note. The UPDATE itself requires the author to match. */
@@ -233,7 +258,7 @@ export async function updateOwnSessionStaffNote(input: {
       [input.actor.organizationId, input.noteId, input.actor.accountId, text],
     );
     const row = updated.rows[0];
-    if (!row) throw new NotFoundError('No such staff note.', 'SESSION_STAFF_NOTE_NOT_FOUND');
+    if (!row) throw authorRefusal(input.actor, before);
 
     await writePilotAuditEvent({
       event_type: 'update',
@@ -264,7 +289,7 @@ export async function removeOwnSessionStaffNote(input: {
         where organization_id = $1 and note_id = $2 and author_account_id = $3 and deleted_at is null`,
       [input.actor.organizationId, input.noteId, input.actor.accountId],
     );
-    if (removed.rowCount !== 1) throw new NotFoundError('No such staff note.', 'SESSION_STAFF_NOTE_NOT_FOUND');
+    if (removed.rowCount !== 1) throw authorRefusal(input.actor, before);
 
     await writePilotAuditEvent({
       event_type: 'update',
