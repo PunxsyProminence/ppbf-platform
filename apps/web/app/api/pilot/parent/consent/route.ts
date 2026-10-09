@@ -193,15 +193,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-type CoGuardianStatus = 'granted' | 'photo_only' | 'withdrawn' | 'not_on_file';
+type CoGuardianStatus = 'granted' | 'photo_only' | 'declined' | 'withdrawn' | 'not_on_file';
 
-// Status as the consent gate reads it: signed (normalised the way
-// guardianConsent compares it) without video is photo-only; any other stored
-// status counts as withdrawn, because the gate treats it as not consenting.
+// Status as the consent gate reads it (normalised the way guardianConsent
+// compares it): signed without video is photo-only. The stored values are
+// signed/declined/withdrawn/missing (pilot_waivers_status_check); missing or
+// anything unrecognised reads as nothing on file, never as a decision the
+// other guardian did not make.
 function coGuardianStatus(g: GuardianConsentStatus): CoGuardianStatus {
-  if (g.status === null) return 'not_on_file';
-  if (normalizeWaiverStatusText(g.status) !== 'signed') return 'withdrawn';
-  return g.coversVideo === false ? 'photo_only' : 'granted';
+  const status = normalizeWaiverStatusText(g.status);
+  if (status === 'signed') return g.coversVideo === false ? 'photo_only' : 'granted';
+  if (status === 'declined' || status === 'withdrawn') return status;
+  return 'not_on_file';
 }
 
 type ConsentDecision = 'grant' | 'withdraw';

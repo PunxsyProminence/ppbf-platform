@@ -196,14 +196,16 @@ describe('GET /api/pilot/parent/consent', () => {
         athleteId: 'ath-1',
         consent: {
           ok: false,
-          guardianIds: ['p1', 'p2', 'p3', 'p4', 'p5'],
-          missingParentIds: ['p3', 'p4'],
+          guardianIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'],
+          missingParentIds: ['p3', 'p4', 'p6', 'p7'],
           perGuardian: [
             { parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' },
             other('p2', ' Signed ', true),
             other('p3', 'withdrawn', true),
             other('p4', null, null),
             other('p5', 'signed', false),
+            other('p6', 'declined', true),
+            other('p7', 'missing', true),
           ],
           retained: [],
         },
@@ -218,8 +220,10 @@ describe('GET /api/pilot/parent/consent', () => {
       { you: false, status: 'withdrawn' },
       { you: false, status: 'not_on_file' },
       { you: false, status: 'photo_only' },
+      { you: false, status: 'declined' },
+      { you: false, status: 'not_on_file' },
     ]);
-    expect(JSON.stringify(body)).not.toMatch(/p2|p3|p4|p5|2026-08-02/);
+    expect(JSON.stringify(body)).not.toMatch(/p[2-7]|2026-08-02/);
   });
 
   test('non-parent roles are refused', async () => {

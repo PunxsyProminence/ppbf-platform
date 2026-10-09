@@ -169,7 +169,10 @@ test('a coach cannot complete a connect', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
   configured();
 
-  expect((await GET(getRequest('code=code-1&state=x'))).status).toBeGreaterThanOrEqual(400);
+  const response = await GET(getRequest('code=code-1&state=x'));
+  expect(response.status).toBeGreaterThanOrEqual(400);
+  // Error responses clear the nonce too -- not only redirects.
+  expect(clearsNonceCookie(response)).toBe(true);
 });
 
 // Audit slice A, Q5 / owner ruling 2026-10-05: the state must be single-use

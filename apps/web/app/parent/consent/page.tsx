@@ -16,7 +16,7 @@ type GuardianConsentRow =
       public_use_allowed: boolean | null;
       signed_at: string | null;
     }
-  | { you: false; status: 'granted' | 'photo_only' | 'withdrawn' | 'not_on_file' };
+  | { you: false; status: 'granted' | 'photo_only' | 'declined' | 'withdrawn' | 'not_on_file' };
 
 interface AthleteConsent {
   athlete_id: string;
