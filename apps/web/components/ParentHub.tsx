@@ -58,6 +58,14 @@ interface FamilyGoal {
   targetDate: string;
 }
 
+/* The task on a message: present when a coach gave the message a due date
+   (pilot.parent_task_state), null when they did not. The route sends null
+   rather than omitting the key, so "no task" and "not loaded" stay apart. */
+interface ParentMessageTask {
+  due_date: string | null;
+  completed_at: string | null;
+}
+
 interface ParentMessage {
   note_id: string;
   athlete_id: string;
@@ -65,6 +73,28 @@ interface ParentMessage {
   sender_role: string;
   note_text: string;
   created_at: string;
+  task: ParentMessageTask | null;
+}
+
+/* A due date is a bare calendar date ('2026-10-20', Postgres date::text).
+   NOT run through the gym-time formatters: they read a bare date as UTC
+   midnight and, in the gym's zone, print the day before. Rendered as the
+   calendar day it names, or as typed if it is not in that shape. */
+function formatDueDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** A task is open until the family ticks it. */
+function isOpenTask(message: ParentMessage): boolean {
+  return message.task !== null && message.task.completed_at === null;
 }
 
 interface AttendanceEntry {
@@ -156,8 +186,11 @@ function assignmentBadge(status: HomeAssignment['status']): { className: string;
 
 /* Selected tab / selected child: a control in the "on" position is brass
    chassis, never a status colour (Laws 1 and 2). */
+/* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
+   and 11.8px uppercase mono was the smallest text on the page. Still a
+   desk size (no kiosk attribute; OD-2026-10-08-011). */
 const TAB_BASE =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
@@ -226,8 +259,10 @@ export default function ParentHub() {
           credentials: 'include',
         });
         if (!response.ok) return;
-        const payload = (await response.json()) as { items?: ParentMessage[] };
-        setMessages(payload.items ?? []);
+        const payload = (await response.json()) as { items?: Array<Omit<ParentMessage, 'task'> & { task?: ParentMessageTask | null }> };
+        // The route sends task: null, never omits it; an item without the
+        // key (an older answer, a stub) is read as "no task", not as a crash.
+        setMessages((payload.items ?? []).map((item) => ({ ...item, task: item.task ?? null })));
         setMessagesLoaded(true);
       } catch {
         // Messages tab falls back to its empty state; the summary tile shows
@@ -235,6 +270,48 @@ export default function ParentHub() {
       }
     })();
   }, []);
+
+  /* TICKING A TASK OFF. POST /api/pilot/parent/messages {note_id, completed}
+     is the one write a guardian makes on this tab; the route scopes the note
+     to this guardian's own children on every call. Both directions are
+     allowed (a wrong tick must be undoable). The row is updated from the
+     ANSWER, not from the click: the box shows what the server holds, and a
+     refused or dropped write leaves it where it was and says so in words. */
+  const [taskBusy, setTaskBusy] = useState<Set<string>>(() => new Set());
+  const [taskNotice, setTaskNotice] = useState<string>('');
+
+  async function handleTaskToggle(noteId: string, completed: boolean) {
+    if (taskBusy.has(noteId)) return;
+    setTaskNotice('');
+    setTaskBusy((held) => new Set(held).add(noteId));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent/messages`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: noteId, completed }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        { ok?: boolean; error?: string; task?: ParentMessageTask } | null;
+      if (!response.ok || payload?.ok !== true || !payload.task || typeof payload.task !== 'object') {
+        throw new Error(typeof payload?.error === 'string' && payload.error ? payload.error : 'The tick did not save.');
+      }
+      const task = payload.task;
+      setMessages((held) =>
+        held.map((message) => (message.note_id === noteId ? { ...message, task } : message)),
+      );
+    } catch (error) {
+      setTaskNotice(
+        `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
+      );
+    } finally {
+      setTaskBusy((held) => {
+        const next = new Set(held);
+        next.delete(noteId);
+        return next;
+      });
+    }
+  }
 
   /* SLICE 8. The scheduler already answers this and the hub was not asking.
      GET /api/pilot/scheduler's parent branch filters registrations, coaching
@@ -289,7 +366,10 @@ export default function ParentHub() {
     classes: SchedulerFeedClass[];
     registrations: SchedulerFeedRegistration[];
     attendance: SchedulerFeedAttendance[];
-  }>({ classes: [], registrations: [], attendance: [] });
+    /** The clock reading the feed is judged against, taken as it landed.
+     *  Render must not read the clock itself (react-hooks/purity). */
+    readAtMs: number;
+  }>({ classes: [], registrations: [], attendance: [], readAtMs: 0 });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -315,6 +395,7 @@ export default function ParentHub() {
           classes: payload.classes ?? [],
           registrations: payload.registrations ?? [],
           attendance: payload.attendance ?? [],
+          readAtMs: Date.now(),
         });
         setSchedulerFeedState('loaded');
       } catch (error) {
@@ -618,14 +699,23 @@ export default function ParentHub() {
       status: row.status === 'present' ? 'Present' : row.status === 'excused' ? 'Excused' : 'Absent',
     }));
 
-  const nowIso = new Date().toISOString();
+  /* PARSED, NOT COMPARED AS TEXT. start_at arrives as Postgres timestamptz
+     text ('2026-10-08 18:00:00+00'), and the old compare held it against
+     new Date().toISOString() ('2026-10-08T17:00:00.000Z') as strings: the
+     space sorts before the 'T', so every class on today's date read as
+     already past, and the format of either side could change the answer.
+     Date.parse reads both. A start that will not parse is not shown as
+     upcoming: nothing can say when it is. "Now" is the moment the feed
+     landed: the page reads one schedule and judges it against one clock. */
+  const nowMs = schedulerFeed.readAtMs;
+  const startMs = (klass: SchedulerFeedClass): number => Date.parse(klass.start_at);
   const activeUpcomingSessions: UpcomingSession[] = schedulerFeed.registrations
     .filter((row) => row.athlete_id === activeChildId && row.status !== 'cancelled')
     .map((row) => ({ registration: row, klass: schedulerClassById.get(row.class_id) }))
     // A cancelled class is not upcoming, and a registration whose class this
     // guardian cannot see is not something to render half of.
-    .filter((pair) => pair.klass !== undefined && pair.klass.status !== 'cancelled' && pair.klass.start_at > nowIso)
-    .sort((a, b) => (a.klass as SchedulerFeedClass).start_at.localeCompare((b.klass as SchedulerFeedClass).start_at))
+    .filter((pair) => pair.klass !== undefined && pair.klass.status !== 'cancelled' && startMs(pair.klass) > nowMs)
+    .sort((a, b) => startMs(a.klass as SchedulerFeedClass) - startMs(b.klass as SchedulerFeedClass))
     .map(({ registration, klass }) => ({
       id: registration.registration_id,
       date: formatGymDateTimeShort((klass as SchedulerFeedClass).start_at) ?? (klass as SchedulerFeedClass).start_at,
@@ -714,15 +804,16 @@ export default function ParentHub() {
           <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
         </div>
 
-        {/* ROLE SUMMARY PANEL. Home tasks and upcoming sessions have NO
-            backend feed yet (their arrays above are hardcoded empty), so
-            those tiles pass null and render Unavailable -- a derived 0 from a
-            feed that does not exist would tell a parent "nothing is due" and
-            "nothing is scheduled", which nobody verified. The messages count
-            is real only after its read answered. */}
+        {/* ROLE SUMMARY PANEL. Home Tasks counts the messages that carry an
+            unticked due date, across every child, and only once the messages
+            read answered (the same rule as the Messages tile: an unanswered
+            read is Unavailable, never 0). Upcoming sessions still have no
+            feed the tile can count from, so that tile passes null -- a
+            derived 0 would tell a parent "nothing is scheduled", which nobody
+            verified. */}
         <ParentSummaryPanel
           childProgress={activeChild?.currentProgress || 'Unavailable - awaiting backend progression feed'}
-          tasksDue={null}
+          tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
           upcomingEvents={null}
           attendancePercent={activeChild?.attendancePercent ?? null}
           unreadMessages={messagesLoaded ? messages.length : null}
@@ -777,7 +868,9 @@ export default function ParentHub() {
             {children.map(child => (
               <button
                 key={child.id}
+                type="button"
                 onClick={() => setActiveChildId(child.id)}
+                aria-pressed={activeChildId === child.id}
                 className={cx(
                   TAB_BASE,
                   'gap-[var(--s3)] pl-[var(--s2)]',
@@ -815,7 +908,10 @@ export default function ParentHub() {
             ].map(tab => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id as TabID)}
+                aria-pressed={activeTab === tab.id}
+                aria-current={activeTab === tab.id ? 'true' : undefined}
                 className={cx(
                   TAB_BASE,
                   activeTab === tab.id ? TAB_ACTIVE : TAB_INACTIVE,
@@ -1105,10 +1201,12 @@ export default function ParentHub() {
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="t-body">
-                  There is no parent-task assignment feed wired to the backend yet. The checklist and progress
-                  bar previously shown here were hardcoded example data, not real tasks -- they have been
-                  removed rather than left showing fake completion status. Home assignments from your child&apos;s
-                  coach appear in the Assignments tab once that feed is connected.
+                  Anything your child&apos;s coach has asked you to do by a date is on the Messages tab, with a box to
+                  tick when it is done; the Home Tasks count at the top of this page is how many are still open.
+                  A separate weekly checklist is not built yet. The checklist and progress bar previously shown
+                  here were hardcoded example data, not real tasks -- they have been removed rather than left
+                  showing fake completion status. Home assignments from your child&apos;s coach appear in the
+                  Assignments tab once that feed is connected.
                 </p>
               </div>
             </div>
@@ -1187,7 +1285,7 @@ export default function ParentHub() {
                     <div>
                       <div className="flex justify-between mb-[var(--s2)]">
                         <span className="t-label">Rating</span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{obs.value}/10</span>
+                        <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{obs.value}/10</span>
                       </div>
                       <div className={TRACK_CLASS}>
                         <div className={FILL_CLASS} style={{width: `${obs.value * 10}%`}}></div>
@@ -1237,7 +1335,7 @@ export default function ParentHub() {
                     <div>
                       <div className="flex justify-between mb-[var(--s2)]">
                         <span className="t-label">Progress</span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{goal.progress}%</span>
+                        <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{goal.progress}%</span>
                       </div>
                       <div className={TRACK_CLASS}>
                         <div className={FILL_CLASS} style={{width: `${goal.progress}%`}}></div>
@@ -1284,6 +1382,10 @@ export default function ParentHub() {
                   that has not come back yet -- "could not be loaded" would
                   claim a failure nobody has observed either. "Unavailable" is
                   the tile's own word for exactly this, and it covers both. */}
+              {taskNotice && (
+                <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice}</p>
+              )}
+
               {!messagesLoaded ? (
                 <p className="t-muted">Unavailable - your messages have not loaded. This is not an empty inbox.</p>
               ) : messages.length === 0 ? (
@@ -1298,6 +1400,32 @@ export default function ParentHub() {
                       </div>
                       <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
                       <p className="t-muted">{formatGymDateTimeShort(message.created_at) ?? message.created_at}</p>
+                      {/* A message with a due date is something to do. The box
+                          is the guardian's one write here; "Done" / "Still to
+                          do" is printed beside it so the state is never the
+                          tick mark alone. */}
+                      {message.task && (
+                        <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)] border-t border-[color:rgba(0,0,0,.14)] pt-[var(--s3)]">
+                          <span className="t-body font-semibold">
+                            {message.task.due_date ? `Due ${formatDueDate(message.task.due_date)}` : 'To do'}
+                          </span>
+                          <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
+                            <input
+                              type="checkbox"
+                              className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+                              checked={message.task.completed_at !== null}
+                              disabled={taskBusy.has(message.note_id)}
+                              onChange={(event) => void handleTaskToggle(message.note_id, event.target.checked)}
+                            />
+                            <span className="t-body">
+                              {message.task.completed_at !== null
+                                ? `Done ${formatGymDateTimeShort(message.task.completed_at) ?? ''}`.trim()
+                                : 'Done'}
+                            </span>
+                          </label>
+                          {message.task.completed_at === null && <span className="t-muted">Still to do</span>}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1457,7 +1585,7 @@ export default function ParentHub() {
                       <div className="mt-[var(--s3)]">
                         <div className="flex justify-between mb-[var(--s2)]">
                           <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{milestone.percent}%</span>
+                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{milestone.percent}%</span>
                         </div>
                         <div className={TRACK_CLASS}>
                           <div className={FILL_CLASS} style={{ width: `${milestone.percent}%` }}></div>
