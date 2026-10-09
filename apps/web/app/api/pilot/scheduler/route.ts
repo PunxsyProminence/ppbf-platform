@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  actorRunsClass,
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
+  assertActorCanMarkClassAthlete,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
   athleteIdsForCoach,
@@ -13,6 +15,7 @@ import {
 import { parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -37,7 +40,11 @@ import {
   type SchedulerStore,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
-import { readStaffHoldWarning, readStaffHoldWarnings } from '@/src/server/pilot/trainingHolds';
+import {
+  readStaffHoldWarning,
+  readStaffHoldWarnings,
+  type StaffHoldWarning,
+} from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -78,16 +85,21 @@ interface SchedulerActor {
   athleteId: string | null;
 }
 
+// Input the caller can fix is a ValidationError (400, carrying its own
+// status), not a bare Error: jsonError maps only a few message prefixes to
+// 400, and "start_at must be a valid date string" matched none of them, so a
+// mistyped date on the schedule screen answered 500 with the field name
+// replaced by "Internal server error" (audit s3).
 function toIso(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new ValidationError(`${field} must be a non-empty string`);
   }
 
   // A time typed on the schedule screen carries no zone and means the gym's
   // clock; `new Date(value)` would read it in the server's zone instead.
   const d = parseInstantAsGymTime(value);
   if (!d) {
-    throw new Error(`${field} must be a valid date string`);
+    throw new ValidationError(`${field} must be a valid date string`);
   }
 
   return d.toISOString();
@@ -95,14 +107,23 @@ function toIso(value: unknown, field: string): string {
 
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new ValidationError(`${field} must be a non-empty string`);
   }
   return value.trim();
 }
 
 function requiredInt(value: unknown, field: string): number {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
-    throw new Error(`${field} must be an integer`);
+    throw new ValidationError(`${field} must be an integer`);
+  }
+  return value;
+}
+
+type AttendanceStatus = SchedulerAttendance['status'];
+
+function attendanceStatus(value: unknown, field: string): AttendanceStatus {
+  if (value !== 'present' && value !== 'absent' && value !== 'excused') {
+    throw new ValidationError(`${field} must be present, absent, or excused`);
   }
   return value;
 }
@@ -140,14 +161,80 @@ function resolveAttendanceMethod(actor: SchedulerActor, isSelf: boolean): Schedu
 // governed by assertCanActOnAthlete instead, and admin manages all.
 function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass): void {
   if (actor.role !== 'coach') return;
-  if (
-    classItem.coach_account_id === actor.accountId
-    || classItem.scheduled_by_account_id === actor.accountId
-    || classItem.covering_coach_account_id === actor.accountId
-  ) {
+  if (actorRunsClass(actor, classItem)) {
     return;
   }
-  throw new Error('Forbidden: coach does not own this class');
+  throw new Error('Forbidden: only the coach, cover or scheduler of this class can mark its register');
+}
+
+/* ONE REGISTER MARK, FOR A COACH OR ADMIN (OD-2026-10-07-008 question card 1
+   item 4, "Whole class plus walk-ins").
+
+   Before this, a coach marking a class they run still had to be the assigned
+   or covering coach of EACH athlete (assertCanActOnAthlete ->
+   assertCoachAssignedToAthlete), so the coach standing in front of the class
+   could not take the register for half of it. The ruling makes the class the
+   unit of reach: the coach who teaches, scheduled, or is covering it marks
+   every athlete registered to it, and may mark an athlete of the gym who
+   walked in without registering as PRESENT. That walk-in is stored with
+   method 'walk_in' so a roster read can tell "signed up and came" from
+   "turned up" -- a registration is not invented for them, and absent/excused
+   stay registered-only, because nobody is absent from a class they were
+   never on.
+
+   assertActorCanMarkClassAthlete (access.ts) decides reach; this wraps it
+   with the status rule and the registered-set read. Athlete self-marks and
+   parent marks do not come through here. */
+/* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
+
+   The register lets the coach running a class mark athletes they do not
+   otherwise reach (assignment or coverage). Reach for everything else is
+   unchanged (OD-2026-10-07-008 ruling 4, "Everything else stays
+   assigned-coach only"), so a register mark must not carry two things with it:
+   - the hold's reason, explanation and lift condition. The training-holds
+     route refuses those to an unassigned coach; without this, cover_class
+     plus a walk-in mark read any athlete's hold in the gym. The coach is
+     still told the athlete is held and at what scope (OD-2026-10-06-024
+     ruling 1), which is what they need on the floor.
+   - the note. They cannot read it (Overwatch option B), so their mark keeps
+     the stored note instead of overwriting it unseen, and a note from them
+     about an athlete they do not coach is refused.
+   Only a coach is narrowed; an organization admin reaches the whole gym. */
+async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly string[]): Promise<Set<string>> {
+  if (actor.role !== 'coach') return new Set();
+  const reach = new Set(await getCoachAthleteIds(actor));
+  return new Set(athleteIds.filter((id) => !reach.has(id)));
+}
+
+function assertNoNoteBeyondReach(beyondReach: ReadonlySet<string>, athleteId: string, note: string): void {
+  if (note && beyondReach.has(athleteId)) {
+    throw new Error("Forbidden: an attendance note on an athlete you do not coach is for that athlete's own coach");
+  }
+}
+
+function holdWarningWithinReach<T extends StaffHoldWarning>(warning: T, beyondReach: boolean) {
+  if (!beyondReach) return warning;
+  return { ...warning, reason_category: '', athlete_explanation: '', lift_condition_text: '', details_withheld: true as const };
+}
+
+async function resolveRegisterMark(
+  actor: SchedulerActor,
+  classItem: SchedulerClass,
+  athleteId: string,
+  status: AttendanceStatus,
+  registeredIds: ReadonlySet<string>,
+): Promise<SchedulerAttendance['method']> {
+  // The helper decides ownership before anything else, so a coach who does
+  // not run the class learns nothing about who is registered to it from the
+  // shape of the refusal. It is the ONE place the rule lives; this function
+  // adds only the status rule for a walk-in.
+  const reach = await assertActorCanMarkClassAthlete(actor as never, classItem, athleteId, registeredIds);
+  if (reach === 'walk_in' && status !== 'present') {
+    throw new Error(
+      `Missing registration: athlete ${athleteId} is not registered for this class; a walk-in can only be marked present`,
+    );
+  }
+  return reach === 'walk_in' ? 'walk_in' : resolveAttendanceMethod(actor, false);
 }
 
 async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -378,6 +465,19 @@ function familyAttendance(row: SchedulerAttendance): FamilyAttendance {
   };
 }
 
+/* A register row for an athlete the coach running the class does not
+   otherwise reach: who, which class, what status -- nothing a coach or a
+   family wrote, and no family account identifier (an account_id can be a
+   login email). */
+function registerOnlyRegistration(row: SchedulerRegistration): SchedulerRegistration {
+  // undefined, so JSON drops the field rather than sending an empty one.
+  return { ...row, requested_by_account_id: '', parent_reviewer_account_id: undefined };
+}
+
+function registerOnlyAttendance(row: SchedulerAttendance): SchedulerAttendance {
+  return { ...row, note: '', checked_in_by_account_id: '' };
+}
+
 function filterStateForActor(
   actor: SchedulerActor,
   store: SchedulerStore,
@@ -393,12 +493,7 @@ function filterStateForActor(
   if (actor.role === 'coach') {
     const coachOwnedClassIds = new Set(
       store.classes
-        .filter(
-          (item) =>
-            item.coach_account_id === actor.accountId ||
-            item.scheduled_by_account_id === actor.accountId ||
-            item.covering_coach_account_id === actor.accountId,
-        )
+        .filter((item) => actorRunsClass(actor, item))
         .map((item) => item.class_id),
     );
 
@@ -406,37 +501,34 @@ function filterStateForActor(
 
     return {
       classes,
-      /* Class ownership AND athlete-reachability, not class ownership alone.
-         These rows name individual athletes, so they need the same dimension
-         coaching_requests below already uses.
+      /* THE CLASS REGISTER, AND WHAT STAYS WITH THE ATHLETE'S OWN COACH.
 
-         Ownership by itself was self-granting. cover_class checks only that the
-         caller is a coach, then writes their own accountId as the covering
-         coach -- no approval, no check that the class's coach is unavailable,
-         no time bound, no audit row -- and covering_coach_account_id is one of
-         the three things this filter counts as ownership. So one POST bought
-         any coach every registration and attendance row, including free-text
-         notes, for any class in the organization, covering athletes they hold
-         no assignment and no coverage grant for.
+         History: ownership alone used to be the whole filter, and cover_class
+         lets any coach make themselves covering coach with one POST, so one
+         POST bought every registration and attendance row -- notes included --
+         for any class. The fix scoped both collections to reachable athletes.
 
-         The write side was never the hole: assertCanActOnAthlete still gates
-         per-athlete writes. This was a read leak, and the fix is the filter the
-         next property down already had. */
-      registrations: store.registrations.filter(
-        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
-      ),
+         OD-2026-10-07-008 ruling 4 then made the class the unit of reach for
+         the register: the coach, cover or scheduler marks every athlete
+         registered to it, and cannot take a register they cannot see. Overwatch
+         option B (2026-10-09) settled how much of it they see: on a class they
+         run, every registration and every attendance STATUS (names-and-status,
+         OD-2026-10-07-011 ruling 1). What a coach wrote about a child -- the
+         attendance note -- and the family's account identifiers stay with
+         athletes the reader reaches (CL-A2, #1266). A self-granted cover is now
+         visible as an audit row (cover_class, route-survey B6). */
+      registrations: store.registrations
+        .filter((row) => coachOwnedClassIds.has(row.class_id))
+        .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyRegistration(row))),
       // Coaching requests carry an athlete_id and no class_id, so they are
       // scoped by athlete-reachability -- the same dimension the parent and
       // athlete branches use -- not by class ownership. Returning
       // store.coaching_requests unfiltered leaked every athlete's 1:1 request
       // (athlete_id, free-text goals, preferred_at) org-wide to any coach.
       coaching_requests: store.coaching_requests.filter((row) => coachReachableAthleteIds.has(row.athlete_id)),
-      // Same reasoning as registrations above. Attendance rows carry an
-      // athlete_id and a free-text note, so class ownership alone is not a
-      // sufficient scope for them either.
-      attendance: store.attendance.filter(
-        (row) => coachOwnedClassIds.has(row.class_id) && coachReachableAthleteIds.has(row.athlete_id),
-      ),
+      attendance: store.attendance
+        .filter((row) => coachOwnedClassIds.has(row.class_id))
+        .map((row) => (coachReachableAthleteIds.has(row.athlete_id) ? row : registerOnlyAttendance(row))),
     };
   }
 
@@ -564,7 +656,7 @@ export async function POST(request: NextRequest) {
       const location = requiredString(body.location, 'location');
       const capacity = requiredInt(body.capacity, 'capacity');
       if (capacity < 1 || capacity > 200) {
-        throw new Error('capacity must be between 1 and 200');
+        throw new ValidationError('capacity must be between 1 and 200');
       }
 
       const now = new Date().toISOString();
@@ -597,6 +689,26 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing class record');
       }
       await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
+
+      // Route-survey B6: any coach can name themselves covering coach with
+      // one POST, and covering a class is what hands them its whole register
+      // (resolveRegisterMark). No approval step by ruling; the audit row is
+      // what makes a self-grant visible, so it records who held cover before.
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_class',
+        entity_id: classId,
+        details: {
+          action: 'cover_class',
+          class_id: classId,
+          previous_covering_coach_account_id: existingClass.covering_coach_account_id ?? null,
+          covering_coach_account_id: actor.accountId,
+        },
+        shadow_mirror: false,
+      });
 
       return NextResponse.json({ ok: true, class_id: classId });
     }
@@ -882,10 +994,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'attendance_checkin') {
       const classId = requiredString(body.class_id, 'class_id');
-      const status = body.status;
-      if (status !== 'present' && status !== 'absent' && status !== 'excused') {
-        throw new Error('status must be present, absent, or excused');
-      }
+      const status = attendanceStatus(body.status, 'status');
 
       let athleteId = body.athlete_id?.trim() || '';
       if (actor.role === 'athlete') {
@@ -895,31 +1004,41 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing athlete_id');
       }
 
-      await assertCanActOnAthlete(actor, athleteId);
-
       const isSelf = actor.role === 'athlete';
       if (isSelf && status !== 'present') {
         throw new Error('Forbidden: athlete self check-in can only mark present');
       }
 
-      const now = new Date().toISOString();
-      const method = resolveAttendanceMethod(actor, isSelf);
-
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
       }
-      assertCoachOwnsClass(actor, classItem);
 
-      // Attendance is only recordable for a registered athlete. An
-      // unregistered mark would count in the org summary while appearing on
-      // no class roster -- a number no drill-down could explain or correct --
-      // and it is also what let an athlete self-mark 'present' in every
-      // class in the gym.
-      const registeredIds = await listRegisteredAthleteIdsForClass(actor.organizationId, classId);
-      if (!registeredIds.includes(athleteId)) {
-        throw new Error('Missing registration: athlete is not registered for this class');
+      const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
+
+      let method: SchedulerAttendance['method'];
+      if (actor.role === 'coach' || canManageAll(actor)) {
+        // The class register: whole class plus walk-ins (resolveRegisterMark).
+        method = await resolveRegisterMark(actor, classItem, athleteId, status, registeredIds);
+      } else {
+        // An athlete's own mark or a parent's mark on their child. Attendance
+        // is only recordable for a registered athlete here: an unregistered
+        // mark would count in the org summary while appearing on no class
+        // roster -- a number no drill-down could explain or correct -- and it
+        // is also what let an athlete self-mark 'present' in every class in
+        // the gym.
+        await assertCanActOnAthlete(actor, athleteId);
+        if (!registeredIds.has(athleteId)) {
+          throw new Error('Missing registration: athlete is not registered for this class');
+        }
+        method = resolveAttendanceMethod(actor, isSelf);
       }
+
+      const beyondReach = await athletesBeyondReach(actor, [athleteId]);
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      assertNoNoteBeyondReach(beyondReach, athleteId, note);
+
+      const now = new Date().toISOString();
 
       const attendanceRecord: SchedulerAttendance = {
         attendance_id: randomUUID(),
@@ -929,12 +1048,14 @@ export async function POST(request: NextRequest) {
         method,
         checked_in_by_role: actorRole,
         checked_in_by_account_id: actor.accountId,
-        note: typeof body.note === 'string' ? body.note.trim() : '',
+        note,
         checked_in_at: now,
         updated_at: now,
       };
 
-      await upsertSchedulerAttendance(actor.organizationId, attendanceRecord);
+      await upsertSchedulerAttendance(actor.organizationId, attendanceRecord, {
+        keepExistingNote: beyondReach.has(athleteId),
+      });
 
       // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active
       // training hold does NOT stop a check-in -- a held athlete may still
@@ -942,11 +1063,16 @@ export async function POST(request: NextRequest) {
       // only (readStaffHoldWarning returns nothing for an athlete's own
       // check-in or a parent's), read after the mark is stored and never able
       // to fail it. The key is absent when the athlete is not held.
-      const holdWarning = await readStaffHoldWarning(actor.role, actor.organizationId, athleteId);
+      const holdRead = await readStaffHoldWarning(actor.role, actor.organizationId, athleteId);
+      const holdWarning = holdRead && holdRead !== 'unreadable'
+        ? holdWarningWithinReach(holdRead, beyondReach.has(athleteId))
+        : holdRead;
       return NextResponse.json({
         ok: true,
         class_id: classId,
         athlete_id: athleteId,
+        // The screen says "marked as a walk-in" from this, not from guessing.
+        method,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       });
     }
@@ -966,6 +1092,8 @@ export async function POST(request: NextRequest) {
       if (!classItem) {
         throw new Error('Missing class record');
       }
+      // Refused before the entries are even read: a coach who does not run
+      // this class gets nothing from it, whoever is in the batch.
       assertCoachOwnsClass(actor, classItem);
 
       const entries = body.entries;
@@ -976,8 +1104,7 @@ export async function POST(request: NextRequest) {
         throw new Error('Unsupported entries: must not exceed 200 per request');
       }
 
-      // Same registration requirement as the single check-in path, for the
-      // same reason -- fetched once for the whole batch.
+      // The class roster, fetched once for the whole batch.
       const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
 
       const now = new Date().toISOString();
@@ -986,31 +1113,24 @@ export async function POST(request: NextRequest) {
 
       for (const entry of entries) {
         const entryAthleteId = requiredString(entry?.athlete_id, 'entries[].athlete_id');
-        const entryStatus = entry?.status;
-        if (entryStatus !== 'present' && entryStatus !== 'absent' && entryStatus !== 'excused') {
-          throw new Error('Unsupported entries[].status: must be present, absent, or excused');
-        }
+        const entryStatus = attendanceStatus(entry?.status, 'entries[].status');
         if (seenAthleteIds.has(entryAthleteId)) {
           throw new Error(`Unsupported entries: duplicate athlete_id ${entryAthleteId}`);
         }
         seenAthleteIds.add(entryAthleteId);
-        if (!registeredIds.has(entryAthleteId)) {
-          throw new Error(`Missing registration: athlete ${entryAthleteId} is not registered for this class`);
-        }
 
-        // Every athlete in the batch, not just the actor's own athleteId,
-        // must pass the same ownership check a single check-in would --
-        // a coach can only mark athletes they are actually assigned to
-        // (assertCanActOnAthlete -> assertCoachAssignedToAthlete), even
-        // inside a bulk call.
-        await assertCanActOnAthlete(actor, entryAthleteId);
+        // Every athlete in the batch passes the same register check a single
+        // mark would (resolveRegisterMark): registered to this class, or a
+        // live athlete of the gym marked present as a walk-in. One refusal
+        // fails the whole batch before any write.
+        const method = await resolveRegisterMark(actor, classItem, entryAthleteId, entryStatus, registeredIds);
 
         records.push({
           attendance_id: randomUUID(),
           class_id: classId,
           athlete_id: entryAthleteId,
           status: entryStatus,
-          method: resolveAttendanceMethod(actor, false),
+          method,
           checked_in_by_role: actorRole,
           checked_in_by_account_id: actor.accountId,
           note: typeof entry?.note === 'string' ? entry.note.trim() : '',
@@ -1019,16 +1139,24 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      await bulkUpsertSchedulerAttendance(actor.organizationId, records);
+      const beyondReach = await athletesBeyondReach(actor, records.map((record) => record.athlete_id));
+      for (const record of records) assertNoNoteBeyondReach(beyondReach, record.athlete_id, record.note);
+
+      await bulkUpsertSchedulerAttendance(actor.organizationId, records, {
+        keepExistingNoteFor: records.filter((record) => beyondReach.has(record.athlete_id)).map((record) => record.athlete_id),
+      });
 
       // Same ruling as the single check-in above: warn, never block. Staff
       // only by the gate at the top of this action; one list read for the
       // batch (readStaffHoldWarnings), absent keys when nobody is held.
-      const holdWarnings = await readStaffHoldWarnings(
+      const holdRead = await readStaffHoldWarnings(
         actor.role,
         actor.organizationId,
         records.map((record) => record.athlete_id),
       );
+      const holdWarnings = holdRead === 'unreadable'
+        ? holdRead
+        : holdRead.map((warning) => holdWarningWithinReach(warning, beyondReach.has(warning.athlete_id)));
       return NextResponse.json({
         ok: true,
         class_id: classId,
