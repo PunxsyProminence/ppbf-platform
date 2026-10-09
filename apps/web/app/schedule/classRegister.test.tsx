@@ -63,7 +63,9 @@ function jsonResponse(payload: unknown) {
   return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
 }
 
-function installFetchMock(options: { attendance?: unknown[]; checkInMethod?: string } = {}): jest.Mock {
+function installFetchMock(
+  options: { attendance?: unknown[]; checkInMethod?: string; holdWarning?: unknown } = {},
+): jest.Mock {
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
@@ -76,7 +78,13 @@ function installFetchMock(options: { attendance?: unknown[]; checkInMethod?: str
     if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as { action?: string; athlete_id?: string };
       if (body.action === 'attendance_checkin') {
-        return jsonResponse({ ok: true, class_id: 'class-1', athlete_id: body.athlete_id, method: options.checkInMethod });
+        return jsonResponse({
+          ok: true,
+          class_id: 'class-1',
+          athlete_id: body.athlete_id,
+          method: options.checkInMethod,
+          ...(options.holdWarning ? { hold_warning: options.holdWarning } : {}),
+        });
       }
       throw new Error(`Unexpected POST action: ${body.action}`);
     }
@@ -148,5 +156,32 @@ describe('the class register on /schedule', () => {
 
     expect(await screen.findByText('PRESENT via walk-in')).toBeInTheDocument();
     expect(screen.queryByText(/walk_in/)).toBeNull();
+  });
+
+  test('a hold on an athlete the coach does not coach shows the scope and says where the details are', async () => {
+    installFetchMock({
+      checkInMethod: 'walk_in',
+      holdWarning: {
+        hold_id: 'hold-9',
+        scope: 'contact_only',
+        reason_category: '',
+        athlete_explanation: '',
+        lift_condition_text: '',
+        expires_at: null,
+        details_withheld: true,
+      },
+    });
+    const picker = await renderPage();
+
+    fireEvent.change(picker, { target: { value: 'athlete-2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+
+    const notice = (await screen.findAllByRole('status')).find((el) => el.textContent?.includes('Active Training Hold'));
+    expect(notice).toBeDefined();
+    expect(notice).toHaveTextContent('CONTACT WORK is currently paused for this athlete.');
+    expect(notice).toHaveTextContent('The check-in was NOT blocked.');
+    expect(notice).toHaveTextContent("The reason and what lifts it are with this athlete's own coach.");
+    expect(notice).not.toHaveTextContent('To lift it');
+    expect(notice).not.toHaveTextContent('()');
   });
 });

@@ -123,6 +123,10 @@ type CheckInHoldWarning = {
   reason_category: string;
   athlete_explanation: string;
   lift_condition_text: string;
+  // The coach marked an athlete on their class register whom they do not
+  // otherwise coach: the route says the athlete is held and at what scope,
+  // and keeps the reason and the lift condition with the athlete's own coach.
+  details_withheld: boolean;
 };
 
 const HOLD_SCOPE_LABEL: Record<CheckInHoldWarning['scope'], string> = {
@@ -149,6 +153,7 @@ function checkInHoldWarningFrom(value: unknown): CheckInHoldWarning | 'unreadabl
     reason_category: hold.reason_category,
     athlete_explanation: hold.athlete_explanation,
     lift_condition_text: typeof hold.lift_condition_text === 'string' ? hold.lift_condition_text.trim() : '',
+    details_withheld: hold.details_withheld === true,
   };
 }
 
@@ -789,13 +794,22 @@ export default function SchedulerPage() {
                     <div className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]" role="status">
                       <p className="t-eyebrow">Active Training Hold</p>
                       <p className="t-body mt-[var(--s3)] font-semibold">
-                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete ({shownCheckInHold.reason_category}).
-                        The check-in was NOT blocked.
+                        {HOLD_SCOPE_LABEL[shownCheckInHold.scope]} is currently paused for this athlete
+                        {shownCheckInHold.details_withheld ? '.' : ` (${shownCheckInHold.reason_category}).`}
+                        {' '}The check-in was NOT blocked.
                       </p>
-                      <p className="t-body mt-[var(--s3)]">{shownCheckInHold.athlete_explanation}</p>
-                      <p className="t-body mt-[var(--s3)]">
-                        To lift it: {shownCheckInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
-                      </p>
+                      {shownCheckInHold.details_withheld ? (
+                        <p className="t-body mt-[var(--s3)]">
+                          The reason and what lifts it are with this athlete&apos;s own coach.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="t-body mt-[var(--s3)]">{shownCheckInHold.athlete_explanation}</p>
+                          <p className="t-body mt-[var(--s3)]">
+                            To lift it: {shownCheckInHold.lift_condition_text || 'not written down — ask whoever placed the hold.'}
+                          </p>
+                        </>
+                      )}
                     </div>
                   ) : null}
                   {shownCheckInHold === 'unreadable' ? (

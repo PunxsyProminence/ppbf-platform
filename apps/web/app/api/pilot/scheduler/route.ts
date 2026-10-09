@@ -40,7 +40,11 @@ import {
   type SchedulerStore,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
-import { readStaffHoldWarning, readStaffHoldWarnings } from '@/src/server/pilot/trainingHolds';
+import {
+  readStaffHoldWarning,
+  readStaffHoldWarnings,
+  type StaffHoldWarning,
+} from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 
@@ -181,6 +185,38 @@ function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass):
    assertActorCanMarkClassAthlete (access.ts) decides reach; this wraps it
    with the status rule and the registered-set read. Athlete self-marks and
    parent marks do not come through here. */
+/* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
+
+   The register lets the coach running a class mark athletes they do not
+   otherwise reach (assignment or coverage). Reach for everything else is
+   unchanged (OD-2026-10-07-008 ruling 4, "Everything else stays
+   assigned-coach only"), so a register mark must not carry two things with it:
+   - the hold's reason, explanation and lift condition. The training-holds
+     route refuses those to an unassigned coach; without this, cover_class
+     plus a walk-in mark read any athlete's hold in the gym. The coach is
+     still told the athlete is held and at what scope (OD-2026-10-06-024
+     ruling 1), which is what they need on the floor.
+   - the note. They cannot read it (Overwatch option B), so their mark keeps
+     the stored note instead of overwriting it unseen, and a note from them
+     about an athlete they do not coach is refused.
+   Only a coach is narrowed; an organization admin reaches the whole gym. */
+async function athletesBeyondReach(actor: SchedulerActor, athleteIds: readonly string[]): Promise<Set<string>> {
+  if (actor.role !== 'coach') return new Set();
+  const reach = new Set(await getCoachAthleteIds(actor));
+  return new Set(athleteIds.filter((id) => !reach.has(id)));
+}
+
+function assertNoNoteBeyondReach(beyondReach: ReadonlySet<string>, athleteId: string, note: string): void {
+  if (note && beyondReach.has(athleteId)) {
+    throw new Error("Forbidden: an attendance note on an athlete you do not coach is for that athlete's own coach");
+  }
+}
+
+function holdWarningWithinReach<T extends StaffHoldWarning>(warning: T, beyondReach: boolean) {
+  if (!beyondReach) return warning;
+  return { ...warning, reason_category: '', athlete_explanation: '', lift_condition_text: '', details_withheld: true as const };
+}
+
 async function resolveRegisterMark(
   actor: SchedulerActor,
   classItem: SchedulerClass,
@@ -998,6 +1034,10 @@ export async function POST(request: NextRequest) {
         method = resolveAttendanceMethod(actor, isSelf);
       }
 
+      const beyondReach = await athletesBeyondReach(actor, [athleteId]);
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      assertNoNoteBeyondReach(beyondReach, athleteId, note);
+
       const now = new Date().toISOString();
 
       const attendanceRecord: SchedulerAttendance = {
@@ -1008,12 +1048,14 @@ export async function POST(request: NextRequest) {
         method,
         checked_in_by_role: actorRole,
         checked_in_by_account_id: actor.accountId,
-        note: typeof body.note === 'string' ? body.note.trim() : '',
+        note,
         checked_in_at: now,
         updated_at: now,
       };
 
-      await upsertSchedulerAttendance(actor.organizationId, attendanceRecord);
+      await upsertSchedulerAttendance(actor.organizationId, attendanceRecord, {
+        keepExistingNote: beyondReach.has(athleteId),
+      });
 
       // OD-2026-10-06-024 ruling 1 ("Warn only, both places"): an active
       // training hold does NOT stop a check-in -- a held athlete may still
@@ -1021,7 +1063,10 @@ export async function POST(request: NextRequest) {
       // only (readStaffHoldWarning returns nothing for an athlete's own
       // check-in or a parent's), read after the mark is stored and never able
       // to fail it. The key is absent when the athlete is not held.
-      const holdWarning = await readStaffHoldWarning(actor.role, actor.organizationId, athleteId);
+      const holdRead = await readStaffHoldWarning(actor.role, actor.organizationId, athleteId);
+      const holdWarning = holdRead && holdRead !== 'unreadable'
+        ? holdWarningWithinReach(holdRead, beyondReach.has(athleteId))
+        : holdRead;
       return NextResponse.json({
         ok: true,
         class_id: classId,
@@ -1094,16 +1139,24 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      await bulkUpsertSchedulerAttendance(actor.organizationId, records);
+      const beyondReach = await athletesBeyondReach(actor, records.map((record) => record.athlete_id));
+      for (const record of records) assertNoNoteBeyondReach(beyondReach, record.athlete_id, record.note);
+
+      await bulkUpsertSchedulerAttendance(actor.organizationId, records, {
+        keepExistingNoteFor: records.filter((record) => beyondReach.has(record.athlete_id)).map((record) => record.athlete_id),
+      });
 
       // Same ruling as the single check-in above: warn, never block. Staff
       // only by the gate at the top of this action; one list read for the
       // batch (readStaffHoldWarnings), absent keys when nobody is held.
-      const holdWarnings = await readStaffHoldWarnings(
+      const holdRead = await readStaffHoldWarnings(
         actor.role,
         actor.organizationId,
         records.map((record) => record.athlete_id),
       );
+      const holdWarnings = holdRead === 'unreadable'
+        ? holdRead
+        : holdRead.map((warning) => holdWarningWithinReach(warning, beyondReach.has(warning.athlete_id)));
       return NextResponse.json({
         ok: true,
         class_id: classId,

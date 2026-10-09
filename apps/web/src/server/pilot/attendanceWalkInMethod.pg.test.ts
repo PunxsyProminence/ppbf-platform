@@ -22,6 +22,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { ATTENDANCE_UPSERT_SQL, attendanceUpsertParams, type SchedulerAttendance } from './schedulerDb';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -314,6 +316,49 @@ describe('attendance walk-in method runner readiness assertion', () => {
       // The `all` chain re-runs every migration on every dispatch (#489), so
       // the second pass has to survive its own first pass.
       await applyMigrationTransaction(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+/* The register mark of a coach who does not otherwise reach the athlete keeps
+   the stored note (adversarial review of W3): the real upsert statement, run
+   against real Postgres, not a mock that only proves the route asked. */
+describe('the attendance upsert keeps a stored note when asked to', () => {
+  function mark(note: string): SchedulerAttendance {
+    return {
+      attendance_id: 'attendance-upsert-new-id',
+      class_id: CLASS_ID,
+      athlete_id: ATHLETE_ID,
+      status: 'present',
+      method: 'coach_override',
+      checked_in_by_role: 'coach',
+      checked_in_by_account_id: COACH_ID,
+      note,
+      checked_in_at: '2026-10-09T15:00:00.000Z',
+      updated_at: '2026-10-09T15:00:00.000Z',
+    };
+  }
+
+  test('kept for an athlete on the keep list, replaced otherwise; status updates either way', async () => {
+    const client = await freshDatabase('ppbf_test_walkin_keep_note');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `insert into pilot.scheduler_attendance
+           (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role, checked_in_by_account_id, note, checked_in_at)
+         values ($1, 'attendance-original', $2, $3, 'absent', 'coach_override', 'coach', $4, 'OWN COACH NOTE', now())`,
+        [ORG_ID, CLASS_ID, ATHLETE_ID, COACH_ID],
+      );
+      const read = async () =>
+        (await client.query('select status, note, attendance_id from pilot.scheduler_attendance where athlete_id = $1', [ATHLETE_ID])).rows;
+
+      await client.query(ATTENDANCE_UPSERT_SQL, attendanceUpsertParams(ORG_ID, [mark('')], [ATHLETE_ID]));
+      expect(await read()).toEqual([{ status: 'present', note: 'OWN COACH NOTE', attendance_id: 'attendance-original' }]);
+
+      await client.query(ATTENDANCE_UPSERT_SQL, attendanceUpsertParams(ORG_ID, [mark('replaced')]));
+      expect(await read()).toEqual([{ status: 'present', note: 'replaced', attendance_id: 'attendance-original' }]);
     } finally {
       await client.end();
     }

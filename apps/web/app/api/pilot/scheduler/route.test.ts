@@ -119,6 +119,9 @@ beforeEach(() => {
   mockUpsertAttendance.mockResolvedValue(undefined);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
   mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
+  // The athletes a coach reaches outside any class register (assignment or
+  // coverage). Tests about reach beyond the register override this.
+  (athleteIdsForCoach as jest.Mock).mockResolvedValue(['ATH-1', 'ATH-2']);
 });
 
 afterEach(() => {
@@ -953,6 +956,163 @@ describe('the class register: whole class plus walk-ins', () => {
 // Audit s3: a mistyped date on the schedule screen answered 500 with the
 // field name replaced by "Internal server error". Caller-fixable input is a
 // 400 that names the field.
+/* WHAT THE REGISTER DOES NOT HAND OVER (adversarial review of W3).
+
+   The register lets the coach running a class mark athletes they do not
+   otherwise reach. Two things must not come with it:
+   - the hold's explanation, reason and lift condition -- the training-holds
+     route refuses those to an unassigned coach, so the check-in answer must
+     not become a way round it (only "on hold" and its scope come back);
+   - the note: they cannot read it (Overwatch option B), so their mark must
+     not overwrite it, and they cannot write one either. */
+describe('the class register does not reach past the register', () => {
+  const mockQueryOne = queryOne as jest.Mock;
+  const mockQuery = query as jest.Mock;
+  const mockReach = athleteIdsForCoach as jest.Mock;
+  afterEach(() => {
+    mockQueryOne.mockReset();
+    mockQuery.mockReset();
+  });
+
+  const HOLD_ROW = {
+    hold_id: 'hold-9',
+    athlete_id: 'ATH-NOT-MINE',
+    scope: 'contact_only',
+    reason_category: 'medical',
+    reason_text: 'STAFF-ONLY',
+    athlete_explanation: 'PRIVATE EXPLANATION',
+    lift_condition_text: 'PRIVATE LIFT CONDITION',
+    placed_by_account_id: 'acct-other',
+    placed_by_role: 'coach',
+    placed_at: '2026-10-01 10:00:00+00',
+    expires_at: null,
+    status: 'active',
+  };
+
+  test('a held athlete the coach does not reach: the answer says on hold and the scope, nothing more', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce(HOLD_ROW);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present' }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.hold_warning).toMatchObject({ scope: 'contact_only', details_withheld: true });
+    const text = JSON.stringify(body);
+    expect(text).not.toContain('PRIVATE EXPLANATION');
+    expect(text).not.toContain('PRIVATE LIFT CONDITION');
+    expect(text).not.toContain('medical');
+  });
+
+  test('bulk: hold details are withheld for athletes beyond reach and kept for athletes the coach reaches', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1', 'ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQuery.mockImplementation(async (sql: string) =>
+      (String(sql).includes('training_holds')
+        ? [HOLD_ROW, { ...HOLD_ROW, hold_id: 'hold-1', athlete_id: 'ATH-1', athlete_explanation: 'OWN ATHLETE EXPLANATION' }]
+        : []));
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-NOT-MINE', status: 'present' },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const byAthlete = Object.fromEntries(
+      (body.hold_warnings as Array<{ athlete_id: string }>).map((row) => [row.athlete_id, row]),
+    );
+    expect(byAthlete['ATH-1']).toMatchObject({ athlete_explanation: 'OWN ATHLETE EXPLANATION' });
+    expect(byAthlete['ATH-NOT-MINE']).toMatchObject({ scope: 'contact_only', details_withheld: true });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE EXPLANATION');
+  });
+
+  test('a mark on an athlete beyond reach keeps the stored note instead of erasing it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present' }));
+
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ athlete_id: 'ATH-NOT-MINE' }), {
+      keepExistingNote: true,
+    });
+  });
+
+  test('a mark on an athlete the coach reaches writes the note as before', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'present', note: 'late' }));
+
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ athlete_id: 'ATH-1', note: 'late' }), {
+      keepExistingNote: false,
+    });
+  });
+
+  test('bulk keeps the stored note for every athlete beyond reach, and only those', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1', 'ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+    mockQuery.mockResolvedValue([]);
+
+    await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-NOT-MINE', status: 'absent' },
+        ],
+      }),
+    );
+
+    expect(mockBulkUpsertAttendance).toHaveBeenCalledWith('org-1', expect.any(Array), {
+      keepExistingNoteFor: ['ATH-NOT-MINE'],
+    });
+  });
+
+  test('a note on an athlete beyond reach is refused, and nothing is written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockReach.mockResolvedValueOnce(['ATH-1']);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present', note: 'x' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('an organization admin reaches every athlete: full hold details and notes, no reach read', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockListRegistered.mockResolvedValueOnce(['ATH-NOT-MINE']);
+    mockQueryOne.mockResolvedValueOnce(HOLD_ROW);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-NOT-MINE', status: 'present', note: 'n' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).hold_warning).toMatchObject({ athlete_explanation: 'PRIVATE EXPLANATION' });
+    expect(mockUpsertAttendance).toHaveBeenCalledWith('org-1', expect.objectContaining({ note: 'n' }), { keepExistingNote: false });
+    expect(mockReach).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/pilot/scheduler answers bad input with 400 and the field name', () => {
   const mockCreateClass = createSchedulerClass as jest.Mock;
 

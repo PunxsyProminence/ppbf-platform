@@ -407,8 +407,14 @@ export async function resolveSchedulerCoachingRequest(params: {
 // of the loser's 23505 unique-violation surfacing as an unexplained 500 --
 // which is exactly what the previous select-then-write body here did, the
 // same race the bulk function's own comment warned about.
-export async function upsertSchedulerAttendance(organizationId: string, item: SchedulerAttendance): Promise<void> {
-  await bulkUpsertSchedulerAttendance(organizationId, [item]);
+export async function upsertSchedulerAttendance(
+  organizationId: string,
+  item: SchedulerAttendance,
+  options: { keepExistingNote?: boolean } = {},
+): Promise<void> {
+  await bulkUpsertSchedulerAttendance(organizationId, [item], {
+    keepExistingNoteFor: options.keepExistingNote ? [item.athlete_id] : [],
+  });
 }
 
 /** Athlete ids with a live ('registered') registration for one class. */
@@ -437,11 +443,13 @@ export async function listRegisteredAthleteIdsForClass(organizationId: string, c
 // semantics leave any column not listed there untouched on a conflict, so an
 // existing row keeps its original id and only a genuinely new row gets the
 // one this call generated.
-export async function bulkUpsertSchedulerAttendance(organizationId: string, items: SchedulerAttendance[]): Promise<void> {
-  if (items.length === 0) return;
-
-  await query(
-    `insert into pilot.scheduler_attendance (
+// keepExistingNoteFor: athletes whose stored note this write must not
+// replace. The coach running a class marks every athlete on it
+// (OD-2026-10-07-008 ruling 4) but reads the note only for athletes they
+// reach (Overwatch option B), so their mark cannot be allowed to overwrite --
+// and erase, unseen -- a note the athlete's own coach wrote. A new row still
+// gets the item's note, which the route sets to ''.
+export const ATTENDANCE_UPSERT_SQL = `insert into pilot.scheduler_attendance (
        organization_id, attendance_id, class_id, athlete_id,
        status, method,
        checked_in_by_role, checked_in_by_account_id,
@@ -464,21 +472,40 @@ export async function bulkUpsertSchedulerAttendance(organizationId: string, item
          method = excluded.method,
          checked_in_by_role = excluded.checked_in_by_role,
          checked_in_by_account_id = excluded.checked_in_by_account_id,
-         note = excluded.note,
+         note = case
+           when excluded.athlete_id = any($12::text[]) then pilot.scheduler_attendance.note
+           else excluded.note
+         end,
          checked_in_at = excluded.checked_in_at,
-         updated_at = excluded.updated_at`,
-    [
-      organizationId,
-      items.map((item) => item.attendance_id),
-      items.map((item) => item.class_id),
-      items.map((item) => item.athlete_id),
-      items.map((item) => item.status),
-      items.map((item) => item.method),
-      items.map((item) => item.checked_in_by_role),
-      items.map((item) => item.checked_in_by_account_id),
-      items.map((item) => item.note),
-      items.map((item) => item.checked_in_at),
-      items.map((item) => item.updated_at),
-    ],
-  );
+         updated_at = excluded.updated_at`;
+
+export function attendanceUpsertParams(
+  organizationId: string,
+  items: SchedulerAttendance[],
+  keepExistingNoteFor: readonly string[] = [],
+): unknown[] {
+  return [
+    organizationId,
+    items.map((item) => item.attendance_id),
+    items.map((item) => item.class_id),
+    items.map((item) => item.athlete_id),
+    items.map((item) => item.status),
+    items.map((item) => item.method),
+    items.map((item) => item.checked_in_by_role),
+    items.map((item) => item.checked_in_by_account_id),
+    items.map((item) => item.note),
+    items.map((item) => item.checked_in_at),
+    items.map((item) => item.updated_at),
+    [...keepExistingNoteFor],
+  ];
+}
+
+export async function bulkUpsertSchedulerAttendance(
+  organizationId: string,
+  items: SchedulerAttendance[],
+  options: { keepExistingNoteFor?: readonly string[] } = {},
+): Promise<void> {
+  if (items.length === 0) return;
+
+  await query(ATTENDANCE_UPSERT_SQL, attendanceUpsertParams(organizationId, items, options.keepExistingNoteFor));
 }
