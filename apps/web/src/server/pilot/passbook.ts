@@ -713,9 +713,15 @@ export async function getGuardianPassbook(
   };
 }
 
+/**
+ * athleteIds: null = the whole organization (an organization admin); a list =
+ * exactly those athletes. A coach's list comes from athleteIdsForCoach --
+ * coach of record UNION active coverage (OD-2026-10-05-024 item 2) -- so a
+ * covering coach sees the gaps of the athletes they are covering.
+ */
 export async function getCoachPassbookGapQueue(
   organizationId: string,
-  coachAccountId: string | null,
+  athleteIds: readonly string[] | null,
 ): Promise<CoachPassbookGapQueueItem[]> {
   const rows = await query<CoachPassbookGapQueueRow>(
     `select
@@ -760,18 +766,19 @@ export async function getCoachPassbookGapQueue(
      ) absences on true
      where g.organization_id = $1
        and g.status not in ('completed', 'deferred')
-       and ($2::text is null or a.coach_id = $2)
+       and ($2::text[] is null or a.athlete_id = any($2::text[]))
        -- Scope B: a deleted athlete's gaps are marked deleted with them.
        and a.deleted_at is null
      order by recorded_absences_since_last_visit desc, last_attended_on asc nulls first,
        case g.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end,
        g.created_at desc`,
-    [organizationId, coachAccountId],
+    [organizationId, athleteIds],
   );
 
+  const scope = athleteIds === null ? null : new Set(athleteIds);
   return rows
     .filter((row) => belongsToOrganization(row, organizationId))
-    .filter((row) => coachAccountId === null || row.coach_id === coachAccountId)
+    .filter((row) => scope === null || scope.has(row.athlete_id))
     .map((row) => ({
       gap_id: row.gap_id,
       gap_type: row.gap_type,

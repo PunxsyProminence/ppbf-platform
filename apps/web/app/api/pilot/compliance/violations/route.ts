@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, athleteIdsForCoach } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   ComplianceViolationAlreadyFiledError,
@@ -56,7 +56,10 @@ export async function GET(request: NextRequest) {
       athleteId: athleteId || undefined,
       status: status || undefined,
       limit,
-      coachAccountId: principal.role === 'coach' && !athleteId ? principal.accountId : undefined,
+      // A coach's unfiltered list: every athlete they reach, coverage included.
+      athleteIds: principal.role === 'coach' && !athleteId
+        ? await athleteIdsForCoach(principal.organizationId, principal.accountId)
+        : undefined,
     });
 
     // `limit` travels with the rows because this read is capped and ordered

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError } from '@/src/server/pilot/http';
 import { issueMagicLink } from '@/src/server/pilot/magicLink';
 import { magicLinkDependencies } from '@/src/server/pilot/magicLinkStore';
-import { getClientIp, checkRateLimit, recordFailedAttempt, checkDurableRateLimit, recordDurableFailedAttempt } from '@/src/server/pilot/rateLimit';
+import { getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -31,6 +31,11 @@ export const runtime = 'nodejs';
  * roster. Attempts are recorded whatever the outcome -- recording only
  * failures would make "no attempt recorded" a signal that the address was
  * real, which is the leak this route exists to avoid.
+ *
+ * Counted and checked in ONE step (reserveAttempts, CL-A4). The IP bucket
+ * used to be recorded only after an await, so a burst across many addresses
+ * from one IP all passed the IP read before the first was counted -- the
+ * roster walk the IP axis exists to slow.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -71,9 +76,8 @@ export async function POST(request: NextRequest) {
     const emailKey = `magic_link_email:${email}`;
     const ipKey = `magic_link_ip:${clientIp}`;
 
-    const durableEmail = await checkDurableRateLimit(emailKey);
-    const durableIp = await checkDurableRateLimit(ipKey);
-    if (durableEmail.isLimited || durableIp.isLimited || checkRateLimit(emailKey).isLimited || checkRateLimit(ipKey).isLimited) {
+    const reservation = await reserveAttempts([emailKey, ipKey]);
+    if (reservation.isLimited) {
       // Deliberately the same 429 for both axes. Distinguishing them tells a
       // caller whether they hit a per-address limit, which is itself a hint
       // that the address is worth continuing to probe.
@@ -82,10 +86,6 @@ export async function POST(request: NextRequest) {
         { status: 429 },
       );
     }
-
-    await recordDurableFailedAttempt(emailKey);
-    await recordDurableFailedAttempt(ipKey);
-    recordFailedAttempt(ipKey);
 
     // Per-address failures are swallowed on purpose, and only here (the site
     // address fault above is the one exception, and it is the same for

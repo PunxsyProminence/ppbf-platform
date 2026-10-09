@@ -291,6 +291,10 @@ describe('the worker\'s response-safety review row is bounded and refunded', () 
       // The worker's rows are always 'high'; only the route writes 'critical'.
       severity: 'high',
       summary: 'A generated SHADOW background result was replaced by the post-generation safety boundary.',
+      // W5: the ticket names the conversation and the appended answer, as
+      // the route's rows do, so the review desk can read the one exchange.
+      conversationId: 'c0ffee00-1111-4222-8333-444444444444',
+      metadata: expect.objectContaining({ assistantMessageId: 'assistant-msg-1' }),
     }));
     expect(mockRefundRateLimit).not.toHaveBeenCalled();
   });

@@ -263,6 +263,13 @@ function PeopleConsoleContent() {
      interrupts somebody mid-use, and that should not be a stray tap on a
      roster. */
   const [revokeArmedId, setRevokeArmedId] = useState<string | null>(null);
+  /* THE HEAVY ONE FOR STAFF (Jason 2026-10-07, OD-2026-10-07-009, "Yes, org
+     admin can"): switch a departed coach, staff member or volunteer off. The
+     route ends their sessions and stops their sign-in; reactivation restores
+     it. Armed per row like the sign-out above, because a stray tap here locks
+     a colleague out. The server decides who may be switched off; this page
+     only offers the control where the server would say yes. */
+  const [deactivateArmedId, setDeactivateArmedId] = useState<string | null>(null);
 
   // Add athlete form. account_id and athlete_id are shared by both modes; the
   // rest of the roster fields are only sent when creating a new record.
@@ -916,6 +923,42 @@ function PeopleConsoleContent() {
   }
 
   /**
+   * Switch a coach, staff or volunteer account off, or back on.
+   *
+   * Off: every session ends now and sign-in refuses until reactivated. On:
+   * sign-in works again, nothing else changes. The roster is re-read rather
+   * than patched, so the Sign-in badge shows what the server now holds.
+   */
+  async function handleSetAccountActive(accountId: string, activeFlag: boolean) {
+    setBusy(true);
+    setNotice('');
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/accounts/deactivate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ account_id: accountId, active_flag: activeFlag }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || (activeFlag ? 'Could not reactivate that account' : 'Could not deactivate that account'));
+      }
+      setDeactivateArmedId(null);
+      setNotice(
+        activeFlag
+          ? `${accountId} is active again and can sign in.`
+          : `${accountId} is deactivated: signed out on every device, and sign-in is refused until you reactivate them.`,
+      );
+      await load();
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : 'Could not change that account');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
    * Revoke the old credential and sessions, then issue a fresh one-time code.
    */
   async function handleResetToStartingPin(accountId: string) {
@@ -1176,6 +1219,8 @@ function PeopleConsoleContent() {
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
                     const status = signInStatus(member, linkCount);
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
+                    // The same three roles the deactivate route accepts (its DEACTIVATABLE_ROLES).
+                    const isDeactivatable = member.role === 'coach' || member.role === 'staff' || member.role === 'volunteer';
 
                     return (
                       <tr key={member.account_id}>
@@ -1390,6 +1435,61 @@ function PeopleConsoleContent() {
                               >
                                 Sign Out Everywhere
                               </button>
+                            )}
+
+                            {/* Only the rows the server will act on: coach,
+                                staff, volunteer (OD-2026-10-07-009). Admins,
+                                guardians and athletes have no switch here --
+                                offering one that always 403s is a broken
+                                button. */}
+                            {isDeactivatable && (
+                              !member.active_flag || !member.membership_active ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  aria-label={`Reactivate ${member.account_id}`}
+                                  onClick={() => void handleSetAccountActive(member.account_id, true)}
+                                  className="btn--lever whitespace-nowrap disabled:opacity-50"
+                                >
+                                  Reactivate
+                                </button>
+                              ) : deactivateArmedId === member.account_id ? (
+                                <>
+                                  <p className="max-w-[34ch]">
+                                    Deactivates {member.account_id} now: signed out on every device, and
+                                    their sign-in is refused until you reactivate them. Nothing else about
+                                    them changes.
+                                  </p>
+                                  <div className="flex flex-wrap gap-[var(--s2)]">
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => void handleSetAccountActive(member.account_id, false)}
+                                      className="btn btn--danger whitespace-nowrap disabled:opacity-50"
+                                    >
+                                      Confirm Deactivate
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => setDeactivateArmedId(null)}
+                                      className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                                    >
+                                      Keep Active
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  aria-label={`Deactivate ${member.account_id}`}
+                                  onClick={() => setDeactivateArmedId(member.account_id)}
+                                  className="btn btn--ghost whitespace-nowrap disabled:opacity-50"
+                                >
+                                  Deactivate
+                                </button>
+                              )
                             )}
                           </div>
                         </td>

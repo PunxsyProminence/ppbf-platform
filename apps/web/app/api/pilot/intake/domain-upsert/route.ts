@@ -12,6 +12,7 @@ import {
 } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
+import { MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
 import { requireWaiverStatus } from '@/src/server/pilot/waiverCompliance';
 import {
   createAssessment,
@@ -183,10 +184,22 @@ export async function POST(request: NextRequest) { // NOSONAR
           notes: typeof payload.notes === 'string' ? payload.notes : undefined,
         }, client);
       } else if (entityType === 'waiver') {
+        const waiverType = asString(payload.waiver_type, 'general');
+        // Jason 2026-10-07, OD-2026-10-07-009 "Remove it, send to consent
+        // screen": photo and media consent is recorded guardian by guardian
+        // (/api/pilot/admin/athlete-consent), never as a register row with no
+        // guardian. A row written here carried no parent_id, so every media
+        // gate ignored it while the register read it as Signed. The register
+        // page no longer offers the type; this makes the rule the server's.
+        if (waiverType === MEDIA_CONSENT_WAIVER_TYPE) {
+          throw new Error(
+            'Unsupported waiver_type: photo and media consent is recorded guardian by guardian on the Guardian Media Consent desk (/admin/athlete-consent), not on the general register',
+          );
+        }
         entityId = await upsertWaiver({
           organizationId: principal.organizationId,
           athleteId,
-          waiverType: asString(payload.waiver_type, 'general'),
+          waiverType,
           signedByName: asString(payload.signed_by_name),
           signedByRole: asString(payload.signed_by_role, 'guardian'),
           signedAt: asString(payload.signed_at, new Date().toISOString()),

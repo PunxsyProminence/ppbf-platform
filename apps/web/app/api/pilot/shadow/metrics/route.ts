@@ -313,11 +313,20 @@ async function getOperationalMetrics(organizationId: string, days: number): Prom
   };
 }
 
+// "Concerned" means a pending flag from negative feedback. A human-reviewed
+// thumbs-up queues a 'promote' proposal, and a neutral outcome (asked_followup,
+// session_ended) a 'retain' proposal, on the same table in the same 'pending'
+// state (shadowLearningLoop.ts queueLibraryEntryChangeForHumanReview), and
+// this list used to count both as topics in trouble. The proposal rows are
+// untouched; they are not concern (OD-2026-10-08 GO-RECS-CONFIRMED, O11 = A,
+// read by overwatch 2026-10-08: concern means negative only). A 'demote'
+// proposal is negative and stays in.
 async function getConcernedTopics(organizationId: string): Promise<string[]> {
   const rows = await query<{ topic: string }>(
     `SELECT topic
      FROM pilot.shadow_library_review_flags
      WHERE organization_id = $1 AND review_state = 'pending'
+       AND (proposed_action IS NULL OR proposed_action = 'demote')
      ORDER BY last_flagged_at DESC
      LIMIT 20`,
     [organizationId],
