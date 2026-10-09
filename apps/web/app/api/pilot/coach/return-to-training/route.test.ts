@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
 import { assertAthleteBelongsToOrganization, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
-import { getInjuryById, updateInjury } from '@/src/server/pilot/athleteInjuries';
+import { getInjuryById, linkInjuryToPlan } from '@/src/server/pilot/athleteInjuries';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -27,7 +27,7 @@ jest.mock('@/src/server/pilot/http', () => ({
 jest.mock('@/src/server/pilot/athleteInjuries', () => ({
   ...jest.requireActual('@/src/server/pilot/athleteInjuries'),
   getInjuryById: jest.fn(),
-  updateInjury: jest.fn(),
+  linkInjuryToPlan: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -45,7 +45,7 @@ const mockPrincipal = requirePrincipal as jest.Mock;
 const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
 const mockBelongs = assertAthleteBelongsToOrganization as jest.Mock;
 const mockGetInjury = getInjuryById as jest.Mock;
-const mockUpdateInjury = updateInjury as jest.Mock;
+const mockLink = linkInjuryToPlan as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCreatePlan = createReturnToTrainingPlan as jest.Mock;
 const mockListPlans = listReturnToTrainingPlans as jest.Mock;
@@ -96,7 +96,7 @@ const ADD = { action: 'add_step', athlete_id: 'ATH-1', plan_id: 'plan-1', week_n
 const ADVANCE = { athlete_id: 'ATH-1', plan_id: 'plan-1', step_id: 'step-2', advancement_note: 'Completed the week pain-free.' };
 
 const writes = () =>
-  [mockCreatePlan, mockAddStep, mockAdvance, mockUpdateInjury, mockAudit].reduce((n, m) => n + m.mock.calls.length, 0);
+  [mockCreatePlan, mockAddStep, mockAdvance, mockLink, mockAudit].reduce((n, m) => n + m.mock.calls.length, 0);
 const moduleCalls = () => writes() + mockListPlans.mock.calls.length + mockListSteps.mock.calls.length + mockGetInjury.mock.calls.length;
 
 beforeEach(() => {
@@ -104,7 +104,7 @@ beforeEach(() => {
   mockCoachAssigned.mockResolvedValue(undefined);
   mockBelongs.mockResolvedValue(undefined);
   mockGetInjury.mockResolvedValue(INJURY);
-  mockUpdateInjury.mockImplementation(async ({ fields }) => ({ ...INJURY, linked_rtt_plan_id: fields.linkedRttPlanId }));
+  mockLink.mockImplementation(async ({ planId }) => ({ ...INJURY, linked_rtt_plan_id: planId, expected_return_date: null }));
   mockCreatePlan.mockImplementation(async (input) => ({
     ...PLAN,
     plan_id: 'plan-new',
@@ -221,18 +221,11 @@ describe('an assigned coach', () => {
       enteredByRole: 'coach',
       note: 'Physician letter on file.',
     });
-    // The link keeps every recorded field, clears the row's own expected
-    // return (the plan now holds it), and names the new plan.
-    expect(mockUpdateInjury).toHaveBeenCalledWith({
+    // Link only, by id: no field of the injury is replayed from the earlier read.
+    expect(mockLink).toHaveBeenCalledWith({
       organizationId: ORG,
       injuryId: INJURY.injury_id,
-      fields: expect.objectContaining({
-        bodyArea: 'wrist',
-        staffNote: 'Said it twisted.',
-        expectedReturnDate: null,
-        linkedRttPlanId: 'plan-new',
-        linkedHoldId: 'hold-1',
-      }),
+      planId: 'plan-new',
       updatedByAccountId: 'acct-coach-1',
     });
     expect(mockAudit).toHaveBeenCalledWith(
@@ -249,7 +242,7 @@ describe('an assigned coach', () => {
     // The audit row is written before the link, so a failed link never leaves
     // an unaudited plan; and it carries no free text (authority_source can
     // name a physician).
-    expect(mockAudit.mock.invocationCallOrder[0]).toBeLessThan(mockUpdateInjury.mock.invocationCallOrder[0]);
+    expect(mockAudit.mock.invocationCallOrder[0]).toBeLessThan(mockLink.mock.invocationCallOrder[0]);
     expect(JSON.stringify(mockAudit.mock.calls[0][0].details)).not.toContain('USA Boxing');
     expect(await res.json()).toMatchObject({ ok: true, plan: { plan_id: 'plan-new', steps: [], current_step_id: null }, injury: { linked_rtt_plan_id: 'plan-new' } });
   });
@@ -257,14 +250,14 @@ describe('an assigned coach', () => {
   test("an injury's own expected return carries into the plan when the body gives none, instead of being dropped", async () => {
     expect((await POST(bodyReq('POST', CREATE))).status).toBe(200);
     expect(mockCreatePlan.mock.calls[0][0]).toMatchObject({ earliestReturnDate: '2026-09-20', medicalClearanceOnFile: false });
-    expect(mockUpdateInjury.mock.calls[0][0].fields).toMatchObject({ expectedReturnDate: null, linkedRttPlanId: 'plan-new' });
+    expect(mockLink.mock.calls[0][0]).toMatchObject({ planId: 'plan-new' });
   });
 
-  test('a link that fails after the plan exists surfaces the error; the plan was already audited', async () => {
-    const { NotFoundError } = jest.requireActual('@/src/server/pilot/errors');
-    mockUpdateInjury.mockRejectedValue(new NotFoundError('Injury record not found.'));
+  test('a link that loses to a plan linked meanwhile is a 409; the plan exists and was audited', async () => {
+    const { ConflictError } = jest.requireActual('@/src/server/pilot/errors');
+    mockLink.mockRejectedValue(new ConflictError('This injury already has a return-to-training plan.', 'RTT_PLAN_ALREADY_LINKED'));
     const res = await POST(bodyReq('POST', CREATE));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(409);
     expect(mockCreatePlan).toHaveBeenCalledTimes(1);
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ entity_type: 'return_to_training_plan', entity_id: 'plan-new' }));
   });

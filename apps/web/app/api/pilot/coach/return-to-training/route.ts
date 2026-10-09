@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertAthleteBelongsToOrganization, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
-import { getInjuryById, updateInjury } from '@/src/server/pilot/athleteInjuries';
+import { getInjuryById, linkInjuryToPlan } from '@/src/server/pilot/athleteInjuries';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ConflictError, NotFoundError, ValidationError } from '@/src/server/pilot/errors';
@@ -48,11 +48,12 @@ const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
  * Creating a plan on an injury links the injury to it (the injury's expected
  * return then reads from the plan, athleteInjuries.ts:24). The plan row, its
  * audit row and the link are separate writes, not one transaction (neither
- * module takes a client). If the link fails after the plan exists, the plan
- * is audited and listed as a link candidate on the injury page, the caller
- * sees the error, and a retry would create a second plan: link the existing
- * one from the injury record instead. Two coaches creating a plan on the same
- * injury at the same moment can both succeed, the later link winning.
+ * module takes a client). The link itself is atomic and link-only
+ * (linkInjuryToPlan): an injury edit made meanwhile is kept, and of two
+ * coaches creating a plan on the same injury at once only the first links;
+ * the second sees a 409 and their plan stays unlinked. A plan whose link
+ * failed is audited and listed as a link candidate on the injury page; link
+ * it from the injury record rather than creating another.
  */
 
 const TRIGGERING_EVENTS: readonly RttTriggeringEvent[] = [
@@ -222,25 +223,12 @@ export async function POST(request: NextRequest) {
         details: { injury_id: injuryId, triggering_event: plan.triggering_event, medical_clearance_on_file: plan.medical_clearance_on_file },
       });
 
-      // Link the injury to its plan, keeping every other field as recorded.
-      // The plan now holds the expected return, so the row's own is cleared.
-      const linked = await updateInjury({
+      // Link only: the row's other fields are left as they are now, not as
+      // they were read above, and a plan linked meanwhile wins (409).
+      const linked = await linkInjuryToPlan({
         organizationId: principal.organizationId,
         injuryId,
-        fields: {
-          injuryDate: injury.injury_date,
-          bodyArea: injury.body_area,
-          injuryType: injury.injury_type,
-          context: injury.context,
-          reportedBy: injury.reported_by,
-          staffNote: injury.staff_note,
-          expectedReturnDate: null,
-          returnedOn: injury.returned_on,
-          linkedRttPlanId: plan.plan_id,
-          linkedHoldId: injury.linked_hold_id,
-          linkedClearanceStatusId: injury.linked_clearance_status_id,
-          linkedPainReportId: injury.linked_pain_report_id,
-        },
+        planId: plan.plan_id,
         updatedByAccountId: principal.accountId,
       });
       return NextResponse.json({ ok: true, plan: { ...plan, steps: [], current_step_id: null }, injury: linked }, NO_STORE);
