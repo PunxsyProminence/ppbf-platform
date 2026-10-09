@@ -52,7 +52,11 @@ export interface SchedulerAttendance {
   class_id: string;
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
-  method: 'self' | 'parent' | 'coach_override' | 'admin_override';
+  // 'walk_in': a coach or admin running the class marked present an athlete
+  // of the gym who was not registered to it (OD-2026-10-07-008 question
+  // card 1 item 4). Admitted by the attendance-walk-in-method migration; the
+  // other four are the base schema's.
+  method: 'self' | 'parent' | 'coach_override' | 'admin_override' | 'walk_in';
   checked_in_by_role: SchedulerRole;
   checked_in_by_account_id: string;
   note: string;

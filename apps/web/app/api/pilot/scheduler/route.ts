@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  actorRunsClass,
   assertActiveCoachAccount,
   assertActorCanAccessAthlete,
+  assertActorCanMarkClassAthlete,
   assertAthleteBelongsToOrganization,
   assertCoachAssignedToAthlete,
   athleteIdsForCoach,
@@ -13,6 +15,7 @@ import {
 import { parseInstantAsGymTime } from '@/src/lib/gymTime';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -78,16 +81,21 @@ interface SchedulerActor {
   athleteId: string | null;
 }
 
+// Input the caller can fix is a ValidationError (400, carrying its own
+// status), not a bare Error: jsonError maps only a few message prefixes to
+// 400, and "start_at must be a valid date string" matched none of them, so a
+// mistyped date on the schedule screen answered 500 with the field name
+// replaced by "Internal server error" (audit s3).
 function toIso(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new ValidationError(`${field} must be a non-empty string`);
   }
 
   // A time typed on the schedule screen carries no zone and means the gym's
   // clock; `new Date(value)` would read it in the server's zone instead.
   const d = parseInstantAsGymTime(value);
   if (!d) {
-    throw new Error(`${field} must be a valid date string`);
+    throw new ValidationError(`${field} must be a valid date string`);
   }
 
   return d.toISOString();
@@ -95,14 +103,23 @@ function toIso(value: unknown, field: string): string {
 
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new ValidationError(`${field} must be a non-empty string`);
   }
   return value.trim();
 }
 
 function requiredInt(value: unknown, field: string): number {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
-    throw new Error(`${field} must be an integer`);
+    throw new ValidationError(`${field} must be an integer`);
+  }
+  return value;
+}
+
+type AttendanceStatus = SchedulerAttendance['status'];
+
+function attendanceStatus(value: unknown, field: string): AttendanceStatus {
+  if (value !== 'present' && value !== 'absent' && value !== 'excused') {
+    throw new ValidationError(`${field} must be present, absent, or excused`);
   }
   return value;
 }
@@ -140,14 +157,48 @@ function resolveAttendanceMethod(actor: SchedulerActor, isSelf: boolean): Schedu
 // governed by assertCanActOnAthlete instead, and admin manages all.
 function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass): void {
   if (actor.role !== 'coach') return;
-  if (
-    classItem.coach_account_id === actor.accountId
-    || classItem.scheduled_by_account_id === actor.accountId
-    || classItem.covering_coach_account_id === actor.accountId
-  ) {
+  if (actorRunsClass(actor, classItem)) {
     return;
   }
-  throw new Error('Forbidden: coach does not own this class');
+  throw new Error('Forbidden: only the coach, cover or scheduler of this class can mark its register');
+}
+
+/* ONE REGISTER MARK, FOR A COACH OR ADMIN (OD-2026-10-07-008 question card 1
+   item 4, "Whole class plus walk-ins").
+
+   Before this, a coach marking a class they run still had to be the assigned
+   or covering coach of EACH athlete (assertCanActOnAthlete ->
+   assertCoachAssignedToAthlete), so the coach standing in front of the class
+   could not take the register for half of it. The ruling makes the class the
+   unit of reach: the coach who teaches, scheduled, or is covering it marks
+   every athlete registered to it, and may mark an athlete of the gym who
+   walked in without registering as PRESENT. That walk-in is stored with
+   method 'walk_in' so a roster read can tell "signed up and came" from
+   "turned up" -- a registration is not invented for them, and absent/excused
+   stay registered-only, because nobody is absent from a class they were
+   never on.
+
+   assertActorCanMarkClassAthlete (access.ts) decides reach; this wraps it
+   with the status rule and the registered-set read. Athlete self-marks and
+   parent marks do not come through here. */
+async function resolveRegisterMark(
+  actor: SchedulerActor,
+  classItem: SchedulerClass,
+  athleteId: string,
+  status: AttendanceStatus,
+  registeredIds: ReadonlySet<string>,
+): Promise<SchedulerAttendance['method']> {
+  // The helper decides ownership before anything else, so a coach who does
+  // not run the class learns nothing about who is registered to it from the
+  // shape of the refusal. It is the ONE place the rule lives; this function
+  // adds only the status rule for a walk-in.
+  const reach = await assertActorCanMarkClassAthlete(actor as never, classItem, athleteId, registeredIds);
+  if (reach === 'walk_in' && status !== 'present') {
+    throw new Error(
+      `Missing registration: athlete ${athleteId} is not registered for this class; a walk-in can only be marked present`,
+    );
+  }
+  return reach === 'walk_in' ? 'walk_in' : resolveAttendanceMethod(actor, false);
 }
 
 async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -564,7 +615,7 @@ export async function POST(request: NextRequest) {
       const location = requiredString(body.location, 'location');
       const capacity = requiredInt(body.capacity, 'capacity');
       if (capacity < 1 || capacity > 200) {
-        throw new Error('capacity must be between 1 and 200');
+        throw new ValidationError('capacity must be between 1 and 200');
       }
 
       const now = new Date().toISOString();
@@ -597,6 +648,26 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing class record');
       }
       await setSchedulerClassCover(actor.organizationId, classId, actor.accountId, new Date().toISOString());
+
+      // Route-survey B6: any coach can name themselves covering coach with
+      // one POST, and covering a class is what hands them its whole register
+      // (resolveRegisterMark). No approval step by ruling; the audit row is
+      // what makes a self-grant visible, so it records who held cover before.
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_class',
+        entity_id: classId,
+        details: {
+          action: 'cover_class',
+          class_id: classId,
+          previous_covering_coach_account_id: existingClass.covering_coach_account_id ?? null,
+          covering_coach_account_id: actor.accountId,
+        },
+        shadow_mirror: false,
+      });
 
       return NextResponse.json({ ok: true, class_id: classId });
     }
@@ -882,10 +953,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'attendance_checkin') {
       const classId = requiredString(body.class_id, 'class_id');
-      const status = body.status;
-      if (status !== 'present' && status !== 'absent' && status !== 'excused') {
-        throw new Error('status must be present, absent, or excused');
-      }
+      const status = attendanceStatus(body.status, 'status');
 
       let athleteId = body.athlete_id?.trim() || '';
       if (actor.role === 'athlete') {
@@ -895,31 +963,37 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing athlete_id');
       }
 
-      await assertCanActOnAthlete(actor, athleteId);
-
       const isSelf = actor.role === 'athlete';
       if (isSelf && status !== 'present') {
         throw new Error('Forbidden: athlete self check-in can only mark present');
       }
 
-      const now = new Date().toISOString();
-      const method = resolveAttendanceMethod(actor, isSelf);
-
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
       }
-      assertCoachOwnsClass(actor, classItem);
 
-      // Attendance is only recordable for a registered athlete. An
-      // unregistered mark would count in the org summary while appearing on
-      // no class roster -- a number no drill-down could explain or correct --
-      // and it is also what let an athlete self-mark 'present' in every
-      // class in the gym.
-      const registeredIds = await listRegisteredAthleteIdsForClass(actor.organizationId, classId);
-      if (!registeredIds.includes(athleteId)) {
-        throw new Error('Missing registration: athlete is not registered for this class');
+      const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
+
+      let method: SchedulerAttendance['method'];
+      if (actor.role === 'coach' || canManageAll(actor)) {
+        // The class register: whole class plus walk-ins (resolveRegisterMark).
+        method = await resolveRegisterMark(actor, classItem, athleteId, status, registeredIds);
+      } else {
+        // An athlete's own mark or a parent's mark on their child. Attendance
+        // is only recordable for a registered athlete here: an unregistered
+        // mark would count in the org summary while appearing on no class
+        // roster -- a number no drill-down could explain or correct -- and it
+        // is also what let an athlete self-mark 'present' in every class in
+        // the gym.
+        await assertCanActOnAthlete(actor, athleteId);
+        if (!registeredIds.has(athleteId)) {
+          throw new Error('Missing registration: athlete is not registered for this class');
+        }
+        method = resolveAttendanceMethod(actor, isSelf);
       }
+
+      const now = new Date().toISOString();
 
       const attendanceRecord: SchedulerAttendance = {
         attendance_id: randomUUID(),
@@ -947,6 +1021,8 @@ export async function POST(request: NextRequest) {
         ok: true,
         class_id: classId,
         athlete_id: athleteId,
+        // The screen says "marked as a walk-in" from this, not from guessing.
+        method,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       });
     }
@@ -966,6 +1042,8 @@ export async function POST(request: NextRequest) {
       if (!classItem) {
         throw new Error('Missing class record');
       }
+      // Refused before the entries are even read: a coach who does not run
+      // this class gets nothing from it, whoever is in the batch.
       assertCoachOwnsClass(actor, classItem);
 
       const entries = body.entries;
@@ -976,8 +1054,7 @@ export async function POST(request: NextRequest) {
         throw new Error('Unsupported entries: must not exceed 200 per request');
       }
 
-      // Same registration requirement as the single check-in path, for the
-      // same reason -- fetched once for the whole batch.
+      // The class roster, fetched once for the whole batch.
       const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
 
       const now = new Date().toISOString();
@@ -986,31 +1063,24 @@ export async function POST(request: NextRequest) {
 
       for (const entry of entries) {
         const entryAthleteId = requiredString(entry?.athlete_id, 'entries[].athlete_id');
-        const entryStatus = entry?.status;
-        if (entryStatus !== 'present' && entryStatus !== 'absent' && entryStatus !== 'excused') {
-          throw new Error('Unsupported entries[].status: must be present, absent, or excused');
-        }
+        const entryStatus = attendanceStatus(entry?.status, 'entries[].status');
         if (seenAthleteIds.has(entryAthleteId)) {
           throw new Error(`Unsupported entries: duplicate athlete_id ${entryAthleteId}`);
         }
         seenAthleteIds.add(entryAthleteId);
-        if (!registeredIds.has(entryAthleteId)) {
-          throw new Error(`Missing registration: athlete ${entryAthleteId} is not registered for this class`);
-        }
 
-        // Every athlete in the batch, not just the actor's own athleteId,
-        // must pass the same ownership check a single check-in would --
-        // a coach can only mark athletes they are actually assigned to
-        // (assertCanActOnAthlete -> assertCoachAssignedToAthlete), even
-        // inside a bulk call.
-        await assertCanActOnAthlete(actor, entryAthleteId);
+        // Every athlete in the batch passes the same register check a single
+        // mark would (resolveRegisterMark): registered to this class, or a
+        // live athlete of the gym marked present as a walk-in. One refusal
+        // fails the whole batch before any write.
+        const method = await resolveRegisterMark(actor, classItem, entryAthleteId, entryStatus, registeredIds);
 
         records.push({
           attendance_id: randomUUID(),
           class_id: classId,
           athlete_id: entryAthleteId,
           status: entryStatus,
-          method: resolveAttendanceMethod(actor, false),
+          method,
           checked_in_by_role: actorRole,
           checked_in_by_account_id: actor.accountId,
           note: typeof entry?.note === 'string' ? entry.note.trim() : '',
