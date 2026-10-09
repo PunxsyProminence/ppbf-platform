@@ -5,14 +5,18 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
-interface GuardianConsentRow {
-  parent_id: string;
-  you: boolean;
-  status: string | null;
-  covers_video: boolean | null;
-  public_use_allowed: boolean | null;
-  signed_at: string | null;
-}
+// The caller's own rows carry full detail; a co-guardian's row carries
+// status only (owner ruling 2026-10-05).
+type GuardianConsentRow =
+  | {
+      parent_id: string;
+      you: true;
+      status: string | null;
+      covers_video: boolean | null;
+      public_use_allowed: boolean | null;
+      signed_at: string | null;
+    }
+  | { you: false; status: 'granted' | 'photo_only' | 'withdrawn' | 'not_on_file' };
 
 interface AthleteConsent {
   athlete_id: string;

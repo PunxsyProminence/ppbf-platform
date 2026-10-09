@@ -4,6 +4,7 @@ import { GET } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
+  CONNECT_NONCE_COOKIE,
   exchangeCodeForAccountId,
   readPaymentPlatformConfig,
   signConnectState,
@@ -52,8 +53,26 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
   } as PilotPrincipal;
 }
 
-const getRequest = (query: string) =>
-  new NextRequest(`https://gym.example/api/pilot/payments/connect/callback?${query}`);
+const NONCE = 'nonce-1';
+
+// The browser that started the connect carries the one-time nonce cookie
+// back on Stripe's top-level redirect (SameSite=Lax permits it).
+const getRequest = (query: string, cookieNonce: string | null = NONCE) =>
+  new NextRequest(`https://gym.example/api/pilot/payments/connect/callback?${query}`, {
+    headers: cookieNonce === null ? {} : { cookie: `${CONNECT_NONCE_COOKIE}=${cookieNonce}` },
+  });
+
+function stateFor(organizationId: string, lane: 'giving' | 'program', overrides: Record<string, string> = {}): string {
+  return signConnectState(
+    { organizationId, lane, accountId: 'acct-1', sessionToken: 'token', nonce: NONCE, ...overrides },
+    SIGNING_KEY,
+  );
+}
+
+function clearsNonceCookie(response: Response): boolean {
+  const header = response.headers.get('set-cookie') ?? '';
+  return header.includes(`${CONNECT_NONCE_COOKIE}=;`) && /Max-Age=0|Expires=Thu, 01 Jan 1970/i.test(header);
+}
 
 function configured() {
   mockConfig.mockReturnValue({ connectClientId: 'ca_1', platformSecretKey: SIGNING_KEY, webhookSecret: null });
@@ -64,7 +83,7 @@ test('a valid round trip stores the account under the state-named lane and audit
   configured();
   mockExchange.mockResolvedValue('acct_new_1');
   mockUpsert.mockResolvedValue({ stripe_account_id: 'acct_new_1' });
-  const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, SIGNING_KEY);
+  const state = stateFor('org-1', 'giving');
 
   const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
 
@@ -94,7 +113,7 @@ test('an audit-write failure still redirects with the real outcome, not raw JSON
   mockExchange.mockResolvedValue('acct_new_1');
   mockUpsert.mockResolvedValue({ stripe_account_id: 'acct_new_1' });
   mockAudit.mockRejectedValueOnce(new Error('connection pool exhausted'));
-  const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, SIGNING_KEY);
+  const state = stateFor('org-1', 'giving');
 
   const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
 
@@ -105,7 +124,7 @@ test('an audit-write failure still redirects with the real outcome, not raw JSON
 test("another organization's state cannot attach an account here", async () => {
   mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-2' }));
   configured();
-  const state = signConnectState({ organizationId: 'org-1', lane: 'giving' }, SIGNING_KEY);
+  const state = stateFor('org-1', 'giving');
 
   const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
 
@@ -138,7 +157,7 @@ test('a refused exchange lands back with the outcome named', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   configured();
   mockExchange.mockRejectedValue(new Error('PAYMENT_CONNECT_EXCHANGE_FAILED: invalid_grant'));
-  const state = signConnectState({ organizationId: 'org-1', lane: 'program' }, SIGNING_KEY);
+  const state = stateFor('org-1', 'program');
 
   const response = await GET(getRequest(`code=stale&state=${encodeURIComponent(state)}`));
 
@@ -151,4 +170,60 @@ test('a coach cannot complete a connect', async () => {
   configured();
 
   expect((await GET(getRequest('code=code-1&state=x'))).status).toBeGreaterThanOrEqual(400);
+});
+
+// Audit slice A, Q5 / owner ruling 2026-10-05: the state must be single-use
+// and bound to the session that started the flow.
+describe('the connect state is single-use and bound to the starting session', () => {
+  beforeEach(() => {
+    configured();
+    mockExchange.mockResolvedValue('acct_new_1');
+    mockUpsert.mockResolvedValue({ stripe_account_id: 'acct_new_1' });
+  });
+
+  test('a successful callback clears the nonce cookie, so the same state is refused the second time', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    const state = stateFor('org-1', 'giving');
+
+    const first = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
+    expect(first.headers.get('location')).toContain('connect=ok');
+    expect(clearsNonceCookie(first)).toBe(true);
+
+    // The browser has applied that clear: the replay arrives without the nonce.
+    const replay = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`, null));
+    expect(replay.headers.get('location')).toContain('connect=state-mismatch');
+    expect(mockExchange).toHaveBeenCalledTimes(1);
+    expect(mockUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  test('another admin of the same organization cannot complete a connect someone else started', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-2' }));
+    const state = stateFor('org-1', 'giving');
+
+    const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
+
+    expect(response.headers.get('location')).toContain('connect=state-mismatch');
+    expect(mockExchange).not.toHaveBeenCalled();
+  });
+
+  test('the same admin on another session cannot complete it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ sessionToken: 'other-token' }));
+    const state = stateFor('org-1', 'giving');
+
+    const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`));
+
+    expect(response.headers.get('location')).toContain('connect=state-mismatch');
+    expect(mockExchange).not.toHaveBeenCalled();
+  });
+
+  test('a mismatched nonce cookie is refused, and the refusal still clears the cookie', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    const state = stateFor('org-1', 'giving');
+
+    const response = await GET(getRequest(`code=code-1&state=${encodeURIComponent(state)}`, 'nonce-other'));
+
+    expect(response.headers.get('location')).toContain('connect=state-mismatch');
+    expect(clearsNonceCookie(response)).toBe(true);
+    expect(mockExchange).not.toHaveBeenCalled();
+  });
 });
