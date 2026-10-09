@@ -8,13 +8,7 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import {
-  getClientIp,
-  checkRateLimit,
-  checkDurableRateLimit,
-  recordDurableFailedAttempt,
-  clearDurableRateLimit,
-} from '@/src/server/pilot/rateLimit';
+import { clearDurableRateLimit, getClientIp, reserveAttempts } from '@/src/server/pilot/rateLimit';
 import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 
 export const runtime = 'nodejs';
@@ -46,12 +40,15 @@ export async function POST(request: NextRequest) {
     // magic-link already use. A durable lookup that cannot reach the
     // database returns not-limited rather than throwing, so a blip degrades
     // to the volatile limiter instead of locking bootstrap out entirely.
+    //
+    // COUNTED BEFORE THE KEY IS COMPARED (CL-A4): reserveAttempts charges the
+    // attempt atomically, so of a burst of guesses in flight together one
+    // reaches the compare. A correct key clears the bucket below.
     const clientIp = getClientIp(request);
     const ipKey = `pin_bootstrap:${clientIp}`;
 
-    const ipLimitCheck = checkRateLimit(ipKey);
-    const durableIpCheck = await checkDurableRateLimit(ipKey);
-    if (ipLimitCheck.isLimited || durableIpCheck.isLimited) {
+    const reservation = await reserveAttempts([ipKey]);
+    if (reservation.isLimited) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
         { status: 429 }
@@ -59,7 +56,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (!bootstrapKeyMatches(request.headers, bootstrapKey)) {
-      await recordDurableFailedAttempt(ipKey);
       throw new Error('Forbidden: invalid bootstrap key');
     }
 
