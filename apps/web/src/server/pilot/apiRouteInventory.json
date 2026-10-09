@@ -5151,6 +5151,90 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": false,
+    "notes": "Lists a minor's return-to-training plans with their steps and the current step for athlete_id (return-to-training/route.ts GET); assertStanding runs on the athlete first. SHADOW_PHI_ROLES = coach, organization_admin, admin (shadowRoleSets.ts:48-52). Lane P8.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Actions: create_plan (on an injury: injuryWithStanding on the injury's own athlete, refusal collapsed to 404, then links the injury to the plan), add_step (assertStanding on athlete_id, then the plan must be in that athlete's list or it is a 404). Writes plan and step rows (health) and audits each.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/return-to-training/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/return-to-training",
+    "gate": "requirePrincipal + requireRole(SHADOW_PHI_ROLES) + assertStanding (coach: assertCoachAssignedToAthlete; org admin: assertAthleteBelongsToOrganization)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "writes": true,
+    "notes": "Advances the current step of a plan as the signed-in coach's recorded decision with a note (not a medical clearance): assertStanding on athlete_id, plan must be in that athlete's list, step must be the earliest not yet advanced. Audited.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertCoachAssignedToAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/coach/intelligence/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/intelligence",
