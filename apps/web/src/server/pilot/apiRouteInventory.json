@@ -5896,6 +5896,114 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/session-staff-notes",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in listSessionStaffNotes",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads the live staff notes on one athlete's session, oldest first (newest 100), author by display name (never account id); staff only, no athlete or parent view (OD-2026-10-10-003 ruling 3); reach enforced in sessionStaffNotes.ts assertStaffNoteAccess via membership role + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/session-staff-notes",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in createSessionStaffNote",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adds one staff note of the caller's own to an athlete's session (OD-2026-10-06-025 ruling 4); the session must be that athlete's; audit row in the same transaction; createSessionStaffNote runs assertStaffNoteAccess.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/session-staff-notes",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in updateOwnSessionStaffNote (author only)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Changes the text of one of the caller's OWN staff notes; the module's UPDATE is scoped to the author and the caller must still reach the athlete; audit row in the same transaction.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/session-staff-notes/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/coach/session-staff-notes",
+    "gate": "requirePrincipal + requireRole(STAFF_NOTE_ROLES) + assertStaffNoteAccess in removeOwnSessionStaffNote (author only)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Removes (soft-deletes, deleted_at) one of the caller's OWN staff notes; the module's UPDATE is scoped to the author and the caller must still reach the athlete; audit row in the same transaction.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/coach/sparring-exposure/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/sparring-exposure",

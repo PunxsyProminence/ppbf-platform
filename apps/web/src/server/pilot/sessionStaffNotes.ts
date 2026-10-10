@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
+import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -31,9 +32,8 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * for an athlete assertActorCanAccessAthlete lets them reach (a coach's own
  * athletes plus live coverage; an org admin's whole gym; never a deleted
  * athlete), run with the MEMBERSHIP role. Athletes, guardians, volunteers,
- * board and platform_owner get nothing from this module: whether the athlete
- * or family sees staff notes on their session is a separate decision nobody
- * has made yet.
+ * board and platform_owner get nothing from this module: staff notes are
+ * STAFF ONLY, with no athlete or parent view (OD-2026-10-10-003 ruling 3).
  *
  * THE SESSION MUST BE THAT ATHLETE'S. The table's foreign keys pin the session
  * and the athlete to this organization separately; that the session belongs
@@ -44,8 +44,8 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * SAME transaction. The note text stays out of the audit row; the table
  * holds it. shadow_mirror: false, because the mirrored shadow_events row
  * would be readable by the athlete and their guardians through
- * /api/pilot/shadow/events (tied by details.athlete_id), and whether the
- * family sees staff notes is not decided.
+ * /api/pilot/shadow/events (tied by details.athlete_id), and staff notes are
+ * staff only (OD-2026-10-10-003 ruling 3).
  */
 
 export const STAFF_NOTE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
@@ -67,10 +67,14 @@ export interface SessionStaffNoteRow {
 
 /**
  * A note as a reader sees it: no account id (an id can be an email address);
- * written_by_me says whether the reader may change it. The author's display
- * name is for the route that shows the list to resolve.
+ * written_by_me says whether the reader may change it, and author_name is the
+ * author's display name (getCoachDisplayName), resolved here because the
+ * account id never leaves this module.
  */
-export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & { written_by_me: boolean };
+export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & {
+  written_by_me: boolean;
+  author_name: string;
+};
 
 const FIELDS = 'note_id, session_id, athlete_id, author_account_id, author_role, note, created_at, updated_at';
 
@@ -151,8 +155,13 @@ export async function listSessionStaffNotes(
       limit ${LIST_LIMIT}`,
     [actor.organizationId, sessionId, athleteId],
   );
+  const names = new Map<string, string>();
+  for (const id of new Set(newest.map((row) => row.author_account_id))) {
+    names.set(id, await getCoachDisplayName(actor.organizationId, id));
+  }
   return newest.reverse().map(({ author_account_id, ...shown }) => ({
     ...shown,
+    author_name: names.get(author_account_id) ?? 'Your coach',
     written_by_me: author_account_id === actor.accountId,
   }));
 }

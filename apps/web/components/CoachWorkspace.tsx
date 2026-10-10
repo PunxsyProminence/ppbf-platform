@@ -7,6 +7,7 @@ import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFoc
 import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
 import ProfilePortrait from './ProfilePortrait';
+import SessionStaffNotesPanel from './SessionStaffNotesPanel';
 import WorkAxis from './WorkAxis';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
@@ -4720,6 +4721,16 @@ export default function CoachWorkspace() {
                 )}
                 {reviewSessionId ? (
                   <p className="t-data text-[color:var(--bone-400)]">Session ID {reviewSessionId}</p>
+                ) : null}
+
+                {/* Lane P5: staff notes on the picked session. Staff only
+                    (OD-2026-10-10-003 ruling 3); the route decides access. */}
+                {reviewSessionId && reviewAthleteId ? (
+                  <SessionStaffNotesPanel
+                    key={`staff-notes-${reviewAthleteId}-${reviewSessionId}`}
+                    sessionId={reviewSessionId}
+                    athleteId={reviewAthleteId}
+                  />
                 ) : null}
 
                 {/* What has already been said about this session, shown BEFORE
