@@ -488,7 +488,8 @@ describe('sessionStaffNotes.ts against real rows', () => {
       const listed = await listSessionStaffNotes(ADMIN, SESSION_ID, ATHLETE_ID);
       expect(listed.map((row) => row.note_id)).toEqual([first.note_id, second.note_id, admin.note_id]);
       // The list never carries an account id; it says whether the reader wrote each note.
-      const firstShown: Record<string, unknown> = { ...first, written_by_me: false };
+      // The seeded accounts carry no login_email, so every author reads as the floor phrase.
+      const firstShown: Record<string, unknown> = { ...first, written_by_me: false, author_name: 'Your coach' };
       delete firstShown.author_account_id;
       expect(listed[0]).toEqual(firstShown);
       expect(listed.map((row) => row.written_by_me)).toEqual([false, false, true]);
@@ -498,6 +499,24 @@ describe('sessionStaffNotes.ts against real rows', () => {
       // The athlete's own note on the session is untouched.
       const { rows } = await client.query('select notes from pilot.sessions where organization_id = $1 and session_id = $2', [ORG_ID, SESSION_ID]);
       expect(rows[0].notes).toBe("the athlete's own words");
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the list names each author by display name, never by account id or email', async () => {
+    const client = await migratedDatabase('notes_author_names');
+    try {
+      await client.query('update pilot.accounts set login_email = $2 where account_id = $1', [COACH_ID, 'dana.reyes@example.test']);
+      await createSessionStaffNote({ actor: COACH, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'From the coach of record.' });
+      await createSessionStaffNote({ actor: ADMIN, sessionId: SESSION_ID, athleteId: ATHLETE_ID, note: 'From an admin with no email on file.' });
+
+      const listed = await listSessionStaffNotes(ADMIN, SESSION_ID, ATHLETE_ID);
+      expect(listed.map((row) => row.author_name)).toEqual(['Coach Dana Reyes', 'Your coach']);
+      const wire = JSON.stringify(listed);
+      expect(wire).not.toContain(COACH_ID);
+      expect(wire).not.toContain(ADMIN_ID);
+      expect(wire).not.toContain('example.test');
     } finally {
       await client.end();
     }
