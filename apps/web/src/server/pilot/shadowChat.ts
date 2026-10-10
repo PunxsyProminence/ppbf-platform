@@ -650,10 +650,11 @@ const NEAR_MISS_CONTEXT_WITHHELD =
  *      role. Their refusal returns null here -- nothing is said about
  *      limits, set or not.
  *
- * Null = say nothing. Never throws: a read that FAILED (not refused) comes
- * back 'unavailable' for that part, so the model is told the limit is
- * unknown instead of reading an outage as "No limit set". The two reads are
- * independent; one failing does not hide the other.
+ * Null = say nothing. A read that FAILED (not refused) does not reject
+ * here: it comes back 'unavailable' for that part, so the model is told the
+ * limit is unknown instead of reading an outage as "No limit set". The two
+ * reads are independent; one failing does not hide the other. A refusal from
+ * either wins over an outage in the other: nothing is said.
  */
 export async function loadShadowAthleteLimits(
   actor: ActorIdentity,
@@ -677,11 +678,17 @@ export async function loadShadowAthleteLimits(
   if (limits.status === 'fulfilled') {
     const inForce = {} as Exclude<ShadowAthleteLimits['minorLimits'], 'unavailable'>['limits'];
     for (const type of MINOR_LIMIT_TYPES) {
-      // Only the value, its id and its date: the reason note and the
-      // account that set it stay out of the prompt.
+      // Only the value, its id, its date and the ROLE that set it: the
+      // reason note and the account that set it stay out of the prompt.
       const row = limits.value.limits[type];
       inForce[type] = row
-        ? { limit_id: row.limit_id, value_number: row.value_number, value_text: row.value_text, set_at: row.set_at }
+        ? {
+            limit_id: row.limit_id,
+            value_number: row.value_number,
+            value_text: row.value_text,
+            set_at: row.set_at,
+            set_by_role: row.set_by_role,
+          }
         : null;
     }
     minorLimits = { athleteIsMinor: limits.value.athlete_is_minor, limits: inForce };
@@ -696,6 +703,7 @@ export async function loadShadowAthleteLimits(
           highest_allowed_stage: row.highest_allowed_stage,
           max_hard_open_sessions_per_7_days: row.max_hard_open_sessions_per_7_days,
           set_at: row.set_at,
+          set_by_role: row.set_by_role,
         }
       : null;
   }

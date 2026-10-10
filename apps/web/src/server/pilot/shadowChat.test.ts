@@ -660,7 +660,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       ['organization_admin', 'orgadmin-1'],
       ['admin', 'legacy-admin-1'],
     ] as const)('%s is given the limits', (userRole, userId) => {
-      test('each limit and the contact cap, marked coach-set, with a citable id', async () => {
+      test('each limit and the contact cap, marked with who set it, with a citable id', async () => {
         limitsOnFile();
 
         const result = await retrieveShadowContext(scopedTo(userRole, userId));
@@ -673,19 +673,19 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(lines).toContain(`${LIMITS_HEADING} (athlete-789), read from the gym's records:`);
         expect(lines).toContain('- This athlete is a MINOR (an unknown date of birth counts as a minor).');
         expect(lines).toContain(
-          `- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (coach-set, 2026-10-09)`,
+          `- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`,
         );
         expect(lines).toContain(
-          `- Weight cut, most percent of body weight: at most 3.5 percent of body weight [E:${CUT_ID}] (coach-set, 2026-10-09)`,
+          `- Weight cut, most percent of body weight: at most 3.5 percent of body weight [E:${CUT_ID}] (set by a coach, 2026-10-09)`,
         );
         expect(lines).toContain(
-          `- Supervision the coach requires: "${SUPERVISION_SENTINEL}" [E:${SUPERVISION_ID}] (coach-set, 2026-10-09)`,
+          `- Supervision the coach requires: "${SUPERVISION_SENTINEL}" [E:${SUPERVISION_ID}] (set by a coach, 2026-10-09)`,
         );
         expect(lines).toContain(
-          `- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (coach-set, 2026-10-08)`,
+          `- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
         );
         expect(lines).toContain(
-          `- Hard or open sparring sessions in any 7 days (sparring cap): at most 2 [E:${CAP_ID}] (coach-set, 2026-10-08)`,
+          `- Hard or open sparring sessions in any 7 days (sparring cap): at most 2 [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
         );
         expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
         expect(result.evidenceIds).toEqual([HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID]);
@@ -708,6 +708,12 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         );
         expect(section).toContain('Never propose, estimate, assume or default a number or a rule for a limit that is not set.');
         expect(section).toContain('The coach decides.');
+        // Warn-only, like the rest of the app: past a set limit SHADOW names
+        // the limit and the coach decides. It is not told to refuse.
+        expect(section).toContain(
+          'If the coach asks for something past a set limit, say which limit it passes and leave the decision with the coach; do not refuse.',
+        );
+        expect(section).toContain('Every time you state one, give the value as written above and put its id right after it.');
         // Nothing is pre-filled: with nothing set, the only digits in the
         // whole section are the athlete id's and the "7 days" of the cap's
         // own label.
@@ -729,10 +735,10 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       const result = await retrieveShadowContext(scopedTo('coach'));
 
       const lines = result.context.split('\n');
-      expect(lines).toContain(`- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (coach-set, 2026-10-09)`);
+      expect(lines).toContain(`- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`);
       expect(lines).toContain('- Weight cut, most percent of body weight: No limit set');
       expect(lines).toContain('- Supervision the coach requires: No limit set');
-      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (coach-set, 2026-10-08)`);
+      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`);
       expect(lines).toContain('- Hard or open sparring sessions in any 7 days (sparring cap): No limit set');
       expect(result.evidenceIds).toEqual([HEAT_ID, CAP_ID]);
     });
@@ -758,6 +764,48 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       expect(result.context).toContain('- Contact level, highest stage (sparring cap): No limit set');
       expect(result.context).toContain('- Hard or open sparring sessions in any 7 days (sparring cap): No limit set');
       expect(result.evidenceIds).toEqual([HEAT_ID, CUT_ID]);
+    });
+
+    test('a limit an organization admin set says so, from the row', async () => {
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({ set_by_role: 'organization_admin' }),
+          weight_cut_max_percent_body_weight: limitRow({
+            limit_id: CUT_ID, limit_type: 'weight_cut_max_percent_body_weight', value_number: 3.5,
+            unit: 'percent_body_weight', set_by_role: 'admin',
+          }),
+          supervision: null,
+        },
+      }));
+      mockGetCurrentContactCap.mockResolvedValue(capRow({ highest_allowed_stage: null }));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines).toContain(
+        `- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by an organization admin, 2026-10-09)`,
+      );
+      expect(lines).toContain(
+        `- Weight cut, most percent of body weight: at most 3.5 percent of body weight [E:${CUT_ID}] (set by an organization admin, 2026-10-09)`,
+      );
+      // The cap row's other half: the stage is not set, the session count is.
+      expect(lines).toContain('- Contact level, highest stage (sparring cap): No limit set');
+      expect(lines).toContain(
+        `- Hard or open sparring sessions in any 7 days (sparring cap): at most 2 [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
+      );
+    });
+
+    test('the date is the gym day when the row carries a Date, which is what the database returns', async () => {
+      // 01:30 UTC on the 10th is still the evening of the 9th at the gym.
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({ set_at: new Date('2026-10-10T01:30:00.000Z') as unknown as string }),
+          weight_cut_max_percent_body_weight: null,
+          supervision: null,
+        },
+      }));
+      const result = await retrieveShadowContext(scopedTo('coach'));
+      expect(result.context).toContain(`at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`);
     });
 
     test('an adult is labelled adult (OD-2026-10-07-005)', async () => {
@@ -806,7 +854,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(mockGetCurrentContactCap).not.toHaveBeenCalled();
         expect(result.evidenceIds).toEqual([]);
         for (const leaked of [
-          LIMITS_HEADING, 'No limit set', 'coach-set', SUPERVISION_SENTINEL, '23 minutes', '3.5 percent',
+          LIMITS_HEADING, 'No limit set', 'set by a coach', SUPERVISION_SENTINEL, '23 minutes', '3.5 percent',
           'Controlled sparring', '/coach/athlete-limits', HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID, '[E:',
         ]) {
           expect(result.context).not.toContain(leaked);
@@ -929,6 +977,24 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       expect(result.evidenceIds).toEqual([]);
     });
 
+    test.each([
+      ['the limits read refuses and the cap read has an outage', true],
+      ['the cap read refuses and the limits read has an outage', false],
+    ] as const)('a refusal wins over an outage in the other read (%s): nothing is said, nothing is logged', async (_name, limitsRefuse) => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const refusal = new ForbiddenError('This account may not read or set limits for this athlete.', 'MINOR_LIMIT_NOT_PERMITTED');
+      mockReadAthleteMinorLimits.mockRejectedValue(limitsRefuse ? refusal : new Error('db down'));
+      mockGetCurrentContactCap.mockRejectedValue(limitsRefuse ? new Error('db down') : refusal);
+
+      const result = await retrieveShadowContext(scopedTo('coach', 'coach-no-membership'));
+
+      expect(result.context).not.toContain(LIMITS_HEADING);
+      expect(result.context).not.toContain('UNKNOWN');
+      expect(result.evidenceIds).toEqual([]);
+      expect(logged).not.toHaveBeenCalled();
+      logged.mockRestore();
+    });
+
     test('organization-scoped context (no athlete) never touches the limits', async () => {
       limitsOnFile();
       const result = await retrieveShadowContext({ userRole: 'coach', userId: 'coach-123', organizationId: 'org-456' });
@@ -993,7 +1059,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         '- Heat exposure, weight cut and supervision: these limits could not be read for this request. '
         + 'They are UNKNOWN, which is not "No limit set".',
       );
-      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (coach-set, 2026-10-08)`);
+      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`);
       expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
       expect(result.evidenceIds).toEqual([CAP_ID]);
       // The class of the error is logged, never its message (a pg error can
@@ -1020,6 +1086,22 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       logged.mockRestore();
     });
 
+    test('both reads failing: every limit is UNKNOWN, none reads as "No limit set", and there are no ids', async () => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockReadAthleteMinorLimits.mockRejectedValue(new Error('db down'));
+      mockGetCurrentContactCap.mockRejectedValue(new Error('db down'));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines.filter((line) => line.includes('UNKNOWN, which is not "No limit set"'))).toHaveLength(2);
+      expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
+      expect(result.evidenceIds).toEqual([]);
+      expect(result.context).toContain('ask the coach to check it on the page it is set on');
+      expect(logged).toHaveBeenCalledTimes(2);
+      logged.mockRestore();
+    });
+
     // ---- the answer path through the response filter ----------------------
     describe('answers a coach-facing chat can now give get past the response filter', () => {
       // These sentences are written by the test, not by a model. They show
@@ -1042,12 +1124,15 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         );
         expect(uncited.filtered).toBe(true);
         expect(uncited.reasonCodes).toContain('uncited_claim');
+
+        // One citation per stated percentage: the directive says "every time".
+        const statedTwice = `The weight-cut limit is 3.5% of body weight [E:${CUT_ID}]. Again: 3.5%`;
+        expect(validateShadowResponse(`${statedTwice} is the limit.`, { allowedEvidenceIds: evidenceIds }).filtered).toBe(true);
+        expect(validateShadowResponse(`${statedTwice} [E:${CUT_ID}] is the limit.`, { allowedEvidenceIds: evidenceIds }).filtered).toBe(false);
       });
 
-      test('a limit id is citable only in the chat it was read for', async () => {
+      test('a parent chat is handed no limit ids, so a limit citation there is an unauthorized one', async () => {
         const answer = `Heat is capped at 23 minutes per session [E:${HEAT_ID}].`;
-        // The chat of an athlete or a parent gets no ids, so the same
-        // citation is an unauthorized one there.
         limitsOnFile();
         const { evidenceIds } = await retrieveShadowContext(scopedTo('parent', 'account-parent-linked'));
         const result = validateShadowResponse(answer, { allowedEvidenceIds: evidenceIds });
