@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 17;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 18;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -89,6 +89,14 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 17;
 // that is not owned or open-licence refuses chunks past 20 / 30,000 characters.
 // What goes into authorizedContext is unchanged; bumped because a listed file
 // moved. A v16 job still queued at deploy is refused as STALE.
+// 18: coach-set limits (lane P4 PR 2, #1399): for coach, organization_admin
+// and admin, retrieveShadowContext (shadowChat.ts) now appends the athlete's
+// coach-set limits and contact cap, with their row ids as citable evidence
+// ids; shadowContextBuilder.ts formats them. This CHANGES what goes into
+// authorizedContext for those three roles; every other role's is unchanged.
+// athleteMinorLimits.ts and athleteContactCaps.ts join the fingerprinted
+// sources below, because what they return is now in that context. A v17 job
+// still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -121,6 +129,8 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 17;
 export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
   'app/api/pilot/shadow/chat/route.ts',
   'app/api/pilot/shadow/video-analysis/route.ts',
+  'src/server/pilot/athleteContactCaps.ts',
+  'src/server/pilot/athleteMinorLimits.ts',
   'src/server/pilot/libraryServability.ts',
   'src/server/pilot/omegaPlatformContext.ts',
   'src/server/pilot/platformLibraryScope.ts',
@@ -159,6 +169,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 15, sha256: '4d19cdd8ad71091f373e5cfeef8750cfc93d011f5bdb3a7e85d7e95aba4d05be' },
   { version: 16, sha256: '4f6d0ba64c024bfe8ccabe6c59e36e724111bd91ae9366c412ac50047c74b4b4' },
   { version: 17, sha256: '4c722ab586bf6327f665416287e5a6aa2823c03fec472c250ac165ea09e0b5c6' },
+  { version: 18, sha256: 'e870435462fbd24a2e161a760dee44c5e015b8c69d22d06a48ec4ea2b249646f' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

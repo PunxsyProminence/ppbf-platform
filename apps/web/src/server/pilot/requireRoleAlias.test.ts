@@ -168,6 +168,16 @@ describe('role gates in source', () => {
       reason: "shadowRoleSets.ts list names both 'organization_admin' and 'admin'",
     },
     {
+      // loadShadowAthleteLimits: the role gate in front of the coach-set
+      // limits reads (lane P4 PR 2).
+      file: 'src/server/pilot/shadowChat.ts',
+      expression: 'DECISION_LOOP_ROLES',
+      reason:
+        "shadowRoleSets.ts list names both 'organization_admin' and 'admin'; pinned by shadowRoleSets.test.ts "
+        + "'legacy admin alias > names both admin spellings in DECISION_LOOP_ROLES' and by shadowChat.test.ts "
+        + "'the gate admits exactly the roles the limits and caps modules admit'",
+    },
+    {
       file: 'src/server/pilot/credentialPolicy.ts',
       expression: 'PASSWORD_ROLES',
       reason: 'credential choice, not a role gate: parent only',

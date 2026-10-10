@@ -7,6 +7,7 @@ import {
   validateShadowRequest,
   validateShadowResponse,
   retrieveShadowContext,
+  loadShadowAthleteLimits,
   SHADOW_SAFE_FILTERED_RESPONSE,
   SHADOW_SYSTEM_PROMPT,
   HighRiskTopic,
@@ -14,6 +15,14 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 import { assertActorCanAccessAthlete } from './access';
+import { type AthleteContactCapRow, CONTACT_CAP_ROLES, getCurrentContactCap } from './athleteContactCaps';
+import {
+  type AthleteMinorLimitRow,
+  type AthleteMinorLimitsReading,
+  MINOR_LIMIT_ROLES,
+  readAthleteMinorLimits,
+} from './athleteMinorLimits';
+import { ForbiddenError } from './errors';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
 import type { PilotRole } from './contracts';
@@ -24,9 +33,91 @@ jest.mock('./access', () => ({
 jest.mock('./shadowNearMisses', () => ({
   listRecentNearMisses: jest.fn(),
 }));
+// Only the two READS are replaced. The role lists, MINOR_LIMIT_TYPES and
+// isCapSet stay the modules' own, so a fourth limit type or a changed role
+// list reaches these tests instead of a copy of it.
+jest.mock('./athleteMinorLimits', () => ({
+  ...jest.requireActual('./athleteMinorLimits'),
+  readAthleteMinorLimits: jest.fn(),
+}));
+jest.mock('./athleteContactCaps', () => ({
+  ...jest.requireActual('./athleteContactCaps'),
+  getCurrentContactCap: jest.fn(),
+}));
 
 const mockAssertActorCanAccessAthlete = jest.mocked(assertActorCanAccessAthlete);
 const mockListRecentNearMisses = jest.mocked(listRecentNearMisses);
+const mockReadAthleteMinorLimits = jest.mocked(readAthleteMinorLimits);
+const mockGetCurrentContactCap = jest.mocked(getCurrentContactCap);
+
+const HEAT_ID = 'aaaaaaa1-0000-4000-8000-000000000001';
+const CUT_ID = 'aaaaaaa2-0000-4000-8000-000000000002';
+const SUPERVISION_ID = 'aaaaaaa3-0000-4000-8000-000000000003';
+const CAP_ID = 'aaaaaaa4-0000-4000-8000-000000000004';
+// Values no default, rounding or model guess would land on.
+const SUPERVISION_SENTINEL = 'Coach Ramos within reach for all pad work';
+const NOTE_SENTINEL = 'staff-only reason: family asked after the July clinic';
+
+function limitRow(overrides: Partial<AthleteMinorLimitRow>): AthleteMinorLimitRow {
+  return {
+    limit_id: HEAT_ID,
+    athlete_id: 'athlete-789',
+    limit_type: 'heat_exposure_minutes_per_session',
+    value_number: 23,
+    value_text: null,
+    unit: 'minutes',
+    note: NOTE_SENTINEL,
+    set_by_account_id: 'account-coach-setter',
+    set_by_role: 'coach',
+    set_at: '2026-10-09T16:30:00.000Z',
+    ...overrides,
+  };
+}
+
+function limitsReading(overrides: Partial<AthleteMinorLimitsReading> = {}): AthleteMinorLimitsReading {
+  return {
+    athlete_is_minor: true,
+    limits: {
+      heat_exposure_minutes_per_session: null,
+      weight_cut_max_percent_body_weight: null,
+      supervision: null,
+    },
+    history: [],
+    ...overrides,
+  };
+}
+
+const allLimitsSet = () => limitsReading({
+  limits: {
+    heat_exposure_minutes_per_session: limitRow({}),
+    weight_cut_max_percent_body_weight: limitRow({
+      limit_id: CUT_ID, limit_type: 'weight_cut_max_percent_body_weight', value_number: 3.5, unit: 'percent_body_weight',
+    }),
+    supervision: limitRow({
+      limit_id: SUPERVISION_ID, limit_type: 'supervision', value_number: null, value_text: SUPERVISION_SENTINEL, unit: 'text',
+    }),
+  },
+  history: [limitRow({})],
+});
+
+function capRow(overrides: Partial<AthleteContactCapRow> = {}): AthleteContactCapRow {
+  return {
+    cap_id: CAP_ID,
+    athlete_id: 'athlete-789',
+    highest_allowed_stage: 'controlled_sparring',
+    max_hard_open_sessions_per_7_days: 2,
+    note: NOTE_SENTINEL,
+    set_by_account_id: 'account-coach-setter',
+    set_by_role: 'coach',
+    set_at: '2026-10-08T15:00:00.000Z',
+    ...overrides,
+  };
+}
+
+const EVERY_PILOT_ROLE = [
+  'platform_owner', 'organization_admin', 'admin', 'coach',
+  'athlete', 'parent', 'board', 'volunteer', 'staff',
+] as const satisfies readonly PilotRole[];
 
 function nearMissRow(overrides: Partial<{
   near_miss_id: string;
@@ -55,6 +146,12 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
     mockListRecentNearMisses.mockReset();
     mockListRecentNearMisses.mockResolvedValue([]);
+    // Nothing set, by default: the suites below that are not about limits
+    // then see a staff context with five "No limit set" lines and no ids.
+    mockReadAthleteMinorLimits.mockReset();
+    mockReadAthleteMinorLimits.mockResolvedValue(limitsReading());
+    mockGetCurrentContactCap.mockReset();
+    mockGetCurrentContactCap.mockResolvedValue(null);
   });
 
   describe('Request Validation', () => {
@@ -529,6 +626,529 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       // And the answer is not vacuous in either direction.
       expect(gate.filter((r) => r.admitted).map((r) => r.role))
         .toEqual(['organization_admin', 'admin', 'coach']);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // COACH-SET LIMITS IN COACH-FACING SHADOW (lane P4, PR 2; issue #1399).
+  //
+  // OD-2026-10-06-024 ruling 2: limits are coach-set data, never an app
+  // number. OD-2026-10-08-007 (minors' limits Q5, Q6): staff only; only
+  // coach-facing SHADOW reads them and asks the coach for a missing one;
+  // athlete and parent chats keep deferring to the coach.
+  //
+  // Every assertion is on the BUILT CONTEXT and on whether the reads
+  // happened -- never on model output. What the live model writes with this
+  // context is not something a test here can prove.
+  //
+  // EVERY EXCLUDED-ROLE CASE HAS LIMITS ON FILE IN THE MOCK, for the reason
+  // the near-miss gate's cases have severe rows: a gate that stopped working
+  // must have something to leak.
+  // -------------------------------------------------------------------------
+  describe('Coach-Set Limits Context (lane P4 PR 2)', () => {
+    const LIMITS_HEADING = 'COACH-SET LIMITS for this athlete';
+    const limitsOnFile = () => {
+      mockReadAthleteMinorLimits.mockResolvedValue(allLimitsSet());
+      mockGetCurrentContactCap.mockResolvedValue(capRow());
+    };
+    const scopedTo = (userRole: PilotRole, userId = 'account-1') => ({
+      userRole, userId, organizationId: 'org-456', athleteId: 'athlete-789',
+    });
+
+    describe.each([
+      ['coach', 'coach-123'],
+      ['organization_admin', 'orgadmin-1'],
+      ['admin', 'legacy-admin-1'],
+    ] as const)('%s is given the limits', (userRole, userId) => {
+      test('each limit and the contact cap, marked with who set it, with a citable id', async () => {
+        limitsOnFile();
+
+        const result = await retrieveShadowContext(scopedTo(userRole, userId));
+
+        const actor = { accountId: userId, role: userRole, organizationId: 'org-456', athleteId: null };
+        expect(mockReadAthleteMinorLimits).toHaveBeenCalledWith(actor, 'athlete-789');
+        expect(mockGetCurrentContactCap).toHaveBeenCalledWith(actor, 'athlete-789');
+
+        const lines = result.context.split('\n');
+        expect(lines).toContain(`${LIMITS_HEADING} (athlete-789), read from the gym's records:`);
+        expect(lines).toContain('- This athlete is a MINOR (an unknown date of birth counts as a minor).');
+        expect(lines).toContain(
+          `- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`,
+        );
+        expect(lines).toContain(
+          `- Weight cut, most percent of body weight: at most 3.5 percent of body weight [E:${CUT_ID}] (set by a coach, 2026-10-09)`,
+        );
+        expect(lines).toContain(
+          `- Supervision the coach requires: "${SUPERVISION_SENTINEL}" [E:${SUPERVISION_ID}] (set by a coach, 2026-10-09)`,
+        );
+        expect(lines).toContain(
+          `- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
+        );
+        expect(lines).toContain(
+          `- Hard or open sparring sessions in any 7 days (sparring cap): at most 2 [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
+        );
+        expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
+        expect(result.evidenceIds).toEqual([HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID]);
+      });
+
+      test('a limit that is not set is said as exactly "No limit set", with the ask and no number', async () => {
+        const result = await retrieveShadowContext(scopedTo(userRole, userId));
+
+        const lines = result.context.split('\n');
+        expect(lines).toContain('- Heat exposure, minutes per session: No limit set');
+        expect(lines).toContain('- Weight cut, most percent of body weight: No limit set');
+        expect(lines).toContain('- Supervision the coach requires: No limit set');
+        expect(lines).toContain('- Contact level, highest stage (sparring cap): No limit set');
+        expect(lines).toContain('- Hard or open sparring sessions in any 7 days (sparring cap): No limit set');
+        expect(result.evidenceIds).toEqual([]);
+
+        const section = result.context.slice(result.context.indexOf(LIMITS_HEADING));
+        expect(section).toContain(
+          'say that it is not set and ask the coach to set it on the Athlete Limits page (/coach/athlete-limits)',
+        );
+        expect(section).toContain('Never propose, estimate, assume or default a number or a rule for a limit that is not set.');
+        expect(section).toContain('The coach decides.');
+        // Warn-only, like the rest of the app: past a set limit SHADOW names
+        // the limit and the coach decides. It is not told to refuse.
+        expect(section).toContain(
+          'If the coach asks for something past a set limit, say which limit it passes and leave the decision with the coach; do not refuse.',
+        );
+        expect(section).toContain('Every time you state one, give the value as written above and put its id right after it.');
+        // Nothing is pre-filled: with nothing set, the only digits in the
+        // whole section are the athlete id's and the "7 days" of the cap's
+        // own label.
+        const digits = section.replace('athlete-789', '').replace('in any 7 days', '').match(/\d+/g);
+        expect(digits).toBeNull();
+      });
+    });
+
+    test('one limit set and the rest not: each line says its own state', async () => {
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({}),
+          weight_cut_max_percent_body_weight: null,
+          supervision: null,
+        },
+      }));
+      mockGetCurrentContactCap.mockResolvedValue(capRow({ max_hard_open_sessions_per_7_days: null }));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines).toContain(`- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`);
+      expect(lines).toContain('- Weight cut, most percent of body weight: No limit set');
+      expect(lines).toContain('- Supervision the coach requires: No limit set');
+      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`);
+      expect(lines).toContain('- Hard or open sparring sessions in any 7 days (sparring cap): No limit set');
+      expect(result.evidenceIds).toEqual([HEAT_ID, CAP_ID]);
+    });
+
+    test('a cleared cap row reads as no cap set, and a 0 limit is a limit', async () => {
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({ value_number: 0 }),
+          weight_cut_max_percent_body_weight: limitRow({
+            limit_id: CUT_ID, limit_type: 'weight_cut_max_percent_body_weight', value_number: 0, unit: 'percent_body_weight',
+          }),
+          supervision: null,
+        },
+      }));
+      mockGetCurrentContactCap.mockResolvedValue(
+        capRow({ highest_allowed_stage: null, max_hard_open_sessions_per_7_days: null }),
+      );
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      expect(result.context).toContain(`at most 0 minutes per session [E:${HEAT_ID}]`);
+      expect(result.context).toContain(`at most 0 percent of body weight [E:${CUT_ID}]`);
+      expect(result.context).toContain('- Contact level, highest stage (sparring cap): No limit set');
+      expect(result.context).toContain('- Hard or open sparring sessions in any 7 days (sparring cap): No limit set');
+      expect(result.evidenceIds).toEqual([HEAT_ID, CUT_ID]);
+    });
+
+    test('a limit an organization admin set says so, from the row', async () => {
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({ set_by_role: 'organization_admin' }),
+          weight_cut_max_percent_body_weight: limitRow({
+            limit_id: CUT_ID, limit_type: 'weight_cut_max_percent_body_weight', value_number: 3.5,
+            unit: 'percent_body_weight', set_by_role: 'admin',
+          }),
+          supervision: null,
+        },
+      }));
+      mockGetCurrentContactCap.mockResolvedValue(capRow({ highest_allowed_stage: null }));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines).toContain(
+        `- Heat exposure, minutes per session: at most 23 minutes per session [E:${HEAT_ID}] (set by an organization admin, 2026-10-09)`,
+      );
+      expect(lines).toContain(
+        `- Weight cut, most percent of body weight: at most 3.5 percent of body weight [E:${CUT_ID}] (set by an organization admin, 2026-10-09)`,
+      );
+      // The cap row's other half: the stage is not set, the session count is.
+      expect(lines).toContain('- Contact level, highest stage (sparring cap): No limit set');
+      expect(lines).toContain(
+        `- Hard or open sparring sessions in any 7 days (sparring cap): at most 2 [E:${CAP_ID}] (set by a coach, 2026-10-08)`,
+      );
+    });
+
+    test('the date is the gym day when the row carries a Date, which is what the database returns', async () => {
+      // 01:30 UTC on the 10th is still the evening of the 9th at the gym.
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading({
+        limits: {
+          heat_exposure_minutes_per_session: limitRow({ set_at: new Date('2026-10-10T01:30:00.000Z') as unknown as string }),
+          weight_cut_max_percent_body_weight: null,
+          supervision: null,
+        },
+      }));
+      const result = await retrieveShadowContext(scopedTo('coach'));
+      expect(result.context).toContain(`at most 23 minutes per session [E:${HEAT_ID}] (set by a coach, 2026-10-09)`);
+    });
+
+    test('an adult is labelled adult (OD-2026-10-07-005)', async () => {
+      mockReadAthleteMinorLimits.mockResolvedValue({ ...allLimitsSet(), athlete_is_minor: false });
+      const result = await retrieveShadowContext(scopedTo('coach'));
+      expect(result.context).toContain('- This athlete is an ADULT; limits are recorded the same way and labelled adult.');
+      expect(result.context).not.toContain('is a MINOR');
+    });
+
+    test('the staff-only reason note and the account that set a limit stay out of the prompt', async () => {
+      limitsOnFile();
+      const result = await retrieveShadowContext(scopedTo('coach'));
+      expect(result.context).not.toContain(NOTE_SENTINEL);
+      expect(result.context).not.toContain('account-coach-setter');
+    });
+
+    test('the limits sit with the near-miss records, and both sets of ids are citable', async () => {
+      limitsOnFile();
+      mockListRecentNearMisses.mockResolvedValue([nearMissRow()]);
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
+      expect(result.context.indexOf('RECORDED NEAR-MISS EVENTS')).toBeLessThan(result.context.indexOf(LIMITS_HEADING));
+      expect(result.evidenceIds).toEqual([
+        '11111111-2222-4333-8444-555555555555', HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID,
+      ]);
+    });
+
+    // ---- staff only -------------------------------------------------------
+    describe.each([
+      ['athlete', 'account-athlete-self'],
+      ['parent', 'account-parent-linked'],
+      ['platform_owner', 'account-platform-owner'],
+      ['board', 'account-board'],
+      ['volunteer', 'account-volunteer'],
+      ['staff', 'account-staff'],
+    ] as const)('%s receives no limits', (userRole, userId) => {
+      test('the limits are never read, never cited, never rendered; the context is unchanged, whole', async () => {
+        limitsOnFile();
+
+        const result = await retrieveShadowContext(scopedTo(userRole, userId));
+
+        // Gated BEFORE the reads, not filtered after them.
+        expect(mockReadAthleteMinorLimits).not.toHaveBeenCalled();
+        expect(mockGetCurrentContactCap).not.toHaveBeenCalled();
+        expect(result.evidenceIds).toEqual([]);
+        for (const leaked of [
+          LIMITS_HEADING, 'No limit set', 'set by a coach', SUPERVISION_SENTINEL, '23 minutes', '3.5 percent',
+          'Controlled sparring', '/coach/athlete-limits', HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID, '[E:',
+        ]) {
+          expect(result.context).not.toContain(leaked);
+        }
+        // UNCHANGED, not merely free of limits: byte for byte the string
+        // this role got before this lane (the near-miss gate's own pin).
+        expect(result.context).toBe(
+          `Authorized role: ${userRole}. Authorized organization: org-456. `
+          + `Authorized athlete scope: athlete-789.\n`
+          + `Recorded safety events are not available in this context. `
+          + `For intensity, contact, or progression questions, defer to the athlete's coach.`,
+        );
+      });
+
+      test('the reply is identical whether limits are on file, not set, or unreadable', async () => {
+        limitsOnFile();
+        const withLimits = await retrieveShadowContext(scopedTo(userRole, userId));
+        mockReadAthleteMinorLimits.mockResolvedValue(limitsReading());
+        mockGetCurrentContactCap.mockResolvedValue(null);
+        const withNone = await retrieveShadowContext(scopedTo(userRole, userId));
+        mockReadAthleteMinorLimits.mockRejectedValue(new Error('db down'));
+        mockGetCurrentContactCap.mockRejectedValue(new Error('db down'));
+        const withOutage = await retrieveShadowContext(scopedTo(userRole, userId));
+
+        expect(withLimits).toEqual(withNone);
+        expect(withLimits).toEqual(withOutage);
+      });
+
+      test('the loader itself refuses the role before either read', async () => {
+        // The second gate: a caller that reaches loadShadowAthleteLimits
+        // without going through retrieveShadowContext still gets nothing.
+        limitsOnFile();
+        const reading = await loadShadowAthleteLimits(
+          { accountId: userId, role: userRole, organizationId: 'org-456', athleteId: null },
+          'athlete-789',
+        );
+        expect(reading).toBeNull();
+        expect(mockReadAthleteMinorLimits).not.toHaveBeenCalled();
+        expect(mockGetCurrentContactCap).not.toHaveBeenCalled();
+      });
+    });
+
+    test('the gate admits exactly the roles the limits and caps modules admit', async () => {
+      // Derived FROM THE GATE (did the read happen?), for every role in the
+      // union, and compared with the modules' own role lists -- not with
+      // DECISION_LOOP_ROLES, which is the gate's own expression.
+      const admittedBy = async (load: (role: PilotRole) => Promise<unknown>) => {
+        const admitted: PilotRole[] = [];
+        for (const role of EVERY_PILOT_ROLE) {
+          mockReadAthleteMinorLimits.mockClear();
+          mockGetCurrentContactCap.mockClear();
+          await load(role);
+          const read = mockReadAthleteMinorLimits.mock.calls.length > 0;
+          expect(mockGetCurrentContactCap.mock.calls.length > 0).toBe(read);
+          if (read) admitted.push(role);
+        }
+        return admitted;
+      };
+      limitsOnFile();
+
+      const throughContext = await admittedBy((role) => retrieveShadowContext(scopedTo(role)));
+      const throughLoader = await admittedBy((role) => loadShadowAthleteLimits(
+        { accountId: 'account-1', role, organizationId: 'org-456', athleteId: null }, 'athlete-789',
+      ));
+
+      const moduleRoles = EVERY_PILOT_ROLE.filter((role) => (MINOR_LIMIT_ROLES as readonly string[]).includes(role));
+      expect(moduleRoles).toEqual(EVERY_PILOT_ROLE.filter((role) => (CONTACT_CAP_ROLES as readonly string[]).includes(role)));
+      expect(throughContext).toEqual(moduleRoles);
+      expect(throughLoader).toEqual(moduleRoles);
+      // Not vacuous in either direction.
+      expect(moduleRoles).toEqual(['organization_admin', 'admin', 'coach']);
+    });
+
+    // ---- reach ------------------------------------------------------------
+    test('a coach who cannot reach the athlete gets nothing, and nothing is read', async () => {
+      limitsOnFile();
+      mockListRecentNearMisses.mockResolvedValue([nearMissRow()]);
+      mockAssertActorCanAccessAthlete.mockRejectedValueOnce(new Error('Forbidden: athlete not assigned to this coach'));
+
+      const result = await retrieveShadowContext(scopedTo('coach', 'coach-other'));
+
+      expect(result).toEqual({
+        context: '',
+        authorized: false,
+        reason: 'Not authorized to access this athlete context.',
+      });
+      expect(mockReadAthleteMinorLimits).not.toHaveBeenCalled();
+      expect(mockGetCurrentContactCap).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['both reads refuse', true, true],
+      ['only the limits read refuses', true, false],
+      ['only the cap read refuses', false, true],
+    ] as const)('when the limits module itself refuses (%s), nothing about limits is said', async (_name, limitsRefuse, capRefuse) => {
+      // The modules check an ACTIVE staff membership in this organization and
+      // run the athlete chokepoint with THAT role, which is stricter than the
+      // session-role check above. Their refusal is not an outage: the context
+      // is the near-miss context alone, with no "No limit set" (which would be
+      // a statement about records this account may not read).
+      limitsOnFile();
+      if (limitsRefuse) {
+        mockReadAthleteMinorLimits.mockRejectedValue(
+          new ForbiddenError('This account may not read or set limits for this athlete.', 'MINOR_LIMIT_NOT_PERMITTED'),
+        );
+      }
+      if (capRefuse) {
+        mockGetCurrentContactCap.mockRejectedValue(
+          new ForbiddenError('This account may not read or set contact caps for this athlete.', 'CONTACT_CAP_NOT_PERMITTED'),
+        );
+      }
+
+      const result = await retrieveShadowContext(scopedTo('coach', 'coach-no-membership'));
+
+      expect(result.authorized).toBe(true);
+      expect(result.context).toBe(
+        'Authorized role: coach. Authorized organization: org-456. Authorized athlete scope: athlete-789.\n'
+        + 'No near-miss events recorded for this athlete in the last 90 days.',
+      );
+      expect(result.evidenceIds).toEqual([]);
+    });
+
+    test.each([
+      ['the limits read refuses and the cap read has an outage', true],
+      ['the cap read refuses and the limits read has an outage', false],
+    ] as const)('a refusal wins over an outage in the other read (%s): nothing is said, nothing is logged', async (_name, limitsRefuse) => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const refusal = new ForbiddenError('This account may not read or set limits for this athlete.', 'MINOR_LIMIT_NOT_PERMITTED');
+      mockReadAthleteMinorLimits.mockRejectedValue(limitsRefuse ? refusal : new Error('db down'));
+      mockGetCurrentContactCap.mockRejectedValue(limitsRefuse ? new Error('db down') : refusal);
+
+      const result = await retrieveShadowContext(scopedTo('coach', 'coach-no-membership'));
+
+      expect(result.context).not.toContain(LIMITS_HEADING);
+      expect(result.context).not.toContain('UNKNOWN');
+      expect(result.evidenceIds).toEqual([]);
+      expect(logged).not.toHaveBeenCalled();
+      logged.mockRestore();
+    });
+
+    test('organization-scoped context (no athlete) never touches the limits', async () => {
+      limitsOnFile();
+      const result = await retrieveShadowContext({ userRole: 'coach', userId: 'coach-123', organizationId: 'org-456' });
+      expect(result.authorized).toBe(true);
+      expect(result.context).not.toContain(LIMITS_HEADING);
+      expect(mockReadAthleteMinorLimits).not.toHaveBeenCalled();
+      expect(mockGetCurrentContactCap).not.toHaveBeenCalled();
+    });
+
+    // ---- across athletes --------------------------------------------------
+    test('the limits of one athlete never appear in the context of another, and nothing is cached', async () => {
+      const otherHeat = 'bbbbbbb1-0000-4000-8000-000000000001';
+      mockReadAthleteMinorLimits.mockImplementation(async (_actor, athleteId) => (
+        athleteId === 'athlete-789'
+          ? allLimitsSet()
+          : limitsReading({
+              limits: {
+                heat_exposure_minutes_per_session: limitRow({ limit_id: otherHeat, athlete_id: 'athlete-other', value_number: 41 }),
+                weight_cut_max_percent_body_weight: null,
+                supervision: null,
+              },
+            })
+      ));
+      mockGetCurrentContactCap.mockImplementation(async (_actor, athleteId) => (
+        athleteId === 'athlete-789' ? capRow() : null
+      ));
+
+      const first = await retrieveShadowContext(scopedTo('coach'));
+      const other = await retrieveShadowContext({ ...scopedTo('coach'), athleteId: 'athlete-other' });
+
+      expect(mockReadAthleteMinorLimits.mock.calls.map((call) => call[1])).toEqual(['athlete-789', 'athlete-other']);
+      expect(mockGetCurrentContactCap.mock.calls.map((call) => call[1])).toEqual(['athlete-789', 'athlete-other']);
+      expect(first.evidenceIds).toEqual([HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID]);
+      expect(other.evidenceIds).toEqual([otherHeat]);
+      expect(other.context).toContain(`${LIMITS_HEADING} (athlete-other)`);
+      expect(other.context).toContain('at most 41 minutes per session');
+      for (const fromFirst of [
+        SUPERVISION_SENTINEL, '23 minutes', '3.5 percent', 'Controlled sparring',
+        HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID, 'athlete-789',
+      ]) {
+        expect(other.context).not.toContain(fromFirst);
+      }
+
+      // A limit changed between two turns is in the very next answer.
+      mockReadAthleteMinorLimits.mockResolvedValue(limitsReading());
+      mockGetCurrentContactCap.mockResolvedValue(null);
+      const again = await retrieveShadowContext(scopedTo('coach'));
+      expect(again.context).toContain('- Heat exposure, minutes per session: No limit set');
+      expect(again.evidenceIds).toEqual([]);
+    });
+
+    // ---- a read that failed is unknown, never "No limit set" --------------
+    test('an outage reading the limits is said as UNKNOWN; the cap that was read is still stated', async () => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockReadAthleteMinorLimits.mockRejectedValue(new Error('db down'));
+      mockGetCurrentContactCap.mockResolvedValue(capRow());
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines).toContain(
+        '- Heat exposure, weight cut and supervision: these limits could not be read for this request. '
+        + 'They are UNKNOWN, which is not "No limit set".',
+      );
+      expect(lines).toContain(`- Contact level, highest stage (sparring cap): Controlled sparring [E:${CAP_ID}] (set by a coach, 2026-10-08)`);
+      expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
+      expect(result.evidenceIds).toEqual([CAP_ID]);
+      // The class of the error is logged, never its message (a pg error can
+      // carry row detail).
+      expect(logged).toHaveBeenCalledWith('SHADOW athlete limits unavailable', { errorClass: 'Error' });
+      logged.mockRestore();
+    });
+
+    test('an outage reading the cap is said as UNKNOWN; the limits that were read are still stated', async () => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockReadAthleteMinorLimits.mockResolvedValue(allLimitsSet());
+      mockGetCurrentContactCap.mockRejectedValue(new Error('timeout'));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines).toContain(
+        '- Contact level (sparring cap): the cap could not be read for this request. '
+        + 'It is UNKNOWN, which is not "No limit set".',
+      );
+      expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
+      expect(result.context).toContain(`at most 23 minutes per session [E:${HEAT_ID}]`);
+      expect(result.evidenceIds).toEqual([HEAT_ID, CUT_ID, SUPERVISION_ID]);
+      logged.mockRestore();
+    });
+
+    test('both reads failing: every limit is UNKNOWN, none reads as "No limit set", and there are no ids', async () => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockReadAthleteMinorLimits.mockRejectedValue(new Error('db down'));
+      mockGetCurrentContactCap.mockRejectedValue(new Error('db down'));
+
+      const result = await retrieveShadowContext(scopedTo('coach'));
+
+      const lines = result.context.split('\n');
+      expect(lines.filter((line) => line.includes('UNKNOWN, which is not "No limit set"'))).toHaveLength(2);
+      expect(lines.filter((line) => line.endsWith(': No limit set'))).toEqual([]);
+      expect(result.evidenceIds).toEqual([]);
+      expect(result.context).toContain('ask the coach to check it on the page it is set on');
+      expect(logged).toHaveBeenCalledTimes(2);
+      logged.mockRestore();
+    });
+
+    // ---- the answer path through the response filter ----------------------
+    describe('answers a coach-facing chat can now give get past the response filter', () => {
+      // These sentences are written by the test, not by a model. They show
+      // that the filter delivers the two kinds of answer this context asks
+      // for; they do not show that the live model writes them.
+      test('a set limit stated with its id is delivered; the same percentage with no id is withheld', async () => {
+        limitsOnFile();
+        const { evidenceIds } = await retrieveShadowContext(scopedTo('coach'));
+
+        const cited = validateShadowResponse(
+          `The coach-set weight-cut limit is 3.5% of body weight [E:${CUT_ID}], and heat is capped at 23 minutes per session [E:${HEAT_ID}]. The coach decides.`,
+          { allowedEvidenceIds: evidenceIds },
+        );
+        expect(cited.filtered).toBe(false);
+        expect(cited.citationIds).toEqual([CUT_ID, HEAT_ID]);
+
+        const uncited = validateShadowResponse(
+          'The coach-set weight-cut limit is 3.5% of body weight.',
+          { allowedEvidenceIds: evidenceIds },
+        );
+        expect(uncited.filtered).toBe(true);
+        expect(uncited.reasonCodes).toContain('uncited_claim');
+
+        // One citation per stated percentage: the directive says "every time".
+        const statedTwice = `The weight-cut limit is 3.5% of body weight [E:${CUT_ID}]. Again: 3.5%`;
+        expect(validateShadowResponse(`${statedTwice} is the limit.`, { allowedEvidenceIds: evidenceIds }).filtered).toBe(true);
+        expect(validateShadowResponse(`${statedTwice} [E:${CUT_ID}] is the limit.`, { allowedEvidenceIds: evidenceIds }).filtered).toBe(false);
+      });
+
+      test('a parent chat is handed no limit ids, so a limit citation there is an unauthorized one', async () => {
+        const answer = `Heat is capped at 23 minutes per session [E:${HEAT_ID}].`;
+        limitsOnFile();
+        const { evidenceIds } = await retrieveShadowContext(scopedTo('parent', 'account-parent-linked'));
+        const result = validateShadowResponse(answer, { allowedEvidenceIds: evidenceIds });
+        expect(result.filtered).toBe(true);
+        expect(result.reasonCodes).toContain('unauthorized_citation');
+      });
+
+      test.each([
+        'No heat exposure limit is set for this athlete. Set it on the Athlete Limits page (/coach/athlete-limits) and I will plan inside it. I will not pick a number for you.',
+        'No weight-cut limit is set for this athlete, so I am not going to guess one. Set it on the Athlete Limits page (/coach/athlete-limits). You decide.',
+        'No supervision requirement is set and no contact cap is set. The limits are set on the Athlete Limits page; the contact cap is set on the Sparring Caps page (/coach/sparring-caps).',
+      ])('"not set, please set it" is delivered: %s', (answer) => {
+        const result = validateShadowResponse(answer, { allowedEvidenceIds: [] });
+        expect(result.filtered).toBe(false);
+        expect(result.reasonCodes).toEqual([]);
+      });
     });
   });
 
