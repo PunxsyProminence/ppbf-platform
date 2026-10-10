@@ -1,0 +1,380 @@
+/**
+ * @jest-environment jsdom
+ */
+
+// The "Return plan" block shows what the return-to-training route answers and
+// sends what the coach entered; every rule is the route's. These pin each
+// state (none, loading, refused, failed, missing, empty, all advanced, not
+// active), the current step, Advance (note required, exact body, the route's
+// refusal in its own words) and Add step (nothing prefilled or preselected,
+// exact body), against the response shapes of
+// app/api/pilot/coach/return-to-training/route.ts.
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+
+import ReturnPlanBlock, { RTT_CONTACT, RTT_SCALE } from './ReturnPlanBlock';
+
+const STEP = {
+  organization_id: 'org-1', plan_id: 'plan-1', permitted_scale_level: null, planned_note: '',
+  advanced_by_account_id: null, advanced_at: null, advancement_note: null,
+};
+// 01:30 UTC on 9/9 is the evening of 9/8 at the gym (America/New_York).
+const STEP1 = {
+  ...STEP, step_id: 'step-1', week_number: 1, intensity_label: 'Walking and light bike', permitted_contact: 'none',
+  planned_note: 'No bag work.', advanced_by_account_id: 'acct-coach-1', advanced_at: '2026-09-09T01:30:00.000Z',
+  advancement_note: 'Completed the week pain-free.',
+};
+const STEP2 = {
+  ...STEP, step_id: 'step-2', week_number: 2, intensity_label: 'Bag work only', permitted_contact: 'light_technical',
+  permitted_scale_level: 'B',
+};
+const STEP3 = { ...STEP, step_id: 'step-3', week_number: 3, intensity_label: 'Pads', permitted_contact: 'conditioned' };
+const PLAN = {
+  organization_id: 'org-1', plan_id: 'plan-1', athlete_id: 'ath-1', triggering_event: 'injury', event_date: '2026-09-01',
+  authority_source: 'physician', rest_period_days: 14, earliest_return_date: '2026-09-22', medical_clearance_on_file: false,
+  entered_by_account_id: 'acct-coach-1', entered_by_role: 'coach', entered_at: '2026-09-01T15:00:00.000Z', status: 'active',
+  note: '', steps: [STEP1, STEP2, STEP3], current_step_id: 'step-2',
+};
+const OTHER_PLAN = { ...PLAN, plan_id: 'plan-other', steps: [{ ...STEP3, step_id: 'other-step', intensity_label: 'Another injury' }], current_step_id: 'other-step' };
+
+const GET_URL = '/api/pilot/coach/return-to-training?athlete_id=ath-1';
+const WRITE_URL = '/api/pilot/coach/return-to-training';
+
+function respond(body: unknown, status = 200): Response {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+}
+
+interface Write { url: string; method: string; body: Record<string, unknown> }
+let reads: string[];
+let writes: Write[];
+
+/**
+ * Records every request; asserting on them happens in the test body, never
+ * inside the double, where a failed expect would be swallowed by the block's
+ * own catch and read as "could not be loaded".
+ */
+function serve(get: () => Response | Promise<Response>, write?: () => Response | Promise<Response>) {
+  reads = [];
+  writes = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'GET') {
+      reads.push(String(input));
+      return get();
+    }
+    writes.push({ url: String(input), method: String(init?.method), body: JSON.parse(String(init?.body)) });
+    return write ? write() : respond({ ok: true, step: STEP2 });
+  }) as unknown as typeof fetch;
+}
+
+const plans = (...list: unknown[]) => () => respond({ ok: true, plans: list });
+
+async function open(planId: string | null = 'plan-1') {
+  render(<ReturnPlanBlock athleteId="ath-1" planId={planId} />);
+  const block = screen.getByRole('region', { name: 'Return plan' });
+  if (planId) await waitFor(() => expect(within(block).queryByText('Loading return plan…')).toBeNull());
+  return block;
+}
+
+function routeList(name: string): string[] {
+  const source = readFileSync(path.resolve(__dirname, '../app/api/pilot/coach/return-to-training/route.ts'), 'utf8');
+  const match = source.match(new RegExp(`const ${name}\\b[^=]*=\\s*\\[([^\\]]*)\\]`));
+  if (!match) throw new Error(`${name} not found in route.ts`);
+  return [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+}
+
+test('the contact and scale choices are exactly the route’s', () => {
+  expect([...RTT_CONTACT]).toEqual(routeList('PERMITTED_CONTACT'));
+  expect([...RTT_SCALE]).toEqual(routeList('SCALE_LEVELS'));
+  expect(RTT_CONTACT.length).toBe(5);
+});
+
+test('an injury with no plan says so and reads nothing', async () => {
+  serve(plans(PLAN));
+  const block = await open(null);
+  expect(within(block).getByText('No return plan on this injury.')).toBeTruthy();
+  expect(global.fetch).not.toHaveBeenCalled();
+  expect(within(block).queryByRole('button')).toBeNull();
+});
+
+test('says it is loading until the route answers, and never shows an empty plan meanwhile', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  serve(async () => { await gate; return respond({ ok: true, plans: [PLAN] }); });
+  render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" />);
+  expect(screen.getByText('Loading return plan…')).toBeTruthy();
+  expect(screen.queryByText('No steps on this plan yet.')).toBeNull();
+  await act(async () => { release(); await gate; });
+  expect(await screen.findByText(/Week 2 · Bag work only/)).toBeTruthy();
+  expect(reads).toEqual([GET_URL]);
+});
+
+test('shows this plan’s steps in week order, marks the route’s current step, and shows an advanced step with its note and gym day', async () => {
+  serve(plans(OTHER_PLAN, PLAN));
+  const block = await open();
+  const steps = within(block).getAllByRole('listitem');
+  expect(steps.map((li) => li.querySelector('p')?.textContent)).toEqual([
+    'Week 1 · Walking and light bike',
+    'Week 2 · Bag work only · ▸ Current step',
+    'Week 3 · Pads',
+  ]);
+  expect(steps.map((li) => li.getAttribute('aria-current'))).toEqual([null, 'step', null]);
+  expect(within(steps[0]).getByText('Contact: No contact')).toBeTruthy();
+  expect(within(steps[0]).getByText('Plan note: No bag work.')).toBeTruthy();
+  expect(within(steps[0]).getByText('Advanced 9/8/2026 · Coach’s note: Completed the week pain-free.')).toBeTruthy();
+  expect(within(steps[1]).getByText('Contact: Light technical contact · Scale B')).toBeTruthy();
+  // Only the current step can be advanced, and another plan's steps never show here.
+  expect(within(block).getAllByRole('button', { name: 'Advance' })).toHaveLength(1);
+  expect(within(steps[1]).getByRole('button', { name: 'Advance' })).toBeTruthy();
+  expect(within(block).queryByText(/Another injury/)).toBeNull();
+  // The account id of who advanced it is not a name and is not printed.
+  expect(block.textContent).not.toContain('acct-coach-1');
+});
+
+test('a plan with no steps says so and still offers Add step', async () => {
+  serve(plans({ ...PLAN, steps: [], current_step_id: null }));
+  const block = await open();
+  expect(within(block).getByText('No steps on this plan yet.')).toBeTruthy();
+  expect(within(block).queryByText('Every step of this plan has been advanced.')).toBeNull();
+  expect(within(block).queryByRole('button', { name: 'Advance' })).toBeNull();
+  expect(within(block).getByRole('button', { name: 'Add step' })).toBeTruthy();
+});
+
+test('a plan with every step advanced says so and offers no Advance', async () => {
+  serve(plans({ ...PLAN, steps: [STEP1], current_step_id: null }));
+  const block = await open();
+  expect(within(block).getByText('Every step of this plan has been advanced.')).toBeTruthy();
+  expect(within(block).queryByRole('button', { name: 'Advance' })).toBeNull();
+});
+
+test.each(['completed', 'cancelled'])('a %s plan shows its steps and offers neither Advance nor Add step', async (status) => {
+  serve(plans({ ...PLAN, status }));
+  const block = await open();
+  expect(within(block).getByText(`This plan is ${status}. Its steps are shown as recorded.`)).toBeTruthy();
+  expect(within(block).getAllByRole('listitem')).toHaveLength(3);
+  expect(within(block).queryByRole('button')).toBeNull();
+});
+
+test('a refused read shows the route’s own words, never an empty plan', async () => {
+  serve(() => respond({ error: 'Forbidden: coach not assigned to athlete' }, 403));
+  const block = await open();
+  expect(within(block).getByRole('alert').textContent).toBe('▲ Not shown: Forbidden: coach not assigned to athlete');
+  expect(within(block).queryByText('No steps on this plan yet.')).toBeNull();
+  expect(within(block).queryByText('No return plan on this injury.')).toBeNull();
+  expect(within(block).queryByRole('listitem')).toBeNull();
+});
+
+test.each([
+  ['a server fault', () => respond({ error: 'Internal server error' }, 500)],
+  ['a reply that is not JSON', () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); } }) as unknown as Response],
+  ['a reply without plans', () => respond({ ok: true })],
+  ['a plan whose steps are unreadable', () => respond({ ok: true, plans: [{ ...PLAN, steps: [{ step_id: 'step-1' }] }] })],
+  ['no connection', () => Promise.reject(new Error('offline'))],
+])('%s is "could not be loaded", never an empty plan, and Try again reads again', async (_name, get) => {
+  let healthy = false;
+  serve(() => (healthy ? respond({ ok: true, plans: [PLAN] }) : get()));
+  const block = await open();
+  expect(within(block).getByRole('alert').textContent).toContain('The return plan could not be loaded.');
+  expect(within(block).queryByText('No steps on this plan yet.')).toBeNull();
+  expect(within(block).queryByRole('listitem')).toBeNull();
+  healthy = true;
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Try again' })); });
+  expect(await within(block).findByText(/Week 2 · Bag work only/)).toBeTruthy();
+  expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test('a linked plan the route did not send is said plainly, not shown as empty', async () => {
+  serve(plans(OTHER_PLAN));
+  const block = await open();
+  expect(within(block).getByRole('alert').textContent)
+    .toContain('This injury is linked to a return plan that was not in the list the server sent.');
+  expect(within(block).queryByText(/Another injury/)).toBeNull();
+  expect(within(block).queryByText('No steps on this plan yet.')).toBeNull();
+});
+
+test('Advance needs the coach’s note: a blank one sends nothing', async () => {
+  serve(plans(PLAN));
+  const block = await open();
+  const form = within(block).getByRole('form', { name: 'Advance week 2' });
+  expect((within(form).getByLabelText('Your note on this decision (required)') as HTMLTextAreaElement).required).toBe(true);
+  fireEvent.change(within(form).getByLabelText('Your note on this decision (required)'), { target: { value: '   ' } });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes).toEqual([]);
+  expect(within(block).getByRole('alert').textContent).toContain('Write your note first');
+});
+
+test('Advance sends the current step with the note, says it was advanced, and reads the plan again', async () => {
+  let advanced = false;
+  const after = { ...PLAN, steps: [STEP1, { ...STEP2, advanced_at: '2026-09-15T15:00:00.000Z', advancement_note: 'Bag work, no symptoms reported.' }, STEP3], current_step_id: 'step-3' };
+  serve(() => respond({ ok: true, plans: [advanced ? after : PLAN] }), () => { advanced = true; return respond({ ok: true, step: after.steps[1] }); });
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText('Your note on this decision (required)'), { target: { value: 'Bag work, no symptoms reported.' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  expect(writes).toEqual([{
+    url: WRITE_URL, method: 'PATCH',
+    body: { athlete_id: 'ath-1', plan_id: 'plan-1', step_id: 'step-2', advancement_note: 'Bag work, no symptoms reported.' },
+  }]);
+  expect(within(block).getByRole('status').textContent).toBe('✓ Week 2 advanced.');
+  expect(reads).toEqual([GET_URL, GET_URL]);
+  const steps = within(block).getAllByRole('listitem');
+  expect(steps.map((li) => li.getAttribute('aria-current'))).toEqual([null, null, 'step']);
+  // The next step's note starts empty: one decision's note is never carried to the next.
+  expect((within(steps[2]).getByLabelText('Your note on this decision (required)') as HTMLTextAreaElement).value).toBe('');
+});
+
+test.each([
+  [400, 'Advancement note must be at least 10 characters.'],
+  [409, 'Week 1 is the current step; advance it first.'],
+  [403, 'Forbidden: coach not assigned to athlete'],
+])('a refused Advance (%i) shows the route’s own words, keeps the note, and reads the plan again', async (status, error) => {
+  serve(plans(PLAN), () => respond({ error }, status));
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText('Your note on this decision (required)'), { target: { value: 'ok' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  expect(writes).toHaveLength(1);
+  expect(within(block).getByRole('alert').textContent).toBe(`▲ ${error}`);
+  expect(within(block).queryByRole('status')).toBeNull();
+  expect((within(block).getByLabelText('Your note on this decision (required)') as HTMLTextAreaElement).value).toBe('ok');
+  expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test.each([
+  ['the connection fails', () => Promise.reject(new Error('offline'))],
+  ['the answer is unreadable', () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); } }) as unknown as Response],
+])('when %s on Advance it does not claim saved or not saved, and reads the plan again', async (_name, write) => {
+  serve(plans(PLAN), write);
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText('Your note on this decision (required)'), { target: { value: 'Bag work, no symptoms reported.' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  expect(within(block).getByRole('alert').textContent).toContain('it is not known whether that was saved');
+  expect(within(block).queryByRole('status')).toBeNull();
+  expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test('controls are off while a write is in flight, so one decision is not sent twice', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  serve(plans(PLAN), async () => { await gate; return respond({ ok: true, step: STEP2 }); });
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText('Your note on this decision (required)'), { target: { value: 'Bag work, no symptoms reported.' } });
+  const form = within(block).getByRole('form', { name: 'Advance week 2' });
+  fireEvent.submit(form);
+  await waitFor(() => expect((within(block).getByRole('button', { name: 'Advance' }) as HTMLButtonElement).disabled).toBe(true));
+  expect((within(block).getByRole('button', { name: 'Add step' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.submit(form);
+  await act(async () => { release(); await gate; });
+  await waitFor(() => expect((within(block).getByRole('button', { name: 'Add step' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(writes).toHaveLength(1);
+});
+
+async function openAddStep() {
+  const block = await open();
+  fireEvent.click(within(block).getByRole('button', { name: 'Add step' }));
+  return { block, form: within(block).getByRole('form', { name: 'Add a step' }) };
+}
+
+test('Add step opens an empty form: no week suggested, no contact chosen for the coach', async () => {
+  serve(plans(PLAN));
+  const { block, form } = await openAddStep();
+  expect(within(block).getByRole('button', { name: 'Add step' }).getAttribute('aria-expanded')).toBe('true');
+  expect((within(form).getByLabelText('Week number') as HTMLInputElement).value).toBe('');
+  expect((within(form).getByLabelText("This week's ceiling, in your words") as HTMLInputElement).value).toBe('');
+  expect((within(form).getByLabelText('Contact') as HTMLSelectElement).value).toBe('');
+  expect(within(within(form).getByLabelText('Contact')).getAllByRole('option').map((o) => (o as HTMLOptionElement).value))
+    .toEqual(['', ...RTT_CONTACT]);
+  expect(within(within(form).getByLabelText('Scale (optional)')).getAllByRole('option').map((o) => (o as HTMLOptionElement).value))
+    .toEqual(['', ...RTT_SCALE]);
+});
+
+test('Add step without a contact choice sends nothing, because the route would save "none" unasked', async () => {
+  serve(plans(PLAN));
+  const { block, form } = await openAddStep();
+  fireEvent.change(within(form).getByLabelText('Week number'), { target: { value: '4' } });
+  fireEvent.change(within(form).getByLabelText("This week's ceiling, in your words"), { target: { value: 'Controlled rounds' } });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes).toEqual([]);
+  expect(within(block).getByRole('alert').textContent).toBe('▲ Choose the contact for this week.');
+});
+
+test('Add step sends exactly what the coach entered, says it was added, closes the form and reads the plan again', async () => {
+  serve(plans(PLAN), () => respond({ ok: true, step: { ...STEP, step_id: 'step-4', week_number: 4, intensity_label: 'Controlled rounds', permitted_contact: 'controlled_sparring' } }));
+  const { block, form } = await openAddStep();
+  fireEvent.change(within(form).getByLabelText('Week number'), { target: { value: '4' } });
+  fireEvent.change(within(form).getByLabelText("This week's ceiling, in your words"), { target: { value: 'Controlled rounds' } });
+  fireEvent.change(within(form).getByLabelText('Contact'), { target: { value: 'controlled_sparring' } });
+  fireEvent.change(within(form).getByLabelText('Plan note (optional)'), { target: { value: 'Three rounds, known partner.' } });
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save step' })); });
+  expect(writes).toEqual([{
+    url: WRITE_URL, method: 'POST',
+    body: {
+      action: 'add_step', athlete_id: 'ath-1', plan_id: 'plan-1', week_number: 4, intensity_label: 'Controlled rounds',
+      permitted_contact: 'controlled_sparring', permitted_scale_level: null, planned_note: 'Three rounds, known partner.',
+    },
+  }]);
+  expect(within(block).getByRole('status').textContent).toBe('✓ Step added.');
+  expect(within(block).queryByRole('form', { name: 'Add a step' })).toBeNull();
+  expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test('a chosen scale is sent, and a week that is not a whole number goes as typed for the route to refuse in its words', async () => {
+  serve(plans(PLAN), () => respond({ error: 'week_number must be a whole number from 1 to 520.' }, 400));
+  const { block, form } = await openAddStep();
+  fireEvent.change(within(form).getByLabelText('Week number'), { target: { value: '2.5' } });
+  fireEvent.change(within(form).getByLabelText("This week's ceiling, in your words"), { target: { value: 'Pads' } });
+  fireEvent.change(within(form).getByLabelText('Contact'), { target: { value: 'none' } });
+  fireEvent.change(within(form).getByLabelText('Scale (optional)'), { target: { value: 'C' } });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes[0].body).toMatchObject({ week_number: '2.5', permitted_contact: 'none', permitted_scale_level: 'C' });
+  expect(within(block).getByRole('alert').textContent).toBe('▲ week_number must be a whole number from 1 to 520.');
+});
+
+test('a refused Add step shows the route’s own words and keeps what the coach typed', async () => {
+  serve(plans(PLAN), () => respond({ error: 'A return-to-training step already exists for that week.', code: 'RTT_STEP_WEEK_DUPLICATE' }, 409));
+  const { block, form } = await openAddStep();
+  fireEvent.change(within(form).getByLabelText('Week number'), { target: { value: '3' } });
+  fireEvent.change(within(form).getByLabelText("This week's ceiling, in your words"), { target: { value: 'Pads' } });
+  fireEvent.change(within(form).getByLabelText('Contact'), { target: { value: 'conditioned' } });
+  await act(async () => { fireEvent.submit(form); });
+  expect(within(block).getByRole('alert').textContent).toBe('▲ A return-to-training step already exists for that week.');
+  const still = within(block).getByRole('form', { name: 'Add a step' });
+  expect((within(still).getByLabelText('Week number') as HTMLInputElement).value).toBe('3');
+  expect((within(still).getByLabelText('Contact') as HTMLSelectElement).value).toBe('conditioned');
+});
+
+test('a reply for a plan no longer shown is dropped, so one injury’s steps never show under another', async () => {
+  let releaseFirst: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let calls = 0;
+  serve(async () => {
+    calls += 1;
+    if (calls === 1) { await gate; return respond({ ok: true, plans: [PLAN, OTHER_PLAN] }); }
+    return respond({ ok: true, plans: [PLAN, OTHER_PLAN] });
+  });
+  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" />);
+  rerender(<ReturnPlanBlock athleteId="ath-1" planId="plan-other" />);
+  expect(await screen.findByText(/Another injury/)).toBeTruthy();
+  await act(async () => { releaseFirst(); await gate; });
+  expect(screen.getByText(/Another injury/)).toBeTruthy();
+  expect(screen.queryByText(/Bag work only/)).toBeNull();
+});
+
+test('Law 5: the block is a kiosk surface, and everything a coach touches is a control that surface floors', async () => {
+  serve(plans(PLAN));
+  const { block } = await openAddStep();
+  // The attribute the 55px and 19.1px rules are scoped to (kioskTapFloor / kioskTypeFloor), on the block's own root.
+  expect(block.getAttribute('data-surface')).toBe('kiosk');
+  expect(block.className).toContain('text-[length:var(--t-md)]');
+  // No anchors or ARIA-made controls: the tap rule names real controls only.
+  expect(block.querySelector('a, [role="button"], [onclick]')).toBeNull();
+  // The tap rule in globals.css does not name textarea, so each asks for the floor itself.
+  const textareas = [...block.querySelectorAll('textarea')];
+  expect(textareas).toHaveLength(2);
+  for (const area of textareas) expect(area.className).toContain('min-h-[var(--tap)]');
+  // Nothing in the block sets its own smaller size: no inline font size, and no voice the kiosk floor does not hold.
+  for (const element of [block, ...block.querySelectorAll('*')]) {
+    expect((element as HTMLElement).style.fontSize).toBe('');
+    expect(element.className).not.toMatch(/\b(working|alert-title|alert-msg|t-data|badge)\b|text-\[length:var\(--t-(xs|sm)\)\]/);
+  }
+});

@@ -7,7 +7,8 @@
 // module; the list shows who it came from, the plan's return date when a plan
 // is linked, and days lost; record and update send the FULL record (an update
 // replaces it); a refusal is shown as the server worded it; marking entered in
-// error asks first.
+// error asks first; each injury carries its Return plan block (the block's own
+// states are pinned in components/ReturnPlanBlock.test.tsx).
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -50,6 +51,15 @@ const CANDIDATES = {
   clearances: [],
   painReports: [],
 };
+// The return-to-training route's reply for this athlete (route.ts GET): plans with steps and current_step_id.
+const RTT_PLANS = [{
+  plan_id: 'plan-1', athlete_id: 'ath-1', status: 'active', triggering_event: 'confirmed_concussion',
+  steps: [{
+    step_id: 'step-1', plan_id: 'plan-1', week_number: 1, intensity_label: 'Bag work only', permitted_contact: 'none',
+    permitted_scale_level: null, planned_note: '', advanced_by_account_id: null, advanced_at: null, advancement_note: null,
+  }],
+  current_step_id: 'step-1',
+}];
 
 let posts: Array<Record<string, unknown>>;
 let postReply: { status: number; body: unknown };
@@ -79,6 +89,9 @@ beforeEach(() => {
     }
     if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
       return { ok: true, json: async () => ({ ok: true, injuries: injuriesReply, candidates: CANDIDATES }) };
+    }
+    if (u.includes('/api/pilot/coach/return-to-training?athlete_id=ath-1') && init?.method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ ok: true, plans: RTT_PLANS }) };
     }
     throw new Error(`unexpected fetch ${u}`);
   }) as unknown as typeof fetch;
@@ -113,6 +126,21 @@ test("the list says who it came from, reads a linked plan's return date, and cou
   expect(within(list).getByText(/28 days lost/)).toBeTruthy();
   expect(within(list).getByText('Staff note: Ringside doctor stopped the bout.')).toBeTruthy();
   expect(within(list).getByText('The athlete told us')).toBeTruthy();
+});
+
+test("each injury carries its own Return plan block: the linked plan's steps read for this athlete, or that there is none", async () => {
+  const list = await openAthlete();
+  const blocks = within(list).getAllByRole('region', { name: 'Return plan' });
+  expect(blocks).toHaveLength(2);
+  expect(await within(blocks[0]).findByText('Week 1 · Bag work only · ▸ Current step')).toBeTruthy();
+  expect(within(blocks[0]).getByRole('button', { name: 'Advance' })).toBeTruthy();
+  expect(within(blocks[1]).getByText('No return plan on this injury.')).toBeTruthy();
+  expect(within(blocks[1]).queryByRole('button')).toBeNull();
+  // One read, for the linked injury only, naming the athlete on screen.
+  const reads = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url)).filter((url) => url.includes('return-to-training'));
+  expect(reads).toEqual(['/api/pilot/coach/return-to-training?athlete_id=ath-1']);
+  // The block's writes are its own: nothing went to the injury route.
+  expect(posts).toEqual([]);
 });
 
 test('recording sends the full record with empty fields as null, then reloads', async () => {
