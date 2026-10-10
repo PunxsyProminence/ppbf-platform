@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import ReturnPlanBlock from '@/components/ReturnPlanBlock';
 import WorkAxis from '@/components/WorkAxis';
 
 // The coach's injury record (map item 11). A separate page, linked from the
@@ -283,6 +284,7 @@ export default function CoachInjuriesPage() {
                         <p className="t-body">Returned {day(i.returned_on)} · {daysBetween(i.injury_date, i.returned_on)} days lost</p>
                       )}
                       {i.staff_note && <p className="t-body">Staff note: {i.staff_note}</p>}
+                      <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id} />
                       <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
                         <button type="button" className="btn btn--ghost" disabled={busy}
                           onClick={() => { setEditing(i.injury_id); setForm(formFrom(i)); setMessage(null); }}>
