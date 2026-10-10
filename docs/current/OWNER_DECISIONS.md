@@ -164,6 +164,29 @@ and should not try to.
 
 ---
 
+## OD-2026-10-10-002 -- VS Code runs build lanes on neeko@ ("B: Keep neeko@ in VS Code"); admin@ takes the browser cloud lanes; VS Code Claude in panel mode
+
+**Provenance: PRIMARY.** Jason's typed message and his selections on two question cards in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given with each quote). Read by script (records pass, 2026-10-10). A card answer is a button pick, quoted exactly; questions and options are quoted as overwatch wrote them. The account found in the VS Code configuration folder is OBSERVED by overwatch (the `oauthAccount.emailAddress` field of `C:\Users\jason\.claude-admin\.claude.json`; no credential was read). Amends OD-2026-10-10-001's "Not ruled here" on which work goes to which account; edits no entry.
+
+**Panel mode.** Overwatch, card at line 23064 (2026-10-10T12:43:28.458Z), as written: "VS Code refused to open Claude: 'Could not locate the Claude CLI on PATH'. Your VS Code is set to terminal mode (claudeCode.useTerminal = true), which needs claude.exe on the system PATH, and it isn't. The docs say the default is the graphical panel, which shows a Sign in button on first open and honours the CLAUDE_CONFIG_DIR setting. Change the VS Code user setting claudeCode.useTerminal to false? (Plain: flip one VS Code setting so Claude opens as a side panel with a Sign in button, instead of a terminal that can't find the program.)" Options as written: "A: Switch to panel mode (Recommended)": "I back up settings.json, set claudeCode.useTerminal to false, and reopen the panel so you land on Sign in. Reversible by setting it back to true."; "B: Keep terminal mode, fix PATH": "Add C:\Users\jason\.local\bin to the system PATH and restart VS Code. Changes a Windows system setting, and whether the config-folder setting reaches terminal mode is unverified."; "C: Leave it": "No change; VS Code stays unable to open Claude.". Jason, line 23065 (2026-10-10T12:44:08.712Z): *"A: Switch to panel mode (Recommended)"*
+
+**The sign-in.** Jason, line 23123 (2026-10-10T12:47:05.210Z): *"signed in with neeko@punxsyprominence.org"*
+
+**Which account does what.** Overwatch, card at line 23131 (2026-10-10T12:47:32.904Z), as written: "VS Code's Claude is now signed in as neeko@punxsyprominence.org (OBSERVED in C:\Users\jason\.claude-admin). The plan and both rule files say VS Code = admin@ (Team premium, 5x usage) for build lanes and neeko@ = browser cloud lanes. Which do you want? (Plain: the build lanes are the heavy users, and they just landed on the smaller seat. Redo the sign-in as admin@, or swap the two accounts' jobs?)" Options as written: "A: Redo as admin@ (Recommended)": "Sign VS Code out and back in as admin@, so build lanes run on the 5x premium seat and the rules stay true. I take you to the sign-in again; use a private browser window so it doesn't auto-pick neeko@."; "B: Keep neeko@ in VS Code": "Build lanes run on neeko@ and admin@ takes the browser cloud lanes instead. I update both rule copies and the handover to match. The premium seat's 5x usage then sits on the lighter job."; "C: Leave as is for now": "Nothing changes; rules and reality disagree until you decide.". Jason, line 23132 (2026-10-10T12:48:08.651Z): *"B: Keep neeko@ in VS Code"*
+
+**Rulings:**
+1. VS Code's Claude Code runs in panel mode (`claudeCode.useTerminal` false). Terminal mode could not start: the Claude CLI is not on the system PATH.
+2. VS Code's Claude Code stays signed in as neeko@punxsyprominence.org and runs the build lanes.
+3. admin@punxsyprominence.org takes the browser cloud lanes instead (claude.ai/code): pull requests only, never releases; no local files, Azure or production database.
+4. Overwatch stays on the personal Max account in the desktop app (OD-2026-10-10-001 ruling 2), and only Overwatch merges and releases.
+
+**On record:** the card told him the consequence before he picked: "The premium seat's 5x usage then sits on the lighter job." The VS Code configuration folder keeps the name `.claude-admin` although the login in it is neeko@. Rule text: the CLAUDE ACCOUNTS section of `~/.claude/rules/ppbf-workspace.md`, with an identical copy under `~/.claude-admin/rules/`.
+
+**Not ruled here:** whether admin@ is signed in at claude.ai/code and can reach the repository (not yet checked at the time of this entry).
+
+---
+
+
 ## OD-2026-10-10-001 -- Three Claude accounts on this PC; Overwatch runs on the personal Max account: "A: Update the rule (Recommended)"
 
 **Provenance: PRIMARY.** Jason's typed messages in the previous overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; lines 4889 and 5074) and his selections on a question card in this overwatch session (transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 22900, 2026-10-10T12:33:51.228Z; his answers at line 22901, 2026-10-10T12:35:25.956Z). Read by script (records pass, 2026-10-10). Timestamps UTC. The line 4889 message is quoted only up to the words shown: the rest of it contains a credential and is deliberately not reproduced here or anywhere in the repository. New; edits no earlier entry.
