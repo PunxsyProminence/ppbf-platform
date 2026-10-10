@@ -254,6 +254,68 @@ test('a refused start whose injury then shows another plan is still said on the 
   expect(within(alert).getByText('This injury already has a return-to-training plan.')).toBeTruthy();
 });
 
+test('a refused start after the route had already made the plan names that plan: it is linked to nothing', async () => {
+  // The route creates, then links; a link refused because another coach linked first leaves the new plan loose.
+  planPostReply = {
+    status: 409, body: { error: 'This injury already has a return-to-training plan.', code: 'RTT_PLAN_ALREADY_LINKED' },
+    injuries: [PLAN_INJURY, WRIST_LINKED_ELSEWHERE],
+  };
+  const { form } = await openStartOnWrist();
+  candidatesReply = { ...CANDIDATES, plans: [...CANDIDATES.plans, { plan_id: 'plan-2', triggering_event: 'injury', event_date: '2026-08-01', earliest_return_date: '2026-08-10', status: 'active' }] };
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('This injury already has a return-to-training plan. Return plans for this athlete not linked to an injury listed here: Injury 8/1/2026.');
+});
+
+test.each([
+  ['refused', { status: 400, body: { error: "earliest_return_date is before this injury's date." } }, "earliest_return_date is before this injury's date."],
+  ['unknown', { status: 500, body: { error: 'Internal server error' } }, 'it is not known whether the plan was saved'],
+])('a %s start whose block is still on screen is said once, beside its form, not repeated on the page', async (_kind, reply, said) => {
+  planPostReply = reply;
+  const { block, form } = await openStartOnWrist();
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  await waitFor(() => expect(screen.queryByText('Reading the injuries again\u2026')).toBeNull());
+  const alerts = screen.getAllByRole('alert');
+  expect(alerts).toHaveLength(1);
+  expect(block.contains(alerts[0])).toBe(true);
+  expect(alerts[0].textContent).toContain(said);
+  // What was typed is still there for the coach to correct.
+  expect((within(block).getByLabelText('Who set the rest period (rulebook, physician)') as HTMLInputElement).value).toBe('Dr. Reyes');
+});
+
+test('a saved plan followed by a failed re-read is said as saved, not as "Not done"', async () => {
+  const { form } = await openStartOnWrist();
+  injuriesFail = true;
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByText('Saved')).toBeTruthy();
+  expect(alert.textContent).toContain('Return plan started. After that, the injuries could not be read again: Injuries could not be loaded.');
+  expect(within(alert).queryByText('Not done')).toBeNull();
+});
+
+test('while a plan is being saved the athlete cannot be switched and no injury can be edited or saved', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const original = (global.fetch as jest.Mock).getMockImplementation()!;
+  const { list, form } = await openStartOnWrist();
+  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') await gate;
+    return original(url, init);
+  });
+  fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+  // The answer must come back to this athlete and this list; an edit opened now would be saved without the plan.
+  await waitFor(() => expect((screen.getByLabelText('Athlete') as HTMLSelectElement).disabled).toBe(true));
+  for (const name of ['Edit', 'Entered in error']) {
+    for (const button of within(list).getAllByRole('button', { name })) expect((button as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect((screen.getByRole('button', { name: 'Record injury' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(list).getByRole('button', { name: 'Advance' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => { release(); await gate; });
+  await waitFor(() => expect((screen.getByLabelText('Athlete') as HTMLSelectElement).disabled).toBe(false));
+  expect((within(list).getAllByRole('button', { name: 'Edit' })[0] as HTMLButtonElement).disabled).toBe(false);
+  expect(posts).toEqual([]);
+});
+
 test('an unknown start followed by a failed re-read stays "not known": it is never replaced by "Not done"', async () => {
   planPostReply = { status: 500, body: { error: 'Internal server error' } };
   const { form } = await openStartOnWrist();
@@ -277,71 +339,12 @@ test('Start is not offered on the injury whose edit is open, so a stale edit can
   expect(within(block).getByRole('button', { name: 'Start a return plan' })).toBeTruthy();
 });
 
-test('an edit opened while a plan was being saved is closed and said so: it would have saved the injury without its plan', async () => {
-  let release: () => void = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const original = (global.fetch as jest.Mock).getMockImplementation()!;
-  const { list, form } = await openStartOnWrist();
-  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
-    if (String(url).endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') await gate;
-    return original(url, init);
-  });
-  fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
-  // The plan write is in flight; the coach opens Edit on the same injury (its form shows no plan).
-  fireEvent.click(within(list).getAllByRole('button', { name: 'Edit' })[1]);
-  expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
-  await act(async () => { release(); await gate; });
-  const alert = await screen.findByRole('alert');
-  expect(within(alert).getByText('Edit closed')).toBeTruthy();
-  expect(alert.textContent).toContain('its return plan changed while it was open');
-  expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
-  // Nothing was sent to the injury route, and the plan is on the injury.
-  expect(posts).toEqual([]);
-  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
-});
-
 test('an active plan no listed injury links to is named on the injury with no plan', async () => {
   candidatesReply = { ...CANDIDATES, plans: [...CANDIDATES.plans, { plan_id: 'plan-9', triggering_event: 'knockout', event_date: '2026-07-04', earliest_return_date: null, status: 'active' }, { plan_id: 'plan-8', triggering_event: 'illness', event_date: '2026-06-01', earliest_return_date: null, status: 'cancelled' }] };
   const list = await openAthlete();
   const block = within(list).getAllByRole('region', { name: 'Return plan' })[1];
   // plan-1 is linked to the other injury and plan-8 is cancelled: only plan-9 is named.
   expect(within(block).getByText(/not linked to an injury listed here: Knockout 7\/4\/2026\. To use one/)).toBeTruthy();
-});
-
-test('an older reply that arrives after a newer one is dropped: the newest read of the injuries is the one shown', async () => {
-  let releasePlan: () => void = () => {};
-  const planGate = new Promise<void>((resolve) => { releasePlan = resolve; });
-  let releaseOld: () => void = () => {};
-  const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
-  const original = (global.fetch as jest.Mock).getMockImplementation()!;
-  const { list, form } = await openStartOnWrist();
-  let injuryReads = 0;
-  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
-    const u = String(url);
-    if (u.endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') await planGate;
-    if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
-      injuryReads += 1;
-      if (injuryReads === 1) {
-        // The first re-read answers late, with the list as it was BEFORE the plan was linked.
-        const before = [PLAN_INJURY, { ...WRIST, staff_note: 'Edited.' }];
-        await oldGate;
-        return { ok: true, json: async () => ({ ok: true, injuries: before, candidates: CANDIDATES }) };
-      }
-    }
-    return original(url, init);
-  });
-  // 1. The plan write starts and waits. 2. The coach saves a new injury; that re-read (read 1) is slow.
-  fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
-  fireEvent.change(screen.getByLabelText('Date of injury'), { target: { value: '2026-10-01' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Record injury' })); });
-  // 3. The plan write lands and the page reads again (read 2), which answers at once with the plan linked.
-  await act(async () => { releasePlan(); await planGate; });
-  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
-  // 4. Read 1 finally answers. It is older than what is on screen and must not replace it.
-  await act(async () => { releaseOld(); await oldGate; });
-  expect(injuryReads).toBe(2);
-  expect(within(list).queryByText('No return plan on this injury.')).toBeNull();
-  expect(within(list).queryByText('Staff note: Edited.')).toBeNull();
 });
 
 test("switching athlete takes the first athlete's list down at once, and that athlete's late failure does not touch the second", async () => {

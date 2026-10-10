@@ -48,12 +48,13 @@ const CREATED = { ok: true, plan: { plan_id: 'plan-new', steps: [], current_step
 
 // The injury the block sits under, as the page passes it.
 const changed = jest.fn();
+const sending = jest.fn();
 const INJURY = {
   injuryId: 'inj-1', injuryDate: '2026-09-01', expectedBack: null as string | null,
-  editing: false, pageBusy: false, loosePlans: [] as string[], onChanged: changed,
+  editing: false, pageBusy: false, loosePlans: [] as string[], onSending: sending, onChanged: changed,
 };
 
-beforeEach(() => { changed.mockClear(); });
+beforeEach(() => { changed.mockClear(); sending.mockClear(); });
 
 function respond(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
@@ -183,6 +184,8 @@ test.each([
     },
   }]);
   expect(changed.mock.calls).toEqual([[{ kind: 'saved', text: 'Return plan started.' }]]);
+  // The page was told a write was in flight, then that it was answered: it locks itself in between.
+  expect(sending.mock.calls).toEqual([[true], [false]]);
   expect(within(block).getByRole('status').textContent).toBe('\u2713 Return plan started.');
   // The plan's steps are the page's to show once the injury is linked: nothing is read here.
   expect(reads).toEqual([]);
@@ -230,30 +233,14 @@ test('while the page is saving or reading again, every control in the block wait
   const block = screen.getByRole('region', { name: 'Return plan' });
   await within(block).findByText(/Week 2 \u00b7 Bag work only/);
   fireEvent.click(within(block).getByRole('button', { name: 'Add step' }));
+  // A note is already typed, so only the page being busy stands between a submit and a write.
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'Bag work, no symptoms reported.' } });
   rerender(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" {...INJURY} pageBusy />);
   const controls = [...block.querySelectorAll('button, input, select, textarea')] as HTMLButtonElement[];
   expect(controls.length).toBeGreaterThan(5);
   for (const control of controls) expect(control.disabled).toBe(true);
   fireEvent.submit(within(block).getByRole('form', { name: 'Advance week 2' }));
   expect(writes).toEqual([]);
-});
-
-test('the answer is handed to the page as it is NOW, not as it was when Save plan was tapped', async () => {
-  let release: () => void = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  serve(plans(), async () => { await gate; return respond(CREATED); });
-  const later = jest.fn();
-  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} />);
-  const block = screen.getByRole('region', { name: 'Return plan' });
-  fireEvent.click(within(block).getByRole('button', { name: 'Start a return plan' }));
-  const form = within(block).getByRole('form', { name: 'Start a return plan' });
-  fillStart(form, { 'Triggering event': 'injury', 'Medical clearance on file': 'no', [AUTHORITY]: 'Dr. Reyes' });
-  fireEvent.submit(form);
-  // The page re-renders while the write is in flight (say, an edit was opened) and hands down a new handler.
-  rerender(<ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} onChanged={later} />);
-  await act(async () => { release(); await gate; });
-  await waitFor(() => expect(later).toHaveBeenCalledTimes(1));
-  expect(changed).not.toHaveBeenCalled();
 });
 
 test('an earliest return date is sent as entered, and rest days that are not a whole number go as typed for the route to refuse', async () => {

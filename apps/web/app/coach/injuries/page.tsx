@@ -108,6 +108,17 @@ function formFrom(injury: Injury): Form {
   };
 }
 
+/** Active plans of the athlete that no listed injury links to (a plan whose link failed, or one unlinked since), worded for display. */
+function loosePlansOf(injuries: Injury[], candidates: Candidates): string[] {
+  const linked = new Set(injuries.map((i) => i.linked_rtt_plan_id));
+  return candidates.plans
+    .filter((p) => p.status === 'active' && !linked.has(p.plan_id))
+    .map((p) => `${words(p.triggering_event)} ${day(p.event_date)}`);
+}
+
+/** The page alert's title when it repeats what a Return plan block answered. */
+const SAID_TITLE: Record<Outcome['kind'], string> = { saved: 'Saved', refused: 'Not done', unknown: 'Not known' };
+
 async function errorOf(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
   return typeof body?.error === 'string' && body.error ? body.error : fallback;
@@ -123,13 +134,14 @@ export default function CoachInjuriesPage() {
   const [message, setMessage] = useState<{ text: string; error: boolean; title?: string } | null>(null);
   // True while the injuries of the athlete on screen are being read again with the list kept up.
   const [rereading, setRereading] = useState(false);
+  // True while a Return plan block has a write in flight. With `busy` and
+  // `rereading` it locks the athlete picker and every save on the page, so a
+  // block's answer always comes back to the athlete and the list it was sent from.
+  const [blockBusy, setBlockBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   // The athlete on screen now. A reply that arrives for an athlete no longer
   // selected is dropped, so one child's injuries never show under another's name.
   const current = useRef('');
-  // Each read of the injuries gets a number; only the newest may land, so a
-  // slow earlier reply never replaces a later one.
-  const reads = useRef(0);
   const fail = (text: string) => setMessage({ text, error: true });
 
   useEffect(() => {
@@ -160,21 +172,19 @@ export default function CoachInjuriesPage() {
   // something else. A list that could not be read again is taken down, never
   // left on screen as if it were current.
   // `said`: what a Return plan block answered just before this re-read. It is
-  // repeated on the page whenever the re-read takes that block off the screen,
-  // so a refusal or an unknown outcome is never replaced by silence.
-  const load = useCallback(async (id: string, keep = false, said: { injuryId: string; text: string; title: string } | null = null) => {
+  // repeated on the page whenever the re-read takes that block off the screen
+  // (the list could not be read, the injury left it, or a refused start's
+  // injury now carries another plan), so an answer is never replaced by silence.
+  const load = useCallback(async (id: string, keep = false, said: ({ injuryId: string } & Outcome) | null = null) => {
     const clear = () => { setInjuries(null); setCandidates(NO_CANDIDATES); };
     if (!keep) clear();
-    const ticket = reads.current + 1;
-    reads.current = ticket;
-    setRereading(keep && id !== '');
     if (!id) return;
-    const stale = () => current.current !== id || reads.current !== ticket;
+    setRereading(keep);
     const lost = (text: string) => {
-      if (stale()) return;
+      if (current.current !== id) return;
       clear();
       setMessage(said
-        ? { text: `${said.text} After that, the injuries could not be read again: ${text}`, error: true, title: said.title }
+        ? { text: `${said.text} After that, the injuries could not be read again: ${text}`, error: true, title: SAID_TITLE[said.kind] }
         : { text, error: true });
     };
     try {
@@ -186,36 +196,30 @@ export default function CoachInjuriesPage() {
         return;
       }
       const payload = (await res.json()) as { injuries?: unknown; candidates?: Candidates };
-      if (stale()) return;
+      if (current.current !== id) return;
       if (!Array.isArray(payload.injuries)) throw new Error('shape');
-      setInjuries(payload.injuries as Injury[]);
-      setCandidates(payload.candidates ?? NO_CANDIDATES);
-      if (said && said.title === 'Not done') {
-        // A refused start whose injury now carries a plan (someone else's) or has left the list.
-        const now = (payload.injuries as Injury[]).find((i) => i.injury_id === said.injuryId);
-        if (!now || now.linked_rtt_plan_id) setMessage({ text: said.text, error: true, title: said.title });
+      const list = payload.injuries as Injury[];
+      const offered = payload.candidates ?? NO_CANDIDATES;
+      setInjuries(list);
+      setCandidates(offered);
+      if (said && said.kind !== 'saved') {
+        const wanted = said.injuryId;
+        const now = list.find((i) => i.injury_id === wanted);
+        if (!now || (said.kind === 'refused' && now.linked_rtt_plan_id)) {
+          // The route links after it creates, so even a refused start can have left a plan: name any that is loose.
+          const loose = loosePlansOf(list, offered);
+          setMessage({
+            text: loose.length ? `${said.text} Return plans for this athlete not linked to an injury listed here: ${loose.join('; ')}.` : said.text,
+            error: true, title: SAID_TITLE[said.kind],
+          });
+        }
       }
     } catch {
       lost('Injuries could not be loaded.');
     } finally {
-      if (reads.current === ticket) setRereading(false);
+      setRereading(false);
     }
   }, []);
-
-  const planTried = (injuryId: string, tried: Outcome) => {
-    // An edit opened before the plan changed would save the injury without it, and so unlink the plan.
-    if (editing === injuryId) {
-      setEditing(null);
-      setForm(EMPTY_FORM);
-      setMessage({
-        text: 'The edit of that injury was closed because its return plan changed while it was open. Nothing in the edit was saved.',
-        error: true, title: 'Edit closed',
-      });
-    }
-    void load(current.current, true, tried.kind === 'saved'
-      ? null
-      : { injuryId, text: tried.text, title: tried.kind === 'unknown' ? 'Not known' : 'Not done' });
-  };
 
   const choose = (id: string) => {
     current.current = id;
@@ -267,12 +271,9 @@ export default function CoachInjuriesPage() {
   });
 
   const planLinked = form.linked_rtt_plan_id !== '';
-  // Active plans of this athlete that no listed injury links to: a plan whose
-  // link failed, or one unlinked since. Shown where a new plan would be started.
-  const linkedPlans = new Set((injuries ?? []).map((i) => i.linked_rtt_plan_id));
-  const loosePlans = candidates.plans
-    .filter((p) => p.status === 'active' && !linkedPlans.has(p.plan_id))
-    .map((p) => `${words(p.triggering_event)} ${day(p.event_date)}`);
+  // Shown where a new plan would be started, so a second one is not started blind.
+  const loosePlans = loosePlansOf(injuries ?? [], candidates);
+  const locked = busy || rereading || blockBusy;
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/injuries" allowedRoles={['coach', 'admin']} room="clinic" showShellHeader={false}>
@@ -301,7 +302,7 @@ export default function CoachInjuriesPage() {
 
         <div className="field mb-[var(--s4)]">
           <label className="t-label" htmlFor="injury-athlete">Athlete</label>
-          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || busy}>
+          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || locked}>
             <option value="">{!roster ? 'Loading roster...' : roster.length ? 'Choose an athlete' : 'No athletes you coach or cover'}</option>
             {(roster ?? []).map((a) => (
               <option key={a.athlete_id} value={a.athlete_id}>{a.full_name || a.athlete_id}</option>
@@ -337,14 +338,14 @@ export default function CoachInjuriesPage() {
                       {i.staff_note && <p className="t-body">Staff note: {i.staff_note}</p>}
                       <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id}
                         injuryId={i.injury_id} injuryDate={i.injury_date} expectedBack={i.expected_return_date}
-                        editing={editing === i.injury_id} pageBusy={busy || rereading} loosePlans={loosePlans}
-                        onChanged={(tried) => planTried(i.injury_id, tried)} />
+                        editing={editing === i.injury_id} pageBusy={locked} loosePlans={loosePlans} onSending={setBlockBusy}
+                        onChanged={(tried) => void load(current.current, true, { injuryId: i.injury_id, ...tried })} />
                       <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
-                        <button type="button" className="btn btn--ghost" disabled={busy || rereading}
+                        <button type="button" className="btn btn--ghost" disabled={locked}
                           onClick={() => { setEditing(i.injury_id); setForm(formFrom(i)); setMessage(null); }}>
                           Edit
                         </button>
-                        <button type="button" className="btn btn--ghost" disabled={busy || rereading}
+                        <button type="button" className="btn btn--ghost" disabled={locked}
                           onClick={() => { if (window.confirm('Mark this injury as entered in error? It leaves the list.')) void post({ action: 'mark_entered_in_error', injury_id: i.injury_id }, 'Marked as entered in error.'); }}>
                           Entered in error
                         </button>
@@ -416,9 +417,9 @@ export default function CoachInjuriesPage() {
                 </select></div>
             </div>
             <div className="mt-[var(--s4)] flex gap-[var(--s2)]">
-              <button type="submit" className="btn" disabled={busy || rereading}>{editing ? 'Save changes' : 'Record injury'}</button>
+              <button type="submit" className="btn" disabled={locked}>{editing ? 'Save changes' : 'Record injury'}</button>
               {editing && (
-                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { setEditing(null); setForm(EMPTY_FORM); }}>
+                <button type="button" className="btn btn--ghost" disabled={locked} onClick={() => { setEditing(null); setForm(EMPTY_FORM); }}>
                   Cancel
                 </button>
               )}

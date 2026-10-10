@@ -114,8 +114,10 @@ interface ReturnPlanBlockProps {
   expectedBack: string | null;
   /** This injury's own edit form is open on the page: no plan is started under it. */
   editing: boolean;
-  /** The page is saving or reading the injuries again: this block's controls wait. */
+  /** The page is saving, reading the injuries again, or another block is writing: this block's controls wait. */
   pageBusy: boolean;
+  /** Told true when a write from this block starts and false when it has been answered and re-read. */
+  onSending: (sending: boolean) => void;
   /** The athlete's active plans that no listed injury links to, already worded for display. */
   loosePlans: string[];
   /** Called after every attempt to start a plan, with what came of it; the page reads the injuries again. */
@@ -129,7 +131,7 @@ const START_UNKNOWN = 'No readable answer came back, so it is not known whether 
   + 'A saved plan shows on this injury, or among the plans not linked to an injury, once the page has read again. Check before starting another.';
 
 export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
-  const { athleteId, planId, injuryId, injuryDate, expectedBack, editing, pageBusy, loosePlans, onChanged } = props;
+  const { athleteId, planId, injuryId, injuryDate, expectedBack, editing, pageBusy, loosePlans, onSending, onChanged } = props;
   // What was read, with the athlete and plan it was read for: a reading for any
   // other athlete or plan is never shown, it reads as loading.
   const key = `${athleteId}|${planId ?? ''}`;
@@ -157,10 +159,6 @@ export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
   // One write at a time, held from the tap itself rather than from the next render.
   const sending = useRef(false);
   const off = busy || pageBusy;
-  // The page's handler as of the latest render, so an answer that arrives after
-  // the page changed (an edit opened meanwhile) is handled by the page as it is now.
-  const changed = useRef(onChanged);
-  useEffect(() => { changed.current = onChanged; });
 
   // The steps already on screen stay there while a read is in flight.
   const read = useCallback(async () => {
@@ -202,6 +200,8 @@ export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
   const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, done: string, where: string, unsure = UNKNOWN): Promise<Outcome | null> => {
     if (sending.current) return null;
     sending.current = true;
+    // The page locks its athlete picker and its saves until this is answered.
+    onSending(true);
     setBusy(true);
     setNotice(null);
     // No readable answer, a server fault, or a failure without the route's words: unknown stands.
@@ -225,6 +225,7 @@ export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
     // usually means this screen was behind what is recorded.
     await read();
     sending.current = false;
+    onSending(false);
     setBusy(false);
     return outcome;
   };
@@ -311,7 +312,7 @@ export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
     // unknown answer (or a link refused after the plan was made) the plan may
     // exist linked, exist unlinked (the page then lists it under "not linked
     // to an injury"), or not exist.
-    changed.current(outcome);
+    onChanged(outcome);
   };
 
   const field = (name: keyof typeof EMPTY_STEP) => ({
