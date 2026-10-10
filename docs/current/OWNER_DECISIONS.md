@@ -164,6 +164,34 @@ and should not try to.
 
 ---
 
+## OD-2026-10-10-001 -- Three Claude accounts on this PC; Overwatch runs on the personal Max account: "A: Update the rule (Recommended)"
+
+**Provenance: PRIMARY.** Jason's typed messages in the previous overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; lines 4889 and 5074) and his selections on a question card in this overwatch session (transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; card put at line 22900, 2026-10-10T12:33:51.228Z; his answers at line 22901, 2026-10-10T12:35:25.956Z). Read by script (records pass, 2026-10-10). Timestamps UTC. The line 4889 message is quoted only up to the words shown: the rest of it contains a credential and is deliberately not reproduced here or anywhere in the repository. New; edits no earlier entry.
+
+**The accounts.** Jason, line 4889 (2026-10-10T12:18:56.174Z), first part only: *"Ok set up as much as you can, punxsy.prominence.boxing@gmail.com is the personal promax, admin@punxsyprominence.org is you a team premium 5x usage and neeko@punxsyprominence.org is the other team member,  set up what you can and ill sign in if I need to"*
+
+**Who does the setup.** Jason, line 5074 (2026-10-10T12:29:40.698Z): *"actually let let the personal account do this set up since it will be actually commanding it, give me prompt to have it set it up, and update drives"*
+
+**Card question 1.** Overwatch, as written: "Ruling needed on ppbf-workspace.md. The identity line says punxsy.prominence.boxing@gmail.com is 'personal/design lab; drafts only, never approves'. The new setup runs Overwatch (merges, releases) on that account's Claude Max plan. GitHub production approvals still come only from the PunxsyProminence GitHub login. Which stands? (Plain: the old rule says the gmail account never approves anything, but you now want Overwatch running on it. Fix the rule, or move Overwatch?)" Options as written: "A: Update the rule (Recommended)": "The gmail line changes to say: as a Claude account it runs Overwatch on the Max plan; it still never approves as an email or GitHub identity. Production approvals stay with the PunxsyProminence GitHub login."; "B: Keep the rule, move Overwatch": "Overwatch moves to admin@ (Team premium) and the gmail Max account goes back to drafts only. Build lanes need a different home."; "C: Leave both as they are": "The rule and the setup keep contradicting each other; every new session will flag it again.". Jason: *"A: Update the rule (Recommended)"*
+
+**Card question 2.** Overwatch, as written: "Which Claude account does THIS desktop app show right now (click your name, bottom-left)? I can't read it without opening a login file. The plan reads 'Max' with the same weekly meter I saw on Oct 8, when the app told me the account was neeko@. (Plain: I need to know which account I'm actually running on before I call the setup done.)" Options as written: "punxsy.prominence.boxing@gmail.com": "The personal Max account, as the plan intends for Overwatch."; "neeko@punxsyprominence.org": "Still the account from Oct 8; the switch has not happened in this app yet."; "admin@punxsyprominence.org": "The Team premium account meant for VS Code build lanes.". Jason: *"punxsy.prominence.boxing@gmail.com"*
+
+**Card question 3.** Overwatch, as written: "Cloud lanes: is neeko@punxsyprominence.org signed in at claude.ai/code in your own browser? (Plain: that browser tab is where cloud-only lanes will run.)" Options as written: "Yes, signed in as neeko@": "claude.ai/code opens and shows neeko@ as the account."; "Not yet": "I'll give you the steps; you sign in yourself."; "Not sure": "I'll tell you where to look.". Jason: *"Not yet"*
+
+**Card question 4.** Overwatch, as written: "Cloud lanes: is the Claude GitHub app connected to PunxsyProminence/ppbf-platform for the neeko@ account (claude.ai/code shows the repo when you start a session)? (Plain: without it a cloud lane cannot read the code or open a pull request.)" Options as written: "Yes, the repo shows": "ppbf-platform can be picked in claude.ai/code."; "No / it asks to connect": "I'll give you the steps; installing the app on the repo is your click as PunxsyProminence."; "Not sure": "I'll tell you where to look.". Jason: *"it should be double check"*
+
+**Rulings:**
+1. Three Claude accounts are in use on this PC, all Jason's: punxsy.prominence.boxing@gmail.com is the personal Max account; admin@punxsyprominence.org is a Team premium (5x usage) account; neeko@punxsyprominence.org is the other team member.
+2. The personal account does the setup "since it will be actually commanding it": Overwatch (merges, releases) runs on the personal Max account in the Claude desktop app.
+3. The identity rule is updated (card question 1, option A): as a Claude account, punxsy.prominence.boxing@gmail.com runs Overwatch on the Max plan; as an email or GitHub identity it still drafts only and never approves. Production approvals stay with the PunxsyProminence GitHub login. The rule text is the ID line and the CLAUDE ACCOUNTS section of `~/.claude/rules/ppbf-workspace.md`, with an identical copy under `~/.claude-admin/rules/`.
+
+**On record, not rulings (his answers to card questions 2 to 4):** the desktop app showed punxsy.prominence.boxing@gmail.com as its account; neeko@ was not yet signed in at claude.ai/code; on the Claude GitHub app being connected to the repository he typed "it should be double check".
+
+**Not ruled here:** which work goes to which account beyond ruling 2. The split written in the workspace rules (VS Code on admin@ for build lanes; the browser claude.ai/code on neeko@ for cloud-only lanes, pull requests only, never releases) is the previous overwatch's plan, carried in the restart prompt Jason pasted; his own words above name the accounts and who commands.
+
+---
+
+
 ## OD-2026-10-09-004 -- Draft goals: "Hide them (Recommended)"; draft or cancelled objectives inside an active block are hidden from athlete and parent
 
 **Provenance: PRIMARY.** Jason's answer to the second question of AskUserQuestion tool use `toolu_01MNvdP4eBvgx3TNwiC6rxm6` in the "Overwatch" session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; asked line 3236, 2026-10-09T18:01:02.048Z; answered line 3264, 2026-10-09T22:10:38.610Z). Read by script (Overwatch, 2026-10-09). Question and option text is as stored. New; edits no earlier entry. Extends PLAN-4 (OD-2026-10-08-006).
