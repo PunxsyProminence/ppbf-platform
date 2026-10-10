@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
+import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -67,10 +68,14 @@ export interface SessionStaffNoteRow {
 
 /**
  * A note as a reader sees it: no account id (an id can be an email address);
- * written_by_me says whether the reader may change it. The author's display
- * name is for the route that shows the list to resolve.
+ * written_by_me says whether the reader may change it, and author_name is the
+ * author's display name (getCoachDisplayName), resolved here because the
+ * account id never leaves this module.
  */
-export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & { written_by_me: boolean };
+export type ListedSessionStaffNote = Omit<SessionStaffNoteRow, 'author_account_id'> & {
+  written_by_me: boolean;
+  author_name: string;
+};
 
 const FIELDS = 'note_id, session_id, athlete_id, author_account_id, author_role, note, created_at, updated_at';
 
@@ -151,8 +156,13 @@ export async function listSessionStaffNotes(
       limit ${LIST_LIMIT}`,
     [actor.organizationId, sessionId, athleteId],
   );
+  const names = new Map<string, string>();
+  for (const id of new Set(newest.map((row) => row.author_account_id))) {
+    names.set(id, await getCoachDisplayName(actor.organizationId, id));
+  }
   return newest.reverse().map(({ author_account_id, ...shown }) => ({
     ...shown,
+    author_name: names.get(author_account_id) ?? 'Your coach',
     written_by_me: author_account_id === actor.accountId,
   }));
 }
