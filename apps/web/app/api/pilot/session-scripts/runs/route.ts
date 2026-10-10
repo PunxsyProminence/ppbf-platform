@@ -27,10 +27,15 @@ export const runtime = 'nodejs';
 // the newest version and older versions' deliveries would otherwise be unreachable. Same role gate
 // as the live lookup: both response shapes are delivery records and carry who was on the floor.
 // Mirrors the sibling browse route's convention of one GET switching on script_id.
+//
+// platform_owner is refused on every verb here and on runs/[runId]: running a session is gym
+// work, done from the gym's own accounts (OD-2026-10-08-003 R2 and PLAN-3).
+const RUN_ROLES = ['coach', 'admin', 'organization_admin'] as const;
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
+    requireRole(principal, [...RUN_ROLES]);
 
     const scriptId = request.nextUrl.searchParams.get('script_id')?.trim();
     if (scriptId) {
@@ -68,7 +73,7 @@ const START_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
+    requireRole(principal, [...RUN_ROLES]);
 
     const body: unknown = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) {

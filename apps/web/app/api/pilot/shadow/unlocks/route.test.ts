@@ -129,6 +129,21 @@ describe('POST unlocks thresholds', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  test("the platform owner cannot change a gym's activation mode", async () => {
+    // A gym's unlock thresholds are gym work (OD-2026-10-08-003 R2): the
+    // gym's own admin changes them, the platform account does not.
+    mockPrincipal.mockResolvedValue({
+      accountId: 'owner-1', organizationId: 'org-1', role: 'platform_owner',
+    } as never);
+
+    const response = await POST(post(VALID_BODY));
+
+    expect(response.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   test('an athlete cannot change activation mode', async () => {
     mockPrincipal.mockResolvedValue({
       accountId: 'ath-1', organizationId: 'org-1', role: 'athlete',
@@ -166,6 +181,39 @@ describe('GET unlocks thresholds', () => {
       ok: true,
       thresholds: [expect.objectContaining({ featureKey: 'aggressive_research_generation' })],
     });
+  });
+
+  test("the platform owner may not read a gym's unlock state", async () => {
+    // PLAN-3 extends the bar to the read as well as the write.
+    mockPrincipal.mockResolvedValue({
+      accountId: 'owner-1', organizationId: 'org-1', role: 'platform_owner',
+    } as never);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/unlocks'));
+
+    expect(response.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+    expect(mockEvaluate).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin'])('the gym admin (%s) reads and changes the state', async (role) => {
+    mockPrincipal.mockResolvedValue({ accountId: 'admin-1', organizationId: 'org-1', role } as never);
+
+    const read = await GET(new NextRequest('http://localhost/api/pilot/shadow/unlocks'));
+    const changed = await POST(post(VALID_BODY));
+
+    expect(read.status).toBe(200);
+    expect(changed.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['athlete', 'parent', 'board'])('role %s may not read the state', async (role) => {
+    mockPrincipal.mockResolvedValue({ accountId: 'x-1', organizationId: 'org-1', role } as never);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/unlocks'));
+
+    expect(response.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
   });
 
   test('a coach may read the state', async () => {

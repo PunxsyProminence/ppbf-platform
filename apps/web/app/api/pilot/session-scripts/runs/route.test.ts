@@ -114,7 +114,7 @@ describe('GET runs — resume', () => {
     expect(mockGetLive).not.toHaveBeenCalled();
   });
 
-  it.each(['coach', 'admin', 'organization_admin', 'platform_owner'])(
+  it.each(['coach', 'admin', 'organization_admin'])(
     'allows role %s',
     async (role) => {
       asCoach(role);
@@ -122,6 +122,49 @@ describe('GET runs — resume', () => {
       expect((await GET(get())).status).toBe(200);
     },
   );
+});
+
+// Running a session is gym work, done from the gym's own accounts: the platform owner is refused
+// on every verb of this file (OD-2026-10-08-003 R2 and PLAN-3), and the gym's own admin is not.
+describe('platform owner is kept off session runs', () => {
+  it('refuses platform_owner the live-run read before touching the module', async () => {
+    asCoach('platform_owner');
+    mockGetLive.mockResolvedValue(liveRun);
+    const response = await GET(get());
+    expect(response.status).toBe(403);
+    expect(mockGetLive).not.toHaveBeenCalled();
+  });
+
+  it('refuses platform_owner the delivery history', async () => {
+    asCoach('platform_owner');
+    mockListSettled.mockResolvedValue([liveRun] as never);
+    const response = await GET(
+      new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id=scr-1'),
+    );
+    expect(response.status).toBe(403);
+    expect(mockListSettled).not.toHaveBeenCalled();
+  });
+
+  it('refuses platform_owner starting a run', async () => {
+    asCoach('platform_owner');
+    mockStart.mockResolvedValue(liveRun);
+    const response = await POST(post({ script_id: 'scr-1' }));
+    expect(response.status).toBe(403);
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it.each(['organization_admin', 'admin', 'coach'])('lets %s read the history and start a run', async (role) => {
+    asCoach(role);
+    mockListSettled.mockResolvedValue([] as never);
+    mockStart.mockResolvedValue(liveRun);
+    const history = await GET(
+      new NextRequest('http://localhost/api/pilot/session-scripts/runs?script_id=scr-1'),
+    );
+    expect(history.status).toBe(200);
+    const started = await POST(post({ script_id: 'scr-1' }));
+    expect(started.status).toBe(201);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('GET runs?script_id — delivery history', () => {

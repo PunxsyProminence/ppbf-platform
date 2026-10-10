@@ -1313,7 +1313,6 @@
     "path": "/api/pilot/admin/gym-photos",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -1323,7 +1322,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:48-49.",
+    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:52-53. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1340,7 +1339,6 @@
     "path": "/api/pilot/admin/gym-photos",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -1348,9 +1346,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Admits platform_owner to upload photos to the gym wall; photos may show people but no athlete-identity link is stored, low concern.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:59-60. Audited with entity gym_wall_photo; EXIF stripped.",
+    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:63-64. Audited with entity gym_wall_photo; EXIF stripped. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1367,7 +1365,6 @@
     "path": "/api/pilot/admin/gym-photos",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -1377,7 +1374,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:134-135. Audited with entity gym_wall_photo; EXIF stripped.",
+    "notes": "Gym wall building photos (slot keys, upload, delete); not athlete data. Gate at route.ts:138-139. Audited with entity gym_wall_photo; EXIF stripped. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1792,8 +1789,7 @@
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": false,
@@ -1801,7 +1797,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads source retraction-check status/queue for the research library (sources, not people). Gate at route.ts:44-45.",
+    "notes": "Reads source retraction-check status/queue for the caller's gym's research library (sources, not people). Gate at route.ts:50-51. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1819,16 +1815,15 @@
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Admits platform_owner to write suppression of a gym's shadow library sources; check that is intended for a single-gym deployment.",
-    "confidence": "medium",
-    "notes": "Records a retraction disposition or suppresses/unsuppresses a shadow library source; audited. Gate at route.ts:89-90. Not athlete data.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records a retraction disposition or suppresses/unsuppresses a shadow library source in the caller's gym; audited. Gate at route.ts:95-96; the domain functions also call requireEvidenceReviewer, which still admits platform_owner, so the route list is the deciding one. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2022,7 +2017,6 @@
     "path": "/api/pilot/admin/track-assignments",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -2030,9 +2024,9 @@
     "writes": false,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Per-athlete track assignments are readable by platform_owner, which access.ts refuses for athlete records elsewhere.",
-    "confidence": "medium",
-    "notes": "Reads pilot.admin_track_assignments: a map keyed by athlete profile id to training tracks (e.g. non_contact, collegiate), per components/trackAssignments.ts:121-135. Gate at route.ts:30-31. GET issues a select only (mechanical writesLikely flag was wrong).",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads pilot.admin_track_assignments: a map of athlete id to training track ids. Gate at route.ts:132-133. Returns only rows whose key is a live athlete of the caller's gym (route.ts:142-152); a row for an invented or deleted athlete is left out. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2049,7 +2043,6 @@
     "path": "/api/pilot/admin/track-assignments",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -2057,9 +2050,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "platform_owner can write per-athlete track assignments; whole map is replaced with unvalidated keys and no audit event.",
-    "confidence": "medium",
-    "notes": "Overwrites the gym's whole assignments map (keys not validated as real athletes, route.ts:54-69). Gate at route.ts:51-52. No audit event.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Replaces the gym's whole assignments map. Gate at route.ts:162-163. Every key must be a live athlete of the caller's gym and every value a known track id, else 400 and nothing written (parseAssignments route.ts:61-93; athlete check route.ts:168-178; OD-2026-10-07-010 ruling 3). The lock, the read of the stored map, the write and the audit event (entity admin_track_assignments, one from/to entry per changed athlete) share one transaction (route.ts:185-229); a save that changes nothing writes and audits nothing. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6537,9 +6530,8 @@
     "id": "app/api/pilot/drills/proposals/review/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/drills/proposals/review",
-    "gate": "requirePrincipal (route) + requireEvidenceReviewer(reviewedByRole) inside adoptDrillChangeProposal/declineDrillChangeProposal (drillVersioning.ts:310, :469; shadowLibrary.ts:345-349)",
+    "gate": "requirePrincipal + route-level refusal of platform_owner (route.ts:127-131) + requireEvidenceReviewer(reviewedByRole) inside adoptDrillChangeProposal/declineDrillChangeProposal (drillVersioning.ts; shadowLibrary.ts requireEvidenceReviewer)",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -6547,9 +6539,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Route itself has no role check; the real gate is the helper requireEvidenceReviewer, which also admits platform_owner for a single-gym drill-content write.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Adopts or declines a drill change proposal (creates new drill version on adopt). Coaches are refused by the helper, not the route. Drill content only; proposals may cite observation_note_ids (uuid list, not read here).",
+    "notes": "Adopts or declines a drill change proposal (creates new drill version on adopt). Coaches are refused by the helper, not the route; platform_owner is refused by the route before the helper runs (OD-2026-10-08-003 R2/PLAN-3), because the helper must keep admitting it for evidence review (OD-2026-10-02-013 5A). Drill content only; proposals may cite observation_note_ids (uuid list, not read here).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6599,9 +6591,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "observation_note_ids are accepted as UUIDs and stored without checking they exist, belong to this gym, or that the proposer may read those notes (parseObservationNoteIds).",
-    "confidence": "medium",
-    "notes": "Creates a drill change proposal against a drill; writes proposal and audit event. Notes referenced are not dereferenced here.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Creates a drill change proposal against a drill; writes proposal and audit event. observation_note_ids: at most 100, lower-cased and de-duplicated (parseObservationNoteIds), and each must be a pilot.coach_observations row in the caller's gym, else 400 and nothing stored (requireObservationNotesInOrganization, route.ts:232-250, called at :311). Any row of that table in the gym is accepted, whatever its note_type; whether the proposer may read each note is not checked (Overwatch, issue #1397 Q1: organization check only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6840,88 +6832,6 @@
     "mechanical": {
       "sessionGates": [],
       "authorizationGates": [],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/floor-plans/route.ts#GET",
-    "method": "GET",
-    "path": "/api/pilot/floor-plans",
-    "gate": "requirePrincipal + requireRole + inline role branches (athlete own id; coach coach_id SQL join; org admin all)",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
-      "athlete"
-    ],
-    "athleteData": true,
-    "writes": false,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "Coach scope is an inline SQL filter a.coach_id = accountId, not assertActorCanAccessAthlete/accessibleAthleteIds, so a coach holding live coverage for an athlete does not see that athlete's plans (stricter than the coach-reach rule, not wider).",
-    "confidence": "high",
-    "notes": "Lists floor plans. floor-plans/route.ts:41-42 gate; athlete branch :48-66 own athleteId; coach branch :69-82 assigned athletes only; org-admin branch :88-98. Reads pilot.athlete_floor_plans payload (per-athlete tasks).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/floor-plans/route.ts#POST",
-    "method": "POST",
-    "path": "/api/pilot/floor-plans",
-    "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete",
-    "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
-      "athlete"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "applied",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Inserts an athlete floor plan. Gate floor-plans/route.ts:105-106; athlete role forced to own athleteId :115-118; assertActorCanAccessAthlete :132 (coach reach + admin + self).",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole",
-        "assertActorCanAccessAthlete"
-      ],
-      "roleLiterals": []
-    }
-  },
-  {
-    "id": "app/api/pilot/floor-plans/route.ts#PATCH",
-    "method": "PATCH",
-    "path": "/api/pilot/floor-plans",
-    "gate": "requirePrincipal + requireRole([athlete]) + assertAthleteBelongsToOrganization",
-    "rolesAdmitted": [
-      "athlete"
-    ],
-    "athleteData": true,
-    "writes": true,
-    "coachReachRule": "n/a",
-    "missingGate": false,
-    "looksWrong": "",
-    "confidence": "high",
-    "notes": "Athlete ticks a task done on own newest plan. Gate floor-plans/route.ts:203-204; no athlete_id read from request, uses principal.athleteId :206-213. Coach not admitted.",
-    "mechanical": {
-      "sessionGates": [
-        "requirePrincipal"
-      ],
-      "authorizationGates": [
-        "requireRole"
-      ],
       "roleLiterals": []
     }
   },
@@ -8413,8 +8323,8 @@
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Platform view of a gym board summary, growth metrics, capability access and track assignments by organization_id; gate gym-summary/route.ts:54-55. Aggregates per the board summary and metrics helpers (not opened in depth).",
+    "confidence": "high",
+    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:41-42. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8437,9 +8347,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "Audit event is written with principal.organizationId rather than the target organizationId.",
+    "looksWrong": "",
     "confidence": "high",
-    "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:13-14. Account/role management, no athlete data.",
+    "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8608,13 +8518,13 @@
     "rolesAdmitted": [
       "platform_owner"
     ],
-    "athleteData": true,
+    "athleteData": false,
     "writes": false,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "platform_owner receives athlete account rows (athlete_id, login_email, has_pin) for the gym, although users/create and users/status comments say the platform owner is kept out of athlete credentials.",
-    "confidence": "medium",
-    "notes": "Lists every membership of a query organization_id via listOrganizationMembers (staffProvisioning.ts:1082-1122), which includes role=athlete rows with athlete_id, login_email, has_pin, active_flag; only deleted athletes are filtered. Gate route.ts:21-22. Account-level only, no sessions/video/notes.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists the staff and parent memberships of a query organization_id via listOrganizationMembers(organizationId, { includeAthletes: false }): role=athlete rows are left out in SQL (staffProvisioning.ts), so no athlete login email or has_pin reaches platform_owner (OD-2026-09-28-005; OD-2026-10-08-003 R3). Gate route.ts:24-25. A staff row can still carry an athlete_id when that person was once an athlete.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -9849,8 +9759,7 @@
     "rolesAdmitted": [
       "coach",
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": true,
@@ -9858,7 +9767,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id.",
+    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9877,8 +9786,7 @@
     "rolesAdmitted": [
       "coach",
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": false,
@@ -9886,7 +9794,7 @@
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (sessionScriptRuns.ts:432). Run rows carry athletes_present counts and coach free text, no athlete identifier.",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9905,8 +9813,7 @@
     "rolesAdmitted": [
       "coach",
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": true,
@@ -9914,7 +9821,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Starts a session-script run owned by the caller (startSessionScriptRun with accountId). Inputs are script id, optional activity id, athletes_present count, date; no athlete identifier.",
+    "notes": "Starts a session-script run owned by the caller (startSessionScriptRun with accountId). Inputs are script id, optional activity id, athletes_present count, date; no athlete identifier. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12011,9 +11918,8 @@
     "id": "app/api/pilot/shadow/unlocks/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/unlocks",
-    "gate": "requirePrincipal + requireRole([platform_owner, organization_admin, admin, coach])",
+    "gate": "requirePrincipal + requireRole([organization_admin, admin, coach])",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin",
       "coach"
@@ -12024,7 +11930,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads SHADOW feature unlock thresholds and evaluated unlock state for the org (route.ts:17-33). Org-level configuration/aggregates, no athlete identifier.",
+    "notes": "Reads SHADOW feature unlock thresholds and evaluated unlock state for the org (route.ts:17-35). Org-level configuration/aggregates, no athlete identifier. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12039,9 +11945,8 @@
     "id": "app/api/pilot/shadow/unlocks/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/unlocks",
-    "gate": "requirePrincipal + requireRole([platform_owner, organization_admin, admin])",
+    "gate": "requirePrincipal + requireRole([organization_admin, admin])",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -12049,9 +11954,9 @@
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "platform_owner can change this organization's unlock thresholds, while sibling routes (shadow/upload, video-analysis) exclude platform_owner from in-organization writes.",
-    "confidence": "medium",
-    "notes": "Updates a shadow_feature_threshold row and writes an audit event with before/after (route.ts:36-109). Org config, not athlete data.",
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Updates a shadow_feature_threshold row and writes an audit event with before/after (route.ts:38-111). Org config, not athlete data. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
-      organization_id: principal.organizationId,
+      // The organization acted ON, not the actor's own: the row has to appear
+      // in the log of the gym whose admin list just changed.
+      organization_id: organizationId,
       entity_type: 'organization_membership',
       entity_id: `${organizationId}:${accountId}`,
       details: { account_id: accountId, organization_id: organizationId, role: 'organization_admin' },

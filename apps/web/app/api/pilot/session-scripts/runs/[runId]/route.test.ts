@@ -117,6 +117,31 @@ describe('action dispatch', () => {
     expect(response.status).toBe(403);
     expect(mockPause).not.toHaveBeenCalled();
   });
+
+  // Gym work, done from the gym's own accounts (OD-2026-10-08-003 PLAN-3 names this verb).
+  it.each([
+    [{ action: 'advance', to_block_id: 'blk-3' }],
+    [{ action: 'pause' }],
+    [{ action: 'resume' }],
+    [{ action: 'show_on_wall', show: true }],
+    [{ action: 'finish' }],
+  ])('refuses platform_owner on %j before touching the module', async (body) => {
+    asCoach('platform_owner');
+    const response = await patch(body);
+    expect(response.status).toBe(403);
+    expect(mockAdvance).not.toHaveBeenCalled();
+    expect(mockPause).not.toHaveBeenCalled();
+    expect(mockResume).not.toHaveBeenCalled();
+    expect(mockShowOnWall).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
+  });
+
+  it.each(['organization_admin', 'admin', 'coach'])('lets role %s move a run', async (role) => {
+    asCoach(role);
+    const response = await patch({ action: 'pause' });
+    expect(response.status).toBe(200);
+    expect(mockPause).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('advance', () => {

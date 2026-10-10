@@ -37,7 +37,11 @@ export const dynamic = 'force-dynamic';
  * storage, format allowlist, private container, no signed URLs.
  */
 
-const ADMIN_ROLES = ['platform_owner', 'organization_admin', 'admin'] as const;
+// The gym's own admins only. platform_owner is not on this list: the wall is
+// gym work and gym work is done from the gym's account (OD-2026-10-02-015 D3,
+// "platform for platform, gym for gym"; OD-2026-10-08-003 R2 and PLAN-3, every
+// verb in this file).
+const ADMIN_ROLES = ['organization_admin', 'admin'] as const;
 
 function knownSlot(slot: unknown): slot is string {
   return typeof slot === 'string' && GYM_PHOTO_SLOTS.some((entry) => entry.key === slot);

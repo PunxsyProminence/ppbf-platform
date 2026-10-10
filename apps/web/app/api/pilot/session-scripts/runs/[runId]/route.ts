@@ -58,7 +58,8 @@ function optionalString(value: unknown): string | null | 'INVALID' {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
+    // No platform_owner, as on the sibling runs route (OD-2026-10-08-003 PLAN-3).
+    requireRole(principal, ['coach', 'admin', 'organization_admin']);
 
     const { runId } = await context.params;
     if (!runId?.trim()) {

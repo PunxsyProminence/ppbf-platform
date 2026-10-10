@@ -14,8 +14,11 @@ import {
 
 export const runtime = 'nodejs';
 
-// Lists every member of an organization. Platform-owner scoped, so the
-// organization is an explicit parameter rather than the caller's own.
+// Lists the staff and parents of an organization. Platform-owner scoped, so
+// the organization is an explicit parameter rather than the caller's own.
+// Athlete logins are left out: the platform account never opens an athlete's
+// record, and a login email plus has-PIN is one (OD-2026-09-28-005;
+// OD-2026-10-08-003 R3, "Hide athlete rows").
 export async function GET(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
@@ -26,7 +29,7 @@ export async function GET(request: NextRequest) {
       throw new Error('Missing organization_id');
     }
 
-    const members = await listOrganizationMembers(organizationId);
+    const members = await listOrganizationMembers(organizationId, { includeAthletes: false });
 
     return NextResponse.json({ ok: true, organization_id: organizationId, members });
   } catch (error) {

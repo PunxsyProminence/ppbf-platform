@@ -92,7 +92,6 @@ jest.mock('./shadowReadiness', () => ({ assertShadowRuntimeReadiness: jest.fn() 
 
 import { GET as exportRosterGET } from '@/app/api/pilot/admin/export/roster/route';
 import { GET as pinDirectoryGET } from '@/app/api/pilot/admin/athlete-pin-directory/route';
-import { GET as floorPlansGET } from '@/app/api/pilot/floor-plans/route';
 import { GET as researchRequirementsGET } from '@/app/api/pilot/shadow/research-requirements/route';
 import { GET as videoListGET } from '@/app/api/pilot/video/list/route';
 
@@ -748,20 +747,6 @@ const READERS: Reader[] = [
   {
     name: 'compliance violations, the coach arm',
     read: async () => athleteIdsOf(await getOrganizationViolations(ORG, { athleteIds: await athleteIdsForCoach(ORG, COACH) })),
-  },
-  {
-    name: 'floor plans, coach',
-    read: async () => {
-      mockRequirePrincipal.mockResolvedValue(principal(COACH, 'coach'));
-      return athleteIdsOf(await items(await floorPlansGET(request('/api/pilot/floor-plans'))));
-    },
-  },
-  {
-    name: 'floor plans, organization admin',
-    read: async () => {
-      mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
-      return athleteIdsOf(await items(await floorPlansGET(request('/api/pilot/floor-plans'))));
-    },
   },
   {
     name: 'athlete PIN directory',

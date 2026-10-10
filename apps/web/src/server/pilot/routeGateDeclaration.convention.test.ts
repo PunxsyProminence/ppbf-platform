@@ -436,7 +436,10 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'adoptDrillChangeProposal and declineDrillChangeProposal are passed '
       + 'reviewedByRole: principal.role and call requireEvidenceReviewer on it '
       + '(drillVersioning.ts), which admits only organization_admin, admin and '
-      + 'platform_owner (shadowLibrary.ts). The organization is the '
+      + 'platform_owner (shadowLibrary.ts). The route itself refuses '
+      + 'platform_owner before either call, by an inline role comparison this '
+      + 'walk does not count as a gate (OD-2026-10-08-003 R2), so the roles '
+      + 'that pass are organization_admin and admin. The organization is the '
       + 'principal\'s own. This is a real gate in a real place -- it is listed '
       + 'because the walk deliberately stops at the module boundary, not '
       + 'because the route is open.',

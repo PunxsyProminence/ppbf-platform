@@ -438,6 +438,34 @@ describe('listOrganizationMembers', () => {
     expect(sql).not.toMatch(/select[\s\S]*a\.pin_hash\s*,/);
     expect(params).toEqual(['org-1']);
   });
+
+  // The gym's own people console lists its athletes' logins; the platform
+  // staff list must not (OD-2026-10-08-003 R3). The rows are left out by the
+  // query, so an athlete's login email never reaches the caller's process.
+  test('lists athlete memberships by default', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listOrganizationMembers('org-1');
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).not.toContain("om.role <> 'athlete'");
+  });
+
+  test('leaves every athlete membership out of the query when asked to', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listOrganizationMembers('org-1', { includeAthletes: false });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/where om\.organization_id = \$1[\s\S]*and om\.role <> 'athlete'[\s\S]*order by/);
+    expect(params).toEqual(['org-1']);
+  });
+
+  test('includeAthletes: true is the default list, not a wider one', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listOrganizationMembers('org-1', { includeAthletes: true });
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).not.toContain("om.role <> 'athlete'");
+  });
 });
 
 describe('requireGuardianLinkForParentInvite', () => {
