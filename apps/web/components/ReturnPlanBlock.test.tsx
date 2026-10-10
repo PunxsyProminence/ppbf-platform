@@ -14,8 +14,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 
-import ReturnPlanBlock, { RTT_CONTACT, RTT_SCALE } from './ReturnPlanBlock';
+import ReturnPlanBlock, { RTT_CONTACT, RTT_EVENTS, RTT_SCALE } from './ReturnPlanBlock';
 
 const STEP = {
   organization_id: 'org-1', plan_id: 'plan-1', permitted_scale_level: null, planned_note: '',
@@ -43,6 +44,17 @@ const OTHER_PLAN = { ...PLAN, plan_id: 'plan-other', steps: [{ ...STEP3, step_id
 const GET_URL = '/api/pilot/coach/return-to-training?athlete_id=ath-1';
 const WRITE_URL = '/api/pilot/coach/return-to-training';
 const NOTE = 'Your note on this decision (required)';
+const CREATED = { ok: true, plan: { plan_id: 'plan-new', steps: [], current_step_id: null }, injury: { injury_id: 'inj-1', linked_rtt_plan_id: 'plan-new' } };
+
+// The injury the block sits under, as the page passes it.
+const changed = jest.fn();
+const sending = jest.fn();
+const INJURY = {
+  injuryId: 'inj-1', injuryDate: '2026-09-01', expectedBack: null as string | null,
+  editing: false, pageBusy: false, loosePlans: [] as string[], onSending: sending, onChanged: changed,
+};
+
+beforeEach(() => { changed.mockClear(); sending.mockClear(); });
 
 function respond(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
@@ -72,8 +84,8 @@ function serve(get: () => Response | Promise<Response>, write?: () => Response |
 
 const plans = (...list: unknown[]) => () => respond({ ok: true, plans: list });
 
-async function open(planId: string | null = 'plan-1') {
-  render(<ReturnPlanBlock athleteId="ath-1" planId={planId} />);
+async function open(planId: string | null = 'plan-1', expectedBack: string | null = null) {
+  render(<ReturnPlanBlock athleteId="ath-1" planId={planId} {...INJURY} expectedBack={expectedBack} />);
   const block = screen.getByRole('region', { name: 'Return plan' });
   if (planId) await waitFor(() => expect(within(block).queryByText('Loading return plan…')).toBeNull());
   return block;
@@ -90,6 +102,8 @@ test('the contact and scale choices are exactly the route’s', () => {
   expect([...RTT_CONTACT]).toEqual(routeList('PERMITTED_CONTACT'));
   expect([...RTT_SCALE]).toEqual(routeList('SCALE_LEVELS'));
   expect(RTT_CONTACT.length).toBe(5);
+  expect([...RTT_EVENTS]).toEqual(routeList('TRIGGERING_EVENTS'));
+  expect(RTT_EVENTS.length).toBe(6);
 });
 
 test('an injury with no plan says so and reads nothing', async () => {
@@ -97,14 +111,197 @@ test('an injury with no plan says so and reads nothing', async () => {
   const block = await open(null);
   expect(within(block).getByText('No return plan on this injury.')).toBeTruthy();
   expect(global.fetch).not.toHaveBeenCalled();
+  // The one thing offered is starting one; nothing is open or filled in until the coach asks.
+  expect(within(block).getAllByRole('button').map((b) => b.textContent)).toEqual(['Start a return plan']);
+  expect(within(block).queryByRole('form')).toBeNull();
+});
+
+async function openStart(expectedBack: string | null = null) {
+  const block = await open(null, expectedBack);
+  fireEvent.click(within(block).getByRole('button', { name: 'Start a return plan' }));
+  return { block, form: within(block).getByRole('form', { name: 'Start a return plan' }) };
+}
+
+function fillStart(form: HTMLElement, values: Record<string, string | undefined>) {
+  for (const [label, value] of Object.entries(values)) {
+    if (value !== undefined) fireEvent.change(within(form).getByLabelText(label), { target: { value } });
+  }
+}
+
+const AUTHORITY = 'Who set the rest period (rulebook, physician)';
+
+test('Start a return plan opens an empty form: no event, clearance, date or number chosen for the coach', async () => {
+  serve(plans());
+  const { form } = await openStart();
+  for (const label of ['Triggering event', 'Medical clearance on file', AUTHORITY, 'Rest period, days (optional)', 'Earliest return date (optional)', 'Plan note (optional)']) {
+    expect((within(form).getByLabelText(label) as HTMLInputElement).value).toBe('');
+  }
+  expect(within(within(form).getByLabelText('Triggering event')).getAllByRole('option').map((o) => (o as HTMLOptionElement).value))
+    .toEqual(['', ...RTT_EVENTS]);
+  expect(within(within(form).getByLabelText('Medical clearance on file')).getAllByRole('option').map((o) => o.textContent))
+    .toEqual(['Choose', 'Yes', 'No']);
+  // The event date is not asked for: the route uses the injury's own, and the form says which.
+  expect(within(form).getByText("Event date: the injury's date, 9/1/2026.")).toBeTruthy();
+  // Nothing is said about an Expected back date the injury does not have.
+  expect(form.textContent).not.toContain('Expected back');
+});
+
+test('when the injury has an Expected back date, the form says a blank earliest return date takes it', async () => {
+  serve(plans());
+  const { form } = await openStart('2026-09-20');
+  expect(within(form).getByText("The plan's earliest return date replaces this injury's Expected back date (9/20/2026). Left blank, that date is used.")).toBeTruthy();
+});
+
+test.each([
+  ['a triggering event', { 'Medical clearance on file': 'no' }, 'Choose the triggering event.'],
+  ['a clearance answer', { 'Triggering event': 'injury' }, 'Say whether a medical clearance is on file: Yes or No.'],
+])('Start a return plan without %s sends nothing, because the route would save one unasked', async (_name, values, said) => {
+  serve(plans());
+  const { block, form } = await openStart();
+  fillStart(form, { [AUTHORITY]: 'USA Boxing rulebook', ...values });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes).toEqual([]);
+  expect(changed).not.toHaveBeenCalled();
+  expect(within(block).getByRole('alert').textContent).toBe(`\u25b2 ${said}`);
+});
+
+test.each([
+  ['yes', true],
+  ['no', false],
+])('Save plan sends exactly what the coach entered (clearance %s), says it started, and asks the page to read the injuries again', async (clearance, onFile) => {
+  serve(plans(), () => respond(CREATED));
+  const { block, form } = await openStart();
+  fillStart(form, {
+    'Triggering event': 'knockout', 'Medical clearance on file': clearance, [AUTHORITY]: 'USA Boxing rulebook',
+    'Rest period, days (optional)': '30', 'Plan note (optional)': 'Stopped in round 2.',
+  });
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  expect(writes).toEqual([{
+    url: WRITE_URL, method: 'POST',
+    body: {
+      action: 'create_plan', injury_id: 'inj-1', triggering_event: 'knockout', medical_clearance_on_file: onFile,
+      authority_source: 'USA Boxing rulebook', rest_period_days: 30, earliest_return_date: null, note: 'Stopped in round 2.',
+    },
+  }]);
+  expect(changed.mock.calls).toEqual([[{ kind: 'saved', text: 'Return plan started.' }]]);
+  // The page was told a write was in flight, then that it was answered: it locks itself in between.
+  expect(sending.mock.calls).toEqual([[true], [false]]);
+  expect(within(block).getByRole('status').textContent).toBe('\u2713 Return plan started.');
+  // The plan's steps are the page's to show once the injury is linked: nothing is read here.
+  expect(reads).toEqual([]);
+});
+
+/** The block under a page that, like the real one, goes busy re-reading as soon as it is told. */
+function UnderPage() {
+  const [pageBusy, setPageBusy] = useState(false);
+  return <ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} pageBusy={pageBusy} onChanged={(tried) => { changed(tried); setPageBusy(true); }} />;
+}
+
+test('once a plan is saved the block stops saying there is none, and offers no second start, while the page reads it in', async () => {
+  serve(plans(), () => respond(CREATED));
+  render(<UnderPage />);
+  const block = screen.getByRole('region', { name: 'Return plan' });
+  fireEvent.click(within(block).getByRole('button', { name: 'Start a return plan' }));
+  const form = within(block).getByRole('form', { name: 'Start a return plan' });
+  fillStart(form, { 'Triggering event': 'injury', 'Medical clearance on file': 'no', [AUTHORITY]: 'Dr. Reyes' });
+  await act(async () => { fireEvent.submit(form); });
+  expect(within(block).getByRole('status').textContent).toBe('\u2713 Return plan started.');
+  expect(within(block).queryByText('No return plan on this injury.')).toBeNull();
   expect(within(block).queryByRole('button')).toBeNull();
+});
+
+test('no plan is started under an injury whose own edit is open on the page', async () => {
+  serve(plans());
+  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} />);
+  const block = screen.getByRole('region', { name: 'Return plan' });
+  fireEvent.click(within(block).getByRole('button', { name: 'Start a return plan' }));
+  rerender(<ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} editing />);
+  expect(within(block).getByText('Save or cancel the edit of this injury before starting a return plan.')).toBeTruthy();
+  expect(within(block).queryByRole('button')).toBeNull();
+  expect(within(block).queryByRole('form')).toBeNull();
+});
+
+test('active plans of this athlete that no listed injury links to are named where a new plan would be started', async () => {
+  serve(plans());
+  render(<ReturnPlanBlock athleteId="ath-1" planId={null} {...INJURY} loosePlans={['Knockout 9/1/2026', 'Injury 8/1/2026']} />);
+  expect(screen.getByText(/Return plans for this athlete not linked to an injury listed here: Knockout 9\/1\/2026; Injury 8\/1\/2026\./)).toBeTruthy();
+});
+
+test('while the page is saving or reading again, every control in the block waits', async () => {
+  serve(plans(PLAN));
+  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" {...INJURY} />);
+  const block = screen.getByRole('region', { name: 'Return plan' });
+  await within(block).findByText(/Week 2 \u00b7 Bag work only/);
+  fireEvent.click(within(block).getByRole('button', { name: 'Add step' }));
+  // A note is already typed, so only the page being busy stands between a submit and a write.
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'Bag work, no symptoms reported.' } });
+  rerender(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" {...INJURY} pageBusy />);
+  const controls = [...block.querySelectorAll('button, input, select, textarea')] as HTMLButtonElement[];
+  expect(controls.length).toBeGreaterThan(5);
+  for (const control of controls) expect(control.disabled).toBe(true);
+  fireEvent.submit(within(block).getByRole('form', { name: 'Advance week 2' }));
+  expect(writes).toEqual([]);
+});
+
+test('an earliest return date is sent as entered, and rest days that are not a whole number go as typed for the route to refuse', async () => {
+  serve(plans(), () => respond({ error: 'rest_period_days must be a whole number from 1 to 3650.' }, 400));
+  const { block, form } = await openStart();
+  fillStart(form, {
+    'Triggering event': 'injury', 'Medical clearance on file': 'no', [AUTHORITY]: 'Dr. Reyes',
+    'Rest period, days (optional)': '2.5', 'Earliest return date (optional)': '2026-09-22',
+  });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes[0].body).toMatchObject({ rest_period_days: '2.5', earliest_return_date: '2026-09-22', note: '' });
+  expect(within(block).getByRole('alert').textContent).toBe('\u25b2 rest_period_days must be a whole number from 1 to 3650.');
+});
+
+test.each([
+  ['refused', () => respond({ error: 'This injury already has a return-to-training plan.', code: 'RTT_PLAN_ALREADY_LINKED' }, 409), 'This injury already has a return-to-training plan.'],
+  ['unknown', () => respond({ error: 'Internal server error' }, 500), 'it is not known whether the plan was saved'],
+  ['unknown', () => Promise.reject(new Error('offline')), 'it is not known whether the plan was saved'],
+])('a Start that is %s says so beside the form, keeps what was typed, and tells the page what came of it', async (kind, write, said) => {
+  serve(plans(), write);
+  const { block, form } = await openStart();
+  fillStart(form, { 'Triggering event': 'illness', 'Medical clearance on file': 'yes', [AUTHORITY]: 'Dr. Reyes' });
+  await act(async () => { fireEvent.submit(form); });
+  expect(writes).toHaveLength(1);
+  expect(within(block).getByRole('alert').textContent).toContain(said);
+  expect(block.textContent).not.toContain('Internal server error');
+  expect(within(block).queryByRole('status')).toBeNull();
+  // Still "no plan" as far as this screen knows; the page's re-read decides what is true.
+  expect(within(block).getByText('No return plan on this injury.')).toBeTruthy();
+  const still = within(block).getByRole('form', { name: 'Start a return plan' });
+  expect((within(still).getByLabelText(AUTHORITY) as HTMLInputElement).value).toBe('Dr. Reyes');
+  expect((within(still).getByLabelText('Triggering event') as HTMLSelectElement).value).toBe('illness');
+  // The page gets the kind and the same words, so it can repeat them if this block leaves the screen.
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed.mock.calls[0][0].kind).toBe(kind);
+  expect(changed.mock.calls[0][0].text).toContain(said);
+  // After an unknown answer the coach is told where a saved plan would show, before starting another.
+  if (kind === 'unknown') expect(within(block).getByRole('alert').textContent).toContain('Check before starting another.');
+});
+
+test('Law 5 on the start form: every field and button asks for the 55px floor by class', async () => {
+  serve(plans());
+  const { block } = await openStart('2026-09-20');
+  expect(block.getAttribute('data-surface')).toBe('kiosk');
+  const fields = [...block.querySelectorAll('input, select, textarea')];
+  expect(fields).toHaveLength(6);
+  for (const control of fields) expect(control.classList.contains('input--kiosk')).toBe(true);
+  const buttons = [...block.querySelectorAll('button')];
+  expect(buttons).toHaveLength(2);
+  for (const button of buttons) expect(button.classList.contains('btn')).toBe(true);
+  for (const element of [block, ...block.querySelectorAll('*')]) {
+    expect((element as HTMLElement).style.fontSize).toBe('');
+    expect(element.className).not.toMatch(/\b(working|alert-title|alert-msg|t-data|badge)\b|text-\[length:var\(--t-(xs|sm)\)\]/);
+  }
 });
 
 test('says it is loading until the route answers, and never shows an empty plan meanwhile', async () => {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
   serve(async () => { await gate; return respond({ ok: true, plans: [PLAN] }); });
-  render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" />);
+  render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" {...INJURY} />);
   expect(screen.getByText('Loading return plan…')).toBeTruthy();
   expect(screen.queryByText('No steps on this plan yet.')).toBeNull();
   await act(async () => { release(); await gate; });
@@ -434,8 +631,8 @@ test.each([
     if (calls === 1) { await gate; return respond({ ok: true, plans: [PLAN, OTHER_PLAN] }); }
     return respond({ ok: true, plans: [PLAN, OTHER_PLAN] });
   });
-  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" />);
-  rerender(<ReturnPlanBlock {...next} />);
+  const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" {...INJURY} />);
+  rerender(<ReturnPlanBlock {...INJURY} {...next} />);
   expect(await screen.findByText(/Another injury/)).toBeTruthy();
   await act(async () => { releaseFirst(); await gate; });
   expect(screen.getByText(/Another injury/)).toBeTruthy();

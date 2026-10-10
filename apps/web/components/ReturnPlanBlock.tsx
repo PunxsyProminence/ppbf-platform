@@ -7,13 +7,16 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // The "Return plan" block under one injury on /coach/injuries (lane P8 PR 2):
 // the plan's steps in week order with the current step marked, Advance (with
-// the coach's note) and Add step.
+// the coach's note) and Add step; and, on an injury with no plan, Start a
+// return plan (PR 3).
 //
 // THE COACH'S DECISION, RECORDED AND SHOWN. Nothing here advises, scores,
 // diagnoses or proposes a step: no week is prefilled, no contact level is
 // preselected, and the only step marked is the one the route calls current
 // (the earliest not yet advanced). Not a medical clearance and it lifts no
-// training hold (route header, OD-2026-09-21-001).
+// training hold (route header, OD-2026-09-21-001). Where the route would save
+// a value nobody chose (contact "none", event "injury", clearance "no"), the
+// page asks for the choice instead of sending nothing.
 //
 // Authorization and every rule are the route's
 // (/api/pilot/coach/return-to-training): this block sends what the coach
@@ -25,13 +28,16 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // unlayered 46px beats the layered kiosk rule, so each field asks for the floor
 // by class (input--kiosk).
 //
-// One block per plan: the page keys it by plan and unmounts the list on every
-// reload, so what was typed here never outlives the plan it was typed for.
+// One block per plan: the page keys it by plan, so what was typed here never
+// outlives the plan it was typed for. The page keeps the block mounted when it
+// reads the same athlete's injuries again; the steps are not re-read then.
 
 /** The route's contact values, lowest first. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
 export const RTT_CONTACT = ['none', 'light_technical', 'conditioned', 'controlled_sparring', 'open_sparring'] as const;
 /** The route's scale levels. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
 export const RTT_SCALE = ['A', 'B', 'C'] as const;
+/** The route's triggering events. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
+export const RTT_EVENTS = ['confirmed_concussion', 'knockout', 'technical_knockout', 'injury', 'illness', 'other'] as const;
 
 interface Step {
   step_id: string;
@@ -59,6 +65,17 @@ type Reading =
   | { state: 'loaded'; plan: Plan };
 
 const EMPTY_STEP = { week: '', intensity: '', contact: '', scale: '', plannedNote: '' };
+const EMPTY_PLAN = { event: '', clearance: '', authority: '', restDays: '', earliest: '', note: '' };
+
+function words(value: string): string {
+  const text = value.replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A date-only value (YYYY-MM-DD), shown as that calendar day. */
+function day(value: string): string {
+  return formatGymDateNumeric(`${value.slice(0, 10)}T12:00:00Z`) ?? value;
+}
 
 function isStep(value: unknown): value is Step {
   if (!value || typeof value !== 'object') return false;
@@ -87,7 +104,34 @@ function errorText(payload: unknown): string | null {
   return typeof error === 'string' && error ? error : null;
 }
 
-export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: string; planId: string | null }) {
+interface ReturnPlanBlockProps {
+  athleteId: string;
+  planId: string | null;
+  /** The injury this block sits under: a plan is started on it. */
+  injuryId: string;
+  /** The injury's own date and "Expected back", as the coach recorded them. */
+  injuryDate: string;
+  expectedBack: string | null;
+  /** This injury's own edit form is open on the page: no plan is started under it. */
+  editing: boolean;
+  /** The page is saving, reading the injuries again, or another block is writing: this block's controls wait. */
+  pageBusy: boolean;
+  /** Told true when a write from this block starts and false when it has been answered and re-read. */
+  onSending: (sending: boolean) => void;
+  /** The athlete's active plans that no listed injury links to, already worded for display. */
+  loosePlans: string[];
+  /** Called after every attempt to start a plan, with what came of it; the page reads the injuries again. */
+  onChanged: (tried: Outcome) => void;
+}
+
+export interface Outcome { kind: 'saved' | 'refused' | 'unknown'; text: string }
+
+const UNKNOWN = 'No readable answer came back, so it is not known whether that was saved. Check the steps here before trying again.';
+const START_UNKNOWN = 'No readable answer came back, so it is not known whether the plan was saved. '
+  + 'A saved plan shows on this injury, or among the plans not linked to an injury, once the page has read again. Check before starting another.';
+
+export default function ReturnPlanBlock(props: ReturnPlanBlockProps) {
+  const { athleteId, planId, injuryId, injuryDate, expectedBack, editing, pageBusy, loosePlans, onSending, onChanged } = props;
   // What was read, with the athlete and plan it was read for: a reading for any
   // other athlete or plan is never shown, it reads as loading.
   const key = `${athleteId}|${planId ?? ''}`;
@@ -98,10 +142,15 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   // step's box is empty: a note is never carried onto a different decision.
   const [note, setNote] = useState({ stepId: '', text: '' });
   const [adding, setAdding] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [draft, setDraft] = useState(EMPTY_PLAN);
+  // True once the route said the plan was saved; while the page reads it in,
+  // the block does not also say there is no plan.
+  const [started, setStarted] = useState(false);
   const [step, setStep] = useState(EMPTY_STEP);
   const [busy, setBusy] = useState(false);
-  // `where` is the step the notice is about, or 'add': it is shown beside the
-  // control that caused it.
+  // `where` is the step the notice is about, or 'add' or 'start': it is shown
+  // beside the control that caused it.
   const [notice, setNotice] = useState<{ text: string; error: boolean; where: string } | null>(null);
   const id = useId();
   // Each read gets a number and only the newest may land, so one plan's steps
@@ -109,6 +158,7 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   const latest = useRef(0);
   // One write at a time, held from the tap itself rather than from the next render.
   const sending = useRef(false);
+  const off = busy || pageBusy;
 
   // The steps already on screen stay there while a read is in flight.
   const read = useCallback(async () => {
@@ -146,13 +196,16 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
     void read();
   };
 
-  /** Send one write and show the route's answer. True when the route said it was saved. */
-  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, done: string, where: string): Promise<boolean> => {
-    if (sending.current) return false;
+  /** Send one write and show the route's answer. Null when a write was already in flight. */
+  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, done: string, where: string, unsure = UNKNOWN): Promise<Outcome | null> => {
+    if (sending.current) return null;
     sending.current = true;
+    // The page locks its athlete picker and its saves until this is answered.
+    onSending(true);
     setBusy(true);
     setNotice(null);
-    let saved = false;
+    // No readable answer, a server fault, or a failure without the route's words: unknown stands.
+    let outcome: Outcome = { kind: 'unknown', text: unsure };
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/return-to-training`, {
         method, credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -162,55 +215,48 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
       // back after the write landed (the audit row is a separate write), so it
       // is unknown, like no answer at all.
       const refusal = !response.ok && response.status < 500 ? errorText(payload) : null;
-      if (refusal) {
-        setNotice({ text: refusal, error: true, where });
-      } else if (!response.ok || payload?.ok !== true) {
-        throw new Error('unknown');
-      } else {
-        saved = true;
-        setNotice({ text: done, error: false, where });
-      }
+      if (refusal) outcome = { kind: 'refused', text: refusal };
+      else if (response.ok && payload?.ok === true) outcome = { kind: 'saved', text: done };
     } catch {
-      setNotice({
-        text: 'No readable answer came back, so it is not known whether that was saved. Check the steps here before trying again.',
-        error: true, where,
-      });
+      // The connection failed: unknown stands.
     }
+    setNotice({ text: outcome.text, error: outcome.kind !== 'saved', where });
     // Saved, refused or unknown: the steps are read again, because a refusal
     // usually means this screen was behind what is recorded.
     await read();
     sending.current = false;
+    onSending(false);
     setBusy(false);
-    return saved;
+    return outcome;
   };
 
   const advance = async (event: FormEvent, current: Step) => {
     event.preventDefault();
-    if (!planId || busy) return;
+    if (!planId || off) return;
     const text = note.stepId === current.step_id ? note.text : '';
     if (!text.trim()) {
       setNotice({ text: 'Write your note first: a step is advanced with the coach’s note.', error: true, where: current.step_id });
       return;
     }
-    const saved = await send(
+    const outcome = await send(
       'PATCH',
       { athlete_id: athleteId, plan_id: planId, step_id: current.step_id, advancement_note: text },
       `Week ${current.week_number} advanced.`,
       current.step_id,
     );
-    if (saved) setNote({ stepId: '', text: '' });
+    if (outcome?.kind === 'saved') setNote({ stepId: '', text: '' });
   };
 
   const addStep = async (event: FormEvent) => {
     event.preventDefault();
-    if (!planId || busy) return;
+    if (!planId || off) return;
     // The route saves a missing contact as "none"; nobody would have chosen that.
     if (!step.contact) {
       setNotice({ text: 'Choose the contact for this week.', error: true, where: 'add' });
       return;
     }
     const week = step.week.trim();
-    const saved = await send(
+    const outcome = await send(
       'POST',
       {
         action: 'add_step', athlete_id: athleteId, plan_id: planId,
@@ -222,17 +268,65 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
       'Step added.',
       'add',
     );
-    if (saved) {
+    if (outcome?.kind === 'saved') {
       setStep(EMPTY_STEP);
       setAdding(false);
     }
   };
 
+  const startPlan = async (event: FormEvent) => {
+    event.preventDefault();
+    if (planId || editing || off) return;
+    // The route saves a missing event as "injury" and a missing clearance as "no"; nobody would have chosen either.
+    if (!draft.event) {
+      setNotice({ text: 'Choose the triggering event.', error: true, where: 'start' });
+      return;
+    }
+    if (!draft.clearance) {
+      setNotice({ text: 'Say whether a medical clearance is on file: Yes or No.', error: true, where: 'start' });
+      return;
+    }
+    const days = draft.restDays.trim();
+    let restDays: number | string | null = null;
+    // Anything that is not a whole number goes as typed, so the route words the refusal.
+    if (days !== '') restDays = /^\d+$/.test(days) ? Number(days) : days;
+    const outcome = await send(
+      'POST',
+      {
+        action: 'create_plan', injury_id: injuryId, triggering_event: draft.event,
+        medical_clearance_on_file: draft.clearance === 'yes', authority_source: draft.authority,
+        rest_period_days: restDays, earliest_return_date: draft.earliest || null, note: draft.note,
+      },
+      'Return plan started.',
+      'start',
+      START_UNKNOWN,
+    );
+    if (!outcome) return;
+    if (outcome.kind === 'saved') {
+      setDraft(EMPTY_PLAN);
+      setStarting(false);
+      setStarted(true);
+    }
+    // Saved, refused or unknown: the page reads the injuries again. The route
+    // writes the plan, its audit row and the link separately, so after an
+    // unknown answer (or a link refused after the plan was made) the plan may
+    // exist linked, exist unlinked (the page then lists it under "not linked
+    // to an injury"), or not exist.
+    onChanged(outcome);
+  };
+
   const field = (name: keyof typeof EMPTY_STEP) => ({
     id: `${id}-${name}`,
     value: step[name],
-    disabled: busy,
+    disabled: off,
     onChange: (e: { target: { value: string } }) => setStep((s) => ({ ...s, [name]: e.target.value })),
+  });
+
+  const planField = (name: keyof typeof EMPTY_PLAN) => ({
+    id: `${id}-plan-${name}`,
+    value: draft[name],
+    disabled: off,
+    onChange: (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [name]: e.target.value })),
   });
 
   const plan = reading.state === 'loaded' ? reading.plan : null;
@@ -245,8 +339,9 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
       : <p role="status" className="mt-[var(--s2)] font-semibold"><span aria-hidden="true">✓ </span>{notice.text}</p>;
   };
   // Beside its control when that control is on screen; otherwise under the heading, never dropped.
-  const placed = notice !== null && plan !== null
-    && (notice.where === 'add' ? active : plan.steps.some((s) => s.step_id === notice.where));
+  const placed = notice !== null && (notice.where === 'start'
+    ? !planId
+    : plan !== null && (notice.where === 'add' ? active : plan.steps.some((s) => s.step_id === notice.where)));
 
   return (
     <section aria-label="Return plan" data-surface="kiosk"
@@ -255,7 +350,58 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
 
       {!placed && say(null)}
 
-      {!planId && <p className="t-body mt-[var(--s2)]">No return plan on this injury.</p>}
+      {!planId && !(started && pageBusy) && (
+        <>
+          <p className="t-body mt-[var(--s2)]">No return plan on this injury.</p>
+          {loosePlans.length > 0 && (
+            <p className="t-body mt-[var(--s2)]">
+              Return plans for this athlete not linked to an injury listed here: {loosePlans.join('; ')}. To use one, link it
+              under Edit, Return-to-training plan.
+            </p>
+          )}
+          {editing ? (
+            <p className="t-body mt-[var(--s2)]">Save or cancel the edit of this injury before starting a return plan.</p>
+          ) : (
+          <div className="mt-[var(--s3)]">
+            <button type="button" className="btn btn--ghost" aria-expanded={starting} aria-controls={starting ? `${id}-start` : undefined}
+              disabled={off} onClick={() => setStarting((open) => !open)}>
+              Start a return plan
+            </button>
+            {starting && (
+              <form id={`${id}-start`} aria-label="Start a return plan" className="mt-[var(--s3)]" onSubmit={(e) => void startPlan(e)}>
+                <p className="t-body">Event date: the injury&apos;s date, {day(injuryDate)}.</p>
+                <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-event`}>Triggering event</label>
+                    <select className="select input--kiosk" required {...planField('event')}>
+                      <option value="">Choose</option>
+                      {RTT_EVENTS.map((e) => <option key={e} value={e}>{words(e)}</option>)}
+                    </select></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-clearance`}>Medical clearance on file</label>
+                    <select className="select input--kiosk" required {...planField('clearance')}>
+                      <option value="">Choose</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-authority`}>Who set the rest period (rulebook, physician)</label>
+                    <input type="text" className="input input--kiosk" maxLength={2000} required {...planField('authority')} /></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-restDays`}>Rest period, days (optional)</label>
+                    <input type="number" className="input input--kiosk" min={1} max={3650} step={1} {...planField('restDays')} /></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-earliest`}>Earliest return date (optional)</label>
+                    <input type="date" className="input input--kiosk" {...planField('earliest')} />
+                    {expectedBack && (
+                      <p className="t-muted">The plan&apos;s earliest return date replaces this injury&apos;s Expected back date ({day(expectedBack)}). Left blank, that date is used.</p>
+                    )}</div>
+                </div>
+                <div className="field mt-[var(--s3)]"><label className="t-label" htmlFor={`${id}-plan-note`}>Plan note (optional)</label>
+                  <textarea className="textarea input--kiosk" rows={2} maxLength={2000} {...planField('note')} /></div>
+                <button type="submit" className="btn mt-[var(--s3)]" disabled={off}>Save plan</button>
+              </form>
+            )}
+          </div>
+          )}
+        </>
+      )}
+      {!planId && say('start')}
       {planId && reading.state === 'loading' && <p className="t-body mt-[var(--s2)]">Loading return plan…</p>}
       {planId && reading.state === 'refused' && (
         <p role="alert" className="mt-[var(--s2)] font-semibold text-[var(--restricted-ink)]">
@@ -305,10 +451,10 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
                         <div className="field">
                           <label className="t-label" htmlFor={`${id}-note`}>Your note on this decision (required)</label>
                           <textarea id={`${id}-note`} className="textarea input--kiosk" rows={2} maxLength={2000} required
-                            value={note.stepId === s.step_id ? note.text : ''} disabled={busy}
+                            value={note.stepId === s.step_id ? note.text : ''} disabled={off}
                             onChange={(e) => setNote({ stepId: s.step_id, text: e.target.value })} />
                         </div>
-                        <button type="submit" className="btn mt-[var(--s2)]" disabled={busy}>Advance</button>
+                        <button type="submit" className="btn mt-[var(--s2)]" disabled={off}>Advance</button>
                       </form>
                     )}
                     {say(s.step_id)}
@@ -324,7 +470,7 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
           {active && (
             <div className="mt-[var(--s3)]">
               <button type="button" className="btn btn--ghost" aria-expanded={adding} aria-controls={adding ? `${id}-add` : undefined}
-                disabled={busy} onClick={() => setAdding((open) => !open)}>
+                disabled={off} onClick={() => setAdding((open) => !open)}>
                 Add step
               </button>
               {adding && (
@@ -347,7 +493,7 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
                   </div>
                   <div className="field mt-[var(--s3)]"><label className="t-label" htmlFor={`${id}-plannedNote`}>Plan note (optional)</label>
                     <textarea className="textarea input--kiosk" rows={2} maxLength={2000} {...field('plannedNote')} /></div>
-                  <button type="submit" className="btn mt-[var(--s3)]" disabled={busy}>Save step</button>
+                  <button type="submit" className="btn mt-[var(--s3)]" disabled={off}>Save step</button>
                 </form>
               )}
               {say('add')}

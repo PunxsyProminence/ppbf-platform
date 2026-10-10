@@ -5,7 +5,7 @@ import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import ReturnPlanBlock from '@/components/ReturnPlanBlock';
+import ReturnPlanBlock, { type Outcome } from '@/components/ReturnPlanBlock';
 import WorkAxis from '@/components/WorkAxis';
 
 // The coach's injury record (map item 11). A separate page, linked from the
@@ -108,6 +108,17 @@ function formFrom(injury: Injury): Form {
   };
 }
 
+/** Active plans of the athlete that no listed injury links to (a plan whose link failed, or one unlinked since), worded for display. */
+function loosePlansOf(injuries: Injury[], candidates: Candidates): string[] {
+  const linked = new Set(injuries.map((i) => i.linked_rtt_plan_id));
+  return candidates.plans
+    .filter((p) => p.status === 'active' && !linked.has(p.plan_id))
+    .map((p) => `${words(p.triggering_event)} ${day(p.event_date)}`);
+}
+
+/** The page alert's title when it repeats what a Return plan block answered. */
+const SAID_TITLE: Record<Outcome['kind'], string> = { saved: 'Saved', refused: 'Not done', unknown: 'Not known' };
+
 async function errorOf(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
   return typeof body?.error === 'string' && body.error ? body.error : fallback;
@@ -120,7 +131,13 @@ export default function CoachInjuriesPage() {
   const [candidates, setCandidates] = useState<Candidates>(NO_CANDIDATES);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [editing, setEditing] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [message, setMessage] = useState<{ text: string; error: boolean; title?: string } | null>(null);
+  // True while the injuries of the athlete on screen are being read again with the list kept up.
+  const [rereading, setRereading] = useState(false);
+  // True while a Return plan block has a write in flight. With `busy` and
+  // `rereading` it locks the athlete picker and every save on the page, so a
+  // block's answer always comes back to the athlete and the list it was sent from.
+  const [blockBusy, setBlockBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   // The athlete on screen now. A reply that arrives for an athlete no longer
   // selected is dropped, so one child's injuries never show under another's name.
@@ -150,26 +167,57 @@ export default function CoachInjuriesPage() {
     })();
   }, []);
 
-  const load = useCallback(async (id: string) => {
-    setInjuries(null);
-    setCandidates(NO_CANDIDATES);
+  // `keep`: a re-read of the athlete already on screen leaves the list mounted,
+  // so what a coach has half-typed in a Return plan block survives saving
+  // something else. A list that could not be read again is taken down, never
+  // left on screen as if it were current.
+  // `said`: what a Return plan block answered just before this re-read. It is
+  // repeated on the page whenever the re-read takes that block off the screen
+  // (the list could not be read, the injury left it, or a refused start's
+  // injury now carries another plan), so an answer is never replaced by silence.
+  const load = useCallback(async (id: string, keep = false, said: ({ injuryId: string } & Outcome) | null = null) => {
+    const clear = () => { setInjuries(null); setCandidates(NO_CANDIDATES); };
+    if (!keep) clear();
     if (!id) return;
+    setRereading(keep);
+    const lost = (text: string) => {
+      if (current.current !== id) return;
+      clear();
+      setMessage(said
+        ? { text: `${said.text} After that, the injuries could not be read again: ${text}`, error: true, title: SAID_TITLE[said.kind] }
+        : { text, error: true });
+    };
     try {
       const res = await fetch(`${apiBase()}/api/pilot/coach/injuries?athlete_id=${encodeURIComponent(id)}`, {
         method: 'GET', credentials: 'include',
       });
       if (!res.ok) {
-        const text = await errorOf(res, 'Injuries could not be loaded.');
-        if (current.current === id) fail(text);
+        lost(await errorOf(res, 'Injuries could not be loaded.'));
         return;
       }
       const payload = (await res.json()) as { injuries?: unknown; candidates?: Candidates };
       if (current.current !== id) return;
       if (!Array.isArray(payload.injuries)) throw new Error('shape');
-      setInjuries(payload.injuries as Injury[]);
-      setCandidates(payload.candidates ?? NO_CANDIDATES);
+      const list = payload.injuries as Injury[];
+      const offered = payload.candidates ?? NO_CANDIDATES;
+      setInjuries(list);
+      setCandidates(offered);
+      if (said && said.kind !== 'saved') {
+        const wanted = said.injuryId;
+        const now = list.find((i) => i.injury_id === wanted);
+        if (!now || (said.kind === 'refused' && now.linked_rtt_plan_id)) {
+          // The route links after it creates, so even a refused start can have left a plan: name any that is loose.
+          const loose = loosePlansOf(list, offered);
+          setMessage({
+            text: loose.length ? `${said.text} Return plans for this athlete not linked to an injury listed here: ${loose.join('; ')}.` : said.text,
+            error: true, title: SAID_TITLE[said.kind],
+          });
+        }
+      }
     } catch {
-      if (current.current === id) fail('Injuries could not be loaded.');
+      lost('Injuries could not be loaded.');
+    } finally {
+      setRereading(false);
     }
   }, []);
 
@@ -197,7 +245,7 @@ export default function CoachInjuriesPage() {
       setMessage({ text: done, error: false });
       setForm(EMPTY_FORM);
       setEditing(null);
-      await load(current.current);
+      await load(current.current, true);
     } catch {
       fail('That was not saved: the connection failed.');
     } finally {
@@ -223,6 +271,9 @@ export default function CoachInjuriesPage() {
   });
 
   const planLinked = form.linked_rtt_plan_id !== '';
+  // Shown where a new plan would be started, so a second one is not started blind.
+  const loosePlans = loosePlansOf(injuries ?? [], candidates);
+  const locked = busy || rereading || blockBusy;
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/injuries" allowedRoles={['coach', 'admin']} room="clinic" showShellHeader={false}>
@@ -242,7 +293,7 @@ export default function CoachInjuriesPage() {
           <div className="alert alert--warning mb-[var(--s4)]" role="alert">
             <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
-              <p className="alert-title">Not done</p>
+              <p className="alert-title">{message.title ?? 'Not done'}</p>
               <p className="alert-msg">{message.text}</p>
             </div>
           </div>
@@ -251,7 +302,7 @@ export default function CoachInjuriesPage() {
 
         <div className="field mb-[var(--s4)]">
           <label className="t-label" htmlFor="injury-athlete">Athlete</label>
-          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || busy}>
+          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || locked}>
             <option value="">{!roster ? 'Loading roster...' : roster.length ? 'Choose an athlete' : 'No athletes you coach or cover'}</option>
             {(roster ?? []).map((a) => (
               <option key={a.athlete_id} value={a.athlete_id}>{a.full_name || a.athlete_id}</option>
@@ -262,7 +313,8 @@ export default function CoachInjuriesPage() {
         {athleteId && injuries === null && !message && <p className="working">Loading injuries...</p>}
 
         {injuries && (
-          <section aria-label="Injuries" className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+          <section aria-label="Injuries" aria-busy={rereading} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+            {rereading && <p className="t-body mb-[var(--s3)]" role="status">Reading the injuries again…</p>}
             {injuries.length === 0 ? (
               <p className="t-body">No injuries recorded for this athlete.</p>
             ) : (
@@ -284,13 +336,16 @@ export default function CoachInjuriesPage() {
                         <p className="t-body">Returned {day(i.returned_on)} · {daysBetween(i.injury_date, i.returned_on)} days lost</p>
                       )}
                       {i.staff_note && <p className="t-body">Staff note: {i.staff_note}</p>}
-                      <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id} />
+                      <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id}
+                        injuryId={i.injury_id} injuryDate={i.injury_date} expectedBack={i.expected_return_date}
+                        editing={editing === i.injury_id} pageBusy={locked} loosePlans={loosePlans} onSending={setBlockBusy}
+                        onChanged={(tried) => void load(current.current, true, { injuryId: i.injury_id, ...tried })} />
                       <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
-                        <button type="button" className="btn btn--ghost" disabled={busy}
+                        <button type="button" className="btn btn--ghost" disabled={locked}
                           onClick={() => { setEditing(i.injury_id); setForm(formFrom(i)); setMessage(null); }}>
                           Edit
                         </button>
-                        <button type="button" className="btn btn--ghost" disabled={busy}
+                        <button type="button" className="btn btn--ghost" disabled={locked}
                           onClick={() => { if (window.confirm('Mark this injury as entered in error? It leaves the list.')) void post({ action: 'mark_entered_in_error', injury_id: i.injury_id }, 'Marked as entered in error.'); }}>
                           Entered in error
                         </button>
@@ -362,9 +417,9 @@ export default function CoachInjuriesPage() {
                 </select></div>
             </div>
             <div className="mt-[var(--s4)] flex gap-[var(--s2)]">
-              <button type="submit" className="btn" disabled={busy}>{editing ? 'Save changes' : 'Record injury'}</button>
+              <button type="submit" className="btn" disabled={locked}>{editing ? 'Save changes' : 'Record injury'}</button>
               {editing && (
-                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { setEditing(null); setForm(EMPTY_FORM); }}>
+                <button type="button" className="btn btn--ghost" disabled={locked} onClick={() => { setEditing(null); setForm(EMPTY_FORM); }}>
                   Cancel
                 </button>
               )}
