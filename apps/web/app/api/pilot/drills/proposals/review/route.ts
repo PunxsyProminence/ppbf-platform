@@ -7,6 +7,7 @@ import {
   type DrillChangeProposalRow,
   type PilotDrillVersionRow,
 } from '@/src/server/pilot/drillVersioning';
+import { ForbiddenError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -24,6 +25,15 @@ export const runtime = 'nodejs';
 // who is not a reviewer gets requireEvidenceReviewer's own
 // 'Forbidden: ...' message, which jsonError maps to 403 before either
 // function touches a row.
+//
+// THE ONE EXCEPTION, AND WHY IT IS NOT A SECOND COPY. requireEvidenceReviewer
+// admits platform_owner, because the platform owner reviews evidence on the
+// platform shelf (OD-2026-10-02-013 answer 5A, "as today"). A gym's drill
+// content is not the platform shelf: adopting or declining here rewrites what
+// one gym's athletes are coached from, which is gym work and is done from the
+// gym's own account (OD-2026-10-02-015 D3; OD-2026-10-08-003 R2). So this
+// route refuses platform_owner and nothing else, and leaves who IS a reviewer
+// to the helper. It names one role to keep out, not the tier to let in.
 
 /**
  * Pinned for the reason ../route.ts records: a producing side typed against
@@ -114,6 +124,11 @@ const CODE_STATUS = new Map<string, number>([
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    if (principal.role === 'platform_owner') {
+      throw new ForbiddenError(
+        "Forbidden: a gym's drill change proposals are reviewed from that gym's own account",
+      );
+    }
 
     const body = await readJsonObject(request);
 

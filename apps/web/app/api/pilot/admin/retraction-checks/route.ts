@@ -15,7 +15,13 @@ import {
 
 export const runtime = 'nodejs';
 
-const REVIEW_ROLES = ['organization_admin', 'admin', 'platform_owner'] as const;
+// This route reads and disposes of findings against the caller's own gym's
+// sources (principal.organizationId throughout), so it is gym work and
+// platform_owner is refused on both verbs (OD-2026-10-08-003 R2 and PLAN-3).
+// requireEvidenceReviewer inside sourceRetractionChecks.ts still admits
+// platform_owner for evidence review elsewhere (OD-2026-10-02-013 5A); this
+// list is the narrower one and it is checked first.
+const REVIEW_ROLES = ['organization_admin', 'admin'] as const;
 
 const ACTION_SIGNALS: ReadonlySet<string> = new Set([
   'urgent_unhandled',

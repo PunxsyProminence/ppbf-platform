@@ -1111,8 +1111,19 @@ export async function removeGuardianLink(params: {
  *
  * `has_pin` is a boolean derived from pin_hash -- the hash itself never leaves
  * the database.
+ *
+ * `includeAthletes: false` leaves every athlete membership out, in the query
+ * rather than after it, so an athlete's login email and has-PIN never reach
+ * the caller's process. The platform staff list passes it: the platform owner
+ * sees a gym's staff and parents, never its athletes' logins
+ * (OD-2026-09-28-005; OD-2026-10-08-003 R3). The gym's own people console
+ * keeps the default.
  */
-export async function listOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
+export async function listOrganizationMembers(
+  organizationId: string,
+  options: { includeAthletes?: boolean } = {},
+): Promise<OrganizationMember[]> {
+  const athleteRowsSql = options.includeAthletes === false ? "and om.role <> 'athlete'" : '';
   return query<OrganizationMember>(
     `select
        a.account_id,
@@ -1142,6 +1153,7 @@ export async function listOrganizationMembers(organizationId: string): Promise<O
               where deleted_athlete.organization_id = om.organization_id
                 and deleted_athlete.athlete_id = a.athlete_id
                 and deleted_athlete.deleted_at is not null)))
+       ${athleteRowsSql}
      order by
        case om.role
          when 'organization_admin' then 1

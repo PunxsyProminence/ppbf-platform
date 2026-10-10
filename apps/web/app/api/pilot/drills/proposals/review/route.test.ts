@@ -113,6 +113,41 @@ describe('POST /api/pilot/drills/proposals/review', () => {
     );
   });
 
+  // The helper's reviewer tier admits platform_owner, for evidence review on
+  // the platform shelf (OD-2026-10-02-013 answer 5A). A gym's drill content is
+  // gym work, so this route keeps that one role out itself and never reaches
+  // the domain function (OD-2026-10-08-003 R2).
+  test.each([
+    ['adopt', { proposal_id: 'propchg_1', action: 'adopt' }],
+    ['decline', { proposal_id: 'propchg_1', action: 'decline', review_note: 'Not this one.' }],
+  ])('refuses platform_owner a %s before the domain function runs', async (_action, body) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'platform_owner', accountId: 'owner-1' }));
+
+    const res = await POST(postRequest(body));
+
+    expect(res.status).toBe(403);
+    expect(mockAdopt).not.toHaveBeenCalled();
+    expect(mockDecline).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin'] as const)(
+    'lets %s adopt and decline',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const adopted = await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
+      const declined = await POST(
+        postRequest({ proposal_id: 'propchg_1', action: 'decline', review_note: 'Not this one.' }),
+      );
+
+      expect(adopted.status).toBe(200);
+      expect(declined.status).toBe(200);
+      expect(mockAdopt).toHaveBeenCalledWith(expect.objectContaining({ reviewedByRole: role }));
+      expect(mockDecline).toHaveBeenCalledWith(expect.objectContaining({ reviewedByRole: role }));
+    },
+  );
+
   test('surfaces the reviewer gate refusal as a 403', async () => {
     mockAdopt.mockRejectedValueOnce(
       new Error('Forbidden: SHADOW evidence review requires an organization administrator'),

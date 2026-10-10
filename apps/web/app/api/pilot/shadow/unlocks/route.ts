@@ -17,7 +17,9 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['platform_owner', 'organization_admin', 'admin', 'coach']);
+    // No platform_owner on either verb: a gym's unlock thresholds are gym
+    // work (OD-2026-10-08-003 R2 and PLAN-3).
+    requireRole(principal, ['organization_admin', 'admin', 'coach']);
 
     const [thresholds, state] = await Promise.all([
       listShadowThresholds(principal.organizationId, principal.accountId),
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['platform_owner', 'organization_admin', 'admin']);
+    requireRole(principal, ['organization_admin', 'admin']);
 
     const body = (await request.json().catch(() => ({}))) as {
       featureKey?: ShadowFeatureKey;
