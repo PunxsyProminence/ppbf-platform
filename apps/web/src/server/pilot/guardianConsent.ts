@@ -219,16 +219,63 @@ export class GuardianConsentMissingError extends ConflictError {
     // readRetainedRestrictions). Not parent ids a caller can look up: those
     // records are gone.
     readonly retainedRestrictionCount = 0,
+    // The athlete is 18 or older on the gym's day: no guardian's consent
+    // counts for a NEW publication any more and no self-consent exists yet
+    // (OD-2026-10-08-015). Callers run that gate before the guardian checks
+    // in their pre-checks, since a guardian cannot cure it.
+    readonly athleteIsAdult = false,
   ) {
     super(
-      missingParentIds.length > 0
-        ? `Blocked: guardian media consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Every guardian must have a current, signed photo/video consent on file before this can be approved.`
-        : retainedRestrictionCount > 0
-          ? 'Blocked: a former guardian of this athlete, whose account has since been deleted, did not consent to media of this athlete. That decision stands until a current guardian records a new photo/video consent.'
-          : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
+      athleteIsAdult
+        ? ADULT_CONSENT_NEEDED_MESSAGE
+        : missingParentIds.length > 0
+          ? `Blocked: guardian media consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Every guardian must have a current, signed photo/video consent on file before this can be approved.`
+          : retainedRestrictionCount > 0
+            ? 'Blocked: a former guardian of this athlete, whose account has since been deleted, did not consent to media of this athlete. That decision stands until a current guardian records a new photo/video consent.'
+            : 'Blocked: this athlete has no guardians on file, so guardian media consent cannot be verified. Link a guardian before approving media of this athlete.',
       'GUARDIAN_CONSENT_MISSING',
     );
     this.name = 'GuardianConsentMissingError';
+  }
+}
+
+export const ADULT_CONSENT_NEEDED_MESSAGE =
+  "Blocked: the athlete is 18 or older, so a guardian's consent no longer counts for a new publication and the athlete's own consent is needed. No consent of the athlete's own can be recorded yet.";
+
+/*
+ * NO NEW PUBLICATION OF AN ADULT ON A GUARDIAN'S CONSENT. Owner ruling
+ * OD-2026-10-08-015 (Jason, "A: adult consents for themselves
+ * (Recommended)"): at 18 guardian-era consent stops counting; no NEW
+ * publication of an adult athlete's footage until the adult consents for
+ * themselves; existing publications are untouched; the adult's own consent
+ * writer and screen are a separate lane.
+ *
+ * Scope is the ruling's words -- new publications: the publish claim, admin
+ * approve, and reopening a retracted publication call this beside their
+ * guardian consent checks. It is deliberately NOT inside
+ * assertGuardianMediaConsent / checkGuardianMediaConsent, which also feed the
+ * safety scan, Film Study, playback of footage already published and the
+ * consent screens; none of those is a new publication.
+ *
+ * Until a self-consent writer exists there is no consent to read, so an adult
+ * is always refused here. Age is the gym's day (guardianLinkEnded); an
+ * unknown date of birth reads as a minor, as everywhere else. A missing
+ * athlete row is left to the caller's other checks.
+ */
+export async function assertNotAdultForNewPublication(
+  organizationId: string,
+  athleteId: string,
+  client?: QueryExecutor,
+): Promise<void> {
+  const rows = await readRows<{ dob: string | null }>(
+    client,
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  const athlete = rows[0];
+  if (athlete !== undefined && guardianLinkEnded(athlete.dob)) {
+    throw new GuardianConsentMissingError(athleteId, [], 0, true);
   }
 }
 
