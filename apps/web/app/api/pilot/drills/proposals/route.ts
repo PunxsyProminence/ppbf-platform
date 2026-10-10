@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { query } from '@/src/server/pilot/db';
 import { DRILL_DIFFICULTIES, isDrillDifficulty } from '@/src/server/pilot/drills';
 import {
   listDrillChangeProposals,
@@ -209,6 +210,39 @@ function parseObservationNoteIds(raw: unknown): string[] | undefined {
 }
 
 /**
+ * Every cited note must be an observation in the CALLER's gym.
+ *
+ * The column is a plain uuid[] with no foreign key (the drill-versioning
+ * migration explains why: observations can be removed under retention), so
+ * nothing below this route stops a proposal from citing an id that names no
+ * note at all, or a note in another gym. A reviewer reading "based on these
+ * observations" would be reading a claim nobody checked.
+ *
+ * Gym membership only. Whether the proposer may read each note is not decided
+ * here (Overwatch, issue #1397, Q1: "the organization check ... only").
+ */
+async function requireObservationNotesInOrganization(
+  organizationId: string,
+  noteIds: string[] | undefined,
+): Promise<void> {
+  const wanted = [...new Set((noteIds ?? []).map((id) => id.toLowerCase()))];
+  if (wanted.length === 0) {
+    return;
+  }
+  const rows = await query<{ note_id: string }>(
+    `select note_id
+       from pilot.coach_observations
+      where organization_id = $1
+        and note_id = any($2::uuid[])`,
+    [organizationId, wanted],
+  );
+  const found = new Set(rows.map((row) => String(row.note_id).toLowerCase()));
+  if (wanted.some((id) => !found.has(id))) {
+    throw new Error('Unsupported observation_note_ids: each must be an observation note in this gym');
+  }
+}
+
+/**
  * The review queue, and the history of one drill's proposals.
  *
  * An unrecognized review_state is refused rather than passed through to an
@@ -257,17 +291,25 @@ export async function POST(request: NextRequest) {
 
     const body = await readJsonObject(request);
 
+    const basedOnDrillId = requireText(body.based_on_drill_id, 'based_on_drill_id');
+    // Validated here as well as in the domain function: the domain guard is
+    // the one that cannot be bypassed, this one produces a 400 with the
+    // field named instead of an unmatched message falling through to a 500.
+    const rationale = requireText(body.rationale, 'rationale');
+    const proposedChange = parseProposedChange(body.proposed_change);
+    const observationNoteIds = parseObservationNoteIds(body.observation_note_ids);
+    // After every shape check, so a malformed body costs no query; before the
+    // write, so a proposal citing a note that is not this gym's is never stored.
+    await requireObservationNotesInOrganization(principal.organizationId, observationNoteIds);
+
     const proposal = await proposeDrillChange({
       organizationId: principal.organizationId,
-      basedOnDrillId: requireText(body.based_on_drill_id, 'based_on_drill_id'),
+      basedOnDrillId,
       proposedByAccountId: principal.accountId,
       proposedByRole: principal.role,
-      // Validated here as well as in the domain function: the domain guard is
-      // the one that cannot be bypassed, this one produces a 400 with the
-      // field named instead of an unmatched message falling through to a 500.
-      rationale: requireText(body.rationale, 'rationale'),
-      proposedChange: parseProposedChange(body.proposed_change),
-      observationNoteIds: parseObservationNoteIds(body.observation_note_ids),
+      rationale,
+      proposedChange,
+      observationNoteIds,
     });
 
     // 'create' from the existing audit vocabulary, not a new drill_change_*

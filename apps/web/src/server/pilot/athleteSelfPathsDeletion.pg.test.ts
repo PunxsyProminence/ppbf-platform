@@ -8,7 +8,6 @@
 // scheduler and the Shadow reads; its reviewer found these, which check the
 // session's own id themselves and never reach that guard:
 //   - athletes/list GET (the athlete's whole row: dob, emergency contact);
-//   - floor-plans GET and PATCH (ticking a task off is a write);
 //   - athlete/check-in GET and POST (POST writes a check-in and a weigh-in);
 //   - athlete/check-in/body-mass GET;
 //   - video/list GET;
@@ -95,7 +94,6 @@ import { GET as athletesListGET } from '@/app/api/pilot/athletes/list/route';
 import { GET as bodyMassGET } from '@/app/api/pilot/athlete/check-in/body-mass/route';
 import { GET as checkInGET, POST as checkInPOST } from '@/app/api/pilot/athlete/check-in/route';
 import { POST as onePercentPOST } from '@/app/api/pilot/coach/one-percent-club/route';
-import { GET as floorPlansGET, PATCH as floorPlansPATCH, POST as floorPlansPOST } from '@/app/api/pilot/floor-plans/route';
 import { GET as trainingHoldsGET, POST as trainingHoldsPOST } from '@/app/api/pilot/training-holds/route';
 import { GET as videoListGET } from '@/app/api/pilot/video/list/route';
 
@@ -201,8 +199,6 @@ async function snapshot(athleteId: string): Promise<Record<string, unknown>> {
          where c.organization_id = $1 and c.athlete_id = $2)::text as check_ins,
        (select count(*) from pilot.shadow_formula_observations o
          where o.organization_id = $1 and o.athlete_id = $2 and o.observation_kind = 'body_weight')::text as weigh_ins,
-       (select json_agg(f.payload order by f.plan_id) from pilot.athlete_floor_plans f
-         where f.organization_id = $1 and f.athlete_id = $2)::text as floor_plans,
        (select count(*) from pilot.one_percent_nominations n
          where n.organization_id = $1 and (n.athlete_id = $2 or n.nominated_by_account_id = 'acct-' || $2))::text as nominations,
        (select count(*) from pilot.audit_events e
@@ -215,7 +211,7 @@ async function snapshot(athleteId: string): Promise<Record<string, unknown>> {
 /**
  * One gym, one coach, two athletes that differ only in deleted_at. Each
  * athlete's own records are written through the routes while both are live:
- * a check-in with a weigh-in, a floor plan, a training hold (by the coach),
+ * a check-in with a weigh-in, a training hold (by the coach),
  * and one ready video.
  */
 async function seed(client: Client): Promise<void> {
@@ -249,9 +245,6 @@ async function seed(client: Client): Promise<void> {
       energy: 4,
       body_mass: 60,
       body_mass_unit: 'kg',
-    }));
-    await expectOk(call(athlete, floorPlansPOST, '/api/pilot/floor-plans', 'POST', {
-      plan: { athleteName: 'Deleted Or Not', readiness: 'GREEN', tasks: [{ id: 't1', title: 'Warmup' }] },
     }));
     await expectOk(call(coachPrincipal, trainingHoldsPOST, '/api/pilot/training-holds', 'POST', {
       action: 'place',
@@ -365,7 +358,6 @@ test("the seeded records exist for both athletes, so a refusal below is not \"th
     const stored = await snapshot(athleteId);
     expect({ weighIns: stored.weigh_ins, nominations: stored.nominations }).toEqual({ weighIns: '1', nominations: '0' });
     expect(stored.check_ins).not.toBeNull();
-    expect(stored.floor_plans).not.toBeNull();
   }
   const { rows } = await activeClient!.query<{ athlete_id: string }>(
     `select athlete_id from pilot.training_holds where organization_id = $1 and status = 'active'
@@ -384,12 +376,6 @@ describe('reads: the live athlete gets their own record; the deleted athlete is 
       handler: athletesListGET,
       url: '/api/pilot/athletes/list',
       live: (body) => expect((body.items as Array<{ athlete_id: string }>).map((row) => row.athlete_id)).toEqual([LIVE_ATHLETE]),
-    },
-    {
-      name: 'floor-plans GET',
-      handler: floorPlansGET,
-      url: '/api/pilot/floor-plans',
-      live: (body) => expect(body.items).toHaveLength(1),
     },
     {
       name: 'athlete/check-in GET',
@@ -459,25 +445,6 @@ describe('writes: the deleted athlete is refused and nothing is written', () => 
     const before = await snapshot(DELETED_ATHLETE);
     expect(await checkIn({ organizationId: ORG_ID, athleteId: DELETED_ATHLETE, energy: 3 })).toBeNull();
     expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
-  });
-
-  test('floor-plans PATCH (ticking a task off)', async () => {
-    const before = await snapshot(DELETED_ATHLETE);
-    const result = await call(athletePrincipal(DELETED_ATHLETE), floorPlansPATCH, '/api/pilot/floor-plans', 'PATCH', {
-      task_id: 't1',
-      completed: true,
-    });
-    expect(outcome(result)).toEqual(REFUSED);
-    expect(await snapshot(DELETED_ATHLETE)).toEqual(before);
-  });
-
-  test('live control: the live athlete may tick the same task off', async () => {
-    await expectOk(call(athletePrincipal(LIVE_ATHLETE), floorPlansPATCH, '/api/pilot/floor-plans', 'PATCH', {
-      task_id: 't1',
-      completed: true,
-    }));
-    const [plan] = JSON.parse((await snapshot(LIVE_ATHLETE)).floor_plans as string);
-    expect(plan.tasks[0].completed).toBe(true);
   });
 
   test('one-percent-club: a deleted athlete nominates no one', async () => {

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { query } from '@/src/server/pilot/db';
 import { listDrillChangeProposals, proposeDrillChange } from '@/src/server/pilot/drillVersioning';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -20,6 +21,11 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The only query this route issues itself: which cited observation notes are
+// in the caller's gym.
+jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn() }));
+
+const mockQuery = query as jest.Mock;
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listDrillChangeProposals as jest.Mock;
 const mockPropose = proposeDrillChange as jest.Mock;
@@ -243,6 +249,81 @@ describe('POST /api/pilot/drills/proposals', () => {
 
     expect(res.status).toBe(400);
     expect(mockPropose).not.toHaveBeenCalled();
+  });
+
+  // The column has no foreign key, so this route is the only place a cited
+  // note is checked to be one of this gym's observations.
+  describe('observation notes must be in the caller\'s gym', () => {
+    const NOTE_A = '11111111-1111-4111-8111-111111111111';
+    const NOTE_B = '22222222-2222-4222-8222-222222222222';
+
+    test('asks about the cited ids in the caller\'s organization, and stores them when all are found', async () => {
+      mockQuery.mockResolvedValueOnce([{ note_id: NOTE_A }, { note_id: NOTE_B }]);
+
+      const res = await POST(postRequest({ ...validBody, observation_note_ids: [NOTE_A, NOTE_B] }));
+
+      expect(res.status).toBe(201);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toMatch(/from pilot\.coach_observations\s+where organization_id = \$1\s+and note_id = any\(\$2::uuid\[\]\)/);
+      expect(params).toEqual(['org-1', [NOTE_A, NOTE_B]]);
+      expect(mockPropose).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1', observationNoteIds: [NOTE_A, NOTE_B] }),
+      );
+    });
+
+    test('refuses a proposal citing a note that is not in this gym, and stores nothing', async () => {
+      // NOTE_B exists in another gym, or nowhere: the gym-scoped query does
+      // not return it either way.
+      mockQuery.mockResolvedValueOnce([{ note_id: NOTE_A }]);
+
+      const res = await POST(postRequest({ ...validBody, observation_note_ids: [NOTE_A, NOTE_B] }));
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toEqual({
+        error: 'Unsupported observation_note_ids: each must be an observation note in this gym',
+      });
+      expect(mockPropose).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('refuses when none of the cited notes is in this gym', async () => {
+      mockQuery.mockResolvedValueOnce([]);
+
+      const res = await POST(postRequest({ ...validBody, observation_note_ids: [NOTE_A] }));
+
+      expect(res.status).toBe(400);
+      expect(mockPropose).not.toHaveBeenCalled();
+    });
+
+    test('an id cited twice, or in another letter case, is one note', async () => {
+      mockQuery.mockResolvedValueOnce([{ note_id: NOTE_A }]);
+      const upper = NOTE_A.toUpperCase();
+
+      const res = await POST(postRequest({ ...validBody, observation_note_ids: [NOTE_A, upper] }));
+
+      expect(res.status).toBe(201);
+      expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', [NOTE_A]]);
+    });
+
+    test.each([
+      ['no observation_note_ids key', {}],
+      ['an empty list', { observation_note_ids: [] }],
+      ['null', { observation_note_ids: null }],
+    ])('a proposal with %s issues no query and is stored', async (_name, extra) => {
+      const res = await POST(postRequest({ ...validBody, ...extra }));
+
+      expect(res.status).toBe(201);
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockPropose).toHaveBeenCalledTimes(1);
+    });
+
+    test('a malformed body costs no query', async () => {
+      const res = await POST(postRequest({ ...validBody, rationale: '', observation_note_ids: [NOTE_A] }));
+
+      expect(res.status).toBe(400);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
   });
 
   // The route refuses proposed_change: {} because adopting it would mint a
