@@ -62,12 +62,16 @@ const RTT_PLANS = [{
   current_step_id: 'step-1',
 }];
 
+const NO_PLANS = { holds: [], plans: [], clearances: [], painReports: [] };
 const NEW_PLAN = { ...RTT_PLANS[0], plan_id: 'plan-2', triggering_event: 'injury', steps: [], current_step_id: null };
 
 let posts: Array<Record<string, unknown>>;
 let planPosts: Array<Record<string, unknown>>;
 let plansReply: unknown[];
 let injuriesFail: boolean;
+let candidatesReply: unknown;
+/** Null: create_plan succeeds and links. Otherwise the reply to give, with the injuries as they are then. */
+let planPostReply: { status: number; body: unknown; injuries?: unknown[] } | null;
 let postReply: { status: number; body: unknown };
 let injuriesReply: unknown[];
 let accessibleReply: string[];
@@ -77,6 +81,8 @@ beforeEach(() => {
   planPosts = [];
   plansReply = RTT_PLANS;
   injuriesFail = false;
+  candidatesReply = CANDIDATES;
+  planPostReply = null;
   postReply = { status: 200, body: { ok: true } };
   injuriesReply = [PLAN_INJURY, WRIST];
   accessibleReply = ['ath-1'];
@@ -98,7 +104,8 @@ beforeEach(() => {
     }
     if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
       if (injuriesFail) return { ok: false, status: 502, json: async () => { throw new Error('not json'); } };
-      return { ok: true, json: async () => ({ ok: true, injuries: injuriesReply, candidates: CANDIDATES }) };
+      const injuries = injuriesReply;
+      return { ok: true, json: async () => ({ ok: true, injuries, candidates: candidatesReply }) };
     }
     if (u.includes('/api/pilot/coach/return-to-training?athlete_id=ath-1') && init?.method === 'GET') {
       return { ok: true, status: 200, json: async () => ({ ok: true, plans: plansReply }) };
@@ -106,6 +113,11 @@ beforeEach(() => {
     if (u.endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') {
       // create_plan (route.ts): the plan is made and the injury linked to it.
       planPosts.push(JSON.parse(String(init.body)));
+      if (planPostReply) {
+        const reply = planPostReply;
+        if (reply.injuries) injuriesReply = reply.injuries;
+        return { ok: reply.status < 300, status: reply.status, json: async () => reply.body };
+      }
       injuriesReply = [PLAN_INJURY, { ...WRIST, linked_rtt_plan_id: 'plan-2', expected_return_date: null, plan_earliest_return_date: '2026-08-10' }];
       plansReply = [...RTT_PLANS, NEW_PLAN];
       return { ok: true, status: 200, json: async () => ({ ok: true, plan: NEW_PLAN, injury: { injury_id: 'inj-2', linked_rtt_plan_id: 'plan-2' } }) };
@@ -212,6 +224,171 @@ test('starting a return plan on an injury re-reads the injuries, and the injury 
   expect(within(blocks[1]).queryByRole('button', { name: 'Start a return plan' })).toBeNull();
   // Nothing went to the injury route: starting a plan is the plan route's write.
   expect(posts).toEqual([]);
+});
+
+/** Open the athlete, open Start on the injury with no plan (the wrist), and fill what is required. */
+async function openStartOnWrist() {
+  const list = await openAthlete();
+  const block = within(list).getAllByRole('region', { name: 'Return plan' })[1];
+  fireEvent.click(within(block).getByRole('button', { name: 'Start a return plan' }));
+  const form = within(block).getByRole('form', { name: 'Start a return plan' });
+  fireEvent.change(within(form).getByLabelText('Triggering event'), { target: { value: 'injury' } });
+  fireEvent.change(within(form).getByLabelText('Medical clearance on file'), { target: { value: 'no' } });
+  fireEvent.change(within(form).getByLabelText('Who set the rest period (rulebook, physician)'), { target: { value: 'Dr. Reyes' } });
+  return { list, block, form };
+}
+
+const WRIST_LINKED_ELSEWHERE = { ...WRIST, linked_rtt_plan_id: 'plan-1', expected_return_date: null, plan_earliest_return_date: '2026-09-22' };
+
+test('a refused start whose injury then shows another plan is still said on the page: the refusal is not erased by the plan appearing', async () => {
+  planPostReply = {
+    status: 409, body: { error: 'This injury already has a return-to-training plan.', code: 'RTT_PLAN_ALREADY_LINKED' },
+    injuries: [PLAN_INJURY, WRIST_LINKED_ELSEWHERE],
+  };
+  const { list, form } = await openStartOnWrist();
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  // The injury now carries a plan the coach did not make; its block shows that plan.
+  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByText('Not done')).toBeTruthy();
+  expect(within(alert).getByText('This injury already has a return-to-training plan.')).toBeTruthy();
+});
+
+test('an unknown start followed by a failed re-read stays "not known": it is never replaced by "Not done"', async () => {
+  planPostReply = { status: 500, body: { error: 'Internal server error' } };
+  const { form } = await openStartOnWrist();
+  injuriesFail = true;
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByText('Not known')).toBeTruthy();
+  expect(alert.textContent).toContain('it is not known whether the plan was saved');
+  expect(alert.textContent).toContain('After that, the injuries could not be read again: Injuries could not be loaded.');
+  expect(within(alert).queryByText('Not done')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Injuries' })).toBeNull();
+});
+
+test('Start is not offered on the injury whose edit is open, so a stale edit cannot be saved over a new plan', async () => {
+  const list = await openAthlete();
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Edit' })[1]);
+  const block = within(list).getAllByRole('region', { name: 'Return plan' })[1];
+  expect(within(block).getByText('Save or cancel the edit of this injury before starting a return plan.')).toBeTruthy();
+  expect(within(block).queryByRole('button', { name: 'Start a return plan' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(within(block).getByRole('button', { name: 'Start a return plan' })).toBeTruthy();
+});
+
+test('an edit opened while a plan was being saved is closed and said so: it would have saved the injury without its plan', async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const original = (global.fetch as jest.Mock).getMockImplementation()!;
+  const { list, form } = await openStartOnWrist();
+  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') await gate;
+    return original(url, init);
+  });
+  fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+  // The plan write is in flight; the coach opens Edit on the same injury (its form shows no plan).
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Edit' })[1]);
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+  await act(async () => { release(); await gate; });
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByText('Edit closed')).toBeTruthy();
+  expect(alert.textContent).toContain('its return plan changed while it was open');
+  expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+  // Nothing was sent to the injury route, and the plan is on the injury.
+  expect(posts).toEqual([]);
+  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
+});
+
+test('an active plan no listed injury links to is named on the injury with no plan', async () => {
+  candidatesReply = { ...CANDIDATES, plans: [...CANDIDATES.plans, { plan_id: 'plan-9', triggering_event: 'knockout', event_date: '2026-07-04', earliest_return_date: null, status: 'active' }, { plan_id: 'plan-8', triggering_event: 'illness', event_date: '2026-06-01', earliest_return_date: null, status: 'cancelled' }] };
+  const list = await openAthlete();
+  const block = within(list).getAllByRole('region', { name: 'Return plan' })[1];
+  // plan-1 is linked to the other injury and plan-8 is cancelled: only plan-9 is named.
+  expect(within(block).getByText(/not linked to an injury listed here: Knockout 7\/4\/2026\. To use one/)).toBeTruthy();
+});
+
+test('an older reply that arrives after a newer one is dropped: the newest read of the injuries is the one shown', async () => {
+  let releasePlan: () => void = () => {};
+  const planGate = new Promise<void>((resolve) => { releasePlan = resolve; });
+  let releaseOld: () => void = () => {};
+  const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+  const original = (global.fetch as jest.Mock).getMockImplementation()!;
+  const { list, form } = await openStartOnWrist();
+  let injuryReads = 0;
+  (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') await planGate;
+    if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
+      injuryReads += 1;
+      if (injuryReads === 1) {
+        // The first re-read answers late, with the list as it was BEFORE the plan was linked.
+        const before = [PLAN_INJURY, { ...WRIST, staff_note: 'Edited.' }];
+        await oldGate;
+        return { ok: true, json: async () => ({ ok: true, injuries: before, candidates: CANDIDATES }) };
+      }
+    }
+    return original(url, init);
+  });
+  // 1. The plan write starts and waits. 2. The coach saves a new injury; that re-read (read 1) is slow.
+  fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+  fireEvent.change(screen.getByLabelText('Date of injury'), { target: { value: '2026-10-01' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Record injury' })); });
+  // 3. The plan write lands and the page reads again (read 2), which answers at once with the plan linked.
+  await act(async () => { releasePlan(); await planGate; });
+  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
+  // 4. Read 1 finally answers. It is older than what is on screen and must not replace it.
+  await act(async () => { releaseOld(); await oldGate; });
+  expect(injuryReads).toBe(2);
+  expect(within(list).queryByText('No return plan on this injury.')).toBeNull();
+  expect(within(list).queryByText('Staff note: Edited.')).toBeNull();
+});
+
+test("switching athlete takes the first athlete's list down at once, and that athlete's late failure does not touch the second", async () => {
+  let failA: () => void = () => {};
+  const gateA = new Promise<void>((resolve) => { failA = resolve; });
+  let releaseB: () => void = () => {};
+  const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+  let readsOfA = 0;
+  global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes('/api/pilot/athletes/list')) {
+      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'A' }, { athlete_id: 'ath-2', full_name: 'B' }] }) };
+    }
+    if (init?.method === 'POST') return { ok: true, status: 200, json: async () => ({ ok: true, athlete_ids: ['ath-1', 'ath-2'] }) };
+    if (u.includes('return-to-training')) return { ok: true, status: 200, json: async () => ({ ok: true, plans: RTT_PLANS }) };
+    if (u.includes('athlete_id=ath-1')) {
+      readsOfA += 1;
+      if (readsOfA === 1) return { ok: true, json: async () => ({ ok: true, injuries: [PLAN_INJURY], candidates: CANDIDATES }) };
+      await gateA;
+      return { ok: false, status: 502, json: async () => { throw new Error('not json'); } };
+    }
+    if (u.includes('athlete_id=ath-2')) {
+      await gateB;
+      return { ok: true, json: async () => ({ ok: true, injuries: [], candidates: NO_PLANS }) };
+    }
+    throw new Error(`unexpected fetch ${u}`);
+  }) as unknown as typeof fetch;
+
+  render(<CoachInjuriesPage />);
+  const select = await screen.findByLabelText('Athlete');
+  await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-1' } }); });
+  expect(await screen.findByText('Staff note: Ringside doctor stopped the bout.')).toBeTruthy();
+  // Back to "choose", then A again (its second read hangs), then B.
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-2' } }); });
+  // B has not answered yet, and nothing of A's is on screen while we wait.
+  expect(screen.queryByText('Staff note: Ringside doctor stopped the bout.')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Injuries' })).toBeNull();
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-1' } }); });
+  await act(async () => { fireEvent.change(select, { target: { value: 'ath-2' } }); });
+  await act(async () => { releaseB(); await gateB; });
+  const list = await screen.findByRole('region', { name: 'Injuries' });
+  expect(within(list).getByText('No injuries recorded for this athlete.')).toBeTruthy();
+  // A's second read now fails. B is on screen: no alert, and B's list stays.
+  await act(async () => { failA(); await gateA; });
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(within(list).getByText('No injuries recorded for this athlete.')).toBeTruthy();
 });
 
 test('recording sends the full record with empty fields as null, then reloads', async () => {
