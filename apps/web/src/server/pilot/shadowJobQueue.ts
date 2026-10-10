@@ -169,7 +169,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 15, sha256: '4d19cdd8ad71091f373e5cfeef8750cfc93d011f5bdb3a7e85d7e95aba4d05be' },
   { version: 16, sha256: '4f6d0ba64c024bfe8ccabe6c59e36e724111bd91ae9366c412ac50047c74b4b4' },
   { version: 17, sha256: '4c722ab586bf6327f665416287e5a6aa2823c03fec472c250ac165ea09e0b5c6' },
-  { version: 18, sha256: '0623a973be4509babf2687fc4d1ed56337cbaf86717768eab87ad07a3df58000' },
+  { version: 18, sha256: 'e870435462fbd24a2e161a760dee44c5e015b8c69d22d06a48ec4ea2b249646f' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

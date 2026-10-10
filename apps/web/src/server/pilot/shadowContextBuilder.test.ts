@@ -6,6 +6,7 @@ import {
   buildAthleteLimitsSection,
   buildShadowContext,
   NO_LIMIT_SET,
+  PAST_SET_LIMIT_DIRECTIVE,
   SPARRING_CAPS_PAGE,
 } from './shadowContextBuilder';
 import type { ShadowAthleteLimits, ShadowContextBuilderInput } from './shadowContextBuilder';
@@ -478,6 +479,17 @@ describe('SHADOW Context Builder', () => {
       expect(directive).toContain(SPARRING_CAPS_PAGE);
       expect(ATHLETE_LIMITS_PAGE).toBe('/coach/athlete-limits');
       expect(SPARRING_CAPS_PAGE).toBe('/coach/sparring-caps');
+    });
+
+    test('past a set limit: the wording that ships is pinned, word for word, and it is in the section once', () => {
+      // OWNER QUESTION PENDING (PR #1407). Whichever wording Jason rules is
+      // changed in PAST_SET_LIMIT_DIRECTIVE and here, and nowhere else.
+      expect(PAST_SET_LIMIT_DIRECTIVE).toBe(
+        'If the coach asks for something past a set limit, say which limit it passes and leave the decision with the coach; do not refuse.',
+      );
+      const text = buildAthleteLimitsSection(nothingSet).lines.join(' ');
+      expect(text.split(PAST_SET_LIMIT_DIRECTIVE)).toHaveLength(2);
+      expect(text).toContain(`Draft inside every limit that is set. ${PAST_SET_LIMIT_DIRECTIVE} When the question depends on`);
     });
 
     test('the date is the gym day, whether the row carries a Date or a string', () => {

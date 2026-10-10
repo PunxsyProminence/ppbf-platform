@@ -271,6 +271,14 @@ export const SPARRING_CAPS_PAGE = '/coach/sparring-caps';
 /** Said for every limit that is not set, in exactly these words. */
 export const NO_LIMIT_SET = 'No limit set';
 
+/**
+ * What SHADOW does when a coach asks for something PAST a limit that is set.
+ * OWNER QUESTION PENDING (put to Jason by Overwatch on PR #1407): this wording
+ * is warn-only, like the rest of the app -- name the limit, the coach decides.
+ * The whole answer to that question is this one line; a test pins it.
+ */
+export const PAST_SET_LIMIT_DIRECTIVE = 'If the coach asks for something past a set limit, say which limit it passes and leave the decision with the coach; do not refuse.';
+
 export type ShadowLimitInForce = Pick<
   AthleteMinorLimitRow,
   'limit_id' | 'value_number' | 'value_text' | 'set_at' | 'set_by_role'
@@ -396,8 +404,7 @@ export function buildAthleteLimitsSection(reading: ShadowAthleteLimits): ShadowA
   lines.push(
     'Limits directive: these limits were set by this gym\'s coaching staff and are recorded as data; none of them is your suggestion. '
       + 'Every time you state one, give the value as written above and put its id right after it. '
-      + 'Draft inside every limit that is set. If the coach asks for something past a set limit, say which limit it passes '
-      + 'and leave the decision with the coach; do not refuse. '
+      + `Draft inside every limit that is set. ${PAST_SET_LIMIT_DIRECTIVE} `
       + `When the question depends on a limit marked "${NO_LIMIT_SET}", say that it is not set and ask the coach to set it `
       + `on the Athlete Limits page (${ATHLETE_LIMITS_PAGE}); the contact cap is set on the Sparring Caps page (${SPARRING_CAPS_PAGE}). `
       + 'Never propose, estimate, assume or default a number or a rule for a limit that is not set. '
