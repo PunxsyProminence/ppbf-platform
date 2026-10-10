@@ -20,8 +20,13 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // entered and shows the route's own answer. A reply that could not be read is
 // never shown as an empty plan.
 //
-// data-surface="kiosk" on the root: Law 5, the repo's one-attribute device --
-// controls take the 55px floor and the voices the 19.1px floor.
+// Law 5. data-surface="kiosk" on the root gives the 19.1px type floor and the
+// 55px floor on .btn. It does NOT floor .input/.select/.textarea, whose
+// unlayered 46px beats the layered kiosk rule, so each field asks for the floor
+// by class (input--kiosk).
+//
+// One block per plan: the page keys it by plan and unmounts the list on every
+// reload, so what was typed here never outlives the plan it was typed for.
 
 /** The route's contact values, lowest first. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
 export const RTT_CONTACT = ['none', 'light_technical', 'conditioned', 'controlled_sparring', 'open_sparring'] as const;
@@ -88,15 +93,22 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   const key = `${athleteId}|${planId ?? ''}`;
   const [stored, setStored] = useState<{ key: string; reading: Reading }>({ key, reading: { state: 'loading' } });
   const reading: Reading = stored.key === key ? stored.reading : { state: 'loading' };
-  const [note, setNote] = useState('');
+  // The note belongs to the step it was written for. If the current step
+  // changes under it (another coach advanced, or an answer was lost), the next
+  // step's box is empty: a note is never carried onto a different decision.
+  const [note, setNote] = useState({ stepId: '', text: '' });
   const [adding, setAdding] = useState(false);
   const [step, setStep] = useState(EMPTY_STEP);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  // `where` is the step the notice is about, or 'add': it is shown beside the
+  // control that caused it.
+  const [notice, setNotice] = useState<{ text: string; error: boolean; where: string } | null>(null);
   const id = useId();
-  // Each read gets a number; only the newest read of a mounted block may land,
-  // so one plan's steps never show under another injury or another athlete.
+  // Each read gets a number and only the newest may land, so one plan's steps
+  // never show under another injury or another athlete.
   const latest = useRef(0);
+  // One write at a time, held from the tap itself rather than from the next render.
+  const sending = useRef(false);
 
   // The steps already on screen stay there while a read is in flight.
   const read = useCallback(async () => {
@@ -135,7 +147,9 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   };
 
   /** Send one write and show the route's answer. True when the route said it was saved. */
-  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, done: string): Promise<boolean> => {
+  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, done: string, where: string): Promise<boolean> => {
+    if (sending.current) return false;
+    sending.current = true;
     setBusy(true);
     setNotice(null);
     let saved = false;
@@ -144,23 +158,28 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
         method, credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
       const payload = (await response.json().catch(() => null)) as { ok?: unknown } | null;
-      if (!response.ok) {
-        setNotice({ text: errorText(payload) ?? `That was not saved (${response.status}).`, error: true });
-      } else if (payload?.ok !== true) {
-        throw new Error('unreadable');
+      // A refusal is a 4xx in the route's own words. A server fault can come
+      // back after the write landed (the audit row is a separate write), so it
+      // is unknown, like no answer at all.
+      const refusal = !response.ok && response.status < 500 ? errorText(payload) : null;
+      if (refusal) {
+        setNotice({ text: refusal, error: true, where });
+      } else if (!response.ok || payload?.ok !== true) {
+        throw new Error('unknown');
       } else {
         saved = true;
-        setNotice({ text: done, error: false });
+        setNotice({ text: done, error: false, where });
       }
     } catch {
       setNotice({
         text: 'No readable answer came back, so it is not known whether that was saved. Check the steps here before trying again.',
-        error: true,
+        error: true, where,
       });
     }
     // Saved, refused or unknown: the steps are read again, because a refusal
     // usually means this screen was behind what is recorded.
     await read();
+    sending.current = false;
     setBusy(false);
     return saved;
   };
@@ -168,16 +187,18 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   const advance = async (event: FormEvent, current: Step) => {
     event.preventDefault();
     if (!planId || busy) return;
-    if (!note.trim()) {
-      setNotice({ text: 'Write your note first: a step is advanced with the coach’s note.', error: true });
+    const text = note.stepId === current.step_id ? note.text : '';
+    if (!text.trim()) {
+      setNotice({ text: 'Write your note first: a step is advanced with the coach’s note.', error: true, where: current.step_id });
       return;
     }
     const saved = await send(
       'PATCH',
-      { athlete_id: athleteId, plan_id: planId, step_id: current.step_id, advancement_note: note },
+      { athlete_id: athleteId, plan_id: planId, step_id: current.step_id, advancement_note: text },
       `Week ${current.week_number} advanced.`,
+      current.step_id,
     );
-    if (saved) setNote('');
+    if (saved) setNote({ stepId: '', text: '' });
   };
 
   const addStep = async (event: FormEvent) => {
@@ -185,7 +206,7 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
     if (!planId || busy) return;
     // The route saves a missing contact as "none"; nobody would have chosen that.
     if (!step.contact) {
-      setNotice({ text: 'Choose the contact for this week.', error: true });
+      setNotice({ text: 'Choose the contact for this week.', error: true, where: 'add' });
       return;
     }
     const week = step.week.trim();
@@ -199,6 +220,7 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
         permitted_scale_level: step.scale || null, planned_note: step.plannedNote,
       },
       'Step added.',
+      'add',
     );
     if (saved) {
       setStep(EMPTY_STEP);
@@ -206,29 +228,32 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
     }
   };
 
-  const field = (key: keyof typeof EMPTY_STEP) => ({
-    id: `${id}-${key}`,
-    value: step[key],
+  const field = (name: keyof typeof EMPTY_STEP) => ({
+    id: `${id}-${name}`,
+    value: step[name],
     disabled: busy,
-    onChange: (e: { target: { value: string } }) => setStep((s) => ({ ...s, [key]: e.target.value })),
+    onChange: (e: { target: { value: string } }) => setStep((s) => ({ ...s, [name]: e.target.value })),
   });
 
   const plan = reading.state === 'loaded' ? reading.plan : null;
   const active = plan?.status === 'active';
+
+  const say = (where: string | null) => {
+    if (!notice || (where !== null && notice.where !== where)) return null;
+    return notice.error
+      ? <p role="alert" className="mt-[var(--s2)] font-semibold text-[var(--restricted-ink)]"><span aria-hidden="true">▲ </span>{notice.text}</p>
+      : <p role="status" className="mt-[var(--s2)] font-semibold"><span aria-hidden="true">✓ </span>{notice.text}</p>;
+  };
+  // Beside its control when that control is on screen; otherwise under the heading, never dropped.
+  const placed = notice !== null && plan !== null
+    && (notice.where === 'add' ? active : plan.steps.some((s) => s.step_id === notice.where));
 
   return (
     <section aria-label="Return plan" data-surface="kiosk"
       className="mt-[var(--s3)] rounded-[var(--r-md)] border border-[var(--hide-700)] p-[var(--s3)] text-[length:var(--t-md)]">
       <h3 className="t-label">Return plan</h3>
 
-      {notice?.error && (
-        <p role="alert" className="mt-[var(--s2)] font-semibold text-[var(--restricted-ink)]">
-          <span aria-hidden="true">▲ </span>{notice.text}
-        </p>
-      )}
-      {notice && !notice.error && (
-        <p role="status" className="mt-[var(--s2)] font-semibold"><span aria-hidden="true">✓ </span>{notice.text}</p>
-      )}
+      {!placed && say(null)}
 
       {!planId && <p className="t-body mt-[var(--s2)]">No return plan on this injury.</p>}
       {planId && reading.state === 'loading' && <p className="t-body mt-[var(--s2)]">Loading return plan…</p>}
@@ -257,7 +282,8 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
           ) : (
             <ol className="mt-[var(--s2)] grid gap-[var(--s3)]">
               {plan.steps.map((s) => {
-                const current = s.step_id === plan.current_step_id;
+                // "Current" is said only on an active plan: a completed or cancelled plan is not on any step.
+                const current = active && s.step_id === plan.current_step_id;
                 return (
                   <li key={s.step_id} aria-current={current ? 'step' : undefined} className="border-t border-[var(--hide-700)] pt-[var(--s2)]">
                     <p className="t-body font-semibold">
@@ -274,54 +300,57 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
                         {s.advancement_note ? ` · Coach’s note: ${s.advancement_note}` : ''}
                       </p>
                     )}
-                    {current && active && (
+                    {current && (
                       <form aria-label={`Advance week ${s.week_number}`} className="mt-[var(--s2)]" onSubmit={(e) => void advance(e, s)}>
                         <div className="field">
                           <label className="t-label" htmlFor={`${id}-note`}>Your note on this decision (required)</label>
-                          <textarea id={`${id}-note`} className="textarea min-h-[var(--tap)]" rows={2} maxLength={2000} required
-                            value={note} disabled={busy} onChange={(e) => setNote(e.target.value)} />
+                          <textarea id={`${id}-note`} className="textarea input--kiosk" rows={2} maxLength={2000} required
+                            value={note.stepId === s.step_id ? note.text : ''} disabled={busy}
+                            onChange={(e) => setNote({ stepId: s.step_id, text: e.target.value })} />
                         </div>
                         <button type="submit" className="btn mt-[var(--s2)]" disabled={busy}>Advance</button>
                       </form>
                     )}
+                    {say(s.step_id)}
                   </li>
                 );
               })}
             </ol>
           )}
-          {plan.steps.length > 0 && plan.current_step_id === null && (
+          {active && plan.steps.length > 0 && plan.current_step_id === null && (
             <p className="t-body mt-[var(--s2)]">Every step of this plan has been advanced.</p>
           )}
 
           {active && (
             <div className="mt-[var(--s3)]">
-              <button type="button" className="btn btn--ghost" aria-expanded={adding} aria-controls={`${id}-add`} disabled={busy}
-                onClick={() => { setAdding((open) => !open); setNotice(null); }}>
+              <button type="button" className="btn btn--ghost" aria-expanded={adding} aria-controls={adding ? `${id}-add` : undefined}
+                disabled={busy} onClick={() => setAdding((open) => !open)}>
                 Add step
               </button>
               {adding && (
                 <form id={`${id}-add`} aria-label="Add a step" className="mt-[var(--s3)]" onSubmit={(e) => void addStep(e)}>
                   <div className="grid gap-[var(--s3)] sm:grid-cols-2">
                     <div className="field"><label className="t-label" htmlFor={`${id}-week`}>Week number</label>
-                      <input type="number" className="input" min={1} max={520} step={1} required {...field('week')} /></div>
+                      <input type="number" className="input input--kiosk" min={1} max={520} step={1} required {...field('week')} /></div>
                     <div className="field"><label className="t-label" htmlFor={`${id}-contact`}>Contact</label>
-                      <select className="select" required {...field('contact')}>
+                      <select className="select input--kiosk" required {...field('contact')}>
                         <option value="">Choose</option>
                         {RTT_CONTACT.map((c) => <option key={c} value={c}>{humanizeContactLevel(c)}</option>)}
                       </select></div>
                     <div className="field"><label className="t-label" htmlFor={`${id}-intensity`}>This week&apos;s ceiling, in your words</label>
-                      <input type="text" className="input" maxLength={2000} required {...field('intensity')} /></div>
+                      <input type="text" className="input input--kiosk" maxLength={2000} required {...field('intensity')} /></div>
                     <div className="field"><label className="t-label" htmlFor={`${id}-scale`}>Scale (optional)</label>
-                      <select className="select" {...field('scale')}>
+                      <select className="select input--kiosk" {...field('scale')}>
                         <option value="">Not set</option>
                         {RTT_SCALE.map((level) => <option key={level} value={level}>{level}</option>)}
                       </select></div>
                   </div>
                   <div className="field mt-[var(--s3)]"><label className="t-label" htmlFor={`${id}-plannedNote`}>Plan note (optional)</label>
-                    <textarea className="textarea min-h-[var(--tap)]" rows={2} maxLength={2000} {...field('plannedNote')} /></div>
+                    <textarea className="textarea input--kiosk" rows={2} maxLength={2000} {...field('plannedNote')} /></div>
                   <button type="submit" className="btn mt-[var(--s3)]" disabled={busy}>Save step</button>
                 </form>
               )}
+              {say('add')}
             </div>
           )}
         </>

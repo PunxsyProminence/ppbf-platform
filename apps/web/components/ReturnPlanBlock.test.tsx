@@ -42,6 +42,7 @@ const OTHER_PLAN = { ...PLAN, plan_id: 'plan-other', steps: [{ ...STEP3, step_id
 
 const GET_URL = '/api/pilot/coach/return-to-training?athlete_id=ath-1';
 const WRITE_URL = '/api/pilot/coach/return-to-training';
+const NOTE = 'Your note on this decision (required)';
 
 function respond(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
@@ -153,8 +154,13 @@ test.each(['completed', 'cancelled'])('a %s plan shows its steps and offers neit
   serve(plans({ ...PLAN, status }));
   const block = await open();
   expect(within(block).getByText(`This plan is ${status}. Its steps are shown as recorded.`)).toBeTruthy();
-  expect(within(block).getAllByRole('listitem')).toHaveLength(3);
+  const steps = within(block).getAllByRole('listitem');
+  expect(steps).toHaveLength(3);
   expect(within(block).queryByRole('button')).toBeNull();
+  // A plan that is over is not "on" a step, whatever the route still calls current.
+  expect(steps.map((li) => li.getAttribute('aria-current'))).toEqual([null, null, null]);
+  expect(block.textContent).not.toContain('Current step');
+  expect(block.textContent).not.toContain('Every step of this plan has been advanced.');
 });
 
 test('a refused read shows the route’s own words, never an empty plan', async () => {
@@ -243,14 +249,71 @@ test.each([
 test.each([
   ['the connection fails', () => Promise.reject(new Error('offline'))],
   ['the answer is unreadable', () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); } }) as unknown as Response],
+  // The route audits after it advances, so a 500 can follow a step that WAS advanced.
+  ['the server faults', () => respond({ error: 'Internal server error' }, 500)],
+  ['a gateway times out', () => ({ ok: false, status: 504, json: async () => { throw new Error('not json'); } }) as unknown as Response],
+  ['a refusal has no readable words', () => respond({}, 409)],
 ])('when %s on Advance it does not claim saved or not saved, and reads the plan again', async (_name, write) => {
   serve(plans(PLAN), write);
   const block = await open();
   fireEvent.change(within(block).getByLabelText('Your note on this decision (required)'), { target: { value: 'Bag work, no symptoms reported.' } });
   await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
   expect(within(block).getByRole('alert').textContent).toContain('it is not known whether that was saved');
+  expect(block.textContent).not.toContain('Internal server error');
   expect(within(block).queryByRole('status')).toBeNull();
   expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test.each([
+  ['refused because another coach advanced it first', () => respond({ error: 'Week 2 has already been advanced.' }, 409), 'Week 2 has already been advanced.'],
+  ['unknown because the answer was lost', () => Promise.reject(new Error('offline')), 'it is not known whether that was saved'],
+])('a note written for one week is never carried onto the next: Advance %s', async (_name, write, said) => {
+  let moved = false;
+  const after = { ...PLAN, steps: [STEP1, { ...STEP2, advanced_at: '2026-09-15T15:00:00.000Z', advancement_note: 'Someone else\u2019s note.' }, STEP3], current_step_id: 'step-3' };
+  serve(() => respond({ ok: true, plans: [moved ? after : PLAN] }), () => { moved = true; return write(); });
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'Week 2 went fine, no symptoms.' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  // Week 3 is now the current step. What the coach wrote was about week 2.
+  const steps = within(block).getAllByRole('listitem');
+  expect(steps.map((li) => li.getAttribute('aria-current'))).toEqual([null, null, 'step']);
+  expect((within(steps[2]).getByLabelText(NOTE) as HTMLTextAreaElement).value).toBe('');
+  // The answer stays on screen, beside the week it was about.
+  expect(within(steps[1]).getByRole('alert').textContent).toContain(said);
+  // A second tap sends nothing: week 3 has no note, so it is not advanced on week 2's.
+  await act(async () => { fireEvent.submit(within(block).getByRole('form', { name: 'Advance week 3' })); });
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body.step_id).toBe('step-2');
+});
+
+test('two taps in the same instant send one decision', async () => {
+  serve(plans(PLAN));
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'Bag work, no symptoms reported.' } });
+  const form = within(block).getByRole('form', { name: 'Advance week 2' });
+  // Both submits land before React renders the disabled state.
+  await act(async () => { fireEvent.submit(form); fireEvent.submit(form); });
+  expect(writes).toHaveLength(1);
+});
+
+test('when the plan cannot be read again after a write, the answer stays and the steps are not guessed', async () => {
+  let wrote = false;
+  serve(() => (wrote ? respond({ error: 'Internal server error' }, 500) : respond({ ok: true, plans: [PLAN] })), () => { wrote = true; return respond({ ok: true, step: STEP2 }); });
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'Bag work, no symptoms reported.' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  expect(within(block).getByRole('status').textContent).toBe('\u2713 Week 2 advanced.');
+  expect(within(block).getByRole('alert').textContent).toContain('The return plan could not be loaded.');
+  expect(within(block).queryByRole('listitem')).toBeNull();
+});
+
+test('a refusal stays on screen when the coach opens Add step', async () => {
+  serve(plans(PLAN), () => respond({ error: 'Advancement note must be at least 10 characters.' }, 400));
+  const block = await open();
+  fireEvent.change(within(block).getByLabelText(NOTE), { target: { value: 'ok' } });
+  await act(async () => { fireEvent.click(within(block).getByRole('button', { name: 'Advance' })); });
+  fireEvent.click(within(block).getByRole('button', { name: 'Add step' }));
+  expect(within(block).getByRole('alert').textContent).toBe('\u25b2 Advancement note must be at least 10 characters.');
 });
 
 test('controls are off while a write is in flight, so one decision is not sent twice', async () => {
@@ -343,7 +406,26 @@ test('a refused Add step shows the route’s own words and keeps what the coach 
   expect((within(still).getByLabelText('Contact') as HTMLSelectElement).value).toBe('conditioned');
 });
 
-test('a reply for a plan no longer shown is dropped, so one injury’s steps never show under another', async () => {
+test('an Add step whose answer is lost says the outcome is unknown, beside the form, and keeps what was typed', async () => {
+  serve(plans(PLAN), () => Promise.reject(new Error('offline')));
+  const { block, form } = await openAddStep();
+  fireEvent.change(within(form).getByLabelText('Week number'), { target: { value: '4' } });
+  fireEvent.change(within(form).getByLabelText("This week's ceiling, in your words"), { target: { value: 'Pads' } });
+  fireEvent.change(within(form).getByLabelText('Contact'), { target: { value: 'conditioned' } });
+  await act(async () => { fireEvent.submit(form); });
+  const alert = within(block).getByRole('alert');
+  expect(alert.textContent).toContain('it is not known whether that was saved');
+  // After the step list, with the form: not above a long plan where it would be missed.
+  const still = within(block).getByRole('form', { name: 'Add a step' });
+  expect(still.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect((within(still).getByLabelText('Week number') as HTMLInputElement).value).toBe('4');
+  expect(reads).toEqual([GET_URL, GET_URL]);
+});
+
+test.each([
+  ['plan', { athleteId: 'ath-1', planId: 'plan-other' }],
+  ['athlete', { athleteId: 'ath-2', planId: 'plan-other' }],
+])('a reply for a %s no longer shown is dropped, so one child’s steps never show under another', async (_name, next) => {
   let releaseFirst: () => void = () => {};
   const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
   let calls = 0;
@@ -353,25 +435,36 @@ test('a reply for a plan no longer shown is dropped, so one injury’s steps nev
     return respond({ ok: true, plans: [PLAN, OTHER_PLAN] });
   });
   const { rerender } = render(<ReturnPlanBlock athleteId="ath-1" planId="plan-1" />);
-  rerender(<ReturnPlanBlock athleteId="ath-1" planId="plan-other" />);
+  rerender(<ReturnPlanBlock {...next} />);
   expect(await screen.findByText(/Another injury/)).toBeTruthy();
   await act(async () => { releaseFirst(); await gate; });
   expect(screen.getByText(/Another injury/)).toBeTruthy();
   expect(screen.queryByText(/Bag work only/)).toBeNull();
+  expect(reads).toEqual([GET_URL, `/api/pilot/coach/return-to-training?athlete_id=${next.athleteId}`]);
 });
 
-test('Law 5: the block is a kiosk surface, and everything a coach touches is a control that surface floors', async () => {
+test('Law 5: the block is a kiosk surface, and every control asks for the 55px floor by a class that has a rule', async () => {
   serve(plans(PLAN));
   const { block } = await openAddStep();
   // The attribute the 55px and 19.1px rules are scoped to (kioskTapFloor / kioskTypeFloor), on the block's own root.
   expect(block.getAttribute('data-surface')).toBe('kiosk');
   expect(block.className).toContain('text-[length:var(--t-md)]');
-  // No anchors or ARIA-made controls: the tap rule names real controls only.
+  // No anchors or ARIA-made controls.
   expect(block.querySelector('a, [role="button"], [onclick]')).toBeNull();
-  // The tap rule in globals.css does not name textarea, so each asks for the floor itself.
-  const textareas = [...block.querySelectorAll('textarea')];
-  expect(textareas).toHaveLength(2);
-  for (const area of textareas) expect(area.className).toContain('min-h-[var(--tap)]');
+  // jsdom applies no CSS, so this pins the class and the rule behind it, not a rendered size.
+  // Buttons: `[data-surface="kiosk"] .btn { min-height: var(--tap) }`, unlayered.
+  const css = readFileSync(path.resolve(__dirname, '../../../design-system/legacy/ppbf-leather-brass.css'), 'utf8');
+  expect(css).toMatch(/\[data-surface="kiosk"\] \.btn \{ min-height: var\(--tap\); \}/);
+  const buttons = [...block.querySelectorAll('button')];
+  expect(buttons).toHaveLength(3);
+  for (const button of buttons) expect(button.classList.contains('btn')).toBe(true);
+  // Fields: the kiosk attribute does NOT floor .input/.select/.textarea (their unlayered 46px wins),
+  // and a min-h utility loses to it too, so each field carries input--kiosk, defined AFTER that 46px rule.
+  expect(css.indexOf('.input--kiosk { min-height: var(--tap);')).toBeGreaterThan(css.indexOf('.input, .select, .textarea {'));
+  expect(css.indexOf('.input, .select, .textarea {')).toBeGreaterThan(-1);
+  const fields = [...block.querySelectorAll('input, select, textarea')];
+  expect(fields).toHaveLength(6);
+  for (const control of fields) expect(control.classList.contains('input--kiosk')).toBe(true);
   // Nothing in the block sets its own smaller size: no inline font size, and no voice the kiosk floor does not hold.
   for (const element of [block, ...block.querySelectorAll('*')]) {
     expect((element as HTMLElement).style.fontSize).toBe('');

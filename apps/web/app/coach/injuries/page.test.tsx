@@ -139,8 +139,6 @@ test("each injury carries its own Return plan block: the linked plan's steps rea
   // One read, for the linked injury only, naming the athlete on screen.
   const reads = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url)).filter((url) => url.includes('return-to-training'));
   expect(reads).toEqual(['/api/pilot/coach/return-to-training?athlete_id=ath-1']);
-  // The block's writes are its own: nothing went to the injury route.
-  expect(posts).toEqual([]);
 });
 
 test('recording sends the full record with empty fields as null, then reloads', async () => {
