@@ -164,6 +164,46 @@ and should not try to.
 
 ---
 
+## OD-2026-10-09-004 -- Draft goals: "Hide them (Recommended)"; draft or cancelled objectives inside an active block are hidden from athlete and parent
+
+**Provenance: PRIMARY.** Jason's answer to the second question of AskUserQuestion tool use `toolu_01MNvdP4eBvgx3TNwiC6rxm6` in the "Overwatch" session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; asked line 3236, 2026-10-09T18:01:02.048Z; answered line 3264, 2026-10-09T22:10:38.610Z). Read by script (Overwatch, 2026-10-09). Question and option text is as stored. New; edits no earlier entry. Extends PLAN-4 (OD-2026-10-08-006).
+
+- "Official (P6, PLAN-4 follow-up): you ruled draft blocks are hidden from athlete and parent. Inside an ACTIVE block, draft or cancelled objectives still show on the athlete/parent plan view. Hide them too? Plain English: a coach's half-written or cancelled goals inside a live training plan are visible to the kid and parent. Hide those?" Options: "Hide them (Recommended)" -- "Athlete and parent see only active/completed objectives, same rule as blocks."; "Leave visible" -- "Families see every objective in an active block, including drafts and cancelled ones.". Jason: *"Hide them (Recommended)"*
+
+**Ruling:** inside an active development block, athletes and parents see only active and completed objectives; draft and cancelled objectives are hidden from them, the same rule PLAN-4 applies to blocks. **Status:** not built as of this entry (PR #1383 hid draft blocks only; the P6 lane's review REPORTED that `athlete/development-blocks/route.ts` still returns every objective of an active block).
+
+---
+
+## OD-2026-10-09-003 -- Public use: "Keep admin box (Recommended)"; public use is recorded only by an admin from a guardian's signed paper form
+
+**Provenance: PRIMARY.** Jason's answer to the first question of AskUserQuestion tool use `toolu_01MNvdP4eBvgx3TNwiC6rxm6` in the "Overwatch" session (same transcript; asked line 3236, 2026-10-09T18:01:02.048Z; answered line 3264, 2026-10-09T22:10:38.610Z). Read by script. New; edits no earlier entry. Qualifies A-Q14 (OD-2026-10-08-005).
+
+- "Official (P6, A-Q14 follow-up): you ruled the parent consent screen hides "Allow public use". Does that also remove the admin's paper-form checkbox "The form allows public use" (admin/athlete-consent page), or does the admin keep recording public use when a guardian's signed paper form says so? Plain English: parents can't tick 'public use' online any more. Should staff still be able to record it from a paper form the parent signed?" Options: "Keep admin box (Recommended)" -- "Public use is recorded only from a guardian's own signed paper form, by an admin. Parents can't set it online."; "Remove it everywhere" -- "No one can record public use at all; all media stays inside the gym.". Jason: *"Keep admin box (Recommended)"*
+
+**Ruling:** the admin paper-form checkbox "The form allows public use" on the admin athlete-consent page stays. Public use is recorded only by an admin, from a guardian's own signed paper form; parents cannot set it online (as built by PR #1383).
+
+---
+
+## OD-2026-10-09-002 -- Portraits: "A: view-first for kids (Recommended)"; a coach must view a child's portrait before releasing it; self-approval unchanged
+
+**Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_016phiCaTDjqVxHVHSwcdyNP` in the "Overwatch" session (same transcript; asked line 3167, 2026-10-09T17:51:47.177Z; answered line 3175, 2026-10-09T17:56:29.098Z). Read by script. New; edits no earlier entry; keeps OD-2026-10-06-005 (CL-A20) in force.
+
+- "Official (W7 item 4, portrait review): today a coach can approve their own staff portrait and a child's portrait (coach_of_subject) through /api/pilot/profile/photo/review, without ever viewing the image; only admins can open the image (the 'must view first' record). Choose: A) keep the route; a coach approving a CHILD's portrait must open and view it first (coaches who may approve that child get view access to that one image); approving their own photo stays as is (your 'Leave as is', CL-A20). B) retire the route: only admins approve portraits; coaches lose self-approval (reverses CL-A20). C) like A, but everyone, including self, must view first. Plain English: should a coach have to actually look at a kid's photo before approving it (A, recommended), or should only admins approve photos at all (B)?" Options: "A: view-first for kids (Recommended)" -- "Coach must open a child's photo before approving; own photo unchanged."; "B: admins only" -- "Coaches can no longer approve any portrait, including their own."; "C: view-first for all" -- "Like A, plus coaches must also open their own photo before approving it.". Jason: *"A: view-first for kids (Recommended)"*
+
+**Ruling:** the portrait review route stays. A coach releasing a child's portrait (coach_of_subject) must first view it; coaches who may release that child's portrait get view access to that one image. A staff member approving their own portrait is unchanged (OD-2026-10-06-005). Built by PR #1389, which applies the view-first rule to every non-self release on that route (admins included, matching the admin console); self-approval needs no view.
+
+---
+
+## OD-2026-10-09-001 -- Competition entries: "A"; the R1 gym-wide exception includes each entry's result and loss lesson note
+
+**Provenance: PRIMARY.** Jason typed *"A"* (line 85, 2026-10-09T17:27:16.630Z) in the session "Coach scope on competition entries list" (transcript `~/.claude/projects/C--Dev/18ec7993-97f5-473e-b5d1-b126dd1c2d92.jsonl`), answering the lane's plain-text question at line 76 (2026-10-09T17:26:25.638Z). Read by script. New; edits no earlier entry; qualifies OD-2026-10-08-003 R1.
+
+- Question as asked: "**Official question:** does the R1 exception include each entry's result and loss lesson_note?" Options: "**A) Yes, as built (Recommended).** Record it under R1 and change nothing. This matches the one-percent club notes, which you also kept gym-wide."; "**B) Split.** Names and entry status stay gym-wide, but the result and lesson note show only for athletes the coach can reach, plus the org admin." Plain: "right now any coach can read every kid's fight results and the after-loss coaching note. Leave it like the other gym-wide screens, or limit it to that kid's own coaches?" Jason: *"A"*
+
+**Ruling:** OD-2026-10-08-003 R1's gym-wide exception covers the external-competition entries list in full, including each entry's result and loss lesson note. The entries GET stays gym-wide for coaches as built; no code change.
+
+---
+
 ## OD-2026-10-08-014 -- Untagged team video: "B: keep scanning"; untagged, unattributed non-teaching video keeps going to the automated vision safety scan
 
 **Provenance: PRIMARY.** Jason's answer to AskUserQuestion tool use `toolu_01BNhWdtZjVUmnbsJEzdsyiw` in the "Overwatch" session (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; asked line 2090, 2026-10-09T01:25:10.250Z; answered line 2092, 2026-10-09T01:25:43.672Z). Read by script (records lane, 2026-10-09). Question and option text is as stored. Timestamps UTC; the id carries 2026-10-08 because these UTC times are the evening of 2026-10-08 Eastern, as with OD-2026-10-06-022 and -023. New; edits no earlier entry.
