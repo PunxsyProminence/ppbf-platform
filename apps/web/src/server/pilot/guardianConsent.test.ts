@@ -35,8 +35,10 @@ import { query, withTransaction } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient } from './intake';
 import {
+  ADULT_CONSENT_NEEDED_MESSAGE,
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
+  assertNotAdultForNewPublication,
   callerParentIdSet,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
@@ -477,6 +479,72 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
         withdrawMediaConsent({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', recordedByAccountId: 'acct-entrant' }),
       ).resolves.toBe('waiver-3');
     });
+  });
+});
+
+describe('assertNotAdultForNewPublication (OD-2026-10-08-015)', () => {
+  const mockQuery = query as jest.Mock;
+  // Dates relative to now: the REAL guardianLinkEnded decides, on the gym's day.
+  function dobYearsAgo(years: number, extraDays = 0): string {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    d.setUTCDate(d.getUTCDate() - extraDays);
+    return d.toISOString().slice(0, 10);
+  }
+
+  beforeEach(() => mockQuery.mockReset());
+
+  test('an athlete who is 18 or older is refused, with the adult reason', async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(18, 2) }]);
+    const error = await assertNotAdultForNewPublication('org-a', 'ath-1').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GuardianConsentMissingError);
+    expect((error as GuardianConsentMissingError).athleteIsAdult).toBe(true);
+    expect((error as Error).message).toBe(ADULT_CONSENT_NEEDED_MESSAGE);
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringMatching(/from pilot\.athletes/), ['org-a', 'ath-1']);
+  });
+
+  test('a minor passes', async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: dobYearsAgo(17) }]);
+    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+  });
+
+  test('an unknown date of birth reads as a minor and passes', async () => {
+    mockQuery.mockResolvedValueOnce([{ dob: null }]);
+    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+  });
+
+  test('a missing athlete row is left to the caller', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+  });
+
+  describe("on the gym's calendar day (America/New_York), not the server's", () => {
+    afterEach(() => jest.useRealTimers());
+
+    test('8:01pm on Aug 3 at the gym (already Aug 4 in UTC): an Aug 4 2008 birthday is still 17 and passes', async () => {
+      jest.useFakeTimers({ now: new Date('2026-08-04T00:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-04' }]);
+      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).resolves.toBeUndefined();
+    });
+
+    test('18th birthday today at the gym is refused', async () => {
+      jest.useFakeTimers({ now: new Date('2026-08-04T00:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-03' }]);
+      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
+    });
+
+    test('12:01am on Aug 4 at the gym: the same Aug 4 2008 birthday is now 18 and refused', async () => {
+      jest.useFakeTimers({ now: new Date('2026-08-04T04:01:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      mockQuery.mockResolvedValueOnce([{ dob: '2008-08-04' }]);
+      await expect(assertNotAdultForNewPublication('org-a', 'ath-1')).rejects.toBeInstanceOf(GuardianConsentMissingError);
+    });
+  });
+
+  test('with a client it reads through that client (inside the caller transaction)', async () => {
+    const client = { query: jest.fn().mockResolvedValue({ rows: [{ dob: dobYearsAgo(19) }] }) };
+    await expect(assertNotAdultForNewPublication('org-a', 'ath-1', client)).rejects.toBeInstanceOf(GuardianConsentMissingError);
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

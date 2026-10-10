@@ -5,7 +5,7 @@ import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
-import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, assertNotAdultForNewPublication, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -334,6 +334,10 @@ export async function POST(request: NextRequest) {
         // checks inside the reopen's own transaction. There the signed check
         // goes first and takes the guardian_links FOR SHARE lock, and the
         // coverage check second, matching the publish claim.
+        // Reopening puts footage back on the way to a new publication: an
+        // adult's is refused on a guardian's consent (OD-2026-10-08-015),
+        // checked first since no guardian paperwork can cure it.
+        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
         await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
         await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
 
@@ -343,6 +347,7 @@ export async function POST(request: NextRequest) {
           verifyBeforeCommit: async (client) => {
             await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
             await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
           },
         });
       } catch (error) {
@@ -359,6 +364,7 @@ export async function POST(request: NextRequest) {
             details: {
               action: 'publication_reopen_blocked_by_consent',
               missing_parent_ids: error.missingParentIds,
+              athlete_is_adult: error.athleteIsAdult,
             },
             shadow_mirror: false,
           });
@@ -452,6 +458,10 @@ export async function POST(request: NextRequest) {
       // lane as the queue's playback check: before this, a photo-only
       // guardian's child's video could be approved.
       if (decision === 'approve') {
+        // No approval of an adult's footage on a guardian's consent
+        // (OD-2026-10-08-015), checked first since no guardian paperwork can
+        // cure it; again inside the transaction below.
+        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
         await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
         await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
       }
@@ -484,6 +494,7 @@ export async function POST(request: NextRequest) {
           ? async (client) => {
             await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
             await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
           }
           : undefined,
       });
@@ -506,6 +517,7 @@ export async function POST(request: NextRequest) {
           details: {
             action: 'publication_compliance_approve_blocked_by_consent',
             missing_parent_ids: error.missingParentIds,
+            athlete_is_adult: error.athleteIsAdult,
           },
           shadow_mirror: false,
         });

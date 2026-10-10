@@ -77,6 +77,8 @@ function consentState(rows: ConsentRow[], links = [...new Set(rows.map((row) => 
     const ours = params[0] === 'org-1' && params[1] === 'ath-1';
     // No purged guardian's choice is retained in these states.
     if (sql.includes('retained_media_consent_restrictions')) return [];
+    // The adult gate (OD-2026-10-08-015): these athletes are minors.
+    if (sql.includes('from pilot.athletes')) return [{ dob: null }];
     // The claim's own read of the video row (audit CL-B10): released Film
     // Study media unless a test says otherwise.
     if (sql.includes('from pilot.video_sessions')) return [{ status: 'ready', capture_take_id: null }];

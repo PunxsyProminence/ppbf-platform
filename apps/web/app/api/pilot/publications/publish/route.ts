@@ -7,6 +7,7 @@ import { ConflictError } from '@/src/server/pilot/errors';
 import {
   assertGuardianMediaConsent,
   assertGuardianMediaConsentWithClient,
+  assertNotAdultForNewPublication,
   GuardianConsentMissingError,
   type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
@@ -154,6 +155,10 @@ export async function POST(request: NextRequest) {
       // gate playback uses). It runs first so a withdrawn or photo-only
       // guardian is refused with that reason rather than as missing
       // paperwork; assertGuardianMediaConsent still refuses absence.
+      // An adult's footage is not published on a guardian's consent
+      // (OD-2026-10-08-015). Checked first: no guardian paperwork can cure
+      // it, so it is the reason to give. Again inside the claim below.
+      await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
       await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
       await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
 
@@ -173,6 +178,7 @@ export async function POST(request: NextRequest) {
           // photo-only from video (review finding on this change).
           await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
           await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+          await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
           // Inside the claim: a clip tag added after the draft was made still
           // stops the publish (tagged clips are staff only, owner 2026-10-03).
           await assertVideoHasNoLiveClipTags(principal.organizationId, publication.video_session_id, client);
@@ -198,6 +204,7 @@ export async function POST(request: NextRequest) {
           details: {
             action: 'publication_publish_blocked_by_consent',
             missing_parent_ids: error.missingParentIds,
+            athlete_is_adult: error.athleteIsAdult,
           },
           shadow_mirror: false,
         });

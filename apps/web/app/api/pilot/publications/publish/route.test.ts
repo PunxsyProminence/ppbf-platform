@@ -2,7 +2,11 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import {
+  assertGuardianMediaConsent,
+  assertNotAdultForNewPublication,
+  GuardianConsentMissingError,
+} from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -29,6 +33,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
     assertGuardianMediaConsentWithClient: jest.fn(),
+    assertNotAdultForNewPublication: jest.fn(),
   };
 });
 
@@ -48,10 +53,13 @@ const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockPublish = publishToResearchLibrary as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockAssertConsent = assertGuardianMediaConsent as jest.Mock;
+const mockAssertNotAdult = assertNotAdultForNewPublication as jest.Mock;
 
 beforeEach(() => {
   // Consent is on file unless a test says otherwise.
   mockAssertConsent.mockResolvedValue(undefined);
+  // Reset, not clear: a queued once-rejection must not leak between tests.
+  mockAssertNotAdult.mockReset();
   // The video is attributed to the publication's athlete unless a test says
   // otherwise.
   mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', athlete_id: 'ath-1', status: 'ready' });
@@ -369,6 +377,20 @@ describe('POST /api/pilot/publications/publish', () => {
     });
   });
 
+  test("an adult athlete is not published on a guardian's consent (OD-2026-10-08-015)", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockGetPublication.mockResolvedValueOnce(publicationRow());
+    mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toMatch(/18 or older/);
+    expect(mockAssertNotAdult).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
   test('the consent re-check is wired into the claim transaction, not only the pre-check', async () => {
     // The pre-check alone leaves a gap between "checked" and "committed"; the
     // claim must carry the same check as verifyBeforeCommit so a withdrawal
@@ -382,6 +404,13 @@ describe('POST /api/pilot/publications/publish', () => {
     expect(res.status).toBe(200);
     const [publishArgs] = mockPublish.mock.calls[0];
     expect(typeof publishArgs.verifyBeforeCommit).toBe('function');
+
+    // The adult gate (OD-2026-10-08-015) is inside the claim too, on the
+    // claim's client, for this publication's athlete.
+    const client = { query: jest.fn() } as never;
+    mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+    await expect(publishArgs.verifyBeforeCommit(client)).rejects.toMatchObject({ athleteIsAdult: true });
+    expect(mockAssertNotAdult).toHaveBeenCalledWith('org-1', 'ath-1', client);
   });
 
   test('a failed audit write does not fail a publish that already committed', async () => {
