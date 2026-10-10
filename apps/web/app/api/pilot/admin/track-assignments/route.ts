@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { allTrackIds, type TrackID } from '@/components/trackAssignments';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -16,16 +16,35 @@ const TRACK_ADMIN_ROLES = ['organization_admin', 'admin'] as const;
 
 // The map is stored whole as jsonb, so its size is whatever the client sends.
 const MAX_ASSIGNED_ATHLETES = 2000;
+const MAX_ATHLETE_ID_LENGTH = 200;
 
 type Assignments = Record<string, TrackID[]>;
 
+interface TrackChange {
+  athlete_id: string;
+  from: string[] | null;
+  to: string[] | null;
+}
+
+/**
+ * A map with no prototype. The keys here are whatever a client or an old row
+ * supplied, and on an ordinary object `map['__proto__'] = tracks` sets the
+ * prototype instead of a key: the entry vanishes, the athlete check never sees
+ * it, and the rest is saved as if nothing was wrong. Likewise a stored key
+ * named `constructor` would read back as a function. With no prototype every
+ * key is just a key.
+ */
+function emptyMap<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
 /** What is on the row, read leniently: it may predate the checks POST now makes. */
 function storedAssignments(value: unknown): Record<string, string[]> {
+  const result = emptyMap<string[]>();
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
+    return result;
   }
 
-  const result: Record<string, string[]> = {};
   for (const [key, rawTracks] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(rawTracks)) {
       result[key] = rawTracks.filter((item): item is string => typeof item === 'string');
@@ -49,10 +68,15 @@ function parseAssignments(value: unknown): Assignments {
     throw new ValidationError(`Unsupported assignments: at most ${MAX_ASSIGNED_ATHLETES} athletes`);
   }
 
-  const result: Assignments = {};
+  const result: Assignments = emptyMap<TrackID[]>();
   for (const [athleteId, rawTracks] of entries) {
     if (!athleteId.trim() || athleteId !== athleteId.trim()) {
       throw new ValidationError('Unsupported assignments: an athlete id is blank or padded');
+    }
+    // A NUL cannot be sent to Postgres as text (SQLSTATE 22021); refused here
+    // it is the caller's 400, not a 500 that reads as an outage.
+    if (athleteId.length > MAX_ATHLETE_ID_LENGTH || athleteId.includes('\u0000')) {
+      throw new ValidationError('Unsupported assignments: an athlete id is too long or has control characters');
     }
     if (!Array.isArray(rawTracks)) {
       throw new ValidationError('Unsupported assignments: each athlete needs a list of track ids');
@@ -84,6 +108,25 @@ async function liveAthleteIds(organizationId: string, athleteIds: string[]): Pro
   return new Set(rows.map((row) => row.athlete_id));
 }
 
+function sameTracks(left: string[] | undefined, right: string[] | undefined): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return left.length === right.length && left.every((track, index) => track === right[index]);
+}
+
+/** One entry per athlete whose tracks differ between the stored map and the new one. */
+function trackChanges(from: Record<string, string[]>, to: Record<string, string[]>): TrackChange[] {
+  return [...new Set([...Object.keys(from), ...Object.keys(to)])]
+    .filter((athleteId) => !sameTracks(from[athleteId], to[athleteId]))
+    .sort()
+    .map((athleteId) => ({
+      athlete_id: athleteId,
+      from: from[athleteId] ?? null,
+      to: to[athleteId] ?? null,
+    }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -101,9 +144,12 @@ export async function GET(request: NextRequest) {
     // to anyone (OD-2026-10-07-010 ruling 3: tracks are for real athletes).
     const stored = storedAssignments(row?.assignments);
     const live = await liveAthleteIds(principal.organizationId, Object.keys(stored));
-    const assignments = Object.fromEntries(
-      Object.entries(stored).filter(([athleteId]) => live.has(athleteId)),
-    );
+    const assignments = emptyMap<string[]>();
+    for (const [athleteId, tracks] of Object.entries(stored)) {
+      if (live.has(athleteId)) {
+        assignments[athleteId] = tracks;
+      }
+    }
 
     return NextResponse.json({ ok: true, assignments });
   } catch (error) {
@@ -130,58 +176,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // The whole map is replaced. `previous` is read by the same statement that
-    // overwrites it, so the audit record's "from" is the row this write
-    // replaced rather than one read a round trip earlier.
-    const written = await queryOne<{ previous_assignments: unknown }>(
-      `with previous as (
-         select assignments
+    // ONE TRANSACTION: the lock, the read of what is there, the write and the
+    // audit record. The audit row is written on the same client, so a map
+    // that changed always has its record and a failed record leaves the map
+    // as it was -- the caller's "not saved" is then true. The lock is per gym,
+    // so two admins saving at once are taken one after the other and each
+    // one's "from" is the row it actually replaced.
+    await withTransaction(async (client) => {
+      await client.query(
+        `select pg_advisory_xact_lock(hashtext('ppbf.track-assignments:' || $1::text))`,
+        [principal.organizationId],
+      );
+      const previous = await client.query<{ assignments: unknown }>(
+        `select assignments
            from pilot.admin_track_assignments
-          where organization_id = $1
-       )
-       insert into pilot.admin_track_assignments (
-         organization_id,
-         assignments,
-         updated_by_account_id,
-         updated_at
-       ) values ($1, $2, $3, now())
-       on conflict (organization_id) do update
-       set assignments = excluded.assignments,
-           updated_by_account_id = excluded.updated_by_account_id,
-           updated_at = now()
-       returning (select assignments from previous) as previous_assignments`,
-      [principal.organizationId, JSON.stringify(assignments), principal.accountId],
-    );
+          where organization_id = $1`,
+        [principal.organizationId],
+      );
 
-    const from = storedAssignments(written?.previous_assignments);
-    const changedAthleteIds = [...new Set([...Object.keys(from), ...athleteIds])]
-      .filter((athleteId) => !sameTracks(from[athleteId], assignments[athleteId]))
-      .sort();
+      const changes = trackChanges(storedAssignments(previous.rows[0]?.assignments), assignments);
+      // The screen saves on load as well as on a click. A save that changes
+      // nothing writes nothing and records nothing: no change happened.
+      if (changes.length === 0) {
+        return;
+      }
 
-    await writePilotAuditEvent({
-      event_type: 'update',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'admin_track_assignments',
-      entity_id: principal.organizationId,
-      details: {
-        action: 'track_assignments_replaced',
-        changed_athlete_ids: changedAthleteIds,
-        from,
-        to: assignments,
-      },
+      await client.query(
+        `insert into pilot.admin_track_assignments (
+           organization_id,
+           assignments,
+           updated_by_account_id,
+           updated_at
+         ) values ($1, $2, $3, now())
+         on conflict (organization_id) do update
+         set assignments = excluded.assignments,
+             updated_by_account_id = excluded.updated_by_account_id,
+             updated_at = now()`,
+        [principal.organizationId, JSON.stringify(assignments), principal.accountId],
+      );
+
+      // Only the athletes whose tracks changed, each with its before and
+      // after, and the athlete id as a value rather than a jsonb key.
+      await writePilotAuditEvent({
+        event_type: 'update',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'admin_track_assignments',
+        entity_id: principal.organizationId,
+        details: { action: 'track_assignments_replaced', changes },
+      }, client);
     });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
     return jsonError(error);
   }
-}
-
-function sameTracks(left: string[] | undefined, right: string[] | undefined): boolean {
-  if (!left || !right) {
-    return left === right;
-  }
-  return left.length === right.length && [...left].sort().join('|') === [...right].sort().join('|');
 }

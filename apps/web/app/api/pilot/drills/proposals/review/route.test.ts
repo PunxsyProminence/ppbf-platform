@@ -148,6 +148,19 @@ describe('POST /api/pilot/drills/proposals/review', () => {
     },
   );
 
+  // The bar above is this route's alone. The shared reviewer check is left
+  // as it was, so the platform owner's evidence review elsewhere still passes
+  // (OD-2026-10-02-013 answer 5A, "as today"). The real helper, not a mock.
+  test('the shared reviewer check still admits platform_owner for evidence review', () => {
+    const { requireEvidenceReviewer } = jest.requireActual<typeof import('@/src/server/pilot/shadowLibrary')>(
+      '@/src/server/pilot/shadowLibrary',
+    );
+
+    expect(() => requireEvidenceReviewer('platform_owner')).not.toThrow();
+    expect(() => requireEvidenceReviewer('organization_admin')).not.toThrow();
+    expect(() => requireEvidenceReviewer('coach')).toThrow(/Forbidden/);
+  });
+
   test('surfaces the reviewer gate refusal as a 403', async () => {
     mockAdopt.mockRejectedValueOnce(
       new Error('Forbidden: SHADOW evidence review requires an organization administrator'),

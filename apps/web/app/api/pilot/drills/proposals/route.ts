@@ -193,6 +193,8 @@ function parseProposedChange(raw: unknown): Record<string, unknown> {
   return change;
 }
 
+const MAX_OBSERVATION_NOTE_IDS = 100;
+
 // observation_note_ids is a uuid[] column. An unvalidated non-UUID string
 // reaches Postgres as invalid input syntax (22P02) and surfaces as a 500 --
 // a caller's malformed id reported as a server fault.
@@ -203,10 +205,16 @@ function parseObservationNoteIds(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) {
     throw new Error('Unsupported observation_note_ids');
   }
+  if (raw.length > MAX_OBSERVATION_NOTE_IDS) {
+    throw new Error(`Unsupported observation_note_ids: at most ${MAX_OBSERVATION_NOTE_IDS}`);
+  }
   if (!raw.every((id) => isUuid(id))) {
     throw new Error('Unsupported observation_note_ids: each must be a UUID');
   }
-  return raw as string[];
+  // One spelling per note: a uuid is the same note in either letter case, and
+  // a note cited twice is cited once. This list is both what is checked and
+  // what is stored, so the two cannot differ.
+  return [...new Set((raw as string[]).map((id) => id.toLowerCase()))];
 }
 
 /**
@@ -225,7 +233,7 @@ async function requireObservationNotesInOrganization(
   organizationId: string,
   noteIds: string[] | undefined,
 ): Promise<void> {
-  const wanted = [...new Set((noteIds ?? []).map((id) => id.toLowerCase()))];
+  const wanted = noteIds ?? [];
   if (wanted.length === 0) {
     return;
   }

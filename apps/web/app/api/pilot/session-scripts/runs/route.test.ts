@@ -153,8 +153,8 @@ describe('platform owner is kept off session runs', () => {
     expect(mockStart).not.toHaveBeenCalled();
   });
 
-  it('lets organization_admin read the history and start a run', async () => {
-    asCoach('organization_admin');
+  it.each(['organization_admin', 'admin', 'coach'])('lets %s read the history and start a run', async (role) => {
+    asCoach(role);
     mockListSettled.mockResolvedValue([] as never);
     mockStart.mockResolvedValue(liveRun);
     const history = await GET(

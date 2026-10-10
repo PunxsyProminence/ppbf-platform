@@ -196,6 +196,26 @@ describe('GET unlocks thresholds', () => {
     expect(mockEvaluate).not.toHaveBeenCalled();
   });
 
+  test.each(['organization_admin', 'admin'])('the gym admin (%s) reads and changes the state', async (role) => {
+    mockPrincipal.mockResolvedValue({ accountId: 'admin-1', organizationId: 'org-1', role } as never);
+
+    const read = await GET(new NextRequest('http://localhost/api/pilot/shadow/unlocks'));
+    const changed = await POST(post(VALID_BODY));
+
+    expect(read.status).toBe(200);
+    expect(changed.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['athlete', 'parent', 'board'])('role %s may not read the state', async (role) => {
+    mockPrincipal.mockResolvedValue({ accountId: 'x-1', organizationId: 'org-1', role } as never);
+
+    const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/unlocks'));
+
+    expect(response.status).toBe(403);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
   test('a coach may read the state', async () => {
     mockPrincipal.mockResolvedValue({
       accountId: 'coach-1', organizationId: 'org-1', role: 'coach',

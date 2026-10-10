@@ -304,6 +304,19 @@ describe('POST /api/pilot/drills/proposals', () => {
 
       expect(res.status).toBe(201);
       expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', [NOTE_A]]);
+      // What was checked is what is stored: one entry, not two.
+      expect(mockPropose).toHaveBeenCalledWith(expect.objectContaining({ observationNoteIds: [NOTE_A] }));
+    });
+
+    test('more than 100 cited notes is a 400 and costs no query', async () => {
+      const ids = Array.from({ length: 101 }, (_, index) =>
+        `${String(index).padStart(8, '0')}-1111-4111-8111-111111111111`);
+
+      const res = await POST(postRequest({ ...validBody, observation_note_ids: ids }));
+
+      expect(res.status).toBe(400);
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockPropose).not.toHaveBeenCalled();
     });
 
     test.each([

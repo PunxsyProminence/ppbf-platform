@@ -339,6 +339,21 @@ describe('before the deletion (the positive control)', () => {
     expect(await memberIds()).toEqual(expect.arrayContaining([GONE_ACCOUNT, LIVE_ACCOUNT, EX_ATHLETE_COACH]));
   });
 
+  // The platform staff list (OD-2026-10-08-003 R3): the same reader with
+  // athlete memberships left out. Proven on real rows because a mocked db
+  // cannot tell a filter that works from one that only reads right.
+  test('with includeAthletes: false no athlete login is listed, and staff and guardians still are', async () => {
+    const shown = await listOrganizationMembers(ORG, { includeAthletes: false });
+    const ids = shown.map((member) => member.account_id);
+
+    expect(shown.map((member) => member.role)).not.toContain('athlete');
+    expect(ids).not.toContain(GONE_ACCOUNT);
+    expect(ids).not.toContain(LIVE_ACCOUNT);
+    expect(ids).toEqual(expect.arrayContaining([ADMIN, COACH, EX_ATHLETE_COACH, GUARDIAN, GUARDIAN_LIVE]));
+    // Nothing but the athlete rows went: the two lists differ by exactly them.
+    expect([...ids, GONE_ACCOUNT, LIVE_ACCOUNT].sort()).toEqual((await memberIds()).sort());
+  });
+
   test("the guardian-link list shows the guardian's link to both children", async () => {
     expect(await guardianLinks()).toEqual(expect.arrayContaining([`${GUARDIAN}:${GONE}`, `${GUARDIAN}:${LIVE}`]));
   });

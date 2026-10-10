@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
+import { GET as trackAssignmentsGET } from '@/app/api/pilot/admin/track-assignments/route';
 import { GET as coachIntelligenceGET } from '@/app/api/pilot/coach/intelligence/route';
-import { GET as floorPlansGET } from '@/app/api/pilot/floor-plans/route';
 import { GET as platformOrganizationsGET } from '@/app/api/pilot/platform/organizations/route';
 import { GET as progressionAssignmentsGET } from '@/app/api/pilot/progression/assignments/route';
 import { getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
@@ -179,16 +179,23 @@ test('PLATFORM: the platform owner still reads their roster of gyms', async () =
   });
 });
 
-test('ADMIN: an organization admin still reads the floor plans for their gym', async () => {
+// The ADMIN case used to read the floor-plans route. That route is deleted
+// (OD-2026-10-08-009 D20), so the same claim is made on another conventional
+// admin read: the gym's track assignments, SQL only, real handler.
+test('ADMIN: an organization admin still reads the track assignments for their gym', async () => {
   mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
-  databaseAnswers([
-    ['pilot.athlete_floor_plans', [{ athlete_id: 'ath-1', payload: { athleteName: 'Rosa', tasks: [] } }]],
-  ]);
+  mockQueryOne.mockResolvedValueOnce({ assignments: { 'ath-1': ['non_contact', 'usa_boxing'] } });
+  databaseAnswers([['from pilot.athletes', [{ athlete_id: 'ath-1' }]]]);
 
-  const response = await floorPlansGET(new NextRequest('http://localhost/api/pilot/floor-plans'));
+  const response = await trackAssignmentsGET(
+    new NextRequest('http://localhost/api/pilot/admin/track-assignments'),
+  );
 
   expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({ items: [{ athleteName: 'Rosa', tasks: [] }] });
+  await expect(response.json()).resolves.toEqual({
+    ok: true,
+    assignments: { 'ath-1': ['non_contact', 'usa_boxing'] },
+  });
 });
 
 test('COACH: the REAL Morning Read digest assembles, over the REAL access scope', async () => {

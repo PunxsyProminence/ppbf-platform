@@ -2026,7 +2026,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads pilot.admin_track_assignments: a map of athlete id to training track ids. Gate at route.ts:89-90. Returns only rows whose key is a live athlete of the caller's gym (route.ts:99-106); a row for an invented or deleted athlete is left out. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Reads pilot.admin_track_assignments: a map of athlete id to training track ids. Gate at route.ts:132-133. Returns only rows whose key is a live athlete of the caller's gym (route.ts:142-152); a row for an invented or deleted athlete is left out. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -2052,7 +2052,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Replaces the gym's whole assignments map. Gate at route.ts:116-117. Every key must be a live athlete of the caller's gym and every value a known track id, else 400 and nothing written (route.ts:119-131; OD-2026-10-07-010 ruling 3). Audited with entity admin_track_assignments and before/after (route.ts:161-174). platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Replaces the gym's whole assignments map. Gate at route.ts:162-163. Every key must be a live athlete of the caller's gym and every value a known track id, else 400 and nothing written (parseAssignments route.ts:61-93; athlete check route.ts:168-178; OD-2026-10-07-010 ruling 3). The lock, the read of the stored map, the write and the audit event (entity admin_track_assignments, one from/to entry per changed athlete) share one transaction (route.ts:185-229); a save that changes nothing writes and audits nothing. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -6485,7 +6485,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates a drill change proposal against a drill; writes proposal and audit event. Each cited observation_note_ids entry must be a pilot.coach_observations row in the caller's gym, else 400 and nothing stored (requireObservationNotesInOrganization). Whether the proposer may read each note is not checked (Overwatch, issue #1397 Q1: organization check only).",
+    "notes": "Creates a drill change proposal against a drill; writes proposal and audit event. observation_note_ids: at most 100, lower-cased and de-duplicated (parseObservationNoteIds), and each must be a pilot.coach_observations row in the caller's gym, else 400 and nothing stored (requireObservationNotesInOrganization, route.ts:232-250, called at :311). Any row of that table in the gym is accepted, whatever its note_type; whether the proposer may read each note is not checked (Overwatch, issue #1397 Q1: organization check only).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8241,7 +8241,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:13-14. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
+    "notes": "Promotes an account to organization_admin; gate assign-admin/route.ts:12-13. The audit event carries the target organization (route.ts:29-39). Account/role management, no athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9686,7 +9686,7 @@
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (sessionScriptRuns.ts:432). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

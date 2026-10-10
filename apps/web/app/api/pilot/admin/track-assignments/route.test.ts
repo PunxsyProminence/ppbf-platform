@@ -4,13 +4,17 @@
 //   what the route will store (live athletes of the caller's gym and known
 //     track ids, or nothing at all; OD-2026-10-07-010 ruling 3 -- tracks are
 //     for real athletes);
-//   that every stored change leaves an audit record with a before and after.
+//   that every stored change leaves an audit record with a before and after,
+//     written in the same transaction as the change.
+//
+// The database is mocked, so the SQL is asserted as text and is not executed
+// here. What Postgres does with it is not proven by this file.
 
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 // requireRole (access.ts) and jsonError stay real.
@@ -19,14 +23,25 @@ jest.mock('@/src/server/pilot/http', () => ({
   requirePrincipal: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
-jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
+jest.mock('@/src/server/pilot/db', () => ({
+  query: jest.fn(),
+  queryOne: jest.fn(),
+  withTransaction: jest.fn(),
+}));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockTransaction = withTransaction as jest.Mock;
 
 const URL_BASE = 'http://localhost/api/pilot/admin/track-assignments';
+
+/** The transaction's client. `stored` is the row the gym has before the POST. */
+const client = { query: jest.fn() };
+let stored: unknown;
+/** Everything the transaction did, in order: 'lock', 'read', 'write', 'audit'. */
+let steps: string[];
 
 function as(role: string, organizationId = 'org-1') {
   mockPrincipal.mockResolvedValue({ accountId: `${role}-1`, organizationId, role } as never);
@@ -50,16 +65,32 @@ function gymHasAthletes(...athleteIds: string[]) {
     params[1].filter((id) => athleteIds.includes(id)).map((athlete_id) => ({ athlete_id })));
 }
 
-function upsertCalls() {
-  return mockQueryOne.mock.calls.filter(([sql]) => /insert into pilot\.admin_track_assignments/.test(sql));
+function clientCalls(pattern: RegExp) {
+  return client.query.mock.calls.filter(([sql]) => pattern.test(sql));
 }
+
+const upserts = () => clientCalls(/insert into pilot\.admin_track_assignments/);
 
 beforeEach(() => {
   jest.resetAllMocks();
   as('organization_admin');
   gymHasAthletes('ath-1', 'ath-2');
-  mockQueryOne.mockResolvedValue({ assignments: {}, previous_assignments: null });
-  mockAudit.mockResolvedValue(undefined as never);
+  stored = undefined;
+  steps = [];
+  mockQueryOne.mockResolvedValue(null);
+  // A transaction that runs its body, and rethrows what the body throws (the
+  // real one rolls back and rethrows; see db.ts).
+  mockTransaction.mockImplementation(async (fn: (c: typeof client) => Promise<unknown>) => fn(client));
+  client.query.mockImplementation(async (sql: string) => {
+    if (/pg_advisory_xact_lock/.test(sql)) { steps.push('lock'); return { rows: [] }; }
+    if (/^\s*select assignments/.test(sql)) {
+      steps.push('read');
+      return { rows: stored === undefined ? [] : [{ assignments: stored }] };
+    }
+    steps.push('write');
+    return { rows: [] };
+  });
+  mockAudit.mockImplementation(async () => { steps.push('audit'); });
 });
 
 describe('platform owner is kept off track assignments', () => {
@@ -79,8 +110,8 @@ describe('platform owner is kept off track assignments', () => {
     const response = await POST(post({ assignments: { 'ath-1': ['non_contact'] } }));
 
     expect(response.status).toBe(403);
-    expect(mockQueryOne).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });
@@ -92,6 +123,7 @@ test.each(['coach', 'athlete', 'parent', 'board'])('role %s is refused on both v
   expect((await GET(get())).status).toBe(403);
   expect((await POST(post({ assignments: {} }))).status).toBe(403);
   expect(mockQueryOne).not.toHaveBeenCalled();
+  expect(mockTransaction).not.toHaveBeenCalled();
 });
 
 describe.each(['organization_admin', 'admin'])('the gym admin (%s)', (role) => {
@@ -115,8 +147,8 @@ describe.each(['organization_admin', 'admin'])('the gym admin (%s)', (role) => {
     const response = await POST(post({ assignments: { 'ath-1': ['non_contact'], 'ath-2': ['pro', 'a2p'] } }));
 
     expect(response.status).toBe(200);
-    expect(upsertCalls()).toHaveLength(1);
-    expect(upsertCalls()[0][1]).toEqual([
+    expect(upserts()).toHaveLength(1);
+    expect(upserts()[0][1]).toEqual([
       'org-1',
       JSON.stringify({ 'ath-1': ['non_contact'], 'ath-2': ['pro', 'a2p'] }),
       `${role}-1`,
@@ -138,9 +170,15 @@ describe('GET shows only rows for athletes the gym has today', () => {
     expect(params).toEqual(['org-1', ['ath-1', 'athlete-001', 'ath-gone']]);
   });
 
-  test('no stored row answers an empty map without an athlete lookup', async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
+  test('a stored key named like an object-prototype member is not read as one', async () => {
+    mockQueryOne.mockResolvedValueOnce({ assignments: { constructor: ['pro'], 'ath-1': ['pro'] } });
 
+    const response = await GET(get());
+
+    await expect(response.json()).resolves.toEqual({ ok: true, assignments: { 'ath-1': ['pro'] } });
+  });
+
+  test('no stored row answers an empty map without an athlete lookup', async () => {
     const response = await GET(get());
 
     expect(response.status).toBe(200);
@@ -154,7 +192,8 @@ describe('POST refuses anything that is not a real athlete with known tracks', (
     const response = await POST(post(body));
 
     expect(response.status).toBe(400);
-    expect(upsertCalls()).toHaveLength(0);
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
     return response;
   }
@@ -179,20 +218,30 @@ describe('POST refuses anything that is not a real athlete with known tracks', (
     expect(params).toEqual(['org-2', ['ath-1']]);
   });
 
-  test('an athlete of ANOTHER gym is not one of this gym\'s', async () => {
-    // The lookup is by the caller's organization, so the other gym's athlete
-    // is simply not returned.
-    gymHasAthletes('ath-1');
+  // On an ordinary object a `__proto__` key sets the prototype and vanishes,
+  // so the map would be saved without it and read as saved. It must be seen as
+  // what it is: a key that names no athlete.
+  test.each(['__proto__', 'constructor', 'toString'])(
+    'a key named %s is an athlete id like any other, and is refused',
+    async (key) => {
+      const response = await expectRefused(`{"assignments":{"${key}":["usa_boxing"],"ath-1":["pro"]}}`);
 
-    await expectRefused({ assignments: { 'other-gym-athlete': ['non_contact'] } });
-  });
+      await expect(response.json()).resolves.toEqual({
+        error: 'Unsupported assignments: 1 athlete id(s) are not athletes of this gym. Nothing was saved.',
+      });
+      expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', [key, 'ath-1']]);
+    },
+  );
 
   test.each([
     ['an unknown track id', { assignments: { 'ath-1': ['non_contact', 'heavyweight_champion'] } }],
     ['a non-string track', { assignments: { 'ath-1': [7] } }],
+    ['a null track', { assignments: { 'ath-1': [null] } }],
     ['tracks that are not a list', { assignments: { 'ath-1': 'non_contact' } }],
     ['a blank athlete id', { assignments: { ' ': ['non_contact'] } }],
     ['a padded athlete id', { assignments: { ' ath-1': ['non_contact'] } }],
+    ['an athlete id with a NUL in it', { assignments: { 'ath\u00001': ['non_contact'] } }],
+    ['an athlete id longer than the cap', { assignments: { ['a'.repeat(201)]: ['non_contact'] } }],
     ['assignments as a list', { assignments: [['ath-1', ['non_contact']]] }],
     ['assignments as a string', { assignments: 'ath-1' }],
     ['no assignments key', {}],
@@ -203,40 +252,34 @@ describe('POST refuses anything that is not a real athlete with known tracks', (
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('more athletes than the cap is a 400 before any lookup', async () => {
-    const assignments = Object.fromEntries(
-      Array.from({ length: 2001 }, (_, index) => [`ath-${index}`, ['non_contact']]),
+  test('2001 athletes is a 400 before any lookup; 2000 is not refused for size', async () => {
+    const many = (count: number) => Object.fromEntries(
+      Array.from({ length: count }, (_, index) => [`ath-${index}`, ['non_contact']]),
     );
 
-    await expectRefused({ assignments });
+    await expectRefused({ assignments: many(2001) });
     expect(mockQuery).not.toHaveBeenCalled();
-  });
 
-  test('an empty map is a real save: it clears the gym\'s assignments', async () => {
-    const response = await POST(post({ assignments: {} }));
-
-    expect(response.status).toBe(200);
-    expect(upsertCalls()[0][1][1]).toBe('{}');
-    expect(mockQuery).not.toHaveBeenCalled();
+    // At the cap the size check passes and the athlete lookup runs.
+    await POST(post({ assignments: many(2000) }));
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
   test('a track listed twice is stored once', async () => {
     await POST(post({ assignments: { 'ath-1': ['pro', 'pro'] } }));
 
-    expect(upsertCalls()[0][1][1]).toBe(JSON.stringify({ 'ath-1': ['pro'] }));
+    expect(upserts()[0][1][1]).toBe(JSON.stringify({ 'ath-1': ['pro'] }));
   });
 });
 
-describe('every stored change is audited with a before and after', () => {
-  test('the audit row names the gym, the actor, and what changed', async () => {
-    mockQueryOne.mockResolvedValueOnce({
-      previous_assignments: { 'ath-1': ['non_contact'], 'ath-2': ['pro'] },
-    });
+describe('every stored change is audited, in the same transaction as the change', () => {
+  test('the audit row names the gym, the actor, and each changed athlete with before and after', async () => {
+    stored = { 'ath-1': ['non_contact'], 'ath-2': ['pro'] };
 
     await POST(post({ assignments: { 'ath-1': ['usa_boxing'], 'ath-2': ['pro'] } }));
 
     expect(mockAudit).toHaveBeenCalledTimes(1);
-    expect(mockAudit).toHaveBeenCalledWith({
+    expect(mockAudit.mock.calls[0][0]).toEqual({
       event_type: 'update',
       actor_account_id: 'organization_admin-1',
       actor_role: 'organization_admin',
@@ -245,71 +288,153 @@ describe('every stored change is audited with a before and after', () => {
       entity_id: 'org-1',
       details: {
         action: 'track_assignments_replaced',
-        changed_athlete_ids: ['ath-1'],
-        from: { 'ath-1': ['non_contact'], 'ath-2': ['pro'] },
-        to: { 'ath-1': ['usa_boxing'], 'ath-2': ['pro'] },
+        changes: [{ athlete_id: 'ath-1', from: ['non_contact'], to: ['usa_boxing'] }],
       },
     });
   });
 
-  test('the before-state comes from the statement that overwrote it', async () => {
+  test('lock, then read what is there, then write, then audit; all on the transaction\'s client', async () => {
     await POST(post({ assignments: { 'ath-1': ['pro'] } }));
 
-    const [sql] = upsertCalls()[0];
-    expect(sql).toMatch(/with previous as \(\s*select assignments\s+from pilot\.admin_track_assignments\s+where organization_id = \$1/);
-    expect(sql).toMatch(/returning \(select assignments from previous\) as previous_assignments/);
-    // One read-and-write statement, and no separate read before it.
-    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(steps).toEqual(['lock', 'read', 'write', 'audit']);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // The audit row rides the same client, so it commits or rolls back with
+    // the write.
+    expect(mockAudit.mock.calls[0][1]).toBe(client);
+    // Neither the read of the previous row nor the write goes through the
+    // pool's autocommit helpers.
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledTimes(1); // the athlete lookup only
   });
 
-  test('a first save records an empty before', async () => {
-    mockQueryOne.mockResolvedValueOnce({ previous_assignments: null });
+  test('the lock and the read are for the caller\'s gym', async () => {
+    as('organization_admin', 'org-2');
 
     await POST(post({ assignments: { 'ath-1': ['pro'] } }));
 
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
-      details: expect.objectContaining({ from: {}, to: { 'ath-1': ['pro'] }, changed_athlete_ids: ['ath-1'] }),
-    }));
+    const [lockSql, lockParams] = clientCalls(/pg_advisory_xact_lock/)[0];
+    expect(lockSql).toContain("hashtext('ppbf.track-assignments:' || $1::text)");
+    expect(lockParams).toEqual(['org-2']);
+    const [readSql, readParams] = clientCalls(/^\s*select assignments/)[0];
+    expect(readSql).toMatch(/from pilot\.admin_track_assignments\s+where organization_id = \$1/);
+    expect(readParams).toEqual(['org-2']);
+    expect(upserts()[0][1][0]).toBe('org-2');
   });
 
-  test('a removed athlete and an added athlete are both named as changed', async () => {
-    mockQueryOne.mockResolvedValueOnce({ previous_assignments: { 'ath-1': ['pro'] } });
+  test('a first save records each athlete with no before', async () => {
+    await POST(post({ assignments: { 'ath-1': ['pro'] } }));
+
+    expect(mockAudit.mock.calls[0][0].details).toEqual({
+      action: 'track_assignments_replaced',
+      changes: [{ athlete_id: 'ath-1', from: null, to: ['pro'] }],
+    });
+  });
+
+  test('a removed athlete and an added athlete are both recorded', async () => {
+    stored = { 'ath-1': ['pro'] };
 
     await POST(post({ assignments: { 'ath-2': ['pro'] } }));
 
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
-      details: expect.objectContaining({ changed_athlete_ids: ['ath-1', 'ath-2'] }),
-    }));
+    expect(mockAudit.mock.calls[0][0].details.changes).toEqual([
+      { athlete_id: 'ath-1', from: ['pro'], to: null },
+      { athlete_id: 'ath-2', from: null, to: ['pro'] },
+    ]);
   });
 
-  test('the same tracks in another order are not a change to that athlete', async () => {
-    mockQueryOne.mockResolvedValueOnce({ previous_assignments: { 'ath-1': ['pro', 'a2p'] } });
+  test('clearing the map is a change: every stored athlete is recorded as removed', async () => {
+    stored = { 'ath-1': ['pro'] };
+
+    const response = await POST(post({ assignments: {} }));
+
+    expect(response.status).toBe(200);
+    expect(upserts()[0][1][1]).toBe('{}');
+    expect(mockAudit.mock.calls[0][0].details.changes).toEqual([
+      { athlete_id: 'ath-1', from: ['pro'], to: null },
+    ]);
+  });
+
+  test('a changed order of the same tracks is a change', async () => {
+    stored = { 'ath-1': ['pro', 'a2p'] };
 
     await POST(post({ assignments: { 'ath-1': ['a2p', 'pro'] } }));
 
-    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
-      details: expect.objectContaining({ changed_athlete_ids: [] }),
-    }));
+    expect(upserts()).toHaveLength(1);
+    expect(mockAudit.mock.calls[0][0].details.changes).toEqual([
+      { athlete_id: 'ath-1', from: ['pro', 'a2p'], to: ['a2p', 'pro'] },
+    ]);
   });
 
-  test('the audit is written after the write, never before', async () => {
-    const order: string[] = [];
-    mockQueryOne.mockImplementation(async () => { order.push('write'); return { previous_assignments: null }; });
-    mockAudit.mockImplementation(async () => { order.push('audit'); });
+  test('a stored row keyed by an object-prototype name is recorded as a plain removed key', async () => {
+    // A row stored before keys were checked. Read through a prototype it would
+    // come back as a function and the comparison would throw.
+    stored = { constructor: ['pro'], 'ath-1': ['pro'] };
 
-    await POST(post({ assignments: { 'ath-1': ['pro'] } }));
+    const response = await POST(post({ assignments: { 'ath-1': ['pro'] } }));
 
-    expect(order).toEqual(['write', 'audit']);
+    expect(response.status).toBe(200);
+    expect(mockAudit.mock.calls[0][0].details.changes).toEqual([
+      { athlete_id: 'constructor', from: ['pro'], to: null },
+    ]);
+  });
+});
+
+describe('a save that changes nothing', () => {
+  // The screen saves once on load as well as on a click.
+  test.each([
+    ['the map already stored', { 'ath-1': ['pro'], 'ath-2': ['a2p'] }, { 'ath-2': ['a2p'], 'ath-1': ['pro'] }],
+    ['an empty map over an empty row', {}, {}],
+    ['an empty map when there is no row', undefined, {}],
+  ])('%s writes nothing and audits nothing, and still answers ok', async (_name, before, sent) => {
+    stored = before;
+
+    const response = await POST(post({ assignments: sent }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(steps).toEqual(['lock', 'read']);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('when part of the save fails, the caller is told it did not save', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    jest.mocked(console.error).mockRestore();
   });
 
-  test('a failed write is not audited', async () => {
-    mockQueryOne.mockRejectedValueOnce(new Error('connection lost'));
-    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  test('a failed write is a 500 and is not audited', async () => {
+    client.query.mockImplementation(async (sql: string) => {
+      if (/insert into/.test(sql)) throw new Error('connection lost');
+      return { rows: [] };
+    });
 
     const response = await POST(post({ assignments: { 'ath-1': ['pro'] } }));
 
     expect(response.status).toBe(500);
     expect(mockAudit).not.toHaveBeenCalled();
-    spy.mockRestore();
+  });
+
+  test('a failed audit fails the transaction it shares with the write', async () => {
+    // With the real withTransaction a throw inside the body is a ROLLBACK, so
+    // the map is as it was and "not saved" is true. What this mock can show is
+    // that the audit failure is thrown INSIDE the transaction body rather than
+    // after it has returned.
+    let bodyRejected = false;
+    mockTransaction.mockImplementation(async (fn: (c: typeof client) => Promise<unknown>) => {
+      try {
+        return await fn(client);
+      } catch (error) {
+        bodyRejected = true;
+        throw error;
+      }
+    });
+    mockAudit.mockRejectedValueOnce(new Error('audit insert refused'));
+
+    const response = await POST(post({ assignments: { 'ath-1': ['pro'] } }));
+
+    expect(response.status).toBe(500);
+    expect(bodyRejected).toBe(true);
   });
 });
