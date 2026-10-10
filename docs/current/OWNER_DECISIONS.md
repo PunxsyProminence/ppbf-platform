@@ -164,6 +164,38 @@ and should not try to.
 
 ---
 
+## OD-2026-10-10-003 -- "A on all, go with your recommendations": enquiries setting on both environments, lane briefs as GitHub issues, staff notes staff-only, org admin withdraws a departed coach's capacity note, storage role for the retention job
+
+**Provenance: PRIMARY.** Jason's typed message in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; line 23632, 2026-10-10T14:26:54.997Z), answering the six numbered questions overwatch put at line 23628 (2026-10-10T13:50:14.210Z). Read by script (records pass, 2026-10-10); each question is quoted as overwatch wrote it, markdown included. Timestamps UTC. New; edits no earlier entry.
+
+**Question 1.** Overwatch, as written: "**Website enquiries switch.** Set `PPBF_PUBLIC_INTEREST_ORG_ID` on: A (recommended) staging and production, then redeploy / B production only / C you set it. *Plain: enquiries still land where ppbf@ can't see them.*"
+
+**Question 2.** Overwatch, as written: "**Lane briefs as GitHub issues.** A (recommended) yes, one issue per lane / B keep pasting files. *Plain: you'd start a cloud lane with one line instead of a long paste.*"
+
+**Question 3.** Overwatch, as written: "**Coach's session note and families.** A (recommended) staff only / B shared when the coach ticks "share" / C always. *Plain: the note box is being built; who reads it is yours.*"
+
+**Question 4.** Overwatch, as written: "**Departed coach's capacity note.** May the org admin withdraw it? A (recommended) yes, audited / B no."
+
+**Question 5.** Overwatch, as written: "**Storage role for the retention job.** Grant it "Storage Blob Data Contributor"? A (recommended) yes / B no. *Plain: without it, deleting a removed person's video files fails.*"
+
+**Question 6.** Overwatch, as written: "**ChatGPT.** Sign in to it in the in-app browser pane so I can relay the status and three architect questions."
+
+Jason, line 23632 (2026-10-10T14:26:54.997Z): *"A on all, go with your recommendations"*
+
+**Rulings (option A of each lettered question):**
+1. `PPBF_PUBLIC_INTEREST_ORG_ID` is set to `punxsy_prominence` on the staging and production GitHub environments, and both are redeployed so website enquiries reach the gym.
+2. Overwatch may create one GitHub issue per lane holding its brief; a lane is started by pointing it at its issue, and questions and answers may live there.
+3. A coach's own session note is staff only: no athlete or parent view.
+4. The organization admin may withdraw a physical-capacity note written by a coach who has left; the withdrawal is audited.
+5. The retention job is to be granted "Storage Blob Data Contributor" on the video storage account, so the purge of a deleted person's video files can delete them.
+
+**Not a ruling:** question 6 asked Jason to sign in to ChatGPT; it has no option A and nothing is recorded for it. "go with your recommendations" is also read as his go-ahead for the coordination plan as written (`Documents\PPBF-overwatch\lane-inbox\COORDINATION-PLAN-2026-10-10.md`): overwatch's reading, not his words.
+
+**Not ruled here:** who performs the Azure role assignment in ruling 5 (overwatch prepares the exact command; an Azure permission change is made by Jason or on his word for that command).
+
+---
+
+
 ## OD-2026-10-10-002 -- VS Code runs build lanes on neeko@ ("B: Keep neeko@ in VS Code"); admin@ takes the browser cloud lanes; VS Code Claude in panel mode
 
 **Provenance: PRIMARY.** Jason's typed message and his selections on two question cards in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given with each quote). Read by script (records pass, 2026-10-10). A card answer is a button pick, quoted exactly; questions and options are quoted as overwatch wrote them. The account found in the VS Code configuration folder is OBSERVED by overwatch (the `oauthAccount.emailAddress` field of `C:\Users\jason\.claude-admin\.claude.json`; no credential was read). Amends OD-2026-10-10-001's "Not ruled here" on which work goes to which account; edits no entry.
