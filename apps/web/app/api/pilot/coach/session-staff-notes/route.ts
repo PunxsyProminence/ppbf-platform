@@ -65,9 +65,14 @@ function present(row: ListedSessionStaffNote) {
   };
 }
 
+// Postgres text cannot hold a NUL byte; one in an id or a note would be a
+// database error answered as a 500.
+const NUL = '\u0000';
+
 function textFrom(value: unknown, field: string): string {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!text) throw new ValidationError(`Missing ${field}`);
+  if (text.includes(NUL)) throw new ValidationError(`${field} is not valid`);
   return text;
 }
 
@@ -85,7 +90,7 @@ async function bodyOf(request: NextRequest): Promise<Record<string, unknown>> {
     throw new ValidationError('Request body must be a JSON object');
   }
   const body = parsed as Record<string, unknown>;
-  if (typeof body.note !== 'string') throw new ValidationError('note must be text');
+  if (typeof body.note !== 'string' || body.note.includes(NUL)) throw new ValidationError('note must be text');
   return body;
 }
 

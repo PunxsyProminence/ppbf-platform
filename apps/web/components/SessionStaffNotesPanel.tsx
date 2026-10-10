@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 // Staff notes on one athlete's session (OD-2026-10-06-025 ruling 4): the
 // athlete's own note stays theirs, and a coach or organization admin adds a
@@ -54,7 +54,8 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
   const [editing, setEditing] = useState<{ noteId: string; text: string } | null>(null);
   // Removal takes two taps: the first asks, the second removes.
   const [removing, setRemoving] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Which write is in flight, so only that action's button says so.
+  const [busy, setBusy] = useState<'add' | 'change' | 'remove' | null>(null);
   // The heading names the action that failed: a refused removal is not "not saved".
   const [refusal, setRefusal] = useState<{ heading: string; text: string } | null>(null);
   // Each read gets a number; only the newest read of an OPEN panel may land.
@@ -94,12 +95,14 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
   }, [athleteId, sessionId]);
 
   const toggle = useCallback(() => {
-    setRefusal(null);
     setEditing(null);
     setRemoving(null);
     if (isOpen.current) {
       isOpen.current = false;
       setReading({ state: 'closed' });
+      // Cleared on closing only: a refusal that lands after the coach closed
+      // the panel is still there to read when it is opened again.
+      setRefusal(null);
     } else {
       void read();
     }
@@ -109,9 +112,14 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
   // server's own yes; the list is then re-read (unless the coach closed the
   // panel meanwhile -- a write must never reopen what the coach closed).
   const write = useCallback(
-    async (request: { url: string; method: string; body?: unknown }, failed: { heading: string; verb: string }, done: () => void) => {
+    async (
+      kind: 'add' | 'change' | 'remove',
+      request: { url: string; method: string; body?: unknown },
+      failed: { heading: string; verb: string },
+      done: () => void,
+    ) => {
       setRefusal(null);
-      setBusy(true);
+      setBusy(kind);
       try {
         const response = await fetch(`${apiBase()}${request.url}`, {
           method: request.method,
@@ -128,32 +136,45 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
               ? payload.error
               : `The note was not ${failed.verb} (${response.status}).`,
           });
+          // "No such note" means the list on screen is out of date (removed
+          // on another device): show what is there now.
+          if (response.status === 404 && isOpen.current) await read();
           return;
         }
         done();
         if (isOpen.current) await read();
       } catch {
-        setRefusal({ heading: failed.heading, text: `The note was not ${failed.verb} — the connection failed. Nothing changed.` });
+        // The request may have reached the server before the connection
+        // dropped, so "nothing changed" would be a guess. Say what is known
+        // and re-read, so a coach does not add the same note twice.
+        setRefusal({
+          heading: 'CONNECTION FAILED',
+          text: `The note may not have been ${failed.verb}. Check the list below before trying again.`,
+        });
+        if (isOpen.current) await read();
       } finally {
-        setBusy(false);
+        setBusy(null);
       }
     },
     [read],
   );
 
   const add = () => write(
+    'add',
     { url: ROUTE, method: 'POST', body: { session_id: sessionId, athlete_id: athleteId, note: draft } },
     { heading: 'NOT SAVED', verb: 'saved' },
     () => setDraft(''),
   );
 
   const saveEdit = (noteId: string, text: string) => write(
+    'change',
     { url: ROUTE, method: 'PATCH', body: { note_id: noteId, note: text } },
     { heading: 'NOT CHANGED', verb: 'changed' },
     () => setEditing(null),
   );
 
   const remove = (noteId: string) => write(
+    'remove',
     { url: `${ROUTE}?note_id=${encodeURIComponent(noteId)}`, method: 'DELETE' },
     { heading: 'NOT REMOVED', verb: 'removed' },
     () => setRemoving(null),
@@ -201,12 +222,14 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
                 ) : (
                   <ul className="space-y-[var(--s3)]" aria-label="Staff notes, oldest first">
                     {reading.notes.map((row) => {
-                      const day = formatGymDateNumeric(row.created_at);
+                      // Date and time: a coach may add one note before a
+                      // session and another after it on the same day.
+                      const when = formatGymDateTimeShort(row.created_at) ?? formatGymDateNumeric(row.created_at);
                       const edit = editing?.noteId === row.note_id ? editing : null;
                       return (
                         <li key={row.note_id} className="t-body">
                           <p className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                            {day} · {row.author_name}{row.own ? ' (you)' : ''}
+                            {when} · {row.author_name}{row.own ? ' (you)' : ''}
                           </p>
                           {edit ? (
                             <div className="field mt-[var(--s1)]">
@@ -223,13 +246,13 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
                                 <button
                                   type="button"
                                   className="btn"
-                                  disabled={busy || edit.text.trim() === ''}
-                                  aria-busy={busy}
+                                  disabled={busy !== null || edit.text.trim() === '' || edit.text.trim() === row.note}
+                                  aria-busy={busy === 'change'}
                                   onClick={() => void saveEdit(row.note_id, edit.text)}
                                 >
-                                  {busy ? 'Saving…' : 'Save change'}
+                                  {busy === 'change' ? 'Saving…' : 'Save change'}
                                 </button>
-                                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setEditing(null)}>
+                                <button type="button" className="btn btn--ghost" disabled={busy !== null} onClick={() => setEditing(null)}>
                                   Cancel
                                 </button>
                               </div>
@@ -244,13 +267,13 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
                                   <button
                                     type="button"
                                     className="btn"
-                                    disabled={busy}
-                                    aria-busy={busy}
+                                    disabled={busy !== null}
+                                    aria-busy={busy === 'remove'}
                                     onClick={() => void remove(row.note_id)}
                                   >
-                                    {busy ? 'Removing…' : 'Yes, remove this note'}
+                                    {busy === 'remove' ? 'Removing…' : 'Yes, remove this note'}
                                   </button>
-                                  <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setRemoving(null)}>
+                                  <button type="button" className="btn btn--ghost" disabled={busy !== null} onClick={() => setRemoving(null)}>
                                     Keep it
                                   </button>
                                 </>
@@ -259,18 +282,18 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
                                   <button
                                     type="button"
                                     className="btn btn--ghost"
-                                    disabled={busy}
+                                    disabled={busy !== null}
                                     onClick={() => { setRefusal(null); setRemoving(null); setEditing({ noteId: row.note_id, text: row.note }); }}
-                                    aria-label={`Change your note from ${day}`}
+                                    aria-label={`Change your note from ${when}`}
                                   >
                                     Change
                                   </button>
                                   <button
                                     type="button"
                                     className="btn btn--ghost"
-                                    disabled={busy}
+                                    disabled={busy !== null}
                                     onClick={() => { setRefusal(null); setEditing(null); setRemoving(row.note_id); }}
-                                    aria-label={`Remove your note from ${day}`}
+                                    aria-label={`Remove your note from ${when}`}
                                   >
                                     Remove
                                   </button>
@@ -316,11 +339,11 @@ export default function SessionStaffNotesPanel({ sessionId, athleteId }: { sessi
                 <button
                   type="button"
                   className="btn"
-                  disabled={busy || draft.trim() === ''}
-                  aria-busy={busy}
+                  disabled={busy !== null || draft.trim() === ''}
+                  aria-busy={busy === 'add'}
                   onClick={() => void add()}
                 >
-                  {busy ? 'Saving…' : 'Add note'}
+                  {busy === 'add' ? 'Saving…' : 'Add note'}
                 </button>
               </div>
             </>

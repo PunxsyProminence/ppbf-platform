@@ -152,7 +152,13 @@ describe('staff only: every other role is refused on every verb before the modul
 });
 
 describe('GET', () => {
-  it.each([['no session', '?athlete_id=ath-1'], ['a blank session', '?session_id=%20&athlete_id=ath-1'], ['no athlete', '?session_id=sess-1']])(
+  it.each([
+    ['no session', '?athlete_id=ath-1'],
+    ['a blank session', '?session_id=%20&athlete_id=ath-1'],
+    ['no athlete', '?session_id=sess-1'],
+    ['a NUL byte in the session id', '?session_id=sess%00&athlete_id=ath-1'],
+    ['a NUL byte in the athlete id', '?session_id=sess-1&athlete_id=ath%00'],
+  ])(
     'refuses %s with a 400 and reads nothing',
     async (_label, query) => {
       mockPrincipal.mockResolvedValue(COACH);
@@ -242,6 +248,8 @@ describe('POST', () => {
     ['no athlete', { athlete_id: undefined }],
     ['a note that is not text', { note: 7 }],
     ['a body that omits the note', { note: undefined }],
+    ['a note holding a NUL byte', { note: 'a\u0000b' }],
+    ['a session id holding a NUL byte', { session_id: 'sess\u0000' }],
   ])('refuses %s with a 400 and writes nothing', async (_label, change) => {
     mockPrincipal.mockResolvedValue(COACH);
     // JSON drops `undefined`, which is how a case omits a key.
@@ -287,6 +295,7 @@ describe('PATCH', () => {
     ['a hand-crafted note id', { note_id: 'abc' }],
     ['a note id that is not text', { note_id: 7 }],
     ['a note that is not text', { note: null }],
+    ['a note holding a NUL byte', { note: 'a\u0000b' }],
   ])('refuses %s with a 400 and changes nothing', async (_label, change) => {
     mockPrincipal.mockResolvedValue(COACH);
     expect((await patch({ note_id: NOTE_ID, note: 'x', ...change })).status).toBe(400);

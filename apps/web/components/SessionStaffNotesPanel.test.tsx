@@ -206,18 +206,139 @@ test('a refused change says NOT CHANGED and keeps the edit open; a refused remov
   await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('NOT REMOVED'));
   alert = screen.getByRole('alert');
   expect(alert.textContent).not.toContain('NOT CHANGED');
+  // The 403 left the list alone; "no such note" (404) re-read it, and the
+  // refusal is still on screen beside what the server lists now.
+  await waitFor(() => expect(gets).toHaveLength(2));
   expect((await noteList()).textContent).toContain('keep it light.');
-  expect(gets).toHaveLength(1);
+  expect(screen.getByRole('alert').textContent).toContain('No such staff note.');
 });
 
-test('a write whose connection fails says nothing changed', async () => {
+test('a note removed elsewhere leaves the list once the server says it is gone', async () => {
+  let notes: unknown[] = [THEIRS, MINE];
+  serve(() => loaded(notes), () => {
+    notes = [THEIRS];
+    return respond({ error: 'No such staff note.' }, 404);
+  });
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Remove your note/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, remove this note' }));
+  await waitFor(async () => expect((await noteList()).querySelectorAll('li')).toHaveLength(1));
+  expect(screen.queryByRole('button', { name: 'Yes, remove this note' })).toBeNull();
+  expect(screen.getByRole('alert').textContent).toContain('NOT REMOVED');
+});
+
+test('two notes of your own on one day get different button names, by time', async () => {
+  serve(() => loaded([MINE, { ...MINE, note_id: 'note-3', note: 'After: moved well.', created_at: '2026-10-08T21:30:00.000Z' }]));
+  openPanel();
+  await noteList();
+  const names = screen.getAllByRole('button', { name: /^Change your note/ }).map((button) => button.getAttribute('aria-label'));
+  expect(names).toHaveLength(2);
+  expect(new Set(names).size).toBe(2);
+});
+
+test('while one write is in flight every write button is off, and only that action says it is working', async () => {
+  let finish: (response: Response) => void = () => undefined;
+  serve(() => loaded([MINE]), () => new Promise<Response>((resolve) => { finish = resolve; }));
+  openPanel();
+  await noteList();
+  fireEvent.change(draftField(), { target: { value: 'another' } });
+  fireEvent.click(addButton());
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(addButton().textContent).toBe('Saving…');
+  expect(addButton().disabled).toBe(true);
+  const change = screen.getByRole('button', { name: /^Change your note/ }) as HTMLButtonElement;
+  const remove = screen.getByRole('button', { name: /^Remove your note/ }) as HTMLButtonElement;
+  expect(change.disabled).toBe(true);
+  expect(remove.disabled).toBe(true);
+  expect(remove.textContent).toBe('Remove');
+  fireEvent.click(change);
+  fireEvent.click(remove);
+  expect(writes).toHaveLength(1);
+  await act(async () => {
+    finish(respond({ ok: true, note_id: 'note-9' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(writes).toHaveLength(1);
+});
+
+test('an unchanged note cannot be saved as a change', async () => {
+  serve(() => loaded([MINE]));
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Change your note/ }));
+  const save = screen.getByRole('button', { name: 'Save change' }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Change your note'), { target: { value: `${MINE.note} ` } });
+  expect(save.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Change your note'), { target: { value: 'After: moved well.' } });
+  expect(save.disabled).toBe(false);
+});
+
+test('hiding the panel drops an open change and a pending removal', async () => {
+  serve(() => loaded([MINE]));
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Change your note/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
+  await noteList();
+  expect(screen.queryByLabelText('Change your note')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /^Remove your note/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
+  await noteList();
+  expect(screen.queryByRole('button', { name: 'Yes, remove this note' })).toBeNull();
+  expect(writes).toHaveLength(0);
+});
+
+test('an older read that lands after a newer one is dropped -- the newest read wins', async () => {
+  const pending: Array<(response: Response) => void> = [];
+  serve(() => new Promise<Response>((resolve) => { pending.push(resolve); }));
+  openPanel();
+  fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
+  await waitFor(() => expect(pending).toHaveLength(2));
+  await act(async () => {
+    pending[1](loaded([MINE]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await screen.findByText(/keep it light\./);
+  await act(async () => {
+    pending[0](loaded([THEIRS]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(screen.queryByText('Parent asked about Saturday.')).toBeNull();
+  expect(screen.getByText(/keep it light\./)).toBeTruthy();
+});
+
+test('a refusal that lands after the coach closed the panel is there when it is opened again', async () => {
+  let finish: (response: Response) => void = () => undefined;
+  serve(() => loaded([]), () => new Promise<Response>((resolve) => { finish = resolve; }));
+  openPanel();
+  await screen.findByText('No staff notes on this session yet.');
+  fireEvent.change(draftField(), { target: { value: 'kept' } });
+  fireEvent.click(addButton());
+  await waitFor(() => expect(writes).toHaveLength(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+  await act(async () => {
+    finish(respond({ error: 'This account may not read or write staff notes for this athlete.' }, 403));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('NOT SAVED');
+  expect(draftField().value).toBe('kept');
+});
+
+test('a write whose connection fails does not claim nothing changed: it says the note may not have been saved and re-reads the list', async () => {
   serve(() => loaded([]), () => { throw new Error('offline'); });
   openPanel();
   await screen.findByText('No staff notes on this session yet.');
   fireEvent.change(draftField(), { target: { value: 'kept' } });
   fireEvent.click(addButton());
   const alert = await screen.findByRole('alert');
-  expect(alert.textContent).toContain('the connection failed. Nothing changed.');
+  expect(alert.textContent).toContain('CONNECTION FAILED');
+  expect(alert.textContent).toContain('The note may not have been saved. Check the list below before trying again.');
+  expect(alert.textContent).not.toContain('Nothing changed');
+  await waitFor(() => expect(gets).toHaveLength(2));
   expect(draftField().value).toBe('kept');
 });
 

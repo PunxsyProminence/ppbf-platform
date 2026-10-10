@@ -32,9 +32,8 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * for an athlete assertActorCanAccessAthlete lets them reach (a coach's own
  * athletes plus live coverage; an org admin's whole gym; never a deleted
  * athlete), run with the MEMBERSHIP role. Athletes, guardians, volunteers,
- * board and platform_owner get nothing from this module: whether the athlete
- * or family sees staff notes on their session is a separate decision nobody
- * has made yet.
+ * board and platform_owner get nothing from this module: staff notes are
+ * STAFF ONLY, with no athlete or parent view (OD-2026-10-10-003 ruling 3).
  *
  * THE SESSION MUST BE THAT ATHLETE'S. The table's foreign keys pin the session
  * and the athlete to this organization separately; that the session belongs
@@ -45,8 +44,8 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * SAME transaction. The note text stays out of the audit row; the table
  * holds it. shadow_mirror: false, because the mirrored shadow_events row
  * would be readable by the athlete and their guardians through
- * /api/pilot/shadow/events (tied by details.athlete_id), and whether the
- * family sees staff notes is not decided.
+ * /api/pilot/shadow/events (tied by details.athlete_id), and staff notes are
+ * staff only (OD-2026-10-10-003 ruling 3).
  */
 
 export const STAFF_NOTE_ROLES = ['coach', 'organization_admin', 'admin'] as const;
