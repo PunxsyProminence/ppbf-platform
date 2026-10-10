@@ -1,8 +1,12 @@
 // Core SHADOW Chat Validation Engine
 // Doctrine enforcement through request validation, topic classification, and response filtering
 
-import { assertActorCanAccessAthlete } from './access';
+import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
+import { getCurrentContactCap, isCapSet } from './athleteContactCaps';
+import { MINOR_LIMIT_TYPES, readAthleteMinorLimits } from './athleteMinorLimits';
 import type { PilotRole } from './contracts';
+import { ForbiddenError } from './errors';
+import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
 
@@ -65,8 +69,8 @@ export interface ShadowContextResult {
   authorized: boolean;
   reason?: string;
   /**
-   * Server-derived ids for records injected into the context (currently
-   * near-miss events). Authorized for citation validation the same way
+   * Server-derived ids for records injected into the context (near-miss
+   * events, and the coach-set limit and contact-cap rows). Authorized for citation validation the same way
    * platform-rollup ids are, and like them kept out of the library bundle's
    * citation persistence -- they are organization records, not library
    * evidence.
@@ -628,6 +632,77 @@ export function validateShadowRequest(
 const NEAR_MISS_CONTEXT_WITHHELD =
   'Recorded safety events are not available in this context. For intensity, contact, or progression questions, defer to the athlete\'s coach.';
 
+/**
+ * The coach-set limits for one athlete, for a coach-facing chat (lane P4,
+ * PR 2): heat, weight cut and supervision from athleteMinorLimits, contact
+ * level from athleteContactCaps -- its only home.
+ *
+ * STAFF ONLY (OD-2026-10-08-007, minors' limits questions Q5 and Q6: a
+ * child's limits are staff only, and only coach-facing SHADOW reads them;
+ * athlete and parent chats keep deferring to the coach). Three gates, each
+ * BEFORE any limit reaches this process's prompt:
+ *   1. retrieveShadowContext returns for every role outside
+ *      DECISION_LOOP_ROLES before it calls this;
+ *   2. the same check here, before either read, so a new caller cannot walk
+ *      past it and an excluded role causes no read;
+ *   3. the limits modules' own check: an ACTIVE staff membership in this
+ *      organization, then the athlete chokepoint run with that membership
+ *      role. Their refusal returns null here -- nothing is said about
+ *      limits, set or not.
+ *
+ * Null = say nothing. Never throws: a read that FAILED (not refused) comes
+ * back 'unavailable' for that part, so the model is told the limit is
+ * unknown instead of reading an outage as "No limit set". The two reads are
+ * independent; one failing does not hide the other.
+ */
+export async function loadShadowAthleteLimits(
+  actor: ActorIdentity,
+  athleteId: string,
+): Promise<ShadowAthleteLimits | null> {
+  if (!DECISION_LOOP_ROLES.includes(actor.role)) return null;
+
+  const [limits, cap] = await Promise.allSettled([
+    readAthleteMinorLimits(actor, athleteId),
+    getCurrentContactCap(actor, athleteId),
+  ]);
+  const failures = [limits, cap].filter((result) => result.status === 'rejected');
+  if (failures.some((result) => result.reason instanceof ForbiddenError)) return null;
+  for (const failure of failures) {
+    console.error('SHADOW athlete limits unavailable', {
+      errorClass: failure.reason instanceof Error ? failure.reason.name : typeof failure.reason,
+    });
+  }
+
+  let minorLimits: ShadowAthleteLimits['minorLimits'] = 'unavailable';
+  if (limits.status === 'fulfilled') {
+    const inForce = {} as Exclude<ShadowAthleteLimits['minorLimits'], 'unavailable'>['limits'];
+    for (const type of MINOR_LIMIT_TYPES) {
+      // Only the value, its id and its date: the reason note and the
+      // account that set it stay out of the prompt.
+      const row = limits.value.limits[type];
+      inForce[type] = row
+        ? { limit_id: row.limit_id, value_number: row.value_number, value_text: row.value_text, set_at: row.set_at }
+        : null;
+    }
+    minorLimits = { athleteIsMinor: limits.value.athlete_is_minor, limits: inForce };
+  }
+
+  let contactCap: ShadowAthleteLimits['contactCap'] = 'unavailable';
+  if (cap.status === 'fulfilled') {
+    const row = cap.value;
+    contactCap = isCapSet(row)
+      ? {
+          cap_id: row.cap_id,
+          highest_allowed_stage: row.highest_allowed_stage,
+          max_hard_open_sessions_per_7_days: row.max_hard_open_sessions_per_7_days,
+          set_at: row.set_at,
+        }
+      : null;
+  }
+
+  return { athleteId, minorLimits, contactCap };
+}
+
 // Retrieve context based on user role and authorization
 export async function retrieveShadowContext(params: {
   userRole: PilotRole;
@@ -727,6 +802,31 @@ export async function retrieveShadowContext(params: {
     };
   }
 
+  // The coach-set limits ride the same gate as the near-miss records: only a
+  // role that got past the return above reaches either read. They are read
+  // together because neither needs the other's result.
+  const [nearMissContext, limits] = await Promise.all([
+    readNearMissContext(header, organizationId, athleteId),
+    loadShadowAthleteLimits(
+      { accountId: userId, role: userRole, organizationId, athleteId: actorAthleteId },
+      athleteId,
+    ),
+  ]);
+  if (!limits) return nearMissContext;
+  const limitsSection = buildAthleteLimitsSection(limits);
+  return {
+    ...nearMissContext,
+    context: [nearMissContext.context, '', ...limitsSection.lines].join('\n'),
+    evidenceIds: [...(nearMissContext.evidenceIds ?? []), ...limitsSection.evidenceIds],
+  };
+}
+
+/** The near-miss half of an athlete-scoped context, for a role the gate above admitted. */
+async function readNearMissContext(
+  header: string,
+  organizationId: string,
+  athleteId: string,
+): Promise<ShadowContextResult> {
   try {
     const nearMisses = await listRecentNearMisses(organizationId, athleteId);
     if (nearMisses.length === 0) {

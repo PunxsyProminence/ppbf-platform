@@ -3,6 +3,11 @@
 // Quick Round: Minimal context (role, recent interactions, basic profile)
 // Heavy Bag: Full context (all 9 weighting dimensions)
 
+import { humanizeContactLevel } from '../../lib/drillPresentation';
+import { gymDayIso } from '../../lib/gymTime';
+
+import type { AthleteContactCapRow } from './athleteContactCaps';
+import type { AthleteMinorLimitRow, MinorLimitType } from './athleteMinorLimits';
 import type { PilotRole } from './contracts';
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
 import type { ShadowQueryType } from './shadowContextWeights';
@@ -238,6 +243,151 @@ function buildAuthoritySection(userRole: PilotRole): string[] {
     `## Role-Based Decision Authority`,
     `- ${authorityMap[userRole] || 'Standard access'}`,
   ];
+}
+
+/* ---------------------------------------------------------------------------
+ * Coach-set limits, as coach-facing SHADOW is told them (lane P4, PR 2).
+ *
+ * COACH-SET DATA, NEVER AN APP NUMBER (OD-2026-10-06-024 ruling 2). This
+ * section states what a coach recorded and nothing else: a limit that is not
+ * set is said as exactly "No limit set", and the model is told to ask the
+ * coach to set it, never to propose, estimate or default one.
+ *
+ * STAFF ONLY (OD-2026-10-08-007, minors' limits questions Q5 and Q6). This
+ * file only FORMATS a reading it is handed. Who may be handed one is decided
+ * where the reading is loaded -- loadShadowAthleteLimits in shadowChat.ts,
+ * behind retrieveShadowContext's decision-loop gate -- and athlete and parent
+ * chats never reach that line. buildShadowContext below does not call this.
+ *
+ * Three limits come from pilot.athlete_minor_limits; contact level lives only
+ * in pilot.athlete_contact_caps and is read from there (one home per limit).
+ * ------------------------------------------------------------------------- */
+
+/** The page a coach sets heat, weight-cut and supervision limits on. */
+export const ATHLETE_LIMITS_PAGE = '/coach/athlete-limits';
+/** The page the contact cap is set on; the limits page shows it read-only. */
+export const SPARRING_CAPS_PAGE = '/coach/sparring-caps';
+
+/** Said for every limit that is not set, in exactly these words. */
+export const NO_LIMIT_SET = 'No limit set';
+
+export type ShadowLimitInForce = Pick<AthleteMinorLimitRow, 'limit_id' | 'value_number' | 'value_text' | 'set_at'>;
+export type ShadowContactCapInForce = Pick<
+  AthleteContactCapRow,
+  'cap_id' | 'highest_allowed_stage' | 'max_hard_open_sessions_per_7_days' | 'set_at'
+>;
+
+/**
+ * What was read for one athlete. 'unavailable' is a read that FAILED: it is
+ * said as unknown, never as "No limit set" -- the two must not read alike.
+ */
+export interface ShadowAthleteLimits {
+  athleteId: string;
+  minorLimits:
+    | {
+        /** From pilot.athletes.dob at read time; an unknown date of birth reads as a minor. */
+        athleteIsMinor: boolean;
+        /** The limit in force per type; null = no limit set. */
+        limits: Record<MinorLimitType, ShadowLimitInForce | null>;
+      }
+    | 'unavailable';
+  /** The cap in force; null = no cap set. */
+  contactCap: ShadowContactCapInForce | null | 'unavailable';
+}
+
+export interface ShadowAthleteLimitsSection {
+  lines: string[];
+  /**
+   * The limit and cap rows stated in `lines`, so an answer that repeats a
+   * coach-set number can cite it. validateShadowResponse withholds an uncited
+   * percentage, and the weight-cut limit is one.
+   */
+  evidenceIds: string[];
+}
+
+const CITABLE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function limitDay(setAt: unknown): string {
+  return gymDayIso(setAt instanceof Date ? setAt : String(setAt)) ?? 'date not recorded';
+}
+
+/** The coach's own words on one line, so stored text cannot start a new context line. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().replace(/"/g, "'");
+}
+
+/**
+ * The coach-set limits as prompt lines. EVERY limit is listed, set or not:
+ * the instruction to ask is attached to the gap, and a gap the model is not
+ * shown is a gap it fills on its own.
+ */
+export function buildAthleteLimitsSection(reading: ShadowAthleteLimits): ShadowAthleteLimitsSection {
+  const evidenceIds: string[] = [];
+  const stated = (id: string, setAt: unknown): string => {
+    // The response validator accepts only UUID citations, so an id that is
+    // not one is not offered as citable.
+    if (!CITABLE_ID.test(id)) return `(coach-set, ${limitDay(setAt)})`;
+    if (!evidenceIds.includes(id)) evidenceIds.push(id);
+    return `[E:${id}] (coach-set, ${limitDay(setAt)})`;
+  };
+
+  const lines: string[] = [`COACH-SET LIMITS for this athlete (${reading.athleteId}), read from the gym's records:`];
+
+  if (reading.minorLimits === 'unavailable') {
+    lines.push(
+      '- Heat exposure, weight cut and supervision: these limits could not be read for this request. '
+        + `They are UNKNOWN, which is not "${NO_LIMIT_SET}".`,
+    );
+  } else {
+    const { athleteIsMinor, limits } = reading.minorLimits;
+    const heat = limits.heat_exposure_minutes_per_session;
+    const cut = limits.weight_cut_max_percent_body_weight;
+    const supervision = limits.supervision;
+    lines.push(
+      athleteIsMinor
+        ? '- This athlete is a MINOR (an unknown date of birth counts as a minor).'
+        : '- This athlete is an ADULT; limits are recorded the same way and labelled adult.',
+      `- Heat exposure, minutes per session: ${heat && heat.value_number !== null
+        ? `at most ${heat.value_number} minutes per session ${stated(heat.limit_id, heat.set_at)}`
+        : NO_LIMIT_SET}`,
+      `- Weight cut, most percent of body weight: ${cut && cut.value_number !== null
+        ? `at most ${cut.value_number} percent of body weight ${stated(cut.limit_id, cut.set_at)}`
+        : NO_LIMIT_SET}`,
+      `- Supervision the coach requires: ${supervision && supervision.value_text !== null
+        ? `"${oneLine(supervision.value_text)}" ${stated(supervision.limit_id, supervision.set_at)}`
+        : NO_LIMIT_SET}`,
+    );
+  }
+
+  if (reading.contactCap === 'unavailable') {
+    lines.push(
+      '- Contact level (sparring cap): the cap could not be read for this request. '
+        + `It is UNKNOWN, which is not "${NO_LIMIT_SET}".`,
+    );
+  } else {
+    const cap = reading.contactCap;
+    lines.push(
+      `- Contact level, highest stage (sparring cap): ${cap && cap.highest_allowed_stage !== null
+        ? `${humanizeContactLevel(cap.highest_allowed_stage)} ${stated(cap.cap_id, cap.set_at)}`
+        : NO_LIMIT_SET}`,
+      `- Hard or open sparring sessions in any 7 days (sparring cap): ${cap && cap.max_hard_open_sessions_per_7_days !== null
+        ? `at most ${cap.max_hard_open_sessions_per_7_days} ${stated(cap.cap_id, cap.set_at)}`
+        : NO_LIMIT_SET}`,
+    );
+  }
+
+  lines.push(
+    'Limits directive: these are the coach\'s limits, recorded as data; you did not set them and you do not change them. '
+      + 'When you state one, give the value as written above and cite its id. '
+      + 'Keep anything you draft for this athlete inside every limit that is set. '
+      + `When the question depends on a limit marked "${NO_LIMIT_SET}", say that it is not set and ask the coach to set it `
+      + `on the Athlete Limits page (${ATHLETE_LIMITS_PAGE}); the contact cap is set on the Sparring Caps page (${SPARRING_CAPS_PAGE}). `
+      + 'Never propose, estimate, assume or default a number or a rule for a limit that is not set. '
+      + 'When a limit is marked UNKNOWN, say the record could not be read and ask the coach to check that page. '
+      + 'The coach decides.',
+  );
+
+  return { lines, evidenceIds };
 }
 
 /**
