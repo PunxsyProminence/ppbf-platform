@@ -7,13 +7,16 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // The "Return plan" block under one injury on /coach/injuries (lane P8 PR 2):
 // the plan's steps in week order with the current step marked, Advance (with
-// the coach's note) and Add step.
+// the coach's note) and Add step; and, on an injury with no plan, Start a
+// return plan (PR 3).
 //
 // THE COACH'S DECISION, RECORDED AND SHOWN. Nothing here advises, scores,
 // diagnoses or proposes a step: no week is prefilled, no contact level is
 // preselected, and the only step marked is the one the route calls current
 // (the earliest not yet advanced). Not a medical clearance and it lifts no
-// training hold (route header, OD-2026-09-21-001).
+// training hold (route header, OD-2026-09-21-001). Where the route would save
+// a value nobody chose (contact "none", event "injury", clearance "no"), the
+// page asks for the choice instead of sending nothing.
 //
 // Authorization and every rule are the route's
 // (/api/pilot/coach/return-to-training): this block sends what the coach
@@ -32,6 +35,8 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 export const RTT_CONTACT = ['none', 'light_technical', 'conditioned', 'controlled_sparring', 'open_sparring'] as const;
 /** The route's scale levels. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
 export const RTT_SCALE = ['A', 'B', 'C'] as const;
+/** The route's triggering events. Pinned to route.ts by ReturnPlanBlock.test.tsx. */
+export const RTT_EVENTS = ['confirmed_concussion', 'knockout', 'technical_knockout', 'injury', 'illness', 'other'] as const;
 
 interface Step {
   step_id: string;
@@ -59,6 +64,17 @@ type Reading =
   | { state: 'loaded'; plan: Plan };
 
 const EMPTY_STEP = { week: '', intensity: '', contact: '', scale: '', plannedNote: '' };
+const EMPTY_PLAN = { event: '', clearance: '', authority: '', restDays: '', earliest: '', note: '' };
+
+function words(value: string): string {
+  const text = value.replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A date-only value (YYYY-MM-DD), shown as that calendar day. */
+function day(value: string): string {
+  return formatGymDateNumeric(`${value.slice(0, 10)}T12:00:00Z`) ?? value;
+}
 
 function isStep(value: unknown): value is Step {
   if (!value || typeof value !== 'object') return false;
@@ -87,7 +103,19 @@ function errorText(payload: unknown): string | null {
   return typeof error === 'string' && error ? error : null;
 }
 
-export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: string; planId: string | null }) {
+interface ReturnPlanBlockProps {
+  athleteId: string;
+  planId: string | null;
+  /** The injury this block sits under: a plan is started on it. */
+  injuryId: string;
+  /** The injury's own date and "Expected back", as the coach recorded them. */
+  injuryDate: string;
+  expectedBack: string | null;
+  /** Called after any attempt to start a plan, so the page reads the injuries again. */
+  onChanged: () => void;
+}
+
+export default function ReturnPlanBlock({ athleteId, planId, injuryId, injuryDate, expectedBack, onChanged }: ReturnPlanBlockProps) {
   // What was read, with the athlete and plan it was read for: a reading for any
   // other athlete or plan is never shown, it reads as loading.
   const key = `${athleteId}|${planId ?? ''}`;
@@ -98,10 +126,14 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
   // step's box is empty: a note is never carried onto a different decision.
   const [note, setNote] = useState({ stepId: '', text: '' });
   const [adding, setAdding] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [draft, setDraft] = useState(EMPTY_PLAN);
+  // True once the route said the plan was saved: the page is reading it in.
+  const [started, setStarted] = useState(false);
   const [step, setStep] = useState(EMPTY_STEP);
   const [busy, setBusy] = useState(false);
-  // `where` is the step the notice is about, or 'add': it is shown beside the
-  // control that caused it.
+  // `where` is the step the notice is about, or 'add' or 'start': it is shown
+  // beside the control that caused it.
   const [notice, setNotice] = useState<{ text: string; error: boolean; where: string } | null>(null);
   const id = useId();
   // Each read gets a number and only the newest may land, so one plan's steps
@@ -228,11 +260,56 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
     }
   };
 
+  const startPlan = async (event: FormEvent) => {
+    event.preventDefault();
+    if (planId || busy) return;
+    // The route saves a missing event as "injury" and a missing clearance as "no"; nobody would have chosen either.
+    if (!draft.event) {
+      setNotice({ text: 'Choose the triggering event.', error: true, where: 'start' });
+      return;
+    }
+    if (!draft.clearance) {
+      setNotice({ text: 'Say whether a medical clearance is on file: Yes or No.', error: true, where: 'start' });
+      return;
+    }
+    const days = draft.restDays.trim();
+    let restDays: number | string | null = null;
+    // Anything that is not a whole number goes as typed, so the route words the refusal.
+    if (days !== '') restDays = /^\d+$/.test(days) ? Number(days) : days;
+    const saved = await send(
+      'POST',
+      {
+        action: 'create_plan', injury_id: injuryId, triggering_event: draft.event,
+        medical_clearance_on_file: draft.clearance === 'yes', authority_source: draft.authority,
+        rest_period_days: restDays, earliest_return_date: draft.earliest || null, note: draft.note,
+      },
+      'Return plan started.',
+      'start',
+    );
+    if (saved) {
+      setDraft(EMPTY_PLAN);
+      setStarting(false);
+      setStarted(true);
+    }
+    // Saved, refused or unknown: the page reads the injuries again. The route
+    // writes the plan, its audit row and the link separately, so after an
+    // unknown answer the plan may exist linked, exist unlinked (the injury
+    // form's plan list then offers it), or not exist.
+    onChanged();
+  };
+
   const field = (name: keyof typeof EMPTY_STEP) => ({
     id: `${id}-${name}`,
     value: step[name],
     disabled: busy,
     onChange: (e: { target: { value: string } }) => setStep((s) => ({ ...s, [name]: e.target.value })),
+  });
+
+  const planField = (name: keyof typeof EMPTY_PLAN) => ({
+    id: `${id}-plan-${name}`,
+    value: draft[name],
+    disabled: busy,
+    onChange: (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [name]: e.target.value })),
   });
 
   const plan = reading.state === 'loaded' ? reading.plan : null;
@@ -245,8 +322,9 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
       : <p role="status" className="mt-[var(--s2)] font-semibold"><span aria-hidden="true">✓ </span>{notice.text}</p>;
   };
   // Beside its control when that control is on screen; otherwise under the heading, never dropped.
-  const placed = notice !== null && plan !== null
-    && (notice.where === 'add' ? active : plan.steps.some((s) => s.step_id === notice.where));
+  const placed = notice !== null && (notice.where === 'start'
+    ? !planId
+    : plan !== null && (notice.where === 'add' ? active : plan.steps.some((s) => s.step_id === notice.where)));
 
   return (
     <section aria-label="Return plan" data-surface="kiosk"
@@ -255,7 +333,48 @@ export default function ReturnPlanBlock({ athleteId, planId }: { athleteId: stri
 
       {!placed && say(null)}
 
-      {!planId && <p className="t-body mt-[var(--s2)]">No return plan on this injury.</p>}
+      {!planId && !started && (
+        <>
+          <p className="t-body mt-[var(--s2)]">No return plan on this injury.</p>
+          <div className="mt-[var(--s3)]">
+            <button type="button" className="btn btn--ghost" aria-expanded={starting} aria-controls={starting ? `${id}-start` : undefined}
+              disabled={busy} onClick={() => setStarting((open) => !open)}>
+              Start a return plan
+            </button>
+            {starting && (
+              <form id={`${id}-start`} aria-label="Start a return plan" className="mt-[var(--s3)]" onSubmit={(e) => void startPlan(e)}>
+                <p className="t-body">Event date: the injury&apos;s date, {day(injuryDate)}.</p>
+                <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-event`}>Triggering event</label>
+                    <select className="select input--kiosk" required {...planField('event')}>
+                      <option value="">Choose</option>
+                      {RTT_EVENTS.map((e) => <option key={e} value={e}>{words(e)}</option>)}
+                    </select></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-clearance`}>Medical clearance on file</label>
+                    <select className="select input--kiosk" required {...planField('clearance')}>
+                      <option value="">Choose</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-authority`}>Who set the rest period (rulebook, physician)</label>
+                    <input type="text" className="input input--kiosk" maxLength={2000} required {...planField('authority')} /></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-restDays`}>Rest period, days (optional)</label>
+                    <input type="number" className="input input--kiosk" min={1} max={3650} step={1} {...planField('restDays')} /></div>
+                  <div className="field"><label className="t-label" htmlFor={`${id}-plan-earliest`}>Earliest return date (optional)</label>
+                    <input type="date" className="input input--kiosk" {...planField('earliest')} />
+                    {expectedBack && (
+                      <p className="t-muted">Left blank, this injury&apos;s Expected back date ({day(expectedBack)}) becomes the plan&apos;s earliest return date.</p>
+                    )}</div>
+                </div>
+                <div className="field mt-[var(--s3)]"><label className="t-label" htmlFor={`${id}-plan-note`}>Plan note (optional)</label>
+                  <textarea className="textarea input--kiosk" rows={2} maxLength={2000} {...planField('note')} /></div>
+                <button type="submit" className="btn mt-[var(--s3)]" disabled={busy}>Save plan</button>
+              </form>
+            )}
+          </div>
+        </>
+      )}
+      {!planId && say('start')}
       {planId && reading.state === 'loading' && <p className="t-body mt-[var(--s2)]">Loading return plan…</p>}
       {planId && reading.state === 'refused' && (
         <p role="alert" className="mt-[var(--s2)] font-semibold text-[var(--restricted-ink)]">

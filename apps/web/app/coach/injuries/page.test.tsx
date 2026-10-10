@@ -8,7 +8,8 @@
 // is linked, and days lost; record and update send the FULL record (an update
 // replaces it); a refusal is shown as the server worded it; marking entered in
 // error asks first; each injury carries its Return plan block (the block's own
-// states are pinned in components/ReturnPlanBlock.test.tsx).
+// states are pinned in components/ReturnPlanBlock.test.tsx); a re-read of the
+// same athlete keeps the list mounted, and a re-read that fails takes it down.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -61,13 +62,21 @@ const RTT_PLANS = [{
   current_step_id: 'step-1',
 }];
 
+const NEW_PLAN = { ...RTT_PLANS[0], plan_id: 'plan-2', triggering_event: 'injury', steps: [], current_step_id: null };
+
 let posts: Array<Record<string, unknown>>;
+let planPosts: Array<Record<string, unknown>>;
+let plansReply: unknown[];
+let injuriesFail: boolean;
 let postReply: { status: number; body: unknown };
 let injuriesReply: unknown[];
 let accessibleReply: string[];
 
 beforeEach(() => {
   posts = [];
+  planPosts = [];
+  plansReply = RTT_PLANS;
+  injuriesFail = false;
   postReply = { status: 200, body: { ok: true } };
   injuriesReply = [PLAN_INJURY, WRIST];
   accessibleReply = ['ath-1'];
@@ -88,10 +97,18 @@ beforeEach(() => {
       return { ok: postReply.status < 300, status: postReply.status, json: async () => postReply.body };
     }
     if (u.includes('/api/pilot/coach/injuries?athlete_id=ath-1')) {
+      if (injuriesFail) return { ok: false, status: 502, json: async () => { throw new Error('not json'); } };
       return { ok: true, json: async () => ({ ok: true, injuries: injuriesReply, candidates: CANDIDATES }) };
     }
     if (u.includes('/api/pilot/coach/return-to-training?athlete_id=ath-1') && init?.method === 'GET') {
-      return { ok: true, status: 200, json: async () => ({ ok: true, plans: RTT_PLANS }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, plans: plansReply }) };
+    }
+    if (u.endsWith('/api/pilot/coach/return-to-training') && init?.method === 'POST') {
+      // create_plan (route.ts): the plan is made and the injury linked to it.
+      planPosts.push(JSON.parse(String(init.body)));
+      injuriesReply = [PLAN_INJURY, { ...WRIST, linked_rtt_plan_id: 'plan-2', expected_return_date: null, plan_earliest_return_date: '2026-08-10' }];
+      plansReply = [...RTT_PLANS, NEW_PLAN];
+      return { ok: true, status: 200, json: async () => ({ ok: true, plan: NEW_PLAN, injury: { injury_id: 'inj-2', linked_rtt_plan_id: 'plan-2' } }) };
     }
     throw new Error(`unexpected fetch ${u}`);
   }) as unknown as typeof fetch;
@@ -135,10 +152,66 @@ test("each injury carries its own Return plan block: the linked plan's steps rea
   expect(await within(blocks[0]).findByText('Week 1 · Bag work only · ▸ Current step')).toBeTruthy();
   expect(within(blocks[0]).getByRole('button', { name: 'Advance' })).toBeTruthy();
   expect(within(blocks[1]).getByText('No return plan on this injury.')).toBeTruthy();
-  expect(within(blocks[1]).queryByRole('button')).toBeNull();
+  expect(within(blocks[1]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Start a return plan']);
   // One read, for the linked injury only, naming the athlete on screen.
   const reads = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url)).filter((url) => url.includes('return-to-training'));
   expect(reads).toEqual(['/api/pilot/coach/return-to-training?athlete_id=ath-1']);
+});
+
+test('a half-typed Advance note survives saving another injury: the list stays mounted across the re-read', async () => {
+  const list = await openAthlete();
+  const note = await within(list).findByLabelText('Your note on this decision (required)');
+  fireEvent.change(note, { target: { value: 'Bag work went fine, no sym' } });
+  // Save a change to the OTHER injury; the page reads the injuries again.
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Edit' })[1]);
+  fireEvent.change(screen.getByLabelText('Returned on'), { target: { value: '2026-08-12' } });
+  injuriesReply = [PLAN_INJURY, { ...WRIST, returned_on: '2026-08-12' }];
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+  expect(await screen.findByText('Injury updated.')).toBeTruthy();
+  // The re-read landed (the other injury now shows its return), and the note is still there, in the same field.
+  expect(within(list).getByText(/Returned 8\/12\/2026/)).toBeTruthy();
+  expect(list.isConnected).toBe(true);
+  expect(note.isConnected).toBe(true);
+  expect((note as HTMLTextAreaElement).value).toBe('Bag work went fine, no sym');
+  // The block was not re-read either: one read of the plan, from before the save.
+  const planReads = (global.fetch as jest.Mock).mock.calls.filter(([url, init]) => String(url).includes('return-to-training') && init?.method === 'GET');
+  expect(planReads).toHaveLength(1);
+});
+
+test('a re-read that fails takes the list down, so a stale list is never left on screen as current', async () => {
+  const list = await openAthlete();
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Edit' })[1]);
+  injuriesFail = true;
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+  expect(within(await screen.findByRole('alert')).getByText('Injuries could not be loaded.')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Injuries' })).toBeNull();
+  expect(screen.queryByText('No injuries recorded for this athlete.')).toBeNull();
+});
+
+test('starting a return plan on an injury re-reads the injuries, and the injury then shows its plan', async () => {
+  const list = await openAthlete();
+  let blocks = within(list).getAllByRole('region', { name: 'Return plan' });
+  fireEvent.click(within(blocks[1]).getByRole('button', { name: 'Start a return plan' }));
+  const form = within(blocks[1]).getByRole('form', { name: 'Start a return plan' });
+  // The injury's own date and Expected back, as recorded, are stated; neither is typed again.
+  expect(within(form).getByText("Event date: the injury's date, 8/1/2026.")).toBeTruthy();
+  expect(within(form).getByText(/Expected back date \(8\/10\/2026\)/)).toBeTruthy();
+  fireEvent.change(within(form).getByLabelText('Triggering event'), { target: { value: 'injury' } });
+  fireEvent.change(within(form).getByLabelText('Medical clearance on file'), { target: { value: 'no' } });
+  fireEvent.change(within(form).getByLabelText('Who set the rest period (rulebook, physician)'), { target: { value: 'Dr. Reyes' } });
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Save plan' })); });
+  expect(planPosts).toEqual([{
+    action: 'create_plan', injury_id: 'inj-2', triggering_event: 'injury', medical_clearance_on_file: false,
+    authority_source: 'Dr. Reyes', rest_period_days: null, earliest_return_date: null, note: '',
+  }]);
+  // The page read the injuries again and the same injury now carries the new plan, ready for its first step.
+  await waitFor(() => expect(within(list).queryByText('No return plan on this injury.')).toBeNull());
+  blocks = within(list).getAllByRole('region', { name: 'Return plan' });
+  expect(await within(blocks[1]).findByText('No steps on this plan yet.')).toBeTruthy();
+  expect(within(blocks[1]).getByRole('button', { name: 'Add step' })).toBeTruthy();
+  expect(within(blocks[1]).queryByRole('button', { name: 'Start a return plan' })).toBeNull();
+  // Nothing went to the injury route: starting a plan is the plan route's write.
+  expect(posts).toEqual([]);
 });
 
 test('recording sends the full record with empty fields as null, then reloads', async () => {

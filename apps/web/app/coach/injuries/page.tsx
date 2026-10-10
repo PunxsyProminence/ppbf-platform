@@ -125,6 +125,9 @@ export default function CoachInjuriesPage() {
   // The athlete on screen now. A reply that arrives for an athlete no longer
   // selected is dropped, so one child's injuries never show under another's name.
   const current = useRef('');
+  // Each read of the injuries gets a number; only the newest may land, so a
+  // slow earlier reply never replaces a later one.
+  const reads = useRef(0);
   const fail = (text: string) => setMessage({ text, error: true });
 
   useEffect(() => {
@@ -150,26 +153,37 @@ export default function CoachInjuriesPage() {
     })();
   }, []);
 
-  const load = useCallback(async (id: string) => {
-    setInjuries(null);
-    setCandidates(NO_CANDIDATES);
+  // `keep`: a re-read of the athlete already on screen leaves the list mounted,
+  // so what a coach has half-typed in a Return plan block survives saving
+  // something else. A list that could not be read again is taken down, never
+  // left on screen as if it were current.
+  const load = useCallback(async (id: string, keep = false) => {
+    const clear = () => { setInjuries(null); setCandidates(NO_CANDIDATES); };
+    if (!keep) clear();
+    const ticket = reads.current + 1;
+    reads.current = ticket;
     if (!id) return;
+    const stale = () => current.current !== id || reads.current !== ticket;
+    const lost = (text: string) => {
+      if (stale()) return;
+      clear();
+      fail(text);
+    };
     try {
       const res = await fetch(`${apiBase()}/api/pilot/coach/injuries?athlete_id=${encodeURIComponent(id)}`, {
         method: 'GET', credentials: 'include',
       });
       if (!res.ok) {
-        const text = await errorOf(res, 'Injuries could not be loaded.');
-        if (current.current === id) fail(text);
+        lost(await errorOf(res, 'Injuries could not be loaded.'));
         return;
       }
       const payload = (await res.json()) as { injuries?: unknown; candidates?: Candidates };
-      if (current.current !== id) return;
+      if (stale()) return;
       if (!Array.isArray(payload.injuries)) throw new Error('shape');
       setInjuries(payload.injuries as Injury[]);
       setCandidates(payload.candidates ?? NO_CANDIDATES);
     } catch {
-      if (current.current === id) fail('Injuries could not be loaded.');
+      lost('Injuries could not be loaded.');
     }
   }, []);
 
@@ -197,7 +211,7 @@ export default function CoachInjuriesPage() {
       setMessage({ text: done, error: false });
       setForm(EMPTY_FORM);
       setEditing(null);
-      await load(current.current);
+      await load(current.current, true);
     } catch {
       fail('That was not saved: the connection failed.');
     } finally {
@@ -284,7 +298,9 @@ export default function CoachInjuriesPage() {
                         <p className="t-body">Returned {day(i.returned_on)} · {daysBetween(i.injury_date, i.returned_on)} days lost</p>
                       )}
                       {i.staff_note && <p className="t-body">Staff note: {i.staff_note}</p>}
-                      <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id} />
+                      <ReturnPlanBlock key={i.linked_rtt_plan_id ?? 'none'} athleteId={athleteId} planId={i.linked_rtt_plan_id}
+                        injuryId={i.injury_id} injuryDate={i.injury_date} expectedBack={i.expected_return_date}
+                        onChanged={() => void load(current.current, true)} />
                       <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
                         <button type="button" className="btn btn--ghost" disabled={busy}
                           onClick={() => { setEditing(i.injury_id); setForm(formFrom(i)); setMessage(null); }}>
