@@ -8215,8 +8215,8 @@
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
-    "confidence": "medium",
-    "notes": "Platform view of a gym board summary, growth metrics, capability access and track assignments by organization_id; gate gym-summary/route.ts:54-55. Aggregates per the board summary and metrics helpers (not opened in depth).",
+    "confidence": "high",
+    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:41-42. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

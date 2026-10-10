@@ -25,30 +25,17 @@ function toBooleanMap(value: unknown): Record<string, boolean> {
   return result;
 }
 
-function toStringArrayMap(value: unknown): Record<string, string[]> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const source = value as Record<string, unknown>;
-  const result: Record<string, string[]> = {};
-
-  for (const [key, rawTracks] of Object.entries(source)) {
-    if (!Array.isArray(rawTracks)) {
-      continue;
-    }
-    result[key] = rawTracks.filter((item): item is string => typeof item === 'string');
-  }
-
-  return result;
-}
-
 // Read-only, cross-organization by design: a platform_owner views any single
 // gym's operational summary here by explicit organization_id, never their own
 // principal.organizationId. Reuses the exact same aggregate functions the
 // board/summary and shadow/metrics routes already call for a single org --
 // no new business logic, and every metric here is already k-anonymity gated
 // (see boardSummary.ts) with no PHI involved.
+//
+// The gym's track assignments are NOT part of this summary. That map is keyed
+// by athlete id, one row per athlete, and the platform account never opens an
+// individual athlete's record (OD-2026-09-28-005; OD-2026-10-08-003 R2 took
+// the same read away on admin/track-assignments).
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -59,15 +46,11 @@ export async function GET(request: NextRequest) {
       throw new Error('Missing organization_id');
     }
 
-    const [board, growth, capabilityRow, trackRow] = await Promise.all([
+    const [board, growth, capabilityRow] = await Promise.all([
       getBoardSummary(organizationId),
       getGrowthMetrics(organizationId),
       queryOne<{ capability_access: unknown }>(
         `select capability_access from pilot.admin_gym_capability_access where organization_id = $1`,
-        [organizationId],
-      ),
-      queryOne<{ assignments: unknown }>(
-        `select assignments from pilot.admin_track_assignments where organization_id = $1`,
         [organizationId],
       ),
     ]);
@@ -78,7 +61,6 @@ export async function GET(request: NextRequest) {
       board,
       growth,
       capabilityAccess: toBooleanMap(capabilityRow?.capability_access),
-      trackAssignments: toStringArrayMap(trackRow?.assignments),
     });
   } catch (error) {
     return jsonError(error);

@@ -416,25 +416,53 @@ describe('when part of the save fails, the caller is told it did not save', () =
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('a failed audit fails the transaction it shares with the write', async () => {
-    // With the real withTransaction a throw inside the body is a ROLLBACK, so
-    // the map is as it was and "not saved" is true. What this mock can show is
-    // that the audit failure is thrown INSIDE the transaction body rather than
-    // after it has returned.
-    let bodyRejected = false;
+  // A MODEL of a transaction, since there is no Postgres here: a write made
+  // on the client lands in `stored` only if the body finishes, and is thrown
+  // away if the body throws -- which is what BEGIN / COMMIT / ROLLBACK do in
+  // db.ts withTransaction. It shows where the route puts the write and the
+  // audit relative to the transaction; it does not show Postgres rolling back.
+  function modelATransaction() {
     mockTransaction.mockImplementation(async (fn: (c: typeof client) => Promise<unknown>) => {
-      try {
-        return await fn(client);
-      } catch (error) {
-        bodyRejected = true;
-        throw error;
+      let pending: unknown;
+      let wrote = false;
+      client.query.mockImplementation(async (sql: string, params: unknown[]) => {
+        if (/insert into pilot\.admin_track_assignments/.test(sql)) {
+          pending = JSON.parse(params[1] as string);
+          wrote = true;
+          return { rows: [] };
+        }
+        if (/^\s*select assignments/.test(sql)) {
+          return { rows: stored === undefined ? [] : [{ assignments: stored }] };
+        }
+        return { rows: [] };
+      });
+      const result = await fn(client); // a throw here skips the commit below
+      if (wrote) {
+        stored = pending;
       }
+      return result;
     });
+  }
+
+  test('a failed audit leaves the map unchanged, and the caller is told it did not save', async () => {
+    stored = { 'ath-1': ['non_contact'] };
+    modelATransaction();
     mockAudit.mockRejectedValueOnce(new Error('audit insert refused'));
 
-    const response = await POST(post({ assignments: { 'ath-1': ['pro'] } }));
+    const response = await POST(post({ assignments: { 'ath-1': ['pro'], 'ath-2': ['a2p'] } }));
 
     expect(response.status).toBe(500);
-    expect(bodyRejected).toBe(true);
+    expect(stored).toEqual({ 'ath-1': ['non_contact'] });
+  });
+
+  test('control: with the audit written, the same save does land', async () => {
+    stored = { 'ath-1': ['non_contact'] };
+    modelATransaction();
+
+    const response = await POST(post({ assignments: { 'ath-1': ['pro'], 'ath-2': ['a2p'] } }));
+
+    expect(response.status).toBe(200);
+    expect(stored).toEqual({ 'ath-1': ['pro'], 'ath-2': ['a2p'] });
+    expect(mockAudit).toHaveBeenCalledTimes(1);
   });
 });
