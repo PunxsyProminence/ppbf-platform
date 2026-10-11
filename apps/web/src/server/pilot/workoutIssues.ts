@@ -13,7 +13,12 @@ import type { PoolClient } from 'pg';
 // transaction client and has no pooled form, so the structure cannot be
 // written apart from the assignments it describes: both commit or neither
 // does. There is no UPDATE and no DELETE in this module. The rows leave only
-// by cascade (the athlete, the assignment or the organization going).
+// by cascade (the athlete or the assignment going).
+//
+// A READER JOINS ON THE ORGANIZATION. The step's foreign key is on
+// assignment_id alone (pilot.drill_assignments has no wider key), so any read
+// added here joins a step to its assignment on organization_id AND
+// assignment_id.
 //
 // A SNAPSHOT. The step keeps what the template item said on the day and the
 // issue keeps the template's name and version, so a workout reads as it was

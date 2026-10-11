@@ -15,7 +15,9 @@
 //     pilot.athletes; the cascades are the only thing that removes these rows.
 //   * THE DATABASE REFUSES what the module never writes: an unknown level, an
 //     assignment in two workouts, a repeated request key in one gym.
-//   * READINESS IS RED when any one guard is missing or looser.
+//   * READINESS IS RED when any one of the guards it names (four checks, four
+//     foreign keys, three indexes) is missing or looser. It does not look at
+//     primary keys, column types or the organization and account foreign keys.
 //
 // That workoutTemplateIssue.pg.test.ts's four rollback cases also count these
 // two tables is the wider all-or-nothing proof; this suite does not repeat
@@ -749,7 +751,7 @@ describe('the rows leave only by cascade', () => {
 
     const { rows } = await client.query(
       `select s.ordinal, a.status from pilot.workout_issue_steps s
-       join pilot.drill_assignments a on a.assignment_id = s.assignment_id
+       join pilot.drill_assignments a on a.organization_id = s.organization_id and a.assignment_id = s.assignment_id
        where s.organization_id = $1 order by s.ordinal`,
       [gym.organizationId],
     );

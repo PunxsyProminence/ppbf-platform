@@ -27,8 +27,14 @@
 --
 -- WRITTEN ONCE. The application inserts these rows inside the transaction that
 -- writes the assignments and never updates or deletes them. They leave only by
--- cascade: with the athlete (the retention purge deletes pilot.athletes), with
--- the assignment, or with the organization.
+-- cascade: with the athlete (the retention purge deletes pilot.athletes) or
+-- with the assignment.
+--
+-- EVERY READER JOINS ON THE ORGANIZATION. pilot.drill_assignments is keyed by
+-- assignment_id alone, so the step's foreign key cannot carry the
+-- organization. The writer ties a step only to an assignment of the same
+-- organization and athlete; a reader joins a step to its assignment on
+-- organization_id AND assignment_id, never on assignment_id alone.
 --
 -- request_key (nullable, unique per gym when set) lets a later change make a
 -- repeated tap or a retry after a lost answer return the first issue instead

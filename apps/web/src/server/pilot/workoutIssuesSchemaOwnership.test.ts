@@ -111,12 +111,15 @@ describe('issued workout schema ownership', () => {
     expect(migration.replace(/^\s*--.*$/gm, '')).not.toMatch(/(?:scale_level|contact_level)[^,\n]*\bdefault\b/i);
   });
 
-  test('the migration is registered: a dispatch option, last in both `all` lists, and its two scripts', () => {
+  test('the migration is registered: a dispatch option, in both `all` lists after what it depends on, and its two scripts', () => {
     expect(workflow).toMatch(/^ {10}- workout-issues$/m);
-    expect(workflow).toMatch(/ athlete-capacity-notes workout-issues; do$/m);
-    expect(workflow).toMatch(/ athlete-capacity-notes workout-issues " in$/m);
-    // After everything it depends on.
+    // Named in the list the workflow applies and in the list its list-check
+    // arm compares against. Not pinned to the tail: the next migration is
+    // appended after it.
     const all = workflow.match(/for m in ([^;]*); do/)?.[1].split(' ') ?? [];
+    const listCheck = workflow.match(/case " ([^"]*) " in/)?.[1].split(' ') ?? [];
+    expect(all).toContain('workout-issues');
+    expect(listCheck).toContain('workout-issues');
     for (const dependency of ['progression', 'coach-cards', 'workout-templates-v2']) {
       expect(all.indexOf(dependency)).toBeGreaterThanOrEqual(0);
       expect(all.indexOf(dependency)).toBeLessThan(all.indexOf('workout-issues'));

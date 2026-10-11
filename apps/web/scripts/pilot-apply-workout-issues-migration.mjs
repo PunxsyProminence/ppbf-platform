@@ -16,12 +16,14 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Readiness asserts both tables and every guard ON THEM (looked up by
-// conrelid, not by name alone), so an environment where a table exists without
-// one of its checks, foreign keys or indexes cannot pass. Every CHECK is
-// compared IN FULL against the text Postgres stores for it; every foreign key
-// by shape (both column lists, target table, ON DELETE action); each clause is
-// refused on its own (workoutIssues.pg.test.ts).
+// Readiness asserts both tables and the guards named below ON THEM (looked up
+// by conrelid, not by name alone): four checks, four foreign keys, three
+// indexes. An environment where a table exists without one of those cannot
+// pass. Every CHECK is compared IN FULL against the text Postgres stores for
+// it; every foreign key by shape (both column lists, target table, ON DELETE
+// action); each is refused on its own (workoutIssues.pg.test.ts). NOT
+// asserted: the primary keys, column types and nullability, and the foreign
+// keys to pilot.organizations and pilot.accounts.
 const EXPECTED_CHECKS = [
   ['workout_issues', 'pilot_workout_issues_request_key_check',
     'CHECK (((request_key IS NULL) OR ((length(btrim(request_key)) > 0) AND (length(request_key) <= 200))))'],
