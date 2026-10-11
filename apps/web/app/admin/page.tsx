@@ -512,12 +512,18 @@ type TrackSaveStatus =
 
 const TRACK_ASSIGNMENTS_URL = '/api/pilot/admin/track-assignments';
 
-/** The stored map as the route returned it: known track ids only, in the manifest's order. */
-function readTrackMap(value: unknown): Map<string, TrackID[]> {
-  const map = new Map<string, TrackID[]>();
+/**
+ * The stored map as the route returned it: known track ids only, in the
+ * manifest's order. Null when the reply carries no map at all. That is a read
+ * that did not work, and it must never be taken for a gym with nobody on a
+ * track: Save lays this admin's changes over this map and sends the whole of
+ * it, so an empty stand-in would wipe every other athlete's tracks.
+ */
+function readTrackMap(value: unknown): Map<string, TrackID[]> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return map;
+    return null;
   }
+  const map = new Map<string, TrackID[]>();
   for (const [athleteId, tracks] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(tracks)) {
       map.set(athleteId, allTrackIds.filter((trackId) => tracks.includes(trackId)));
@@ -526,10 +532,11 @@ function readTrackMap(value: unknown): Map<string, TrackID[]> {
   return map;
 }
 
-function readTrackRoster(value: unknown): TrackRosterAthlete[] {
+/** The roster as the route returned it, by name. Null when the reply carries no list. */
+function readTrackRoster(value: unknown): TrackRosterAthlete[] | null {
   const items = (value as { items?: unknown } | null)?.items;
   if (!Array.isArray(items)) {
-    return [];
+    return null;
   }
   const roster: TrackRosterAthlete[] = [];
   for (const item of items as Array<Partial<TrackRosterAthlete> | null>) {
@@ -559,7 +566,7 @@ function sameTracks(left: TrackID[], right: TrackID[]): boolean {
  * admin's `changes` over it. An athlete left with no track is left out of the
  * map: no track is invented for anyone.
  */
-function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) {
+function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | null }) {
   const [athletes, setAthletes] = useState<TrackRosterAthlete[] | null>(null);
   const [stored, setStored] = useState<Map<string, TrackID[]> | null>(null);
   const [changes, setChanges] = useState<Map<string, TrackID[]>>(() => new Map());
@@ -572,8 +579,9 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
 
   useEffect(() => {
     // The route admits the gym's own admins only; another sign-in would be
-    // answered with a refusal, so it is not asked.
-    if (!canAssign) {
+    // answered with a refusal, so it is not asked. Null is a session not read
+    // yet: nothing is asked, and nobody is told they may not.
+    if (canAssign !== true) {
       return;
     }
     void (async () => {
@@ -590,8 +598,16 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
           setLoadError(await readResponseError(mapResponse, 'Track assignments could not be loaded'));
           return;
         }
-        const roster = readTrackRoster(await rosterResponse.json());
-        const map = readTrackMap(((await mapResponse.json()) as { assignments?: unknown }).assignments);
+        const roster = readTrackRoster(await rosterResponse.json().catch(() => null));
+        const map = readTrackMap(((await mapResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
+        if (roster === null) {
+          setLoadError('The roster could not be read');
+          return;
+        }
+        if (map === null) {
+          setLoadError('Track assignments could not be read');
+          return;
+        }
         setAthletes(roster);
         setStored(map);
       } catch (error) {
@@ -647,7 +663,11 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
         setStatus({ kind: 'failed', message: `${message}. Nothing was sent, so nothing is saved.` });
         return;
       }
-      const next = readTrackMap(((await freshResponse.json()) as { assignments?: unknown }).assignments);
+      const next = readTrackMap(((await freshResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
+      if (next === null) {
+        setStatus({ kind: 'failed', message: 'Track assignments could not be read. Nothing was sent, so nothing is saved.' });
+        return;
+      }
       for (const [athleteId, tracks] of sending) {
         if (tracks.length > 0) {
           next.set(athleteId, tracks);
@@ -689,11 +709,12 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
   return (
     <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
       <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Who Trains On What</h2>
-      {!canAssign ? (
+      {canAssign === false && (
         <p className="t-body mt-[var(--s3)]">
           Tracks are set from the gym&apos;s own admin sign-in. This sign-in cannot read or change them.
         </p>
-      ) : (
+      )}
+      {canAssign === true && (
         <>
           <p className="t-body mt-[var(--s3)]">
             Pick an athlete, choose their tracks, then press Save tracks. Nothing is saved until you do. The capability
@@ -703,6 +724,9 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
             <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[var(--locked-ink)]">
               {loadError}. Tracks cannot be shown or saved until this loads; reload to try again.
             </p>
+          )}
+          {!loaded && !loadError && (
+            <p className="t-body mt-[var(--s3)]">Reading the roster and tracks…</p>
           )}
           {loaded && roster.length === 0 && (
             <p className="t-body mt-[var(--s3)]">No athletes are on this gym&apos;s roster yet, so there is nobody to put on a track.</p>
@@ -1566,7 +1590,7 @@ export default function AdminCapabilitiesPage() {
         </header>
 
         <section className="border-b border-[color:var(--hide-600)] bg-[var(--hide-900)] px-6 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-400)]">
-          Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
+          Capability, role assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
         </section>
 
         {(capabilityStoreError || gymCapabilityStoreError) && (
@@ -1877,7 +1901,7 @@ export default function AdminCapabilitiesPage() {
               track changes live in its own state, and a walk to the Library
               and back must not throw them away without a word. */}
           <div hidden={activeTab !== 'overview'}>
-            <TrackAssignmentControl canAssign={isOrganizationAdminSessionRole(pilotSession.role)} />
+            <TrackAssignmentControl canAssign={pilotSession.loading ? null : isOrganizationAdminSessionRole(pilotSession.role)} />
           </div>
 
           {activeTab === 'library' && (

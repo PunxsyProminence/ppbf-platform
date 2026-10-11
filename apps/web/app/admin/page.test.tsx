@@ -365,9 +365,32 @@ describe('Who Trains On What', () => {
     expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
   });
 
+  // The save lays this admin's changes over the map as re-read and sends the
+  // whole of it. A re-read that comes back 2xx with no map in it must stop
+  // the save: sent as an empty map it would remove every other athlete's tracks.
+  it('a re-read at save time that carries no map sends nothing, so nobody else is wiped', async () => {
+    const server: TrackServer = { roster: [ADA, BEN], stored: { 'ath-ben': ['a2p'] } };
+    const fetchMock = trackFetch(server);
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    server.mapResponse = () => jsonResponse({ ok: true });
+    fireEvent.click(saveButton());
+
+    await screen.findByText('Failed: Track assignments could not be read. Nothing was sent, so nothing is saved.');
+    expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(0);
+    expect(screen.queryByText('Saved.')).toBeNull();
+    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+  });
+
   it.each([
     ['the stored map', { mapResponse: () => jsonResponse({ error: 'Forbidden: role not allowed' }, false, 403) }, /Forbidden: role not allowed\. Tracks cannot be shown or saved/],
     ['the roster', { rosterResponse: () => jsonResponse({ error: 'Server error' }, false, 500) }, /Server error\. Tracks cannot be shown or saved/],
+    // A 2xx that carries no map or no list is a read that did not work. Read
+    // as "nobody is on a track" it would let Save wipe the gym's stored map.
+    ['a stored map the reply does not carry', { mapResponse: () => jsonResponse({ ok: true }) }, /Track assignments could not be read\. Tracks cannot be shown or saved/],
+    ['a roster the reply does not carry', { rosterResponse: () => jsonResponse({ ok: true }) }, /The roster could not be read\. Tracks cannot be shown or saved/],
   ])('a failed read of %s says so and offers nothing to save', async (_label, failure, expected) => {
     const fetchMock = trackFetch({ roster: [ADA], stored: { 'ath-ada': ['pro'] }, ...failure });
 
@@ -444,6 +467,21 @@ describe('Who Trains On What', () => {
     await screen.findByText('Saved.');
     expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(1);
     expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(2);
+  });
+
+  // While the session is still being read the role is unknown, which is not
+  // the same as a sign-in that may not: nothing is asked and nobody is told no.
+  it('a session not read yet makes no call and does not tell an admin they cannot', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+    mockUsePilotSession.mockReturnValue({ ...session(null), loading: true });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<AdminCapabilitiesPage />);
+
+    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
+    expect(screen.getByRole('heading', { name: 'Who Trains On What' })).toBeTruthy();
+    expect(screen.queryByText(/This sign-in cannot read or change them/)).toBeNull();
+    expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(0);
+    expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(0);
   });
 
   // The route refuses platform_owner on both verbs (OD-2026-10-08-003 R2), and

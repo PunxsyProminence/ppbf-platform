@@ -506,18 +506,6 @@ interface RabbitHoleTopic {
 
 type RabbitHoleLoadState = 'loading' | 'loaded' | 'unavailable';
 
-/**
- * The gym's authored lessons, as the athlete reads them.
- *
- * Every lesson here was written by a person at this gym. Nothing on this
- * surface carries a SHADOW evidence tier -- PROVEN / EMERGING / EXPERIMENTAL /
- * RESEARCH_NEEDED grade retrieved and cited material, and coaching written by
- * hand cannot borrow that authority.
- *
- * A topic with no lesson is not drawn at all, and a read that did not complete
- * is never reported as an empty library: "the gym has published nothing" is a
- * claim about the coaches, not about the network.
- */
 type AthleteTracksRead =
   | { state: 'loading' }
   | { state: 'unavailable' }
@@ -597,6 +585,18 @@ function AthleteTracksPanel() {
   );
 }
 
+/**
+ * The gym's authored lessons, as the athlete reads them.
+ *
+ * Every lesson here was written by a person at this gym. Nothing on this
+ * surface carries a SHADOW evidence tier -- PROVEN / EMERGING / EXPERIMENTAL /
+ * RESEARCH_NEEDED grade retrieved and cited material, and coaching written by
+ * hand cannot borrow that authority.
+ *
+ * A topic with no lesson is not drawn at all, and a read that did not complete
+ * is never reported as an empty library: "the gym has published nothing" is a
+ * claim about the coaches, not about the network.
+ */
 function AthleteRabbitHoleLibrary() {
   const [topics, setTopics] = useState<RabbitHoleTopic[]>([]);
   const [loadState, setLoadState] = useState<RabbitHoleLoadState>('loading');
