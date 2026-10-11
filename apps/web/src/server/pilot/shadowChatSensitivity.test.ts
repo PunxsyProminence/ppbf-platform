@@ -667,8 +667,7 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 //   - the current verdict is exactly the taught shape -- valid, high-risk,
 //     the classifier's topic, one of the two classifications;
 //   - a weight-cut question: main's own weight-cut wording is in the folded
-//     message, and the topic is none, a weight row or dehydration -- or a
-//     clearance row, when the message is also a training-clearance question;
+//     message, and the topic is none, a weight row or dehydration;
 //   - a training-clearance question: "cleared" or "clearance" (not the bare
 //     word "clear") within 40 characters of train / training / contact /
 //     spar / sparring, with no "medical clearance", no medical wording and
@@ -717,7 +716,7 @@ function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): bo
   const pureTrainingClearance = RELEASED_CLEARED_NEAR.test(folded) && !KEPT_CLEARANCE_GATE.test(folded) && !MEDICAL_WORDING.test(folded) && !MEDICAL_INITIALS.test(folded);
   const clearanceTopic = RELEASED_CLEARED_TOPICS.includes(topic);
   const weightCut = same(is, { valid: true, highRisk: true, topic, classification: 'weight_cut_question' })
-    && (RELEASED_WEIGHT_TOPICS.includes(topic) || (clearanceTopic && pureTrainingClearance))
+    && RELEASED_WEIGHT_TOPICS.includes(topic)
     && (RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE))
     // A weight-cut question that also trips main's clearance gate is released
     // only if the clearance half is itself a training-clearance question.

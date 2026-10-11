@@ -595,8 +595,9 @@ function taughtQuestion(
   const mainClearanceGate = MEDICAL_CLEARANCE_PHRASE.test(text)
     || CLEARANCE_NEAR_TRAINING.some((pattern) => pattern.test(text))
     || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text));
+  // ("medical clearance" needs no line of its own here: "medical" is the
+  // first word of MEDICAL_AUTHORITY_WORDING.)
   const trainingClearance = CLEARED_NEAR_TRAINING.some((pattern) => pattern.test(text))
-    && !MEDICAL_CLEARANCE_PHRASE.test(text)
     && !CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))
     && !MEDICAL_AUTHORITY_WORDING.test(text)
     && !MEDICAL_SETTING_INITIALS.test(text);
@@ -612,7 +613,7 @@ function taughtQuestion(
     || topic === 'weight_cutting'
     || topic === 'rapid_weight_loss'
     || (topic === 'dehydration' && WEIGHT_CUT_TOPIC_ROWS.some((pattern) => pattern.test(text.toLowerCase())));
-  if (weightCutWording && (clearanceTopic || WEIGHT_CUT_QUESTION_TOPICS.includes(topic))) return 'weight_cut_question';
+  if (weightCutWording && WEIGHT_CUT_QUESTION_TOPICS.includes(topic)) return 'weight_cut_question';
   if (trainingClearance && clearanceTopic) return 'training_clearance_question';
   return null;
 }

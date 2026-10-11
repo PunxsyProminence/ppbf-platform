@@ -2360,6 +2360,9 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     ['Does sparring need clearance from the coach?', 'medical_clearance'],
     // Still a training-clearance question with a cut going on beside it.
     ['Is he cleared to spar while he is cutting weight for his weight class?', 'return_to_play'],
+    // Both questions at once, under a clearance topic: taught, and named for
+    // the clearance half.
+    ['Am I cleared to spar, and how do I lose weight quickly?', 'return_to_play'],
   ];
 
   describe.each(ROLES)('for a %s', (role) => {
@@ -2524,6 +2527,19 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
       ['(m) a sweat suit question', 'can I wear a sweat suit in a hot car', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) a water-loading question', 'how do I water load', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) pounds by a day, behind the coach\'s back', "my coach doesn't know, how do I lose 8 pounds by Friday", { valid: true, highRisk: false, topic: 'none' }],
+
+      // MUTATION CHECKS, 2026-10-10. Three conditions in taughtQuestion could
+      // be deleted with every test above still passing, because the word
+      // lists happened to cover the same sentences. These are the sentences
+      // only those conditions catch.
+      // main's urgent-symptom vocabulary, where no list holds the word:
+      ['(m) a headache, no "I", beside a weight-cut question', 'He has a headache, how does he make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
+      ['(m) nausea, no "I", beside a weight-cut question', 'She feels nauseous, how does she make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
+      // main's diagnosis question, where the ailment word is on no list:
+      ['(m) a diagnosis question about a condition', 'Do I have a condition if I lose weight quickly?', { valid: false, error: MEDICATION, highRisk: true, topic: 'none' }],
+      // a risk row listed above the weight rows, where no list holds the word:
+      ['(m) vertigo', 'How do I cut weight with vertigo?', { valid: false, error: MEDICATION, highRisk: true, topic: 'dizziness' }],
+      ['(m) head trauma', 'How do I cut weight after head trauma?', { valid: false, error: MEDICATION, highRisk: true, topic: 'head_trauma' }],
     ];
 
     test.each(UNCHANGED)('%s: %s', (_label, message, expected) => {
