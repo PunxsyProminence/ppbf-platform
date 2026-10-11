@@ -793,11 +793,17 @@ describe('through the routes: revise, unlink and correct, and what the next read
     const v1 = await item<ProtocolItem>(await protocolsRoute.POST(send('POST', PROTOCOLS, {
       ...CONTENT, athlete_id: ATHLETE_ID, intended_exposure: { rounds: 6 },
     })));
+    // Each write below is sent in the shape its screen sends it: every field
+    // the form shows, the optional ones as empty strings.
     const v2 = await item<ProtocolItem>(await protocolsRoute.PATCH(send('PATCH', PROTOCOLS, {
       action: 'revise',
       protocol_id: v1.protocol_id,
       ...CONTENT,
       hypothesis: 'It is pacing, not conditioning.',
+      intended_task_context: '',
+      contradicting_evidence: '',
+      alternative_explanations: '',
+      evaluation_plan: '',
       intended_exposure: { rounds: 4 },
     })));
     expect(v2).toMatchObject({
@@ -861,8 +867,12 @@ describe('through the routes: revise, unlink and correct, and what the next read
       action: 'correct',
       execution_id: original.execution_id,
       correction_reason: 'logged six rounds; it was four',
+      outcome: 'completed',
       adherence: 'under_delivered',
       trained_context: 'controlled',
+      deviations: '',
+      stop_change_reason: '',
+      notes: '',
       actual_exposure: { rounds: 4 },
     })));
     expect(current).toMatchObject({

@@ -93,8 +93,9 @@ export default function InterventionExecutionsPage() {
   const [closeForm, setCloseForm] = useState(EMPTY_FACTS);
   const [closeExposure, setCloseExposure] = useState<Record<string, string>>({});
   // A correction re-states the actual facts, so it borrows the close-out
-  // fields (prefilled from the record) and adds the one thing only a
-  // correction needs: why.
+  // fields and adds the one thing only a correction needs: why. Either way
+  // the fields open holding what the record says now -- both acts send every
+  // field they show, and a blank one would overwrite what was recorded.
   const [correcting, setCorrecting] = useState<string | null>(null);
   const [correctionReason, setCorrectionReason] = useState('');
 
@@ -164,17 +165,13 @@ export default function InterventionExecutionsPage() {
     }
   };
 
+  // Closing the form needs no reset: every way of opening it loads the record.
   const closeFactsForm = () => {
     setClosing(null);
     setCorrecting(null);
-    setCorrectionReason('');
-    setCloseForm(EMPTY_FACTS);
-    setCloseExposure({});
   };
 
-  const startCorrecting = (row: ExecutionRow) => {
-    setClosing(null);
-    setCorrecting(row.execution_id);
+  const loadFacts = (row: ExecutionRow) => {
     setCorrectionReason('');
     setCloseForm({
       ...EMPTY_FACTS,
@@ -188,6 +185,18 @@ export default function InterventionExecutionsPage() {
     setCloseExposure(Object.fromEntries(
       Object.entries(row.actual_exposure).map(([dimension, amount]) => [dimension, String(amount)]),
     ));
+  };
+
+  const startClosing = (row: ExecutionRow) => {
+    setCorrecting(null);
+    setClosing(row.execution_id);
+    loadFacts(row);
+  };
+
+  const startCorrecting = (row: ExecutionRow) => {
+    setClosing(null);
+    setCorrecting(row.execution_id);
+    loadFacts(row);
   };
 
   /** The exposure fields as numbers, or null (with the reason shown) when one is not a positive number. */
@@ -421,7 +430,7 @@ export default function InterventionExecutionsPage() {
                       <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
                         {row.status === 'in_progress' && (
                           <button type="button" className="btn btn--ghost" disabled={busy}
-                            onClick={() => { closeFactsForm(); setClosing(row.execution_id); }}>
+                            onClick={() => startClosing(row)}>
                             Close out
                           </button>
                         )}

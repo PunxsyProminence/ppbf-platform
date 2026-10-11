@@ -350,22 +350,126 @@ describe('correcting a record', () => {
     expect(screen.getByText(/rounds must be a positive number/)).toBeTruthy();
   });
 
-  test('a cancelled correction leaves nothing behind in the close-out form', async () => {
+  test('a cancelled correction leaves nothing it typed behind in the close-out form', async () => {
     const server = correctionServer(EXECUTION);
     await openCorrection(server);
 
     await change('What was wrong? (required)', 'never mind');
+    await change('Rounds', '9');
+    await change('Adherence', 'not_delivered');
     await press('Cancel');
     expect(server.patches).toHaveLength(0);
 
-    // Close out shares these fields. It must start from its own blank
-    // defaults, not from the record the correction form was loaded with.
+    // Close out shares these fields. It opens on what the RECORD says, not on
+    // what was typed into the abandoned correction.
     await press('Close out');
-    expect(valueOf('Adherence')).toBe('unknown');
-    expect(valueOf('Trained context')).toBe('unknown');
-    expect(valueOf('Rounds')).toBe('');
-    expect(valueOf('Deviations (required if you claimed any)')).toBe('');
+    expect(valueOf('Rounds')).toBe('3');
+    expect(valueOf('Adherence')).toBe('under_delivered');
     expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
+  });
+
+  test('closing out a record that already has facts keeps them: the form opens holding what the record says', async () => {
+    // A correction can put facts on work still in progress. Close out sends
+    // every field it shows, so a form that opened blank would overwrite
+    // them with "unknown" and "none recorded".
+    const server = correctionServer(EXECUTION);
+    global.fetch = server.fetchMock;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Close out' }));
+    });
+
+    expect(valueOf('Outcome')).toBe('completed');
+    expect(valueOf('Adherence')).toBe('under_delivered');
+    expect(valueOf('Trained context')).toBe('constrained_live');
+    expect(valueOf('Rounds')).toBe('3');
+    expect(valueOf('Deviations (required if you claimed any)')).toBe('cut to 3 rounds -- athlete gassed');
+
+    await press('Record close-out');
+    expect(server.patches).toHaveLength(1);
+    expect(server.patches[0]).toMatchObject({
+      action: 'close',
+      execution_id: 'ex-1',
+      outcome: 'completed',
+      adherence: 'under_delivered',
+      trained_context: 'constrained_live',
+      deviations: 'cut to 3 rounds -- athlete gassed',
+      actual_exposure: { rounds: 3 },
+    });
+  });
+
+  test('a correction that is saved while the reload fails still closes the form, and says the list could not be loaded', async () => {
+    const patches: unknown[] = [];
+    let saved = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)));
+        saved = true;
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (url.includes('/intervention-executions')) {
+        if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items: [EXECUTION] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
+    });
+
+    await change('What was wrong? (required)', 'wrong round count');
+    await press('Record correction');
+
+    expect(patches).toHaveLength(1);
+    // The correction went in. The form must not sit open inviting a second one.
+    expect(screen.queryByRole('button', { name: 'Record correction' })).toBeNull();
+    expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+  });
+
+  test('switching straight from correcting one record to correcting another carries nothing across', async () => {
+    const other = {
+      ...EXECUTION, execution_id: 'ex-other', athlete_name: 'Sam R.',
+      actual_exposure: { minutes: 20 }, adherence: 'delivered_as_planned', deviations: '',
+    };
+    const patches: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') patches.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      const items = String(input).includes('/intervention-executions') ? [EXECUTION, other] : [];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+
+    await act(async () => {
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Correct record' }))[0]);
+    });
+    await change('What was wrong? (required)', 'a reason meant for the first record');
+    await change('Rounds', '9');
+    // The first record's form is open, so the one Correct record button left is the second record's.
+    await press('Correct record');
+
+    expect(valueOf('What was wrong? (required)')).toBe('');
+    expect(valueOf('Rounds')).toBe('');
+    expect(valueOf('Minutes')).toBe('20');
+    expect(valueOf('Adherence')).toBe('delivered_as_planned');
+
+    await change('What was wrong? (required)', 'twenty minutes, not thirty');
+    await press('Record correction');
+    expect(patches).toEqual([expect.objectContaining({
+      action: 'correct',
+      execution_id: 'ex-other',
+      correction_reason: 'twenty minutes, not thirty',
+      adherence: 'delivered_as_planned',
+      actual_exposure: { minutes: 20 },
+    })]);
   });
 
   test('closing out one record while another is being corrected does not carry the other record\'s facts across', async () => {

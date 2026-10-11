@@ -303,6 +303,88 @@ describe('revising a protocol', () => {
     expect(server.sent[0].body).toMatchObject({ title: 'A different protocol', intended_exposure: {} });
   });
 
+  test('switching straight from revising one protocol to revising another files against the second, with its content', async () => {
+    const second = {
+      ...PROTOCOL, protocol_id: 'p-b', lineage_id: 'p-b', version: 1, athlete_id: null, athlete_name: null,
+      title: 'Guard recovery', hypothesis: 'it is a habit, not fatigue', intended_exposure: { sessions: 4 },
+    };
+    const sent: Array<{ method: string; body: Record<string, unknown> }> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method) sent.push({ method: init.method, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+      const items = String(input).includes('/intervention-protocols') ? [PROTOCOL, second] : [];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionProtocolsPage />);
+    });
+
+    await act(async () => {
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Revise' }))[0]);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Hypothesis/), { target: { value: 'typed for the first protocol' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Revise' })[1]);
+    });
+
+    expect(screen.getByText('Revise protocol (files version 2)')).toBeTruthy();
+    expect(fieldValue('Title')).toBe('Guard recovery');
+    expect(fieldValue(/Hypothesis/)).toBe('it is a habit, not fatigue');
+    expect(fieldValue('Rounds')).toBe('');
+    expect(fieldValue('Sessions')).toBe('4');
+    expect(fieldValue(/^Athlete/)).toBe('');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'File revision' }));
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].method).toBe('PATCH');
+    expect(sent[0].body).toMatchObject({
+      action: 'revise', protocol_id: 'p-b', title: 'Guard recovery',
+      hypothesis: 'it is a habit, not fatigue', intended_exposure: { sessions: 4 },
+    });
+  });
+
+  test('retiring the protocol being revised closes the revision; the form goes back to filing a new one', async () => {
+    const server = revisionServer();
+    await openRevision(server);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retire' }));
+    });
+
+    expect(server.sent).toEqual([{ method: 'PATCH', body: { action: 'retire', protocol_id: 'p-1' } }]);
+    expect(screen.getByText('File a protocol')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'File revision' })).toBeNull();
+    expect(fieldValue('Title')).toBe('');
+    expect((screen.getByLabelText(/^Athlete/) as HTMLSelectElement).disabled).toBe(false);
+  });
+
+  test('the locked athlete names the protocol\'s athlete even when the roster did not load', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      const items = url.includes('/intervention-protocols') ? [PROTOCOL] : [];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionProtocolsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Revise' }));
+    });
+
+    const athlete = screen.getByLabelText(/^Athlete/) as HTMLSelectElement;
+    expect(athlete.value).toBe('ath-1');
+    expect(athlete.selectedOptions[0].textContent).toBe('Jordan P.');
+    // Not offered once the revision is over.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    });
+    expect(Array.from(athlete.options).map((option) => option.textContent)).toEqual(['Org-general']);
+  });
+
   test('a retired protocol offers no Revise', async () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const items = String(input).includes('/intervention-protocols') ? [{ ...PROTOCOL, status: 'retired' }] : [];

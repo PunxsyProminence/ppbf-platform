@@ -195,6 +195,8 @@ export default function InterventionProtocolsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Retire failed (${response.status})`);
       }
+      // A retired protocol cannot be revised; do not leave its revision open.
+      if (revising?.protocol_id === protocolId) clearForm();
       await reload();
       setErrorMessage(null);
     } catch (error) {
@@ -246,6 +248,10 @@ export default function InterventionProtocolsPage() {
                 <select id="proto-athlete" className="select" value={athleteId} disabled={revising !== null}
                   onChange={(e) => setAthleteId(e.target.value)}>
                   <option value="">Org-general</option>
+                  {/* The revised protocol's athlete is shown even when the roster did not load them. */}
+                  {revising?.athlete_id && !athletes.some((athlete) => athlete.athlete_id === revising.athlete_id) && (
+                    <option value={revising.athlete_id}>{revising.athlete_name ?? revising.athlete_id}</option>
+                  )}
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                   ))}

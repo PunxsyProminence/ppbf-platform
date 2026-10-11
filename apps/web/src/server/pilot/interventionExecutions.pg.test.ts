@@ -702,13 +702,42 @@ describe('the real intervention-execution lifecycle against real rows', () => {
                  'prior_belief_strengthened', 'active', $3)`,
         [ORG_ID, originalId, COACH_ID],
       );
+
+      // Two bystanders that must NOT move. One is another execution in the
+      // same gym. The other is an execution in ANOTHER gym that happens to
+      // carry the same execution_id (the key is the pair, so it can).
+      await insertExecution(client, 'exec-bystander');
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, created_by_account_id)
+         values ($1, 'proto-1', 'proto-1', 1, 'Elsewhere block', 'p', 'h', 'i', 'e', $2)`,
+        [OTHER_ORG_ID, OTHER_ADMIN_ID],
+      );
+      await insertExecution(client, originalId, { organization_id: OTHER_ORG_ID, athlete_id: OTHER_ATHLETE_ID });
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
+         values ($1, 'link-bystander', 'exec-bystander', 'baseline', 'training_attempt', 'att-1', $2),
+                ($3, 'link-elsewhere', $4, 'baseline', 'training_attempt', 'att-9', $5)`,
+        [ORG_ID, COACH_ID, OTHER_ORG_ID, originalId, OTHER_ADMIN_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-bystander', 'exec-bystander', 'unknown', 'not this one', 'unresolved', 'unresolved', 'active', $2),
+                ($3, 'rev-elsewhere', $4, 'unknown', 'not this gym', 'unresolved', 'unresolved', 'active', $5)`,
+        [ORG_ID, COACH_ID, OTHER_ORG_ID, originalId, OTHER_ADMIN_ID],
+      );
+
       const attached = async () => ({
         links: (await client.query(
-          `select * from pilot.intervention_evidence_links where organization_id = $1 order by link_id`, [ORG_ID],
-        )).rows,
+          `select * from pilot.intervention_evidence_links order by organization_id, link_id`,
+        )).rows as Array<Record<string, unknown>>,
         reviews: (await client.query(
-          `select * from pilot.intervention_outcome_reviews where organization_id = $1 order by review_id`, [ORG_ID],
-        )).rows,
+          `select * from pilot.intervention_outcome_reviews order by organization_id, review_id`,
+        )).rows as Array<Record<string, unknown>>,
       });
       const before = await attached();
 
@@ -744,12 +773,28 @@ describe('the real intervention-execution lifecycle against real rows', () => {
 
       // The evidence and the reviews came with it: all four rows now hang
       // off the correction, and nothing about them changed but that pointer.
+      // The bystanders -- the other execution, and the other gym's execution
+      // of the same id -- are exactly as they were.
       const moved = await attached();
-      const repointed = (rows: Array<Record<string, unknown>>) =>
-        rows.map((row) => ({ ...row, execution_id: corrected!.execution_id }));
-      expect(before.links.map((row) => row.execution_id)).toEqual([originalId, originalId]);
+      const repointed = (rows: Array<Record<string, unknown>>) => rows.map((row) => (
+        row.organization_id === ORG_ID && row.execution_id === originalId
+          ? { ...row, execution_id: corrected!.execution_id }
+          : row
+      ));
+      expect(before.links.map((row) => [row.link_id, row.execution_id])).toEqual([
+        ['link-elsewhere', originalId],
+        ['link-bystander', 'exec-bystander'],
+        ['link-live', originalId],
+        ['link-struck', originalId],
+      ]);
       expect(moved.links).toEqual(repointed(before.links));
       expect(moved.reviews).toEqual(repointed(before.reviews));
+      expect(moved.links.map((row) => [row.link_id, row.execution_id])).toEqual([
+        ['link-elsewhere', originalId],
+        ['link-bystander', 'exec-bystander'],
+        ['link-live', corrected!.execution_id],
+        ['link-struck', corrected!.execution_id],
+      ]);
 
       // A superseded record cannot itself be corrected again -- and the
       // refusal leaves the evidence where the correction put it.
