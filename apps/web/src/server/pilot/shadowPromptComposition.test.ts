@@ -48,13 +48,15 @@ You are speaking with an athlete. Assume they may be a minor.
 - Hold them to it. Do not make excuses for them or take the responsibility off them: the mistake is theirs to own and theirs to fix. Being treated badly by someone else is not a mistake and not an excuse.
 - Short sentences. Plain words -- about an 8th-grade reading level.
 - Define any training or medical term in a few words the first time you use it.
-- Point them toward their coach for decisions rather than toward long theory.`;
+- Point them toward their coach for decisions rather than toward long theory.
+- Weight cutting, sauna, sweat suit, water loading: teach it for a young athlete. Coach-set limits are not shown to you here. Say their coach may have set limits for them, and to ask the coach what they are before doing any of it.`;
 
 const PARENT_REGISTER = `## AUDIENCE REGISTER
 You are speaking with a parent or guardian. Assume no boxing or sports-science background.
 - Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
 - Respectful. The gym's dry, dark humor is welcome: aim it at the situation, never at the parent or their child. Put the plain meaning beside any gym slang.
-- Be clear about what needs a coach or medical professional, and how to reach one.`;
+- Be clear about what needs a coach or medical professional, and how to reach one.
+- Weight cutting, sauna, sweat suit, water loading: teach it for a young athlete, in plain words. Coach-set limits are not shown to you here. Say the coach may have set limits for their child (heat, weight cut, contact, supervision) and that the coach has them.`;
 
 const STAFF_REGISTER = `## AUDIENCE REGISTER
 You are speaking with staff. Use the full technical register: precise terminology, direct analysis, and the complete persona defined above.`;
@@ -134,6 +136,90 @@ describe('teach first', () => {
   test('the deflect-first example is gone', () => {
     expect(SHADOW_SYSTEM_PROMPT).not.toContain("that's not my lane");
     expect(SHADOW_SYSTEM_PROMPT).not.toContain('Want that?');
+  });
+});
+
+// Lane S1, OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone": SHADOW
+// teaches weight cutting safely from real sources, age-tuned, and the coach
+// decides) and OD-2026-10-01-001 ("we can educate it in a safe way", "the app
+// should rarely say dont"). The section is pinned whole for the same reason
+// the registers are: a model talking to minors reads it. Overwatch accepted
+// this text before it was built.
+const WEIGHT_CUT_SECTION = `WEIGHT CUTTING, HEAT AND "AM I CLEARED" QUESTIONS — TEACH, THE COACH DECIDES:
+Making weight is part of boxing, and this gym teaches it instead of hiding it. When someone asks about cutting weight, making weight, a sauna, a sweat suit, water loading or dehydration:
+1. Teach how it works: what the method does in the body, what actually comes off and how fast it comes back, and why fighters use it.
+2. Teach how it is done as safely as possible: the slow way before the fast way, what makes it riskier, and the warning signs that mean stop and tell the coach now.
+3. Tune it to age. When the context says the athlete is a minor, or you are speaking with an athlete or a parent, teach it for a young athlete: smaller amounts, wider margins, an adult watching. Use only what the context tells you about age; do not guess one.
+4. Ground it in the Library. Use what the verified evidence in your context says, and cite it. Where the Library holds nothing on a point, say so in plain words ("the Library has nothing on that yet") and do not fill the gap with a number, a schedule or a rule of your own.
+5. Leave the decision with the coach. You teach; the coach decides whether, how much and when. When coach-set limits are in your context, give them as written, each with its id. When they are not, say that the coach may have set limits for this athlete and that those come first.
+A question about being "cleared" to spar, train or take contact is a question about what the coach has set. Answer from the recorded contact cap when it is in your context, with its id; when it is not, say the coach sets that, and to ask them. You never clear anyone yourself, and medical clearance stays a medical professional's call.
+Add no warnings, disclaimers or refusals beyond these steps. Say "don't" rarely, and only where the teaching itself calls for it.`;
+
+describe('weight cutting, heat and "am I cleared" questions are taught', () => {
+  test('the section is exactly the approved text, between TEACH FIRST and PHRASING', () => {
+    expect(SHADOW_SYSTEM_PROMPT.split(WEIGHT_CUT_SECTION)).toHaveLength(2);
+    const teachFirst = SHADOW_SYSTEM_PROMPT.indexOf('TEACH FIRST — PAIN, INJURY, HEAD KNOCKS AND RECOVERY QUESTIONS:');
+    const section = SHADOW_SYSTEM_PROMPT.indexOf(WEIGHT_CUT_SECTION);
+    const phrasing = SHADOW_SYSTEM_PROMPT.indexOf('PHRASING — A RESPONSE FILTER ENFORCES THIS:');
+    expect(teachFirst).toBeGreaterThan(-1);
+    expect(section).toBeGreaterThan(teachFirst);
+    expect(phrasing).toBeGreaterThan(section);
+    // Its own section: the TEACH FIRST block ends where it did, and the
+    // section is followed by a blank line and PHRASING.
+    expect(SHADOW_SYSTEM_PROMPT).toContain(`Do not prescribe exercises, stretches, ice, heat or medication as treatment.\n\n${WEIGHT_CUT_SECTION}\n\nPHRASING — A RESPONSE FILTER ENFORCES THIS:`);
+  });
+
+  test('every audience gets the same section: it is in the base prompt, not in a register', () => {
+    for (const role of ['coach', 'organization_admin', 'athlete', 'parent']) {
+      for (const sessionType of ['quick_round', 'heavy_bag']) {
+        expect(composeShadowSystemPrompt({ role, sessionType }).split(WEIGHT_CUT_SECTION)).toHaveLength(2);
+      }
+    }
+  });
+
+  test('it teaches in order: how it works, as safely as possible, age, the Library, the coach decides', () => {
+    const order = ['1. Teach how it works', '2. Teach how it is done as safely as possible', '3. Tune it to age', '4. Ground it in the Library', '5. Leave the decision with the coach']
+      .map((step) => WEIGHT_CUT_SECTION.indexOf(step));
+    expect(order.every((index) => index > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test('it says the Library has nothing instead of filling the gap, and never guesses an age', () => {
+    expect(WEIGHT_CUT_SECTION).toContain('Where the Library holds nothing on a point, say so in plain words');
+    expect(WEIGHT_CUT_SECTION).toContain('do not fill the gap with a number, a schedule or a rule of your own');
+    expect(WEIGHT_CUT_SECTION).toContain('Use only what the context tells you about age; do not guess one.');
+  });
+
+  test('it does not loosen the doctrine: no clearance from SHADOW, and no new warnings', () => {
+    expect(WEIGHT_CUT_SECTION).toContain("You never clear anyone yourself, and medical clearance stays a medical professional's call.");
+    expect(WEIGHT_CUT_SECTION).toContain('Add no warnings, disclaimers or refusals beyond these steps.');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('3. Never grant medical clearance or return-to-play approval.');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('2. Never prescribe treatment or medication.');
+  });
+
+  test('athletes and parents are pointed back to the coach-set limits; the staff register is unchanged', () => {
+    expect(buildRegisterPrompt('athlete')).toContain('Say their coach may have set limits for them, and to ask the coach what they are before doing any of it.');
+    expect(buildRegisterPrompt('parent')).toContain('Say the coach may have set limits for their child (heat, weight cut, contact, supervision) and that the coach has them.');
+    // Limits are staff only (OD-2026-10-08-007); these two registers say so
+    // in the prompt's own terms.
+    for (const role of ['athlete', 'parent']) {
+      expect(buildRegisterPrompt(role)).toContain('Coach-set limits are not shown to you here.');
+    }
+    expect(buildRegisterPrompt('coach')).toBe(STAFF_REGISTER);
+  });
+
+  // The response rules these two lines describe are untouched by lane S1 and
+  // apply with or without a citation, so they sit under their own lead-in and
+  // not in the citation list above it.
+  test('PHRASING names the two rules a taught answer still has to get past', () => {
+    const lead = 'With or without a citation, the filter also WITHHOLDS your entire answer if it:';
+    expect(SHADOW_SYSTEM_PROMPT.split(lead)).toHaveLength(2);
+    const after = SHADOW_SYSTEM_PROMPT.slice(SHADOW_SYSTEM_PROMPT.indexOf(lead) + lead.length);
+    expect(after.startsWith(`
+- puts "cleared" after "you" or after "the athlete is" in the same sentence, even in "ask your coach what you are cleared for". Give a recorded contact cap as a cap ("the contact cap is <value> [E:id]"), or say "what your coach has set"
+- puts cut, cutting, drop, shed or lose shortly before "water weight" or a number of pounds or kilos, says "restrict fluids" or "restrict water", or says "you should / can / need to / must ... cut weight" or "make weight"
+Without a supplied evidence ID,`)).toBe(true);
+    expect(SHADOW_SYSTEM_PROMPT.indexOf('- states a percentage, or a count of cases, athletes, participants, or studies')).toBeLessThan(SHADOW_SYSTEM_PROMPT.indexOf(lead));
   });
 });
 

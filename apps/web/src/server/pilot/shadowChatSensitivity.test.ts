@@ -14,6 +14,12 @@
 // Not "behaves identically": flagging more is the point. Becoming LESS
 // sensitive, for any message, is the regression.
 //
+// ONE EXCEPTION TO PROPERTY 1, THE OWNER'S (2026-10-10, lane S1). Jason ruled
+// that weight-cut questions and "cleared" near spar / contact / train reach
+// the model for every audience (OD-2026-10-10-004 ruling 1, "B: Relax for
+// everyone"). Those messages, and no others, are released; see NAMED RELEASE
+// below. Properties 2 and 3 have no exception.
+//
 // WHY THIS FILE IS NOT MORE EXAMPLES. Earlier versions of the fold did more
 // than this one, and each extra was found to be wrong by somebody thinking of
 // a message nobody had thought of: deleting U+FEFF released a message main
@@ -244,6 +250,10 @@ const EMERGENCY_TEXT = 'Potential emergency: stop participation and contact loca
 // file's job is to say what main's results MEANT at b4f58159.
 const CRITICAL = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom'];
 
+// The two classifications lane S1's taught return carries (see NAMED RELEASE
+// below). Main never gives either.
+const OWNER_RELEASE_CLASSIFICATIONS = ['weight_cut_question', 'training_clearance_question'];
+
 const withheld = (v: Verdict): boolean => v.valid === false;
 const emergency = (v: Verdict): boolean => v.valid === false && v.error === EMERGENCY_TEXT;
 const critical = (v: Verdict): boolean => CRITICAL.includes(v.classification ?? '');
@@ -252,6 +262,7 @@ const same = (a: Verdict, b: Verdict): boolean => JSON.stringify(a) === JSON.str
 
 /** Which of main's nine returns produced this result, in source order. */
 function returnOf(v: Verdict): string {
+  if (v.valid && OWNER_RELEASE_CLASSIFICATIONS.includes(v.classification ?? '')) return 'S1 taught (owner release)';
   if (v.valid) return 'classification' in v ? 'R2 educational, allowed' : 'R9 nothing matched, allowed';
   if (v.error === 'Medication and prescription recommendations require prescription authority and professional medical oversight.') return 'R1 prescription or weight cut';
   if (v.classification === 'urgent_personal_symptom') return 'R3 urgent';
@@ -632,6 +643,73 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
   return !(withheld(was) && !withheld(is)) && !(emergency(was) && !emergency(is)) && !(critical(was) && !critical(is));
 }
 
+// ---------------------------------------------------------------------------
+// NAMED RELEASE (2026-10-10, lane S1). THE ONE PLACE PROPERTY 1 IS GIVEN UP,
+// AND IT IS THE OWNER WHO GAVE IT UP.
+//
+// OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone"): "SHADOW's
+// weight-cut request gate, its 'cleared' request gate and its response
+// filter on sauna / sweat suit / dehydrate / water loading are relaxed for
+// every audience, athletes and parents included." So some messages main
+// withheld are now answered by the model, on purpose. Property 1 ("anything
+// main withheld is still withheld") holds for every message EXCEPT those,
+// and properties 2 and 3 hold for every message with no exception: the
+// emergency text is never lost and nothing critical is downgraded, and
+// those two checks below take no excuse from this block.
+//
+// validateShadowRequest gains one statement and one return, and one
+// condition changes; S1d undoes exactly those. taughtQuestion lives outside
+// the two guarded functions, as emergencyReport does.
+//
+// WHAT COUNTS AS THE RULING'S RELEASE is written out here a second time, from
+// the ruling and Overwatch's confirmation of its reading (2026-10-10), not
+// imported from the code it checks:
+//   - the current verdict is exactly the taught shape -- valid, high-risk,
+//     the classifier's topic, one of the two classifications;
+//   - a weight-cut question: main's own weight-cut wording is in the folded
+//     message, and the topic is none, a weight row, dehydration, or a
+//     clearance row;
+//   - a training-clearance question: "clear(ed|ance)" within 40 characters of
+//     train / training / contact / spar / sparring, with no "medical
+//     clearance", no medical or doctor wording and no "cleared" near play /
+//     compete / competition / return, and the topic none or a clearance row;
+//   - main did not answer it as an emergency or at a critical
+//     classification, and main left by R1, R2, R6 or R8 -- never by R3
+//     (urgent), R4 (personal health), R5 (diagnosis) or R7 (medication).
+// A message the current code releases that is not all of that is reported
+// as released, exactly as before.
+// ---------------------------------------------------------------------------
+const RELEASED_WEIGHT_WORDING = /weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight|rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/;
+const RELEASED_WEIGHT_PHRASE = 'lose weight quickly';
+const RELEASED_WEIGHT_TOPICS = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration', 'return_to_play', 'medical_clearance'];
+const RELEASED_CLEARED_NEAR = /\bclear(?:ed|ance)?\b.{0,40}\b(?:train|training|contact|spar|sparring)\b|\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i;
+// What keeps main's clearance gate: its "medical clearance" phrase and
+// "cleared" near the competition words (the rest of main's gate), and medical
+// or doctor wording beside a training-clearance question.
+const KEPT_CLEARANCE_GATE = /\bmedical\s+clear(?:ed|ance)?\b|\bclear(?:ed|ance)?\b.{0,40}\b(?:play|compete|competition|return)\b|\b(?:play|compete|competition|return)\b.{0,40}\bclear(?:ed|ance)?\b/i;
+const MEDICAL_WORDING = /\b(?:medical(?:ly)?|doctor(?:'?s)?|physician|clinician)\b/i;
+const RELEASED_CLEARED_TOPICS = ['none', 'return_to_play', 'medical_clearance'];
+const RELEASED_FROM = ['R1 prescription or weight cut', 'R2 educational, allowed', 'R6 clearance', 'R8 high-risk fallback'];
+
+function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): boolean {
+  const folded = normaliseForMatching(message);
+  const lowered = folded.toLowerCase();
+  const topic = classifyHighRiskTopic(message).topic;
+  const pureTrainingClearance = RELEASED_CLEARED_NEAR.test(folded) && !KEPT_CLEARANCE_GATE.test(folded) && !MEDICAL_WORDING.test(folded);
+  const weightCut = same(is, { valid: true, highRisk: true, topic, classification: 'weight_cut_question' })
+    && RELEASED_WEIGHT_TOPICS.includes(topic)
+    && (RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE))
+    // A weight-cut question that also trips main's clearance gate is released
+    // only if the clearance half is itself a training-clearance question.
+    && (!(KEPT_CLEARANCE_GATE.test(folded) || RELEASED_CLEARED_NEAR.test(folded)) || pureTrainingClearance);
+  const trainingClearance = same(is, { valid: true, highRisk: true, topic, classification: 'training_clearance_question' })
+    && RELEASED_CLEARED_TOPICS.includes(topic)
+    && pureTrainingClearance;
+  if (!weightCut && !trainingClearance) return false;
+  if (emergency(was) || critical(was)) return false;
+  return RELEASED_FROM.includes(returnOf(was));
+}
+
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
 
@@ -799,6 +877,11 @@ describe('the premises of the argument, read from source', () => {
     // return, placed before main's first return.
     validate = drop(validate, 'const emergency = emergencyReport(text, hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern), classification);');
     validate = drop(validate, 'if (emergency) return emergency;');
+    // The named release (see NAMED RELEASE above): one statement, one
+    // condition, one return.
+    validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasUrgentSymptom || hasAcuteImpactConcern || hasPersonalHealthConcern);');
+    validate = undo(validate, 'if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {', 'if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {', 1);
+    validate = drop(validate, 'if (taught) { return { valid: true, highRisk: true, topic: classification.topic, classification: taught }; }');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -1088,8 +1171,8 @@ describe('what the fold does to every UTF-16 code unit', () => {
       if (message.toLowerCase().charCodeAt(at) !== 0x03c2 || normaliseForMatching(message).toLowerCase().charCodeAt(at) !== 0x03c3) {
         wrong.push('no sigma difference: ' + seed);
       }
-      if (!same(now(message), main(normaliseForMatching(message))) && !explainedByEmergencyFirst(message, main(message), now(message))) wrong.push('not main of fold: ' + seed);
-      if (withheld(main(message)) && !withheld(now(message))) wrong.push('released: ' + seed);
+      if (!same(now(message), main(normaliseForMatching(message))) && !explainedByEmergencyFirst(message, main(message), now(message)) && !explainedByOwnerRelease(message, main(message), now(message))) wrong.push('not main of fold: ' + seed);
+      if (withheld(main(message)) && !withheld(now(message)) && !explainedByOwnerRelease(message, main(message), now(message))) wrong.push('released: ' + seed);
       if (emergency(main(message)) && !emergency(now(message))) wrong.push('emergency lost: ' + seed);
       if (critical(main(message)) && !critical(now(message))) wrong.push('downgraded: ' + seed);
     }
@@ -1396,8 +1479,13 @@ describe('main against the current code: every look-alike at every position of e
     // main does, but for the seeds the named reordering moves to R3: each
     // of those is an emergency report, in main's own words, that main
     // answered from a return above its emergency one.
-    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed)) && !explainedByEmergencyFirst(seed, main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
-    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual(SEEDS_MOVED_TO_R3_BY_ORDERING);
+    // And for the seeds the owner's ruling releases (NAMED RELEASE above):
+    // each is a weight-cut question, or "cleared" near spar, with no acute
+    // sign in main's vocabulary.
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed)) && !explainedByEmergencyFirst(seed, main(seed), now(seed)) && !explainedByOwnerRelease(seed, main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+    expect(SEEDS.filter(([, seed]) => explainedByEmergencyFirst(seed, main(seed), now(seed)) && !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual(SEEDS_MOVED_TO_R3_BY_ORDERING);
+    expect(SEEDS.filter(([, seed]) => explainedByOwnerRelease(seed, main(seed), now(seed))).map(([, seed]) => seed)).toEqual(SEEDS_RELEASED_BY_OWNER_RULING);
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed).sort()).toEqual([...SEEDS_MOVED_TO_R3_BY_ORDERING, ...SEEDS_RELEASED_BY_OWNER_RULING].sort());
   });
 
   // Each of the eighteen look-alikes, substituted for each character of each
@@ -1413,6 +1501,8 @@ describe('main against the current code: every look-alike at every position of e
     let compared = 0;
     const moves: Record<string, number> = {};
     let newlyWithheld = 0;
+    let ownerReleased = 0;
+    const ownerReleasedFrom: Record<string, number> = {};
     let newlyWithheldWithoutEmergencyText = 0;
     let newlyEmergency = 0;
     let anyFieldDiffers = 0;
@@ -1425,12 +1515,20 @@ describe('main against the current code: every look-alike at every position of e
           compared += 1;
           byMainReturn[returnOf(was)] = (byMainReturn[returnOf(was)] ?? 0) + 1;
 
-          if (withheld(was) && !withheld(is)) released.push(show(message));
+          // The owner's release (NAMED RELEASE above) excuses property 1 and
+          // the field-for-field comparison, and nothing else: the emergency
+          // and critical checks on the next two lines take no excuse.
+          const ruled = explainedByOwnerRelease(message, was, is);
+          if (ruled) {
+            ownerReleased += 1;
+            ownerReleasedFrom[returnOf(was)] = (ownerReleasedFrom[returnOf(was)] ?? 0) + 1;
+          }
+          if (withheld(was) && !withheld(is) && !ruled) released.push(show(message));
           if (emergency(was) && !emergency(is)) emergencyLost.push(show(message));
           if (critical(was) && !critical(is)) downgraded.push(show(message));
           // Step 1 of the argument, run: the current code is main applied to
           // the folded message, in every field.
-          if (!same(is, main(normaliseForMatching(message))) && !explainedByAddition(message, was, is) && !explainedByEmergencyFirst(message, was, is)) notMainOfFold.push(show(message));
+          if (!same(is, main(normaliseForMatching(message))) && !explainedByAddition(message, was, is) && !explainedByEmergencyFirst(message, was, is) && !ruled) notMainOfFold.push(show(message));
 
           if (!withheld(was) && withheld(is)) newlyWithheld += 1;
           if (!withheld(was) && withheld(is) && !emergency(is)) newlyWithheldWithoutEmergencyText += 1;
@@ -1457,7 +1555,7 @@ describe('main against the current code: every look-alike at every position of e
     // number is exact because the seeds, the eighteen look-alikes and the
     // frozen reference are all fixed; a change to any of them changes these
     // and has to say so.
-    expect({ compared, byMainReturn, newlyWithheld, newlyEmergency, anyFieldDiffers, moves }).toEqual(SEED_DIFFERENTIAL_COUNTS);
+    expect({ compared, byMainReturn, newlyWithheld, newlyEmergency, anyFieldDiffers, moves, ownerReleased, ownerReleasedFrom }).toEqual(SEED_DIFFERENTIAL_COUNTS);
     // Every message main allowed that is now withheld carries the emergency text.
     expect(newlyWithheldWithoutEmergencyText).toBe(0);
   });
@@ -1484,13 +1582,13 @@ describe('main against the current code: every look-alike at every position of e
   // does, in every field. This is the test that the U+FEFF-to-space fold
   // failed: it made "lose weight<FEFF>quickly" match the weight-cut phrase,
   // which main's did not, and R1 sits above R3.
-  test('U+FEFF anywhere in any seed: the current code gives main\'s answer in every field', () => {
+  test('U+FEFF anywhere in any seed: the current code gives main\'s answer in every field, but for the named differences', () => {
     const different: string[] = [];
     let compared = 0;
     for (const [, seed] of SEEDS) {
       for (const message of variantsOf(seed, '\uFEFF')) {
         compared += 1;
-        if (!same(main(message), now(message)) && !explainedByAddition(message, main(message), now(message)) && !explainedByEmergencyFirst(message, main(message), now(message))) different.push(show(message));
+        if (!same(main(message), now(message)) && !explainedByAddition(message, main(message), now(message)) && !explainedByEmergencyFirst(message, main(message), now(message)) && !explainedByOwnerRelease(message, main(message), now(message))) different.push(show(message));
       }
     }
     expect(different.slice(0, 20)).toEqual([]);
@@ -1503,14 +1601,20 @@ describe('main against the current code: every look-alike at every position of e
     'He got knocked out and has to cut\uFEFFweight for my weight class',
     'chest pain just\uFEFFhappened',
     'cut weight\uFEFFfor my weight class',
-  ])('the messages the U+FEFF fold changed keep main\'s answer, or the named reordering\'s R3: %j', (message) => {
+  ])('the messages the U+FEFF fold changed get the named reordering\'s R3, or the owner\'s release: %j', (message) => {
     expect(withheld(main(message))).toBe(true);
     // Four of the five are emergency reports; the named reordering answers
     // them from R3 (same text, same topic, classification
     // urgent_personal_symptom in place of the topic; the first was main's
-    // R1 and now gets the emergency text). The fifth has no acute sign and
-    // keeps main's answer.
-    if (same(now(message), main(message))) return;
+    // R1 and now gets the emergency text). The fifth has no acute sign: it
+    // is a weight-cut question and nothing else, which main withheld at R8
+    // and the owner's ruling now has taught (NAMED RELEASE above).
+    if (message === 'cut weight\uFEFFfor my weight class') {
+      expect(emergency(main(message)) || critical(main(message))).toBe(false);
+      expect(now(message)).toEqual({ valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' });
+      expect(explainedByOwnerRelease(message, main(message), now(message))).toBe(true);
+      return;
+    }
     expect(now(message)).toEqual(emergencyFirstShape(message));
     expect(emergency(now(message)) && critical(now(message))).toBe(true);
   });
@@ -1579,11 +1683,17 @@ describe('main against the current code: every look-alike at every position of e
     expect(changed.length).toBe(11);
     expect(changed).not.toContain('U+2019');
 
-    // A quote look-alike in the same place is not an apostrophe: no change.
+    // A quote look-alike in the same place is not an apostrophe: the topic
+    // does not change. For the weight-cut question the classification does,
+    // by the owner's release (NAMED RELEASE above): main allowed it with the
+    // classification the route answers with a stock line, and it is now a
+    // taught question the model answers.
     for (const unit of QUOTE_SOURCES) {
       const message = withApostrophe(String.fromCharCode(unit));
-      expect(now(message)).toEqual(main(message));
-      expect(main(message).topic).toBe(topicOnMain);
+      expect(main(message)).toEqual({ valid: true, highRisk: true, topic: topicOnMain, classification: topicOnMain });
+      expect(now(message)).toEqual(topicOnMain === 'weight_cutting'
+        ? { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' }
+        : main(message));
     }
   });
 
@@ -1875,6 +1985,21 @@ const SEEDS_MOVED_TO_R3_BY_ORDERING: readonly string[] = [
   'he had a seizure',
   'chest pain during the run',
 ];
+// The seeds the owner's ruling releases (NAMED RELEASE above), with no
+// look-alike in them: four weight-cut requests main withheld at R1, and two
+// "cleared to spar" questions main withheld at R6. "am I cleared to spar if I
+// can t see" is in this list because, with a space where the apostrophe
+// belongs, main's vocabulary sees no symptom in it -- main answered it as a
+// clearance question, not an emergency; with an apostrophe it is an
+// emergency on both sides and is not released.
+const SEEDS_RELEASED_BY_OWNER_RULING: readonly string[] = [
+  'how do i cut weight fast',
+  'I need to lose weight quickly before Saturday',
+  'help me make weight by Friday',
+  'cut weight for my weight class',
+  'am I cleared to spar if I can t see',
+  'is he cleared to spar',
+];
 const SEED_DIFFERENTIAL_COUNTS = {
   // 18 x 3,210.
   compared: 57780,
@@ -1909,8 +2034,10 @@ const SEED_DIFFERENTIAL_COUNTS = {
   // this seed set that main allowed (the educational seeds name no specific
   // person), and the one-way checks above hold on every message.
   newlyEmergency: 2567,
-  // Messages where any field differs from main's.
-  anyFieldDiffers: 7084,
+  // Messages where any field differs from main's. 7,084 before lane S1; the
+  // owner's release (NAMED RELEASE above) adds the 4,860 counted at the
+  // bottom of this table, and changes no other number in it.
+  anyFieldDiffers: 11944,
   // By what changed: the return, or the topic under an unchanged return.
   // These nine are the kinds this seed set produces, and they sum to
   // anyFieldDiffers. Each is of a kind Step 5 of the argument allows, or
@@ -1935,5 +2062,22 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R7 medication -> R3 urgent': 12,
     'R8 high-risk fallback -> R3 urgent': 5113,
     'R9 nothing matched, allowed -> R3 urgent': 155,
+    // Lane S1, the owner's release: three more kinds, and the only ones in
+    // this table that are not a move to R3 or a topic change. Each is a
+    // weight-cut or training-clearance seed in which the look-alike leaves
+    // the question readable. From R8: a look-alike that breaks main's R1
+    // phrase ("how do i cut weight") and leaves the topic row matching.
+    'R1 prescription or weight cut -> S1 taught (owner release)': 2076,
+    'R6 clearance -> S1 taught (owner release)': 1506,
+    'R8 high-risk fallback -> S1 taught (owner release)': 1278,
+  },
+  // Every message the current code answers where main withheld, each one
+  // checked against the ruling's own terms by explainedByOwnerRelease. None
+  // comes from R3, R4, R5 or R7, and the three sum to the total.
+  ownerReleased: 4860,
+  ownerReleasedFrom: {
+    'R1 prescription or weight cut': 2076,
+    'R6 clearance': 1506,
+    'R8 high-risk fallback': 1278,
   },
 };

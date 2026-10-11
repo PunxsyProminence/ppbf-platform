@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 18;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 19;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -97,6 +97,14 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 18;
 // athleteMinorLimits.ts and athleteContactCaps.ts join the fingerprinted
 // sources below, because what they return is now in that context. A v17 job
 // still queued at deploy is refused as STALE.
+// 19: SHADOW filters relaxed for every audience (lane S1, #1417,
+// OD-2026-10-10-004 ruling 1): shadowChat.ts's request validator lets a
+// weight-cut question, and "cleared" near spar, contact or train, through to
+// the model; its response filter no longer withholds an answer for the words
+// sauna, sweat suit, dehydrate or water loading; the system prompt gains a
+// section that teaches those topics, and the athlete and parent registers one
+// line each. What goes into authorizedContext is unchanged; bumped because a
+// listed file moved. A v18 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -170,6 +178,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 16, sha256: '4f6d0ba64c024bfe8ccabe6c59e36e724111bd91ae9366c412ac50047c74b4b4' },
   { version: 17, sha256: '4c722ab586bf6327f665416287e5a6aa2823c03fec472c250ac165ea09e0b5c6' },
   { version: 18, sha256: 'e870435462fbd24a2e161a760dee44c5e015b8c69d22d06a48ec4ea2b249646f' },
+  { version: 19, sha256: '90e48d6931b1973a1054c3d09e2fd7a690441183efc144ac425d7aa4bb9b2962' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
