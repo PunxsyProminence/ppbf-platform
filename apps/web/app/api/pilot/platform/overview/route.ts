@@ -47,10 +47,10 @@ function countEnabled(value: unknown): number {
 //
 // Track assignments are NOT read here. pilot.admin_track_assignments is a map
 // keyed by athlete id, one entry per real athlete of a gym, and the platform
-// account never opens an individual athlete's record (OD-2026-09-28-005; the
-// same read was taken off platform/gym-summary and admin/track-assignments
-// under OD-2026-10-08-003 R2). This route used to select every gym's whole map
-// to produce a count no screen showed.
+// account never opens an individual athlete's record (OD-2026-09-28-005).
+// #1406 took the same read off platform/gym-summary, and OD-2026-10-08-003 R2
+// took platform_owner off admin/track-assignments. This route used to select
+// every gym's whole map to produce a count no screen showed.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);

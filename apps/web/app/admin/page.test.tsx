@@ -134,6 +134,94 @@ it('after a gym-capability read comes back, each row states its access and can b
   expect(screen.queryByText('Gym admin access could not be read.')).toBeNull();
 });
 
+// THE AUTOSAVE LANE (useAutosaveLane), which still carries the capability
+// registry and the gym-capability switches. These two cases used to ride on
+// the tracks panel, back when tracks saved on every click; tracks now save on
+// a button (see 'Who Trains On What' below), so they ride on the gym-capability
+// switches instead. What they assert about the lane is unchanged.
+//
+// Found by review on #618: every state change used to start its own
+// overlapping whole-record POST, so an older request finishing last could
+// write its snapshot over a newer one AND clear the banner a newer failed save
+// had just earned. The lane serializes sends and lets only the newest speak.
+it('a stale save cannot outrun a newer one or speak over its banner', async () => {
+  let releaseFirstPost: (response: Response) => void = () => undefined;
+  let postCount = 0;
+  const postBodies: string[] = [];
+
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/admin/gym-capabilities')) {
+      if ((init?.method ?? 'GET') === 'POST') {
+        postCount += 1;
+        postBodies.push(String(init?.body));
+        if (postCount === 1) {
+          // The hydration echo, held open so the clicks below land while a
+          // request is genuinely in flight.
+          return new Promise<Response>((resolve) => {
+            releaseFirstPost = resolve;
+          });
+        }
+        return jsonResponse({ error: 'Forbidden: role not allowed' }, false, 403);
+      }
+      return jsonResponse({ capabilityAccess: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+  await waitFor(() => expect(postCount).toBe(1));
+
+  // Two clicks while the first POST is still out: both must wait, and only
+  // the NEWEST combined snapshot may be sent when the lane frees up.
+  const [first, second] = await screen.findAllByRole('button', { name: 'Disabled' });
+  fireEvent.click(first);
+  fireEvent.click(second);
+  expect(postCount).toBe(1);
+
+  // The stale echo now succeeds -- its outcome is superseded, so it must not
+  // clear or set anything; the queued newest snapshot goes out and is refused.
+  releaseFirstPost(jsonResponse({ ok: true }));
+
+  await screen.findByText(/Forbidden: role not allowed\. This change is not saved and will be lost on reload/);
+  expect(postCount).toBe(2);
+  const finalBody = JSON.parse(postBodies[1]) as { capabilityAccess: Record<string, boolean> };
+  // Both clicks are in the one snapshot that went out, not one each in two.
+  expect(Object.values(finalBody.capabilityAccess).filter((allowed) => allowed === true)).toHaveLength(2);
+});
+
+it('a network error reports an unconfirmed save, never a definite loss', async () => {
+  // A thrown fetch has no response: the server may have committed the write
+  // before the connection died. The banner may only claim what is known.
+  let posted = 0;
+  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/admin/gym-capabilities')) {
+      if ((init?.method ?? 'GET') === 'POST') {
+        posted += 1;
+        if (posted > 1) {
+          throw new Error('Network request failed');
+        }
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ capabilityAccess: {} });
+    }
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+  await waitFor(() => expect(posted).toBe(1));
+
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Disabled' }))[0]);
+
+  await screen.findByText(/Network request failed\. The save was not confirmed -- it may or may not have been stored/);
+  expect(screen.queryByText(/will be lost on reload/)).toBeNull();
+});
+
 // WHO TRAINS ON WHAT (OD-2026-10-07-010 ruling 3): tracks are set for real
 // athletes of this gym, picked by name. The control used to hold three made-up
 // athletes and save on load and on every click; it now reads the roster and
@@ -347,7 +435,7 @@ describe('Who Trains On What', () => {
     await screen.findByText(expected);
     expect(screen.queryByText('Saved.')).toBeNull();
     expect(screen.queryByText(/^Refused:/)).toBeNull();
-    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+    expect(screen.getByText('Not confirmed saved: Ada Lopez')).toBeTruthy();
   });
 
   it('if the stored map cannot be read again at save time, nothing is sent', async () => {
@@ -467,6 +555,165 @@ describe('Who Trains On What', () => {
     await screen.findByText('Saved.');
     expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(1);
     expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(2);
+  });
+
+  // The line between "the route said no" and "nobody knows": every 4xx is a
+  // refusal with the route's message, every 5xx is unconfirmed.
+  it.each([
+    [400, 'refused'],
+    [403, 'refused'],
+    [409, 'refused'],
+    [499, 'refused'],
+    [500, 'unconfirmed'],
+    [503, 'unconfirmed'],
+  ] as const)('a %i answer to the save is reported as %s', async (status, kind) => {
+    const fetchMock = trackFetch({
+      roster: [ADA],
+      stored: {},
+      post: () => jsonResponse({ error: 'The route said this' }, false, status),
+    });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    fireEvent.click(saveButton());
+
+    if (kind === 'refused') {
+      await screen.findByText('Refused: The route said this');
+      expect(screen.queryByText(/^Failed:/)).toBeNull();
+    } else {
+      await screen.findByText(/^Failed: The route said this\. The save was not confirmed/);
+      expect(screen.queryByText(/^Refused:/)).toBeNull();
+    }
+  });
+
+  // After a save that was sent and never answered, the change may be stored.
+  // Calling it "not saved" would be a claim nobody can back.
+  it('an unconfirmed save calls the change not confirmed, never not saved', async () => {
+    const fetchMock = trackFetch({
+      roster: [ADA],
+      stored: {},
+      post: () => Promise.reject(new Error('Network request failed')),
+    });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+    fireEvent.click(saveButton());
+
+    await screen.findByText(/^Failed: Network request failed\. The save was not confirmed/);
+    expect(screen.getByText('Not confirmed saved: Ada Lopez')).toBeTruthy();
+    expect(screen.queryByText(/Not saved yet/)).toBeNull();
+    expect(trackButton(/USA Boxing Track/).textContent).toContain('Status: Assigned (not confirmed)');
+    expect(trackButton(/USA Boxing Track/).textContent).not.toContain('(not saved)');
+    // It can be sent again.
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it('if the re-read at save time drops, the control says nothing was sent, not that the save is unconfirmed', async () => {
+    const server: TrackServer = { roster: [ADA], stored: {} };
+    const fetchMock = trackFetch(server);
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    server.mapResponse = () => {
+      throw new Error('Network request failed');
+    };
+    fireEvent.click(saveButton());
+
+    await screen.findByText('Failed: Network request failed. Nothing was sent, so nothing is saved.');
+    expect(screen.queryByText(/not confirmed/i)).toBeNull();
+    expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(0);
+    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+  });
+
+  // A toggle or a change of athlete while the save is out would be wiped when
+  // the save lands and clears the changes it sent.
+  it('while a save is out, the picker and the tracks are locked', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const fetchMock = trackFetch({
+      roster: [ADA, BEN],
+      stored: {},
+      post: () => new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+    });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    fireEvent.click(saveButton());
+
+    const saving = (await screen.findByRole('button', { name: 'Saving…' })) as HTMLButtonElement;
+    await waitFor(() => expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(1));
+    expect(saving.disabled).toBe(true);
+    expect((screen.getByLabelText('Athlete') as HTMLSelectElement).disabled).toBe(true);
+    expect(trackButton(/Collegiate Track/).disabled).toBe(true);
+    expect(trackButton(/USA Boxing Track/).disabled).toBe(true);
+
+    await act(async () => {
+      release(jsonResponse({ ok: true }));
+    });
+    await screen.findByText('Saved.');
+    expect(trackButton(/Collegiate Track/).disabled).toBe(false);
+  });
+
+  it('"Saved." does not sit beside a new unsaved change', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+    fireEvent.click(saveButton());
+    await screen.findByText('Saved.');
+
+    fireEvent.click(trackButton(/Collegiate Track/));
+
+    expect(screen.queryByText('Saved.')).toBeNull();
+    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+  });
+
+  // The route refuses a map holding an id it does not know, so one stale id
+  // in a stored entry would refuse every later save. It is read out.
+  it('a stored id that is not a track this app knows is neither shown nor sent back', async () => {
+    const fetchMock = trackFetch({ roster: [ADA, BEN], stored: { 'ath-ada': ['made_up_track', 'pro'], 'ath-ben': ['retired_track'] } });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    expect(trackButton(/^Pro Track/).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(trackButton(/Collegiate Track/));
+    fireEvent.click(saveButton());
+
+    await screen.findByText('Saved.');
+    expect(postedMaps(fetchMock)).toEqual([{ 'ath-ada': ['pro', 'collegiate'] }]);
+  });
+
+  it('with nobody chosen, no card says Assigned or Unassigned about anyone', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: { 'ath-ada': ['pro'] } });
+
+    await renderPage(fetchMock);
+    await screen.findByLabelText('Athlete');
+
+    expect(trackButton(/^Pro Track/).textContent).not.toMatch(/Status:|Review Needed/);
+    await chooseAthlete('ath-ada');
+    expect(trackButton(/^Pro Track/).textContent).toContain('Status: Assigned');
+    expect(trackButton(/USA Boxing Track/).textContent).toContain('Status: Unassigned');
+  });
+
+  // A session that could not be read leaves the role unknown. That is not a
+  // sign-in that may not set tracks, and a gym admin must not be told it is.
+  it('a session that could not be read makes no call and does not tell an admin they cannot', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+
+    await renderPage(fetchMock, null);
+
+    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
+    expect(screen.getByRole('heading', { name: 'Who Trains On What' })).toBeTruthy();
+    expect(screen.queryByText(/This sign-in cannot read or change them/)).toBeNull();
+    expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(0);
+    expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(0);
   });
 
   // While the session is still being read the role is unknown, which is not

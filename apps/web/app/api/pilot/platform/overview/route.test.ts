@@ -3,7 +3,7 @@
 // to select every gym's track assignments as well -- a map keyed by athlete id,
 // one entry per athlete -- to produce a count no screen showed. Now that those
 // keys are real athletes (OD-2026-10-07-010 ruling 3), that map is not the
-// platform account's to read (OD-2026-09-28-005; OD-2026-10-08-003 R2).
+// platform account's to read (OD-2026-09-28-005).
 
 import { NextRequest } from 'next/server';
 

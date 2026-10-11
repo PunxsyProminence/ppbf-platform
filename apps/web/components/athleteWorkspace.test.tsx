@@ -4403,7 +4403,7 @@ describe('the Tracks tab', () => {
 
       openTab('Tracks');
 
-      expect(await screen.findByText(/Your tracks could not be read just now/)).toBeTruthy();
+      expect(await screen.findByText(/Your tracks could not be read\. If this keeps happening, tell your coach\./)).toBeTruthy();
       expect(screen.queryByText('Nobody has put you on a track yet.')).toBeNull();
     },
   );
@@ -4414,7 +4414,7 @@ describe('the Tracks tab', () => {
 
     openTab('Tracks');
 
-    expect(await screen.findByText(/Your tracks could not be read just now/)).toBeTruthy();
+    expect(await screen.findByText(/Your tracks could not be read\. If this keeps happening, tell your coach\./)).toBeTruthy();
     expect(screen.queryByText('Nobody has put you on a track yet.')).toBeNull();
   });
 

@@ -8525,7 +8525,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Per-gym rollup of getBoardSummary and getGrowthMetrics plus a count of enabled gym capabilities. Aggregates only; file comment says k-anonymity gated in boardSummary.ts, which I did not verify. Does not read pilot.admin_track_assignments: that map is keyed by athlete id and the platform account does not read it (OD-2026-09-28-005; OD-2026-10-08-003 R2).",
+    "notes": "Per-gym rollup of getBoardSummary and getGrowthMetrics plus a count of enabled gym capabilities. Aggregates only; file comment says k-anonymity gated in boardSummary.ts, which I did not verify. Does not read pilot.admin_track_assignments: that map is keyed by athlete id and the platform account does not read it (OD-2026-09-28-005).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

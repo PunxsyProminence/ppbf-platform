@@ -508,7 +508,13 @@ type TrackSaveStatus =
   | { kind: 'saving' }
   | { kind: 'saved' }
   | { kind: 'refused'; message: string }
-  | { kind: 'failed'; message: string };
+  // Nothing reached the route, so nothing is saved.
+  | { kind: 'failed'; message: string }
+  // The save was sent and no answer about it came back: stored or not is unknown.
+  | { kind: 'unconfirmed'; message: string };
+
+const TRACK_SAVE_UNCONFIRMED =
+  'The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.';
 
 const TRACK_ASSIGNMENTS_URL = '/api/pilot/admin/track-assignments';
 
@@ -525,8 +531,10 @@ function readTrackMap(value: unknown): Map<string, TrackID[]> | null {
   }
   const map = new Map<string, TrackID[]>();
   for (const [athleteId, tracks] of Object.entries(value as Record<string, unknown>)) {
-    if (Array.isArray(tracks)) {
-      map.set(athleteId, allTrackIds.filter((trackId) => tracks.includes(trackId)));
+    const known = Array.isArray(tracks) ? allTrackIds.filter((trackId) => tracks.includes(trackId)) : [];
+    // An entry with no known track is an athlete on no track: left out.
+    if (known.length > 0) {
+      map.set(athleteId, known);
     }
   }
   return map;
@@ -564,7 +572,9 @@ function sameTracks(left: TrackID[], right: TrackID[]): boolean {
  * been open a while would put back whatever another admin changed in the
  * meantime. Save therefore reads the stored map again and lays only this
  * admin's `changes` over it. An athlete left with no track is left out of the
- * map: no track is invented for anyone.
+ * map: no track is invented for anyone. (What is sent for the athletes this
+ * admin did not touch is their stored entry as readTrackMap reads it: known
+ * track ids, in the manifest's order. The route refuses anything else.)
  */
 function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | null }) {
   const [athletes, setAthletes] = useState<TrackRosterAthlete[] | null>(null);
@@ -580,7 +590,8 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
   useEffect(() => {
     // The route admits the gym's own admins only; another sign-in would be
     // answered with a refusal, so it is not asked. Null is a session not read
-    // yet: nothing is asked, and nobody is told they may not.
+    // yet, or one that could not be read: nothing is asked, and nobody is told
+    // they may not.
     if (canAssign !== true) {
       return;
     }
@@ -628,6 +639,9 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
     roster.filter((other) => other.full_name === athlete.full_name).length > 1
       ? `${athlete.full_name} (${athlete.athlete_id})`
       : athlete.full_name;
+  // After a save that was sent and never answered, "not saved" would be a
+  // claim: the changes may be stored. They are only not confirmed.
+  const unconfirmed = status.kind === 'unconfirmed';
   const unsavedNames = roster.filter((athlete) => changes.has(athlete.athlete_id)).map(athleteLabel);
 
   function toggleTrack(trackId: TrackID) {
@@ -657,15 +671,22 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
     const sending = new Map(changes);
     setStatus({ kind: 'saving' });
     try {
-      const freshResponse = await fetch(`${apiBase()}${TRACK_ASSIGNMENTS_URL}`, { method: 'GET', credentials: 'include' });
-      if (!freshResponse.ok) {
-        const message = await readResponseError(freshResponse, 'Track assignments could not be read');
-        setStatus({ kind: 'failed', message: `${message}. Nothing was sent, so nothing is saved.` });
-        return;
+      // The re-read has its own catch: if it is the read that drops, nothing
+      // was sent, and that is a different thing to say than "not confirmed".
+      let next: Map<string, TrackID[]> | null = null;
+      let rereadError = 'Track assignments could not be read';
+      try {
+        const freshResponse = await fetch(`${apiBase()}${TRACK_ASSIGNMENTS_URL}`, { method: 'GET', credentials: 'include' });
+        if (freshResponse.ok) {
+          next = readTrackMap(((await freshResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
+        } else {
+          rereadError = await readResponseError(freshResponse, rereadError);
+        }
+      } catch (error) {
+        rereadError = toErrorMessage(error, rereadError);
       }
-      const next = readTrackMap(((await freshResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
       if (next === null) {
-        setStatus({ kind: 'failed', message: 'Track assignments could not be read. Nothing was sent, so nothing is saved.' });
+        setStatus({ kind: 'failed', message: `${rereadError}. Nothing was sent, so nothing is saved.` });
         return;
       }
       for (const [athleteId, tracks] of sending) {
@@ -689,7 +710,7 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
         setStatus(
           response.status >= 400 && response.status < 500
             ? { kind: 'refused', message }
-            : { kind: 'failed', message: `${message}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.` },
+            : { kind: 'unconfirmed', message: `${message}. ${TRACK_SAVE_UNCONFIRMED}` },
         );
         return;
       }
@@ -698,8 +719,8 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
       setStatus({ kind: 'saved' });
     } catch (error) {
       setStatus({
-        kind: 'failed',
-        message: `${toErrorMessage(error, 'Track assignments could not be saved')}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.`,
+        kind: 'unconfirmed',
+        message: `${toErrorMessage(error, 'Track assignments could not be saved')}. ${TRACK_SAVE_UNCONFIRMED}`,
       });
     } finally {
       saveInFlight.current = false;
@@ -762,13 +783,13 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
                 </button>
                 {unsavedNames.length > 0 && !saving && (
                   <p className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                    Not saved yet: {unsavedNames.join(', ')}
+                    {unconfirmed ? 'Not confirmed saved' : 'Not saved yet'}: {unsavedNames.join(', ')}
                   </p>
                 )}
                 <p role="status" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
                   {status.kind === 'saved' && 'Saved.'}
                   {status.kind === 'refused' && `Refused: ${status.message}`}
-                  {status.kind === 'failed' && `Failed: ${status.message}`}
+                  {(status.kind === 'failed' || status.kind === 'unconfirmed') && `Failed: ${status.message}`}
                 </p>
               </div>
 
@@ -792,11 +813,17 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
                       <span className="text-[length:var(--t-md)] font-semibold">{trackManifests[trackId].name}</span>
                       <span className="text-[length:var(--t-sm)]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
                       <span className="text-[length:var(--t-sm)]">Assigned Roles: Athlete / Coach</span>
-                      <span className="text-[length:var(--t-sm)]">
-                        Status: {assigned ? 'Assigned' : 'Unassigned'}
-                        {unsaved ? ' (not saved)' : ''}
-                      </span>
-                      <span className="text-[length:var(--t-sm)]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
+                      {/* Both lines are about the athlete chosen. With nobody
+                          chosen they would say "Unassigned" about no one. */}
+                      {selectedAthleteId && (
+                        <>
+                          <span className="text-[length:var(--t-sm)]">
+                            Status: {assigned ? 'Assigned' : 'Unassigned'}
+                            {unsaved ? (unconfirmed ? ' (not confirmed)' : ' (not saved)') : ''}
+                          </span>
+                          <span className="text-[length:var(--t-sm)]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
+                        </>
+                      )}
                       <span className="t-muted">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
                     </button>
                   );
@@ -1901,7 +1928,9 @@ export default function AdminCapabilitiesPage() {
               track changes live in its own state, and a walk to the Library
               and back must not throw them away without a word. */}
           <div hidden={activeTab !== 'overview'}>
-            <TrackAssignmentControl canAssign={pilotSession.loading ? null : isOrganizationAdminSessionRole(pilotSession.role)} />
+            <TrackAssignmentControl
+              canAssign={pilotSession.loading || pilotSession.role === null ? null : isOrganizationAdminSessionRole(pilotSession.role)}
+            />
           </div>
 
           {activeTab === 'library' && (

@@ -564,7 +564,7 @@ function AthleteTracksPanel() {
       )}
       {read.state === 'unavailable' && (
         <p role="alert" className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-          Your tracks could not be read just now. Try again in a little while.
+          Your tracks could not be read. If this keeps happening, tell your coach.
         </p>
       )}
       {read.state === 'loaded' && read.tracks.length === 0 && (
