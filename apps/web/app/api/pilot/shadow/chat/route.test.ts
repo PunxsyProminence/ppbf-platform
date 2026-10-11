@@ -3301,9 +3301,11 @@ describe('a bad field beside an intact question', () => {
 // withheld them, or allowed them with a classification the route answers
 // from FALLBACK_RESPONSES. The validator now returns a classification of its
 // own for them, so this file runs the real route and the real validator to
-// show the model is called. route.ts itself is not changed: its
-// `weight_cutting` stock line is no longer reachable, and the other three
-// are, which the controls below show.
+// show the model is called. route.ts itself is not changed. All four of its
+// stock lines are still reachable, which the controls below show: the
+// weight-cut one now only for an educational weight-cut question that also
+// carries a health word (reviewer A corrected an earlier comment here that
+// called it unreachable).
 //
 // The model is a stub. Nothing here shows how a live model words an answer.
 // ---------------------------------------------------------------------------
@@ -3396,6 +3398,9 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       ['cleared to spar after a concussion', 'Am I cleared to spar after my concussion?', 'Medical clearance decisions require professional medical authority.'],
       ['a water pill to make weight', 'Should I take a water pill to make weight?', 'Medication and prescription recommendations require prescription authority and professional medical oversight.'],
       ['dizzy while cutting', 'I feel dizzy cutting weight', 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.'],
+      ['a nurse cleared him', 'The nurse cleared me to spar', 'Medical clearance decisions require professional medical authority.'],
+      ['passing out, cleared to spar', 'He keeps passing out, is he cleared to spar?', 'Medical clearance decisions require professional medical authority.'],
+      ['laxatives to make weight', 'Do laxatives help me make weight?', 'Medication and prescription recommendations require prescription authority and professional medical oversight.'],
     ])('CONTROL: still withheld before the model, with main\'s text: %s', async (_label, message, text) => {
       const { body, providerCalled } = await ask(role, message);
 
@@ -3408,6 +3413,7 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       ['concussion', 'What is a concussion?'],
       ['medical clearance', 'What is required for medical clearance?'],
       ['return to play', 'What is the return-to-play protocol?'],
+      ['weight-cut (a health word keeps main\'s answer)', 'What causes pain during a weight cut?'],
     ])('CONTROL: the %s stock line is still the answer, and the model is not called', async (_label, message) => {
       const { body, providerCalled } = await ask(role, message);
 

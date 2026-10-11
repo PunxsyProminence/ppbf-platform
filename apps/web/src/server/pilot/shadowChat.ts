@@ -504,22 +504,42 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
 //
 // Everything else keeps main's answer, because this returns null whenever
 // any of these is true, and a null changes nothing in validateShadowRequest:
-//   - a symptom word is in the message (main's urgent-symptom, acute-impact
-//     and health-concern vocabularies), with or without "I" or "my";
+//   - an acute sign is in the message: main's urgent-symptom and
+//     acute-impact vocabularies, any emergency topic row, any true emergency
+//     sign -- tested directly, with or without "I" or "my", whichever row
+//     took the topic;
+//   - a health word is in it: main's health-concern words, or the wider
+//     list below (HEALTH_CONTEXT_WORDING). The wider list exists because
+//     main's vocabularies miss plain speech -- "passing out", "seizing",
+//     "a fractured rib", "laxatives" -- and main withheld those messages
+//     only because the gate being relaxed here happened to catch them
+//     (reviewer A, 2026-10-10). Every word on it only keeps main's answer;
+//     none of them withholds anything main allowed. A health word counts
+//     however it is used, so "how do I make weight without getting hurt?"
+//     still gets main's answer: main's personal-health return stands behind
+//     the weight-cut gate for that sentence, and that return is not one the
+//     ruling relaxed;
 //   - it is a diagnosis question or a medication question (main's patterns,
 //     copied below and pinned to their source by shadowChat.test.ts);
-//   - main's clearance gate matches for any reason other than "cleared" near
-//     spar, contact or train: "medical clearance", medical or doctor wording,
-//     or "cleared" near play, compete, competition or return;
-//   - the classifier's topic is another risk row (concussion, dizziness,
-//     fainting, medication...). A dehydration topic counts only when the
-//     message is also a weight-cut question.
+//   - main's clearance gate matches for any reason other than "cleared" or
+//     "clearance" near spar, contact or train: "medical clearance", medical
+//     wording of any kind (doctor, Dr., nurse, hospital, ER...), "cleared"
+//     near play, compete, competition or return, or the bare word "clear";
+//   - the classifier's topic is another risk row listed above the weight
+//     rows (concussion, head trauma, dizziness...). Rows listed below them
+//     (chest pain, fainting, medication, surgery, injection) cannot take the
+//     topic from a weight-cut message, which is why their words are tested
+//     directly above. A dehydration topic counts only when the message is
+//     also a weight-cut question, and a clearance topic only when the
+//     message is a training-clearance question.
 // The emergency return runs before this and is not read here. Prescription
 // language is tested before this by the caller and still withholds.
 const WEIGHT_CUT_TOPIC_ROWS: readonly RegExp[] = [
   /(weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight)/i,
   /rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/i,
 ];
+const HEALTH_CONCERN_WORDS = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i;
+const HEALTH_CONTEXT_WORDING = /\b(?:seiz\w*|convuls\w*|pass(?:es|ed|ing)?\s+out|black(?:s|ed|ing)?\s+out|knock(?:ed|ing)?\s*out|knockouts?|ko'?d?|concus\w*|faint\w*|syncope|dizz\w*|collaps\w*|unconscious|blood|bleed\w*|bled|breath\w*|chok\w*|chest\s+pains?|heart\s+(?:pains?|problems?|conditions?|issues?|attacks?)|cardiac|confus\w*|can(?:not|\s*'?\s*t|\s+not)\s+(?:remember|feel|see|move|breathe?|stand|walk)|vomit\w*|throw(?:s|ing)?\s+up|threw\s+up|puk\w*|purg\w*|starv\w*|fractur\w*|broken|torn|sprain\w*|stitch\w*|surger\w*|surgical|operation|operated|crutch\w*|sick|illness|fever|flu|covid|asthma|diabet\w*|heat\s*stroke|heat\s+exhaustion|cramp\w*|urine|pee(?:ing)?\s+blood|kidneys?|pills?|laxatives?|diuretics?|lasix|medicat\w*|medicines?|drugs?|steroids?|inject\w*|needles?|eating\s+disorder|anorexi\w*|bulimi\w*|stop(?:ped|ping)?\s+eating|not\s+eating|after\s+(?:an?|my|his|her|their|the|that)\s+(?:hit|knock\w*|injur\w*|fall|ko))\b/i;
 const DIAGNOSIS_QUESTION = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i;
 const MEDICATION_QUESTION = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i;
 const MEDICAL_CLEARANCE_PHRASE = /\bmedical\s+clear(?:ed|ance)?\b/i;
@@ -533,9 +553,17 @@ const CLEARANCE_NEAR_COMPETITION: readonly RegExp[] = [
   /\bclear(?:ed|ance)?\b.{0,40}\b(play|compete|competition|return)\b/i,
   /\b(play|compete|competition|return)\b.{0,40}\bclear(?:ed|ance)?\b/i,
 ];
-const MEDICAL_AUTHORITY_WORDING = /\b(?:medical(?:ly)?|doctor(?:'?s)?|physician|clinician)\b/i;
-const WEIGHT_CUT_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration', 'return_to_play', 'medical_clearance'];
-const TRAINING_CLEARANCE_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'return_to_play', 'medical_clearance'];
+// What is released is "cleared" or "clearance" near those words. Main's
+// pattern also takes the bare word "clear" ("a clear round of sparring"),
+// which is no clearance question; that keeps main's answer.
+const CLEARED_NEAR_TRAINING: readonly RegExp[] = [
+  /\bclear(?:ed|ance)\b.{0,40}\b(?:train|training|contact|spar|sparring)\b/i,
+  /\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)\b/i,
+];
+const MEDICAL_AUTHORITY_WORDING = /\b(?:medical(?:ly)?|medic|doctor(?:'?s)?|docs?|dr|physician|clinician|neurologist|pa?ediatrician|specialist|surgeon|nurse|hospital|clinic|urgent\s+care|emergency\s+room|athletic\s+trainer|physio\w*|therapist)\b/i;
+// Case matters for these two: "er" is not a word a clearance question uses.
+const MEDICAL_SETTING_INITIALS = /\b(?:ER|A&E)(?![A-Za-z])/;
+const WEIGHT_CUT_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration'];
 
 export type ShadowTaughtQuestion = 'weight_cut_question' | 'training_clearance_question';
 
@@ -543,15 +571,25 @@ function taughtQuestion(
   text: string,
   topic: HighRiskTopic,
   hasRapidWeightCutLanguage: boolean,
-  hasSymptomWord: boolean,
+  hasAcuteSign: boolean,
 ): ShadowTaughtQuestion | null {
-  if (hasSymptomWord) return null;
+  if (hasAcuteSign) return null;
+  if (TRUE_EMERGENCY_SIGNS.test(text) || EMERGENCY_TOPIC_PATTERNS.some((pattern) => pattern.test(text))) return null;
+  if (HEALTH_CONCERN_WORDS.test(text) || HEALTH_CONTEXT_WORDING.test(text)) return null;
   if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return null;
 
-  const nearTraining = CLEARANCE_NEAR_TRAINING.some((pattern) => pattern.test(text));
-  const keptClearance = MEDICAL_CLEARANCE_PHRASE.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text));
-  const trainingClearance = nearTraining && !keptClearance && !MEDICAL_AUTHORITY_WORDING.test(text);
-  if ((nearTraining || keptClearance) && !trainingClearance) return null;
+  const mainClearanceGate = MEDICAL_CLEARANCE_PHRASE.test(text)
+    || CLEARANCE_NEAR_TRAINING.some((pattern) => pattern.test(text))
+    || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text));
+  const trainingClearance = CLEARED_NEAR_TRAINING.some((pattern) => pattern.test(text))
+    && !MEDICAL_CLEARANCE_PHRASE.test(text)
+    && !CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))
+    && !MEDICAL_AUTHORITY_WORDING.test(text)
+    && !MEDICAL_SETTING_INITIALS.test(text);
+  const clearanceTopic = topic === 'return_to_play' || topic === 'medical_clearance';
+  // A clearance question that is not a training-clearance question keeps
+  // main's answer, whatever else the message asks.
+  if ((mainClearanceGate || clearanceTopic) && !trainingClearance) return null;
 
   // The classifier lowercases before it reads a row, so the copies of its
   // rows read the same. A weight row only needs testing here when the
@@ -560,8 +598,8 @@ function taughtQuestion(
     || topic === 'weight_cutting'
     || topic === 'rapid_weight_loss'
     || (topic === 'dehydration' && WEIGHT_CUT_TOPIC_ROWS.some((pattern) => pattern.test(text.toLowerCase())));
-  if (weightCutWording && WEIGHT_CUT_QUESTION_TOPICS.includes(topic)) return 'weight_cut_question';
-  if (trainingClearance && TRAINING_CLEARANCE_QUESTION_TOPICS.includes(topic)) return 'training_clearance_question';
+  if (weightCutWording && (clearanceTopic || WEIGHT_CUT_QUESTION_TOPICS.includes(topic))) return 'weight_cut_question';
+  if (trainingClearance && clearanceTopic) return 'training_clearance_question';
   return null;
 }
 
@@ -606,7 +644,7 @@ export function validateShadowRequest(
 
   // A weight-cut question, or a question about being cleared to spar, train
   // or take contact, and nothing else -- see taughtQuestion above.
-  const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasUrgentSymptom || hasAcuteImpactConcern || hasPersonalHealthConcern);
+  const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasUrgentSymptom || hasAcuteImpactConcern);
 
   // Prescription language is blocked even when phrased as a question. So is
   // weight-cut language in a message that is not only a weight-cut question.
