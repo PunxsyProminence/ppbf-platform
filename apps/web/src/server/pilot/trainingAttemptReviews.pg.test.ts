@@ -574,7 +574,24 @@ describe('through the routes: record, correct, dispute, and the transfer readout
     state: string;
   }
 
+  // A second athlete of the same coach, so the readout's athlete scoping is
+  // exercised: their attempts must never count toward ATHLETE_ID's readout.
+  const OTHER_ATHLETE_ID = 'ath-reviews-2';
+
   beforeAll(async () => {
+    const c = await client();
+    try {
+      await c.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Reviews Athlete', '2011-01-01', '110', 'active', 'contact', true, $3, now(), now())
+         on conflict do nothing`,
+        [ORG_ID, OTHER_ATHLETE_ID, COACH_ID],
+      );
+    } finally {
+      await c.end();
+    }
+
     attemptsRoute = await import('@/app/api/pilot/training-attempts/route');
     reviewRoute = await import('@/app/api/pilot/training-attempts/review/route');
     transferRoute = await import('@/app/api/pilot/coach/transfer-check/route');
@@ -601,9 +618,9 @@ describe('through the routes: record, correct, dispute, and the transfer readout
     });
 
   /** Records one targeted reps attempt (target 10) through the route. */
-  async function record(contextType: string, achieved: number): Promise<AttemptItem> {
+  async function record(contextType: string, achieved: number, athleteId: string = ATHLETE_ID): Promise<AttemptItem> {
     const response = await attemptsRoute.POST(post('/api/pilot/training-attempts', {
-      athlete_id: ATHLETE_ID,
+      athlete_id: athleteId,
       metric_kind: 'reps',
       context_type: contextType,
       target_value: 10,
@@ -663,6 +680,15 @@ describe('through the routes: record, correct, dispute, and the transfer readout
     await record('open_sparring', 6);
     expect(await repsReadout()).toMatchObject({ live_makes: 0, live_misses: 3, state: 'not_transferring' });
 
+    // The coach's OTHER athlete lands three live makes. They are that
+    // athlete's evidence and change nothing here.
+    await record('open_sparring', 10, OTHER_ATHLETE_ID);
+    await record('open_sparring', 12, OTHER_ATHLETE_ID);
+    await record('open_sparring', 11, OTHER_ATHLETE_ID);
+    expect(await repsReadout()).toMatchObject({
+      controlled_makes: 3, controlled_misses: 1, live_makes: 0, live_misses: 3, state: 'not_transferring',
+    });
+
     // CORRECT one live miss: the coach counted ten on film. It now counts as a
     // make (1 of 3 clears the weak line), and the athlete's own number stays.
     const corrected = await review({
@@ -706,7 +732,7 @@ describe('through the routes: record, correct, dispute, and the transfer readout
     const states = ((await history.json()) as { items: Array<{ review_state: string }> }).items.map((item) => item.review_state);
     expect(states.sort()).toEqual(['confirmed', 'disputed']);
 
-    expect(await rowCounts()).toEqual({ attempts: 7, reviews: 3 });
+    expect(await rowCounts()).toEqual({ attempts: 10, reviews: 3 });
   });
 
   describe('a coach who is not this athlete\'s coach', () => {

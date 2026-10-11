@@ -477,7 +477,21 @@ test('a review that finishes after the coach switches athlete never paints the o
   expect(screen.queryByText('gassed at 300m')).toBeNull();
 });
 
-test('the athlete picker is held while a record is in flight, so its answer lands under that athlete', async () => {
+test('a refusal for one athlete does not stay on screen once the coach picks nobody', async () => {
+  global.fetch = mockRosterFetch({
+    listFor: () => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden' }) }) as Response,
+  });
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await pick('ath-2');
+  expect(await screen.findByText('Unable to load attempts.')).toBeTruthy();
+
+  // Nobody picked: nothing was refused for nobody.
+  await pick('');
+  expect(screen.queryByText('Unable to load attempts.')).toBeNull();
+});
+
+test('the athlete picker is held while a record is in flight', async () => {
   const record = deferred<Response>();
   global.fetch = mockRosterFetch({
     listFor: () => okJson({ items: [{ ...MISSED_ATTEMPT, review_state: null }] }),

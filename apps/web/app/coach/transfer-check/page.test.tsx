@@ -114,6 +114,20 @@ test('an athlete the server refuses shows nothing from the athlete before', asyn
   expect(screen.queryByText(/practice: 8 of 9 made/)).toBeNull();
 });
 
+test('a refusal for one athlete does not stay on screen once the coach picks nobody', async () => {
+  global.fetch = mockRosterFetch(() => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden' }) }) as Response);
+
+  await act(async () => { render(<TransferCheckPage />); });
+  await pick('ath-2');
+  expect(await screen.findByText('Unable to load the transfer check.')).toBeTruthy();
+
+  await pick('');
+  expect(screen.queryByText('Unable to load the transfer check.')).toBeNull();
+});
+
+// This mock does not honour the abort signal, so it models an answer that has
+// already arrived when the coach switches. A real fetch rejects on abort and
+// the effect drops it; the guard this pins is the belt to that brace.
 test('a slow answer for the athlete before never renders under the athlete picked now', async () => {
   let answerJordan!: (response: Response) => void;
   const jordan = new Promise<Response>((resolve) => { answerJordan = resolve; });
