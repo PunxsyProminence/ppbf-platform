@@ -662,70 +662,59 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 // the two guarded functions, as emergencyReport does.
 //
 // WHAT COUNTS AS THE RULING'S RELEASE is written out here a second time, from
-// the ruling and Overwatch's confirmation of its reading (2026-10-10), not
-// imported from the code it checks:
+// the decisions and not from the code it checks. OD-2026-10-10-006 (Jason,
+// "B: SHADOW answers") gives the test: "A request is withheld only where a
+// rule the app already had, other than the weight-cut and 'cleared' gates,
+// withholds it by its own unchanged patterns." So a release is explained
+// when all of this holds:
 //   - the current verdict is exactly the taught shape -- valid, high-risk,
 //     the classifier's topic, one of the two classifications;
-//   - a weight-cut question: main's own weight-cut wording is in the folded
-//     message, and the topic is none, a weight row or dehydration;
-//   - a training-clearance question: "cleared" or "clearance" (not the bare
-//     word "clear") within 40 characters of train / training / contact /
-//     spar / sparring, with no "medical clearance", no medical wording and
-//     no "cleared" near play / compete / competition / return, and the topic
-//     a clearance row;
-//   - no health word anywhere in it: main's health-concern words, a
-//     diagnosis or medication question, or the plain-speech words main's
-//     vocabularies miss (reviewer A, 2026-10-10: a first version of this
-//     check could not see a symptom when main's first return or its
-//     clearance return had fired ahead of the return that reads symptoms);
+//   - it is a message one of the two gates is about: main's own weight-cut
+//     wording is in the folded message, or "cleared" / "clearance" (not the
+//     bare word "clear") is within 40 characters of train / training /
+//     contact / spar / sparring;
+//   - NO OTHER RULE OF MAIN'S CATCHES IT. That is asked of the frozen copy of
+//     main in this file: with the two gates' own words blanked out of the
+//     folded message, main ALLOWS it. (Blanked by strings of the same length:
+//     "weight" always, "lose" where main's "lose N pounds this week" phrase
+//     stands, and "clear" only for a training-clearance question.) One
+//     exception, which Overwatch confirmed on 2026-10-10: main's dehydration
+//     row may be what still holds a message that is also a weight-cut
+//     question;
 //   - main did not answer it as an emergency or at a critical
 //     classification, and main left by R1, R2, R6 or R8 -- never by R3
 //     (urgent), R4 (personal health), R5 (diagnosis) or R7 (medication).
 // A message the current code releases that is not all of that is reported
 // as released, exactly as before.
+//
+// (An earlier form of this check listed health words and medical wording of
+// the lane's own, because the lane's code then held such messages back.
+// OD-2026-10-10-006 has them answered; the lists are gone from both.)
 // ---------------------------------------------------------------------------
 const RELEASED_WEIGHT_WORDING = /weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight|rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/;
 const RELEASED_WEIGHT_PHRASE = 'lose weight quickly';
-const RELEASED_WEIGHT_TOPICS = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration'];
 const RELEASED_CLEARED_NEAR = /\bclear(?:ed|ance)\b.{0,40}\b(?:train|training|contact|spar|sparring)\b|\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)\b/i;
-// What keeps main's clearance gate: its "medical clearance" phrase and
-// "cleared" near the competition words (the rest of main's gate), and medical
-// wording beside a training-clearance question.
-const KEPT_CLEARANCE_GATE = /\bmedical\s+clear(?:ed|ance)?\b|\bclear(?:ed|ance)?\b.{0,40}\b(?:play|compete|competition|return)\b|\b(?:play|compete|competition|return)\b.{0,40}\bclear(?:ed|ance)?\b/i;
-const MEDICAL_WORDING = /\b(?:medical(?:ly)?|medic|doctor(?:'?s)?|docs?|dr|physician|clinician|neurologist|pa?ediatrician|specialist|surgeon|nurse|hospital|clinic|urgent\s+care|emergency\s+room|athletic\s+trainer|physio\w*|therapist)\b/i;
-const MEDICAL_INITIALS = /\b(?:ER|A&E)(?![A-Za-z])/;
-const RELEASED_CLEARED_TOPICS = ['return_to_play', 'medical_clearance'];
 const RELEASED_FROM = ['R1 prescription or weight cut', 'R2 educational, allowed', 'R6 clearance', 'R8 high-risk fallback'];
-// No release carries one of these, whichever of main's returns answered it.
-const NEVER_RELEASED_WITH: readonly RegExp[] = [
-  // main's health-concern words, its diagnosis question and its medication question
-  /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i,
-  /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i,
-  /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i,
-  // acute signs and medication in plain words
-  /\b(?:seiz\w*|convuls\w*|pass(?:es|ed|ing)?\s+out|black(?:s|ed|ing)?\s+out|knock(?:ed|ing)?\s*out|knockouts?|concus\w*|faint\w*|dizz\w*|collaps\w*|unconscious|blood|bleed\w*|breath\w*|chest\s+pains?|cardiac|confus\w*|vomit\w*|throw(?:s|ing)?\s+up|starv\w*|fractur\w*|broken|torn|surger\w*|sick|fever|cramp\w*|pills?|laxatives?|diuretics?|lasix|medicat\w*|medicines?|drugs?|inject\w*)\b/i,
-  /\bcan(?:not|\s*'?\s*t|\s+not)\s+(?:remember|feel|see|move|breathe?|stand|walk)\b/i,
-  // distress, going without food or water, being made to (reviewer B, 2026-10-10)
-  /\b(?:stop(?:s|ped)?\s+sweating|not\s+sweating|went\s+(?:black|dark)|pounding|throbbing|light\s*-?\s*headed|shak(?:y|ing)|pale|out\s+of\s+it|racing|(?:haven'?t|hasn'?t)\s+(?:eaten|had|drunk)|without\s+(?:food|water)|ex-?lax|(?:makes?|made|forc(?:e|es|ed|ing)|lock(?:s|ed|ing)?)\s+(?:me|him|her|us|them)|(?:won'?t|doesn'?t)\s+let\s+(?:me|him|her|us|them)|can(?:not|\s*'?\s*t)\s+(?:eat|drink))\b/i,
-];
 
 function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): boolean {
   const folded = normaliseForMatching(message);
   const lowered = folded.toLowerCase();
   const topic = classifyHighRiskTopic(message).topic;
-  const pureTrainingClearance = RELEASED_CLEARED_NEAR.test(folded) && !KEPT_CLEARANCE_GATE.test(folded) && !MEDICAL_WORDING.test(folded) && !MEDICAL_INITIALS.test(folded);
-  const clearanceTopic = RELEASED_CLEARED_TOPICS.includes(topic);
-  const weightCut = same(is, { valid: true, highRisk: true, topic, classification: 'weight_cut_question' })
-    && RELEASED_WEIGHT_TOPICS.includes(topic)
-    && (RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE))
-    // A weight-cut question that also trips main's clearance gate is released
-    // only if the clearance half is itself a training-clearance question.
-    && (!(KEPT_CLEARANCE_GATE.test(folded) || /\bclear(?:ed|ance)?\b.{0,40}\b(?:train|training|contact|spar|sparring)\b|\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(folded)) || pureTrainingClearance);
-  const trainingClearance = same(is, { valid: true, highRisk: true, topic, classification: 'training_clearance_question' })
-    && clearanceTopic
-    && pureTrainingClearance;
-  if (!weightCut && !trainingClearance) return false;
-  if (NEVER_RELEASED_WITH.some((pattern) => pattern.test(folded))) return false;
+  const weightWording = RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE);
+  const clearedNearTraining = RELEASED_CLEARED_NEAR.test(folded);
+  const taughtShape = (same(is, { valid: true, highRisk: true, topic, classification: 'weight_cut_question' }) && weightWording)
+    || (same(is, { valid: true, highRisk: true, topic, classification: 'training_clearance_question' }) && clearedNearTraining);
+  if (!taughtShape) return false;
+
+  let blanked = folded
+    .replace(/weight/gi, 'xxxxxx')
+    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, 'xxxx');
+  if (clearedNearTraining) blanked = blanked.replace(/clear/gi, 'xxxxx');
+  const withoutTheGates = mainValidate(blanked, 'athlete', 'org-123');
+  const nothingElseCatchesIt = withoutTheGates.valid === true
+    || (weightWording && withoutTheGates.topic === 'dehydration' && returnOf(withoutTheGates) === 'R8 high-risk fallback');
+  if (!nothingElseCatchesIt) return false;
+
   if (emergency(was) || critical(was)) return false;
   return RELEASED_FROM.includes(returnOf(was));
 }
@@ -899,7 +888,7 @@ describe('the premises of the argument, read from source', () => {
     validate = drop(validate, 'if (emergency) return emergency;');
     // The named release (see NAMED RELEASE above): one statement, one
     // condition, one return.
-    validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasUrgentSymptom || hasAcuteImpactConcern);');
+    validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasPersonalContext && hasPersonalHealthConcern);');
     validate = undo(validate, 'if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {', 'if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {', 1);
     validate = drop(validate, 'if (taught) { return { valid: true, highRisk: true, topic: classification.topic, classification: taught }; }');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
@@ -964,7 +953,11 @@ describe('the premises of the argument, read from source', () => {
       }
     });
     expect(responseSideCalls).toBe(1);
-    expect(mentions('classifyHighRiskTopic')).toBe(2); // declared, and called by the validator
+    // Declared; called by the validator; and called by otherRiskTopicMatches
+    // (lane S1), which asks it whether a risk row other than the two relaxed
+    // gates' own matches a message. That third call reads the classifier's
+    // answer and changes nothing in it.
+    expect(mentions('classifyHighRiskTopic')).toBe(3);
     expect(mentions('validateShadowRequest')).toBe(1); // declared; called only from outside this file
 
     // The `examples` statement S1d drops: one declarator, and nothing in its
@@ -1703,13 +1696,20 @@ describe('main against the current code: every look-alike at every position of e
     expect(changed.length).toBe(11);
     expect(changed).not.toContain('U+2019');
 
-    // A quote look-alike in the same place is not an apostrophe: no change.
-    // (That holds for the weight-cut question too: with a knockout named in
-    // it, lane S1's release leaves main's answer standing.)
+    // A quote look-alike in the same place is not an apostrophe: the topic
+    // does not change, because no pattern of main's reads a knockout in it.
+    // For the weight-cut question the classification does change, by the
+    // owner's release (NAMED RELEASE above): main allowed it with the
+    // classification the route answers from its fixed line, and with nothing
+    // else of main's catching it, it is now a taught question the model
+    // answers. (With a real apostrophe main's knockout row catches it, on
+    // both sides, and it is not released: that is the loop above.)
     for (const unit of QUOTE_SOURCES) {
       const message = withApostrophe(String.fromCharCode(unit));
-      expect(now(message)).toEqual(main(message));
-      expect(main(message).topic).toBe(topicOnMain);
+      expect(main(message)).toEqual({ valid: true, highRisk: true, topic: topicOnMain, classification: topicOnMain });
+      expect(now(message)).toEqual(topicOnMain === 'weight_cutting'
+        ? { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' }
+        : main(message));
     }
   });
 
@@ -2002,17 +2002,19 @@ const SEEDS_MOVED_TO_R3_BY_ORDERING: readonly string[] = [
   'chest pain during the run',
 ];
 // The seeds the owner's ruling releases (NAMED RELEASE above), with no
-// look-alike in them: four weight-cut requests main withheld at R1, and one
-// "cleared to spar" question main withheld at R6. "am I cleared to spar if I
-// can t see" is NOT in this list: with a space where the apostrophe belongs
-// main's vocabulary sees no symptom in it, and the first build released it
-// for that reason; the release now reads "can t see" as the health word it
-// is and leaves main's clearance answer standing (reviewer A, 2026-10-10).
+// look-alike in them: four weight-cut requests main withheld at R1, and two
+// "cleared to spar" questions main withheld at R6. "am I cleared to spar if I
+// can t see" is in this list because, with a space where the apostrophe
+// belongs, no pattern of main's sees a symptom in it: main answered it as a
+// clearance question, by the "cleared" gate alone, and OD-2026-10-10-006
+// releases what only that gate caught. With an apostrophe it is an emergency
+// on both sides and is not released.
 const SEEDS_RELEASED_BY_OWNER_RULING: readonly string[] = [
   'how do i cut weight fast',
   'I need to lose weight quickly before Saturday',
   'help me make weight by Friday',
   'cut weight for my weight class',
+  'am I cleared to spar if I can t see',
   'is he cleared to spar',
 ];
 const SEED_DIFFERENTIAL_COUNTS = {
@@ -2050,9 +2052,9 @@ const SEED_DIFFERENTIAL_COUNTS = {
   // person), and the one-way checks above hold on every message.
   newlyEmergency: 2567,
   // Messages where any field differs from main's. 7,084 before lane S1; the
-  // owner's release (NAMED RELEASE above) adds the 3,888 counted at the
+  // owner's release (NAMED RELEASE above) adds the 4,788 counted at the
   // bottom of this table, and changes no other number in it.
-  anyFieldDiffers: 10972,
+  anyFieldDiffers: 11872,
   // By what changed: the return, or the topic under an unchanged return.
   // These nine are the kinds this seed set produces, and they sum to
   // anyFieldDiffers. Each is of a kind Step 5 of the argument allows, or
@@ -2082,20 +2084,22 @@ const SEED_DIFFERENTIAL_COUNTS = {
     // weight-cut or training-clearance seed in which the look-alike leaves
     // the question readable. From R8: a look-alike that breaks main's R1
     // phrase ("how do i cut weight") and leaves the topic row matching.
-    'R1 prescription or weight cut -> S1 taught (owner release)': 1872,
-    'R6 clearance -> S1 taught (owner release)': 738,
+    'R1 prescription or weight cut -> S1 taught (owner release)': 2076,
+    'R6 clearance -> S1 taught (owner release)': 1434,
     'R8 high-risk fallback -> S1 taught (owner release)': 1278,
   },
   // Every message the current code answers where main withheld, each one
   // checked against the ruling's own terms by explainedByOwnerRelease. None
-  // comes from R3, R4, R5 or R7, and the three sum to the total. (The first
-  // build released 4,860: reviewer A's findings took out 972, among them
-  // every variant of "I can't breathe and I need to lose weight quickly" in
-  // which the look-alike had broken "can't" and left "breathe".)
-  ownerReleased: 3888,
+  // comes from R3, R4, R5 or R7, and the three sum to the total.
+  //
+  // What the number has been: 4,860 in the first build; 3,888 while the lane
+  // held messages back with word lists of its own; 4,788 once
+  // OD-2026-10-10-006 had those lists removed. The 72 fewer than the first
+  // build are all from main's clearance return (1,506 then, 1,434 now).
+  ownerReleased: 4788,
   ownerReleasedFrom: {
-    'R1 prescription or weight cut': 1872,
-    'R6 clearance': 738,
+    'R1 prescription or weight cut': 2076,
+    'R6 clearance': 1434,
     'R8 high-risk fallback': 1278,
   },
 };

@@ -3305,9 +3305,9 @@ describe('a bad field beside an intact question', () => {
 // own for them, so this file runs the real route and the real validator to
 // show the model is called. route.ts itself is not changed. All four of its
 // stock lines are still reachable, which the controls below show: the
-// weight-cut one now only for an educational weight-cut question that also
-// carries a health word (reviewer A corrected an earlier comment here that
-// called it unreachable).
+// weight-cut one now only for an educational weight-cut question that another
+// risk row of main's also matches (reviewer A corrected an earlier comment
+// here that called it unreachable).
 //
 // The model is a stub. Nothing here shows how a live model words an answer.
 // ---------------------------------------------------------------------------
@@ -3350,6 +3350,10 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       ['Is he cleared for open sparring under his cap?', 'medical_clearance', CLEARANCE_BANNER],
       ['Am I cleared to spar?', 'return_to_play', RETURN_TO_PLAY_BANNER],
       ['Is my daughter cleared for contact this week?', 'medical_clearance', CLEARANCE_BANNER],
+      // OD-2026-10-10-006 ("B: SHADOW answers"): going without, and being
+      // made to cut, are answered like any other weight-cut question.
+      ["I haven't had water in 2 days, how do I make weight", 'weight_cutting', WEIGHT_BANNER],
+      ["my dad says I can't eat until I make weight", 'weight_cutting', WEIGHT_BANNER],
     ])('the model answers, the answer is delivered, and staff still get one review row: %s', async (message, topic, banner) => {
       const { status, body, providerCalled, reviews } = await ask(role, message);
 
@@ -3396,13 +3400,11 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
 
     test.each([
       ['cleared to compete', 'Am I cleared to compete?', 'Medical clearance decisions require professional medical authority.'],
-      ['medically cleared to spar', 'Is he medically cleared to spar?', 'Medical clearance decisions require professional medical authority.'],
       ['cleared to spar after a concussion', 'Am I cleared to spar after my concussion?', 'Medical clearance decisions require professional medical authority.'],
       ['a water pill to make weight', 'Should I take a water pill to make weight?', 'Medication and prescription recommendations require prescription authority and professional medical oversight.'],
       ['dizzy while cutting', 'I feel dizzy cutting weight', 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.'],
-      ['a nurse cleared him', 'The nurse cleared me to spar', 'Medical clearance decisions require professional medical authority.'],
-      ['passing out, cleared to spar', 'He keeps passing out, is he cleared to spar?', 'Medical clearance decisions require professional medical authority.'],
-      ['laxatives to make weight', 'Do laxatives help me make weight?', 'Medication and prescription recommendations require prescription authority and professional medical oversight.'],
+      ['a headache with a weight-cut question', 'He has a headache, how does he make weight?', 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.'],
+      ['medical clearance to spar', 'Does he need medical clearance to spar?', 'Medical clearance decisions require professional medical authority.'],
     ])('CONTROL: still withheld before the model, with main\'s text: %s', async (_label, message, text) => {
       const { body, providerCalled } = await ask(role, message);
 
@@ -3415,7 +3417,7 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       ['concussion', 'What is a concussion?'],
       ['medical clearance', 'What is required for medical clearance?'],
       ['return to play', 'What is the return-to-play protocol?'],
-      ['weight-cut (a health word keeps main\'s answer)', 'What causes pain during a weight cut?'],
+      ['weight-cut (another risk row of main\'s matches)', 'What causes fainting during a weight cut?'],
     ])('CONTROL: the %s stock line is still the answer, and the model is not called', async (_label, message) => {
       const { body, providerCalled } = await ask(role, message);
 

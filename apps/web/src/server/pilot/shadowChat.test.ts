@@ -2264,9 +2264,10 @@ describe('#1036 ordering: a real emergency reaches the emergency response first'
     test('a diagnosis, clearance or medication question with no acute sign keeps its own text', () => {
       expect(check('Do I have a concussion?').error).toBe('Diagnosis and personal health assessment require professional medical evaluation.');
       // "cleared" near spar, contact or train is taught since lane S1; near
-      // compete, or with medical wording, the clearance text stands.
+      // compete, or with main's "medical clearance" phrase, the clearance text
+      // stands.
       expect(check('Am I cleared to compete?').error).toBe('Medical clearance decisions require professional medical authority.');
-      expect(check('Am I medically cleared to spar?').error).toBe('Medical clearance decisions require professional medical authority.');
+      expect(check('Do I need medical clearance to spar?').error).toBe('Medical clearance decisions require professional medical authority.');
       expect(check('Should I take ibuprofen pills for this?').error).toBe('Medication and prescription recommendations require prescription authority and professional medical oversight.');
     });
     test('a non-emergency high-risk report keeps the handoff text', () => {
@@ -2346,6 +2347,34 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     ['should I skip meals to make weight', 'weight_cutting'],
     ['does spitting help me make weight', 'weight_cutting'],
     ['how do I help my 11 year old cut weight', 'weight_cutting'],
+    // OD-2026-10-10-006 ("B: SHADOW answers"). Each of these was withheld on
+    // main by the weight-cut gate and by nothing else of main's, and this
+    // lane's own word lists kept it withheld until that decision: going
+    // without food or water, being made to cut, and health words that are in
+    // none of main's patterns. The last two were allowed on main with the
+    // classification the route answers from its fixed line.
+    ['What does it mean when pupils are uneven during a weight cut?', 'weight_cutting'],
+    ['I can not breathe and I need to lose weight quickly', 'none'],
+    ['I keep passing out in the sauna and I need to make weight', 'weight_cutting'],
+    ['I keep vomiting, how do I cut weight for my weight class?', 'weight_cutting'],
+    ["I'm peeing blood, how do I cut weight for my weight class?", 'weight_cutting'],
+    ['I make myself throw up to make weight, help me make weight faster', 'weight_cutting'],
+    ['I am starving myself and I need to lose weight quickly', 'none'],
+    ['Do laxatives help me make weight?', 'weight_cutting'],
+    ['I am on Lasix and I need to lose weight quickly', 'none'],
+    ['What causes pain during a weight cut?', 'weight_cutting'],
+    ['I stopped sweating in the sauna, how much longer to make weight', 'weight_cutting'],
+    ['everything went black for a second in the sauna, how do I make weight', 'weight_cutting'],
+    ['my head is pounding, how do I make weight', 'weight_cutting'],
+    ['my heart is racing in the sauna, how do I make weight', 'weight_cutting'],
+    ["I haven't had water in 2 days, how do I make weight", 'weight_cutting'],
+    ["I haven't eaten in two days to make weight is that ok", 'weight_cutting'],
+    ['I took ex-lax to make weight, how much more', 'weight_cutting'],
+    ['my son looks pale and is shaking, how do we make weight by tonight', 'weight_cutting'],
+    ['my kid is really out of it after the sauna, how do we make weight', 'weight_cutting'],
+    ['my dad locks me in the car with the heat on to make weight', 'weight_cutting'],
+    ['I am 11 and my dad makes me sit in the sauna to make weight', 'weight_cutting'],
+    ["my dad says I can't eat until I make weight", 'weight_cutting'],
   ];
   const TRAINING_CLEARANCE: Array<[string, HighRiskTopic]> = [
     ['What contact level is this athlete cleared for?', 'medical_clearance'],
@@ -2360,6 +2389,31 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     // Both questions at once, under a clearance topic: taught, and named for
     // the clearance half.
     ['Am I cleared to spar, and how do I lose weight quickly?', 'return_to_play'],
+    // OD-2026-10-10-006: withheld on main by "cleared" near spar, contact or
+    // train and by nothing else of main's. Medical wording that is not
+    // main's "medical clearance" phrase, and health words that are in none of
+    // main's patterns, hold nothing back.
+    ['Is he medically cleared to spar?', 'return_to_play'],
+    ["Does he need a doctor's clearance to spar?", 'medical_clearance'],
+    ['My neurologist cleared me to spar, can I?', 'medical_clearance'],
+    ['Dr. Smith cleared me to spar', 'medical_clearance'],
+    ['The doc cleared me to spar', 'medical_clearance'],
+    ['The ER cleared me to spar', 'medical_clearance'],
+    ['The hospital cleared him for contact', 'medical_clearance'],
+    ['My pediatrician cleared him to train', 'medical_clearance'],
+    ['The nurse cleared me to spar', 'medical_clearance'],
+    ['He is seizing, is he cleared to spar?', 'return_to_play'],
+    ['He keeps passing out, is he cleared to spar?', 'return_to_play'],
+    ['I can not breathe, am I cleared to spar?', 'return_to_play'],
+    ['He is coughing up blood, is he cleared to spar?', 'return_to_play'],
+    ['I cant feel my legs, am I cleared to spar?', 'return_to_play'],
+    ['He is confused and cant remember the round. Is he cleared to spar?', 'return_to_play'],
+    ['Am I cleared to spar, I keep blacking out', 'return_to_play'],
+    ['Am I cleared to spar after a knockout last week?', 'return_to_play'],
+    ['Am I cleared to spar after my concusion?', 'return_to_play'],
+    ['Am I cleared to spar with a fractured rib?', 'return_to_play'],
+    ['am I cleared to spar if I can t see', 'return_to_play'],
+    ['Is he cleared to spar with a sore shoulder?', 'return_to_play'],
   ];
 
   describe.each(ROLES)('for a %s', (role) => {
@@ -2378,10 +2432,23 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     });
   });
 
-  // Every row below is main's answer at 30b6c53f for that sentence. The lane
-  // measured the rows marked (m) by running main's validateShadowRequest
-  // before changing anything; the others follow main's returns by reading and
-  // are held here from the first run on.
+  // OD-2026-10-10-006: "A request is withheld only where a rule the app
+  // already had, other than the weight-cut and 'cleared' gates, withholds it
+  // by its own unchanged patterns (emergency handling, the symptom topics,
+  // medication, diagnosis, safeguarding)."
+  //
+  // Every row below is such a message: it carries weight-cut or "cleared"
+  // wording, and another rule of main's catches it, so it gets main's answer
+  // at 30b6c53f field for field. The label says what the sentence is; the
+  // error text and topic say which rule holds it. "(m)" marks a row the lane
+  // measured on main when it wrote it; the whole table is run against main's
+  // own validator before each push, and the count of rows that matched is in
+  // the pull request.
+  //
+  // Also here, because they are main's answer too: ordinary questions that
+  // carry none of main's weight-cut wording (a sauna, a sweat suit, water
+  // loading), allowed with no mark for every role; and the bare word "clear"
+  // near sparring.
   describe('what is NOT relaxed gives main\'s answer, field for field', () => {
     const UNCHANGED: Array<[string, string, ReturnType<typeof validateShadowRequest>]> = [
       ['(m) an emergency with a weight-cut phrase', "I can't breathe and I need to lose weight quickly",
@@ -2410,11 +2477,7 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
         { valid: false, error: CLEARANCE, highRisk: true, topic: 'concussion' }],
       ['cleared, with a dehydration topic', 'Is he cleared to spar while dehydrated?',
         { valid: false, error: CLEARANCE, highRisk: true, topic: 'dehydration' }],
-      ['(m) medically cleared', 'Is he medically cleared to spar?',
-        { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
       ['(m) medical clearance', 'Does he need medical clearance to spar?',
-        { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ["(m) a doctor's clearance", "Does he need a doctor's clearance to spar?",
         { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
       ['(m) cleared to compete', 'Am I cleared to compete?',
         { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
@@ -2432,116 +2495,33 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
         { valid: true, highRisk: true, topic: 'return_to_play', classification: 'return_to_play' }],
       ['a diagnosis question', 'Do I have a concussion?',
         { valid: false, error: 'Diagnosis and personal health assessment require professional medical evaluation.', highRisk: true, topic: 'concussion' }],
-
-      // REVIEWER A, 2026-10-10. The first build released each sentence from
-      // here to the end of the table; every one was withheld (or, for the
-      // three "clear" questions, allowed as an ordinary question) on main.
-      // (m) throughout: main's answers measured by running main beside the
-      // branch.
-      //
-      // Medical wording beyond "medical" and "doctor".
-      ['(m) a neurologist', 'My neurologist cleared me to spar, can I?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) Dr.', 'Dr. Smith cleared me to spar', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) the doc', 'The doc cleared me to spar', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) the ER', 'The ER cleared me to spar', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) the hospital', 'The hospital cleared him for contact', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) a pediatrician', 'My pediatrician cleared him to train', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      ['(m) the nurse', 'The nurse cleared me to spar', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
-      // A health word main's vocabularies do not hold, beside "cleared".
-      ['(m) seizing', 'He is seizing, is he cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) passing out', 'He keeps passing out, is he cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) can not breathe', 'I can not breathe, am I cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) coughing up blood', 'He is coughing up blood, is he cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) cant feel', 'I cant feel my legs, am I cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) confused', 'He is confused and cant remember the round. Is he cleared to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) blacking out', 'Am I cleared to spar, I keep blacking out', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) a knockout', 'Am I cleared to spar after a knockout last week?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) a misspelt concussion', 'Am I cleared to spar after my concusion?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) a fractured rib', 'Am I cleared to spar with a fractured rib?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) can t see, with a space for the apostrophe', 'am I cleared to spar if I can t see', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      ['(m) one of main\'s health words, with no "I" or "my"', 'Is he cleared to spar with a sore shoulder?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'return_to_play' }],
-      // The bare word "clear" is not a clearance question.
       ['(m) a clear way', 'What is a clear way to explain sparring rules?', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) a clear round', 'What does a clear round of sparring look like?', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) the plan made clear', 'How does the coach make the training plan clear?', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) the ring clear', 'Is the ring clear for sparring?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'none' }],
-      // "cleared" that is not a training clearance, beside a weight-cut request.
       ['(m) a doctor cleared a cut', 'The doctor cleared me to lose weight quickly', { valid: false, error: MEDICATION, highRisk: true, topic: 'medical_clearance' }],
       ['(m) cleared to lose weight', 'Am I cleared to lose weight quickly?', { valid: false, error: MEDICATION, highRisk: true, topic: 'return_to_play' }],
-      // Risk rows listed BELOW the weight rows cannot take the topic, so
-      // their words are read directly.
       ['(m) feeling faint in a cut', 'Is it normal to feel faint during a weight cut?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
       ['(m) a kid feeling faint in a cut', 'What should a coach do when a kid feels faint during a weight cut?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
       ['(m) taking pills', "I'm taking pills to cut weight for my weight class", { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) after surgery', 'How do I cut weight after surgery?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) a cardiac issue', 'Tips to cut weight for my weight class with a cardiac issue', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) feeling dizzy in a cut', 'Is it normal to feel dizzy during a weight cut?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dizziness', classification: 'dizziness' }],
-      ['(m) an emergency sign in a general question about a cut', 'What does it mean when pupils are uneven during a weight cut?', { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      // Acute signs and medication in plain words, beside a weight-cut request.
-      ['(m) can not breathe', 'I can not breathe and I need to lose weight quickly', { valid: false, error: MEDICATION, highRisk: true, topic: 'none' }],
-      ['(m) passing out in the sauna', 'I keep passing out in the sauna and I need to make weight', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) vomiting', 'I keep vomiting, how do I cut weight for my weight class?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) blood', "I'm peeing blood, how do I cut weight for my weight class?", { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) throwing up to make weight', 'I make myself throw up to make weight, help me make weight faster', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) starving', 'I am starving myself and I need to lose weight quickly', { valid: false, error: MEDICATION, highRisk: true, topic: 'none' }],
-      ['(m) laxatives', 'Do laxatives help me make weight?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) Lasix', 'I am on Lasix and I need to lose weight quickly', { valid: false, error: MEDICATION, highRisk: true, topic: 'none' }],
       ['(m) water pills', 'Can I use water pills to cut weight for my weight class?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) a diagnosis question with a weight-cut request', 'Do I have an injury? how do I cut weight for my weight class', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      // A health word counts however it is used. These two are the question
-      // the ruling is about, and they still get main's answer, because
-      // main's personal-health return stands behind the weight-cut gate for
-      // them and is not a return the ruling relaxed. Raised with Overwatch.
       ['(m) without getting hurt', 'How do I cut weight for my weight class without getting hurt?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) without injury', 'How do I make weight without injury?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
       ['(m) avoid getting hurt', 'How does my son make weight and avoid getting hurt?', { valid: false, error: PERSONAL_HEALTH, highRisk: true, topic: 'weight_cutting', classification: 'personal_health_concern' }],
-      // So the route's weight-cut stock line is still reachable: an
-      // educational weight-cut question with a health word in it.
-      ['(m) the weight-cut stock line', 'What causes pain during a weight cut?', { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-
-      // REVIEWER B, 2026-10-10: distress, going without food or water, and
-      // being made to cut, in a kid's or a parent's own words. The second
-      // build released each of these; all were withheld on main.
-      ['(m) stopped sweating', 'I stopped sweating in the sauna, how much longer to make weight', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) everything went black', 'everything went black for a second in the sauna, how do I make weight', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) head pounding', 'my head is pounding, how do I make weight', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) heart racing', 'my heart is racing in the sauna, how do I make weight', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) no water for days', "I haven't had water in 2 days, how do I make weight", { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
-      ['(m) not eaten for days', "I haven't eaten in two days to make weight is that ok", { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) ex-lax', 'I took ex-lax to make weight, how much more', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) pale and shaking', 'my son looks pale and is shaking, how do we make weight by tonight', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) out of it', 'my kid is really out of it after the sauna, how do we make weight', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) locked in a hot car', 'my dad locks me in the car with the heat on to make weight', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) made to sit in the sauna', 'I am 11 and my dad makes me sit in the sauna to make weight', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      ['(m) not allowed to eat', "my dad says I can't eat until I make weight", { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-
-      // Questions about a sauna, a sweat suit or water loading that use none
-      // of main's weight-cut wording were ordinary questions on main and
-      // still are, for every role: answered by the model, not marked
-      // high-risk, so no staff review row. A mark for athletes and parents
-      // was built in this lane and withdrawn (OD-2026-10-10-005: "a staff
-      // review-row flag on sauna, sweat-suit and water-loading questions from
-      // athletes and parents" is listed there as added on overwatch's own
-      // judgment). These rows hold that it is gone.
       ['(m) a sauna question with no weight-cut wording', "I'm 12, how long should I sit in the sauna", { valid: true, highRisk: false, topic: 'none' }],
       ['(m) a sweat suit question', 'can I wear a sweat suit in a hot car', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) a water-loading question', 'how do I water load', { valid: true, highRisk: false, topic: 'none' }],
       ['(m) pounds by a day, behind the coach\'s back', "my coach doesn't know, how do I lose 8 pounds by Friday", { valid: true, highRisk: false, topic: 'none' }],
       ['(m) an educational sauna question', 'What does a sauna do to the body?', { valid: true, highRisk: false, topic: 'none' }],
-
-      // MUTATION CHECKS, 2026-10-10. Three conditions in taughtQuestion could
-      // be deleted with every test above still passing, because the word
-      // lists happened to cover the same sentences. These are the sentences
-      // only those conditions catch.
-      // main's urgent-symptom vocabulary, where no list holds the word:
       ['(m) a headache, no "I", beside a weight-cut question', 'He has a headache, how does he make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
       ['(m) nausea, no "I", beside a weight-cut question', 'She feels nauseous, how does she make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'weight_cutting', classification: 'weight_cutting' }],
-      // main's diagnosis question, where the ailment word is on no list:
       ['(m) a diagnosis question about a condition', 'Do I have a condition if I lose weight quickly?', { valid: false, error: MEDICATION, highRisk: true, topic: 'none' }],
-      // a risk row listed above the weight rows, where no list holds the word:
       ['(m) vertigo', 'How do I cut weight with vertigo?', { valid: false, error: MEDICATION, highRisk: true, topic: 'dizziness' }],
       ['(m) head trauma', 'How do I cut weight after head trauma?', { valid: false, error: MEDICATION, highRisk: true, topic: 'head_trauma' }],
-      // a kept clearance question beside a weight-cut request under a weight topic:
       ['(m) cleared to compete, with a weight-cut request', 'How do I cut weight for my weight class, and am I cleared to compete?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
     ];
 
@@ -2550,6 +2530,25 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
         expect(validateShadowRequest(message, role, 'org-123')).toEqual(expected);
       }
     });
+  });
+
+  // After its two reviews this lane added word lists of its own, to keep
+  // main's refusal for messages only the two relaxed gates had caught: health
+  // words main's vocabularies lack, distress, going without food or water,
+  // being made to cut, medical wording beyond main's. OD-2026-10-10-006 has
+  // those messages answered ("B: SHADOW answers"), and OD-2026-10-10-005
+  // records what adding such lists is ("Your sneaking safety back into things
+  // again"). They are gone. This holds that they stay gone, and that the role
+  // decides nothing.
+  test('no word list of the lane\'s own holds a message back, and the role is not read', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'shadowChat.ts'), 'utf8');
+    for (const name of ['HEALTH_CONTEXT_WORDING', 'DISTRESS_OR_COERCION_WORDING', 'MEDICAL_AUTHORITY_WORDING', 'MEDICAL_SETTING_INITIALS', 'HEALTH_CONCERN_WORDS', 'CUT_METHOD_QUESTION', 'FAMILY_ROLES']) {
+      expect(source).not.toContain(name);
+    }
+    const body = source.slice(source.indexOf('export function validateShadowRequest('), source.indexOf('// The one line excluded roles get'));
+    expect(body.split('_userRole')).toHaveLength(2); // the parameter, and nothing that reads it
+    const helper = source.slice(source.indexOf('function taughtQuestion('), source.indexOf('// Validate that the request aligns'));
+    expect(helper).not.toContain('Role');
   });
 
   // The helper holds copies of patterns that live inside the two guarded
@@ -2575,9 +2574,9 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
       expect(declared('WEIGHT_CUT_TOPIC_ROWS')).toEqual(rows.map((row) => row[2]));
     });
 
-    test('the diagnosis, medication, medical-clearance and health-concern patterns each appear once inside validateShadowRequest', () => {
+    test('the diagnosis, medication and medical-clearance patterns each appear once inside validateShadowRequest', () => {
       expect(validateBody.length).toBeGreaterThan(1000);
-      for (const name of ['DIAGNOSIS_QUESTION', 'MEDICATION_QUESTION', 'MEDICAL_CLEARANCE_PHRASE', 'HEALTH_CONCERN_WORDS']) {
+      for (const name of ['DIAGNOSIS_QUESTION', 'MEDICATION_QUESTION', 'MEDICAL_CLEARANCE_PHRASE']) {
         expect(validateBody.split(`${declared(name)[0]}.test(text)`)).toHaveLength(2);
       }
     });
