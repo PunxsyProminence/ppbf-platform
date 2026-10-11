@@ -402,9 +402,13 @@ describe('GET /api/pilot/progression/assignments: the shape of an issued workout
     // The link check (assertActorCanAccessAthlete) ran once. That a failed
     // check stops the read before anything else is the next case.
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    // It is the guardian-link read, not another role's reach check with the same values.
+    expect(mockQueryOne.mock.calls[0][0]).toContain('from pilot.guardian_links gl');
     for (const part of ['org-1', 'acct-parent', 'ath-1']) {
       expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain(part);
     }
+    // The assignments read is for that child, in that organization.
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 'ath-1']);
     expect(mockQuery).toHaveBeenCalledTimes(2);
     const [shapeSql, shapeParams] = mockQuery.mock.calls[1];
     expect(shapeSql).toContain('from pilot.workout_issue_steps s');

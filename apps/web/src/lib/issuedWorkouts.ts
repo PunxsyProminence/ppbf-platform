@@ -2,9 +2,9 @@
 // draws it in (lane P7c, OD-2026-10-10-004 ruling 5).
 //
 // Pure and client-safe: no server imports. The READER is the one copy for the
-// four screens that list assigned work -- the athlete's assignments page, the
-// athlete's Floor, the guardian's page and the coach's card list -- so they
-// cannot come to disagree about what a readable answer is. The ORDERING is shared by the two athlete
+// four screens that draw an issued workout -- the athlete's assignments page,
+// the athlete's Floor, the guardian's page and the coach's card list -- so
+// they cannot come to disagree about what a readable answer is. The ORDERING is shared by the two athlete
 // screens and the guardian's; the card list arranges cards inside its own
 // issuance groups (app/coach/cards/page.tsx) and uses only the reader.
 //
@@ -28,8 +28,9 @@ export interface IssuedWorkoutStepView {
 
 /**
  * An issued workout, as far as readIssuedWorkouts has checked it. The date and
- * the coach's name are typed `unknown` because the reader does not look at
- * them: a screen that draws one checks it itself and narrows the type.
+ * the coach's name are typed `unknown` because that reader does not look at
+ * them: a screen that draws them reads with readDatedIssuedWorkouts, which
+ * checks both and narrows the type.
  */
 export interface IssuedWorkoutView {
   issue_id: string;

@@ -457,19 +457,17 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     const panel = within(section).getByTestId('issued-workout');
     const sparring = stepOf(panel, 'Body Sparring');
 
-    expect(within(section).queryByRole('alert')).toBeNull();
+    // No alert anywhere on the page, not only in this section. (What the
+    // panel says, word for word, is the next case.)
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(sparring.querySelector('.alert, [title]')).toBeNull();
-    // Its whole text: its step, its name and description, its status, the three lines, its record.
-    expect(sparring.textContent).toBe(
-      'Step 7Body SparringHow Body Sparring is done.◉assignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Completion0%Per week3xAssigned byCoach J Rivera',
-    );
-    // The same classes and the same attributes, element for element and on
-    // the step itself, as a step with no contact (only the status badge may
-    // differ): no title, no role, no colour of its own.
+    // The same elements with the same attributes and the same VALUES, element
+    // for element and on the step itself, as a step with no contact (only the
+    // status badge may differ): no title, no role, no colour or marker of its own.
     const shape = (step: HTMLElement) =>
       [step, ...Array.from(step.querySelectorAll('*'))]
         .filter((element) => !element.closest('.badge'))
-        .map((element) => `${element.tagName}.${element.className}[${element.getAttributeNames().sort().join(',')}]`);
+        .map((element) => `${element.tagName}[${element.getAttributeNames().sort().map((name) => `${name}=${element.getAttribute(name)}`).join(',')}]`);
     const noContact = stepOf(panel, 'Skip Rope');
     expect(shape(sparring)).toEqual(shape(noContact));
   });
