@@ -426,3 +426,48 @@ describe('CT-15: the structured emergency contact record is shown as authoritati
     expect(screen.queryByText('Rosa Quinteros')).toBeNull();
   });
 });
+
+// Lane FU2 (OD-2026-10-10-004 ruling 4): the organization admin reads what the
+// gym's coaches wrote about an athlete from a block on this page. The block's
+// own behaviour is covered in AdminAthleteCoachNotes.test.tsx; these pin where
+// it is mounted, for whom, and for which athlete.
+describe('the coach-notes block', () => {
+  const notesUrl = '/api/pilot/coach/athlete-capacity-notes';
+
+  test('is under the selected athlete, reads nothing until opened, and then reads THAT athlete', async () => {
+    const fetchMock = consoleFetch((url) => (
+      url.includes(notesUrl) ? jsonResponse({ ok: true, note_max: 2000, notes: [], older_notes: false }) : undefined
+    ));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    // No athlete chosen: no block.
+    await screen.findByRole('button', { name: /correct record/i });
+    expect(screen.queryByRole('heading', { name: 'Coach notes' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /correct record/i }));
+    expect(screen.getByRole('heading', { name: 'Coach notes' })).toBeDefined();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes(notesUrl))).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/sessions/list'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+    await screen.findByText('No capacity notes yet for this athlete.');
+    const reads = fetchMock.mock.calls.filter((call) => String(call[0]).includes(notesUrl));
+    expect(reads).toHaveLength(1);
+    expect(String(reads[0][0])).toContain('athlete_id=ath-001');
+  });
+
+  test('a platform owner gets no block and no note is read', async () => {
+    mockUsePilotSession.mockReturnValue(session('platform_owner'));
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/athlete records are managed per gym/i);
+    expect(screen.queryByRole('heading', { name: 'Coach notes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Capacity notes' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

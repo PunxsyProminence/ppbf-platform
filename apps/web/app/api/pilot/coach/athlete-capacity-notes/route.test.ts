@@ -56,6 +56,7 @@ const MINE = {
   author_role: 'coach',
   author_name: 'Coach Jason',
   created_at: '2026-10-08T12:00:00.000Z',
+  can_withdraw: true,
 };
 const THEIRS = {
   ...MINE,
@@ -64,6 +65,7 @@ const THEIRS = {
   author_account_id: 'acct-admin',
   author_role: 'organization_admin',
   author_name: 'Coach Gym Admin',
+  can_withdraw: false,
 };
 
 function get(query: string) {
@@ -128,6 +130,7 @@ describe('GET', () => {
         author_role: 'organization_admin',
         created_at: MINE.created_at,
         own: false,
+        can_withdraw: false,
       },
       {
         note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f',
@@ -137,8 +140,28 @@ describe('GET', () => {
         author_role: 'coach',
         created_at: MINE.created_at,
         own: true,
+        can_withdraw: true,
       },
     ]);
+    expect(JSON.stringify(body)).not.toContain('acct-');
+  });
+
+  it('an organization admin reading a departed coach\'s note is told can_withdraw by the module, with no account id', async () => {
+    // OD-2026-10-10-003 ruling 4. The module decides (membership role + whether
+    // the author has left); the route passes its answer through and does not
+    // derive one from `own` or from the session role.
+    mockPrincipal.mockResolvedValue({ ...COACH, accountId: 'acct-admin', role: 'organization_admin' });
+    const departed = { ...MINE, author_account_id: 'acct-departed-coach', can_withdraw: true };
+    const active = { ...MINE, note_id: THEIRS.note_id, author_account_id: 'acct-active-coach', can_withdraw: false };
+    mockList.mockResolvedValue({ notes: [departed, active], olderNotes: false });
+    const body = await (await get('?athlete_id=ath-1')).json();
+    expect(body.notes.map((row: { own: boolean; can_withdraw: boolean }) => [row.own, row.can_withdraw])).toEqual([
+      [false, true],
+      [false, false],
+    ]);
+    expect(Object.keys(body.notes[0]).sort()).toEqual(
+      ['athlete_id', 'author_name', 'author_role', 'can_withdraw', 'created_at', 'note', 'note_id', 'own'],
+    );
     expect(JSON.stringify(body)).not.toContain('acct-');
   });
 
@@ -171,6 +194,7 @@ describe('POST', () => {
       author_role: 'coach',
       created_at: MINE.created_at,
       own: true,
+      can_withdraw: true,
     });
     expect(JSON.stringify(body)).not.toContain('acct-');
   });

@@ -12,6 +12,9 @@
 //     refusals, and a note cannot name another gym's athlete;
 //   * notes are history: newest first, a withdrawn note leaves the list but
 //     not the table, only its author may withdraw it;
+//   * an organization admin may withdraw a note once its author has left the
+//     gym, and only then (OD-2026-10-10-003 ruling 4); that withdrawal is
+//     audited naming the departed author, and is not mirrored;
 //   * the audit row commits with the note row and rolls back with it, and
 //     never reaches the SHADOW feed;
 //   * only staff with an ACTIVE membership here, who reach the athlete through
@@ -65,6 +68,7 @@ import * as accessModule from './access';
 import type { ActorIdentity } from './access';
 import * as auditModule from './audit';
 import { addCapacityNote, listCapacityNotes, readCapacityNotes, withdrawCapacityNote } from './athleteCapacityNotes';
+import { setAccountActiveStatus } from './auth';
 import type { PilotRole } from './contracts';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
 
@@ -776,6 +780,195 @@ describe('athleteCapacityNotes.ts against real rows', () => {
         "select count(*)::int as n from pilot.shadow_telemetry_events where dimensions->>'entity_type' = 'athlete_capacity_note'",
       );
       expect(telemetry.rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// OD-2026-10-10-003 ruling 4: "The organization admin may withdraw a
+// physical-capacity note written by a coach who has left; the withdrawal is
+// audited." Nothing else is opened: an active author's note stays theirs, a
+// coach who is not the author is refused either way, and no text is edited.
+describe('an organization admin withdraws a note whose author has left the gym', () => {
+  async function mirroredRows(client: Client): Promise<number> {
+    const events = await client.query(
+      "select count(*)::int as n from pilot.shadow_events where entity_type = 'athlete_capacity_note' or event_name like '%CAPACITY_NOTE%'",
+    );
+    const telemetry = await client.query(
+      "select count(*)::int as n from pilot.shadow_telemetry_events where dimensions->>'entity_type' = 'athlete_capacity_note'",
+    );
+    return events.rows[0].n + telemetry.rows[0].n;
+  }
+
+  test('refused while the author is active; allowed once the People screen switches the author off; audited, not mirrored; refused again after reactivation', async () => {
+    const client = await migratedDatabase('capnotes_departed');
+    try {
+      const first = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'Held pace through all six rounds' });
+      const second = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'Second' });
+      const visiting = await addCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, note: 'Visiting' });
+
+      // The author is still at the gym: the note is theirs to withdraw.
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID)).map((row) => row.can_withdraw)).toEqual([false, false, false]);
+      await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: first.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+      expect(await noteCount(client, { live: true })).toBe(3);
+
+      // The deactivation #1368's route performs, through its own helper.
+      await setAccountActiveStatus(COACH_ID, ORG_ID, false);
+
+      // What each reader is told: the admin may withdraw the departed coach's
+      // notes and not the visiting coach's; the visiting coach only their own.
+      const forAdmin = await listCapacityNotes(ADMIN, ATHLETE_ID);
+      expect(forAdmin.map((row) => [row.note_id, row.can_withdraw])).toEqual([
+        [visiting.note_id, false],
+        [second.note_id, true],
+        [first.note_id, true],
+      ]);
+      // The departed coach is still shown by name, never by account id.
+      expect(forAdmin[1].author_name).toBe('Coach Jason Neale');
+      const forVisiting = await listCapacityNotes(VISITING_COACH, ATHLETE_ID);
+      expect(forVisiting.map((row) => [row.note_id, row.can_withdraw])).toEqual([
+        [visiting.note_id, true],
+        [second.note_id, false],
+        [first.note_id, false],
+      ]);
+
+      // A coach who is not the author is refused even though the author left.
+      await expect(withdrawCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, noteId: first.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+      expect(await noteCount(client, { live: true })).toBe(3);
+
+      await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: first.note_id });
+      const { rows } = await client.query(
+        'select note, author_account_id, deleted_at from pilot.athlete_capacity_notes where note_id = $1',
+        [first.note_id],
+      );
+      // Withdrawn, not rewritten: the coach's words and name stay on the row.
+      expect(rows[0]).toMatchObject({ note: 'Held pace through all six rounds', author_account_id: COACH_ID });
+      expect(rows[0].deleted_at).not.toBeNull();
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID)).map((row) => row.note_id)).toEqual([visiting.note_id, second.note_id]);
+
+      // The audit row names the admin, the note, the athlete and the departed author.
+      const audit = (await auditRows(client)).filter((row) => row.event_type === 'update');
+      expect(audit).toEqual([
+        {
+          event_type: 'update',
+          actor_account_id: ADMIN_ID,
+          actor_role: 'organization_admin',
+          organization_id: ORG_ID,
+          entity_id: first.note_id,
+          details: { athlete_id: ATHLETE_ID, action: 'withdraw_departed_author', author_account_id: COACH_ID },
+        },
+      ]);
+      expect(JSON.stringify(audit)).not.toContain('Held pace');
+      expect(await mirroredRows(client)).toBe(0);
+
+      // Back at the gym: the remaining note is the coach's again.
+      await setAccountActiveStatus(COACH_ID, ORG_ID, true);
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID)).map((row) => row.can_withdraw)).toEqual([false, false]);
+      await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: second.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+      await withdrawCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, noteId: second.note_id });
+      expect(await noteCount(client, { live: true })).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['the account is switched off', 'update pilot.accounts set active_flag = false where account_id = $1'],
+    ['the account carries the deletion mark', 'update pilot.accounts set deleted_at = now() where account_id = $1'],
+    ['the membership here is inactive', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = '${ORG_ID}'`],
+    ['there is no membership row here', `delete from pilot.organization_memberships where account_id = $1 and organization_id = '${ORG_ID}'`],
+  ])('"has left" is each of: %s', async (_label, sql) => {
+    const client = await migratedDatabase('capnotes_left_forms');
+    try {
+      const added = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'x' });
+      await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: added.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+
+      await client.query(sql, [COACH_ID]);
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID))[0].can_withdraw).toBe(true);
+      await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: added.note_id });
+      expect(await noteCount(client, { live: true })).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach who changed role but is still active here has not left; a membership in ANOTHER gym does not count as being here', async () => {
+    const client = await migratedDatabase('capnotes_still_here');
+    try {
+      const added = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'x' });
+      await client.query(
+        `update pilot.organization_memberships set role = 'volunteer' where account_id = $1 and organization_id = $2`,
+        [COACH_ID, ORG_ID],
+      );
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID))[0].can_withdraw).toBe(false);
+      await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: added.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+
+      // The visiting coach keeps an active membership in their home gym; taken
+      // off THIS gym, they have left it.
+      const visiting = await addCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, note: 'y' });
+      await client.query(
+        'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+        [VISITING_COACH_ID, ORG_ID],
+      );
+      await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: visiting.note_id });
+      expect((await listCapacityNotes(ADMIN, ATHLETE_ID)).map((row) => row.note_id)).toEqual([added.note_id]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('only this gym\'s organization admin: a session role that says admin, another gym\'s admin and the platform owner are all refused', async () => {
+    const client = await migratedDatabase('capnotes_departed_who');
+    try {
+      await insertRaw(client, { author_account_id: LAPSED_COACH_ID });
+      const { rows } = await client.query('select note_id from pilot.athlete_capacity_notes');
+      const noteId = rows[0].note_id as string;
+
+      // Membership here is 'coach' (covering this athlete); the session's
+      // claim to be an organization admin changes nothing.
+      const claimsAdmin = actorFor(VISITING_COACH_ID, 'organization_admin');
+      expect((await listCapacityNotes(claimsAdmin, ATHLETE_ID))[0].can_withdraw).toBe(false);
+      await expect(withdrawCapacityNote({ actor: claimsAdmin, athleteId: ATHLETE_ID, noteId }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+
+      for (const actor of [
+        OTHER_ADMIN,
+        actorFor(OTHER_ADMIN_ID, 'organization_admin'), // the other gym's admin, aimed at this gym
+        PLATFORM_OWNER,
+        actorFor(ADMIN_ID, 'platform_owner', OTHER_ORG_ID),
+        VOLUNTEER,
+        BOARD,
+        GUARDIAN,
+        ATHLETE,
+      ]) {
+        await expect(withdrawCapacityNote({ actor, athleteId: ATHLETE_ID, noteId })).rejects.toBeInstanceOf(ForbiddenError);
+      }
+      expect(await noteCount(client, { live: true })).toBe(1);
+      expect(await auditRows(client)).toEqual([]);
+
+      await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId });
+      expect(await noteCount(client, { live: true })).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('when the audit row cannot be written, the admin\'s withdrawal is rolled back with it', async () => {
+    const client = await migratedDatabase('capnotes_departed_rollback');
+    try {
+      await insertRaw(client, { author_account_id: LAPSED_COACH_ID });
+      const { rows } = await client.query('select note_id from pilot.athlete_capacity_notes');
+      jest.spyOn(auditModule, 'writePilotAuditEvent').mockRejectedValueOnce(new Error('audit insert failed'));
+      await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: rows[0].note_id }))
+        .rejects.toThrow('audit insert failed');
+      expect(await noteCount(client, { live: true })).toBe(1);
+      expect(await auditRows(client)).toEqual([]);
     } finally {
       await client.end();
     }

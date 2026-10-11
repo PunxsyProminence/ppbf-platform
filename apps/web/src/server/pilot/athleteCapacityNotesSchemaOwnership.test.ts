@@ -29,10 +29,16 @@ describe('athlete capacity notes schema ownership', () => {
     const statements = body.match(/`[^`]*pilot\.athlete_capacity_notes[^`]*`/g) ?? [];
     expect(statements.length).toBe(4);
     for (const statement of statements) {
+      // The two reads alias the table `n`, because they also ask whether the
+      // note's author has left (a subquery over accounts and memberships).
       expect(statement).toMatch(
-        /where organization_id = \$1 and athlete_id = \$2|insert into pilot\.athlete_capacity_notes\s*\(\s*organization_id/,
+        /where (?:n\.)?organization_id = \$1 and (?:n\.)?athlete_id = \$2|insert into pilot\.athlete_capacity_notes\s*\(\s*organization_id/,
       );
     }
+    // "Has left" is asked of the note's OWN organization: a membership in
+    // another gym never counts as being here (OD-2026-10-10-003 ruling 4).
+    expect(body).toMatch(/om\.organization_id = n\.organization_id\s+and om\.active_flag = true/);
+    expect(body).toMatch(/a\.account_id = n\.author_account_id\s+and a\.active_flag = true/);
     // The one UPDATE sets deleted_at and nothing else.
     const updates = statements.filter((s) => /update pilot\.athlete_capacity_notes/.test(s));
     expect(updates).toHaveLength(1);

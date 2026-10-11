@@ -18,7 +18,10 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // NAME (the server's author_name); the panel never sees an account id.
 //
 // HISTORY. A note is never edited. The coach who wrote one may withdraw it
-// (`own` from the server); it leaves the list, the server keeps the row.
+// (`own` from the server); it leaves the list, the server keeps the row. An
+// organization admin is also offered Withdraw on a note whose author has left
+// the gym (`can_withdraw` from the server, OD-2026-10-10-003 ruling 4) -- the
+// server decides who that is, and decides again on the withdrawal itself.
 //
 // Authorization is the route's: this panel sends the form and shows what the
 // server answers. Whether the athlete or family sees these notes is NOT
@@ -30,6 +33,7 @@ interface NoteRow {
   author_name: string;
   created_at: string;
   own: boolean;
+  can_withdraw?: boolean;
 }
 
 type Reading =
@@ -45,7 +49,8 @@ function isNoteRow(value: unknown): value is NoteRow {
     && typeof row.note === 'string'
     && typeof row.author_name === 'string'
     && typeof row.created_at === 'string'
-    && typeof row.own === 'boolean';
+    && typeof row.own === 'boolean'
+    && (row.can_withdraw === undefined || typeof row.can_withdraw === 'boolean');
 }
 
 export default function CapacityNotesPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
@@ -250,13 +255,15 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                           {formatGymDateNumeric(row.created_at)} · {row.author_name}
                         </p>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{row.note}</p>
-                        {row.own ? (
+                        {row.own || row.can_withdraw === true ? (
                           <button
                             type="button"
                             className="btn btn--ghost mt-[var(--s1)]"
                             disabled={busy}
                             onClick={() => void withdraw(row.note_id)}
-                            aria-label={`Withdraw your note from ${formatGymDateNumeric(row.created_at)}`}
+                            aria-label={row.own
+                              ? `Withdraw your note from ${formatGymDateNumeric(row.created_at)}`
+                              : `Withdraw the note ${row.author_name} wrote on ${formatGymDateNumeric(row.created_at)}`}
                           >
                             Withdraw
                           </button>

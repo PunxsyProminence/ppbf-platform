@@ -4540,7 +4540,7 @@
     "id": "app/api/pilot/coach/athlete-capacity-notes/route.ts#DELETE",
     "method": "DELETE",
     "path": "/api/pilot/coach/athlete-capacity-notes",
-    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in withdrawCapacityNote (author only)",
+    "gate": "requirePrincipal + requireRole(CAPACITY_NOTE_ROLES) + assertNoteAccess in withdrawCapacityNote (the author; or an organization admin once the author has left the gym)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -4552,7 +4552,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Withdraws (soft-deletes, deleted_at) one of the caller's OWN capacity notes for an athlete; audit row in the same transaction. Module 013 slice, OD-2026-10-08-002.",
+    "notes": "Withdraws (soft-deletes, deleted_at) one of the caller's OWN capacity notes for an athlete, or, for an organization admin, a note whose author has left the gym (account inactive or deleted, or no active membership here; OD-2026-10-10-003 ruling 4); audit row in the same transaction, not mirrored. Module 013 slice, OD-2026-10-08-002.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -4581,7 +4581,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads an athlete's live coach-written capacity notes, newest first, author by display name (never account id); reach enforced in athleteCapacityNotes.ts assertNoteAccess via membership role + assertActorCanAccessAthlete.",
+    "notes": "Reads an athlete's live coach-written capacity notes, newest first, author by display name (never account id), each with can_withdraw for this reader; reach enforced in athleteCapacityNotes.ts assertNoteAccess via membership role + assertActorCanAccessAthlete.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

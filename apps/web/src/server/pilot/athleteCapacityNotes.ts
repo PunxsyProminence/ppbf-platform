@@ -4,6 +4,7 @@ import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { getCoachDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
@@ -21,9 +22,12 @@ import { ForbiddenError, NotFoundError, ValidationError } from './errors';
  * no board individual rows) and OD-2026-09-21-001 (in-app AI never
  * diagnoses) both hold here by there being nothing to compute.
  *
- * HISTORY, NOT A FIELD. A note is never edited. Its author -- and only its
- * author -- may withdraw it, which sets deleted_at and leaves the row; reads
- * skip withdrawn notes. Each write (add, withdraw) records an audit event on
+ * HISTORY, NOT A FIELD. A note is never edited. Its author may withdraw it,
+ * which sets deleted_at and leaves the row; reads skip withdrawn notes. Once
+ * the author has LEFT the gym, and only then, an organization admin may
+ * withdraw it in their place (OD-2026-10-10-003 ruling 4); nobody else ever
+ * may, and nobody changes a note's text. Each write (add, withdraw) records
+ * an audit event on
  * entity 'athlete_capacity_note' in the SAME transaction, shadow_mirror:
  * false, so the record never reaches the family-readable SHADOW feed
  * (/api/pilot/shadow/events admits athletes and guardians). The note text
@@ -53,11 +57,43 @@ export interface AthleteCapacityNoteRow {
   /** The author's display name (getCoachDisplayName); callers show this, never the account id. */
   author_name: string;
   created_at: string;
+  /**
+   * Whether THIS reader may withdraw the note: its author, or an organization
+   * admin once the author has left. The withdrawal decides again for itself.
+   */
+  can_withdraw: boolean;
 }
 
-type StoredRow = Omit<AthleteCapacityNoteRow, 'author_name'>;
+type StoredRow = Omit<AthleteCapacityNoteRow, 'author_name' | 'can_withdraw'>;
 
 const FIELDS = 'note_id, athlete_id, note, author_account_id, author_role, created_at';
+
+/** The membership roles that may withdraw a departed author's note ('admin' is the legacy spelling, roleAlias.ts). */
+const DEPARTED_AUTHOR_WITHDRAW_ROLES: readonly CapacityNoteRole[] = ['organization_admin', 'admin'];
+
+/**
+ * "The author of note `n` has left this gym" (Overwatch ruling A, 2026-10-11):
+ * the account is switched off (#1368, setAccountActiveStatus), carries the
+ * deletion mark, or holds no active membership row in the note's
+ * organization. A coach still active here has not left, whatever their role.
+ */
+const AUTHOR_DEPARTED_SQL = `not exists (
+  select 1
+    from pilot.accounts a
+    join pilot.organization_memberships om
+      on om.account_id = a.account_id
+     and om.organization_id = n.organization_id
+     and om.active_flag = true
+   where a.account_id = n.author_account_id
+     and a.active_flag = true
+     and not ${accountDeletedSql('a')}
+)`;
+
+/** Author, or an organization admin once the author has left. Used by the read and by the withdrawal. */
+function mayWithdraw(actor: ActorIdentity, role: CapacityNoteRole, authorAccountId: string, authorDeparted: boolean): boolean {
+  if (authorAccountId === actor.accountId) return true;
+  return authorDeparted && DEPARTED_AUTHOR_WITHDRAW_ROLES.includes(role);
+}
 
 /** The note to store for this text, or the reason it is refused. Pure. */
 export function capacityNoteShapeError(note: string): string | null {
@@ -104,7 +140,10 @@ async function assertNoteAccess(actor: ActorIdentity, athleteId: string): Promis
   throw new ForbiddenError('This account may not read or write capacity notes for this athlete.', 'CAPACITY_NOTE_NOT_PERMITTED');
 }
 
-async function withAuthorNames(organizationId: string, rows: StoredRow[]): Promise<AthleteCapacityNoteRow[]> {
+async function withAuthorNames<Row extends { author_account_id: string }>(
+  organizationId: string,
+  rows: Row[],
+): Promise<(Row & { author_name: string })[]> {
   const names = new Map<string, string>();
   for (const id of new Set(rows.map((row) => row.author_account_id))) {
     names.set(id, await getCoachDisplayName(organizationId, id));
@@ -121,16 +160,21 @@ export async function readCapacityNotes(
   actor: ActorIdentity,
   athleteId: string,
 ): Promise<{ notes: AthleteCapacityNoteRow[]; olderNotes: boolean }> {
-  await assertNoteAccess(actor, athleteId);
-  const rows = await query<StoredRow>(
-    `select ${FIELDS} from pilot.athlete_capacity_notes
-      where organization_id = $1 and athlete_id = $2 and deleted_at is null
-      order by note_seq desc
+  const role = await assertNoteAccess(actor, athleteId);
+  const rows = await query<StoredRow & { author_departed: boolean }>(
+    `select ${FIELDS}, ${AUTHOR_DEPARTED_SQL} as author_departed
+       from pilot.athlete_capacity_notes n
+      where n.organization_id = $1 and n.athlete_id = $2 and n.deleted_at is null
+      order by n.note_seq desc
       limit ${LIST_LIMIT + 1}`,
     [actor.organizationId, athleteId],
   );
+  const shown = rows.slice(0, LIST_LIMIT).map(({ author_departed, ...row }) => ({
+    ...row,
+    can_withdraw: mayWithdraw(actor, role, row.author_account_id, author_departed),
+  }));
   return {
-    notes: await withAuthorNames(actor.organizationId, rows.slice(0, LIST_LIMIT)),
+    notes: await withAuthorNames(actor.organizationId, shown),
     olderNotes: rows.length > LIST_LIMIT,
   };
 }
@@ -176,14 +220,24 @@ export async function addCapacityNote(input: {
     }, client);
     return stored;
   });
-  return (await withAuthorNames(input.actor.organizationId, [row]))[0];
+  // The author's own note, just written: theirs to withdraw.
+  return (await withAuthorNames(input.actor.organizationId, [{ ...row, can_withdraw: true }]))[0];
 }
 
 /**
- * Withdraws one of the actor's OWN notes: sets deleted_at, leaves the row,
- * audits it on the same transaction. A note somebody else wrote is refused
- * even for an organization admin; a note already withdrawn, or not this
- * athlete's, is not found.
+ * Withdraws a note: sets deleted_at, leaves the row, audits it on the same
+ * transaction. The actor's OWN note, always. A note somebody else wrote: only
+ * an organization admin, and only once its author has left the gym
+ * (OD-2026-10-10-003 ruling 4) -- while the author is still here it is theirs
+ * to withdraw and the admin is refused; a coach who is not the author is
+ * refused either way. A note already withdrawn, or not this athlete's, is not
+ * found. Whether the author has left is read under the note's row lock, in the
+ * transaction that withdraws it.
+ *
+ * The admin's withdrawal is audited as its own action and names the departed
+ * author by account id; the audit row is not mirrored (see above) and
+ * 'athlete_capacity_note' is not on the coach audit allow-list
+ * (auditReadAllowlist.ts), so that id stays with the organization admin.
  */
 export async function withdrawCapacityNote(input: {
   actor: ActorIdentity;
@@ -193,17 +247,19 @@ export async function withdrawCapacityNote(input: {
   const role = await assertNoteAccess(input.actor, input.athleteId);
 
   await withTransaction(async (client) => {
-    const live = await client.query<{ author_account_id: string }>(
-      `select author_account_id from pilot.athlete_capacity_notes
-        where organization_id = $1 and athlete_id = $2 and note_id = $3 and deleted_at is null
-        for update`,
+    const live = await client.query<{ author_account_id: string; author_departed: boolean }>(
+      `select n.author_account_id, ${AUTHOR_DEPARTED_SQL} as author_departed
+         from pilot.athlete_capacity_notes n
+        where n.organization_id = $1 and n.athlete_id = $2 and n.note_id = $3 and n.deleted_at is null
+        for update of n`,
       [input.actor.organizationId, input.athleteId, input.noteId],
     );
     const found = live.rows[0];
     if (!found) throw new NotFoundError('No such note.', 'CAPACITY_NOTE_NOT_FOUND');
-    if (found.author_account_id !== input.actor.accountId) {
+    if (!mayWithdraw(input.actor, role, found.author_account_id, found.author_departed)) {
       throw new ForbiddenError('Only the coach who wrote a note may withdraw it.', 'CAPACITY_NOTE_NOT_AUTHOR');
     }
+    const own = found.author_account_id === input.actor.accountId;
 
     await client.query(
       `update pilot.athlete_capacity_notes set deleted_at = clock_timestamp()
@@ -218,7 +274,9 @@ export async function withdrawCapacityNote(input: {
       organization_id: input.actor.organizationId,
       entity_type: 'athlete_capacity_note',
       entity_id: input.noteId,
-      details: { athlete_id: input.athleteId, action: 'withdraw' },
+      details: own
+        ? { athlete_id: input.athleteId, action: 'withdraw' }
+        : { athlete_id: input.athleteId, action: 'withdraw_departed_author', author_account_id: found.author_account_id },
       shadow_mirror: false,
     }, client);
   });
