@@ -208,27 +208,25 @@ describe('weight cutting, heat and "am I cleared" questions are taught', () => {
     expect(buildRegisterPrompt('coach')).toBe(STAFF_REGISTER);
   });
 
-  // Two lines, under their own lead-in. The first describes the clearance
-  // rule, which lane S1 did not touch, and gives the model a way to say the
-  // true thing. The second describes the one weight-cut rule (Jason, question
-  // card 2026-10-11) by asking for the behaviour that rule checks: words for
-  // how it works, a number only with its citation.
+  // One line, under its own lead-in: the clearance rule, which lane S1 did
+  // not touch and which withholds "ask your coach what you are cleared for".
+  // The line gives the model a way to say the true thing.
   //
-  // The line that stood second here before named the trigger words of the old
-  // patterns and offered no other way to say it. The lane's second reviewer
-  // returned CONFLICT on it (it coached the model around a filter) and
-  // Overwatch had it removed (lane question 7, option b). It must not return.
-  test('PHRASING describes the two rules a taught answer has to get past, and coaches the model around neither', () => {
+  // There is NO line about weight cutting. The reply filter on it is gone
+  // (OD-2026-10-10-005 ruling 2), so there is nothing to phrase around. Two
+  // earlier versions of a second line stood here: one named the old
+  // patterns' trigger words (the lane's second reviewer returned CONFLICT on
+  // it), one described a rule that was withdrawn. Neither may come back.
+  test('PHRASING names the clearance rule a taught answer has to get past, and says nothing about weight cutting', () => {
     const lead = 'With or without a citation, the filter also WITHHOLDS your entire answer if it:';
     expect(SHADOW_SYSTEM_PROMPT.split(lead)).toHaveLength(2);
     const after = SHADOW_SYSTEM_PROMPT.slice(SHADOW_SYSTEM_PROMPT.indexOf(lead) + lead.length);
     expect(after.startsWith(`
 - puts "cleared" after "you" or after "the athlete is" in the same sentence, even in "ask your coach what you are cleared for". Give a recorded contact cap as a cap ("the contact cap is <value> [E:id]"), or say "what your coach has set"
-- on cutting weight, heat, food or fluids, gives a number, a set time or a "go without" instruction in a sentence that has no [E:id] of its own. Teach how it works in words. Give an amount, a length of time or a "when" only with the citation it comes from, in the same sentence
 Without a supplied evidence ID,`)).toBe(true);
     expect(SHADOW_SYSTEM_PROMPT.indexOf('- states a percentage, or a count of cases, athletes, participants, or studies')).toBeLessThan(SHADOW_SYSTEM_PROMPT.indexOf(lead));
     expect(SHADOW_SYSTEM_PROMPT).not.toContain('puts cut, cutting, drop, shed or lose shortly before');
-    expect(SHADOW_SYSTEM_PROMPT).not.toContain('"you should / can / need to / must ... cut weight"');
+    expect(SHADOW_SYSTEM_PROMPT).not.toContain('gives a number, a set time or a "go without" instruction');
   });
 });
 

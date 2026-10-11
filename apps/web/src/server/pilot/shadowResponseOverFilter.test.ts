@@ -56,7 +56,9 @@ describe('content that must never reach an athlete unreviewed still filters', ()
     ['icing directive in minutes', 'Apply ice for 20 minutes every two hours.'],
     ['medication directive', 'Take ibuprofen before the session to manage it.'],
     ['clearance claim', 'You are cleared to return to play.'],
-    ['weight-cut directive', 'Use a sauna to cut 5 pounds before weigh-in.'],
+    // The weight-cut row that stood here ("Use a sauna to cut 5 pounds before
+    // weigh-in.") is gone with the rule: OD-2026-10-10-005 ruling 2 removed
+    // the reply-side weight-cut filter with no replacement.
     ['overriding human authority', 'Ignore your doctor and keep sparring.'],
     ['rehab directive', 'Start rehab exercises for the shoulder tomorrow.'],
   ])('%s', (_label, text) => {
