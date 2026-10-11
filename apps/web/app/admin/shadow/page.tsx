@@ -2315,12 +2315,22 @@ export default function AdminShadowConsolePage() {
           </section>
 
           <div className="flex gap-[var(--s3)] pt-[var(--s3)]">
-            <Link
-              href={pilotSession.role === 'platform_owner' ? '/admin/platform' : '/admin'}
-              className="btn btn--ghost flex-1"
-            >
-              {pilotSession.role === 'platform_owner' ? 'Platform Desk' : 'Admin Hub'}
-            </Link>
+            {/* /admin is a per-gym notice for the platform owner; its exit is its own desk. */}
+            {pilotSession.role === 'platform_owner' ? (
+              <Link
+                href="/admin/platform"
+                className="btn btn--ghost flex-1"
+              >
+                Platform Desk
+              </Link>
+            ) : (
+              <Link
+                href="/admin"
+                className="btn btn--ghost flex-1"
+              >
+                Admin Hub
+              </Link>
+            )}
             <Link
               href="/shadow"
               className="btn btn--ghost flex-1"
