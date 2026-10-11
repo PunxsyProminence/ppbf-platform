@@ -463,12 +463,13 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     expect(sparring.textContent).toBe(
       'Step 7Body SparringHow Body Sparring is done.◉assignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Completion0%Per week3xAssigned byCoach J Rivera',
     );
-    // The same classes, element for element and on the step itself, as a step
-    // with no contact (only the status badge may differ).
+    // The same classes and the same attributes, element for element and on
+    // the step itself, as a step with no contact (only the status badge may
+    // differ): no title, no role, no colour of its own.
     const shape = (step: HTMLElement) =>
       [step, ...Array.from(step.querySelectorAll('*'))]
         .filter((element) => !element.closest('.badge'))
-        .map((element) => `${element.tagName}.${element.className}`);
+        .map((element) => `${element.tagName}.${element.className}[${element.getAttributeNames().sort().join(',')}]`);
     const noContact = stepOf(panel, 'Skip Rope');
     expect(shape(sparring)).toEqual(shape(noContact));
   });
@@ -555,5 +556,122 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     expect(screen.queryByTestId('issued-workout')).toBeNull();
     expect(screen.queryByText('Technical Tuesday')).toBeNull();
     expect(screen.queryByTestId('step-notes')).toBeNull();
+  });
+
+  test('nothing else is said in the panel: its whole text is the workout, its blocks and its three steps', async () => {
+    open(WORK, [WORKOUT]);
+    const panel = within(await drillSection()).getByTestId('issued-workout');
+    const record = (percent: number) => `Completion${percent}%Per week3xAssigned byCoach J Rivera`;
+
+    expect(panel.textContent).toBe(
+      [
+        'Workout',
+        'Technical Tuesday',
+        `From: Coach J Rivera · ${formatGymDateNumeric(WORKOUT.issued_at)} · 3 steps, in this order`,
+        'warmup',
+        `Step 2Skip RopeHow Skip Rope is done.✓completedScale: Easier (A)Contact: No contactNote: Easy pace.${record(100)}`,
+        'main work',
+        `Step 5Jab LadderHow Jab Ladder is done.◉in progressContact: Light technical contact${record(50)}`,
+        `Step 7Body SparringHow Body Sparring is done.◉assignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.${record(0)}`,
+      ].join(''),
+    );
+  });
+
+  test("a step shows the coach's reps and minutes when they are set, and no line for one that is not", async () => {
+    const work = WORK.map((item) => {
+      if (item.assignment_id === 'as-w1') return { ...item, duration_minutes: 5 };
+      if (item.assignment_id === 'as-w2') return { ...item, rep_count: 20 };
+      if (item.assignment_id === 'as-loose') return { ...item, rep_count: 0, duration_minutes: 12 };
+      return item;
+    });
+    open(work, [WORKOUT]);
+    const section = await drillSection();
+    const panel = within(section).getByTestId('issued-workout');
+    const dose = (within_: HTMLElement) =>
+      Array.from(within_.querySelectorAll('dl > div')).map((pair) => pair.textContent);
+
+    expect(dose(stepOf(panel, 'Skip Rope'))).toEqual(['Completion100%', 'Duration5 min', 'Per week3x', 'Assigned byCoach J Rivera']);
+    expect(dose(stepOf(panel, 'Jab Ladder'))).toEqual(['Completion50%', 'Reps20', 'Per week3x', 'Assigned byCoach J Rivera']);
+    // Neither was set on this step: no "Reps" or "Duration" line, and no zero standing in.
+    expect(dose(stepOf(panel, 'Body Sparring'))).toEqual(['Completion0%', 'Per week3x', 'Assigned byCoach J Rivera']);
+    // A drill in no workout shows them the same way; a zero the coach set is a figure, not an absence.
+    const loose = within(section).getByRole('heading', { name: 'Shadowbox' }).closest('article') as HTMLElement;
+    expect(dose(loose)).toEqual(['Completion0%', 'Reps0', 'Duration12 min', 'Per week3x', 'Assigned byCoach J Rivera']);
+  });
+
+  test('a due date is the calendar day the coach set, not the day before', async () => {
+    open([drill('as-due', 'Shadowbox', { due_date: '2026-10-15' })], []);
+    const section = await drillSection();
+
+    expect(within(section).getByText('Oct 15, 2026')).toBeTruthy();
+    expect(section.textContent).not.toContain('10/14/2026');
+    expect(section.textContent).not.toContain('Oct 14');
+  });
+
+  test("the answer for the child left behind, arriving late with a workout, is never drawn on the selected child's record", async () => {
+    // The first child's ASSIGNMENTS read -- the hop that carries the workouts
+    // -- is held open until the second child's record is on screen.
+    let releaseFirstChild: () => void = () => {};
+    const firstChildAnswered = new Promise<void>((resolve) => {
+      releaseFirstChild = resolve;
+    });
+    const siblingDrill = drill('as-sib', 'Footwork Ladder');
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return jsonOk({ items: [CHILD, SECOND_CHILD] });
+      if (url.includes('/progression/gaps')) return jsonOk({ items: [] });
+      if (url.includes('/progression/assignments')) {
+        if (url.includes('athlete_id=athlete-001')) {
+          await firstChildAnswered;
+          return jsonOk({ items: WORK, workouts: [WORKOUT] });
+        }
+        return jsonOk({ items: [siblingDrill], workouts: [] });
+      }
+      return jsonOk({ items: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ParentProgressionVisibilityPage />);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).includes('/progression/assignments?athlete_id=athlete-001')),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+    await screen.findByRole('heading', { name: 'Footwork Ladder' });
+
+    // Now the first child's assignments and workout arrive -- last, and for the wrong child.
+    await act(async () => {
+      releaseFirstChild();
+    });
+
+    expect(screen.getByText("Riley Doe's Progression")).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Footwork Ladder' })).toBeTruthy();
+    expect(screen.queryByTestId('issued-workout')).toBeNull();
+    expect(screen.queryByText('Technical Tuesday')).toBeNull();
+    expect(screen.queryByText('Shadowbox')).toBeNull();
+    // And no completions were read for the child left behind.
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('assignment_id=as-w1'))).toBe(false);
+  });
+
+  test('a child with a workout and no gap is shown no "Identified Gaps" heading over nothing; with a gap it is shown', async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return jsonOk({ items: [CHILD] });
+      if (url.includes('/progression/gaps')) return jsonOk({ items: [] });
+      if (url.includes('/progression/assignments')) return jsonOk({ items: WORK, workouts: [WORKOUT] });
+      return jsonOk({ items: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const view = render(<ParentProgressionVisibilityPage />);
+
+    await screen.findByTestId('issued-workout');
+    expect(screen.queryByRole('heading', { name: 'Identified Gaps' })).toBeNull();
+    expect(screen.queryByText('No progression gaps on record')).toBeNull();
+    view.unmount();
+
+    open(WORK, [WORKOUT]);
+    await screen.findByTestId('issued-workout');
+    expect(screen.getByRole('heading', { name: 'Identified Gaps' })).toBeTruthy();
   });
 });

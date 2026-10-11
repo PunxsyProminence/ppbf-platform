@@ -396,17 +396,33 @@ describe('GET /api/pilot/progression/assignments: the shape of an issued workout
     expect(JSON.stringify(guardian.body)).not.toContain('account_id');
   });
 
-  test("the guardian's shape read is asked after the guardian-link check, about that child's assignments only", async () => {
+  test("the guardian's read runs the guardian-link check as that guardian, for that child, in the session's organization, and asks the shape about that child's assignments only", async () => {
     await read('parent', ASSIGNMENTS, STEP_ROWS);
 
-    // The link check (assertActorCanAccessAthlete) ran, as the guardian, for the child asked about.
+    // The link check (assertActorCanAccessAthlete) ran once. That a failed
+    // check stops the read before anything else is the next case.
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain('acct-parent');
-    expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain('ath-1');
+    for (const part of ['org-1', 'acct-parent', 'ath-1']) {
+      expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain(part);
+    }
     expect(mockQuery).toHaveBeenCalledTimes(2);
     const [shapeSql, shapeParams] = mockQuery.mock.calls[1];
     expect(shapeSql).toContain('from pilot.workout_issue_steps s');
     expect(shapeParams).toEqual(['org-1', ['asg-loose', 'asg-2', 'asg-1', 'asg-3']]);
+  });
+
+  test('the workout names the coach who ISSUED it, each drill the coach who assigned it, and neither by account id', async () => {
+    mockCoachName.mockImplementation(async (_org: string, accountId: string) =>
+      (accountId === 'acct-coach-2' ? 'Coach A Chen' : 'Coach J Rivera'));
+    const issuedByAnother = STEP_ROWS.map((row) => ({ ...row, issued_by_account_id: 'acct-coach-2' }));
+
+    const { body } = await read('parent', ASSIGNMENTS, issuedByAnother);
+
+    const [issued] = body.workouts as Array<{ issued_by_name: string }>;
+    expect(issued.issued_by_name).toBe('Coach A Chen');
+    const items = body.items as Array<{ assigned_by_name: string }>;
+    expect(items.map((item) => item.assigned_by_name)).toEqual(Array(4).fill('Coach J Rivera'));
+    expect(JSON.stringify(body)).not.toContain('acct-coach');
   });
 
   test('a guardian who is not linked to the child is refused before anything is read: no assignments, no shape', async () => {

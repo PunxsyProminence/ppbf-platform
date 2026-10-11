@@ -2,9 +2,9 @@
 // draws it in (lane P7c, OD-2026-10-10-004 ruling 5).
 //
 // Pure and client-safe: no server imports. The READER is the one copy for the
-// three screens that list assigned work -- the athlete's assignments page, the
-// athlete's Floor and the coach's card list -- so they cannot come to disagree
-// about what a readable answer is. The ORDERING is shared by the two athlete
+// four screens that list assigned work -- the athlete's assignments page, the
+// athlete's Floor, the guardian's page and the coach's card list -- so they
+// cannot come to disagree about what a readable answer is. The ORDERING is shared by the two athlete
 // screens and the guardian's; the card list arranges cards inside its own
 // issuance groups (app/coach/cards/page.tsx) and uses only the reader.
 //
@@ -42,7 +42,7 @@ export interface IssuedWorkoutView {
 const isText = (value: unknown): value is string => typeof value === 'string';
 const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
 
-/** Thrown by readIssuedWorkouts. Its message is for a log, never for a screen. */
+/** Thrown by readIssuedWorkouts and readDatedIssuedWorkouts. Its message is for a log, never for a screen. */
 export class IssuedWorkoutsUnreadableError extends Error {
   constructor() {
     super('The workouts beside the assignments could not be read.');

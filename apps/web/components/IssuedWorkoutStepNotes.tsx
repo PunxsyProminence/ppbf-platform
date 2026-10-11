@@ -12,8 +12,8 @@ export interface IssuedWorkoutStepLines {
 /**
  * What the template says beside one step of a workout, as written, each line
  * labelled so it is not taken for the drill's own level in the instruction
- * near it. One component for the athlete's screen and the coach's, so both
- * read the same lines.
+ * near it. One component for the athlete's screens, the guardian's and the
+ * coach's, so all read the same lines.
  *
  * A scale level the coach left open is not shown; nothing is filled in, and
  * nothing is said about the contact level beyond the level itself. The note is
