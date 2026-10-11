@@ -563,7 +563,7 @@ describe('issue to athlete', () => {
       expect(init.method).toBe('POST');
       expect(init.credentials).toBe('include');
       expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
-      expect(JSON.parse(String(init.body))).toEqual({ template_id: 'wt-1', athlete_id: 'ath-1' });
+      expect(JSON.parse(String(init.body))).toEqual({ template_id: 'wt-1', athlete_id: 'ath-1', request_key: expect.any(String) });
     });
 
     it('while the issue is running every control is disabled, and a second tap sends nothing more', async () => {
@@ -678,7 +678,7 @@ describe('issue to athlete', () => {
       await issuedStatus();
       const posts = issuePosts(fetchMock);
       expect(posts).toHaveLength(1);
-      expect(JSON.parse(String((posts[0] as unknown as [unknown, RequestInit])[1].body))).toEqual({ template_id: 'wt-2', athlete_id: 'ath-1' });
+      expect(JSON.parse(String((posts[0] as unknown as [unknown, RequestInit])[1].body))).toEqual({ template_id: 'wt-2', athlete_id: 'ath-1', request_key: expect.any(String) });
     });
 
     it('a late FAILED answer to an earlier read does not close the template that is open', async () => {
@@ -1199,6 +1199,193 @@ describe('issue to athlete', () => {
       for (const holder of textHolders) {
         expect(holder.getAttribute('class') ?? '').toMatch(/\bt-(body|label)\b|text-\[length:var\(--t-md\)\]/);
       }
+    });
+  });
+  // ONE PRESS, ONE ISSUE (lane P7c, PR F). Every issue goes out with a request
+  // key. A press that gets no definite answer keeps its key, so pressing again
+  // sends the SAME key and the server answers with the first issue; a definite
+  // answer ends the request, and the next press is a new issue with a new key.
+  describe('the request key: pressing again after no answer cannot issue the workout twice', () => {
+    const ALREADY_BODY = {
+      ok: true,
+      already_issued: true,
+      athlete_id: 'ath-1',
+      issue_id: ISSUED_BODY.issue_id,
+      template: ISSUED_BODY.template,
+      step_count: 2,
+    };
+    const NO_ANSWER = (): Response => {
+      throw new TypeError('Failed to fetch');
+    };
+
+    /** The page with the issue POST answered by each of `answers` in turn. */
+    function mockIssues(answers: Array<() => Response>) {
+      let sends = 0;
+      return mockIssuePage({
+        issue: () => {
+          const answer = answers[sends];
+          sends += 1;
+          if (!answer) throw new Error('test bug: more issues were sent than this case answers');
+          return answer();
+        },
+      });
+    }
+
+    const keysSent = (fetchMock: jest.Mock): unknown[] =>
+      issuePosts(fetchMock).map((call) => (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>).request_key);
+
+    /** Presses Issue and Confirm again for the athlete already chosen. */
+    async function issueAgain() {
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+      });
+    }
+
+    it('an issue is sent with a key: text, not blank, at most 200 characters', async () => {
+      const fetchMock = mockIssues([() => statusResponse(201, ISSUED_BODY)]);
+
+      await issueTo();
+      await issuedStatus();
+
+      const [key] = keysSent(fetchMock);
+      expect(typeof key).toBe('string');
+      expect((key as string).trim().length).toBeGreaterThan(0);
+      expect((key as string).length).toBeLessThanOrEqual(200);
+    });
+
+    it('no answer, then pressed again: the same key goes out, and the answer says it was issued once', async () => {
+      const fetchMock = mockIssues([NO_ANSWER, () => statusResponse(200, ALREADY_BODY)]);
+
+      await issueTo();
+      await screen.findByRole('alert');
+      await issueAgain();
+
+      const status = await issuedStatus();
+      const [first, second] = keysSent(fetchMock);
+      expect(second).toBe(first);
+      expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+      // Still said: what the athlete sees. Not said: anything adopted (this press adopted nothing).
+      expect(status).toHaveTextContent('The athlete sees this as one workout');
+      expect(status).not.toHaveTextContent(/Adopted for this gym/);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('an ordinary issue does not say anything about an earlier try', async () => {
+      mockIssues([() => statusResponse(201, ISSUED_BODY)]);
+
+      await issueTo();
+
+      expect(await issuedStatus()).not.toHaveTextContent(/earlier try|not twice/);
+    });
+
+    const KEPT: Array<[string, () => Response]> = [
+      ['no answer', NO_ANSWER],
+      ['a server error', () => statusResponse(500, { error: 'Internal server error' })],
+      ['a status this screen does not know', () => statusResponse(302, {})],
+      ['a 200 that does not say it was already issued', () => statusResponse(200, { ok: true })],
+      ['a 200 whose body cannot be read', () => ({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } }) as unknown as Response],
+    ];
+
+    it.each(KEPT)('after %s the key is kept: the next press sends it again', async (_label, unknownAnswer) => {
+      const fetchMock = mockIssues([unknownAnswer, () => statusResponse(201, ISSUED_BODY)]);
+
+      await issueTo();
+      // Not read as issued, and not read as "nothing was issued".
+      const alert = await screen.findByRole('alert');
+      expect(alert).not.toHaveTextContent(/Nothing was issued/);
+      expect(screen.queryByText(/^Issued to /)).not.toBeInTheDocument();
+      await issueAgain();
+      await issuedStatus();
+
+      const [first, second] = keysSent(fetchMock);
+      expect(typeof first).toBe('string');
+      expect(second).toBe(first);
+    });
+
+    const ENDED: Array<[string, () => Response]> = [
+      ['an issue (201)', () => statusResponse(201, ISSUED_BODY)],
+      ['an "already issued" (200)', () => statusResponse(200, ALREADY_BODY)],
+      ['a refusal that names drills (409)', () => statusResponse(409, REFUSED_BODY)],
+      ['another 409', () => statusResponse(409, { error: 'This workout template is no longer in use, so it cannot be issued.', code: 'WORKOUT_TEMPLATE_NOT_CURRENT' })],
+      ['a 400', () => statusResponse(400, { error: 'Missing athlete_id' })],
+      ['a 401', () => statusResponse(401, {})],
+      ['a 403', () => statusResponse(403, {})],
+      ['a 404', () => statusResponse(404, {})],
+    ];
+
+    it.each(ENDED)('%s is a definite answer: the next press is a new issue with a new key', async (_label, definiteAnswer) => {
+      const fetchMock = mockIssues([definiteAnswer, () => statusResponse(201, ISSUED_BODY)]);
+
+      await issueTo();
+      await waitFor(() => expect(screen.getByRole('status').textContent !== '' || screen.queryByRole('alert') !== null).toBe(true));
+      await issueAgain();
+      await issuedStatus();
+
+      const [first, second] = keysSent(fetchMock);
+      expect(typeof first).toBe('string');
+      expect(typeof second).toBe('string');
+      expect(second).not.toBe(first);
+    });
+
+    it('each athlete has its own key, and an unanswered one is still that athlete\'s after choosing someone else and coming back', async () => {
+      const fetchMock = mockIssues([NO_ANSWER, NO_ANSWER, () => statusResponse(200, ALREADY_BODY)]);
+
+      await issueTo('ath-1');
+      await screen.findByRole('alert');
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+      await issueAgain();
+      await screen.findByRole('alert');
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      await issueAgain();
+      await issuedStatus();
+
+      const bodies = issuePosts(fetchMock).map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+      expect(bodies.map((body) => body.athlete_id)).toEqual(['ath-1', 'ath-2', 'ath-1']);
+      expect(bodies[1].request_key).not.toBe(bodies[0].request_key);
+      expect(bodies[2].request_key).toBe(bodies[0].request_key);
+    });
+
+    it('"already issued" with no step count says the count could not be read, never 0', async () => {
+      const withoutCount: Record<string, unknown> = { ...ALREADY_BODY };
+      delete withoutCount.step_count;
+      mockIssues([() => statusResponse(200, withoutCount)]);
+
+      await issueTo();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent('Issued to Dana Reyes. The number of Coach Cards could not be read.');
+      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+      expect(status).not.toHaveTextContent(/0 Coach Cards/);
+    });
+
+    it('"already issued" still says the training hold: the first answer may never have arrived', async () => {
+      mockIssues([() => statusResponse(200, { ...ALREADY_BODY, hold_warning: { hold_id: 'hold-1', scope: 'contact_only' } })]);
+
+      await issueTo();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent('This athlete has an active training hold (CONTACT WORK). Issuing was NOT blocked');
+    });
+
+    it('where the browser cannot make a random id no key is sent, and the issue goes out as it always did', async () => {
+      // Shadowed on the object for this case only; deleting the shadow gives the real one back.
+      const cryptoObject = globalThis.crypto as unknown as Record<string, unknown>;
+      Object.defineProperty(cryptoObject, 'randomUUID', { value: undefined, configurable: true });
+      try {
+        const fetchMock = mockIssues([() => statusResponse(201, ISSUED_BODY)]);
+
+        await issueTo();
+        await issuedStatus();
+
+        const [post] = issuePosts(fetchMock);
+        expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ template_id: 'wt-1', athlete_id: 'ath-1' });
+      } finally {
+        delete cryptoObject.randomUUID;
+      }
+      expect(typeof globalThis.crypto.randomUUID).toBe('function');
     });
   });
 });

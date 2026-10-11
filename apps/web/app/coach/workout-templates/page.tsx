@@ -52,6 +52,8 @@ interface TemplateDetail {
 // issued" issues again and the athlete gets every card twice. Three answers,
 // kept apart:
 //   - 201: issued, always -- even when the body cannot be read;
+//   - 200 saying `already_issued`: this press repeated one that had gone
+//     through (see the request key below); issued once, and said so;
 //   - 400 / 401 / 403 / 404 / 409: the server refused before or inside the
 //     write, so nothing was issued, and the screen says so;
 //   - anything else (no answer, a 5xx, a status this screen does not know):
@@ -63,6 +65,13 @@ interface TemplateDetail {
 // result says so. It says nothing about the Coach Cards screen: that screen
 // lists a coach's own issues the same way, but an admin can issue here too,
 // and an admin's issue is on nobody's Coach Cards screen.
+//
+// ONE PRESS, ONE ISSUE. Each issue is sent with a request key: a random id
+// kept for that template and athlete until the server gives a definite answer.
+// When a press gets no answer and the coach presses again, the same key goes
+// out, and the server answers with the first issue instead of issuing twice.
+// The key lives only as long as this open template does, so the "check before
+// trying again" sentences below stay as they are.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -139,8 +148,13 @@ function cardCountFrom(payload: Record<string, unknown>): number | null {
   return typeof assignments === 'number' ? assignments : null;
 }
 
+/** A new request key, or null where the browser cannot make a random id (then none is sent). */
+function newRequestKey(): string | null {
+  return typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : null;
+}
+
 type IssueOutcome =
-  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote }
+  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote; already?: boolean }
   // A 201 whose body could not be read: the cards exist, the details do not.
   | { kind: 'issued_unread'; athleteName: string }
   | { kind: 'refused'; message: string; drills: RefusedDrill[] }
@@ -187,6 +201,8 @@ function IssueToAthlete({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<IssueOutcome | null>(null);
+  // The request key of each athlete's issue that has no definite answer yet.
+  const requestKeys = useRef(new Map<string, string | null>());
 
   // Where focus goes after each step. Each step replaces what was on screen,
   // so without this a keyboard or screen-reader user is dropped at the top of
@@ -244,6 +260,11 @@ function IssueToAthlete({
     setOutcome(null);
     setBusy(true);
     onBusyChange(true);
+    // The key of this athlete's unanswered issue, or a new one. It is kept
+    // through every answer that does not say which way the issue went.
+    const keys = requestKeys.current;
+    if (!keys.has(chosen.athlete_id)) keys.set(chosen.athlete_id, newRequestKey());
+    const requestKey = keys.get(chosen.athlete_id) ?? null;
     try {
       let response: Response;
       try {
@@ -251,7 +272,11 @@ function IssueToAthlete({
           credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ template_id: template.template_id, athlete_id: chosen.athlete_id }),
+          body: JSON.stringify({
+            template_id: template.template_id,
+            athlete_id: chosen.athlete_id,
+            ...(requestKey ? { request_key: requestKey } : {}),
+          }),
         });
       } catch {
         setOutcome({ kind: 'failed', message: ISSUE_NO_ANSWER });
@@ -260,7 +285,25 @@ function IssueToAthlete({
       const parsed: unknown = await response.json().catch(() => null);
       const payload = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 
-      if (response.status === 201) {
+      // A definite answer either way ends this request: the next press for
+      // this athlete is a new issue with a new key.
+      const definite = response.status === 201
+        || (response.status === 200 && payload?.already_issued === true)
+        || [400, 401, 403, 404, 409].includes(response.status);
+      if (definite) keys.delete(chosen.athlete_id);
+
+      if (response.status === 200 && payload?.already_issued === true) {
+        // An earlier press of this same issue went through; this one wrote
+        // nothing. Issued once.
+        setOutcome({
+          kind: 'issued',
+          athleteName: chosen.full_name,
+          cards: typeof payload.step_count === 'number' ? payload.step_count : null,
+          adopted: [],
+          hold: holdNoteFrom(payload.hold_warning),
+          already: true,
+        });
+      } else if (response.status === 201) {
         // Committed, whatever else is true. An unreadable body loses the
         // details, never the fact.
         setOutcome(payload
@@ -309,6 +352,8 @@ function IssueToAthlete({
       ? `Issued to ${outcome.athleteName}. The number of Coach Cards could not be read.`
       : `Issued to ${outcome.athleteName}: ${outcome.cards} Coach ${outcome.cards === 1 ? 'Card' : 'Cards'}.`)
     : '';
+  // Said only when this press repeated one that had already gone through.
+  const alreadyLine = 'Your earlier try had gone through. It was issued once, not twice.';
 
   return (
     <div
@@ -417,6 +462,7 @@ function IssueToAthlete({
           {outcome?.kind === 'issued' && (
             <>
               <p className="t-body font-semibold">{cardsLine}</p>
+              {outcome.already && <p className="t-body">{alreadyLine}</p>}
               <p className="t-body">
                 The athlete sees this as one workout: each step in your order, with its block, scale level,
                 contact level and note.

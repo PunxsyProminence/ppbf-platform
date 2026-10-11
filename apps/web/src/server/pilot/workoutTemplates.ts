@@ -20,7 +20,11 @@ import {
 } from './drills';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule, type DrillAssignment } from './progression';
-import { recordWorkoutIssue } from './workoutIssues';
+import {
+  findWorkoutIssueByRequestKey,
+  recordWorkoutIssue,
+  WorkoutIssueRequestKeyTakenError,
+} from './workoutIssues';
 
 // pilot.workout_templates and pilot.workout_template_items are owned by
 // infra/azure/pilot_slice_postgres_workout_templates_v2_migration.sql,
@@ -277,6 +281,14 @@ export type TemplateIssueResult =
       template: { template_id: string; name: string; version: number };
       steps: TemplateIssuedStep[];
       adopted: TemplateAdoptedDrill[];
+    }
+  // A repeat of a request that already issued this workout: nothing was
+  // written this time. The template is as it was issued.
+  | {
+      outcome: 'already_issued';
+      issue_id: string;
+      template: { template_id: string; name: string; version: number };
+      step_count: number;
     };
 
 const TYPED_STEP_REASON =
@@ -508,13 +520,52 @@ async function planTemplateIssue(
  * with what was created otherwise. Throws ConflictError for a template that is
  * withdrawn or has no steps, and for a write that lost a race.
  */
+/**
+ * The answer to a request whose key already names an issue, or null when the
+ * key names none. A key is one issue's: sent again with a different athlete or
+ * template it is refused, never answered with the other issue and never
+ * issued a second time under the same key.
+ */
+async function repeatOfIssuedRequest(
+  organizationId: string,
+  requestKey: string,
+  athleteId: string,
+  templateId: string,
+): Promise<TemplateIssueResult | null> {
+  const first = await findWorkoutIssueByRequestKey(organizationId, requestKey);
+  if (!first) return null;
+  if (first.athlete_id !== athleteId || first.template_id !== templateId) {
+    throw new ConflictError(
+      'This request was already used to issue a different workout.',
+      'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+    );
+  }
+  return {
+    outcome: 'already_issued',
+    issue_id: first.issue_id,
+    template: { template_id: first.template_id, name: first.template_name, version: first.template_version },
+    step_count: first.step_count,
+  };
+}
+
 export async function issueWorkoutTemplate(params: {
   organizationId: string;
   templateId: string;
   athleteId: string;
   actorAccountId: string;
   actorRole: PilotRole;
+  /** The request's key, when it sent one. See workoutIssues.ts. */
+  requestKey?: string | null;
 }): Promise<TemplateIssueResult> {
+  // FIRST, before the template is read: a request whose key already names an
+  // issue is a repeat, and is answered with that issue whatever has happened
+  // to the template since.
+  const requestKey = params.requestKey ?? null;
+  if (requestKey !== null) {
+    const repeat = await repeatOfIssuedRequest(params.organizationId, requestKey, params.athleteId, params.templateId);
+    if (repeat) return repeat;
+  }
+
   const detail = await getWorkoutTemplateWithItems(params.organizationId, params.templateId);
   if (!detail) {
     return { outcome: 'not_found' };
@@ -620,6 +671,7 @@ export async function issueWorkoutTemplate(params: {
         athleteId: params.athleteId,
         template: issuedTemplate,
         issuedByAccountId: params.actorAccountId,
+        requestKey,
         steps: steps.map((issued) => {
           const item = itemById.get(issued.item_id) as WorkoutTemplateItemWithDrillHead;
           return {
@@ -668,6 +720,13 @@ export async function issueWorkoutTemplate(params: {
       };
     });
   } catch (error) {
+    // The same request arrived twice at the same moment and the other one
+    // committed first. This transaction has rolled back -- no assignment and
+    // no adoption of its own is kept -- so it is answered as the repeat it is.
+    if (error instanceof WorkoutIssueRequestKeyTakenError && requestKey !== null) {
+      const repeat = await repeatOfIssuedRequest(params.organizationId, requestKey, params.athleteId, params.templateId);
+      if (repeat) return repeat;
+    }
     // A unique index refused an adoption inside the transaction, which has
     // rolled back by the time this is seen: nothing was written. The plan
     // found the name and the reference free a moment ago, so someone adopted

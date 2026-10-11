@@ -58,7 +58,7 @@ enforces the other windows below, and nothing sets `deleted_at` at age 18.
 | Mental skills log: self-talk cues, imagery (`pilot.athlete_mental_skill_entries`) | Period not yet ruled | -- | Not yet ruled |
 | Video clip tags (`pilot.video_clip_tags`) | Period not yet ruled | -- | Not yet ruled |
 | Check-in body mass (`pilot.shadow_formula_observations`, kind `body_weight`, since #1199; no table of its own) | Period not yet ruled | -- | Not yet ruled |
-| Issued workouts: the block, order, scale level, contact level and coach note of each step of a workout template issued to an athlete (`pilot.workout_issues`, `pilot.workout_issue_steps`; they leave with the athlete's assignments, by cascade) | Period not yet ruled | -- | Not yet ruled |
+| Issued workouts: the block, order, scale level, contact level and coach note of each step of a workout template issued to an athlete, and the random request key of the press that issued it when the screen sent one (`pilot.workout_issues`, `pilot.workout_issue_steps`; they leave with the athlete's assignments, by cascade) | Period not yet ruled | -- | Not yet ruled |
 
 The eleven rows above name tables added or extended for athlete data that no window has been
 ruled for yet (2026-10-04; minor limits added 2026-10-07; staff session notes and capacity notes 2026-10-09; issued workouts 2026-10-11). They are listed so the gap is visible, not filled; the periods are

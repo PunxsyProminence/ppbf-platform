@@ -91,9 +91,11 @@ import { issueCoachCard } from './coachCards';
 import { query } from './db';
 import { promoteReferenceDrill } from './drills';
 import {
+  findWorkoutIssueByRequestKey,
   listIssuedWorkoutsForAssignments,
   recordWorkoutIssue,
   toFamilyIssuedWorkouts,
+  WorkoutIssueRequestKeyTakenError,
   type WorkoutIssueStepInput,
 } from './workoutIssues';
 import { issueWorkoutTemplate, type TemplateIssueResult } from './workoutTemplates';
@@ -277,13 +279,14 @@ async function gymWithWorkout(label: string): Promise<{ gym: Gym; drills: Record
   return { gym, drills };
 }
 
-function issue(gym: Gym, athleteId = ATHLETE_ID): Promise<TemplateIssueResult> {
+function issue(gym: Gym, athleteId = ATHLETE_ID, requestKey: string | null = null): Promise<TemplateIssueResult> {
   return issueWorkoutTemplate({
     organizationId: gym.organizationId,
     templateId: TEMPLATE_ID,
     athleteId,
     actorAccountId: gym.coachId,
     actorRole: 'coach',
+    requestKey,
   });
 }
 
@@ -328,7 +331,12 @@ function step(assignmentId: string, ordinal = 1, overrides: Partial<WorkoutIssue
 }
 
 /** recordWorkoutIssue on its own committed transaction. */
-async function record(gym: Gym, steps: WorkoutIssueStepInput[], athleteId = ATHLETE_ID): Promise<string> {
+async function record(
+  gym: Gym,
+  steps: WorkoutIssueStepInput[],
+  athleteId = ATHLETE_ID,
+  requestKey: string | null = null,
+): Promise<string> {
   const own = await ownConnection();
   try {
     await own.query('BEGIN');
@@ -337,6 +345,7 @@ async function record(gym: Gym, steps: WorkoutIssueStepInput[], athleteId = ATHL
       athleteId,
       template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
       issuedByAccountId: gym.coachId,
+      requestKey,
       steps,
     });
     await own.query('COMMIT');
@@ -531,6 +540,7 @@ describe('issuing a template writes the workout as the coach wrote it', () => {
         athleteId: ATHLETE_ID,
         template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
         issuedByAccountId: gym.coachId,
+        requestKey: null,
         steps: [step(assignment.assignment_id)],
       });
       seenDuring = await counts(gym);
@@ -741,6 +751,234 @@ describe('the database refuses what the module never writes', () => {
 
     expect((await counts(here.gym)).issues).toBe(3);
     expect((await counts(there.gym)).issues).toBe(1);
+  });
+});
+
+// ONE ISSUE PER REQUEST KEY (lane P7c, PR F). The coach's screen sends a random
+// id with a press of Issue and sends the same one again when that press got no
+// answer. The second send must answer with the first issue and write nothing.
+describe('a request key names one issue', () => {
+  const auditCount = async (gym: Gym): Promise<number> => {
+    const { rows } = await client.query(
+      `select count(*)::int as n from pilot.audit_events
+       where organization_id = $1 and entity_type = 'workout_template_issue'`,
+      [gym.organizationId],
+    );
+    return rows[0].n;
+  };
+
+  /** A second current template in the gym, with one step. */
+  async function secondTemplate(gym: Gym): Promise<string> {
+    await client.query(
+      `insert into pilot.workout_templates
+         (organization_id, template_id, lineage_id, version, name, session_type, difficulty, age_band, active,
+          duration_minutes, intent)
+       values ($1,'wtp_second','wtp_second',1,'Second Fixture','technical','intermediate','any',true,30,'Test intent')`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.workout_template_items
+         (organization_id, item_id, template_id, ordinal, block, drill_id, scale_level, duration_minutes,
+          rep_count, contact_level, coach_note)
+       values ($1,'wti_second_1','wtp_second',1,'warmup','ref-a',null,5,null,'none',null)`,
+      [gym.organizationId],
+    );
+    return 'wtp_second';
+  }
+
+  test('the key is stored on the issue; an issue sent without one stores null', async () => {
+    const { gym } = await gymWithWorkout('key-stored');
+
+    const keyed = await issue(gym, ATHLETE_ID, 'key-stored-1');
+    const unkeyed = await issue(gym);
+
+    if (keyed.outcome !== 'issued' || unkeyed.outcome !== 'issued') throw new Error('both must issue');
+    const { rows } = await client.query(
+      `select issue_id::text, request_key from pilot.workout_issues where organization_id = $1`,
+      [gym.organizationId],
+    );
+    expect(rows.sort((a, b) => String(a.request_key).localeCompare(String(b.request_key)))).toEqual([
+      { issue_id: keyed.issue_id, request_key: 'key-stored-1' },
+      { issue_id: unkeyed.issue_id, request_key: null },
+    ]);
+  });
+
+  test('the same request sent again writes nothing and is answered with the first issue', async () => {
+    const { gym } = await gymWithWorkout('key-repeat');
+
+    const first = await issue(gym, ATHLETE_ID, 'key-repeat-1');
+    if (first.outcome !== 'issued') throw new Error('the first send must issue');
+    const before = await counts(gym);
+    const again = await issue(gym, ATHLETE_ID, 'key-repeat-1');
+    const andAgain = await issue(gym, ATHLETE_ID, 'key-repeat-1');
+
+    const repeat = {
+      outcome: 'already_issued',
+      issue_id: first.issue_id,
+      template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
+      step_count: 4,
+    };
+    expect(again).toEqual(repeat);
+    expect(andAgain).toEqual(repeat);
+    // One workout, its four steps and four assignments, and one audit event: nothing was added.
+    expect(before).toEqual({ issues: 1, steps: 4, assignments: 4 });
+    expect(await counts(gym)).toEqual(before);
+    expect(await auditCount(gym)).toBe(1);
+  });
+
+  test('a different key is a different issue: the same template issued again on purpose is still a second workout', async () => {
+    const { gym } = await gymWithWorkout('key-two');
+
+    const first = await issue(gym, ATHLETE_ID, 'key-two-1');
+    const second = await issue(gym, ATHLETE_ID, 'key-two-2');
+
+    expect(first.outcome).toBe('issued');
+    expect(second.outcome).toBe('issued');
+    expect(await counts(gym)).toEqual({ issues: 2, steps: 8, assignments: 8 });
+  });
+
+  test('a repeat is answered with the workout as it was issued, even after the template is withdrawn; a new request is refused', async () => {
+    const { gym } = await gymWithWorkout('key-withdrawn');
+    const first = await issue(gym, ATHLETE_ID, 'key-withdrawn-1');
+    if (first.outcome !== 'issued') throw new Error('the first send must issue');
+    await client.query(
+      `update pilot.workout_templates set active = false, name = 'Renamed Since' where organization_id = $1 and template_id = $2`,
+      [gym.organizationId, TEMPLATE_ID],
+    );
+
+    expect(await issue(gym, ATHLETE_ID, 'key-withdrawn-1')).toEqual({
+      outcome: 'already_issued',
+      issue_id: first.issue_id,
+      // The name the workout was issued under, not the template's name today.
+      template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
+      step_count: 4,
+    });
+    await expect(issue(gym, ATHLETE_ID, 'key-withdrawn-2')).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_NOT_CURRENT' });
+    expect(await counts(gym)).toEqual({ issues: 1, steps: 4, assignments: 4 });
+  });
+
+  test('a key sent again for another athlete or another template is refused, and nothing is written', async () => {
+    const { gym } = await gymWithWorkout('key-reused');
+    const other = await secondTemplate(gym);
+    const first = await issue(gym, ATHLETE_ID, 'key-reused-1');
+    expect(first.outcome).toBe('issued');
+    const before = await counts(gym);
+
+    await expect(issue(gym, OTHER_ATHLETE_ID, 'key-reused-1')).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+    });
+    await expect(
+      issueWorkoutTemplate({
+        organizationId: gym.organizationId,
+        templateId: other,
+        athleteId: ATHLETE_ID,
+        actorAccountId: gym.coachId,
+        actorRole: 'coach',
+        requestKey: 'key-reused-1',
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED' });
+
+    expect(await counts(gym)).toEqual(before);
+    expect(await auditCount(gym)).toBe(1);
+  });
+
+  test("another gym's use of the same key is that gym's own issue, and neither gym is answered with the other's", async () => {
+    const here = await gymWithWorkout('key-here');
+    const there = await gymWithWorkout('key-there');
+
+    const mine = await issue(here.gym, ATHLETE_ID, 'key-shared');
+    const theirs = await issue(there.gym, ATHLETE_ID, 'key-shared');
+
+    if (mine.outcome !== 'issued' || theirs.outcome !== 'issued') throw new Error('each gym issues its own');
+    expect(theirs.issue_id).not.toBe(mine.issue_id);
+    expect(await counts(here.gym)).toEqual({ issues: 1, steps: 4, assignments: 4 });
+    expect(await counts(there.gym)).toEqual({ issues: 1, steps: 4, assignments: 4 });
+    const repeat = await issue(there.gym, ATHLETE_ID, 'key-shared');
+    expect(repeat.outcome === 'already_issued' && repeat.issue_id).toBe(theirs.issue_id);
+  });
+
+  test('two sends of one request at the same moment issue once: the one that loses rolls back whole and is answered as the repeat', async () => {
+    const { gym, drills } = await gymWithWorkout('key-race');
+    // The request that wins, held OPEN on its own transaction: one card and
+    // its issue, under the key, not yet committed.
+    const own = await ownConnection();
+    let winner = '';
+    let losing: Promise<TemplateIssueResult> | null = null;
+    try {
+      await own.query('BEGIN');
+      const assignment = await issueCoachCard(
+        { organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: drills['ref-a'] },
+        own as never,
+      );
+      winner = await recordWorkoutIssue(own as never, {
+        organizationId: gym.organizationId,
+        athleteId: ATHLETE_ID,
+        template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
+        issuedByAccountId: gym.coachId,
+        requestKey: 'key-race-1',
+        steps: [step(assignment.assignment_id)],
+      });
+
+      // The same request again. Its lookup sees nothing (the winner has not
+      // committed), so it runs its whole transaction and then waits on the
+      // unique index for the winner to finish.
+      losing = issue(gym, ATHLETE_ID, 'key-race-1');
+      let waiting = 0;
+      for (let attempt = 0; attempt < 200 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const { rows } = await client.query(`select count(*)::int as n from pg_locks where not granted`);
+        waiting = rows[0].n;
+      }
+      expect(waiting).toBeGreaterThan(0);
+      await own.query('COMMIT');
+    } catch (error) {
+      await own.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      await own.end();
+    }
+
+    expect(await losing).toEqual({
+      outcome: 'already_issued',
+      issue_id: winner,
+      template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
+      step_count: 1,
+    });
+    // Only the winner's rows: the loser's four assignments went with its transaction.
+    expect(await counts(gym)).toEqual({ issues: 1, steps: 1, assignments: 1 });
+    expect(await auditCount(gym)).toBe(0);
+  });
+
+  test('recordWorkoutIssue names the taken key as its own error and lets every other refusal through as it was', async () => {
+    const { gym, drills } = await gymWithWorkout('key-error');
+    await record(gym, [step(await card(gym, drills['ref-a']))], ATHLETE_ID, 'key-error-1');
+
+    await expect(record(gym, [step(await card(gym, drills['ref-b']))], ATHLETE_ID, 'key-error-1'))
+      .rejects.toBeInstanceOf(WorkoutIssueRequestKeyTakenError);
+    // A key the column's own check refuses is not reported as "taken".
+    const blank = record(gym, [step(await card(gym, drills['ref-c']))], ATHLETE_ID, '   ');
+    await expect(blank).rejects.toMatchObject({ constraint: 'pilot_workout_issues_request_key_check' });
+    await expect(blank).rejects.not.toBeInstanceOf(WorkoutIssueRequestKeyTakenError);
+    expect((await counts(gym)).issues).toBe(1);
+  });
+
+  test('the lookup answers only in its own gym and only for the key asked', async () => {
+    const here = await gymWithWorkout('key-find-here');
+    const there = await gymWithWorkout('key-find-there');
+    const first = await issue(here.gym, ATHLETE_ID, 'key-find-1');
+    if (first.outcome !== 'issued') throw new Error('must issue');
+
+    expect(await findWorkoutIssueByRequestKey(here.gym.organizationId, 'key-find-1')).toEqual({
+      issue_id: first.issue_id,
+      athlete_id: ATHLETE_ID,
+      template_id: TEMPLATE_ID,
+      template_name: 'Shape Fixture',
+      template_version: 3,
+      step_count: 4,
+    });
+    expect(await findWorkoutIssueByRequestKey(there.gym.organizationId, 'key-find-1')).toBeNull();
+    expect(await findWorkoutIssueByRequestKey(here.gym.organizationId, 'key-find-2')).toBeNull();
   });
 });
 
