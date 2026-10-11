@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { getProtocol } from './interventionProtocols';
 
 // Intervention executions (register module 026 slice 2) -- what ACTUALLY
@@ -399,6 +400,27 @@ export async function correctExecution(input: ExecutionFactsInput & {
        where organization_id = $1 and execution_id = $2`,
       [input.organizationId, input.executionId, newId],
     );
+
+    // A VERDICT STANDS ON FINISHED WORK. reviewOutcome refuses to review an
+    // execution that is still in progress; a correction that reopens a closed
+    // one would put the verdict just carried across onto exactly that. So the
+    // one transition closed -> in progress is refused while a review stands,
+    // and the throw rolls the whole correction back. Asked here, after the
+    // move and inside the transaction, so it sees the reviews this correction
+    // now owns. Every other correction is untouched, as is reopening a record
+    // with no standing review.
+    if (finalStatus === 'in_progress' && current.status !== 'in_progress') {
+      const standing = await client.query(
+        `select 1 from pilot.intervention_outcome_reviews
+         where organization_id = $1 and execution_id = $2 and status = 'active'`,
+        [input.organizationId, newId],
+      );
+      if (standing.rows.length > 0) {
+        throw new ConflictError(
+          'This execution has an outcome review, which stands on finished work. It cannot be corrected back to in progress.',
+        );
+      }
+    }
 
     await client.query(
       `update pilot.intervention_executions set status = $3, updated_at = now()

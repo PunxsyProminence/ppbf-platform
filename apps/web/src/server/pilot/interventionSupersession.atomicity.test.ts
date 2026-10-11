@@ -38,6 +38,7 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { listExecutions, correctExecution } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
 import { reviseProtocol } from './interventionProtocols';
@@ -203,6 +204,11 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
   }
 
   /* ---- outcome reviews ---- */
+  if (/select 1 from pilot\.intervention_outcome_reviews/.test(sql)) {
+    return store.intervention_outcome_reviews
+      .filter((r) => r.organization_id === params[0] && r.execution_id === params[1] && r.status === 'active')
+      .map(() => ({ '?column?': 1 }));
+  }
   if (/select review_id from pilot\.intervention_outcome_reviews/.test(sql)) {
     return store.intervention_outcome_reviews
       .filter((r) => r.organization_id === params[0] && r.execution_id === params[1] && r.status === 'active')
@@ -514,6 +520,32 @@ describe('correctExecution', () => {
     const listed = await listExecutions(ORG, 'ath-1');
     expect(listed.map((r) => [r.execution_id, r.status])).toEqual([['exec-1', 'completed']]);
     expect(store.intervention_executions).toHaveLength(1);
+  });
+
+  test('reopening a reviewed execution is refused whole: no new version, and the evidence and review stay put', async () => {
+    seedExecution();
+    seedLink();
+    seedReview();
+    const before = snapshot();
+
+    await expect(correctExecution({ ...correction, outcome: 'in_progress' })).rejects.toBeInstanceOf(ConflictError);
+
+    // The refusal lands after the links and the review were re-pointed, so
+    // only the rollback puts them back.
+    expect(store).toEqual(before);
+  });
+
+  test('reopening is refused only while a review stands; kept closed, or never reviewed, the correction goes through', async () => {
+    seedExecution();
+    seedReview();
+    const kept = await correctExecution({ ...correction, outcome: 'stopped' });
+    expect(kept?.status).toBe('stopped');
+
+    store = emptyStore();
+    seedExecution();
+    seedReview({ status: 'superseded' });
+    const reopened = await correctExecution({ ...correction, outcome: 'in_progress' });
+    expect(reopened?.status).toBe('in_progress');
   });
 
   test('a second correction that read the same record loses cleanly: null, and nothing stranded', async () => {

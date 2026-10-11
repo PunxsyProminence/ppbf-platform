@@ -34,6 +34,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { ConflictError } from './errors';
+
 let activeClient: Client | null = null;
 
 jest.mock('./db', () => ({
@@ -805,6 +807,95 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         correctedByAccountId: COACH_ID,
       })).resolves.toBeNull();
       expect(await attached()).toEqual(moved);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a closed execution with a standing review cannot be corrected back to in progress; every other correction still can', async () => {
+    const client = await freshDatabase('executions_reopen');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      await client.query(evidenceSql);
+
+      // Closed and reviewed, with a piece of evidence on it.
+      await insertExecution(client, 'exec-reviewed', { status: 'completed' });
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
+         values ($1, 'link-reviewed', 'exec-reviewed', 'baseline', 'training_attempt', 'att-1', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-standing', 'exec-reviewed', 'improved', 'held through the third', 'supported',
+                 'prior_belief_strengthened', 'active', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      // Closed, and nobody has reviewed it.
+      await insertExecution(client, 'exec-unreviewed', { status: 'completed' });
+      // Closed, and its only review has itself been superseded: no verdict stands.
+      await insertExecution(client, 'exec-withdrawn', { status: 'completed' });
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-withdrawn', 'exec-withdrawn', 'unknown', 'too early', 'unresolved', 'unresolved', 'superseded', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+
+      const everything = async () => ({
+        executions: (await client.query(`select * from pilot.intervention_executions order by organization_id, execution_id`)).rows,
+        links: (await client.query(`select * from pilot.intervention_evidence_links order by organization_id, link_id`)).rows,
+        reviews: (await client.query(`select * from pilot.intervention_outcome_reviews order by organization_id, review_id`)).rows,
+      });
+      const before = await everything();
+
+      // A verdict is a statement about finished work. Reopening the work
+      // underneath it would leave the verdict standing on a record that says
+      // the work is still going -- which reviewOutcome itself refuses to write.
+      const reopening = correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-reviewed',
+        correctionReason: 'it had not actually finished',
+        outcome: 'in_progress',
+        correctedByAccountId: COACH_ID,
+      });
+      await expect(reopening).rejects.toBeInstanceOf(ConflictError);
+      await expect(reopening).rejects.toThrow(/outcome review/);
+      // Refused whole: no new version, nothing stamped, nothing moved.
+      expect(await everything()).toEqual(before);
+
+      // The same record corrected and KEPT closed goes through, review and evidence with it.
+      const kept = await correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-reviewed',
+        correctionReason: 'it was stopped, not completed',
+        outcome: 'stopped',
+        stopChangeReason: 'shoulder tightened in round four',
+        correctedByAccountId: COACH_ID,
+      });
+      expect(kept).toMatchObject({ version: 2, status: 'stopped' });
+      const carried = await everything();
+      expect(carried.reviews.find((row) => row.review_id === 'rev-standing'))
+        .toMatchObject({ execution_id: kept!.execution_id, status: 'active' });
+      expect(carried.links.find((row) => row.link_id === 'link-reviewed'))
+        .toMatchObject({ execution_id: kept!.execution_id });
+
+      // Reopening is refused only for a verdict that STANDS: a record nobody
+      // reviewed, and one whose only review was itself superseded, both reopen.
+      for (const executionId of ['exec-unreviewed', 'exec-withdrawn']) {
+        await expect(correctExecution({
+          organizationId: ORG_ID,
+          executionId,
+          correctionReason: 'it had not actually finished',
+          outcome: 'in_progress',
+          correctedByAccountId: COACH_ID,
+        })).resolves.toMatchObject({ version: 2, status: 'in_progress' });
+      }
     } finally {
       await client.end();
     }

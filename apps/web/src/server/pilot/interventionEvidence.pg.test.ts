@@ -918,6 +918,21 @@ describe('through the routes: revise, unlink and correct, and what the next read
     const final = await chainFor(current.execution_id);
     expect(final?.evidence.map((entry) => entry.status)).toEqual(['removed', 'removed']);
     expect(final?.review?.review_id).toBe(reReviewed.review_id);
+
+    // The verdict stands on finished work, so the work cannot be flipped back
+    // to in progress underneath it. Refused whole, with the reason.
+    const beforeReopen = await ledger();
+    const reopen = await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+      action: 'correct',
+      execution_id: current.execution_id,
+      correction_reason: 'it had not actually finished',
+      outcome: 'in_progress',
+    }));
+    expect(reopen.status).toBe(409);
+    expect(((await reopen.json()) as { error: string }).error).toMatch(/outcome review/);
+    expect(await ledger()).toBe(beforeReopen);
+    expect((await chainFor(current.execution_id))?.execution.status).toBe('completed');
+
     // Both attempts are still there.
     const attempts = await db.query(
       `select attempt_id from pilot.training_attempts where organization_id = $1 order by attempt_id`,
