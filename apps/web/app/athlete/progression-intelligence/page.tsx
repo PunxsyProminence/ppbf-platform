@@ -130,18 +130,23 @@ interface DrillAssignment {
  * who issued it, so a workout with no readable date, or a name that is not
  * text, is refused here too.
  */
-function readDatedWorkouts(raw: unknown): IssuedWorkoutView[] {
+interface DatedWorkout extends IssuedWorkoutView {
+  issued_at: string;
+  issued_by_name?: string;
+}
+
+function readDatedWorkouts(raw: unknown): DatedWorkout[] {
   try {
-    const workouts = readIssuedWorkouts(raw);
-    for (const workout of workouts) {
-      if (typeof workout.issued_at !== 'string' || Number.isNaN(Date.parse(workout.issued_at))) {
+    return readIssuedWorkouts(raw).map((workout) => {
+      const { issued_at, issued_by_name } = workout;
+      if (typeof issued_at !== 'string' || Number.isNaN(Date.parse(issued_at))) {
         throw new Error('a workout has no readable date');
       }
-      if (workout.issued_by_name !== undefined && typeof workout.issued_by_name !== 'string') {
+      if (issued_by_name !== undefined && typeof issued_by_name !== 'string') {
         throw new Error('a workout names its coach with something that is not text');
       }
-    }
-    return workouts;
+      return { ...workout, issued_at, issued_by_name };
+    });
   } catch (cause) {
     throw new Error(DRILLS_DID_NOT_LOAD, { cause });
   }
@@ -358,7 +363,7 @@ export default function AthleteProgressionIntelligencePage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
-  const [workouts, setWorkouts] = useState<IssuedWorkoutView[]>([]);
+  const [workouts, setWorkouts] = useState<DatedWorkout[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -784,7 +789,7 @@ export default function AthleteProgressionIntelligencePage() {
                           </h3>
                           <p className="t-muted mt-[var(--s2)]">
                             {row.workout.issued_by_name ? `From: ${row.workout.issued_by_name} · ` : ''}
-                            {formatGymDateNumeric(row.workout.issued_at as string)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
+                            {formatGymDateNumeric(row.workout.issued_at)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
                           </p>
                         </div>
                       );

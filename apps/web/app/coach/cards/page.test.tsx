@@ -1799,6 +1799,8 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
   test.each(RELOAD_FAILS)('a verify that succeeded is not called failed when the list read after it %s: the list says it could not be read', async (_label, afterVerify) => {
     await renderList(ITEMS, [WORKOUT]);
     const workout = await screen.findByTestId('issued-workout');
+    // An unreadable answer is logged for the operator; that is not what this case reads.
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const after = installFetch(afterVerify);
     await act(async () => {
@@ -1806,6 +1808,7 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     });
 
     await screen.findByText(/Your cards could not be read/);
+    logged.mockRestore();
     // The write went through, and nothing says it did not.
     expect(after.some((call) => call.url.includes('/api/pilot/progression/completions'))).toBe(true);
     expect(screen.queryByRole('alert')).toBeNull();
@@ -1947,9 +1950,13 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
   ];
 
   test.each(UNREADABLE)('workouts the screen cannot read (%s) make the list unreadable, never the steps passed off as loose cards', async (_label, workouts) => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     await renderList(ITEMS, workouts);
 
     await screen.findByText(/Your cards could not be read/);
+    // What the reader refused is kept for the log.
+    expect(logged.mock.calls).toEqual([[{ event: 'coach-cards-workouts-unreadable', error: expect.objectContaining({ name: 'IssuedWorkoutsUnreadableError' }) }]]);
+    logged.mockRestore();
     // Said in this screen's own words, not the shared reader's log line.
     expect(screen.getByText('The workouts of the card list could not be read.')).toBeTruthy();
     expect(document.body.textContent).not.toContain('beside the assignments');

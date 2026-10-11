@@ -23,6 +23,7 @@ import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
 
@@ -1969,13 +1970,24 @@ describe('an issued workout keeps its shape on the Floor', () => {
   const headings = (grid: HTMLElement) =>
     within(grid).getAllByRole('heading').map((heading) => `${heading.tagName.toLowerCase()}: ${heading.textContent}`);
 
+  /** The step number each of the workout's drills carries; work in no workout has none. */
+  const STEP_OF: Record<string, number> = { 'Skip Rope': 2, 'Jab Ladder': 5, 'Body Sparring': 7 };
+  /** What a card's two links call its work: a step is named with its number. */
+  const linkLabel = (title: string) => (STEP_OF[title] ? `Step ${STEP_OF[title]}, ${title}` : title);
+
   /** The card of one piece of work, found from its heading; it must hold that work's own log link. */
   function cardOf(grid: HTMLElement, title: string): HTMLElement {
     const card = within(grid).getByRole('heading', { name: title }).closest('div.mat-leather--raised') as HTMLElement;
     expect(within(card).getAllByRole('link', { name: /^Log completion: / })).toHaveLength(1);
-    expect(within(card).getByRole('link', { name: `Log completion: ${title}` })).toBeTruthy();
+    expect(within(card).getByRole('link', { name: `Log completion: ${linkLabel(title)}` })).toBeTruthy();
     return card;
   }
+
+  /** The titles of the work cards whose PARENT is this element, in order. */
+  const cardsDirectlyIn = (parent: Element) =>
+    Array.from(parent.children)
+      .filter((child) => child.classList.contains('mat-leather--raised'))
+      .map((card) => within(card as HTMLElement).getByRole('heading').textContent);
 
   test('the workout is drawn once, whole, where the FIRST of its open steps stood: steps in the coach order, a block name wherever the block changes', async () => {
     await openFloorWith(WORK, [WORKOUT]);
@@ -1997,7 +2009,7 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
     expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday3 steps to do, in this order');
     // Five pieces of open work, five cards: none drawn twice, none dropped.
-    expect(floorWorkTitles()).toEqual(['Shadowbox', 'Skip Rope', 'Jab Ladder', 'Body Sparring', 'Heavy Bag']);
+    expect(floorWorkTitles()).toEqual(['Shadowbox', 'Step 2, Skip Rope', 'Step 5, Jab Ladder', 'Step 7, Body Sparring', 'Heavy Bag']);
   });
 
   test('each step says its number, then exactly: the scale level when the coach set one, the contact level as written, and the note', async () => {
@@ -2023,17 +2035,28 @@ describe('an issued workout keeps its shape on the Floor', () => {
     const grid = await floorGrid('Technical Tuesday');
     const sparring = cardOf(grid, 'Body Sparring');
 
-    // No alert anywhere on the Floor, not only inside the grid.
-    expect(screen.queryByRole('alert')).toBeNull();
+    // Nothing on the grid is an alert, and the card carries no badge or tooltip.
+    expect(within(grid).queryByRole('alert')).toBeNull();
     expect(sparring.querySelector('.alert, .badge, [title]')).toBeNull();
     // Its whole text: its step, its name, its status, the three lines, its two links.
     expect(sparring.textContent).toBe(
       'Step 7Body SparringassignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Open drillLog completion',
     );
-    expect(within(sparring).getByRole('link', { name: 'Open drill: Body Sparring' }).getAttribute('href'))
+    expect(within(sparring).getByRole('link', { name: 'Open drill: Step 7, Body Sparring' }).getAttribute('href'))
       .toBe('/athlete/progression-intelligence?assignment=as-w3&intent=instruction');
-    expect(within(sparring).getByRole('link', { name: 'Log completion: Body Sparring' }).getAttribute('href'))
+    expect(within(sparring).getByRole('link', { name: 'Log completion: Step 7, Body Sparring' }).getAttribute('href'))
       .toBe('/athlete/progression-intelligence?assignment=as-w3&intent=log');
+  });
+
+  test('two steps on the same drill are two links with two names; work in no workout is named as it always was', async () => {
+    const twice = WORK.map((item) => (item.assignment_id === 'as-w2' ? { ...item, drill_display_name: 'Skip Rope' } : item));
+    await openFloorWith(twice, [WORKOUT]);
+    await floorGrid('Technical Tuesday');
+
+    expect(floorWorkTitles()).toEqual(['Shadowbox', 'Step 2, Skip Rope', 'Step 5, Skip Rope', 'Step 7, Body Sparring', 'Heavy Bag']);
+    expect(screen.getByRole('link', { name: 'Open drill: Step 2, Skip Rope' }).getAttribute('href')).toContain('assignment=as-w1&');
+    expect(screen.getByRole('link', { name: 'Open drill: Step 5, Skip Rope' }).getAttribute('href')).toContain('assignment=as-w2&');
+    expect(screen.getByRole('link', { name: 'Open drill: Shadowbox' })).toBeTruthy();
   });
 
   test('a step is still the work it always was: its status and its dose', async () => {
@@ -2091,20 +2114,42 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday1 of 3 steps still to do, in this order');
   });
 
-  test('work that follows the last step of a workout starts a new row of the grid; nothing else is moved', async () => {
+  test('a workout is ONE panel across the grid: its name, its block names and its steps are inside it, and work in no workout is outside it', async () => {
     await openFloorWith(WORK, [WORKOUT]);
     const grid = await floorGrid('Technical Tuesday');
-    const startsRow = (title: string) => cardOf(grid, title).className.split(' ').includes('md:col-start-1');
+    const panel = within(grid).getByTestId('floor-issued-workout-panel');
 
-    // Heavy Bag is in no workout and comes straight after the workout's last
-    // step: without this it would sit beside that step as if it were one more.
-    expect(startsRow('Heavy Bag')).toBe(true);
-    // Work before the workout, and the workout's own steps, flow as they did.
-    expect(startsRow('Shadowbox')).toBe(false);
-    for (const title of ['Skip Rope', 'Jab Ladder', 'Body Sparring']) expect(startsRow(title)).toBe(false);
-    // The heading and each block name take the whole row.
-    expect(within(grid).getByTestId('floor-issued-workout').className).toContain('md:col-span-2');
-    for (const block of within(grid).getAllByRole('heading', { level: 5 })) expect(block.className).toContain('md:col-span-2');
+    // The panel is a child of the grid, takes the whole row, and is the
+    // leather ground its text is read against (not the room behind the grid).
+    expect(panel.parentElement).toBe(grid);
+    expect(panel.className.split(' ')).toEqual(expect.arrayContaining(['mat-leather', 'md:col-span-2']));
+    // Inside it: the heading, both block names, and the three steps -- only those.
+    expect(within(panel).getByTestId('floor-issued-workout')).toBeTruthy();
+    expect(headings(panel)).toEqual(['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring']);
+    expect(within(panel).getAllByRole('link', { name: /^Log completion: / })).toHaveLength(3);
+    // The work in no workout stands on the grid itself, before and after the
+    // panel, so the panel's edge is where the workout ends.
+    expect(cardsDirectlyIn(grid)).toEqual(['Shadowbox', 'Heavy Bag']);
+    expect(Array.from(grid.children).indexOf(panel)).toBe(1);
+    expect(grid.children).toHaveLength(3);
+  });
+
+  test('two workouts are two panels, each holding its own steps', async () => {
+    const friday = {
+      ...WORKOUT,
+      issue_id: 'issue-2',
+      template_name: 'Friday Rounds',
+      steps: [{ ordinal: 1, block: 'main_work', scale_level: null, contact_level: 'none', coach_note: null, assignment_id: 'as-late' }],
+    };
+    await openFloorWith(WORK, [WORKOUT, friday]);
+    const grid = await floorGrid('Technical Tuesday');
+    const panels = within(grid).getAllByTestId('floor-issued-workout-panel');
+
+    expect(panels.map((panel) => headings(panel))).toEqual([
+      ['h4: Technical Tuesday', 'h5: warmup', 'h6: Skip Rope', 'h5: main work', 'h6: Jab Ladder', 'h6: Body Sparring'],
+      ['h4: Friday Rounds', 'h5: main work', 'h6: Heavy Bag'],
+    ]);
+    expect(cardsDirectlyIn(grid)).toEqual(['Shadowbox']);
   });
 
   test('what the Floor does not draw cannot fail its load: a workout whose date or coach name is not text is still drawn', async () => {
@@ -2125,6 +2170,10 @@ describe('an issued workout keeps its shape on the Floor', () => {
     const grid = await floorGrid('Shadowbox');
 
     expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Body Sparring', 'h4: Skip Rope', 'h4: Heavy Bag', 'h4: Jab Ladder']);
+    // Every card stands on the grid itself, named as it always was.
+    expect(cardsDirectlyIn(grid)).toEqual(['Shadowbox', 'Body Sparring', 'Skip Rope', 'Heavy Bag', 'Jab Ladder']);
+    expect(floorWorkTitles()).toEqual(['Shadowbox', 'Body Sparring', 'Skip Rope', 'Heavy Bag', 'Jab Ladder']);
+    expect(screen.queryByTestId('floor-issued-workout-panel')).toBeNull();
     expect(screen.queryByTestId('floor-issued-workout')).toBeNull();
     expect(screen.queryByTestId('step-notes')).toBeNull();
     expect(screen.queryByText("Could not load your coach's work")).toBeNull();
@@ -2138,10 +2187,14 @@ describe('an issued workout keeps its shape on the Floor', () => {
   ];
 
   test.each(UNREADABLE)('workouts the Floor cannot read (%s) are a failed load in its own words, never the steps drawn loose or an empty floor', async (_label, workouts) => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     await openFloorWith(WORK, workouts);
 
     expect(await screen.findByText("Could not load your coach's work")).toBeTruthy();
     expect(screen.getByText('Your assigned work did not load.')).toBeTruthy();
+    // What the reader refused is kept for the log; the screen says only its own words.
+    expect(logged.mock.calls).toEqual([[{ event: 'athlete-floor-workouts-unreadable', error: expect.any(IssuedWorkoutsUnreadableError) }]]);
+    logged.mockRestore();
     expect(screen.queryByText('Skip Rope')).toBeNull();
     expect(screen.queryByText('Shadowbox')).toBeNull();
     expect(screen.queryByText('No open work from your coach.')).toBeNull();

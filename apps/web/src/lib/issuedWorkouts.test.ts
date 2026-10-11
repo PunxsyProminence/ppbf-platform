@@ -2,6 +2,7 @@ import {
   IssuedWorkoutsUnreadableError,
   orderAssignedWork,
   readIssuedWorkouts,
+  sectionAssignedWork,
   type IssuedWorkoutStepView,
   type IssuedWorkoutView,
 } from './issuedWorkouts';
@@ -144,14 +145,29 @@ describe('orderAssignedWork', () => {
     expect(ids.sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  test('row keys never repeat, even when two blocks of one workout share a name', () => {
+  test('row keys never repeat: two blocks of one workout that share a name, two workouts that share a template name', () => {
     const tuesday = workout('issue-1', [
       step(1, 'a', { block: 'warmup' }),
       step(2, 'b', { block: 'main_work' }),
       step(3, 'c', { block: 'warmup' }),
-    ]);
-    const keys = orderAssignedWork(work('a', 'b', 'c', 'x'), [tuesday]).map((row) => row.key);
+    ], 'Tuesday');
+    // The same template issued again: same name, same blocks, its own issue id.
+    const again = workout('issue-2', [step(1, 'p', { block: 'warmup' }), step(2, 'q', { block: 'main_work' })], 'Tuesday');
+    const keys = orderAssignedWork(work('a', 'b', 'c', 'x', 'p', 'q'), [tuesday, again]).map((row) => row.key);
+    expect(keys).toHaveLength(13);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test('nothing the caller passed is changed: not the lists, not a workout, not its steps', () => {
+    const steps = Object.freeze([Object.freeze(step(7, 'c')), Object.freeze(step(2, 'a')), Object.freeze(step(5, 'b'))]);
+    const tuesday = Object.freeze({ issue_id: 'issue-1', template_name: 'Tuesday', steps }) as unknown as IssuedWorkoutView;
+    const assignments = Object.freeze(work('x', 'c', 'a', 'b').map((item) => Object.freeze(item))) as Array<{ assignment_id: string }>;
+    const workouts = Object.freeze([tuesday]) as IssuedWorkoutView[];
+
+    // In strict mode (a module is) an in-place sort of a frozen list throws.
+    expect(drawn(assignments, workouts)).toEqual(['A:x', 'W:Tuesday(3)', 'B:main_work', 'S2:a', 'S5:b', 'S7:c']);
+    expect(steps.map((s) => s.ordinal)).toEqual([7, 2, 5]);
+    expect(assignments.map((a) => a.assignment_id)).toEqual(['x', 'c', 'a', 'b']);
   });
 
   test('the caller\'s assignment objects are passed through untouched, with every field they had', () => {
@@ -160,5 +176,52 @@ describe('orderAssignedWork', () => {
     const out = rows.flatMap((row) => (row.kind === 'assignment' ? [row.assignment] : []));
     expect(out[0]).toBe(items[0]);
     expect(out[1]).toBe(items[1]);
+  });
+});
+
+describe('sectionAssignedWork', () => {
+  /** A section as short strings: a workout is its heading then its parts, indented. */
+  const sectioned = (assignments: Array<{ assignment_id: string }>, workouts: IssuedWorkoutView[]) =>
+    sectionAssignedWork(assignments, workouts).map((section) => (section.kind === 'assignment'
+      ? `A:${section.assignment.assignment_id}`
+      : [
+        `W:${section.workout.template_name}(${section.stepCount})`,
+        ...section.parts.map((part) => (part.kind === 'block' ? `B:${part.block}` : `S${part.step.ordinal}:${part.assignment.assignment_id}`)),
+      ]));
+
+  test('the same order, with each workout holding its own block names and steps and nothing else', () => {
+    const tuesday = workout('issue-1', [step(2, 'a', { block: 'warmup' }), step(5, 'b'), step(7, 'c')], 'Tuesday');
+    const friday = workout('issue-2', [step(1, 'p'), step(2, 'q', { block: 'cooldown' })], 'Friday');
+    // Loose work before, between and after; the two workouts stand side by side.
+    expect(sectioned(work('x', 'c', 'y', 'a', 'b', 'q', 'p', 'z'), [tuesday, friday])).toEqual([
+      'A:x',
+      ['W:Tuesday(3)', 'B:warmup', 'S2:a', 'B:main_work', 'S5:b', 'S7:c'],
+      'A:y',
+      ['W:Friday(2)', 'B:main_work', 'S1:p', 'B:cooldown', 'S2:q'],
+      'A:z',
+    ]);
+    // Workouts with no work between them do not run into each other.
+    expect(sectioned(work('a', 'p'), [tuesday, friday])).toEqual([
+      ['W:Tuesday(1)', 'B:warmup', 'S2:a'],
+      ['W:Friday(1)', 'B:main_work', 'S1:p'],
+    ]);
+  });
+
+  test('with no workouts every assignment is its own section, in the order given', () => {
+    expect(sectioned(work('a', 'b', 'c'), [])).toEqual(['A:a', 'A:b', 'A:c']);
+    expect(sectioned([], [workout('issue-1', [step(1, 'a')])])).toEqual([]);
+  });
+
+  test('every key is its row\'s own, and the assignment objects are the caller\'s', () => {
+    const items = [{ assignment_id: 'x', extra: 1 }, { assignment_id: 'a', extra: 2 }, { assignment_id: 'b', extra: 3 }];
+    const tuesday = workout('issue-1', [step(1, 'a', { block: 'warmup' }), step(2, 'b')], 'Tuesday');
+    const sections = sectionAssignedWork(items, [tuesday]);
+    const keys = sections.flatMap((section) => (section.kind === 'workout' ? [section.key, ...section.parts.map((part) => part.key)] : [section.key]));
+
+    expect(keys).toEqual(['x', 'workout-issue-1', 'block-issue-1-0', 'a', 'block-issue-1-1', 'b']);
+    const [loose, tuesdaySection] = sections;
+    expect(loose.kind === 'assignment' && loose.assignment).toBe(items[0]);
+    const firstStep = tuesdaySection.kind === 'workout' ? tuesdaySection.parts[1] : null;
+    expect(firstStep !== null && firstStep.kind === 'step' && firstStep.assignment).toBe(items[1]);
   });
 });

@@ -36,7 +36,12 @@ import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
-import { orderAssignedWork, readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
+import {
+  readIssuedWorkouts,
+  sectionAssignedWork,
+  type IssuedWorkoutStepView,
+  type IssuedWorkoutView,
+} from '@/src/lib/issuedWorkouts';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
@@ -236,6 +241,76 @@ function isOpenCoachWork(status: string | undefined): boolean {
 /** Where the Floor sends an athlete to act on one assignment. See the deep-link on that page. */
 function progressionLink(assignmentId: string, intent: 'instruction' | 'log'): string {
   return `/athlete/progression-intelligence?assignment=${encodeURIComponent(assignmentId)}&intent=${intent}`;
+}
+
+/**
+ * One piece of open work on the Floor. Every figure is the coach's, drawn only
+ * when they set it. `step` is set when the work is a step of an issued
+ * workout: the card then says its step number and what the template says
+ * beside the step, and its two links name the step, so two steps on the same
+ * drill are not two links with one name.
+ */
+function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkoutStepView | null }) {
+  const name = work.drill_display_name || work.drill_name;
+  const label = step ? `Step ${step.ordinal}, ${name}` : name;
+  // Under a workout and its block the drill's heading is one level further down.
+  const WorkHeading = step ? 'h6' : 'h4';
+  return (
+    <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
+      <div className="flex items-start justify-between gap-[var(--s4)]">
+        <div className="min-w-0">
+          {step && <p className="t-label">Step {step.ordinal}</p>}
+          <WorkHeading className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{name}</WorkHeading>
+        </div>
+        <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
+      </div>
+      {step && <StepNotes step={step} />}
+      <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
+        {work.rep_count != null && (
+          <div>
+            <dt className="t-label">Reps</dt>
+            <dd className="t-data mt-[var(--s2)]">{work.rep_count}</dd>
+          </div>
+        )}
+        {work.duration_minutes != null && (
+          <div>
+            <dt className="t-label">Duration</dt>
+            <dd className="t-data mt-[var(--s2)]">{work.duration_minutes} min</dd>
+          </div>
+        )}
+        {work.frequency_per_week != null && (
+          <div>
+            <dt className="t-label">Frequency</dt>
+            <dd className="t-data mt-[var(--s2)]">{work.frequency_per_week}x/week</dd>
+          </div>
+        )}
+        {work.due_date && (
+          <div>
+            <dt className="t-label">Due</dt>
+            <dd className="t-data mt-[var(--s2)]">{formatCalendarDay(work.due_date)}</dd>
+          </div>
+        )}
+      </dl>
+      <div className="flex flex-wrap gap-[var(--s3)]">
+        {work.drill_id ? (
+          <Link
+            href={progressionLink(work.assignment_id, 'instruction')}
+            aria-label={`Open drill: ${label}`}
+            className="btn btn--kiosk btn--ghost"
+          >
+            Open drill
+          </Link>
+        ) : null}
+        <Link
+          href={progressionLink(work.assignment_id, 'log')}
+          aria-label={`Log completion: ${label}`}
+          className="btn btn--kiosk"
+        >
+          Log completion
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -1289,8 +1364,9 @@ export default function AthleteWorkspace() {
       let workouts: IssuedWorkoutView[];
       try {
         workouts = readIssuedWorkouts(data.workouts);
-      } catch {
-        throw new Error('Your assigned work did not load.');
+      } catch (error) {
+        console.error({ event: 'athlete-floor-workouts-unreadable', error });
+        throw new Error('Your assigned work did not load.', { cause: error });
       }
       setOpenCoachWork((data.items ?? []).filter((item) => isOpenCoachWork(item.status)));
       setCoachWorkouts(workouts);
@@ -2918,10 +2994,12 @@ export default function AthleteWorkspace() {
                 </div>
               )}
 
-              {/* One card per open assignment, in the order the API returned
-                  them. Every figure is the coach's, drawn only when they set
-                  it -- an absent dose is left absent, never filled with a
-                  default that would read as an instruction.
+              {/* One card per piece of open work. Work that is a step of no
+                  workout is drawn where the API listed it; an issued workout
+                  is drawn whole at the place of its first open step
+                  (sectionAssignedWork). Every figure is the coach's, drawn
+                  only when they set it -- an absent dose is left absent, never
+                  filled with a default that would read as an instruction.
 
                   The two actions are LINKS to the Progression page's own
                   controls, not copies of them (see the deep-link there): one
@@ -2931,101 +3009,40 @@ export default function AthleteWorkspace() {
               {!assignedWorkLoading && !assignedWorkError && openCoachWork.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
                   {/* An issued workout template keeps its shape here too (lane
-                      P7c): a heading across the grid at the place of its first
-                      open step, a block name wherever the block changes, then
-                      its open steps in the coach's order. Work that is a step
-                      of no workout is drawn where it stands, as before. Only
-                      OPEN work is on the Floor, so the heading says how many
-                      of the workout's steps that is. */}
-                  {orderAssignedWork(openCoachWork, coachWorkouts).map((row, index, rows) => {
-                    if (row.kind === 'workout') {
-                      const total = row.workout.steps.length;
-                      return (
-                        <div key={row.key} className="md:col-span-2" data-testid="floor-issued-workout">
+                      P7c): ONE panel across the grid holding its name, a block
+                      name wherever the block changes, and its open steps in
+                      the coach's order. The panel is the ground its text is
+                      read against, and its edge is where the workout ends.
+                      Only OPEN work is on the Floor, so the panel says how
+                      many of the workout's steps that is; the total is every
+                      step of the workout, which the assignments answer sends
+                      whatever their status. */}
+                  {sectionAssignedWork(openCoachWork, coachWorkouts).map((section) => {
+                    if (section.kind === 'assignment') {
+                      return <FloorWorkCard key={section.key} work={section.assignment} step={null} />;
+                    }
+                    const total = section.workout.steps.length;
+                    return (
+                      <div key={section.key} className={`${PANEL} md:col-span-2`} data-testid="floor-issued-workout-panel">
+                        <div data-testid="floor-issued-workout">
                           <p className="t-eyebrow">Workout</p>
                           <h4 className="mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">
-                            {row.workout.template_name}
+                            {section.workout.template_name}
                           </h4>
                           <p className="t-muted mt-[var(--s2)]">
-                            {row.stepCount === total
+                            {section.stepCount === total
                               ? `${total === 1 ? '1 step' : `${total} steps`} to do, in this order`
-                              : `${row.stepCount} of ${total} steps still to do, in this order`}
+                              : `${section.stepCount} of ${total} steps still to do, in this order`}
                           </p>
                         </div>
-                      );
-                    }
-                    if (row.kind === 'block') {
-                      return (
-                        <h5 key={row.key} className="t-label md:col-span-2">
-                          {row.block.replace(/_/g, ' ')}
-                        </h5>
-                      );
-                    }
-                    const { assignment: work, step } = row;
-                    const name = work.drill_display_name || work.drill_name;
-                    // Under a workout and its block the drill's heading is one level further down.
-                    const WorkHeading = step ? 'h6' : 'h4';
-                    // Work that is in no workout and follows a workout's last
-                    // step starts a new row of the grid, so it is never drawn
-                    // beside that step as if it were one more of them.
-                    const before = rows[index - 1];
-                    const endsWorkout = step === null && before?.kind === 'assignment' && before.step !== null;
-                    return (
-                      <div
-                        key={work.assignment_id}
-                        className={`mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]${endsWorkout ? ' md:col-start-1' : ''}`}
-                      >
-                        <div className="flex items-start justify-between gap-[var(--s4)]">
-                          <div className="min-w-0">
-                            {step && <p className="t-label">Step {step.ordinal}</p>}
-                            <WorkHeading className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{name}</WorkHeading>
-                          </div>
-                          <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
-                        </div>
-                        {step && <StepNotes step={step} />}
-                        <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
-                          {work.rep_count != null && (
-                            <div>
-                              <dt className="t-label">Reps</dt>
-                              <dd className="t-data mt-[var(--s2)]">{work.rep_count}</dd>
-                            </div>
-                          )}
-                          {work.duration_minutes != null && (
-                            <div>
-                              <dt className="t-label">Duration</dt>
-                              <dd className="t-data mt-[var(--s2)]">{work.duration_minutes} min</dd>
-                            </div>
-                          )}
-                          {work.frequency_per_week != null && (
-                            <div>
-                              <dt className="t-label">Frequency</dt>
-                              <dd className="t-data mt-[var(--s2)]">{work.frequency_per_week}x/week</dd>
-                            </div>
-                          )}
-                          {work.due_date && (
-                            <div>
-                              <dt className="t-label">Due</dt>
-                              <dd className="t-data mt-[var(--s2)]">{formatCalendarDay(work.due_date)}</dd>
-                            </div>
-                          )}
-                        </dl>
-                        <div className="flex flex-wrap gap-[var(--s3)]">
-                          {work.drill_id ? (
-                            <Link
-                              href={progressionLink(work.assignment_id, 'instruction')}
-                              aria-label={`Open drill: ${name}`}
-                              className="btn btn--kiosk btn--ghost"
-                            >
-                              Open drill
-                            </Link>
-                          ) : null}
-                          <Link
-                            href={progressionLink(work.assignment_id, 'log')}
-                            aria-label={`Log completion: ${name}`}
-                            className="btn btn--kiosk"
-                          >
-                            Log completion
-                          </Link>
+                        <div className="mt-[var(--s4)] grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+                          {section.parts.map((part) => (part.kind === 'block' ? (
+                            <h5 key={part.key} className="t-label md:col-span-2">
+                              {part.block.replace(/_/g, ' ')}
+                            </h5>
+                          ) : (
+                            <FloorWorkCard key={part.key} work={part.assignment} step={part.step} />
+                          )))}
                         </div>
                       </div>
                     );

@@ -188,8 +188,9 @@ export default function CoachCardsPage() {
     let workouts: IssuedWorkoutView[];
     try {
       workouts = readIssuedWorkouts(data.workouts);
-    } catch {
-      throw new Error('The workouts of the card list could not be read.');
+    } catch (error) {
+      console.error({ event: 'coach-cards-workouts-unreadable', error });
+      throw new Error('The workouts of the card list could not be read.', { cause: error });
     }
     setGroups(arrangeGroups(data.items || [], workouts));
     // A read that succeeded clears the flag, so a recovered page stops
