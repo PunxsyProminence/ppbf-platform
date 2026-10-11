@@ -10,11 +10,7 @@ import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 import {
   allTrackIds,
-  athleteProfiles,
-  getDefaultTrackAssignments,
-  normalizeTrackAssignments,
   trackManifests,
-  type TrackAssignments,
   type TrackID,
 } from '@/components/trackAssignments';
 import {
@@ -502,6 +498,345 @@ function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+interface TrackRosterAthlete {
+  athlete_id: string;
+  full_name: string;
+}
+
+type TrackSaveStatus =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved' }
+  | { kind: 'refused'; message: string }
+  // Nothing reached the route, so nothing is saved.
+  | { kind: 'failed'; message: string }
+  // The save was sent and no answer about it came back: stored or not is unknown.
+  | { kind: 'unconfirmed'; message: string };
+
+const TRACK_SAVE_UNCONFIRMED =
+  'The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.';
+
+const TRACK_ASSIGNMENTS_URL = '/api/pilot/admin/track-assignments';
+
+/**
+ * The stored map as the route returned it: known track ids only, in the
+ * manifest's order. Null when the reply carries no map at all. That is a read
+ * that did not work, and it must never be taken for a gym with nobody on a
+ * track: Save lays this admin's changes over this map and sends the whole of
+ * it, so an empty stand-in would wipe every other athlete's tracks.
+ */
+function readTrackMap(value: unknown): Map<string, TrackID[]> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const map = new Map<string, TrackID[]>();
+  for (const [athleteId, tracks] of Object.entries(value as Record<string, unknown>)) {
+    const known = Array.isArray(tracks) ? allTrackIds.filter((trackId) => tracks.includes(trackId)) : [];
+    // An entry with no known track is an athlete on no track: left out.
+    if (known.length > 0) {
+      map.set(athleteId, known);
+    }
+  }
+  return map;
+}
+
+/** The roster as the route returned it, by name. Null when the reply carries no list. */
+function readTrackRoster(value: unknown): TrackRosterAthlete[] | null {
+  const items = (value as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  const roster: TrackRosterAthlete[] = [];
+  for (const item of items as Array<Partial<TrackRosterAthlete> | null>) {
+    if (item && typeof item.athlete_id === 'string' && item.athlete_id !== '' && typeof item.full_name === 'string') {
+      roster.push({ athlete_id: item.athlete_id, full_name: item.full_name });
+    }
+  }
+  return roster.sort((left, right) => left.full_name.localeCompare(right.full_name));
+}
+
+function sameTracks(left: TrackID[], right: TrackID[]): boolean {
+  return left.length === right.length && left.every((trackId) => right.includes(trackId));
+}
+
+/**
+ * Who Trains On What (OD-2026-10-07-010 ruling 3): a track is set for a real
+ * athlete of this gym, picked by name from the live roster.
+ *
+ * NOTHING SAVES UNTIL "SAVE TRACKS" IS PRESSED. The control used to save on
+ * load and on every click, which wrote its own starting values into the gym's
+ * record before anyone had chosen anything. A toggle now only changes
+ * `changes`, the athletes this admin has edited since the last read.
+ *
+ * THE ROUTE REPLACES THE GYM'S WHOLE MAP, so a save from a screen that has
+ * been open a while would put back whatever another admin changed in the
+ * meantime. Save therefore reads the stored map again and lays only this
+ * admin's `changes` over it. An athlete left with no track is left out of the
+ * map: no track is invented for anyone. (What is sent for the athletes this
+ * admin did not touch is their stored entry as readTrackMap reads it: known
+ * track ids, in the manifest's order. The route refuses anything else.)
+ */
+function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | null }) {
+  const [athletes, setAthletes] = useState<TrackRosterAthlete[] | null>(null);
+  const [stored, setStored] = useState<Map<string, TrackID[]> | null>(null);
+  const [changes, setChanges] = useState<Map<string, TrackID[]>>(() => new Map());
+  const [loadError, setLoadError] = useState('');
+  const [selectedAthleteId, setSelectedAthleteId] = useState('');
+  const [status, setStatus] = useState<TrackSaveStatus>({ kind: 'idle' });
+  // Read by saveTracks before React has re-rendered the button as disabled, so
+  // a double press cannot start a second save beside the first.
+  const saveInFlight = useRef(false);
+
+  useEffect(() => {
+    // The route admits the gym's own admins only; another sign-in would be
+    // answered with a refusal, so it is not asked. Null is a session not read
+    // yet, or one that could not be read: nothing is asked, and nobody is told
+    // they may not.
+    if (canAssign !== true) {
+      return;
+    }
+    void (async () => {
+      try {
+        const [rosterResponse, mapResponse] = await Promise.all([
+          fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' }),
+          fetch(`${apiBase()}${TRACK_ASSIGNMENTS_URL}`, { method: 'GET', credentials: 'include' }),
+        ]);
+        if (!rosterResponse.ok) {
+          setLoadError(await readResponseError(rosterResponse, 'The roster could not be loaded'));
+          return;
+        }
+        if (!mapResponse.ok) {
+          setLoadError(await readResponseError(mapResponse, 'Track assignments could not be loaded'));
+          return;
+        }
+        const roster = readTrackRoster(await rosterResponse.json().catch(() => null));
+        const map = readTrackMap(((await mapResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
+        if (roster === null) {
+          setLoadError('The roster could not be read');
+          return;
+        }
+        if (map === null) {
+          setLoadError('Track assignments could not be read');
+          return;
+        }
+        setAthletes(roster);
+        setStored(map);
+      } catch (error) {
+        setLoadError(toErrorMessage(error, 'Tracks could not be loaded'));
+      }
+    })();
+  }, [canAssign]);
+
+  const loaded = athletes !== null && stored !== null;
+  const roster = athletes ?? [];
+  const saving = status.kind === 'saving';
+  const savedTracks = (athleteId: string): TrackID[] => stored?.get(athleteId) ?? [];
+  const shownTracks = (athleteId: string): TrackID[] => changes.get(athleteId) ?? savedTracks(athleteId);
+  const selectedTracks = selectedAthleteId ? shownTracks(selectedAthleteId) : [];
+
+  // Two athletes can share a name; the id tells them apart only then.
+  const athleteLabel = (athlete: TrackRosterAthlete): string =>
+    roster.filter((other) => other.full_name === athlete.full_name).length > 1
+      ? `${athlete.full_name} (${athlete.athlete_id})`
+      : athlete.full_name;
+  // After a save that was sent and never answered, "not saved" would be a
+  // claim: the changes may be stored. They are only not confirmed.
+  const unconfirmed = status.kind === 'unconfirmed';
+  const unsavedNames = roster.filter((athlete) => changes.has(athlete.athlete_id)).map(athleteLabel);
+
+  function toggleTrack(trackId: TrackID) {
+    if (!loaded || saving || !selectedAthleteId) {
+      return;
+    }
+    const current = shownTracks(selectedAthleteId);
+    const next = allTrackIds.filter((id) => (id === trackId ? !current.includes(id) : current.includes(id)));
+    setChanges((existing) => {
+      const updated = new Map(existing);
+      // Back to what is stored is not a change, so it is not sent.
+      if (sameTracks(next, savedTracks(selectedAthleteId))) {
+        updated.delete(selectedAthleteId);
+      } else {
+        updated.set(selectedAthleteId, next);
+      }
+      return updated;
+    });
+    setStatus({ kind: 'idle' });
+  }
+
+  async function saveTracks() {
+    if (!loaded || saveInFlight.current || changes.size === 0) {
+      return;
+    }
+    saveInFlight.current = true;
+    const sending = new Map(changes);
+    setStatus({ kind: 'saving' });
+    try {
+      // The re-read has its own catch: if it is the read that drops, nothing
+      // was sent, and that is a different thing to say than "not confirmed".
+      let next: Map<string, TrackID[]> | null = null;
+      let rereadError = 'Track assignments could not be read';
+      try {
+        const freshResponse = await fetch(`${apiBase()}${TRACK_ASSIGNMENTS_URL}`, { method: 'GET', credentials: 'include' });
+        if (freshResponse.ok) {
+          next = readTrackMap(((await freshResponse.json().catch(() => null)) as { assignments?: unknown } | null)?.assignments);
+        } else {
+          rereadError = await readResponseError(freshResponse, rereadError);
+        }
+      } catch (error) {
+        rereadError = toErrorMessage(error, rereadError);
+      }
+      if (next === null) {
+        setStatus({ kind: 'failed', message: `${rereadError}. Nothing was sent, so nothing is saved.` });
+        return;
+      }
+      for (const [athleteId, tracks] of sending) {
+        if (tracks.length > 0) {
+          next.set(athleteId, tracks);
+        } else {
+          next.delete(athleteId);
+        }
+      }
+
+      const response = await fetch(`${apiBase()}${TRACK_ASSIGNMENTS_URL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ assignments: Object.fromEntries(next) }),
+      });
+      if (!response.ok) {
+        const message = await readResponseError(response, 'Track assignments could not be saved');
+        // A 4xx is the route saying no, and it writes nothing when it does. A
+        // 5xx is not an answer about the write either way.
+        setStatus(
+          response.status >= 400 && response.status < 500
+            ? { kind: 'refused', message }
+            : { kind: 'unconfirmed', message: `${message}. ${TRACK_SAVE_UNCONFIRMED}` },
+        );
+        return;
+      }
+      setStored(next);
+      setChanges(new Map());
+      setStatus({ kind: 'saved' });
+    } catch (error) {
+      setStatus({
+        kind: 'unconfirmed',
+        message: `${toErrorMessage(error, 'Track assignments could not be saved')}. ${TRACK_SAVE_UNCONFIRMED}`,
+      });
+    } finally {
+      saveInFlight.current = false;
+    }
+  }
+
+  return (
+    <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+      <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Who Trains On What</h2>
+      {canAssign === false && (
+        <p className="t-body mt-[var(--s3)]">
+          Tracks are set from the gym&apos;s own admin sign-in. This sign-in cannot read or change them.
+        </p>
+      )}
+      {canAssign === true && (
+        <>
+          <p className="t-body mt-[var(--s3)]">
+            Pick an athlete, choose their tracks, then press Save tracks. Nothing is saved until you do. The capability
+            counts on each card are a planning preview, not live wiring — read them as intent, not as what is switched on.
+          </p>
+          {loadError && (
+            <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[var(--locked-ink)]">
+              {loadError}. Tracks cannot be shown or saved until this loads; reload to try again.
+            </p>
+          )}
+          {!loaded && !loadError && (
+            <p className="t-body mt-[var(--s3)]">Reading the roster and tracks…</p>
+          )}
+          {loaded && roster.length === 0 && (
+            <p className="t-body mt-[var(--s3)]">No athletes are on this gym&apos;s roster yet, so there is nobody to put on a track.</p>
+          )}
+          {loaded && roster.length > 0 && (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr]">
+              <div>
+                <label className="t-label mb-[var(--s3)] block" htmlFor="trackAthlete">
+                  Athlete
+                </label>
+                <select
+                  id="trackAthlete"
+                  value={selectedAthleteId}
+                  onChange={(event) => setSelectedAthleteId(event.target.value)}
+                  disabled={saving}
+                  className="input"
+                >
+                  <option value="">Choose an athlete</option>
+                  {roster.map((athlete) => (
+                    <option key={athlete.athlete_id} value={athlete.athlete_id}>
+                      {athleteLabel(athlete)}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => void saveTracks()}
+                  disabled={saving || changes.size === 0}
+                  className="btn mt-[var(--s4)]"
+                >
+                  {saving ? 'Saving…' : 'Save tracks'}
+                </button>
+                {unsavedNames.length > 0 && !saving && (
+                  <p className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    {unconfirmed ? 'Not confirmed saved' : 'Not saved yet'}: {unsavedNames.join(', ')}
+                  </p>
+                )}
+                <p role="status" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                  {status.kind === 'saved' && 'Saved.'}
+                  {status.kind === 'refused' && `Refused: ${status.message}`}
+                  {(status.kind === 'failed' || status.kind === 'unconfirmed') && `Failed: ${status.message}`}
+                </p>
+              </div>
+
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+                {allTrackIds.map((trackId) => {
+                  const assigned = selectedTracks.includes(trackId);
+                  const unsaved = !!selectedAthleteId && assigned !== savedTracks(selectedAthleteId).includes(trackId);
+                  return (
+                    <button
+                      key={trackId}
+                      type="button"
+                      aria-pressed={assigned}
+                      disabled={!selectedAthleteId || saving}
+                      onClick={() => toggleTrack(trackId)}
+                      className={`grid gap-[var(--s3)] rounded-[var(--r-md)] border px-[var(--s4)] py-[var(--s4)] text-left ${
+                        assigned
+                          ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)] text-[color:var(--bone-100)]'
+                          : 'mat-leather border-[color:var(--hide-700)] text-[color:var(--bone-300)]'
+                      }`}
+                    >
+                      <span className="text-[length:var(--t-md)] font-semibold">{trackManifests[trackId].name}</span>
+                      <span className="text-[length:var(--t-sm)]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
+                      <span className="text-[length:var(--t-sm)]">Assigned Roles: Athlete / Coach</span>
+                      {/* Both lines are about the athlete chosen. With nobody
+                          chosen they would say "Unassigned" about no one. */}
+                      {selectedAthleteId && (
+                        <>
+                          <span className="text-[length:var(--t-sm)]">
+                            Status: {assigned ? 'Assigned' : 'Unassigned'}
+                            {unsaved ? (unconfirmed ? ' (not confirmed)' : ' (not saved)') : ''}
+                          </span>
+                          <span className="text-[length:var(--t-sm)]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
+                        </>
+                      )}
+                      <span className="t-muted">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </article>
+  );
+}
+
 function formatDateLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -527,7 +862,6 @@ export default function AdminCapabilitiesPage() {
   const canProvisionOrganizations = pilotSession.role === 'platform_owner';
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
-  const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
   const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === 'undefined') {
@@ -536,8 +870,6 @@ export default function AdminCapabilitiesPage() {
 
     return parseTabKey(new URLSearchParams(window.location.search).get('tab')) ?? 'overview';
   });
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
-  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => getDefaultTrackAssignments());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<'ALL' | RoleName>('ALL');
@@ -604,7 +936,6 @@ export default function AdminCapabilitiesPage() {
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
   const [capabilityStoreError, setCapabilityStoreError] = useState('');
   const [gymCapabilityStoreError, setGymCapabilityStoreError] = useState('');
-  const [trackAssignmentsStoreError, setTrackAssignmentsStoreError] = useState('');
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
@@ -615,52 +946,6 @@ export default function AdminCapabilitiesPage() {
 
     setEventTraces((current) => [trace, ...current].slice(0, 40));
   }
-
-  // Hydrated stays false on any failed load, same rule as the capability
-  // registry effect below: marking a failed GET as hydrated would release the
-  // save effect to POST the in-memory seed over the stored assignments.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          setTrackAssignmentsStoreError(
-            `${await readResponseError(response, 'Track assignments could not be loaded')}. The tracks shown are the defaults and track changes are not being saved.`,
-          );
-          return;
-        }
-
-        const payload = (await response.json()) as { assignments?: unknown };
-        setTrackAssignments(normalizeTrackAssignments(payload.assignments));
-        setTrackAssignmentsHydrated(true);
-      } catch (error) {
-        setTrackAssignmentsStoreError(
-          `${toErrorMessage(error, 'Track assignments could not be loaded')}. The tracks shown are the defaults and track changes are not being saved.`,
-        );
-      }
-    })();
-  }, []);
-
-  // The panel's own copy promises "it saves as you click", so a save that
-  // fails has to say so, and a save that lands out of order must not overwrite
-  // a newer one or speak over its banner -- see useAutosaveLane.
-  useAutosaveLane(
-    trackAssignmentsHydrated,
-    trackAssignments,
-    (snapshot) =>
-      fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ assignments: snapshot }),
-      }),
-    'Track assignments could not be saved',
-    setTrackAssignmentsStoreError,
-  );
 
   // The hydrated flags are what release the save effects below, so they stay
   // false whenever a load fails: saving the on-screen seed over a record that
@@ -845,8 +1130,6 @@ export default function AdminCapabilitiesPage() {
   const pendingReview = useMemo(() => capabilities.filter((item) => item.reviewNeeded || item.status === 'DRAFT'), [capabilities]);
   const draftCapabilities = useMemo(() => capabilities.filter((item) => item.status === 'DRAFT'), [capabilities]);
 
-  const assignedTracks = trackAssignments[selectedAthleteId] ?? ['non_contact'];
-
   // An empty library table has two completely different causes and the old
   // screen showed the same nothing for both: a gym with no capabilities on
   // file, and a search that happens to match none of the ones it has. The
@@ -1008,18 +1291,6 @@ export default function AdminCapabilitiesPage() {
     setCapabilities((current) =>
       current.map((capability) => (capability.id === id ? { ...updater(capability), updatedAt: new Date().toISOString() } : capability)),
     );
-  }
-
-  function toggleTrackAssignment(trackId: TrackID) {
-    setTrackAssignments((current) => {
-      const existing = current[selectedAthleteId] ?? [];
-      const next = existing.includes(trackId) ? existing.filter((id) => id !== trackId) : [...existing, trackId];
-
-      return {
-        ...current,
-        [selectedAthleteId]: next.length > 0 ? next : ['non_contact'],
-      };
-    });
   }
 
   function setCapabilityStatus(id: number, nextStatus: CapabilityStatus) {
@@ -1346,16 +1617,13 @@ export default function AdminCapabilitiesPage() {
         </header>
 
         <section className="border-b border-[color:var(--hide-600)] bg-[var(--hide-900)] px-6 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-400)]">
-          Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
+          Capability, role assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
         </section>
 
-        {(capabilityStoreError || gymCapabilityStoreError || trackAssignmentsStoreError) && (
+        {(capabilityStoreError || gymCapabilityStoreError) && (
           <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[length:var(--t-sm)] text-[var(--locked-ink)]">
             {capabilityStoreError && <p>{capabilityStoreError}</p>}
             {gymCapabilityStoreError && <p className={capabilityStoreError ? 'mt-1' : undefined}>{gymCapabilityStoreError}</p>}
-            {trackAssignmentsStoreError && (
-              <p className={capabilityStoreError || gymCapabilityStoreError ? 'mt-1' : undefined}>{trackAssignmentsStoreError}</p>
-            )}
           </section>
         )}
 
@@ -1653,68 +1921,17 @@ export default function AdminCapabilitiesPage() {
                   </div>
                 </div>
               </article>
-
-              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-                {/*
-                  "FRONT-END TRACK ASSIGNMENT PREVIEW" described the code, not
-                  the work. The distinction the old label was reaching for is
-                  real and worth keeping, so it is now stated precisely: the
-                  track toggles below save, and only the per-track capability
-                  counts are a hard-coded preview map. Saying "preview" over
-                  the whole panel would have understated what actually works.
-                */}
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Who Trains On What</h2>
-                <p className="t-body mt-[var(--s3)]">
-                  Put an athlete on a track and it saves as you click. The capability counts on each card
-                  are a planning preview, not live wiring — read them as intent, not as what is switched on.
-                </p>
-                <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr]">
-                  <div>
-                    <label className="t-label mb-[var(--s3)] block" htmlFor="athleteProfile">
-                      Active athlete profile
-                    </label>
-                    <select
-                      id="athleteProfile"
-                      value={selectedAthleteId}
-                      onChange={(event) => setSelectedAthleteId(event.target.value)}
-                      className="input"
-                    >
-                      {athleteProfiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-                    {allTrackIds.map((trackId) => {
-                      const assigned = assignedTracks.includes(trackId);
-                      return (
-                        <button
-                          key={trackId}
-                          type="button"
-                          onClick={() => toggleTrackAssignment(trackId)}
-                          className={`grid gap-[var(--s3)] rounded-[var(--r-md)] border px-[var(--s4)] py-[var(--s4)] text-left ${
-                            assigned
-                              ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgb(var(--brass-400-rgb)_/_.07)] text-[color:var(--bone-100)]'
-                              : 'mat-leather border-[color:var(--hide-700)] text-[color:var(--bone-300)]'
-                          }`}
-                        >
-                          <span className="text-[length:var(--t-md)] font-semibold">{trackManifests[trackId].name}</span>
-                          <span className="text-[length:var(--t-sm)]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
-                          <span className="text-[length:var(--t-sm)]">Assigned Roles: Athlete / Coach</span>
-                          <span className="text-[length:var(--t-sm)]">Status: {assigned ? 'Assigned' : 'Unassigned'}</span>
-                          <span className="text-[length:var(--t-sm)]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
-                          <span className="t-muted">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </article>
             </section>
           )}
+
+          {/* Kept mounted, and only hidden, on the other tabs: its unsaved
+              track changes live in its own state, and a walk to the Library
+              and back must not throw them away without a word. */}
+          <div hidden={activeTab !== 'overview'}>
+            <TrackAssignmentControl
+              canAssign={pilotSession.loading || pilotSession.role === null ? null : isOrganizationAdminSessionRole(pilotSession.role)}
+            />
+          </div>
 
           {activeTab === 'library' && (
             <section className="space-y-5">
