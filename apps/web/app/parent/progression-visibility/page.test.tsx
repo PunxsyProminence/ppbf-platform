@@ -357,7 +357,7 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     ],
   };
 
-  function open(work: unknown[], workouts: unknown, completions: Array<{ assignment_id: string }> = []) {
+  function open(work: unknown[], workouts: unknown, completions: Array<typeof COMPLETION> = []) {
     const answer: JsonBody = workouts === undefined ? { items: work } : { items: work, workouts };
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
