@@ -45,6 +45,8 @@ export const VOCABULARIES = {
       { table: 'athlete_contact_caps', constraint: 'pilot_athlete_contact_caps_stage_check' },
       // The stage a sparring segment was done at, compared against that cap.
       { table: 'sparring_exposure', constraint: 'pilot_sparring_exposure_contact_stage_check' },
+      // A step of an issued workout keeps the template item's contact level.
+      { table: 'workout_issue_steps', constraint: 'pilot_workout_issue_steps_contact_level_check' },
     ],
   ),
   // competence_cohorts :123-124. Narrower than contact_level on purpose: a
@@ -65,6 +67,8 @@ export const VOCABULARIES = {
     [
       { table: 'drill_scale_levels', constraint: 'drill_scale_levels_scale_level_check' },
       { table: 'workout_template_items', constraint: 'workout_template_items_scale_level_check' },
+      // The same step keeps the item's scale level (null stays null).
+      { table: 'workout_issue_steps', constraint: 'pilot_workout_issue_steps_scale_level_check' },
       { table: 'session_script_blocks', constraint: 'session_script_blocks_scale_level_check' },
       { table: 'competence_levels', constraint: 'competence_levels_typical_scale_check' },
     ],
