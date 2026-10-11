@@ -835,6 +835,10 @@ describe('a request key names one issue', () => {
     expect(first.outcome).toBe('issued');
     expect(second.outcome).toBe('issued');
     expect(await counts(gym)).toEqual({ issues: 2, steps: 8, assignments: 8 });
+    // A repeat of the first names the first, and counts only its own steps.
+    const repeat = await issue(gym, ATHLETE_ID, 'key-two-1');
+    expect(repeat).toMatchObject({ outcome: 'already_issued', step_count: 4 });
+    expect(repeat.outcome === 'already_issued' && first.outcome === 'issued' && repeat.issue_id === first.issue_id).toBe(true);
   });
 
   test('a repeat is answered with the workout as it was issued, even after the template is withdrawn; a new request is refused', async () => {
