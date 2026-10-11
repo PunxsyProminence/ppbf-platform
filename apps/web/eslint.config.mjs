@@ -9,7 +9,8 @@ import nextTs from "eslint-config-next/typescript";
 // (#1411, #1420). The usual cause is a tool that collapses a doubled backslash
 // on the way to disk.
 //
-// no-control-regex refuses a control character inside a regex, raw or escaped.
+// no-control-regex refuses a control character inside a regex, as the raw byte
+// or as a backslash-x or backslash-u escape.
 //
 // The only files where it is switched off. Each one names control characters
 // ON PURPOSE, as visible escapes (backslash-u-0000 and the like) that anyone
@@ -36,11 +37,13 @@ const CONTROL_CHARACTER_HANDLERS = [
 // regex built from a string or a template. "backslash, b" inside a string IS a
 // backspace, so a pattern assembled from it matches nothing either, and on disk
 // it is two ordinary visible characters. Nothing in this app means a backspace,
-// so one in a string or an untagged template is refused outright. String.raw
+// so one in a string or a template is refused outright. Only String.raw
 // templates are left alone: there the two characters stay two characters.
+// (Code that truly needs the character can spell it String.fromCharCode(8).)
 //
 // Spelled with fromCharCode so that this file holds no escape to collapse.
 const BACKSPACE = String.fromCharCode(8);
+const STRING_RAW = 'TaggedTemplateExpression[tag.object.name="String"][tag.property.name="raw"]';
 const BACKSPACE_MESSAGE =
   "This holds a backspace character. If a regex word boundary was meant, the backslash before the b was lost: "
   + "double it inside a string, or build the pattern with String.raw.";
@@ -59,7 +62,7 @@ const eslintConfig = defineConfig([
         },
         {
           selector:
-            `TemplateLiteral:not(TaggedTemplateExpression > TemplateLiteral) > TemplateElement[value.cooked=/${BACKSPACE}/]`,
+            `TemplateLiteral:not(${STRING_RAW} > TemplateLiteral) > TemplateElement[value.cooked=/${BACKSPACE}/]`,
           message: BACKSPACE_MESSAGE,
         },
       ],

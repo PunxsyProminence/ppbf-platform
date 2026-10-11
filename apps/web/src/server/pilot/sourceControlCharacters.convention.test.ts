@@ -24,24 +24,28 @@
  *
  *   1. The byte scan below reads every tracked file under apps/web and packages
  *      as BYTES and refuses any C0 control character other than tab, line feed
- *      and carriage return (and DEL). It has no regex of its own to go blind.
+ *      and carriage return. It also refuses DEL (0x7F), which is not C0 but is
+ *      just as invisible. It has no regex of its own to go blind.
  *   2. ESLint's no-control-regex, switched on in apps/web/eslint.config.mjs,
  *      also refuses a control character written as an escape inside a regex.
  *      Nine files do that on purpose and the rule is off for exactly those nine.
  *   3. A no-restricted-syntax entry in the same config refuses a backspace in a
- *      string or an untagged template: the same accident when the regex is
- *      built from text, where the damaged source is two visible characters and
- *      neither of the first two guards can see it.
+ *      string or a template (String.raw aside): the same accident when the
+ *      regex is built from text, where the damaged source is two visible
+ *      characters and neither of the first two guards can see it.
  *
- * This file asks ESLint itself what it enforces, file by file, and hands it
- * known-bad samples, so neither rule can be dropped, narrowed or exempted for
- * one more file without a test going red.
+ * This file asks ESLint itself what it enforces, file by file, hands it
+ * known-bad samples, and refuses any comment that would switch either rule off
+ * from inside a file. Dropping a rule, replacing its selectors, or exempting
+ * one more file turns a test red.
  *
  * WHAT IS NOT COVERED. Only apps/web and packages are read. Characters beyond
  * C0 that are also hard to see (zero-width, bidirectional marks, C1) pass. A
  * word boundary that lost its backslash inside a String.raw template is not a
- * control character at all and is not caught. packages/ has no ESLint, so only
- * the byte scan reaches it.
+ * control character at all and is not caught. A regex that spells a control
+ * character as "backslash, c, letter" is not reported by no-control-regex.
+ * Changing what the lint script itself runs is not watched here. packages/ has
+ * no ESLint, so only the byte scan reaches it.
  */
 
 import { execFileSync, spawnSync } from 'child_process';
@@ -150,34 +154,36 @@ function offendersIn(root: string, names: string[]): string[] {
  * exempts a file from the rules above without naming them, so the checks on the
  * config would never notice.
  *
- * A directive is the token directly after a comment opener. What follows it,
- * up to the end of the comment and before any "--" explanation, must name at
- * least one rule.
+ * A directive is the first thing in its comment: directly after a line-comment
+ * opener on the same line, or after a block-comment opener with any white space
+ * between, line breaks included. What follows it, up to the end of the comment
+ * and before any "--" explanation, must name at least one rule.
  */
 function blanketDisables(text: string): number[] {
+  const newline = String.fromCharCode(LINE_FEED);
   const lines: number[] = [];
-  text.split(String.fromCharCode(LINE_FEED)).forEach((line, index) => {
-    let from = 0;
-    for (;;) {
-      const at = line.indexOf(DISABLE_DIRECTIVE, from);
-      if (at < 0) break;
-      from = at + DISABLE_DIRECTIVE.length;
-      const opener = line.slice(0, at).trimEnd().slice(-2);
-      if (opener !== '//' && opener !== '/*') continue;
-      let rest = line.slice(from);
-      for (const suffix of ['-next-line', '-line']) {
-        if (rest.startsWith(suffix)) {
-          rest = rest.slice(suffix.length);
-          break;
-        }
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(DISABLE_DIRECTIVE, from);
+    if (at < 0) break;
+    from = at + DISABLE_DIRECTIVE.length;
+    const before = text.slice(0, at);
+    const inBlock = before.trimEnd().endsWith('/*');
+    const inLine = !inBlock && before.slice(before.lastIndexOf(newline) + 1).trimEnd().endsWith('//');
+    if (!inBlock && !inLine) continue;
+    let rest = text.slice(from);
+    for (const suffix of ['-next-line', '-line']) {
+      if (rest.startsWith(suffix)) {
+        rest = rest.slice(suffix.length);
+        break;
       }
-      for (const end of ['*/', '--']) {
-        const cut = rest.indexOf(end);
-        if (cut >= 0) rest = rest.slice(0, cut);
-      }
-      if (rest.trim().length === 0) lines.push(index + 1);
     }
-  });
+    const end = rest.indexOf(inBlock ? '*/' : newline);
+    if (end >= 0) rest = rest.slice(0, end);
+    const explanation = rest.indexOf('--');
+    if (explanation >= 0) rest = rest.slice(0, explanation);
+    if (rest.split(',').join('').trim().length === 0) lines.push(before.split(newline).length);
+  }
   return lines;
 }
 
@@ -214,7 +220,13 @@ describe('tracked files under apps/web and packages hold no C0 control character
     // A scan that lists nothing passes everything. A tracked file that is not
     // on disk, or whose name did not survive decoding, would be skipped without
     // a word, so that is refused here rather than tolerated.
-    expect(TRACKED.filter((name) => !isOnDisk(name))).toEqual([]);
+    const absent = TRACKED.filter((name) => !isOnDisk(name));
+    if (absent.length > 0) {
+      throw new Error(
+        `${absent.length} tracked file(s) are not on disk, so this guard cannot read them: ${absent.slice(0, 10).join(', ')}. `
+          + 'If you deleted them on purpose, stage the deletion (git rm) and run this again.',
+      );
+    }
     expect(SCANNED.length).toBeGreaterThan(2000);
     expect(SCANNED.filter((name) => name.startsWith('packages/')).length).toBeGreaterThan(10);
     expect(SCANNED).toEqual(
@@ -334,7 +346,10 @@ process.stdin.on('end', async () => {
       for (const rule of asked.rules) {
         const setting = config.rules ? config.rules[rule] : undefined;
         const severity = Array.isArray(setting) ? setting[0] : setting;
-        if (severity !== 2 && severity !== 'error') answer.notEnforced[rule].push(name);
+        const options = Array.isArray(setting) ? setting.slice(1) : [];
+        const selectors = options.map((option) => (option && typeof option === 'object' ? option.selector : option));
+        const complete = (asked.required[rule] || []).every((selector) => selectors.includes(selector));
+        if ((severity !== 2 && severity !== 'error') || !complete) answer.notEnforced[rule].push(name);
       }
     }
     for (const sample of asked.samples) {
@@ -383,6 +398,11 @@ const SAMPLES = [
     label: 'a lost backslash in a template handed to RegExp',
     code: `export const a = (word: string) => new RegExp(${'`'}${WORD_BOUNDARY}${'$'}{word}${WORD_BOUNDARY}${'`'});`,
   },
+  // Only String.raw keeps the two characters apart. Any other tag gets the backspace.
+  {
+    label: 'a lost backslash in a template with a tag that is not String.raw',
+    code: `export const a = (tag: (parts: TemplateStringsArray) => string) => tag${'`'}${WORD_BOUNDARY}insert${'`'};`,
+  },
   // The three right ways to write it. None may be reported.
   {
     label: 'correct: a regex literal, a doubled backslash, a String.raw template',
@@ -394,9 +414,21 @@ const SAMPLES = [
   },
 ];
 
+/**
+ * Must equal the two selectors in eslint.config.mjs, character for character.
+ * The rule is one shared list, so a later config block that sets it again
+ * replaces these; asking only "is the rule an error" would not notice.
+ */
+const BACKSPACE_SELECTORS = [
+  `Literal[value=/${BACKSPACE_BYTE}/]`,
+  'TemplateLiteral:not(TaggedTemplateExpression[tag.object.name="String"][tag.property.name="raw"] > TemplateLiteral)'
+    + ` > TemplateElement[value.cooked=/${BACKSPACE_BYTE}/]`,
+];
+
 function askEslint(): EslintAnswer {
   const asked = {
     rules: [CONTROL_REGEX_RULE, RESTRICTED_SYNTAX_RULE],
+    required: { [RESTRICTED_SYNTAX_RULE]: BACKSPACE_SELECTORS },
     names: APP_CODE,
     samples: SAMPLES,
     // An ordinary app path that no override names. The file does not exist.
@@ -431,7 +463,7 @@ describe('ESLint refuses a control character in a regex, for the app', () => {
     expect([...answer.notEnforced[CONTROL_REGEX_RULE]].sort()).toEqual([...RULE_OFF_ON_PURPOSE].sort());
   });
 
-  it('the backspace-in-a-string rule is an error for every linted file, with no exception', () => {
+  it('the backspace-in-a-string rule is an error, with both selectors, for every linted file', () => {
     expect(answer.notEnforced[RESTRICTED_SYNTAX_RULE]).toEqual([]);
   });
 
@@ -442,6 +474,7 @@ describe('ESLint refuses a control character in a regex, for the app', () => {
       'a lost backslash in a string handed to RegExp': [CONTROL_REGEX_RULE, RESTRICTED_SYNTAX_RULE],
       'a lost backslash in a string kept for later': [RESTRICTED_SYNTAX_RULE],
       'a lost backslash in a template handed to RegExp': [RESTRICTED_SYNTAX_RULE],
+      'a lost backslash in a template with a tag that is not String.raw': [RESTRICTED_SYNTAX_RULE],
       'correct: a regex literal, a doubled backslash, a String.raw template': [],
     });
   });
@@ -454,10 +487,16 @@ describe('ESLint refuses a control character in a regex, for the app', () => {
 });
 
 describe('neither rule is switched off from inside a file', () => {
-  it(`only the config and this test name ${CONTROL_REGEX_RULE}`, () => {
-    // A lint-off comment naming the rule would exempt a file without touching
-    // the list in the config. Nothing else has a reason to mention it.
-    const mentions = SCANNED.filter((name) => fs.readFileSync(path.join(REPO_ROOT, name)).includes(CONTROL_REGEX_RULE));
+  it('only the config and this test name either rule', () => {
+    // A comment naming a rule (to switch it off for a line or a file, or to
+    // reconfigure it) would exempt that file without touching the config.
+    // Nothing else has a reason to mention either one. If a second use of
+    // no-restricted-syntax ever needs an exception, it belongs in the config,
+    // where the test above can see it.
+    const mentions = SCANNED.filter((name) => {
+      const bytes = fs.readFileSync(path.join(REPO_ROOT, name));
+      return bytes.includes(CONTROL_REGEX_RULE) || bytes.includes(RESTRICTED_SYNTAX_RULE);
+    });
     expect(mentions.sort()).toEqual([ESLINT_CONFIG, THIS_FILE].sort());
   }, WHOLE_TREE_TIMEOUT_MS);
 
@@ -480,6 +519,13 @@ describe('neither rule is switched off from inside a file', () => {
       `{/* ${next} @next/next/no-img-element */}`,
       `// the ${next} below is there because of the effect`,
       `const text = 'how to write an ${DISABLE_DIRECTIVE} comment';`,
+      '/*',
+      `  ${DISABLE_DIRECTIVE} no-console,`,
+      '  no-alert',
+      '*/',
+      '/* a note',
+      `   ${DISABLE_DIRECTIVE}`,
+      '*/',
     ].join(String.fromCharCode(LINE_FEED));
     expect(blanketDisables(named)).toEqual([]);
 
@@ -491,7 +537,14 @@ describe('neither rule is switched off from inside a file', () => {
       `// ${next} -- because`,
       `{/* ${next} */}`,
       `/* ${DISABLE_DIRECTIVE} no-console */ /* ${DISABLE_DIRECTIVE} */`,
+      // Spread over three lines, and with both line endings.
+      '/*',
+      `  ${DISABLE_DIRECTIVE}`,
+      '*/',
+      `// ${next} ,`,
+      `// ${next}${String.fromCharCode(CARRIAGE_RETURN)}`,
+      'const c = 3;',
     ].join(String.fromCharCode(LINE_FEED));
-    expect(blanketDisables(blanketed)).toEqual([2, 3, 4, 5, 6, 7]);
+    expect(blanketDisables(blanketed)).toEqual([2, 3, 4, 5, 6, 7, 9, 11, 12]);
   });
 });
