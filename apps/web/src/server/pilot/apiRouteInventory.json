@@ -13734,7 +13734,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
