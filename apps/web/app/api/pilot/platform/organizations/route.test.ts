@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import { createOrganization } from '@/src/server/pilot/auth';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -40,6 +41,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockCreateOrganization = jest.mocked(createOrganization);
 const mockQuery = jest.mocked(query);
+const mockAudit = jest.mocked(writePilotAuditEvent);
 
 function principal(role: PilotRole): PilotPrincipal {
   return {
@@ -84,6 +86,35 @@ test('the platform owner provisions a named organization', async () => {
   // caller named -- a provisioning route that quietly created something else
   // would pass a status assertion and still fail the person using it.
   expect(mockCreateOrganization).toHaveBeenCalledWith('new-gym', 'New Gym', 'platform_owner-account');
+});
+
+// The record of a gym's creation belongs in that gym's log. It used to be
+// filed under the platform owner's own organization ('platform' here), where
+// the new gym's admin would never see it.
+test("the audit row for a new gym is filed under that gym, not the platform owner's own", async () => {
+  const response = await post({ organization_id: '  new-gym  ', organization_name: 'New Gym' });
+
+  expect(response.status).toBe(200);
+  expect(mockAudit).toHaveBeenCalledTimes(1);
+  expect(mockAudit.mock.calls[0][0]).toEqual({
+    event_type: 'create',
+    actor_account_id: 'platform_owner-account',
+    actor_role: 'platform_owner',
+    organization_id: 'new-gym',
+    entity_type: 'organization',
+    entity_id: 'new-gym',
+    details: { organization_name: 'New Gym' },
+  });
+});
+
+test('a gym that could not be created leaves no audit row', async () => {
+  mockCreateOrganization.mockRejectedValue(new Error('RESERVED_ORGANIZATION_ID'));
+
+  const response = await post({ organization_id: '__platform__', organization_name: 'Shelf' });
+
+  // 500 today: the helper's refusal carries no prefix jsonError maps.
+  expect(response.status).toBe(500);
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 // Every role below can sign in and can reach this URL. Only one of them may

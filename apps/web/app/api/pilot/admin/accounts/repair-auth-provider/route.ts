@@ -24,7 +24,10 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'platform_owner']);
+    // The repair reaches only accounts of the caller's own gym, so it is gym
+    // work: the gym's admin may, the platform owner may not
+    // (OD-2026-10-10-004 ruling 3), as on the sibling account routes.
+    requireRole(principal, ['organization_admin']);
 
     const body = (await request.json().catch(() => ({}))) as { account_id?: string };
     const accountId = body.account_id?.trim() || '';

@@ -43,51 +43,74 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// The capability registry is one gym's own list, so this is gym work: the gym's
+// admin may, the platform owner may not, on both verbs (OD-2026-10-10-004
+// ruling 3). The refusals below are asserted before anything is read or
+// written.
 describe('/api/pilot/admin/capabilities', () => {
-  test('reads the platform owner session organization when no override is supplied', async () => {
+  test.each([
+    ['with no organization named', ''],
+    ['naming another gym', '?organization_id=org-gym-2'],
+    ['naming the gym of its own session', '?organization_id=org-owner'],
+  ])('refuses a platform owner read %s, and reads nothing', async (_label, search) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await GET(getRequest(search));
+
+    expect(response.status).toBe(403);
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['with no organization named', { capabilities: [{ capabilityId: 'CAP-002' }] }],
+    ['naming another gym', { capabilities: [], organization_id: 'org-gym-2' }],
+    ['naming the gym of its own session', { capabilities: [], organization_id: 'org-owner' }],
+  ])('refuses a platform owner save %s, and writes nothing', async (_label, body) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await POST(postRequest(body));
+
+    expect(response.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test.each(['organization_admin', 'admin'])('%s reads the registry of its own gym', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, 'org-gym-1'));
     mockQueryOne.mockResolvedValueOnce({ capabilities: [{ capabilityId: 'CAP-001' }] });
 
     const response = await GET(getRequest());
 
     expect(response.status).toBe(200);
-    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-owner']);
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-gym-1']);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       capabilities: [{ capabilityId: 'CAP-001' }],
     });
   });
 
-  test('reads the organization a platform owner names explicitly', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+  test('a gym admin read ignores an organization named in the query', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', 'org-gym-1'));
 
     const response = await GET(getRequest('?organization_id=org-gym-2'));
 
     expect(response.status).toBe(200);
-    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-gym-2']);
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-gym-1']);
   });
 
-  test('saves the platform owner edit instead of refusing it', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+  test.each(['organization_admin', 'admin'])('%s saves the registry of its own gym', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, 'org-gym-1'));
 
     const response = await POST(postRequest({ capabilities: [{ capabilityId: 'CAP-002' }] }));
 
     expect(response.status).toBe(200);
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(mockQuery.mock.calls[0][1]).toEqual([
-      'org-owner',
+      'org-gym-1',
       JSON.stringify([{ capabilityId: 'CAP-002' }]),
-      'platform_owner@punxsyprominence.org',
+      `${role}@punxsyprominence.org`,
     ]);
-  });
-
-  test('writes to the organization a platform owner names explicitly', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
-
-    const response = await POST(postRequest({ capabilities: [], organization_id: 'org-gym-2' }));
-
-    expect(response.status).toBe(200);
-    expect(mockQuery.mock.calls[0][1][0]).toBe('org-gym-2');
   });
 
   test('ignores an organization override from an organization admin', async () => {

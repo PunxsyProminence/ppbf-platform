@@ -10,7 +10,12 @@ import {
 
 export const runtime = 'nodejs';
 
-const REVIEW_ROLES = ['organization_admin', 'admin', 'platform_owner'] as const;
+// Every view here reads the caller's own gym's sources (principal.organizationId
+// throughout), so it is gym work and platform_owner is refused
+// (OD-2026-10-10-004 ruling 3), as on the retraction-checks twin. A session
+// reads only the organization it is signed into here; nothing in this route
+// names the platform shelf.
+const REVIEW_ROLES = ['organization_admin', 'admin'] as const;
 
 const REVIEW_SIGNALS: ReadonlySet<string> = new Set([
   'needs_adjudication',

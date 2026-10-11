@@ -10,7 +10,9 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'parent', 'platform_owner']);
+    // The intake review queue of the caller's own gym: gym data, so
+    // platform_owner is refused (OD-2026-10-10-004 ruling 3).
+    requireRole(principal, ['organization_admin', 'admin', 'coach', 'parent']);
     await assertShadowRuntimeReadiness({ requiredTables: ['intake_cases', 'intake_documents', 'shadow_events'] });
 
     const body = (await request.json().catch(() => ({}))) as {
