@@ -458,6 +458,48 @@ describe('the coach-notes block', () => {
     expect(String(reads[0][0])).toContain('athlete_id=ath-001');
   });
 
+  test('opening another athlete takes the first athlete\'s notes off the screen', async () => {
+    const second = { ...rosterBody.items[0], athlete_id: 'ath-002', full_name: 'Second Athlete' };
+    const noteFor = (athleteId: string) => ({
+      note_id: `note-${athleteId}`,
+      note: `A note about ${athleteId}`,
+      author_name: 'Coach Jason',
+      created_at: '2026-10-08T12:00:00.000Z',
+      own: false,
+      can_withdraw: false,
+    });
+    const fetchMock = consoleFetch((url) => {
+      if (url.includes('/api/pilot/athletes/list')) {
+        return jsonResponse({ items: [rosterBody.items[0], second] });
+      }
+      if (url.includes(notesUrl)) {
+        const athleteId = url.includes('athlete_id=ath-002') ? 'ath-002' : 'ath-001';
+        return jsonResponse({ ok: true, note_max: 2000, notes: [noteFor(athleteId)], older_notes: false });
+      }
+      return undefined;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    const openButtons = await screen.findAllByRole('button', { name: /correct record/i });
+    fireEvent.click(openButtons[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+    await screen.findByText('A note about ath-001');
+
+    // The second athlete's block starts closed: nothing of the first remains,
+    // and nothing is read for the second until it is opened.
+    fireEvent.click(openButtons[1]);
+    expect(screen.queryByText('A note about ath-001')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Capacity notes' })).toBeDefined();
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes(notesUrl))).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capacity notes' }));
+    await screen.findByText('A note about ath-002');
+    expect(screen.queryByText('A note about ath-001')).toBeNull();
+    expect(screen.getByText(/Capacity notes — Second Athlete/)).toBeDefined();
+  });
+
   test('a platform owner gets no block and no note is read', async () => {
     mockUsePilotSession.mockReturnValue(session('platform_owner'));
     const fetchMock = consoleFetch();

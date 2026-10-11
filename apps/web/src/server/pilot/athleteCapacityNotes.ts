@@ -89,10 +89,20 @@ const AUTHOR_DEPARTED_SQL = `not exists (
      and not ${accountDeletedSql('a')}
 )`;
 
+/**
+ * Organization admin by BOTH the membership row here and the session: a
+ * platform_owner session never withdraws another person's note, whatever
+ * membership its account holds.
+ */
+function isOrganizationAdminHere(actor: ActorIdentity, role: CapacityNoteRole): boolean {
+  return DEPARTED_AUTHOR_WITHDRAW_ROLES.includes(role)
+    && (DEPARTED_AUTHOR_WITHDRAW_ROLES as readonly string[]).includes(actor.role);
+}
+
 /** Author, or an organization admin once the author has left. Used by the read and by the withdrawal. */
 function mayWithdraw(actor: ActorIdentity, role: CapacityNoteRole, authorAccountId: string, authorDeparted: boolean): boolean {
   if (authorAccountId === actor.accountId) return true;
-  return authorDeparted && DEPARTED_AUTHOR_WITHDRAW_ROLES.includes(role);
+  return authorDeparted && isOrganizationAdminHere(actor, role);
 }
 
 /** The note to store for this text, or the reason it is refused. Pure. */
@@ -231,8 +241,10 @@ export async function addCapacityNote(input: {
  * (OD-2026-10-10-003 ruling 4) -- while the author is still here it is theirs
  * to withdraw and the admin is refused; a coach who is not the author is
  * refused either way. A note already withdrawn, or not this athlete's, is not
- * found. Whether the author has left is read under the note's row lock, in the
- * transaction that withdraws it.
+ * found. Whether the author has left is read by the statement that locks the
+ * note, in the transaction that withdraws it. The author's account and
+ * membership rows are not locked: a reactivation landing at that instant is
+ * not excluded.
  *
  * The admin's withdrawal is audited as its own action and names the departed
  * author by account id; the audit row is not mirrored (see above) and
@@ -257,7 +269,15 @@ export async function withdrawCapacityNote(input: {
     const found = live.rows[0];
     if (!found) throw new NotFoundError('No such note.', 'CAPACITY_NOTE_NOT_FOUND');
     if (!mayWithdraw(input.actor, role, found.author_account_id, found.author_departed)) {
-      throw new ForbiddenError('Only the coach who wrote a note may withdraw it.', 'CAPACITY_NOTE_NOT_AUTHOR');
+      // One code for every refusal. Only the organization admin, who is
+      // already told on the read which authors have left, gets the sentence
+      // that says so; a coach learns nothing about another coach's standing.
+      throw new ForbiddenError(
+        isOrganizationAdminHere(input.actor, role)
+          ? 'The coach who wrote this note is still at the gym; only they may withdraw it.'
+          : 'Only the coach who wrote a note may withdraw it.',
+        'CAPACITY_NOTE_NOT_AUTHOR',
+      );
     }
     const own = found.author_account_id === input.actor.accountId;
 

@@ -808,10 +808,14 @@ describe('an organization admin withdraws a note whose author has left the gym',
       const second = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'Second' });
       const visiting = await addCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, note: 'Visiting' });
 
-      // The author is still at the gym: the note is theirs to withdraw.
+      // The author is still at the gym: the note is theirs to withdraw, and
+      // the admin is told so.
       expect((await listCapacityNotes(ADMIN, ATHLETE_ID)).map((row) => row.can_withdraw)).toEqual([false, false, false]);
       await expect(withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: first.note_id }))
-        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+        .rejects.toMatchObject({
+          code: 'CAPACITY_NOTE_NOT_AUTHOR',
+          message: 'The coach who wrote this note is still at the gym; only they may withdraw it.',
+        });
       expect(await noteCount(client, { live: true })).toBe(3);
 
       // The deactivation #1368's route performs, through its own helper.
@@ -834,9 +838,14 @@ describe('an organization admin withdraws a note whose author has left the gym',
         [first.note_id, false],
       ]);
 
-      // A coach who is not the author is refused even though the author left.
+      // A coach who is not the author is refused even though the author left,
+      // in the same words as before the author left: the refusal tells a coach
+      // nothing about another coach's standing.
       await expect(withdrawCapacityNote({ actor: VISITING_COACH, athleteId: ATHLETE_ID, noteId: first.note_id }))
-        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+        .rejects.toMatchObject({
+          code: 'CAPACITY_NOTE_NOT_AUTHOR',
+          message: 'Only the coach who wrote a note may withdraw it.',
+        });
       expect(await noteCount(client, { live: true })).toBe(3);
 
       await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId: first.note_id });
@@ -923,7 +932,7 @@ describe('an organization admin withdraws a note whose author has left the gym',
     }
   });
 
-  test('only this gym\'s organization admin: a session role that says admin, another gym\'s admin and the platform owner are all refused', async () => {
+  test('only this gym\'s organization admin, by membership AND session: every other standing is refused', async () => {
     const client = await migratedDatabase('capnotes_departed_who');
     try {
       await insertRaw(client, { author_account_id: LAPSED_COACH_ID });
@@ -934,6 +943,8 @@ describe('an organization admin withdraws a note whose author has left the gym',
       // claim to be an organization admin changes nothing.
       const claimsAdmin = actorFor(VISITING_COACH_ID, 'organization_admin');
       expect((await listCapacityNotes(claimsAdmin, ATHLETE_ID))[0].can_withdraw).toBe(false);
+      // Nor is a platform_owner session told it may withdraw.
+      expect((await listCapacityNotes(actorFor(ADMIN_ID, 'platform_owner'), ATHLETE_ID))[0].can_withdraw).toBe(false);
       await expect(withdrawCapacityNote({ actor: claimsAdmin, athleteId: ATHLETE_ID, noteId }))
         .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
 
@@ -942,6 +953,10 @@ describe('an organization admin withdraws a note whose author has left the gym',
         actorFor(OTHER_ADMIN_ID, 'organization_admin'), // the other gym's admin, aimed at this gym
         PLATFORM_OWNER,
         actorFor(ADMIN_ID, 'platform_owner', OTHER_ORG_ID),
+        // A platform_owner SESSION on an account whose membership here is the
+        // organization admin's: the membership alone does not carry it.
+        actorFor(ADMIN_ID, 'platform_owner'),
+        actorFor(ADMIN_ID, 'coach'),
         VOLUNTEER,
         BOARD,
         GUARDIAN,
@@ -954,6 +969,40 @@ describe('an organization admin withdraws a note whose author has left the gym',
 
       await withdrawCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, noteId });
       expect(await noteCount(client, { live: true })).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a legacy \'admin\' membership is the organization admin here; a departed author who was an admin is treated like any other', async () => {
+    const client = await migratedDatabase('capnotes_departed_legacy_admin');
+    try {
+      await client.query(
+        `update pilot.organization_memberships set role = 'admin' where account_id = $1 and organization_id = $2`,
+        [UNASSIGNED_COACH_ID, ORG_ID],
+      );
+      const legacyAdmin = actorFor(UNASSIGNED_COACH_ID, 'admin');
+      const byCoach = await addCapacityNote({ actor: COACH, athleteId: ATHLETE_ID, note: 'x' });
+      const byAdmin = await addCapacityNote({ actor: ADMIN, athleteId: ATHLETE_ID, note: 'y' });
+
+      // Both authors are still here.
+      await expect(withdrawCapacityNote({ actor: legacyAdmin, athleteId: ATHLETE_ID, noteId: byCoach.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+      await expect(withdrawCapacityNote({ actor: legacyAdmin, athleteId: ATHLETE_ID, noteId: byAdmin.note_id }))
+        .rejects.toMatchObject({ code: 'CAPACITY_NOTE_NOT_AUTHOR' });
+
+      await client.query(
+        'update pilot.organization_memberships set active_flag = false where organization_id = $1 and account_id = any($2::text[])',
+        [ORG_ID, [COACH_ID, ADMIN_ID]],
+      );
+      await withdrawCapacityNote({ actor: legacyAdmin, athleteId: ATHLETE_ID, noteId: byCoach.note_id });
+      await withdrawCapacityNote({ actor: legacyAdmin, athleteId: ATHLETE_ID, noteId: byAdmin.note_id });
+      expect(await noteCount(client, { live: true })).toBe(0);
+      const withdrawals = (await auditRows(client)).filter((row) => row.event_type === 'update');
+      expect(withdrawals.map((row) => [row.actor_account_id, row.actor_role, row.details.author_account_id])).toEqual([
+        [UNASSIGNED_COACH_ID, 'admin', COACH_ID],
+        [UNASSIGNED_COACH_ID, 'admin', ADMIN_ID],
+      ]);
     } finally {
       await client.end();
     }

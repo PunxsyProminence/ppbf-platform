@@ -338,3 +338,37 @@ test('can_withdraw that is not a boolean is an unreadable answer, never a Withdr
   expect(await screen.findByText(/could not be read just now/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: /^Withdraw/ })).toBeNull();
 });
+
+test('a withdrawal the server refuses as not permitted re-reads the list, so a Withdraw it no longer allows does not stay', async () => {
+  // The list was read while the author was away; the author came back before the tap.
+  const STALE = { ...THEIRS, own: false, can_withdraw: true };
+  let notes = [STALE];
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes }),
+    undefined,
+    () => {
+      notes = [{ ...STALE, can_withdraw: false }];
+      return respond({ ok: false, error: 'The coach who wrote this note is still at the gym; only they may withdraw it.' }, 403);
+    },
+  );
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Withdraw the note/ }));
+  expect(await screen.findByText('The coach who wrote this note is still at the gym; only they may withdraw it.')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Withdraw/ })).toBeNull());
+  expect(gets).toHaveLength(2);
+  // The note is still listed, and the refusal still says what happened.
+  expect(screen.getByText('Gassed after round three')).toBeTruthy();
+  expect(screen.getByText('NOT WITHDRAWN')).toBeTruthy();
+});
+
+test('a withdrawal that fails for another reason does not re-read', async () => {
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes: [MINE] }),
+    undefined,
+    () => respond({ ok: false }, 500),
+  );
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Withdraw your note/ }));
+  expect(await screen.findByText('The note was not withdrawn (500).')).toBeTruthy();
+  expect(gets).toHaveLength(1);
+});

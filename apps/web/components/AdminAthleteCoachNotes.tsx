@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 import CapacityNotesPanel from './CapacityNotesPanel';
 import SessionStaffNotesPanel from './SessionStaffNotesPanel';
@@ -13,19 +14,30 @@ import SessionStaffNotesPanel from './SessionStaffNotesPanel';
 // selected athlete on the admin athlete-records page, which is already
 // organization-admin only. The coach page is NOT opened to the admin.
 //
-// NOTHING NEW IS DECIDED HERE. Both panels are the coach screen's own,
-// unchanged, over the routes they already call; the routes and the modules
+// NOTHING NEW IS DECIDED HERE. Both panels are the ones the coach screen
+// mounts, over the routes they already call; the routes and the modules
 // behind them decide who may read, write and withdraw. That is also where the
 // admin withdraws a capacity note whose author has left the gym
 // (OD-2026-10-10-003 ruling 4): the capacity panel shows Withdraw on exactly
 // the notes the server marks.
 //
 // STAFF ONLY (OD-2026-10-10-003 ruling 3): no athlete or parent page mounts
-// this block.
+// this block (athleteCapacityNotesSchemaOwnership.test.ts pins who imports it).
+//
+// ONE ATHLETE PER MOUNT. The page keys this block by athlete, and the staff
+// notes panel below is keyed by athlete and session, so nothing read for one
+// athlete or session is ever shown under another.
 //
 // READS NOTHING UNTIL OPENED, like the panels it holds. A session has to be
 // picked before its staff notes can be read, so "Session notes" reads this
-// athlete's sessions (the existing per-athlete session read) only when opened.
+// athlete's sessions only when opened. That read is the existing
+// GET /api/pilot/sessions/list, unchanged: it returns whole session rows (this
+// block keeps the id, the day, when it was started and whether it was
+// completed) and, like every call to it, first runs the gym's
+// inactive-session auto-close sweep.
+
+/** The picker lists this many sessions, newest first; one more is asked for, to know whether older ones exist. */
+const SESSION_LIST_LIMIT = 200;
 
 /** A row of GET /api/pilot/sessions/list, cut to what an option is labelled with. */
 interface PickableSession {
@@ -51,11 +63,18 @@ function pickableSession(row: unknown): PickableSession | null {
   };
 }
 
+/** The day, when the session was started (two sessions on one day are told apart by it), and whether it was completed. */
+function sessionLabel(session: PickableSession): string {
+  const started = formatGymTimeOfDay(session.createdAt);
+  return `${session.date}${started ? `, ${started}` : ''} - ${session.completed ? 'completed' : 'open'}`;
+}
+
 type Sessions =
   | { state: 'closed' }
   | { state: 'loading' }
-  | { state: 'unavailable' }
-  | { state: 'loaded'; sessions: PickableSession[] };
+  // `reason` is the server's own refusal, when it gave one.
+  | { state: 'unavailable'; reason: string | null }
+  | { state: 'loaded'; sessions: PickableSession[]; unreadable: number; older: boolean };
 
 export default function AdminAthleteCoachNotes({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
   const [sessions, setSessions] = useState<Sessions>({ state: 'closed' });
@@ -73,23 +92,33 @@ export default function AdminAthleteCoachNotes({ athleteId, athleteName }: { ath
     const landed = () => isOpen.current && latestRead.current === ticket;
     try {
       const response = await fetch(
-        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}&limit=${SESSION_LIST_LIMIT + 1}`,
         { method: 'GET', credentials: 'include' },
       );
-      const payload = (await response.json().catch(() => null)) as { items?: unknown } | null;
-      if (!response.ok || !payload || !Array.isArray(payload.items)) throw new Error('unreadable');
+      const payload = (await response.json().catch(() => null)) as { items?: unknown; error?: unknown } | null;
       if (!landed()) return;
+      if (!response.ok || !payload || !Array.isArray(payload.items)) {
+        // Unknown is never shown as "no sessions".
+        setSessions({
+          state: 'unavailable',
+          reason: !response.ok && typeof payload?.error === 'string' && payload.error ? payload.error : null,
+        });
+        return;
+      }
+      // The route answers newest day first, so the rows kept are the newest.
+      const rows = payload.items.slice(0, SESSION_LIST_LIMIT);
+      const readable = rows.map(pickableSession).filter((session): session is PickableSession => session !== null);
       setSessions({
         state: 'loaded',
-        sessions: payload.items
-          .map(pickableSession)
-          .filter((session): session is PickableSession => session !== null)
-          // The route orders by date alone, which cannot separate two sessions on one day.
-          .sort((left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt)),
+        // The route orders by date alone, which cannot separate two sessions on one day.
+        sessions: readable.sort(
+          (left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt),
+        ),
+        unreadable: rows.length - readable.length,
+        older: payload.items.length > SESSION_LIST_LIMIT,
       });
     } catch {
-      // Unknown is never shown as "no sessions".
-      if (landed()) setSessions({ state: 'unavailable' });
+      if (landed()) setSessions({ state: 'unavailable', reason: null });
     }
   }, [athleteId]);
 
@@ -140,7 +169,8 @@ export default function AdminAthleteCoachNotes({ athleteId, athleteName }: { ath
             {sessions.state === 'unavailable' ? (
               <div role="alert">
                 <p className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                  This athlete’s sessions could not be read just now. Unknown is not “no sessions” — check again.
+                  {sessions.reason
+                    ?? 'This athlete’s sessions could not be read just now. Unknown is not “no sessions” — check again.'}
                 </p>
                 <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => void readSessions()}>
                   Check again
@@ -148,23 +178,38 @@ export default function AdminAthleteCoachNotes({ athleteId, athleteName }: { ath
               </div>
             ) : null}
 
-            {sessions.state === 'loaded' && sessions.sessions.length === 0 ? (
-              <p className="t-body">No sessions are recorded for this athlete yet.</p>
-            ) : null}
-
-            {sessions.state === 'loaded' && sessions.sessions.length > 0 ? (
+            {sessions.state === 'loaded' ? (
               <>
-                <label className="field">
-                  <span className="t-label">Session</span>
-                  <select className="select" value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
-                    <option value="">Select a session</option>
-                    {sessions.sessions.map((session) => (
-                      <option key={session.sessionId} value={session.sessionId}>
-                        {session.date} - {session.completed ? 'completed' : 'open'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {sessions.sessions.length === 0 && sessions.unreadable === 0 ? (
+                  <p className="t-body">No sessions are recorded for this athlete yet.</p>
+                ) : null}
+
+                {sessions.sessions.length > 0 ? (
+                  <label className="field">
+                    <span className="t-label">Session</span>
+                    <select className="select" value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
+                      <option value="">Select a session</option>
+                      {sessions.sessions.map((session) => (
+                        <option key={session.sessionId} value={session.sessionId}>{sessionLabel(session)}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {sessions.unreadable > 0 ? (
+                  <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>
+                    {sessions.unreadable === 1
+                      ? '1 session record could not be read and is not listed.'
+                      : `${sessions.unreadable} session records could not be read and are not listed.`}
+                  </p>
+                ) : null}
+
+                {sessions.older ? (
+                  <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>
+                    Older sessions are kept but not listed here; this shows the newest {SESSION_LIST_LIMIT}.
+                  </p>
+                ) : null}
+
                 {sessionId ? (
                   <SessionStaffNotesPanel key={`${athleteId}-${sessionId}`} sessionId={sessionId} athleteId={athleteId} />
                 ) : null}

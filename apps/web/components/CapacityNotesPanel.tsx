@@ -7,8 +7,9 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // A coach's physical capacity notes for one athlete (module 013's slice,
 // OD-2026-10-08-002): what a coach saw of the athlete's capacity, in the
 // coach's own words, dated and kept as history newest first. Rendered closed
-// under the selected athlete on the coach dashboard; it reads nothing until a
-// coach opens it.
+// under the selected athlete on the coach dashboard, and in the organization
+// admin's coach-notes block on the admin athlete-records page
+// (AdminAthleteCoachNotes.tsx); it reads nothing until it is opened.
 //
 // WORDS, NOT NUMBERS. The panel shows the text the server stored and sends the
 // text the coach typed. Nothing here parses, counts, grades or colours a note:
@@ -157,6 +158,10 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
         const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
         if (!response.ok || !payload || payload.ok !== true) {
           setRefusal({ heading: 'NOT WITHDRAWN', text: describeFailure(payload, response.status, 'withdrawn') });
+          // Not permitted, or already gone: what is listed is out of date (the
+          // author came back, or somebody else withdrew it). Read again so a
+          // Withdraw the server no longer allows does not stay on screen.
+          if ((response.status === 403 || response.status === 404) && isOpen.current) await read();
           return;
         }
         if (isOpen.current) await read();
