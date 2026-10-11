@@ -169,9 +169,11 @@ export function deriveSuggestions(
 
     // Rule 2: training days dropping. Only fires when the older half showed a
     // real habit (TRAINING_DAYS_MIN_EARLY distinct days) that the newer half
-    // has lost at least half of.
+    // has lost at least half of. A register must exist for the newer half: no
+    // marks there is "nobody took the register", not a dropped habit.
     if (
-      row.training_days_early >= TRAINING_DAYS_MIN_EARLY
+      row.training_days_recorded_late > 0
+      && row.training_days_early >= TRAINING_DAYS_MIN_EARLY
       && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO
       && !openTypes(row.athlete_id).has('mental')
     ) {

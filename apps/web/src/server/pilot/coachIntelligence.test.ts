@@ -129,16 +129,16 @@ test('the fading filter applies the half-drop rule exactly, with names from the 
   });
   mockRollup.mockResolvedValue([
     // 6 -> 2 training days: under half of early -- fading.
-    { athlete_id: 'ath-fading', training_days_early: 6, training_days_late: 2 },
+    { athlete_id: 'ath-fading', training_days_early: 6, training_days_late: 2, training_days_recorded_late: 6 },
     // 6 -> 3: exactly half lost is still "lost AT LEAST half" -- fading too.
     // (Matches progressionSuggestions.ts's training_days_dropping rule,
     // which also fires at this exact boundary -- see the agreement test
     // below.)
-    { athlete_id: 'ath-boundary', training_days_early: 6, training_days_late: 3 },
+    { athlete_id: 'ath-boundary', training_days_early: 6, training_days_late: 3, training_days_recorded_late: 6 },
     // 6 -> 4: above half retained -- fine.
-    { athlete_id: 'ath-fine', training_days_early: 6, training_days_late: 4 },
+    { athlete_id: 'ath-fine', training_days_early: 6, training_days_late: 4, training_days_recorded_late: 6 },
     // 2 -> 0: early below the minimum floor -- too little signal to flag.
-    { athlete_id: 'ath-new', training_days_early: 2, training_days_late: 0 },
+    { athlete_id: 'ath-new', training_days_early: 2, training_days_late: 0, training_days_recorded_late: 6 },
   ]);
 
   const digest = await getCoachIntelligence('org-1', ['ath-fading', 'ath-boundary', 'ath-fine', 'ath-new']);
@@ -147,6 +147,18 @@ test('the fading filter applies the half-drop rule exactly, with names from the 
     { athlete_id: 'ath-fading', athlete_name: 'Rosa D.', training_days_early: 6, training_days_late: 2 },
     { athlete_id: 'ath-boundary', athlete_name: 'Alex P.', training_days_early: 6, training_days_late: 3 },
   ]);
+});
+
+test('item 3 does not flag fading attendance when the newer half has no register', async () => {
+  mockQuery.mockResolvedValue([]);
+  mockRollup.mockResolvedValue([
+    { athlete_id: 'ath-noreg', training_days_early: 6, training_days_late: 0, training_days_recorded_late: 0 },
+    { athlete_id: 'ath-real', training_days_early: 6, training_days_late: 1, training_days_recorded_late: 4 },
+  ]);
+
+  const digest = await getCoachIntelligence('org-1', ['ath-noreg', 'ath-real']);
+
+  expect(digest.fading_attendance.map((row) => row.athlete_id)).toEqual(['ath-real']);
 });
 
 // The header comment's "never drift apart" claim is only as good as this:
@@ -166,6 +178,8 @@ describe('fading_attendance agrees with progressionSuggestions.training_days_dro
       session_load_count: 0,
       training_days: 0,
       training_days_recorded: 0,
+      training_days_recorded_early: 0,
+      training_days_recorded_late: 6,
       training_days_early: 0,
       training_days_late: 0,
       readiness_count: 0,
@@ -182,7 +196,8 @@ describe('fading_attendance agrees with progressionSuggestions.training_days_dro
   }
 
   function isFading(row: AthletePerformanceRow): boolean {
-    return row.training_days_early >= TRAINING_DAYS_MIN_EARLY
+    return row.training_days_recorded_late > 0
+      && row.training_days_early >= TRAINING_DAYS_MIN_EARLY
       && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO;
   }
 

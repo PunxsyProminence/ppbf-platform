@@ -59,6 +59,11 @@ export interface AthletePerformanceRow {
   // for the deterministic consistency rule in progressionSuggestions.ts.
   training_days_early: number;
   training_days_late: number;
+  // Days with ANY mark in each half (present, absent or excused). The drop
+  // rules need late > 0: with no register in the newer half, 0 present days
+  // is "nobody took the register", not "the athlete stopped coming".
+  training_days_recorded_early: number;
+  training_days_recorded_late: number;
   readiness_count: number;
   avg_readiness: number | null;
   // Mean readiness in the older half vs the newer half of the window, so the
@@ -97,6 +102,8 @@ interface TrainingDaysAgg {
   athlete_id: string;
   training_days: number;
   training_days_recorded: number;
+  training_days_recorded_early: number;
+  training_days_recorded_late: number;
   training_days_early: number;
   training_days_late: number;
 }
@@ -216,6 +223,8 @@ export async function getPerformanceRollup(
       `select athlete_id,
               (count(*) filter (where status = 'present'))::int as training_days,
               count(*)::int as training_days_recorded,
+              (count(*) filter (where attendance_date < $4::date))::int as training_days_recorded_early,
+              (count(*) filter (where attendance_date >= $4::date))::int as training_days_recorded_late,
               (count(*) filter (where status = 'present' and attendance_date < $4::date))::int as training_days_early,
               (count(*) filter (where status = 'present' and attendance_date >= $4::date))::int as training_days_late
        from pilot.attendance_reconciled
@@ -263,6 +272,8 @@ export async function getPerformanceRollup(
     training_days_recorded: byTraining.get(athleteId)?.training_days_recorded ?? 0,
     training_days_early: byTraining.get(athleteId)?.training_days_early ?? 0,
     training_days_late: byTraining.get(athleteId)?.training_days_late ?? 0,
+    training_days_recorded_early: byTraining.get(athleteId)?.training_days_recorded_early ?? 0,
+    training_days_recorded_late: byTraining.get(athleteId)?.training_days_recorded_late ?? 0,
     readiness_count: byReadiness.get(athleteId)?.readiness_count ?? 0,
     avg_readiness: byReadiness.get(athleteId)?.avg_readiness ?? null,
     readiness_early_avg: byReadiness.get(athleteId)?.readiness_early_avg ?? null,

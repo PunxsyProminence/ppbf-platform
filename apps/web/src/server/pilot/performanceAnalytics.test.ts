@@ -351,6 +351,8 @@ describe('training days come from the reconciled register (OD-2026-10-07-010 Q9)
       training_days_recorded: 6,
       training_days_early: 3,
       training_days_late: 2,
+      training_days_recorded_early: 3,
+      training_days_recorded_late: 3,
     });
 
     const [row] = await getPerformanceRollup('org-1', ['ath-1'], 28);
@@ -360,7 +362,20 @@ describe('training days come from the reconciled register (OD-2026-10-07-010 Q9)
       training_days_recorded: 6,
       training_days_early: 3,
       training_days_late: 2,
+      training_days_recorded_early: 3,
+      training_days_recorded_late: 3,
     });
+  });
+
+  test('the per-half recorded counts are issued and default to 0 with no register', async () => {
+    resolveAllFiveEmpty();
+
+    const [row] = await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    const sql = mockQuery.mock.calls[2][0] as string;
+    expect(sql).toContain('as training_days_recorded_late');
+    expect(row.training_days_recorded_early).toBe(0);
+    expect(row.training_days_recorded_late).toBe(0);
   });
 
   test('a register read failure rejects instead of reporting zero', async () => {
