@@ -947,13 +947,6 @@ describe('a request key names one issue', () => {
     template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday As Issued', version: 2 },
     step_count: 3,
   };
-  const nothingWritten = () => {
-    expect(mockTransaction).not.toHaveBeenCalled();
-    expect(mockCard).not.toHaveBeenCalled();
-    expect(mockPromote).not.toHaveBeenCalled();
-    expect(mockRecordIssue).not.toHaveBeenCalled();
-    expect(mockAudit).not.toHaveBeenCalled();
-  };
 
   test.each([
     ['no key', PARAMS],
@@ -988,7 +981,7 @@ describe('a request key names one issue', () => {
     expect(result).toEqual(REPEAT);
     expect(mockQueryOne).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
-    nothingWritten();
+    expectNothingWritten();
   });
 
   test.each([
@@ -1002,7 +995,7 @@ describe('a request key names one issue', () => {
       code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
       message: 'This request was already used to issue a different workout.',
     });
-    nothingWritten();
+    expectNothingWritten();
   });
 
   test('the key is taken INSIDE the transaction (the same request, sent twice at once): the answer is the issue that took it, and no audit event is written', async () => {
@@ -1072,6 +1065,21 @@ describe('a request key names one issue', () => {
         code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
       });
       expect(mockFindByKey).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  test.each(COLLISIONS)(
+    "a drill library collision (%s index) whose key names ANOTHER athlete's issue is refused as a reused key, not answered with that issue and not called a library change",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...FIRST, athlete_id: 'athlete-other' });
+      mockPromote.mockRejectedValue(collision());
+
+      await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+        status: 409,
+        code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+      });
+      expect(mockAudit).not.toHaveBeenCalled();
     },
   );
 

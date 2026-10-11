@@ -71,12 +71,15 @@ interface TemplateDetail {
 // THAT request (issued, already issued, or the key refused as used for another
 // workout). When a press gets no answer and the coach presses again, the same
 // key goes out, and the server answers with the first issue instead of issuing
-// twice. Every other answer keeps the key, a refusal included: a 401, 403, 404
-// or 400 is given before the server has looked at the key, so it says nothing
-// about an earlier press that may have landed. Keeping a key that names
-// nothing costs nothing; the next press simply issues under it. The key lives
-// only as long as this open template does, so the "check before trying again"
-// sentences below stay as they are.
+// twice. Every other answer keeps the key, a refusal included: a 400, 401,
+// 403, 404 or any other 409 refuses THIS press and says nothing about an
+// earlier one that may have landed. Keeping a key that names nothing costs
+// nothing; the next press simply issues under it. One consequence, kept on
+// purpose: after a press with no answer, the next press for that athlete is
+// treated as the retry even if the coach meant a second issue, and says so;
+// the press after that is a new issue. The key lives only as long as this
+// open template does (reloading the page or opening another template starts
+// again), so the "check before trying again" sentences below stay as they are.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -358,8 +361,10 @@ function IssueToAthlete({
       ? `Issued to ${outcome.athleteName}. The number of Coach Cards could not be read.`
       : `Issued to ${outcome.athleteName}: ${outcome.cards} Coach ${outcome.cards === 1 ? 'Card' : 'Cards'}.`)
     : '';
-  // Said only when this press repeated one that had already gone through.
-  const alreadyLine = 'Your earlier try had gone through. It was issued once, not twice.';
+  // Said only when this press repeated one that had already gone through. It
+  // speaks of this press, not of a total: the coach may have issued this
+  // template to this athlete before, on purpose.
+  const alreadyLine = 'Your earlier try had gone through. This press did not issue it again.';
 
   return (
     <div

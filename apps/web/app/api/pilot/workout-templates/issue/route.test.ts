@@ -299,15 +299,18 @@ describe('a request key', () => {
     step_count: 2,
   };
 
-  test('the key is handed to the writer exactly as sent; a request with none hands it null', async () => {
+  test('the key is handed to the writer exactly as sent, never trimmed; a request with none hands it null', async () => {
     await POST(post({ ...BODY, request_key: 'a1b2c3d4-0000-4000-8000-000000000001' }));
     await POST(post(BODY));
     await POST(post({ ...BODY, request_key: null }));
+    // The same characters must come back on a retry, so the route changes none of them.
+    await POST(post({ ...BODY, request_key: '  Key With Spaces  ' }));
 
     expect(mockIssue.mock.calls.map(([params]) => params.requestKey)).toEqual([
       'a1b2c3d4-0000-4000-8000-000000000001',
       null,
       null,
+      '  Key With Spaces  ',
     ]);
   });
 

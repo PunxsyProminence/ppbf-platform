@@ -1268,7 +1268,7 @@ describe('issue to athlete', () => {
       const [first, second] = keysSent(fetchMock);
       expect(second).toBe(first);
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
-      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+      expect(status).toHaveTextContent('Your earlier try had gone through. This press did not issue it again.');
       // Still said: what the athlete sees. Not said: anything adopted (this press adopted nothing).
       expect(status).toHaveTextContent('The athlete sees this as one workout');
       expect(status).not.toHaveTextContent(/Adopted for this gym/);
@@ -1280,7 +1280,7 @@ describe('issue to athlete', () => {
 
       await issueTo();
 
-      expect(await issuedStatus()).not.toHaveTextContent(/earlier try|not twice/);
+      expect(await issuedStatus()).not.toHaveTextContent(/earlier try|issue it again/);
     });
 
     const KEPT: Array<[string, () => Response]> = [
@@ -1307,9 +1307,8 @@ describe('issue to athlete', () => {
       expect(second).toBe(first);
     });
 
-    // Answers that refuse THIS press without saying what became of an earlier
-    // one. The route gives 400, 401, 403 and its 404 before it looks at the
-    // key; the writer's refusals come after it found the key naming nothing.
+    // Answers that refuse THIS press and say nothing about an earlier one
+    // that may have landed.
     const REFUSALS: Array<[string, () => Response]> = [
       ['a refusal that names drills (409)', () => statusResponse(409, REFUSED_BODY)],
       ['a template no longer in use (409)', () => statusResponse(409, { error: 'This workout template is no longer in use, so it cannot be issued.', code: 'WORKOUT_TEMPLATE_NOT_CURRENT' })],
@@ -1336,7 +1335,7 @@ describe('issue to athlete', () => {
       expect(typeof first).toBe('string');
       expect(second).toBe(first);
       expect(third).toBe(first);
-      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+      expect(status).toHaveTextContent('Your earlier try had gone through. This press did not issue it again.');
     });
 
     const SETTLED: Array<[string, () => Response]> = [
@@ -1370,7 +1369,7 @@ describe('issue to athlete', () => {
       const [first, second] = keysSent(fetchMock);
       expect(second).not.toBe(first);
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
-      expect(status).not.toHaveTextContent(/earlier try|not twice/);
+      expect(status).not.toHaveTextContent(/earlier try|issue it again/);
     });
 
     it('the key refused as another workout\'s is said in the server\'s words, as nothing issued', async () => {
@@ -1379,6 +1378,40 @@ describe('issue to athlete', () => {
       await issueTo();
 
       expect(await screen.findByRole('alert')).toHaveTextContent('This request was already used to issue a different workout. Nothing was issued.');
+    });
+
+    it('a key belongs to the open template: the same athlete under another template is sent a different key', async () => {
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ISSUE_URL)) throw new TypeError('Failed to fetch');
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      const pressIssue = async () => {
+        fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+        });
+        await screen.findByRole('alert');
+      };
+
+      render(<CoachWorkoutTemplatesPage />);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+      await pressIssue();
+      // The other template: the issue control is taken down and put up again.
+      fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+      await screen.findByRole('heading', { level: 2, name: 'Conditioning Circuit 45' });
+      await pressIssue();
+
+      const bodies = issuePosts(fetchMock).map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+      expect(bodies.map((body) => body.template_id)).toEqual(['wt-1', 'wt-2']);
+      expect(typeof bodies[0].request_key).toBe('string');
+      expect(typeof bodies[1].request_key).toBe('string');
+      expect(bodies[1].request_key).not.toBe(bodies[0].request_key);
     });
 
     it('each athlete has its own key, and an unanswered one is still that athlete\'s after choosing someone else and coming back', async () => {
@@ -1408,7 +1441,7 @@ describe('issue to athlete', () => {
 
       const status = await issuedStatus();
       expect(status).toHaveTextContent('Issued to Dana Reyes. The number of Coach Cards could not be read.');
-      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+      expect(status).toHaveTextContent('Your earlier try had gone through. This press did not issue it again.');
       expect(status).not.toHaveTextContent(/0 Coach Cards/);
     });
 

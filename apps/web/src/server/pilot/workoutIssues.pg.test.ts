@@ -306,9 +306,11 @@ async function counts(gym: Gym): Promise<{ issues: number; steps: number; assign
 }
 
 /**
- * Waits until a transaction in this suite's database is waiting for another
+ * Waits until a transaction on this suite's own server is waiting for another
  * to finish (a unique-index wait is a wait on the other transaction's id), and
- * returns how many are. Zero after five seconds.
+ * returns how many are. Zero after five seconds. The server is this suite's
+ * alone, so the only transaction that can be waiting is the one a case made
+ * wait.
  */
 async function waitingOnAnotherTransaction(): Promise<number> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -969,6 +971,45 @@ describe('a request key names one issue', () => {
     // Only the winner's rows: the loser's four assignments went with its transaction.
     expect(await counts(gym)).toEqual({ issues: 1, steps: 1, assignments: 1 });
     expect(await auditCount(gym)).toBe(0);
+  });
+
+  test('when the first send ROLLS BACK instead, the one that waited issues: the key names exactly one workout, whole', async () => {
+    const { gym, drills } = await gymWithWorkout('key-race-rollback');
+    const own = await ownConnection();
+    let waited: Promise<TemplateIssueResult> | null = null;
+    try {
+      await own.query('BEGIN');
+      const assignment = await issueCoachCard(
+        { organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: drills['ref-a'] },
+        own as never,
+      );
+      await recordWorkoutIssue(own as never, {
+        organizationId: gym.organizationId,
+        athleteId: ATHLETE_ID,
+        template: { template_id: TEMPLATE_ID, name: 'Shape Fixture', version: 3 },
+        issuedByAccountId: gym.coachId,
+        requestKey: 'key-race-rollback-1',
+        steps: [step(assignment.assignment_id)],
+      });
+      waited = issue(gym, ATHLETE_ID, 'key-race-rollback-1');
+      waited.catch(() => {});
+      expect(await waitingOnAnotherTransaction()).toBeGreaterThan(0);
+      // The first send fails after all: nothing of it is kept.
+      await own.query('ROLLBACK');
+    } catch (error) {
+      await own.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      await own.end();
+    }
+
+    if (!waited) throw new Error('the waiting send was never started');
+    const result = await waited;
+    expect(result.outcome).toBe('issued');
+    // The waiting send's own workout, complete: not a repeat of something that never happened.
+    expect(await counts(gym)).toEqual({ issues: 1, steps: 4, assignments: 4 });
+    const repeat = await issue(gym, ATHLETE_ID, 'key-race-rollback-1');
+    expect(repeat.outcome === 'already_issued' && result.outcome === 'issued' && repeat.issue_id === result.issue_id).toBe(true);
   });
 
   test('two sends at the same moment of a template that ADOPTS a drill: the loser meets the winner at the drill library, not the key, and is still answered as the repeat', async () => {
