@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import {
+  isFamilyVisibleObjectiveStatus,
   listObjectivesForBlock,
   type BlockObjectiveRow,
 } from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
@@ -24,6 +25,12 @@ export const dynamic = 'force-dynamic';
  * the coach wrote them. A guardian reads precisely what their child reads and
  * no more. Asked as "what does the athlete see of the plan their coach wrote
  * about them", answered "everything, verbatim".
+ *
+ * NARROWED SINCE, BY STATUS AND NOT BY CONTENT. A family reads what the coach
+ * has put in front of them: active and completed blocks (A-Q20 and PLAN-4,
+ * OD-2026-10-08-006) and, inside those, active and completed objectives
+ * (OD-2026-10-09-004). A draft or cancelled block or objective is not sent.
+ * What IS sent is still every domain, in the coach's own words.
  *
  * WHY VERBATIM RATHER THAN A SOFTENED PROJECTION. A second, gentler version
  * of a coach's words would be a second version of the truth about a child,
@@ -218,7 +225,16 @@ export async function GET(request: NextRequest) {
 
     const withObjectives: FamilyDevelopmentBlock[] = [];
     for (const block of blocks) {
-      const objectives = await listObjectivesForBlock(principal, block.block_id);
+      /* THE SAME CUT ONE LEVEL DOWN (OD-2026-10-09-004 "Hide them"): inside a
+         block the family may read, a draft objective is one the coach is
+         still writing and a cancelled one was taken back, so neither is sent
+         to the athlete or the guardian. listObjectivesForBlock already makes
+         this cut in its query for these two roles; it is made again here, on
+         the rule that module exports, so this response does not depend on
+         the store alone. */
+      const objectives = (await listObjectivesForBlock(principal, block.block_id)).filter(
+        (row) => isFamilyVisibleObjectiveStatus(row.status),
+      );
       /* Named field by field, never spread. A spread here is what put a staff
          account id in a minor's API response in the first place, and it would
          put the next column there too, silently, on the day it is added. */

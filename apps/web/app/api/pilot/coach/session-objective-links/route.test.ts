@@ -232,6 +232,26 @@ describe('reading', () => {
     );
   });
 
+  test.each(['coach', 'organization_admin'])('a %s still receives draft and cancelled objectives on the block-wide read', async (role) => {
+    /* OD-2026-10-09-004 hides draft and cancelled objectives from athletes
+       and parents only. This route is staff's, so all four statuses stay. */
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+    mockGetBlock.mockResolvedValue(block());
+    mockBlockObjectives.mockResolvedValue(
+      ['draft', 'active', 'completed', 'cancelled'].map((status) => objective({ objective_id: `obj-${status}`, status })),
+    );
+
+    const payload = await (await GET(getRequest('?block_id=blk-a'))).json();
+
+    expect(payload.objectives.map((row: { objective_id: string; status: string }) => [row.objective_id, row.status]))
+      .toEqual([
+        ['obj-draft', 'draft'],
+        ['obj-active', 'active'],
+        ['obj-completed', 'completed'],
+        ['obj-cancelled', 'cancelled'],
+      ]);
+  });
+
   test('the session read is scoped to the block, not to the whole run', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetBlock.mockResolvedValue(block());

@@ -197,6 +197,27 @@ describe('reading a block\'s objectives', () => {
       .toEqual(['obj-1', 'obj-2']);
   });
 
+  test.each(['coach', 'organization_admin'])('a %s still receives draft and cancelled objectives -- the family cut is not made here', async (role) => {
+    /* OD-2026-10-09-004 hides draft and cancelled objectives from athletes
+       and parents only. Staff author them, so staff keep reading all four
+       statuses, in a draft block as much as in a live one. */
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+    mockGetBlock.mockResolvedValue(block({ status: 'active' }));
+    mockList.mockResolvedValue(
+      OBJECTIVE_STATUSES.map((status) => objective({ objective_id: `obj-${status}`, status })),
+    );
+
+    const payload = await (await GET(getRequest('?block_id=blk-1'))).json();
+
+    expect(payload.objectives.map((row: { objective_id: string; status: string }) => [row.objective_id, row.status]))
+      .toEqual([
+        ['obj-draft', 'draft'],
+        ['obj-active', 'active'],
+        ['obj-completed', 'completed'],
+        ['obj-cancelled', 'cancelled'],
+      ]);
+  });
+
   test('a block that cannot be opened is a 404, and its objectives are never read', async () => {
     /* The distinction this route exists to draw. listObjectivesForBlock
        answers [] for another gym's block, for an athlete this coach cannot

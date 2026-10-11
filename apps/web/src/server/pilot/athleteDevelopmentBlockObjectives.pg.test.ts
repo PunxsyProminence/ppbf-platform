@@ -839,7 +839,9 @@ describe('the module writing and reading objectives', () => {
        dismissed as "they never had access". */
     const client = await migratedDatabase('adbo_mod_status_gate');
     try {
-      await insertObjective(client, 'obj-gated', { domain: 'technical' });
+      // 'active': a family is shown active and completed objectives only
+      // (OD-2026-10-09-004), and this case needs the read to succeed first.
+      await insertObjective(client, 'obj-gated', { domain: 'technical', status: 'active' });
 
       for (const actor of [ATHLETE, GUARDIAN]) {
         expect((await getBlockObjective(actor, 'obj-gated'))?.objective_id).toBe('obj-gated');
@@ -851,7 +853,7 @@ describe('the module writing and reading objectives', () => {
         'select status from pilot.athlete_development_block_objectives where objective_id = $1',
         ['obj-gated'],
       );
-      expect(untouched.rows).toEqual([{ status: 'draft' }]);
+      expect(untouched.rows).toEqual([{ status: 'active' }]);
     } finally {
       await client.end();
     }
@@ -869,9 +871,12 @@ describe('access is inherited from the block, arm by arm', () => {
 
   async function seeded(name: string): Promise<Client> {
     const client = await migratedDatabase(name);
-    await insertObjective(client, 'obj-mine', { domain: 'technical' });
+    // 'active', not the default 'draft': these cases are about WHO reaches a
+    // row, and a draft is hidden from the athlete and guardian arms by status
+    // (OD-2026-10-09-004; see "which statuses a family reads" below).
+    await insertObjective(client, 'obj-mine', { domain: 'technical', status: 'active' });
     await insertObjective(client, 'obj-sibling', {
-      domain: 'technical', block_id: SECOND_BLOCK_ID,
+      domain: 'technical', block_id: SECOND_BLOCK_ID, status: 'active',
     });
     return client;
   }
@@ -994,6 +999,95 @@ describe('access is inherited from the block, arm by arm', () => {
         ['obj-mine'],
       );
       expect(stored.rows).toEqual([{ objective_id: 'obj-mine' }]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('which statuses a family reads', () => {
+  /* OD-2026-10-09-004 "Hide them (Recommended)": athletes and parents see
+     only active and completed objectives; draft and cancelled ones are
+     hidden from them, the same rule PLAN-4 applies to blocks. Coaches and
+     organization admins keep reading every status.
+
+     Against real rows, and through BOTH reads, for the same reason the
+     access cases above use both: a cut made in listObjectivesForBlock and
+     forgotten in getBlockObjective is not made. */
+
+  const BY_STATUS = [
+    ['obj-s-draft', 'draft'],
+    ['obj-s-active', 'active'],
+    ['obj-s-completed', 'completed'],
+    ['obj-s-cancelled', 'cancelled'],
+  ] as const;
+
+  async function seededByStatus(name: string): Promise<Client> {
+    const client = await migratedDatabase(name);
+    for (const [objectiveId, status] of BY_STATUS) {
+      await insertObjective(client, objectiveId, { domain: 'technical', status });
+    }
+    return client;
+  }
+
+  test('an athlete and a linked guardian are given active and completed objectives, and never a draft or cancelled one', async () => {
+    const client = await seededByStatus('adbo_family_statuses');
+    try {
+      for (const actor of [ATHLETE, GUARDIAN]) {
+        const listed = await listObjectivesForBlock(actor, BLOCK_ID);
+        expect(listed.map((row) => [row.objective_id, row.status]).sort()).toEqual([
+          ['obj-s-active', 'active'],
+          ['obj-s-completed', 'completed'],
+        ]);
+
+        expect((await getBlockObjective(actor, 'obj-s-active'))?.status).toBe('active');
+        expect((await getBlockObjective(actor, 'obj-s-completed'))?.status).toBe('completed');
+        // The same answer as an id that does not exist.
+        expect(await getBlockObjective(actor, 'obj-s-draft')).toBeNull();
+        expect(await getBlockObjective(actor, 'obj-s-cancelled')).toBeNull();
+        expect(await getBlockObjective(actor, 'obj-s-no-such-row')).toBeNull();
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach and an organization admin still read every status', async () => {
+    const client = await seededByStatus('adbo_staff_statuses');
+    try {
+      for (const actor of [COACH, ADMIN]) {
+        const listed = await listObjectivesForBlock(actor, BLOCK_ID);
+        expect(listed.map((row) => [row.objective_id, row.status]).sort()).toEqual([
+          ['obj-s-active', 'active'],
+          ['obj-s-cancelled', 'cancelled'],
+          ['obj-s-completed', 'completed'],
+          ['obj-s-draft', 'draft'],
+        ]);
+        for (const [objectiveId, status] of BY_STATUS) {
+          expect((await getBlockObjective(actor, objectiveId))?.status).toBe(status);
+        }
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the cut follows the status as the coach moves it', async () => {
+    /* Nothing is cached and nothing is copied: what a family reads is decided
+       by the row's status at the moment of the read. A coach publishing a
+       draft puts it in front of the family; a coach cancelling an active
+       objective takes it back. */
+    const client = await seededByStatus('adbo_family_status_moves');
+    try {
+      expect((await setBlockObjectiveStatus(COACH, 'obj-s-draft', 'active'))?.status).toBe('active');
+      expect((await setBlockObjectiveStatus(COACH, 'obj-s-active', 'cancelled'))?.status).toBe('cancelled');
+
+      for (const actor of [ATHLETE, GUARDIAN]) {
+        expect((await listObjectivesForBlock(actor, BLOCK_ID)).map((row) => row.objective_id).sort())
+          .toEqual(['obj-s-completed', 'obj-s-draft']);
+        expect((await getBlockObjective(actor, 'obj-s-draft'))?.status).toBe('active');
+        expect(await getBlockObjective(actor, 'obj-s-active')).toBeNull();
+      }
     } finally {
       await client.end();
     }
