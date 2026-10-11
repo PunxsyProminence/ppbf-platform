@@ -116,47 +116,64 @@ export default function AdminComplianceCenterPage() {
     [violations],
   );
   // The tab the admin is looking at right now, readable from a request that
-  // was sent before they changed it. A re-read after an escalate or a
-  // transition is asked for one tab; if another is showing by the time it
-  // answers, its rows belong to nobody and are dropped. Without this, rows
-  // of the old tab landed under the new one, the status filter hid them all,
-  // and the list read as a loaded, empty answer.
+  // was sent before they changed it: a re-read after an escalate or a
+  // transition reads the tab showing when it is SENT, not the one that was
+  // showing when the button was pressed.
   const showingTabRef = useRef(statusFilter);
+  // Every read of the register takes the next number when it is sent, and
+  // only the latest one sent may put rows on the screen. Comparing the tab
+  // NAME was not enough: tab A, then B, then back to A made an old answer
+  // for A acceptable again, and it could land after the newer read of A and
+  // put older rows and counts on screen.
+  const latestReadRef = useRef(0);
+  // True from the moment a tab's own load is sent until some read answers
+  // it. A re-read that overtakes that load has to finish its job (clear
+  // "Loading", or say the list is unavailable), because the load it
+  // overtook will be dropped when it answers.
+  const loadOwedRef = useRef(false);
+
+  // `reconcile` is the quiet re-read after an escalate or a transition: it
+  // shows no "Loading", and when it fails over rows already on screen it
+  // changes nothing, so the action's own outcome message stands.
+  const readTab = useCallback(async (tab: string, reconcile: boolean) => {
+    latestReadRef.current += 1;
+    const generation = latestReadRef.current;
+    if (!reconcile) {
+      loadOwedRef.current = true;
+      setIsLoading(true);
+    }
+    try {
+      const res = await fetch(violationsUrl(tab), { credentials: 'include' });
+      if (!res.ok) {
+        throw new Error('Unable to load compliance violations');
+      }
+
+      const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
+      if (generation !== latestReadRef.current) return;
+      setViolations(data.items ?? []);
+      setReadLimit(typeof data.limit === 'number' ? data.limit : null);
+      setDataAuthoritative(true);
+      if (!reconcile) setErrorMessage('');
+    } catch (error) {
+      if (generation !== latestReadRef.current) return;
+      if (reconcile && !loadOwedRef.current) return;
+      const message = error instanceof Error ? error.message : 'Unable to load violations';
+      setDataAuthoritative(false);
+      setViolations([]);
+      setReadLimit(null);
+      // A re-read standing in for a load keeps the action's message if there is one.
+      setErrorMessage((current) => (reconcile && current ? current : message));
+    }
+    loadOwedRef.current = false;
+    setIsLoading(false);
+  }, []);
 
   // Load violations: on entry, and again each time the status tab changes.
-  // `stale` drops an answer that arrives after a later tab was chosen.
   useEffect(() => {
-    let stale = false;
     void (async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
-        if (!res.ok) {
-          throw new Error('Unable to load compliance violations');
-        }
-
-        const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
-        if (stale) return;
-        const allViolations = data.items ?? [];
-        setViolations(allViolations);
-        setReadLimit(typeof data.limit === 'number' ? data.limit : null);
-
-        setDataAuthoritative(true);
-        setErrorMessage('');
-      } catch (error) {
-        if (stale) return;
-        setDataAuthoritative(false);
-        setViolations([]);
-        setReadLimit(null);
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
-      } finally {
-        if (!stale) setIsLoading(false);
-      }
+      await readTab(statusFilter, false);
     })();
-    return () => {
-      stale = true;
-    };
-  }, [statusFilter]);
+  }, [statusFilter, readTab]);
 
   const getFilteredViolations = () => {
     return violations.filter((v) => {
@@ -184,19 +201,12 @@ export default function AdminComplianceCenterPage() {
 
       setSelectedViolation(null);
       setEscalateToRole('organization_admin');
-
-      // Reload the tab that was showing when this was sent.
-      const askedTab = statusFilter;
-      const reloadRes = await fetch(violationsUrl(askedTab), { credentials: 'include' });
-      if (reloadRes.ok) {
-        const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-        if (showingTabRef.current === askedTab) {
-          setViolations(data.items ?? []);
-        }
-      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to escalate violation');
+      return;
     }
+    // Re-read the tab that is showing now.
+    await readTab(showingTabRef.current, true);
   };
 
   // The lifecycle levers the register was missing: acknowledge is receipt;
@@ -242,22 +252,11 @@ export default function AdminComplianceCenterPage() {
         next.delete(violation.violation_id);
         return next;
       });
-      // Reconcile with server truth on every terminal outcome: after a 409
-      // the rendered state is stale by definition.
-      try {
-        const askedTab = statusFilter;
-        const reloadRes = await fetch(violationsUrl(askedTab), { credentials: 'include' });
-        if (reloadRes.ok) {
-          const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-          if (showingTabRef.current === askedTab) {
-            setViolations(data.items ?? []);
-          }
-        }
-      } catch {
-        // The action's own outcome message stands; a failed reload must not
-        // overwrite it.
-      }
     }
+    // Reconcile with server truth on every terminal outcome: after a 409 the
+    // rendered state is stale by definition. The action's own outcome
+    // message stands; a failed re-read does not overwrite it.
+    await readTab(showingTabRef.current, true);
   };
 
   const filteredViolations = getFilteredViolations();

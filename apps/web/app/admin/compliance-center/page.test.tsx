@@ -584,3 +584,124 @@ test('while a tab’s read is in flight no count is stated over the previous tab
   });
   expect(await screen.findByText(/Violations \(0 of 0 loaded\)/)).toBeTruthy();
 });
+
+// CODEX REVIEW (PR #1456, P2): dropping a re-read by comparing the tab NAME
+// was not enough. Tab A, then B, then back to A makes an old answer for A
+// acceptable again, and it can land after the newer read of A. Every read
+// now takes a number when it is sent, and only the latest one sent may put
+// rows on the screen.
+test('A, then B, then back to A: a late answer to the old re-read of A does not replace the newer rows', async () => {
+  const lateReload = deferred();
+  let newTabReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return { ok: true, json: async () => ({ ok: true }) } as Response;
+    const status = statusOf(input);
+    if (status !== 'new') return rowsResponse([]);
+    newTabReads += 1;
+    // 1: the tab's first read. 2: the re-read after the transition, held back.
+    // 3: the read when the admin comes back to the tab.
+    if (newTabReads === 1) return rowsResponse([violation({ athlete_name: 'First Kid' })]);
+    if (newTabReads === 2) return lateReload.promise;
+    return rowsResponse([
+      violation({ violation_id: 'v-a', athlete_name: 'Newer Kid' }),
+      violation({ violation_id: 'v-b', athlete_name: 'Second Newer Kid' }),
+    ]);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('new');
+  await screen.findByText('Athlete: First Kid');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+  await openTab('dismissed');
+  await openTab('new');
+  expect(await screen.findByText('Athlete: Newer Kid')).toBeTruthy();
+
+  await act(async () => {
+    lateReload.release(rowsResponse([violation({ violation_id: 'v-old', athlete_name: 'Stale Kid' })]));
+  });
+
+  expect(screen.getByText('Athlete: Newer Kid')).toBeTruthy();
+  expect(screen.queryByText('Athlete: Stale Kid')).toBeNull();
+  // The counts are the newer read's too.
+  expect(screen.getByText(/Violations \(2 of 2 loaded\)/)).toBeTruthy();
+  const total = screen.getByText(/^Total/).closest('article') as HTMLElement;
+  expect(within(total).getByText('2')).toBeTruthy();
+});
+
+// The other side of "only the latest read counts": a re-read that overtakes a
+// tab's own load makes that load's answer unusable, so the re-read has to
+// finish the load's job. Otherwise the tab would sit on "Loading" for ever.
+test('a re-read that overtakes a tab’s load fills the tab, and the overtaken load is dropped', async () => {
+  const heldPatch = deferred();
+  const overtakenLoad = deferred();
+  let dismissedReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return heldPatch.promise;
+    const status = statusOf(input);
+    if (status === 'new') return rowsResponse([violation({ athlete_name: 'New Kid' })]);
+    if (status === 'dismissed') {
+      dismissedReads += 1;
+      // 1: the tab's own load, held back. 2: the re-read sent when the PATCH answers.
+      return dismissedReads === 1
+        ? overtakenLoad.promise
+        : rowsResponse([violation({ violation_id: 'v-dis', status: 'dismissed', athlete_name: 'Dismissed Kid' })]);
+    }
+    return rowsResponse([]);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('new');
+  await screen.findByText('Athlete: New Kid');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+  await openTab('dismissed');
+  expect(screen.getByText('Loading…')).toBeTruthy();
+
+  // The transition answers: its re-read is for the tab showing NOW.
+  await act(async () => {
+    heldPatch.release({ ok: true, json: async () => ({ ok: true }) } as Response);
+  });
+
+  expect(await screen.findByText('Athlete: Dismissed Kid')).toBeTruthy();
+  expect(screen.queryByText('Loading…')).toBeNull();
+  expect(screen.queryByText('Athlete: New Kid')).toBeNull();
+
+  await act(async () => {
+    overtakenLoad.release(rowsResponse([]));
+  });
+
+  expect(screen.getByText('Athlete: Dismissed Kid')).toBeTruthy();
+  expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
+});
+
+test('a re-read that fails leaves the rows on screen and the action’s own message standing', async () => {
+  let reads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      return { ok: false, json: async () => ({ error: 'This violation cannot be acknowledged from its current state.' }) } as Response;
+    }
+    // The deletion-request queue on the same page reads its own route.
+    if (!String(input).includes('/api/pilot/compliance/violations')) return rowsResponse([]);
+    reads += 1;
+    return reads === 1 ? rowsResponse([violation({ athlete_name: 'Jordan T.' })]) : ({ ok: false, json: async () => ({}) } as Response);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+
+  expect(await screen.findByText('This violation cannot be acknowledged from its current state.')).toBeTruthy();
+  expect(screen.getByText('Athlete: Jordan T.')).toBeTruthy();
+  expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  expect(screen.queryByText(/Unable to load compliance violations/i)).toBeNull();
+});
