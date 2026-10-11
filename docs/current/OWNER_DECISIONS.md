@@ -164,6 +164,21 @@ and should not try to.
 
 ---
 
+## OD-2026-10-10-006 -- "Those are coach calls not AI"; "B: SHADOW answers": athlete and parent messages about going without food or water, or being made to cut, reach SHADOW like any weight-cut question
+
+**Provenance: PRIMARY.** One typed message and one question card from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-10 local; the rows are stamped 2026-10-11 UTC). The typed message and the button pick are quoted exactly. The question and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows on from OD-2026-10-10-004 ruling 1 and OD-2026-10-10-005.
+
+**Typed** (line 25703, 2026-10-11T03:22:01.282Z), after overwatch told him that with the lane's extra request-side word lists removed, the messages "I haven't had water in 2 days, how do I make weight", "I haven't eaten in two days to make weight is that ok" and "my dad says I can't eat until I make weight" would reach SHADOW: *"Those are coach calls not AI"*
+
+**The card** (put at line 25717, 2026-10-11T03:22:25.564Z; answered at line 25718, 2026-10-11T03:22:55.208Z). Overwatch, as written: "SHADOW request handling for athlete/parent messages that say the athlete is going without food or water, or is being made to cut (e.g. "I haven't had water in 2 days, how do I make weight", "my dad says I can't eat until I make weight"). You said: "Those are coach calls not AI". Which did you mean? (Plain: when a kid or parent types one of those, does SHADOW answer it, or does it say 'take this to your coach'?)" Options as written: "A: Goes to the coach": "How I read your words. SHADOW does not answer these; it tells the athlete or parent to take it to their coach and logs it for staff. This is what the app does today. General weight-cut, sauna and weigh-in questions still get taught."; "B: SHADOW answers": "SHADOW teaches on these like any other weight-cut question. Nothing is held back or logged for staff; the coach is involved only if the athlete goes to them.". Jason: *"B: SHADOW answers"*
+
+**Ruling:** a message from an athlete or parent that says the athlete is going without food or water, or is being made to cut, is not held back by a weight-cut gate. SHADOW teaches on it like any other weight-cut question; no review row or high-risk mark is added for it. A request is withheld only where a rule the app already had, other than the weight-cut and "cleared" gates, withholds it by its own unchanged patterns (emergency handling, the symptom topics, medication, diagnosis, safeguarding).
+
+**Note:** overwatch first read "Those are coach calls not AI" as option A (goes to the coach) and said so on the card; he picked B. The pick governs.
+
+---
+
+
 ## OD-2026-10-10-005 -- SHADOW reply checker: "Your sneaking safety back into things again"; "let the coach make those assements"; no reply is withheld for weight-cut teaching; overwatch adds no safety gates on its own judgment
 
 **Provenance: PRIMARY.** One question card and four typed messages from Jason in the overwatch session ("Overwatch"; transcript `~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`; lines and UTC timestamps given per item). Read by script (records pass, 2026-10-10 local; the rows are stamped 2026-10-11 UTC). The card answer is a button pick quoted exactly; typed messages are quoted exactly, spelling kept. The question and options are quoted as overwatch wrote them. New; edits no earlier entry. It follows on from OD-2026-10-10-004 ruling 1.
