@@ -20,6 +20,7 @@ import {
 } from './drills';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule, type DrillAssignment } from './progression';
+import { recordWorkoutIssue } from './workoutIssues';
 
 // pilot.workout_templates and pilot.workout_template_items are owned by
 // infra/azure/pilot_slice_postgres_workout_templates_v2_migration.sql,
@@ -28,7 +29,8 @@ import { assertNewAssignmentMeetsCueRule, type DrillAssignment } from './progres
 // drillLibraryV3.ts's own design -- a change-proposal review lifecycle for
 // templates is a reasonable future consolidation with drillVersioning.ts, not
 // attempted here. The one write in this module is issueWorkoutTemplate, at the
-// foot: it writes assignments and adopted drills, never a template row.
+// foot: it writes assignments, adopted drills and the issued workout's shape
+// (workoutIssues.ts), never a template row.
 //
 // SCALE LEVEL IS NEVER FORCED. getWorkoutTemplateWithItems returns each
 // item's drill_id and its own scale_level PREFERENCE (nullable) as-is --
@@ -221,21 +223,19 @@ export async function getWorkoutTemplateWithItems(
 //   - anything else                           -> the WHOLE issue is refused and
 //     every such drill is named with its reason. Nothing is written.
 //
-// WHAT IS NOT CARRIED. pilot.drill_assignments has no column for a step's
-// block, its place in the order, its scale level, its contact level or its
-// coach note, so none of those reach the athlete: each step arrives as a
-// separate assignment carrying the drill, its rep count and its minutes. The
-// link back to the template lives in the audit event only. The caller says so
-// (TEMPLATE_STEP_FIELDS_NOT_CARRIED) rather than letting a reader assume the
-// session's structure travelled with it.
+// THE WORKOUT KEEPS ITS SHAPE (lane P7c, OD-2026-10-10-004 ruling 5). The
+// assignment carries the drill, its rep count and its minutes;
+// pilot.drill_assignments has no column for a step's block, its place in the
+// order, its scale level, its contact level or its coach note. Those, and the
+// link back to the template, are written by recordWorkoutIssue
+// (workoutIssues.ts) in the SAME transaction as the assignments: one issue
+// row, one row per step. An issue made before that existed has no such rows
+// and reads as separate assignments.
 //
 // AUTHORIZATION IS THE ROUTE'S. Like issueCoachCard, this trusts its caller to
 // have passed the role gate and assertActorCanAccessAthlete; organizationId is
 // the session's and scopes every read and write below.
 // ---------------------------------------------------------------------------
-
-/** The template step columns an issued assignment has nowhere to store. */
-export const TEMPLATE_STEP_FIELDS_NOT_CARRIED = ['block', 'ordinal', 'scale_level', 'contact_level', 'coach_note'] as const;
 
 // The operational ceiling the promote route enforces (drills/promote/route.ts
 // MAX_CUES): an adopted drill takes the reference's first twelve cues.
@@ -272,6 +272,8 @@ export type TemplateIssueResult =
   | { outcome: 'refused'; message: string; drills: TemplateIssueRefusedDrill[] }
   | {
       outcome: 'issued';
+      /** The issued workout (pilot.workout_issues) that holds the steps' shape. */
+      issue_id: string;
       template: { template_id: string; name: string; version: number };
       steps: TemplateIssuedStep[];
       adopted: TemplateAdoptedDrill[];
@@ -608,7 +610,30 @@ export async function issueWorkoutTemplate(params: {
         steps.push({ step: item.ordinal, item_id: item.item_id, assignment });
       }
 
-      // The only durable link between these assignments and the template.
+      // The workout's shape, on this transaction: block, order, scale level,
+      // contact level and coach note per step, each as the template item has
+      // it, tied to the assignment that step just became.
+      const issuedTemplate = { template_id: template.template_id, name: template.name, version: template.version };
+      const itemById = new Map(items.map((item) => [item.item_id, item]));
+      const issueId = await recordWorkoutIssue(client, {
+        organizationId: params.organizationId,
+        athleteId: params.athleteId,
+        template: issuedTemplate,
+        issuedByAccountId: params.actorAccountId,
+        steps: steps.map((issued) => {
+          const item = itemById.get(issued.item_id) as WorkoutTemplateItemWithDrillHead;
+          return {
+            ordinal: item.ordinal,
+            block: item.block,
+            scale_level: item.scale_level,
+            contact_level: item.contact_level,
+            coach_note: item.coach_note,
+            template_item_id: item.item_id,
+            assignment_id: issued.assignment.assignment_id,
+          };
+        }),
+      });
+
       await writePilotAuditEvent(
         {
           event_type: 'create',
@@ -619,6 +644,7 @@ export async function issueWorkoutTemplate(params: {
           entity_id: template.template_id,
           details: {
             athlete_id: params.athleteId,
+            issue_id: issueId,
             template_name: template.name,
             template_version: template.version,
             steps: steps.map((issued) => ({
@@ -628,7 +654,6 @@ export async function issueWorkoutTemplate(params: {
               drill_id: issued.assignment.drill_id,
             })),
             adopted_drill_ids: adopted.map((drill) => drill.drill_id),
-            not_carried: [...TEMPLATE_STEP_FIELDS_NOT_CARRIED],
           },
         },
         client,
@@ -636,7 +661,8 @@ export async function issueWorkoutTemplate(params: {
 
       return {
         outcome: 'issued' as const,
-        template: { template_id: template.template_id, name: template.name, version: template.version },
+        issue_id: issueId,
+        template: issuedTemplate,
         steps,
         adopted,
       };

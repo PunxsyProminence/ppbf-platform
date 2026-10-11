@@ -280,9 +280,13 @@ interface Written {
   audit: number;
   shadowEvents: number;
   telemetry: number;
+  // The issued workout's shape (lane P7c): written on the same transaction,
+  // so every rollback proven below is proven for these rows too.
+  issues: number;
+  issueSteps: number;
 }
 
-const NOTHING: Written = { drills: 0, assignments: 0, audit: 0, shadowEvents: 0, telemetry: 0 };
+const NOTHING: Written = { drills: 0, assignments: 0, audit: 0, shadowEvents: 0, telemetry: 0, issues: 0, issueSteps: 0 };
 
 /**
  * Everything an issue can write, counted for one gym on the committed ("pool")
@@ -295,7 +299,9 @@ async function written(gym: Gym): Promise<Written> {
             (select count(*)::int from pilot.drill_assignments where organization_id = $1) as assignments,
             (select count(*)::int from pilot.audit_events where organization_id = $1) as audit,
             (select count(*)::int from pilot.shadow_events where organization_id = $1) as "shadowEvents",
-            (select count(*)::int from pilot.shadow_telemetry_events where organization_id = $1) as telemetry`,
+            (select count(*)::int from pilot.shadow_telemetry_events where organization_id = $1) as telemetry,
+            (select count(*)::int from pilot.workout_issues where organization_id = $1) as issues,
+            (select count(*)::int from pilot.workout_issue_steps where organization_id = $1) as "issueSteps"`,
     [gym.organizationId],
   );
   return rows[0];

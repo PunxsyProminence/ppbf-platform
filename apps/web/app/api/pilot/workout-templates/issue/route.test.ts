@@ -25,7 +25,6 @@ jest.mock('@/src/server/pilot/access', () => {
 });
 
 jest.mock('@/src/server/pilot/workoutTemplates', () => ({
-  TEMPLATE_STEP_FIELDS_NOT_CARRIED: ['block', 'ordinal', 'scale_level', 'contact_level', 'coach_note'],
   issueWorkoutTemplate: jest.fn(),
 }));
 
@@ -61,6 +60,7 @@ const BODY = { template_id: 'wtp_1', athlete_id: 'athlete-1' };
 
 const ISSUED = {
   outcome: 'issued',
+  issue_id: '0b0e3f0c-6a53-4d0e-9d0b-3a8f5a1c2d4e',
   template: { template_id: 'wtp_1', name: 'Technical Tuesday', version: 2 },
   steps: [
     { step: 1, item_id: 'wti_1', assignment: { assignment_id: 'assignment_1', drill_id: 'op-1', gap_id: null } },
@@ -221,7 +221,7 @@ describe('the outcomes', () => {
     expect(await res.json()).toMatchObject({ code: 'WORKOUT_TEMPLATE_EMPTY' });
   });
 
-  test('an issue is a 201 that says what was created, and what was not carried', async () => {
+  test('an issue is a 201 that names the issued workout and says what was created', async () => {
     const res = await POST(post(BODY));
 
     expect(res.status).toBe(201);
@@ -229,11 +229,11 @@ describe('the outcomes', () => {
       ok: true,
       organization_id: 'org-1',
       athlete_id: 'athlete-1',
+      issue_id: ISSUED.issue_id,
       template: ISSUED.template,
       created: { assignments: 2, adopted_drills: 1 },
       steps: ISSUED.steps,
       adopted_drills: ISSUED.adopted,
-      not_carried: ['block', 'ordinal', 'scale_level', 'contact_level', 'coach_note'],
     });
   });
 });

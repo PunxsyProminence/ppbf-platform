@@ -41,6 +41,10 @@ jest.mock('./audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('./workoutIssues', () => ({
+  recordWorkoutIssue: jest.fn(),
+}));
+
 jest.mock('./progression', () => {
   const actual = jest.requireActual('./progression');
   return { ...actual, assertNewAssignmentMeetsCueRule: jest.fn() };
@@ -54,7 +58,8 @@ import { getDrillWithDetail, getOtherVersionAdoption, listReferenceLifecycles } 
 import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferenceDrill } from './drills';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
-import { TEMPLATE_STEP_FIELDS_NOT_CARRIED, issueWorkoutTemplate } from './workoutTemplates';
+import { recordWorkoutIssue } from './workoutIssues';
+import { issueWorkoutTemplate } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -67,6 +72,7 @@ const mockPromote = promoteReferenceDrill as jest.Mock;
 const mockCard = issueCoachCard as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCueRule = assertNewAssignmentMeetsCueRule as jest.Mock;
+const mockRecordIssue = recordWorkoutIssue as jest.Mock;
 
 const ORG = 'org-1';
 const TEMPLATE_ID = 'wtp_1';
@@ -187,6 +193,7 @@ function expectNothingWritten() {
   expect(mockTransaction).not.toHaveBeenCalled();
   expect(mockPromote).not.toHaveBeenCalled();
   expect(mockCard).not.toHaveBeenCalled();
+  expect(mockRecordIssue).not.toHaveBeenCalled();
   expect(mockAudit).not.toHaveBeenCalled();
 }
 
@@ -196,6 +203,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   cardCount = 0;
   mockCueRule.mockResolvedValue(undefined);
+  mockRecordIssue.mockResolvedValue('issue-1');
   mockCard.mockImplementation(async (params: { drillId: string }) => {
     cardCount += 1;
     return assignment(params.drillId, cardCount);
@@ -282,18 +290,20 @@ describe('a template whose drills the gym already runs', () => {
       entity_id: TEMPLATE_ID,
       details: {
         athlete_id: ATHLETE,
+        issue_id: 'issue-1',
         template_version: 2,
         steps: [
           { step: 1, item_id: 'wti_1', assignment_id: 'assignment_1', drill_id: 'op-1' },
           { step: 2, item_id: 'wti_2', assignment_id: 'assignment_2', drill_id: 'op-2' },
         ],
         adopted_drill_ids: [],
-        not_carried: [...TEMPLATE_STEP_FIELDS_NOT_CARRIED],
       },
     });
+    expect(event.details).not.toHaveProperty('not_carried');
 
     expect(result).toEqual({
       outcome: 'issued',
+      issue_id: 'issue-1',
       template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday', version: 2 },
       steps: [
         { step: 1, item_id: 'wti_1', assignment: assignment('op-1', 1) },
@@ -851,6 +861,61 @@ describe('drill names, decided before anything is written', () => {
     // The cards still follow the template's step order.
     expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-ref-b', 'op-ref-a']);
     expect(result).toMatchObject({ outcome: 'issued', steps: [{ step: 1 }, { step: 2 }] });
+  });
+});
+
+describe('the issued workout keeps its shape (lane P7c)', () => {
+  const ITEMS = [
+    item(1, { block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.' }),
+    item(2, { block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null }),
+    item(3, { block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.', duration_minutes: null }),
+  ];
+  const LIBRARY = {
+    'ref-1': { state: 'operational', operational: 'op-1' },
+    'ref-2': { state: 'operational', operational: 'op-2' },
+    'ref-3': { state: 'operational', operational: 'op-3' },
+  };
+
+  test('every step is recorded on the transaction with its block, order, levels and note exactly as the template item has them', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockRecordIssue).toHaveBeenCalledTimes(1);
+    const [client, recorded] = mockRecordIssue.mock.calls[0];
+    expect(client).toBe(transactionClient);
+    expect(recorded).toEqual({
+      organizationId: ORG,
+      athleteId: ATHLETE,
+      template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday', version: 2 },
+      issuedByAccountId: 'coach-1',
+      steps: [
+        { ordinal: 1, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', template_item_id: 'wti_1', assignment_id: 'assignment_1' },
+        // A level the coach left open stays open, and a missing note stays missing.
+        { ordinal: 2, block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null, template_item_id: 'wti_2', assignment_id: 'assignment_2' },
+        // The contact level is the coach's entry: recorded as written.
+        { ordinal: 3, block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.', template_item_id: 'wti_3', assignment_id: 'assignment_3' },
+      ],
+    });
+  });
+
+  test('the shape is written after every card and before the audit event, inside the one transaction', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    const lastCard = Math.max(...mockCard.mock.invocationCallOrder);
+    expect(mockRecordIssue.mock.invocationCallOrder[0]).toBeGreaterThan(lastCard);
+    expect(mockRecordIssue.mock.invocationCallOrder[0]).toBeLessThan(mockAudit.mock.invocationCallOrder[0]);
+  });
+
+  test('a failure to record the shape fails the issue and no audit event is written', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+    mockRecordIssue.mockRejectedValue(new Error('insert refused'));
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toThrow('insert refused');
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 
