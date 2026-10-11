@@ -1093,7 +1093,8 @@ describe('drillVersioning.ts against real Postgres', () => {
 // of the checks Restore makes (drills.ts#updateDrill: the reference must still
 // be active; the route applies the cue rule). Retire and Restore here are the
 // real updateDrill, not hand-written SQL, so the gate is proven against the
-// rows the coach page actually leaves behind.
+// rows the coach page actually leaves behind. The one exception is the
+// two-connection case, which says why it writes the retire out.
 //
 // "Retired" is the definition getOperationalDrillLifecycle already uses: no
 // version of the lineage is active. A drill that was only REFINED (an older
@@ -1345,10 +1346,54 @@ describe('a retired drill cannot be changed through a change proposal (OD-2026-1
 
       const onEarlier = await propose('drill-jab', 'Written against the earlier version.');
       expect(onEarlier.review_state).toBe('proposed');
+
+      // And the queue says the same thing the adopt will: stale, not retired.
+      // lineage_retired is about the drill, not about the version the
+      // proposal happens to be written against.
+      const listed = (await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' }))
+        .find((row) => row.proposal_id === onEarlier.proposal_id);
+      expect(listed).toMatchObject({ base_is_current: false, lineage_retired: false });
+
       await expect(adopt(onEarlier.proposal_id)).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
 
       const onCurrent = await propose(newDrillVersion.drill_id, 'Written against the current version.');
       await expect(adopt(onCurrent.proposal_id)).resolves.toBeDefined();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test("another gym's drill under the same id does not make this gym's retired drill look in use", async () => {
+    // A drill id is unique per gym, not across gyms, so two gyms can hold the
+    // same id and the same lineage id. Each of the three reads asks about the
+    // caller's gym only; were any of them to ask about the lineage id alone,
+    // the other gym's running drill would answer for this gym's retired one.
+    const client = await freshDatabase('ppbf_test_drillver_retired_org');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+      await insertDrill(client, { organizationId: ORG_B, drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const proposal = await propose('drill-jab');
+      await retire('drill-jab');
+
+      await expect(propose('drill-jab')).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+
+      const listed = (await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' }))
+        .find((row) => row.proposal_id === proposal.proposal_id);
+      expect(listed).toMatchObject({ base_is_current: true, lineage_retired: true });
+
+      await expect(adopt(proposal.proposal_id)).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+      expect(await versionsOf(client, 'drill-jab')).toEqual([[1, 'drill-jab', false]]);
+
+      // The other gym's drill was never touched.
+      const other = await client.query(
+        `select version, active from pilot.drills where organization_id = $1 and drill_id = 'drill-jab'`,
+        [ORG_B],
+      );
+      expect(other.rows).toEqual([{ version: 1, active: true }]);
     } finally {
       activeClient = null;
       await client.end();

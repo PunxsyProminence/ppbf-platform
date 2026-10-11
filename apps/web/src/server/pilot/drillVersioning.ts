@@ -422,8 +422,9 @@ export async function adoptDrillChangeProposal(input: {
     //
     // An active newest version means the drill is in use and costs no query.
     // Otherwise the lineage is asked: only when NO version is active is the
-    // drill retired. The newest version is locked above and Retire is an
-    // UPDATE of that row, so a retirement that committed first is seen here.
+    // drill retired. The newest version is locked above, and when it is the
+    // version in use Retire is an UPDATE of that row, so a retirement that
+    // committed first is seen here.
     //
     // BEFORE the staleness check on purpose. "Written against an earlier
     // version" invites a re-proposal against the newest one, and on a retired
