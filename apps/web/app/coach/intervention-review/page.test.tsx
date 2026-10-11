@@ -291,10 +291,65 @@ describe('unlinking evidence', () => {
 
     expect(server.patches).toHaveLength(1);
     expect(screen.getByRole('alert').textContent).toContain(shown);
+    expect(screen.getByRole('alert').textContent).toContain('Failed');
     expect(screen.getByText(/training attempt att-9/).textContent).not.toContain('(removed');
     // Still open with what was typed, so nothing has to be re-entered.
     expect((screen.getByLabelText('Why does this no longer count? (required)') as HTMLInputElement).value)
       .toBe('not mine to remove');
+  });
+
+  test('a removal that is saved while the reload fails is shown as saved: form closed and the link stamped removed', async () => {
+    const patches: unknown[] = [];
+    let saved = false;
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)));
+        saved = true;
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    await openPage();
+
+    await click('Remove link');
+    await typeReason('linked the wrong attempt');
+    await click('Remove it');
+
+    expect(patches).toHaveLength(1);
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).toContain('The list could not be refreshed. Reload the page to see the latest.');
+    expect(alert).not.toContain('Failed');
+    // No open form inviting a second removal, which the server would answer 404...
+    expect(screen.queryByRole('button', { name: 'Remove it' })).toBeNull();
+    // ...and the link reads as the server left it, though the reload never came back.
+    expect(screen.getByText(/training attempt att-9/).textContent).toContain('(removed: linked the wrong attempt)');
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(1);
+    // The other link is untouched.
+    expect(screen.getByText(/film study prop-7/).textContent).not.toContain('(removed');
+  });
+
+  test('linking evidence shares that handling: saved while the reload fails closes the form and says saved', async () => {
+    let saved = false;
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        saved = true;
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    await openPage();
+
+    await click('Link evidence');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Source record id'), { target: { value: 'att-12' } });
+    });
+    await click('Link it');
+
+    expect(screen.getByRole('alert').textContent).toContain('Saved');
+    expect(screen.queryByRole('button', { name: 'Link it' })).toBeNull();
   });
 
   test('Cancel closes the form and sends nothing', async () => {

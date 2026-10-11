@@ -69,6 +69,10 @@ const ADHERENCE_OPTIONS: Array<{ value: string; label: string }> = [
 
 const CONTEXT_OPTIONS = ['unknown', 'controlled', 'constrained_live', 'live'];
 
+// Shown when a write went through and only the reload after it failed: the
+// work is saved, and saying "Failed" would invite doing it twice.
+const NOT_REFRESHED = 'The list could not be refreshed. Reload the page to see the latest.';
+
 const EMPTY_FACTS = {
   outcome: 'completed', adherence: 'unknown', trained_context: 'unknown',
   deviations: '', deviation_reason: '', stop_change_reason: '', notes: '',
@@ -253,9 +257,15 @@ export default function InterventionExecutionsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Correction failed (${response.status})`);
       }
+      // The correction is in. Show it from the server's own answer, so a
+      // reload that fails cannot leave the superseded record on screen.
+      const corrected = ((await response.json().catch(() => ({}))) as { item?: ExecutionRow }).item;
       closeFactsForm();
-      await reload();
+      if (corrected?.execution_id) {
+        setExecutions((rows) => rows.map((shown) => (shown.execution_id === row.execution_id ? corrected : shown)));
+      }
       setErrorMessage(null);
+      await reload().catch(() => setErrorMessage(NOT_REFRESHED));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to correct the execution.');
     } finally {
@@ -324,10 +334,10 @@ export default function InterventionExecutionsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
+              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
               </div>
             </div>

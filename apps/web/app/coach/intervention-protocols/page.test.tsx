@@ -255,11 +255,64 @@ describe('revising a protocol', () => {
 
     expect(server.sent).toHaveLength(1);
     expect(screen.getByRole('alert').textContent).toContain(shown);
+    expect(screen.getByRole('alert').textContent).toContain('Failed');
     expect(screen.getByText(/v2 · Jordan P\./)).toBeTruthy();
     expect(screen.getByText(/aerobic capacity limits round-3 output/)).toBeTruthy();
     // Still revising, with what was typed.
     expect(fieldValue(/Hypothesis/)).toBe('not mine to rewrite');
     expect(screen.getByRole('button', { name: 'File revision' })).toBeTruthy();
+  });
+
+  test('a revision that is saved while the reload fails is shown as saved: the new version on screen, and the next revision aimed at it', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let saved = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        sent.push(body);
+        saved = true;
+        // The route answers a revision with the new version it wrote.
+        const item = { ...PROTOCOL, protocol_id: 'p-2', version: 3, hypothesis: body.hypothesis };
+        return { ok: true, json: async () => ({ item }) } as Response;
+      }
+      if (url.includes('/intervention-protocols')) {
+        if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items: [PROTOCOL] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionProtocolsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Revise' }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Hypothesis/), { target: { value: 'it is pacing, not conditioning' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'File revision' }));
+    });
+
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).toContain('The list could not be refreshed. Reload the page to see the latest.');
+    expect(alert).not.toContain('Failed');
+    expect(screen.getByText('File a protocol')).toBeTruthy();
+    expect(screen.getByText(/v3 · Jordan P\./)).toBeTruthy();
+    expect(screen.getByText(/it is pacing, not conditioning/)).toBeTruthy();
+
+    // Revising again goes against the version just filed, not the one it replaced.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Revise' }));
+    });
+    expect(screen.getByText('Revise protocol (files version 4)')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'File revision' }));
+    });
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({ action: 'revise', protocol_id: 'p-2' });
   });
 
   test('a non-positive exposure in a revision never leaves the page', async () => {

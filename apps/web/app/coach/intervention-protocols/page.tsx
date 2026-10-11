@@ -52,6 +52,10 @@ const EXPOSURE_DIMENSIONS: Array<{ key: string; label: string }> = [
   { key: 'task_exposures', label: 'Task exposures' },
 ];
 
+// Shown when a write went through and only the reload after it failed: the
+// work is saved, and saying "Failed" would invite doing it twice.
+const NOT_REFRESHED = 'The list could not be refreshed. Reload the page to see the latest.';
+
 const EMPTY_FORM = {
   title: '',
   target_problem: '',
@@ -172,9 +176,16 @@ export default function InterventionProtocolsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `${revising ? 'Revision' : 'Create'} failed (${response.status})`);
       }
+      // The write is in. A revision is shown from the server's own answer,
+      // so a reload that fails cannot leave the superseded version on screen.
+      const filed = ((await response.json().catch(() => ({}))) as { item?: ProtocolRow }).item;
+      const replaced = revising?.protocol_id;
       clearForm();
-      await reload();
+      if (replaced && filed?.protocol_id) {
+        setProtocols((rows) => rows.map((shown) => (shown.protocol_id === replaced ? filed : shown)));
+      }
       setErrorMessage(null);
+      await reload().catch(() => setErrorMessage(NOT_REFRESHED));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : `Unable to file the ${revising ? 'revision' : 'protocol'}.`);
     } finally {
@@ -229,10 +240,10 @@ export default function InterventionProtocolsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
+              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
               </div>
             </div>

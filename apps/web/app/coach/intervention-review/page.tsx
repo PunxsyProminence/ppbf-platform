@@ -79,6 +79,10 @@ const LEARNING_SIGNALS = [
 
 const words = (value: string) => value.replaceAll('_', ' ');
 
+// Shown when a write went through and only the reload after it failed: the
+// work is saved, and saying "Failed" would invite doing it twice.
+const NOT_REFRESHED = 'The list could not be refreshed. Reload the page to see the latest.';
+
 function exposureText(exposure: Record<string, number>): string {
   const entries = Object.entries(exposure);
   if (entries.length === 0) return 'none recorded';
@@ -139,15 +143,23 @@ export default function InterventionReviewPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `${failure} (${response.status})`);
       }
-      await reload();
-      setErrorMessage(null);
-      return true;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : failure);
+      setBusy(false);
       return false;
+    }
+    // The write is done from here on. A reload that fails is reported as
+    // that, and the caller still closes its form: leaving it open would
+    // invite sending the same write again.
+    try {
+      await reload();
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage(NOT_REFRESHED);
     } finally {
       setBusy(false);
     }
+    return true;
   };
 
   const post = (body: Record<string, unknown>, failure: string) => send('POST', body, failure);
@@ -167,6 +179,15 @@ export default function InterventionReviewPage() {
       removed_reason: reason,
     }, 'Unable to remove the link.');
     if (ok) {
+      // Stamped here as the server stamped it, so the link reads removed even
+      // when the reload did not come back. After a good reload it already
+      // does, and this changes nothing.
+      setItems((current) => current.map((entry) => ({
+        ...entry,
+        evidence: entry.evidence.map((link) => (link.link_id === linkId && link.status === 'active'
+          ? { ...link, status: 'removed', removed_reason: reason }
+          : link)),
+      })));
       setRemovingLink(null);
       setRemoveReason('');
     }
@@ -235,10 +256,10 @@ export default function InterventionReviewPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
+              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
               </div>
             </div>

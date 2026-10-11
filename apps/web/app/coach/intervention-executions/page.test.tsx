@@ -332,6 +332,7 @@ describe('correcting a record', () => {
 
     expect(server.patches).toHaveLength(1);
     expect(screen.getByRole('alert').textContent).toContain(shown);
+    expect(screen.getByRole('alert').textContent).toContain('Failed');
     expect(screen.queryByText(/corrected \(v2\)/)).toBeNull();
     expect(screen.getByText(/rounds: 3$/)).toBeTruthy();
     // Still open with what was typed.
@@ -400,15 +401,21 @@ describe('correcting a record', () => {
     });
   });
 
-  test('a correction that is saved while the reload fails still closes the form, and says the list could not be loaded', async () => {
-    const patches: unknown[] = [];
+  test('a correction that is saved while the reload fails is shown as saved: form closed, the corrected record on screen, and the next correction aimed at it', async () => {
+    const patches: Array<Record<string, unknown>> = [];
     let saved = false;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (init?.method === 'PATCH') {
-        patches.push(JSON.parse(String(init.body)));
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
         saved = true;
-        return { ok: true, json: async () => ({ item: {} }) } as Response;
+        // The route answers a correction with the new version it wrote.
+        const item = {
+          ...EXECUTION, execution_id: 'ex-2', version: 2,
+          actual_exposure: body.actual_exposure, correction_reason: body.correction_reason,
+        };
+        return { ok: true, json: async () => ({ item }) } as Response;
       }
       if (url.includes('/intervention-executions')) {
         if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
@@ -424,13 +431,27 @@ describe('correcting a record', () => {
     });
 
     await change('What was wrong? (required)', 'wrong round count');
+    await change('Rounds', '4');
     await press('Record correction');
 
     expect(patches).toHaveLength(1);
-    // The correction went in. The form must not sit open inviting a second one.
+    // Said as saved, not as failed, and not by leaving the form open.
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).toContain('The list could not be refreshed. Reload the page to see the latest.');
+    expect(alert).not.toContain('Failed');
     expect(screen.queryByRole('button', { name: 'Record correction' })).toBeNull();
-    expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
-    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    // The record on screen is the corrected one the server returned...
+    expect(screen.getByText(/corrected \(v2\)/)).toBeTruthy();
+    expect(screen.getByText(/rounds: 4$/)).toBeTruthy();
+    expect(screen.getByText('Corrected because:').parentElement?.textContent).toBe('Corrected because: wrong round count');
+
+    // ...so a further correction goes to it, not to the version just superseded.
+    await press('Correct record');
+    await change('What was wrong? (required)', 'and the adherence');
+    await press('Record correction');
+    expect(patches).toHaveLength(2);
+    expect(patches[1]).toMatchObject({ execution_id: 'ex-2', correction_reason: 'and the adherence' });
   });
 
   test('switching straight from correcting one record to correcting another carries nothing across', async () => {
