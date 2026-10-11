@@ -625,7 +625,8 @@ describe('cleared tonight against real Postgres', () => {
 
       const [row] = await getOrganizationClearedTonight(ORG_A);
 
-      expect(row.tonight.medical).toMatchObject({ status: 'cleared_expired', current: false });
+      // The expiry leaves as ISO, read from the real timestamptz column.
+      expect(row.tonight.medical).toEqual({ status: 'cleared_expired', current: false, expires_at: '2026-02-01T00:00:00.000Z' });
       expect(row.tonight.answer).toBe('cleared_to_train');
     } finally {
       activeClient = null;

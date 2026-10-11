@@ -228,9 +228,16 @@ describe('who reads the cleared-tonight answer', () => {
     // The walk found the tree: an empty walk must not pass this.
     expect(files.length).toBeGreaterThan(500);
     const importers = files
-      .filter((file) => /from '[^']*\/clearedTonight'/.test(fs.readFileSync(file, 'utf8')))
+      .filter((file) => /['"][^'"]*\/clearedTonight['"]/.test(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(APP_WEB, file).split(path.sep).join('/'));
     expect(importers).toEqual(['app/api/pilot/admin/waiver-status/route.ts']);
+  });
+});
+
+describe('a record this module has no word for', () => {
+  test('a hold scope outside the vocabulary is unavailable, never cleared', () => {
+    const stray = { ...holdRead('all_training'), scope: 'weekends_only' as unknown as TrainingHoldScope };
+    expect(clearedTonightAnswer(stray, CLEARED)).toBe('unavailable');
   });
 });
 
@@ -309,7 +316,9 @@ describe('getOrganizationClearedTonight', () => {
       scope: 'all_training',
       athlete_explanation: 'Rest this week.',
       lift_condition_text: 'A note from your doctor.',
-      expires_at: '2026-10-20 12:00:00+00',
+      // ISO, not the Postgres text it was read as: a tablet's browser must be
+      // able to read the day.
+      expires_at: '2026-10-20T12:00:00.000Z',
     });
     const sent = JSON.stringify(row);
     expect(sent).not.toContain('STAFF-ONLY');
@@ -332,7 +341,8 @@ describe('getOrganizationClearedTonight', () => {
   // The time bound is shadowMedicalStatus's own (isClearanceCurrent): a stored
   // 'cleared' past its expiry is not a clearance.
   test('a clearance past its stated expiry is not a clearance tonight', async () => {
-    mockMedical.mockResolvedValue(medicalRow('cleared', { expires_at: '2026-10-01T00:00:00.000Z' }));
+    // As Postgres hands it over (expires_at::text), not as ISO.
+    mockMedical.mockResolvedValue(medicalRow('cleared', { expires_at: '2026-10-01 00:00:00+00' }));
 
     const [row] = await getOrganizationClearedTonight('org-1', NOW);
 

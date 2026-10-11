@@ -55,7 +55,13 @@ import {
  * compliance.ts says closing a violation "does not clear" an athlete), so
  * none of them can move the answer here either.
  *
- * A SOURCE THAT COULD NOT BE READ IS 'unavailable', NEVER 'cleared'.
+ * A SOURCE THAT COULD NOT BE READ IS 'unavailable', NEVER 'cleared'. One case
+ * is inherited rather than decided here: listTrainingHolds reads a database
+ * with no training_holds table at all as "no holds" (its documented
+ * pre-migration contract, the same one the enforcement reads keep). Such a
+ * database can hold no hold, so that is not a false answer; every other hold
+ * read failure, and every medical read failure including a missing table, is
+ * 'unavailable'.
  */
 
 export const CLEARED_TONIGHT_ANSWERS = [
@@ -137,8 +143,31 @@ const RESTRICTIVENESS: Record<KnownAnswer, number> = {
   not_cleared: 3,
 };
 
-function holdAnswer(hold: ClearedTonightHold | null): KnownAnswer {
-  return hold ? HOLD_SCOPE_ANSWER[hold.scope] : 'cleared';
+/**
+ * No hold stops nothing. A scope this module has no answer for is null, read
+ * as "nobody could tell" -- the column's CHECK forbids one today, and the
+ * Record above fails the build before a new scope could get here unanswered.
+ */
+function holdAnswer(hold: ClearedTonightHold | null): KnownAnswer | null {
+  if (!hold) return 'cleared';
+  return (HOLD_SCOPE_ANSWER as Partial<Record<string, KnownAnswer>>)[hold.scope] ?? null;
+}
+
+/** For choosing which of two holds to report: an unanswerable one outranks all. */
+function holdRank(hold: ClearedTonightHold): number {
+  return RESTRICTIVENESS[holdAnswer(hold) ?? 'not_cleared'];
+}
+
+/**
+ * Postgres hands an expiry over as its own text ('2026-10-20 12:00:00+00').
+ * Node reads that; a tablet's browser may not, and the screen would then state
+ * an expiry with no day. Sent as ISO so the day can always be shown. A value
+ * that will not parse is passed through as it is rather than dropped.
+ */
+function isoInstant(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? value : at.toISOString();
 }
 
 /**
@@ -214,10 +243,10 @@ async function readActiveHolds(organizationId: string): Promise<Map<string, Clea
       scope: hold.scope,
       athlete_explanation: hold.athlete_explanation,
       lift_condition_text: hold.lift_condition_text,
-      expires_at: hold.expires_at,
+      expires_at: isoInstant(hold.expires_at),
     };
     const existing = byAthlete.get(hold.athlete_id);
-    if (!existing || RESTRICTIVENESS[holdAnswer(next)] > RESTRICTIVENESS[holdAnswer(existing)]) {
+    if (!existing || holdRank(next) > holdRank(existing)) {
       byAthlete.set(hold.athlete_id, next);
     }
   }
@@ -230,7 +259,7 @@ async function readMedical(organizationId: string, athleteId: string, now: Date)
     return {
       status: effectiveMedicalStatus(record, now),
       current: isClearanceCurrent(record, now),
-      expires_at: record?.expires_at ?? null,
+      expires_at: isoInstant(record?.expires_at),
     };
   } catch (error) {
     // Includes a database the medical-status table has not reached: nobody

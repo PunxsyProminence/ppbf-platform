@@ -585,7 +585,7 @@ export async function getOrganizationViolations(
 /**
  * How many violations each athlete has that are still open, by this module's
  * one definition of open. A count per athlete and nothing else: the
- * cleared-tonight answer (waiverCompliance.ts) lists it as a fact on file and
+ * cleared-tonight answer (clearedTonight.ts) lists it as a fact on file and
  * never reads it as a verdict, because resolving or dismissing a violation
  * does not clear an athlete and an open one stops nothing.
  *
