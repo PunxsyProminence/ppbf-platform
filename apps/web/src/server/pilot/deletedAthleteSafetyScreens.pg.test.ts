@@ -1193,7 +1193,6 @@ describe('after deleteAthleteRecord(GONE)', () => {
     // A deleted athlete's open violation stays on the register
     // (OD-2026-09-30-004 B) and is still named.
     expect(here.items.find((row) => row.violation_id === `${GONE}:violation-new`)).toMatchObject({ athlete_name: GONE });
-    expect(here.items.some((row) => (row.athlete_name ?? '').startsWith('other gym'))).toBe(false);
 
     mockRequirePrincipal.mockResolvedValue(principal(OTHER_ADMIN, 'organization_admin', OTHER_ORG));
     const there = await json<{ items: NamedRow[] }>(

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowDataDeletionQueue from '@/components/ShadowDataDeletionQueue';
@@ -102,17 +102,26 @@ export default function AdminComplianceCenterPage() {
   // Per-row, not a single scalar: a transition in flight on one violation
   // must never disable another row's buttons.
   const [transitioningIds, setTransitioningIds] = useState<Set<string>>(new Set());
-  const [metrics, setMetrics] = useState({
-    total: 0,
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    new: 0,
-    acknowledged: 0,
-    escalated: 0,
-    resolved: 0,
-  });
+  // Counted from the rows on screen, never held beside them: a tile that is
+  // its own state falls behind the list the moment a re-read sets one and
+  // not the other.
+  const metrics = useMemo(
+    () => ({
+      total: violations.length,
+      critical: violations.filter((v) => v.severity === 'critical').length,
+      high: violations.filter((v) => v.severity === 'high').length,
+      medium: violations.filter((v) => v.severity === 'medium').length,
+      low: violations.filter((v) => v.severity === 'low').length,
+    }),
+    [violations],
+  );
+  // The tab the admin is looking at right now, readable from a request that
+  // was sent before they changed it. A re-read after an escalate or a
+  // transition is asked for one tab; if another is showing by the time it
+  // answers, its rows belong to nobody and are dropped. Without this, rows
+  // of the old tab landed under the new one, the status filter hid them all,
+  // and the list read as a loaded, empty answer.
+  const showingTabRef = useRef(statusFilter);
 
   // Load violations: on entry, and again each time the status tab changes.
   // `stale` drops an answer that arrives after a later tab was chosen.
@@ -132,19 +141,6 @@ export default function AdminComplianceCenterPage() {
         setViolations(allViolations);
         setReadLimit(typeof data.limit === 'number' ? data.limit : null);
 
-        // Calculate metrics
-        const calc = {
-          total: allViolations.length,
-          critical: allViolations.filter((v) => v.severity === 'critical').length,
-          high: allViolations.filter((v) => v.severity === 'high').length,
-          medium: allViolations.filter((v) => v.severity === 'medium').length,
-          low: allViolations.filter((v) => v.severity === 'low').length,
-          new: allViolations.filter((v) => v.status === 'new').length,
-          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
-          escalated: allViolations.filter((v) => v.status === 'escalated').length,
-          resolved: allViolations.filter((v) => v.status === 'resolved').length,
-        };
-        setMetrics(calc);
         setDataAuthoritative(true);
         setErrorMessage('');
       } catch (error) {
@@ -189,25 +185,14 @@ export default function AdminComplianceCenterPage() {
       setSelectedViolation(null);
       setEscalateToRole('organization_admin');
 
-      // Reload violations
-      const reloadRes = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
+      // Reload the tab that was showing when this was sent.
+      const askedTab = statusFilter;
+      const reloadRes = await fetch(violationsUrl(askedTab), { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-        const allViolations = data.items ?? [];
-        setViolations(allViolations);
-
-        const calc = {
-          total: allViolations.length,
-          critical: allViolations.filter((v) => v.severity === 'critical').length,
-          high: allViolations.filter((v) => v.severity === 'high').length,
-          medium: allViolations.filter((v) => v.severity === 'medium').length,
-          low: allViolations.filter((v) => v.severity === 'low').length,
-          new: allViolations.filter((v) => v.status === 'new').length,
-          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
-          escalated: allViolations.filter((v) => v.status === 'escalated').length,
-          resolved: allViolations.filter((v) => v.status === 'resolved').length,
-        };
-        setMetrics(calc);
+        if (showingTabRef.current === askedTab) {
+          setViolations(data.items ?? []);
+        }
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to escalate violation');
@@ -260,10 +245,13 @@ export default function AdminComplianceCenterPage() {
       // Reconcile with server truth on every terminal outcome: after a 409
       // the rendered state is stale by definition.
       try {
-        const reloadRes = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
+        const askedTab = statusFilter;
+        const reloadRes = await fetch(violationsUrl(askedTab), { credentials: 'include' });
         if (reloadRes.ok) {
           const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-          setViolations(data.items ?? []);
+          if (showingTabRef.current === askedTab) {
+            setViolations(data.items ?? []);
+          }
         }
       } catch {
         // The action's own outcome message stands; a failed reload must not
@@ -279,6 +267,9 @@ export default function AdminComplianceCenterPage() {
     if (!dataAuthoritative) return '--';
     return String(value);
   };
+  // The same rule for the two "X of Y loaded" counts: a read in flight or a
+  // read that failed has no count to state.
+  const countShown = metricValue;
 
   return (
     <RoleStandaloneView
@@ -355,7 +346,7 @@ export default function AdminComplianceCenterPage() {
         {/* The window the figures above were computed over. Stated only when
             there are rows and a server-reported cap to state -- a caveat over
             an unread or empty register would be furniture explaining nothing. */}
-        {dataAuthoritative && readLimit !== null && violations.length > 0 ? (
+        {!isLoading && dataAuthoritative && readLimit !== null && violations.length > 0 ? (
           <p className="t-muted">
             These figures cover the {readLimit} most recently filed{statusFilter === 'all' ? '' : ` ${statusFilter}`} violations,
             newest first — not this gym&rsquo;s whole compliance record. A violation filed before that window is
@@ -368,7 +359,10 @@ export default function AdminComplianceCenterPage() {
             {STATUS_TABS.map((status) => (
               <button
                 key={status}
-                onClick={() => setStatusFilter(status)}
+                onClick={() => {
+                  showingTabRef.current = status;
+                  setStatusFilter(status);
+                }}
                 aria-pressed={statusFilter === status}
                 className={`inline-flex min-h-[44px] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] transition ${
                   statusFilter === status
@@ -398,7 +392,7 @@ export default function AdminComplianceCenterPage() {
               rows on file -- the read is capped. Said as "loaded" so the
               denominator stops reading as the register's size. */}
           <div className="t-muted ml-auto">
-            Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'} loaded
+            Showing {countShown(filteredViolations.length)} of {countShown(violations.length)} loaded
           </div>
         </section>
 
@@ -414,7 +408,7 @@ export default function AdminComplianceCenterPage() {
         {/* Violations List */}
         <section>
           <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>
-            Violations ({filteredViolations.length} of {violations.length} loaded)
+            Violations ({countShown(filteredViolations.length)} of {countShown(violations.length)} loaded)
           </h2>
           <div className="space-y-[var(--s4)]">
             {/* A register that failed to load is not a register the filters

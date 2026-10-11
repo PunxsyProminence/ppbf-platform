@@ -484,3 +484,103 @@ test('after a transition the page re-reads the tab that is showing, not the whol
   const reads = readsOf(fetchMock);
   expect(reads[reads.length - 1].endsWith('?status=new')).toBe(true);
 });
+
+/** A response the test releases by hand, to put two reads in a chosen order. */
+function deferred() {
+  let release!: (response: Response) => void;
+  const promise = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+const rowsResponse = (items: Array<Record<string, unknown>>) =>
+  ({ ok: true, json: async () => ({ items, limit: 50 }) }) as Response;
+
+// REVIEW FINDING (PR #1456): a re-read sent from one tab and answered after
+// the admin moved to another put the old tab's rows under the new tab. The
+// status filter then hid every one of them and the list read "No violations
+// match" over a loaded register -- the false empty this page exists to avoid.
+test('a re-read that answers after the tab changed does not replace the new tab’s rows', async () => {
+  const lateReload = deferred();
+  let newTabReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return { ok: true, json: async () => ({ ok: true }) } as Response;
+    const status = statusOf(input);
+    if (status === 'new') {
+      newTabReads += 1;
+      // The first read of the tab answers at once; the re-read after the
+      // transition is the one held back.
+      return newTabReads === 1 ? rowsResponse([violation({ athlete_name: 'New Kid' })]) : lateReload.promise;
+    }
+    if (status === 'dismissed') {
+      return rowsResponse([violation({ violation_id: 'v-dis', status: 'dismissed', athlete_name: 'Dismissed Kid' })]);
+    }
+    return rowsResponse([]);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('new');
+  await screen.findByText('Athlete: New Kid');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+  await openTab('dismissed');
+  expect(await screen.findByText('Athlete: Dismissed Kid')).toBeTruthy();
+
+  await act(async () => {
+    lateReload.release(rowsResponse([violation({ status: 'acknowledged', athlete_name: 'New Kid' })]));
+  });
+
+  expect(screen.getByText('Athlete: Dismissed Kid')).toBeTruthy();
+  expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
+});
+
+test('the tiles count the rows on screen after a transition’s re-read', async () => {
+  let newTabReads = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return { ok: true, json: async () => ({ ok: true }) } as Response;
+    if (statusOf(input) !== 'new') return rowsResponse([]);
+    newTabReads += 1;
+    // Acknowledged, so it has left the "new" tab by the re-read.
+    return rowsResponse(newTabReads === 1 ? [violation({ severity: 'critical' })] : []);
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('new');
+  const tile = () => screen.getByText(/^Total/).closest('article') as HTMLElement;
+  await waitFor(() => expect(within(tile()).getByText('1')).toBeTruthy());
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+
+  await waitFor(() => expect(within(tile()).getByText('0')).toBeTruthy());
+  expect(screen.getByText(/Violations \(0 of 0 loaded\)/)).toBeTruthy();
+});
+
+test('while a tab’s read is in flight no count is stated over the previous tab’s rows', async () => {
+  const slowTab = deferred();
+  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+    (statusOf(input) === 'dismissed' ? slowTab.promise : rowsResponse([violation(), violation({ violation_id: 'v2' })]))) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  expect(screen.getByText(/Violations \(2 of 2 loaded\)/)).toBeTruthy();
+
+  await openTab('dismissed');
+
+  expect(screen.getByText(/Violations \(\.\.\. of \.\.\. loaded\)/)).toBeTruthy();
+  expect(screen.queryByText(/most recently filed/i)).toBeNull();
+  expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
+
+  await act(async () => {
+    slowTab.release(rowsResponse([]));
+  });
+  expect(await screen.findByText(/Violations \(0 of 0 loaded\)/)).toBeTruthy();
+});
