@@ -12,9 +12,11 @@
 // get wrong.
 
 import {
+  FAMILY_VISIBLE_OBJECTIVE_STATUSES,
   FULL_SPECTRUM_DOMAINS,
   OBJECTIVE_STATUSES,
   blockObjectiveShapeError,
+  isFamilyVisibleObjectiveStatus,
 } from './athleteDevelopmentBlockObjectives';
 
 const VALID = {
@@ -86,4 +88,19 @@ test('the lifecycle vocabulary is the parent block\'s, and it is closed', () => 
   }
   expect(blockObjectiveShapeError({ ...VALID, status: 'archived' as never }))
     .toMatch(/Unknown objective status 'archived'/);
+});
+
+test('a family reads active and completed objectives, and every other status is cut', () => {
+  // OD-2026-10-09-004 "Hide them (Recommended)". Written as the full
+  // vocabulary split two ways, so a fifth status cannot be added without
+  // somebody deciding which side of the line it sits on.
+  expect([...FAMILY_VISIBLE_OBJECTIVE_STATUSES]).toEqual(['active', 'completed']);
+  expect(OBJECTIVE_STATUSES.filter((status) => isFamilyVisibleObjectiveStatus(status)))
+    .toEqual(['active', 'completed']);
+  expect(OBJECTIVE_STATUSES.filter((status) => !isFamilyVisibleObjectiveStatus(status)))
+    .toEqual(['draft', 'cancelled']);
+  // Not a status at all is not visible either -- the rule admits, it does not exclude.
+  for (const unknown of ['', 'archived', 'Active', 'ACTIVE', ' active']) {
+    expect(isFamilyVisibleObjectiveStatus(unknown)).toBe(false);
+  }
 });

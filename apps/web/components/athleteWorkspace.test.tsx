@@ -64,6 +64,9 @@ let storedCheckIn: Record<string, unknown> | null;
 let checkInReadFails: boolean;
 /** A-FIN-01: hold the wellness READ open for the whole test, so "still loading" can be asserted. */
 let checkInReadPending: boolean;
+// GET /api/pilot/athlete/tracks: what it answers under `tracks`, or a failure.
+let storedTracks: unknown = [];
+let tracksReadStatus: 'ok' | 'refused' | 'offline' = 'ok';
 let assignmentsFail = false;
 let assignmentsPending = false;
 
@@ -233,6 +236,8 @@ beforeEach(() => {
   storedCheckIn = checkedInRecord();
   checkInReadFails = false;
   checkInReadPending = false;
+  storedTracks = [];
+  tracksReadStatus = 'ok';
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -240,6 +245,11 @@ beforeEach(() => {
 
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
+    }
+    if (url.includes('/api/pilot/athlete/tracks')) {
+      if (tracksReadStatus === 'offline') throw new Error('tracks offline');
+      if (tracksReadStatus === 'refused') return jsonResponse({ error: 'Forbidden: role not allowed' }, false);
+      return jsonResponse({ tracks: storedTracks });
     }
     if (url.includes('/api/pilot/athlete/check-in')) {
       if (checkInReadFails) throw new Error('check-in offline');
@@ -390,6 +400,7 @@ const GROUP_FOR_SURFACE: Record<string, string> = {
   Floor: 'Today',
   Goals: 'Development',
   Attempts: 'Development',
+  Tracks: 'Development',
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
@@ -2139,28 +2150,22 @@ describe('a session check-in goes where the day actually is', () => {
 // (nothing calls /api/pilot/athlete/check-in), Tracks had every value reading
 // "Nobody has written this down yet", and Assessments said NOT BUILT YET over
 // a disabled button. A tab is a promise that there is something behind it, so
-// they are no longer offered; the panels stay in the file for when they earn
-// their entry back.
+// they were taken out of the nav until they earned their entry back.
+//
+// Wellness came back on 2026-08-28. TRACKS CAME BACK on 2026-10-10: the owner
+// ruled that tracks are assigned to real athletes and shown on the athlete's
+// Tracks tab (OD-2026-10-07-010 ruling 3), which reverses its removal. Its
+// own cases are in 'the Tracks tab' below. Assessments is still not offered.
 describe('tabs with nothing behind them are not offered', () => {
-  test('Tracks and Assessments are still gone from the nav', async () => {
-    // This case used to also assert `queryByRole('button', { name: 'Bio
-    // Check-In' })` was null, under a title that named all three.
-    //
-    // That assertion was a PROXY and it stopped meaning anything the moment
-    // the surface came back: the tab returned on 2026-08-28 labelled
-    // "Wellness", so a check for the literal string 'Bio Check-In' kept
-    // passing while asserting nothing about the property in its title. It is
-    // removed rather than renamed, because the surface it guarded now HAS
-    // something behind it -- see the check-in cases below, which assert that
-    // directly instead.
+  test('Assessments is still gone from the nav, and Tracks is offered under Development', async () => {
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Development' }));
-    expect(screen.queryByRole('button', { name: 'Tracks' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Tracks' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Assessments' })).toBeNull();
   });
 
-  test('Development opens straight onto Goals, its one real surface', async () => {
+  test('Development opens straight onto Goals, its first surface', async () => {
     await renderWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Development' }));
@@ -4332,5 +4337,95 @@ describe('a failed send says try again only while there is something to try', ()
     expect(screen.getByRole('button', { name: 'Withdraw from coach' })).toBeTruthy();
     expect(storedSessions[0].notes).toBe(SHARED);
     expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+  });
+});
+
+// OD-2026-10-07-010 ruling 3: the track the gym's admin set for an athlete is
+// shown on that athlete's Tracks tab. The tab reads the athlete's own entry
+// from /api/pilot/athlete/tracks and says the track's NAME, nothing else.
+describe('the Tracks tab', () => {
+  function tracksCalls() {
+    return fetchCalls.filter((call) => call.url.includes('/api/pilot/athlete/tracks'));
+  }
+
+  test('shows the names of the tracks the athlete is on', async () => {
+    storedTracks = ['usa_boxing', 'collegiate'];
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    expect(await screen.findByText('USA Boxing Track')).toBeTruthy();
+    expect(screen.getByText('Collegiate Track')).toBeTruthy();
+    expect(screen.queryByText('Non-Contact Track')).toBeNull();
+    expect(screen.queryByText('Nobody has put you on a track yet.')).toBeNull();
+    // Own record: the request names no athlete. The route takes it from the session.
+    expect(tracksCalls()).toHaveLength(1);
+    expect(tracksCalls()[0].method).toBe('GET');
+    expect(tracksCalls()[0].url).not.toMatch(/athlete_id|\?/);
+  });
+
+  test('names only: no description or focus workout is drawn', async () => {
+    storedTracks = ['collegiate'];
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    await screen.findByText('Collegiate Track');
+    expect(screen.queryByText(/Tailored for student-athletes/)).toBeNull();
+    expect(screen.queryByText(/homework block/)).toBeNull();
+  });
+
+  test('an athlete on no track sees a plain empty state', async () => {
+    storedTracks = [];
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    expect(await screen.findByText('Nobody has put you on a track yet.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('an id that is not a track this app knows is not drawn', async () => {
+    storedTracks = ['made_up_track', 'pro'];
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    expect(await screen.findByText('Pro Track')).toBeTruthy();
+    expect(screen.queryByText(/made_up_track/)).toBeNull();
+  });
+
+  test.each(['refused', 'offline'] as const)(
+    'a %s read says it could not be read, never that the athlete has no track',
+    async (status) => {
+      tracksReadStatus = status;
+      await renderWorkspace();
+
+      openTab('Tracks');
+
+      expect(await screen.findByText(/Your tracks could not be read\. If this keeps happening, tell your coach\./)).toBeTruthy();
+      expect(screen.queryByText('Nobody has put you on a track yet.')).toBeNull();
+    },
+  );
+
+  test('a reply with no list of tracks is not read as "no track"', async () => {
+    storedTracks = undefined;
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    expect(await screen.findByText(/Your tracks could not be read\. If this keeps happening, tell your coach\./)).toBeTruthy();
+    expect(screen.queryByText('Nobody has put you on a track yet.')).toBeNull();
+  });
+
+  test('the lines nothing ever stored are gone', async () => {
+    await renderWorkspace();
+
+    openTab('Tracks');
+
+    await screen.findByText('Nobody has put you on a track yet.');
+    expect(screen.queryByText(/Nobody has written this down yet/)).toBeNull();
+    expect(screen.queryByText(/request upgrades/)).toBeNull();
+    expect(screen.queryByText(/Your programme|Where you stand|Support:|Hours you have put in/)).toBeNull();
   });
 });
