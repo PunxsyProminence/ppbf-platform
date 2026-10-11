@@ -454,6 +454,37 @@ describe('correcting a record', () => {
     expect(patches[1]).toMatchObject({ execution_id: 'ex-2', correction_reason: 'and the adherence' });
   });
 
+  test('a saved correction closes the form even when the answer carries no record and the reload fails', async () => {
+    let saved = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        saved = true;
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (String(input).includes('/intervention-executions')) {
+        if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ items: [EXECUTION] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
+    });
+
+    await change('What was wrong? (required)', 'wrong round count');
+    await press('Record correction');
+
+    // Nothing to show the corrected record from, so the old row stays -- but
+    // the form does not sit open with the reason typed, inviting a resend.
+    expect(screen.getByRole('alert').textContent).toContain('Saved');
+    expect(screen.queryByRole('button', { name: 'Record correction' })).toBeNull();
+    expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
+    expect(screen.getByText(/rounds: 3$/)).toBeTruthy();
+  });
+
   test('switching straight from correcting one record to correcting another carries nothing across', async () => {
     const other = {
       ...EXECUTION, execution_id: 'ex-other', athlete_name: 'Sam R.',

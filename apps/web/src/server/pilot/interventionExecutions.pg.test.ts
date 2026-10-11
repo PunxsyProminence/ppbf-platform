@@ -896,6 +896,25 @@ describe('the real intervention-execution lifecycle against real rows', () => {
           correctedByAccountId: COACH_ID,
         })).resolves.toMatchObject({ version: 2, status: 'in_progress' });
       }
+
+      // And it is the REOPENING that is refused, not correcting. A record that
+      // is in progress and somehow already carries a review (nothing writes
+      // that today; the database allows it) can still have its facts corrected.
+      await insertExecution(client, 'exec-odd');
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-odd', 'exec-odd', 'unknown', 'reviewed early', 'unresolved', 'unresolved', 'active', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      await expect(correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-odd',
+        correctionReason: 'wrong round count',
+        actualExposure: { rounds: 4 },
+        correctedByAccountId: COACH_ID,
+      })).resolves.toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
     } finally {
       await client.end();
     }
