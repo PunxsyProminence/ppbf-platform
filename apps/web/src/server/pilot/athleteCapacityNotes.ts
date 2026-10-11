@@ -6,6 +6,7 @@ import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { roleEquals } from './roleAlias';
 
 /**
  * Athlete capacity notes: module 013's one slice, "physical capacity note
@@ -68,9 +69,6 @@ type StoredRow = Omit<AthleteCapacityNoteRow, 'author_name' | 'can_withdraw'>;
 
 const FIELDS = 'note_id, athlete_id, note, author_account_id, author_role, created_at';
 
-/** The membership roles that may withdraw a departed author's note ('admin' is the legacy spelling, roleAlias.ts). */
-const DEPARTED_AUTHOR_WITHDRAW_ROLES: readonly CapacityNoteRole[] = ['organization_admin', 'admin'];
-
 /**
  * "The author of note `n` has left this gym" (Overwatch ruling A, 2026-10-11):
  * the account is switched off (#1368, setAccountActiveStatus), carries the
@@ -92,11 +90,11 @@ const AUTHOR_DEPARTED_SQL = `not exists (
 /**
  * Organization admin by BOTH the membership row here and the session: a
  * platform_owner session never withdraws another person's note, whatever
- * membership its account holds.
+ * membership its account holds. roleEquals carries the legacy 'admin'
+ * spelling (roleAlias.ts).
  */
 function isOrganizationAdminHere(actor: ActorIdentity, role: CapacityNoteRole): boolean {
-  return DEPARTED_AUTHOR_WITHDRAW_ROLES.includes(role)
-    && (DEPARTED_AUTHOR_WITHDRAW_ROLES as readonly string[]).includes(actor.role);
+  return roleEquals(role, 'organization_admin') && roleEquals(actor.role, 'organization_admin');
 }
 
 /** Author, or an organization admin once the author has left. Used by the read and by the withdrawal. */
