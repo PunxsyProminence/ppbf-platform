@@ -26,6 +26,7 @@ import ShadowChatButton from './ShadowChatButton';
 import AthleteCorner from './AthleteCorner';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
+import { allTrackIds, trackManifests, type TrackID } from './trackAssignments';
 import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
 import DrillDetail from './drills/DrillDetail';
@@ -89,7 +90,13 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'sh
  * described the opposite and has been corrected rather than left to rot; this
  * list is what actually decides, which is the lesson from last time.
  *
- * Tracks and Assessments stay unlisted. Nothing has changed for them.
+ * TRACKS CAME BACK (2026-10-10), by owner ruling: tracks are assigned to real
+ * athletes and "shown on the athlete's Tracks tab" (OD-2026-10-07-010 ruling
+ * 3). Something stores it now: the gym's admin sets a track per athlete on
+ * /admin, and AthleteTracksPanel reads the athlete's own from
+ * /api/pilot/athlete/tracks. It sits in Development.
+ *
+ * Assessments stays unlisted. Nothing has changed for it.
  */
 const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string }[] }[] = [
   {
@@ -108,6 +115,7 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
       { id: 'smart-goals', label: 'Goals' },
       // BASE-05: the athlete's own attempt log over the training-attempts ledger.
       { id: 'attempt-log', label: 'Attempts' },
+      { id: 'tracks', label: 'Tracks' },
     ],
   },
   {
@@ -497,6 +505,85 @@ interface RabbitHoleTopic {
 }
 
 type RabbitHoleLoadState = 'loading' | 'loaded' | 'unavailable';
+
+type AthleteTracksRead =
+  | { state: 'loading' }
+  | { state: 'unavailable' }
+  | { state: 'loaded'; tracks: TrackID[] };
+
+/**
+ * The tracks this athlete is on, by name.
+ *
+ * Read from /api/pilot/athlete/tracks, which serves the signed-in athlete's
+ * own entry in the map the gym's admin saves on /admin -- the same record, so
+ * what the admin set is what shows here.
+ *
+ * NAMES ONLY. A track's description and focus workout are not shown.
+ *
+ * A read that did not complete is never shown as "no track": that would tell
+ * an athlete nobody has placed them when the app simply could not look.
+ */
+function AthleteTracksPanel() {
+  const [read, setRead] = useState<AthleteTracksRead>({ state: 'loading' });
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athlete/tracks`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        const payload = response.ok ? ((await response.json()) as { tracks?: unknown }) : null;
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (!payload || !Array.isArray(payload.tracks)) {
+          setRead({ state: 'unavailable' });
+          return;
+        }
+        const assigned = payload.tracks;
+        setRead({ state: 'loaded', tracks: allTrackIds.filter((trackId) => assigned.includes(trackId)) });
+      } catch {
+        if (!controller.signal.aborted) {
+          setRead({ state: 'unavailable' });
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <>
+      <h3 className="t-label">Your tracks</h3>
+      {read.state === 'loading' && (
+        <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">Reading your tracks…</p>
+      )}
+      {read.state === 'unavailable' && (
+        <p role="alert" className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+          Your tracks could not be read. If this keeps happening, tell your coach.
+        </p>
+      )}
+      {read.state === 'loaded' && read.tracks.length === 0 && (
+        <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+          Nobody has put you on a track yet.
+        </p>
+      )}
+      {read.state === 'loaded' && read.tracks.length > 0 && (
+        <ul className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
+          {read.tracks.map((trackId) => (
+            <li key={trackId} className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+              {trackManifests[trackId].name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
 
 /**
  * The gym's authored lessons, as the athlete reads them.
@@ -3135,34 +3222,10 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
-          {/* TRACKS - Placeholder */}
+          {/* TRACKS - the athlete's own assigned tracks (OD-2026-10-07-010 ruling 3). */}
           {activeTab === 'tracks' && (
             <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
-              <h3 className="t-label">Track Management</h3>
-              <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">View current track assignment and request upgrades as you progress.</p>
-              {/* Track assignment, membership, scholarship, and support status
-                  have no backing column anywhere in the schema -- the track
-                  itself would come from pilot.admin_track_assignments, which
-                  does not exist in staging or prod. These were hardcoded to the
-                  same "supported / active member" values for every athlete
-                  regardless of their actual status, which is a billing- and
-                  eligibility-adjacent misstatement, not a placeholder. Show
-                  unavailable honestly until real fields exist.
-
-                  The HONESTY is unchanged; only the voice is. "Unavailable -
-                  not yet tracked" is a field status read out to a child, and
-                  this file already had the right grammar for an honest empty a
-                  few hundred lines up -- the Floor's "No open work from your
-                  coach." A coach says nobody has written
-                  it down; a console reports a null column. Both refuse to
-                  invent a value, which is the part that matters. */}
-              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
-                <p className="text-[length:var(--t-md)]"><strong>Your track:</strong> <span className="text-[color:var(--bone-400)]">Nobody has written this down yet.</span></p>
-                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Your programme:</strong> <span>Nobody has written this down yet.</span></p>
-                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Where you stand:</strong> <span>Nobody has written this down yet.</span></p>
-                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Support:</strong> <span>Nobody has written this down yet.</span></p>
-                <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]"><strong>Hours you have put in for the gym:</strong> <span>Nobody has written this down yet.</span></p>
-              </div>
+              <AthleteTracksPanel />
             </div>
           )}
 

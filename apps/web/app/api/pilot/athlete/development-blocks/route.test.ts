@@ -2,7 +2,11 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
-import { listObjectivesForBlock } from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
+import {
+  FAMILY_VISIBLE_OBJECTIVE_STATUSES,
+  OBJECTIVE_STATUSES,
+  listObjectivesForBlock,
+} from '@/src/server/pilot/athleteDevelopmentBlockObjectives';
 import { DEVELOPMENT_BLOCK_STATUSES, listDevelopmentBlocksForAthlete } from '@/src/server/pilot/athleteDevelopmentBlocks';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -13,9 +17,13 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * guardian's view of their child's.
  *
  * Owner decision 2026-08-28: everything, verbatim, including the
- * nutrition_body_composition domain. So the assertions here are not about
- * what is hidden -- nothing is -- they are about the three ways a read-only
- * family surface can still be wrong:
+ * nutrition_body_composition domain. No domain is hidden and no word is
+ * changed. What IS cut, since, is by status: a family is sent active and
+ * completed blocks (OD-2026-10-08-006) and, inside them, active and completed
+ * objectives (OD-2026-10-09-004) -- see "which blocks a family sees" and
+ * "which objectives a family sees" below. Beyond that cut, the assertions
+ * here are about the three ways a read-only family surface can still be
+ * wrong:
  *
  *   1. an athlete reading a subject that is not themselves. The athlete arm
  *      takes the id from the SESSION and never from the query string, so this
@@ -111,7 +119,9 @@ function objective(overrides: Record<string, unknown> = {}) {
     block_id: 'blk-1',
     domain: 'technical',
     objective: 'Jab off the back foot under pressure, not just off the front.',
-    status: 'draft',
+    // 'active', not 'draft', for the same reason as the block above: a draft
+    // objective never reaches a family (see "which objectives a family sees").
+    status: 'active',
     created_by_account_id: 'acct-coach-a',
     created_at: '2026-08-28T00:00:00.000Z',
     updated_at: '2026-08-28T00:00:00.000Z',
@@ -295,6 +305,80 @@ describe('which blocks a family sees', () => {
   });
 });
 
+/* OD-2026-10-09-004 "Hide them (Recommended)": inside a block a family may
+   read, athletes and parents see only active and completed objectives. The
+   store is mocked here and hands back every status ON PURPOSE -- these prove
+   the route's own cut, so the response does not depend on the store having
+   made it. The store's cut is proven against real rows in
+   athleteDevelopmentBlockObjectives.pg.test.ts. */
+describe('which objectives a family sees', () => {
+  const mixedObjectives = (blockId: string) => [
+    objective({ objective_id: `${blockId}-draft`, block_id: blockId, status: 'draft', objective: 'DRAFT WORDS' }),
+    objective({ objective_id: `${blockId}-active`, block_id: blockId, status: 'active' }),
+    objective({ objective_id: `${blockId}-done`, block_id: blockId, status: 'completed' }),
+    objective({ objective_id: `${blockId}-cancelled`, block_id: blockId, status: 'cancelled', objective: 'CANCELLED WORDS' }),
+  ];
+
+  test.each(['athlete', 'parent'])('the %s never receives a draft or cancelled objective, in an active block or a completed one', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([
+      block({ block_id: 'blk-active', status: 'active' }),
+      block({ block_id: 'blk-done', status: 'completed' }),
+    ]);
+    mockListObjectives.mockImplementation(async (_actor: unknown, blockId: string) => mixedObjectives(blockId));
+
+    const response = await GET(getRequest(role === 'parent' ? '?athlete_id=ath-1' : ''));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.blocks.map((row: { block_id: string; objectives: Array<{ objective_id: string; status: string }> }) => [
+      row.block_id,
+      row.objectives.map((item) => [item.objective_id, item.status]),
+    ])).toEqual([
+      ['blk-active', [['blk-active-active', 'active'], ['blk-active-done', 'completed']]],
+      ['blk-done', [['blk-done-active', 'active'], ['blk-done-done', 'completed']]],
+    ]);
+    // Nothing of a hidden objective travels: not its id, its status or its words.
+    const serialized = JSON.stringify(payload);
+    for (const hidden of ['-draft', '-cancelled', '"draft"', '"cancelled"', 'DRAFT WORDS', 'CANCELLED WORDS']) {
+      expect(serialized).not.toContain(hidden);
+    }
+  });
+
+  test.each(['athlete', 'parent'])('for the %s a block whose objectives are all draft or cancelled is still shown, with none', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue([
+      objective({ objective_id: 'obj-draft', status: 'draft' }),
+      objective({ objective_id: 'obj-cancelled', status: 'cancelled' }),
+    ]);
+
+    const payload = await (await GET(getRequest(role === 'parent' ? '?athlete_id=ath-1' : ''))).json();
+
+    expect(payload.blocks).toHaveLength(1);
+    expect(payload.blocks[0].block_id).toBe('blk-1');
+    expect(payload.blocks[0].objectives).toEqual([]);
+  });
+
+  test('every objective status the store knows is either shown or cut -- a new status is a decision, not a leak', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockListBlocks.mockResolvedValue([block()]);
+    mockListObjectives.mockResolvedValue(
+      OBJECTIVE_STATUSES.map((status) => objective({ objective_id: `obj-${status}`, status })),
+    );
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(payload.blocks[0].objectives.map((row: { status: string }) => row.status).sort())
+      .toEqual(['active', 'completed']);
+    expect(OBJECTIVE_STATUSES).toEqual(['draft', 'active', 'completed', 'cancelled']);
+    expect(FAMILY_VISIBLE_OBJECTIVE_STATUSES).toEqual(['active', 'completed']);
+  });
+});
+
 describe('what the family actually sees', () => {
   test('the coach\'s words arrive verbatim, and body composition is not withheld', async () => {
     /* THE OWNER DECISION, ASSERTED. 2026-08-28: everything, verbatim. If a
@@ -355,7 +439,7 @@ describe('what the family actually sees', () => {
     mockListBlocks.mockResolvedValue([block()]);
     mockListObjectives.mockResolvedValue([
       objective({ objective_id: 'obj-1', status: 'completed' }),
-      objective({ objective_id: 'obj-2', status: 'draft' }),
+      objective({ objective_id: 'obj-2', status: 'active' }),
     ]);
 
     const payload = await (await GET(getRequest())).json();

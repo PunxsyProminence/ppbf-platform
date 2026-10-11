@@ -103,9 +103,10 @@ export default function AthleteMentalSkillsPage() {
         if (!response.ok) throw new Error('blocks');
         const payload = (await response.json()) as { blocks?: FamilyBlock[] };
         if (!Array.isArray(payload.blocks)) throw new Error('shape');
-        // Current goals only: active objectives in active blocks. Drafts,
-        // finished and cancelled goals stay on the development plan page,
-        // where their status is shown.
+        // Current goals only: active objectives in active blocks. Finished
+        // goals stay on the development plan page, where their status is
+        // shown. Draft and cancelled goals are not sent to an athlete or a
+        // parent at all (OD-2026-10-09-004).
         setGoals(
           payload.blocks.filter((block) => block.status === 'active').flatMap((block) => (block.objectives ?? [])
             .filter((o) => o.domain === 'mental' && o.status === 'active')
