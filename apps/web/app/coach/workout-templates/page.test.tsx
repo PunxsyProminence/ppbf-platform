@@ -1086,6 +1086,42 @@ describe('issue to athlete', () => {
       expect(issuePosts(fetchMock)).toHaveLength(1);
     });
 
+    it('when a second issue is sent, the first result leaves the screen at once: it is not left standing as the answer to the new one', async () => {
+      let sends = 0;
+      let answer: (response: Response) => void = () => {};
+      const pending = new Promise<Response>((resolve) => {
+        answer = resolve;
+      });
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ISSUE_URL)) {
+          sends += 1;
+          return sends === 1 ? statusResponse(201, ISSUED_BODY) : pending;
+        }
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await issueTo('ath-1');
+      await issuedStatus();
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+      });
+
+      await screen.findByRole('button', { name: 'Issuing...' });
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+
+      await act(async () => {
+        answer(statusResponse(409, REFUSED_BODY));
+        await pending;
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent(REFUSED_BODY.error);
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    });
+
     it('choosing a different athlete closes the confirm step, so Confirm can never send the athlete picked before', async () => {
       const fetchMock = mockIssuePage();
 
