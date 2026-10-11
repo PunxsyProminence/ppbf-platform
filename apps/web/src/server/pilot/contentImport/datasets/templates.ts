@@ -16,8 +16,11 @@ import { childFile, versionedDatasetEngine } from './templateScriptVersions';
 //   - active = false, because pilot_workout_templates_one_active_name is
 //     partial on `active` alone (workout_templates_v2 :128-129), so a v2 that
 //     keeps the name is refused while v1 is active -- and unlike a drill,
-//     nothing adopts a template version (no table references template_id;
-//     intake plan IMP-08 CAP), so nothing needs the old one live. The coach
+//     nothing adopts a template version, so nothing needs the old one live
+//     (intake plan IMP-08 CAP). pilot.workout_issues does reference
+//     template_id (lane P7c: the workout a coach issued), which is why a
+//     replaced version is superseded and withdrawn here and never deleted:
+//     the row an issued workout names stays. The coach
 //     browse lists `where active` (workoutTemplates.ts:78-82) and so shows
 //     exactly the new version.
 //

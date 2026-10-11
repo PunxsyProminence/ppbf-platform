@@ -26,26 +26,94 @@ function code(source: string): string {
 const TABLE = /pilot\.workout_issue(?:s|_steps)\b/;
 
 describe('issued workout schema ownership', () => {
+  // The module is the write (recordWorkoutIssue) and, below it, the read. The
+  // two halves are held to different rules, so they are cut apart here.
+  const READ_MARKER = 'export async function listIssuedWorkoutsForAssignments';
+  const writeHalf = () => code(moduleSource).slice(0, code(moduleSource).indexOf(READ_MARKER));
+  const readHalf = () => code(moduleSource).slice(code(moduleSource).indexOf(READ_MARKER));
+
   test('the module issues no DDL and never updates or deletes a row: the shape is written once', () => {
     const body = code(moduleSource);
+    expect(body.indexOf(READ_MARKER)).toBeGreaterThan(0);
     expect(body).not.toMatch(/create\s+table|create\s+index|alter\s+table|drop\s+table/i);
     expect(body).not.toMatch(/delete\s+from/i);
     expect(body).not.toMatch(/\bupdate\s+pilot\./i);
 
-    const statements = body.match(/`[^`]*pilot\.workout_issue[^`]*`/g) ?? [];
-    expect(statements).toHaveLength(2);
-    for (const statement of statements) {
+    const writes = writeHalf().match(/`[^`]*pilot\.workout_issue[^`]*`/g) ?? [];
+    expect(writes).toHaveLength(2);
+    for (const statement of writes) {
       expect(statement).toMatch(/insert into pilot\.workout_issue(?:s|_steps)\s*\(\s*organization_id/);
     }
+    // The read half reads: one statement, no insert.
+    const reads = readHalf().match(/`[^`]*pilot\.workout_issue[^`]*`/g) ?? [];
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toMatch(/^`select /);
+    expect(readHalf()).not.toMatch(/insert\s+into/i);
   });
 
-  test('the write has no pooled form: it takes a transaction client and imports nothing from ./db', () => {
-    const body = code(moduleSource);
-    expect(body).not.toMatch(/from '\.\/db'/);
+  test('the write has no pooled form: it takes a transaction client and never touches the pool', () => {
+    const body = writeHalf();
     expect(body).toMatch(/export async function recordWorkoutIssue\(\s*client: PoolClient,/);
-    // Every statement goes through that client.
+    // Every statement of the write goes through that client.
     expect(body.match(/\bclient\.query\(/g)).toHaveLength(2);
-    expect(body).not.toMatch(/(?<!client\.)\bquery(?:One)?\(/);
+    expect(body.replace(/^import .*$/gm, '')).not.toMatch(/(?<!client\.)\bquery(?:One)?\b/);
+  });
+
+  test('the read is scoped to the organization, asked only about named assignments, and joins a step to its assignment on the organization and the athlete', () => {
+    const body = readHalf();
+    expect(body.match(/\bquery</g)).toHaveLength(1);
+    expect(body).not.toMatch(/\bclient\b/);
+    expect(body).toMatch(/where s\.organization_id = \$1 and s\.assignment_id = any\(\$2::text\[\]\)/);
+    expect(body).toMatch(/join pilot\.workout_issues i\s+on i\.organization_id = s\.organization_id and i\.issue_id = s\.issue_id/);
+    expect(body).toMatch(
+      /join pilot\.drill_assignments a\s+on a\.organization_id = s\.organization_id and a\.assignment_id = s\.assignment_id\s+and a\.athlete_id = i\.athlete_id/,
+    );
+    // No assignment ids, no statement: an empty list never becomes "everything".
+    expect(body).toMatch(/if \(assignmentIds\.length === 0\) \{\s+return \[\];/);
+  });
+
+  test('the shape read has one caller, and that caller asks only about assignments it has just read behind the athlete gate', () => {
+    // The read takes whatever ids it is given and scopes them by organization
+    // only, so WHO may call it, and with what, is the boundary. A new importer
+    // is added here deliberately, with the gated read its ids come from.
+    const webRoot = path.join(repositoryRoot, 'apps/web');
+    const importers: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          // An import of it, in any form. (privacyTiers.ts names it in a string, as the field's enforcer.)
+          if (/import\s*\{[^}]*\blistIssuedWorkoutsForAssignments\b[^}]*\}\s*from/.test(code(fs.readFileSync(full, 'utf8')))) {
+            importers.push(path.relative(webRoot, full).replace(/\\/g, '/'));
+          }
+        }
+      }
+    };
+    for (const top of ['app', 'components', 'src']) walk(path.join(webRoot, top));
+    expect(importers.sort()).toEqual(['app/api/pilot/progression/assignments/route.ts']);
+
+    const route = code(read('apps/web/app/api/pilot/progression/assignments/route.ts'));
+    const gate = route.indexOf('await assertActorCanAccessAthlete(principal, athleteId);');
+    const gatedRead = route.indexOf('const assignments = await getAthleteAssignments(');
+    const shapeRead = route.indexOf('listIssuedWorkoutsForAssignments(');
+    expect(gate).toBeGreaterThan(0);
+    expect(gatedRead).toBeGreaterThan(gate);
+    expect(shapeRead).toBeGreaterThan(gatedRead);
+    // Its ids are the gated read's own rows, and its organization the session's.
+    expect(route).toMatch(
+      /listIssuedWorkoutsForAssignments\(\s*principal\.organizationId,\s*assignments\.map\(\(assignment\) => assignment\.assignment_id\),\s*\)/,
+    );
+    expect(route.match(/listIssuedWorkoutsForAssignments\(/g)).toHaveLength(1);
+  });
+
+  test('the family projection is named field by field and carries no account id', () => {
+    const projection = code(moduleSource).slice(code(moduleSource).indexOf('export async function toFamilyIssuedWorkouts'));
+    expect(projection).not.toMatch(/\.\.\.\s*(?:workout|step)\b/);
+    const returned = projection.slice(projection.indexOf('return workouts.map'));
+    expect(returned).not.toMatch(/issued_by_account_id:/);
+    expect(returned).toMatch(/issued_by_name:/);
   });
 
   test('a step is tied to an assignment of this athlete in this organization as it is written', () => {

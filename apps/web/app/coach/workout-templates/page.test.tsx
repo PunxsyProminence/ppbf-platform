@@ -305,7 +305,7 @@ const ISSUED_BODY = {
     { step: 2, item_id: 'wti-2', assignment: { assignment_id: 'a-2' } },
   ],
   adopted_drills: [],
-  not_carried: ['block', 'ordinal', 'scale_level', 'contact_level', 'coach_note'],
+  issue_id: '0b0e3f0c-6a53-4d0e-9d0b-3a8f5a1c2d4e',
 };
 
 const REFUSED_BODY = {
@@ -741,7 +741,7 @@ describe('issue to athlete', () => {
   });
 
   describe('what came back', () => {
-    it('issued: how many Coach Cards, and plainly that each step is a separate card', async () => {
+    it('issued: how many Coach Cards, that the athlete sees one workout, and that the coach\'s own list is still separate cards', async () => {
       mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
 
       await issueTo();
@@ -749,8 +749,9 @@ describe('issue to athlete', () => {
       const status = await issuedStatus();
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(status).toHaveTextContent(
-        'Each step is a separate Coach Card for now. The block, order, scale level, contact level and coach note are not carried.',
+        'The athlete sees this as one workout: each step in your order, with its block, scale level, contact level and note. On your Coach Cards screen each step is still listed as a separate card for now.',
       );
+      expect(status).not.toHaveTextContent(/not carried/);
       // Nothing adopted and nobody held: neither line is drawn.
       expect(status).not.toHaveTextContent(/Adopted for this gym/);
       expect(status).not.toHaveTextContent(/training hold/i);
