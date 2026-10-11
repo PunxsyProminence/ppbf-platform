@@ -435,4 +435,40 @@ describe('getOrganizationViolations', () => {
     expect(sql).not.toContain('any($');
     expect(params).toEqual(['org-1', 50]);
   });
+
+  // Lane N4-01: the admin screen printed "Athlete: ath-017 / Rule: rule-xxx".
+  // The names ride on the row. Each lookup is tied to the violation's own
+  // organization as well as the id, so a name never crosses gyms.
+  test('the list read names the athlete and the rule, each within the violation’s own organization', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { violation_id: 'v1', rule_id: 'rule-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', rule_name: 'Headgear worn' },
+    ]);
+
+    const rows = await getOrganizationViolations('org-1', {});
+
+    expect(rows[0].athlete_name).toBe('Jordan T.');
+    expect(rows[0].rule_name).toBe('Headgear worn');
+    const [sql] = mockQuery.mock.calls[0] as [string, unknown[]];
+    const flat = sql.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      '(select named_athlete.full_name from pilot.athletes named_athlete'
+      + ' where named_athlete.organization_id = pilot.compliance_violations.organization_id'
+      + ' and named_athlete.athlete_id = pilot.compliance_violations.athlete_id) as athlete_name',
+    );
+    expect(flat).toContain(
+      '(select named_rule.rule_name from pilot.compliance_rules named_rule'
+      + ' where named_rule.organization_id = pilot.compliance_violations.organization_id'
+      + ' and named_rule.rule_id = pilot.compliance_violations.rule_id) as rule_name',
+    );
+  });
+
+  // The names are columns of rows the caller was already given. They must not
+  // widen which rows come back: a coach's reach list still narrows the read.
+  test('naming the record does not change which rows a narrowed read returns', async () => {
+    await getOrganizationViolations('org-1', { athleteIds: ['ath-own'], status: 'dismissed' });
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('athlete_id = any($2::text[])');
+    expect(sql).toContain('status = $3');
+    expect(params).toEqual(['org-1', ['ath-own'], 'dismissed', 50]);
+  });
 });

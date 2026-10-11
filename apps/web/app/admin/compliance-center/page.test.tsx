@@ -320,3 +320,167 @@ test('a failed read does not render the register as filtered-to-empty', async ()
   expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
   expect(screen.getByText(/could not be loaded/i)).toBeTruthy();
 });
+
+// LANE N4-01 (ADMIN-05): the card read "Athlete: ath-017 / Rule: rule-xxx" and
+// the status tabs had no Dismissed tab.
+test('a violation is identified by the athlete’s name and the rule’s name, not two ids', async () => {
+  await renderWithViolations([violation({ athlete_name: 'Jordan T.', rule_name: 'Headgear worn' })]);
+
+  expect(screen.getByText('Athlete: Jordan T.')).toBeTruthy();
+  expect(screen.getByText('Rule: Headgear worn')).toBeTruthy();
+  expect(screen.queryByText(/ath-1/)).toBeNull();
+  expect(screen.queryByText(/rule-1/)).toBeNull();
+});
+
+test('a record whose names are not on file still shows its ids rather than a blank', async () => {
+  await renderWithViolations([violation({ athlete_name: null, rule_name: null })]);
+
+  expect(screen.getByText('Athlete: ath-1')).toBeTruthy();
+  expect(screen.getByText('Rule: rule-1')).toBeTruthy();
+});
+
+test('the escalate dialog names the athlete it is about', async () => {
+  await renderWithViolations([violation({ athlete_name: 'Jordan T.' })]);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate' }));
+  });
+
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText('Jordan T.')).toBeTruthy();
+});
+
+/** Every read of the violations register the page made, as the URL it asked for. */
+function readsOf(fetchMock: jest.Mock): string[] {
+  return fetchMock.mock.calls
+    .filter(([, init]) => (init as RequestInit | undefined)?.method !== 'PATCH')
+    .map(([input]) => String(input))
+    // The deletion-request queue on the same page reads its own route.
+    .filter((url) => url.includes('/api/pilot/compliance/violations'));
+}
+
+function statusOf(input: RequestInfo | URL): string {
+  return new URL(String(input), 'http://localhost').searchParams.get('status') ?? 'all';
+}
+
+/** A server that answers each status tab with its own rows. */
+function serveByStatus(byStatus: Record<string, Array<Record<string, unknown>>>, failing: string[] = []) {
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }
+    const status = statusOf(input);
+    if (failing.includes(status)) {
+      return { ok: false, json: async () => ({}) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: byStatus[status] ?? [], limit: 50 }) } as Response;
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  return fetchMock;
+}
+
+async function openTab(name: string) {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name }));
+  });
+}
+
+test('the Dismissed tab retrieves dismissed records from the server, beyond the newest rows of the register', async () => {
+  // The register's newest rows hold no dismissed record at all: the one on
+  // file is older than that window, which is the case a client-side filter
+  // over "all" could never reach.
+  const fetchMock = serveByStatus({
+    all: [violation({ violation_id: 'v-new', athlete_name: 'Sam R.' })],
+    dismissed: [violation({ violation_id: 'v-old', status: 'dismissed', athlete_name: 'Jordan T.' })],
+  });
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  expect(screen.getByText('Athlete: Sam R.')).toBeTruthy();
+  expect(screen.queryByText('Athlete: Jordan T.')).toBeNull();
+
+  await openTab('dismissed');
+
+  expect(await screen.findByText('Athlete: Jordan T.')).toBeTruthy();
+  expect(screen.queryByText('Athlete: Sam R.')).toBeNull();
+  expect(readsOf(fetchMock).some((url) => url.endsWith('/api/pilot/compliance/violations?status=dismissed'))).toBe(true);
+  // Identifiable as dismissed, and terminal: nothing left to press.
+  expect(badgeFor('dismissed')).toBeTruthy();
+  for (const name of ['Acknowledge', 'Escalate', 'Resolve', 'Dismiss']) {
+    expect(screen.queryByRole('button', { name })).toBeNull();
+  }
+  expect(screen.getByText(/50 most recently filed dismissed violations/i)).toBeTruthy();
+});
+
+test('"all" still asks for the whole register and still shows a dismissed record, labelled', async () => {
+  const fetchMock = serveByStatus({
+    all: [violation(), violation({ violation_id: 'v2', status: 'dismissed', athlete_name: 'Jordan T.' })],
+  });
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+
+  const reads = readsOf(fetchMock);
+  expect(reads).toHaveLength(1);
+  expect(reads[0].endsWith('/api/pilot/compliance/violations')).toBe(true);
+  expect(screen.getByText('Athlete: Jordan T.')).toBeTruthy();
+  expect(badgeFor('dismissed')).toBeTruthy();
+});
+
+test('a status tab keeps resolved, dismissed and open records apart', async () => {
+  serveByStatus({
+    all: [],
+    resolved: [violation({ violation_id: 'v-res', status: 'resolved', athlete_name: 'Resolved Kid' })],
+    dismissed: [violation({ violation_id: 'v-dis', status: 'dismissed', athlete_name: 'Dismissed Kid' })],
+  });
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('resolved');
+
+  expect(await screen.findByText('Athlete: Resolved Kid')).toBeTruthy();
+  expect(screen.queryByText('Athlete: Dismissed Kid')).toBeNull();
+});
+
+test('a Dismissed tab that would not load says unavailable, never "no dismissed records"', async () => {
+  serveByStatus({ all: [violation()] }, ['dismissed']);
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('dismissed');
+
+  expect(await screen.findByText(/could not be loaded/i)).toBeTruthy();
+  expect(screen.queryByText(/No violations match the current filters/i)).toBeNull();
+});
+
+test('an empty Dismissed tab is a loaded, empty answer', async () => {
+  serveByStatus({ all: [violation()], dismissed: [] });
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('dismissed');
+
+  expect(await screen.findByText(/No violations match the current filters/i)).toBeTruthy();
+  expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+});
+
+test('after a transition the page re-reads the tab that is showing, not the whole register', async () => {
+  const fetchMock = serveByStatus({ all: [], new: [violation()] });
+
+  await act(async () => {
+    render(<ComplianceCenterPage />);
+  });
+  await openTab('new');
+  await screen.findByRole('button', { name: 'Acknowledge' });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+  });
+
+  const reads = readsOf(fetchMock);
+  expect(reads[reads.length - 1].endsWith('?status=new')).toBe(true);
+});

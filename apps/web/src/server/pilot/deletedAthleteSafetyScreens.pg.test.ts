@@ -1176,6 +1176,40 @@ describe('after deleteAthleteRecord(GONE)', () => {
     );
   });
 
+  // Lane N4-01: the register names the athlete and the rule instead of
+  // printing two ids. The fixtures were built for exactly this: an athlete in
+  // ORG is named after its id, and the second gym's athlete under the same id
+  // is named "other gym <id>", so a name pulled across gyms shows.
+  test('a violation is named by its own gym’s athlete and rule, never another gym’s', async () => {
+    type NamedRow = { violation_id: string; athlete_name: string | null; rule_name: string | null };
+    mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
+    const here = await json<{ items: NamedRow[] }>(
+      await violationsGET(request('/api/pilot/compliance/violations?limit=100')),
+    );
+    expect(here.items.find((row) => row.violation_id === `${LIVE}:violation-new`)).toMatchObject({
+      athlete_name: LIVE,
+      rule_name: 'Headgear required for sparring',
+    });
+    // A deleted athlete's open violation stays on the register
+    // (OD-2026-09-30-004 B) and is still named.
+    expect(here.items.find((row) => row.violation_id === `${GONE}:violation-new`)).toMatchObject({ athlete_name: GONE });
+    expect(here.items.some((row) => (row.athlete_name ?? '').startsWith('other gym'))).toBe(false);
+
+    mockRequirePrincipal.mockResolvedValue(principal(OTHER_ADMIN, 'organization_admin', OTHER_ORG));
+    const there = await json<{ items: NamedRow[] }>(
+      await violationsGET(request('/api/pilot/compliance/violations?limit=100')),
+    );
+    // Same athlete id, the other gym's own child. The rule it cites belongs to
+    // ORG, so this gym is not told its name.
+    expect(there.items).toEqual([
+      expect.objectContaining({
+        violation_id: `${GONE}:violation-resolved-other-gym`,
+        athlete_name: `other gym ${GONE}`,
+        rule_name: null,
+      }),
+    ]);
+  });
+
   test("a status filter asking for resolved items does not bring GONE's back", async () => {
     mockRequirePrincipal.mockResolvedValue(principal(ADMIN, 'organization_admin'));
     const escalations = await json<{ escalations: Array<{ escalation_id: string }> }>(

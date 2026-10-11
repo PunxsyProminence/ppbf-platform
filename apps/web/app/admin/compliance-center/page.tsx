@@ -16,7 +16,24 @@ interface ComplianceViolation {
   status: 'new' | 'acknowledged' | 'escalated' | 'resolved' | 'dismissed';
   created_at: string;
   description?: string;
+  // Filled by the list read; null when the athlete or rule row is not on file,
+  // and then the id is what there is to show.
+  athlete_name?: string | null;
+  rule_name?: string | null;
 }
+
+// The status tabs. 'all' is the register as loaded; every other tab asks the
+// server for that status alone, so a dismissed record older than the newest
+// rows of the whole register is still reachable from its own tab.
+const STATUS_TABS = ['all', 'new', 'acknowledged', 'escalated', 'resolved', 'dismissed'] as const;
+
+function violationsUrl(status: string): string {
+  const base = `${apiBase()}/api/pilot/compliance/violations`;
+  return status === 'all' ? base : `${base}?status=${encodeURIComponent(status)}`;
+}
+
+const athleteLabel = (v: ComplianceViolation) => v.athlete_name || v.athlete_id;
+const ruleLabel = (v: ComplianceViolation) => v.rule_name || v.rule_id;
 
 // Law 3: severity and workflow state each carry a glyph and an uppercase
 // label on the badge ladder, never colour alone. Severity climbs the four
@@ -97,17 +114,20 @@ export default function AdminComplianceCenterPage() {
     resolved: 0,
   });
 
-  // Load violations
+  // Load violations: on entry, and again each time the status tab changes.
+  // `stale` drops an answer that arrives after a later tab was chosen.
   useEffect(() => {
+    let stale = false;
     void (async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
+        const res = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
         if (!res.ok) {
           throw new Error('Unable to load compliance violations');
         }
 
         const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
+        if (stale) return;
         const allViolations = data.items ?? [];
         setViolations(allViolations);
         setReadLimit(typeof data.limit === 'number' ? data.limit : null);
@@ -128,15 +148,19 @@ export default function AdminComplianceCenterPage() {
         setDataAuthoritative(true);
         setErrorMessage('');
       } catch (error) {
+        if (stale) return;
         setDataAuthoritative(false);
         setViolations([]);
         setReadLimit(null);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
       } finally {
-        setIsLoading(false);
+        if (!stale) setIsLoading(false);
       }
     })();
-  }, []);
+    return () => {
+      stale = true;
+    };
+  }, [statusFilter]);
 
   const getFilteredViolations = () => {
     return violations.filter((v) => {
@@ -166,7 +190,7 @@ export default function AdminComplianceCenterPage() {
       setEscalateToRole('organization_admin');
 
       // Reload violations
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
+      const reloadRes = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
         const allViolations = data.items ?? [];
@@ -236,7 +260,7 @@ export default function AdminComplianceCenterPage() {
       // Reconcile with server truth on every terminal outcome: after a 409
       // the rendered state is stale by definition.
       try {
-        const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
+        const reloadRes = await fetch(violationsUrl(statusFilter), { credentials: 'include' });
         if (reloadRes.ok) {
           const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
           setViolations(data.items ?? []);
@@ -333,14 +357,15 @@ export default function AdminComplianceCenterPage() {
             an unread or empty register would be furniture explaining nothing. */}
         {dataAuthoritative && readLimit !== null && violations.length > 0 ? (
           <p className="t-muted">
-            These figures cover the {readLimit} most recently filed violations, newest first — not this
-            gym&rsquo;s whole compliance record. A violation filed before that window is not counted here.
+            These figures cover the {readLimit} most recently filed{statusFilter === 'all' ? '' : ` ${statusFilter}`} violations,
+            newest first — not this gym&rsquo;s whole compliance record. A violation filed before that window is
+            not counted here.
           </p>
         ) : null}
 
         <section className="mat-leather flex flex-wrap items-center gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
           <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Filter violations by status">
-            {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
+            {STATUS_TABS.map((status) => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
@@ -397,7 +422,11 @@ export default function AdminComplianceCenterPage() {
                 selects for a read that never happened sends them to widen
                 filters that were never the reason they see nothing -- and
                 leaves them believing the gym has no matching violations. */}
-            {!isLoading && !dataAuthoritative ? (
+            {isLoading ? (
+              <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
+                <p className="empty-msg mx-auto">Loading…</p>
+              </div>
+            ) : !dataAuthoritative ? (
               <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
                 <p className="empty-msg mx-auto">
                   The violations register could not be loaded. This list is unavailable, not empty — violations
@@ -426,8 +455,8 @@ export default function AdminComplianceCenterPage() {
                           <i>{STATUS_BADGE[v.status].glyph}</i>{v.status}
                         </span>
                       </div>
-                      <p className="t-body font-semibold text-[color:var(--bone-100)]">Athlete: {v.athlete_id}</p>
-                      <p className="t-data">Rule: {v.rule_id}</p>
+                      <p className="t-body font-semibold text-[color:var(--bone-100)]">Athlete: {athleteLabel(v)}</p>
+                      <p className="t-data">Rule: {ruleLabel(v)}</p>
                       <p className="t-muted mt-[var(--s2)]">
                         {formatGymStamp(v.created_at)}
                       </p>
@@ -500,7 +529,7 @@ export default function AdminComplianceCenterPage() {
               <div className="p-[var(--s5)]">
                 <h3 id="escalate-violation-heading" className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Escalate Violation</h3>
                 <p className="t-body mb-[var(--s4)]">
-                  Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{selectedViolation.athlete_id}</span>
+                  Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{athleteLabel(selectedViolation)}</span>
                 </p>
                 <div className="field mb-[var(--s4)]">
                   <label htmlFor="escalate-to-select" className="t-label">Escalate To</label>
@@ -546,7 +575,7 @@ export default function AdminComplianceCenterPage() {
               className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
             >
               <p className="t-eyebrow text-[color:var(--brass-200)]">
-                {closing.violation.severity} &middot; {closing.violation.rule_id}
+                {closing.violation.severity} &middot; {ruleLabel(closing.violation)} &middot; {athleteLabel(closing.violation)}
               </p>
               <h3
                 id="close-violation-heading"
