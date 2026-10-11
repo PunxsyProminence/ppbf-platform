@@ -67,6 +67,7 @@ const ISSUED = {
     { step: 2, item_id: 'wti_2', assignment: { assignment_id: 'assignment_2', drill_id: 'op-2', gap_id: null } },
   ],
   adopted: [{ drill_id: 'op-2', reference_drill_id: 'ref-2', name: 'Slip Rope Shuffle' }],
+  updated: [],
 };
 
 const REFUSED = {
@@ -232,10 +233,24 @@ describe('the outcomes', () => {
       athlete_id: 'athlete-1',
       issue_id: ISSUED.issue_id,
       template: ISSUED.template,
-      created: { assignments: 2, adopted_drills: 1 },
+      created: { assignments: 2, adopted_drills: 1, updated_drills: 0 },
       steps: ISSUED.steps,
       adopted_drills: ISSUED.adopted,
+      updated_drills: [],
     });
+  });
+
+  test('a drill updated to the newer version while issuing is returned and counted as updated, not adopted', async () => {
+    const updated = [{ drill_id: 'op-1-v2', reference_drill_id: 'ref-1-v2', name: 'Jab Return', updated_from_drill_id: 'op-1' }];
+    mockIssue.mockResolvedValue({ ...ISSUED, adopted: [], updated });
+
+    const res = await POST(post(BODY));
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.created).toEqual({ assignments: 2, adopted_drills: 0, updated_drills: 1 });
+    expect(body.adopted_drills).toEqual([]);
+    expect(body.updated_drills).toEqual(updated);
   });
 });
 
@@ -257,7 +272,7 @@ describe('an athlete with an active training hold (OD-2026-10-06-024 ruling 1: w
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.hold_warning).toEqual(WARNING);
-    expect(body.created).toEqual({ assignments: 2, adopted_drills: 1 });
+    expect(body.created).toEqual({ assignments: 2, adopted_drills: 1, updated_drills: 0 });
     expect(mockIssue).toHaveBeenCalledTimes(1);
   });
 

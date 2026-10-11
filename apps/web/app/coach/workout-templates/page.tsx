@@ -180,7 +180,7 @@ function newRequestKey(): string | null {
 }
 
 type IssueOutcome =
-  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote; already?: boolean }
+  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; updated?: string[]; hold: HoldNote; already?: boolean }
   // A 201 whose body could not be read: the cards exist, the details do not.
   | { kind: 'issued_unread'; athleteName: string }
   | { kind: 'refused'; message: string; drills: RefusedDrill[] }
@@ -341,6 +341,7 @@ function IssueToAthlete({
             athleteName: chosen.full_name,
             cards: cardCountFrom(payload),
             adopted: namedDrills(payload.adopted_drills),
+            updated: namedDrills(payload.updated_drills),
             hold: holdNoteFrom(payload.hold_warning),
           }
           : { kind: 'issued_unread', athleteName: chosen.full_name });
@@ -500,6 +501,11 @@ function IssueToAthlete({
               </p>
               {outcome.adopted.length > 0 && (
                 <p className="t-body">Adopted for this gym: {outcome.adopted.join(', ')}.</p>
+              )}
+              {/* A drill the gym already ran, moved to the newer version a step
+                  names (OD-2026-10-08-008 D1). Wording PROPOSED for Jason's look. */}
+              {outcome.updated && outcome.updated.length > 0 && (
+                <p className="t-body">Moved to the newer version: {outcome.updated.join(', ')}.</p>
               )}
               {/* OD-2026-10-06-024 ruling 1: told beside the action, after the
                   fact, and nothing was blocked. The progression screen's wording. */}

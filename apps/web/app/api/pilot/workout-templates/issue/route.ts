@@ -135,10 +135,17 @@ export async function POST(request: NextRequest) {
         // scale level, contact level and coach note beside its assignment.
         issue_id: result.issue_id,
         template: result.template,
-        // What was created: one assignment per step, in one workout.
-        created: { assignments: result.steps.length, adopted_drills: result.adopted.length },
+        // What was created: one assignment per step, in one workout. A drill
+        // the gym already ran and moved to the newer version a step names is
+        // counted as updated, never as adopted (OD-2026-10-08-008 D1).
+        created: {
+          assignments: result.steps.length,
+          adopted_drills: result.adopted.length,
+          updated_drills: result.updated.length,
+        },
         steps: result.steps,
         adopted_drills: result.adopted,
+        updated_drills: result.updated,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       },
       { status: 201 },
