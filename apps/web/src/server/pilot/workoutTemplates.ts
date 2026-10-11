@@ -1,12 +1,34 @@
-import { query, queryOne } from './db';
+import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
+import { requiresFloorValidation } from '../../lib/drillFloorValidation';
+import { writePilotAuditEvent } from './audit';
+import { issueCoachCard } from './coachCards';
+import type { PilotRole } from './contracts';
+import { query, queryOne, withTransaction } from './db';
+import { listFloorValidations } from './drillFloorValidations';
+import {
+  getDrillWithDetail,
+  getOtherVersionAdoption,
+  listReferenceLifecycles,
+  type DrillWithDetail,
+} from './drillLibraryV3';
+import {
+  DrillNameTakenError,
+  ReferenceDrillAlreadyPromotedError,
+  isDrillDifficulty,
+  promoteReferenceDrill,
+  type DrillDifficulty,
+} from './drills';
+import { ConflictError } from './errors';
+import { assertNewAssignmentMeetsCueRule, type DrillAssignment } from './progression';
 
 // pilot.workout_templates and pilot.workout_template_items are owned by
 // infra/azure/pilot_slice_postgres_workout_templates_v2_migration.sql,
 // applied through the apply-migrations workflow like every other table.
-// Nothing here issues DDL. Read-only, matching drillLibraryV3.ts's own
-// design -- a change-proposal review lifecycle for templates is a
-// reasonable future consolidation with drillVersioning.ts, not attempted
-// here.
+// Nothing here issues DDL. The TEMPLATES are read-only, matching
+// drillLibraryV3.ts's own design -- a change-proposal review lifecycle for
+// templates is a reasonable future consolidation with drillVersioning.ts, not
+// attempted here. The one write in this module is issueWorkoutTemplate, at the
+// foot: it writes assignments and adopted drills, never a template row.
 //
 // SCALE LEVEL IS NEVER FORCED. getWorkoutTemplateWithItems returns each
 // item's drill_id and its own scale_level PREFERENCE (nullable) as-is --
@@ -172,4 +194,400 @@ export async function getWorkoutTemplateWithItems(
   );
 
   return { template, items };
+}
+
+// ---------------------------------------------------------------------------
+// ISSUING A TEMPLATE TO ONE ATHLETE -- OD-2026-10-07-012 ruling 2 and
+// OD-2026-10-08-002 item 2.
+//
+// Every step becomes one gap-free assignment (a Coach Card: issueCoachCard,
+// the same writer the cards route uses), all in ONE transaction, so a template
+// is issued whole or not at all.
+//
+// A step names a REFERENCE drill (pilot.drill_library), and only an
+// operational drill (pilot.drills) may be assigned (OD-2026-09-18-001). So:
+//   - the gym already runs the drill          -> its operational drill is assigned.
+//   - the gym has not adopted it, it is ready -> it is adopted in the same
+//     transaction (promoteReferenceDrill, audited as a promotion is), then
+//     assigned. "Ready" is adoptionReadiness, the check the promote route
+//     enforces, so a floor-tested draft is ready and an untested one is not.
+//   - anything else                           -> the WHOLE issue is refused and
+//     every such drill is named with its reason. Nothing is written.
+//
+// WHAT IS NOT CARRIED. pilot.drill_assignments has no column for a step's
+// block, its place in the order, its scale level, its contact level or its
+// coach note, so none of those reach the athlete: each step arrives as a
+// separate assignment carrying the drill, its rep count and its minutes. The
+// link back to the template lives in the audit event only. The caller says so
+// (TEMPLATE_STEP_FIELDS_NOT_CARRIED) rather than letting a reader assume the
+// session's structure travelled with it.
+//
+// AUTHORIZATION IS THE ROUTE'S. Like issueCoachCard, this trusts its caller to
+// have passed the role gate and assertActorCanAccessAthlete; organizationId is
+// the session's and scopes every read and write below.
+// ---------------------------------------------------------------------------
+
+/** The template step columns an issued assignment has nowhere to store. */
+export const TEMPLATE_STEP_FIELDS_NOT_CARRIED = ['block', 'ordinal', 'scale_level', 'contact_level', 'coach_note'] as const;
+
+// The operational ceiling the promote route enforces (drills/promote/route.ts
+// MAX_CUES): an adopted drill takes the reference's first twelve cues.
+const MAX_ADOPTED_CUES = 12;
+
+/** One drill (or typed step) that stopped a template from being issued. */
+export interface TemplateIssueRefusedDrill {
+  /** The template steps (ordinals) that name it. */
+  steps: number[];
+  /** The reference drill id; null for a typed step, which names no drill. */
+  drill_id: string | null;
+  name: string;
+  /** True for a draft no coach of this gym has floor-tested (OD-2026-10-08-002 item 2). */
+  untested_draft: boolean;
+  reason: string;
+}
+
+export interface TemplateIssuedStep {
+  /** The template step (ordinal) this assignment was created from. */
+  step: number;
+  item_id: string;
+  assignment: DrillAssignment;
+}
+
+export interface TemplateAdoptedDrill {
+  /** The gym's new operational drill. */
+  drill_id: string;
+  reference_drill_id: string;
+  name: string;
+}
+
+export type TemplateIssueResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'refused'; message: string; drills: TemplateIssueRefusedDrill[] }
+  | {
+      outcome: 'issued';
+      template: { template_id: string; name: string; version: number };
+      steps: TemplateIssuedStep[];
+      adopted: TemplateAdoptedDrill[];
+    };
+
+const TYPED_STEP_REASON =
+  'This step is typed text, not a drill from the library, so it cannot be assigned.';
+const RETIRED_ADOPTION_REASON =
+  'This gym adopted this drill and then retired it. Restore it in the drill library first.';
+const OTHER_VERSION_REASON =
+  'This gym already has another version of this drill, and this template names a different one.';
+const UNREADABLE_DRILL_REASON = 'This drill could not be read from the library.';
+
+function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
+  const names = (list: TemplateIssueRefusedDrill[]) => list.map((drill) => drill.name).join(', ');
+  const drafts = drills.filter((drill) => drill.untested_draft);
+  const others = drills.filter((drill) => !drill.untested_draft);
+  const parts = ['Nothing was issued.'];
+  if (drafts.length > 0) {
+    parts.push(`Not floor-tested by a coach of this gym yet: ${names(drafts)}.`);
+  }
+  if (others.length > 0) {
+    parts.push(`Cannot be assigned as they stand: ${names(others)}.`);
+  }
+  return parts.join(' ');
+}
+
+interface TemplateIssuePlan {
+  refused: TemplateIssueRefusedDrill[];
+  /** reference drill id -> the gym's active operational drill id. */
+  operational: Map<string, string>;
+  /** Reference drills to adopt in the transaction, in step order. */
+  adoptions: AdoptableReference[];
+}
+
+/** A reference drill whose difficulty is already known to be in the operational vocabulary. */
+type AdoptableReference = DrillWithDetail & { difficulty: DrillDifficulty };
+
+/**
+ * The read-only pass: what each step's drill is to this gym right now. Writes
+ * nothing. The transaction that follows re-decides everything that can change
+ * underneath it (the unique indexes on pilot.drills, and issueCoachCard's
+ * insert-from-an-active-drill), so a stale answer here cannot become a write.
+ */
+async function planTemplateIssue(
+  organizationId: string,
+  items: WorkoutTemplateItemWithDrillHead[],
+): Promise<TemplateIssuePlan> {
+  const plan: TemplateIssuePlan = { refused: [], operational: new Map(), adoptions: [] };
+
+  for (const item of items) {
+    if (item.drill_id === null) {
+      plan.refused.push({
+        steps: [item.ordinal],
+        drill_id: null,
+        name: (item.free_text_drill ?? '').trim() || `Step ${item.ordinal}`,
+        untested_draft: false,
+        reason: TYPED_STEP_REASON,
+      });
+    }
+  }
+
+  // One verdict per reference drill, however many steps name it.
+  const stepsByReference = new Map<string, number[]>();
+  for (const item of items) {
+    if (item.drill_id !== null) {
+      stepsByReference.set(item.drill_id, [...(stepsByReference.get(item.drill_id) ?? []), item.ordinal]);
+    }
+  }
+  const referenceIds = [...stepsByReference.keys()];
+  if (referenceIds.length === 0) {
+    return plan;
+  }
+
+  const lifecycles = await listReferenceLifecycles(organizationId, referenceIds);
+  const floorTested = await listFloorValidations(organizationId, referenceIds);
+
+  for (const referenceId of referenceIds) {
+    const steps = stepsByReference.get(referenceId) ?? [];
+    const reference = await getDrillWithDetail(organizationId, referenceId);
+    const lifecycle = lifecycles[referenceId];
+    const refuse = (reason: string, untestedDraft = false) => {
+      plan.refused.push({
+        steps,
+        drill_id: referenceId,
+        name: reference?.name ?? referenceId,
+        untested_draft: untestedDraft,
+        reason,
+      });
+    };
+
+    if (!reference || !lifecycle) {
+      refuse(UNREADABLE_DRILL_REASON);
+      continue;
+    }
+
+    // The gym runs this drill: no adoption, and the reference's own state no
+    // longer decides anything (an adopted drill outlives a withdrawn
+    // reference). The cue rule on a NEW assignment still applies, and is
+    // asked here so a drill that breaks it is named with the others rather
+    // than surfacing alone from inside the transaction.
+    if (lifecycle.state === 'operational' && lifecycle.operational_drill_id) {
+      try {
+        await assertNewAssignmentMeetsCueRule(organizationId, lifecycle.operational_drill_id);
+      } catch (error) {
+        if (error instanceof ConflictError) {
+          refuse(error.message);
+          continue;
+        }
+        throw error;
+      }
+      plan.operational.set(referenceId, lifecycle.operational_drill_id);
+      continue;
+    }
+
+    // Adopted once and retired: the promote route refuses a second promotion
+    // and sends the coach to Restore, so issuing does not revive it either.
+    if (lifecycle.state === 'retired') {
+      refuse(RETIRED_ADOPTION_REASON);
+      continue;
+    }
+
+    // Not adopted. The same readiness check, on the same inputs, the promote
+    // route enforces -- so issuing a template can adopt nothing a coach could
+    // not adopt by hand. An untested draft is the case the owner ruled on by
+    // name; it is flagged so the caller can say so first.
+    const tested = Boolean(floorTested[referenceId]);
+    const readiness = adoptionReadiness({ ...reference, floor_tested_by_this_gym: tested });
+    if (!readiness.ready) {
+      refuse(readiness.missing.join(' '), requiresFloorValidation(reference.field_provenance) && !tested);
+      continue;
+    }
+
+    // A different version of a drill this gym already has (running or
+    // retired). The promote route refuses it until the coach-reviewed update
+    // step exists; the template is not quietly pointed at the gym's version.
+    if (await getOtherVersionAdoption(organizationId, referenceId)) {
+      refuse(OTHER_VERSION_REASON);
+      continue;
+    }
+
+    // The promote route checks the same vocabulary before it writes: a
+    // reference row holding another value is not coerced.
+    const difficulty = reference.difficulty;
+    if (!isDrillDifficulty(difficulty)) {
+      refuse('Its difficulty is not one this gym can assign.');
+      continue;
+    }
+
+    plan.adoptions.push({ ...reference, difficulty });
+  }
+
+  // In step order, so the answer reads the way the template does.
+  plan.refused.sort((a, b) => Math.min(...a.steps) - Math.min(...b.steps));
+  return plan;
+}
+
+/**
+ * Issues one saved workout template to one athlete: every step an assignment,
+ * every unadopted-but-ready reference drill adopted, in one transaction.
+ *
+ * Returns 'not_found' for a template id that names nothing in this gym,
+ * 'refused' (nothing written) when any step cannot be assigned, and 'issued'
+ * with what was created otherwise. Throws ConflictError for a template that is
+ * withdrawn or has no steps, and for a write that lost a race.
+ */
+export async function issueWorkoutTemplate(params: {
+  organizationId: string;
+  templateId: string;
+  athleteId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+}): Promise<TemplateIssueResult> {
+  const detail = await getWorkoutTemplateWithItems(params.organizationId, params.templateId);
+  if (!detail) {
+    return { outcome: 'not_found' };
+  }
+  const { template, items } = detail;
+
+  // The list read offers only current, active templates. A direct call with
+  // the id of a withdrawn or replaced one does not get to issue it.
+  if (!template.active || template.superseded_at !== null) {
+    throw new ConflictError(
+      'This workout template is no longer in use, so it cannot be issued.',
+      'WORKOUT_TEMPLATE_NOT_CURRENT',
+    );
+  }
+  if (items.length === 0) {
+    throw new ConflictError('This workout template has no steps to issue.', 'WORKOUT_TEMPLATE_EMPTY');
+  }
+
+  const plan = await planTemplateIssue(params.organizationId, items);
+  if (plan.refused.length > 0) {
+    return { outcome: 'refused', message: refusalMessage(plan.refused), drills: plan.refused };
+  }
+
+  try {
+    return await withTransaction(async (client) => {
+      const drillByReference = new Map(plan.operational);
+      const adopted: TemplateAdoptedDrill[] = [];
+
+      for (const reference of plan.adoptions) {
+        // The promote route's mapping, and the whole of it: focus <- purpose,
+        // the first twelve non-blank cues in the reference's own order.
+        const drill = await promoteReferenceDrill(
+          {
+            organizationId: params.organizationId,
+            referenceDrillId: reference.drill_id,
+            name: reference.name,
+            category: reference.category,
+            focus: reference.purpose.trim(),
+            difficulty: reference.difficulty,
+            cues: reference.cues
+              .map((cue) => cue.cue_text.trim())
+              .filter((cue) => cue.length > 0)
+              .slice(0, MAX_ADOPTED_CUES),
+          },
+          client,
+        );
+        // The evidence a promotion writes, plus what caused this one.
+        await writePilotAuditEvent(
+          {
+            event_type: 'create',
+            actor_account_id: params.actorAccountId,
+            actor_role: params.actorRole,
+            organization_id: params.organizationId,
+            entity_type: 'drill',
+            entity_id: drill.drill_id,
+            details: {
+              name: drill.name,
+              category: drill.category,
+              difficulty: drill.difficulty,
+              reference_drill_id: drill.reference_drill_id,
+              adopted_by: 'workout_template_issue',
+              template_id: template.template_id,
+            },
+          },
+          client,
+        );
+        drillByReference.set(reference.drill_id, drill.drill_id);
+        adopted.push({ drill_id: drill.drill_id, reference_drill_id: reference.drill_id, name: drill.name });
+      }
+
+      const steps: TemplateIssuedStep[] = [];
+      for (const item of items) {
+        const drillId = item.drill_id === null ? undefined : drillByReference.get(item.drill_id);
+        if (!drillId) {
+          // Unreachable while planTemplateIssue judges every step; thrown
+          // rather than skipped, so a step can never be silently left out.
+          throw new ConflictError(
+            'This workout template changed while it was being issued. Nothing was issued; try again.',
+            'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+          );
+        }
+        const assignment = await issueCoachCard(
+          {
+            organizationId: params.organizationId,
+            athleteId: params.athleteId,
+            assignedByAccountId: params.actorAccountId,
+            drillId,
+            repCount: item.rep_count ?? undefined,
+            durationMinutes: item.duration_minutes ?? undefined,
+          },
+          client,
+        );
+        steps.push({ step: item.ordinal, item_id: item.item_id, assignment });
+      }
+
+      // The only durable link between these assignments and the template.
+      await writePilotAuditEvent(
+        {
+          event_type: 'create',
+          actor_account_id: params.actorAccountId,
+          actor_role: params.actorRole,
+          organization_id: params.organizationId,
+          entity_type: 'workout_template_issue',
+          entity_id: template.template_id,
+          details: {
+            athlete_id: params.athleteId,
+            template_name: template.name,
+            template_version: template.version,
+            steps: steps.map((issued) => ({
+              step: issued.step,
+              item_id: issued.item_id,
+              assignment_id: issued.assignment.assignment_id,
+              drill_id: issued.assignment.drill_id,
+            })),
+            adopted_drill_ids: adopted.map((drill) => drill.drill_id),
+            not_carried: [...TEMPLATE_STEP_FIELDS_NOT_CARRIED],
+          },
+        },
+        client,
+      );
+
+      return {
+        outcome: 'issued' as const,
+        template: { template_id: template.template_id, name: template.name, version: template.version },
+        steps,
+        adopted,
+      };
+    });
+  } catch (error) {
+    // Decided by the unique indexes inside the transaction, which has rolled
+    // back by the time either is seen here: nothing was written.
+    if (error instanceof DrillNameTakenError) {
+      const named = plan.adoptions.filter((reference) => reference.name === error.drillName);
+      const drills: TemplateIssueRefusedDrill[] = named.map((reference) => ({
+        steps: items.filter((item) => item.drill_id === reference.drill_id).map((item) => item.ordinal),
+        drill_id: reference.drill_id,
+        name: reference.name,
+        untested_draft: false,
+        reason: `${error.message}, so this one cannot be adopted under that name.`,
+      }));
+      if (drills.length > 0) {
+        return { outcome: 'refused', message: refusalMessage(drills), drills };
+      }
+    }
+    if (error instanceof ReferenceDrillAlreadyPromotedError) {
+      throw new ConflictError(
+        'A drill in this template was adopted while the template was being issued. Nothing was issued; try again.',
+        'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+      );
+    }
+    throw error;
+  }
 }

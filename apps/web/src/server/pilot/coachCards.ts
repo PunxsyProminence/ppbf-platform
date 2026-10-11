@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import {
   accessibleAthleteIds,
   athleteIdsForCoach,
@@ -112,21 +114,32 @@ function newAssignmentId(): string {
  * (assertActorCanAccessAthlete) is enforced at the route exactly as it is
  * for gap-driven assignments. A single INSERT is atomic on its own, so no
  * explicit transaction is opened.
+ *
+ * `client` puts the insert on the caller's transaction, so a card issued as one
+ * step of a larger write (issuing a workout template) commits or rolls back
+ * with it. The cue-rule read above the insert stays pooled either way, and a
+ * pooled read cannot see a drill created on that same uncommitted transaction:
+ * a caller that adopts a drill and cards it together judges the cue rule
+ * itself before it writes. Omitted, this is the pooled insert it has always
+ * been.
  */
 export async function issueCoachCard(params: {
   organizationId: string;
   athleteId: string;
   assignedByAccountId: string;
-} & CardContent): Promise<DrillAssignment> {
+} & CardContent, client?: PoolClient): Promise<DrillAssignment> {
   const drillId = requireAssignableDrillId(params.drillId);
   await assertNewAssignmentMeetsCueRule(params.organizationId, drillId);
+  const run = client
+    ? async (text: string, values: unknown[]) => (await client.query<DrillAssignment>(text, values)).rows
+    : (text: string, values: unknown[]) => query<DrillAssignment>(text, values);
 
   // Resolve and snapshot in one statement, as assignDrill does: an unknown,
   // cross-org, reference-library or retired drill_id selects nothing and so
   // inserts nothing. Still a single statement, so still atomic without an
   // explicit transaction. The casts are needed for the same reason as there --
   // parameters in an INSERT ... SELECT list do not take the target column type.
-  const rows = await query<DrillAssignment>(
+  const rows = await run(
     `with a as (
       insert into pilot.drill_assignments (
         assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,

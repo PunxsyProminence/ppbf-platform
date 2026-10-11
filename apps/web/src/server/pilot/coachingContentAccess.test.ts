@@ -62,6 +62,9 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   // OD-2026-10-06-026 ruling 3: a coach or the gym's admin marks a draft
   // reference drill floor-tested for their gym. POST-only, like promote.
   'drills/floor-tested/route.ts': ['FLOOR_VALIDATOR_ROLES'],
+  // Lane P7 (#1401): issuing a template assigns drills and may adopt one, so
+  // it gates on the author list. POST-only, like promote.
+  'workout-templates/issue/route.ts': ['DRILL_AUTHOR_ROLES'],
   // W-D4B (OD-2026-09-19-001): the reference instruction a piece of assigned
   // work links to. The same content class reached by another path, so it
   // takes the same policy -- and then a record gate on the assignment's
@@ -82,7 +85,7 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
  * So the reader-policy case iterates the read routes, and every other case
  * iterates all of them.
  */
-const AUTHOR_ONLY_ROUTES = ['drills/promote/route.ts', 'drills/floor-tested/route.ts'];
+const AUTHOR_ONLY_ROUTES = ['drills/promote/route.ts', 'drills/floor-tested/route.ts', 'workout-templates/issue/route.ts'];
 
 const REGISTERED_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
 const GATED_READ_ROUTES = REGISTERED_ROUTES.filter(
@@ -187,18 +190,19 @@ describe('every surface serving this content reaches the one policy', () => {
   });
 
   it('keeps the author list identical wherever it is declared, so promotion cannot drift from authoring', () => {
-    // DRILL_AUTHOR_ROLES is declared in two route files: the drills route that
-    // creates and edits a drill, and the promote route that creates one from a
-    // reference drill. Both are the same question -- who may put an assignable
-    // drill in this gym -- so the two literals are asserted equal here rather
-    // than left to drift into two different answers.
+    // DRILL_AUTHOR_ROLES is declared in three route files: the drills route
+    // that creates and edits a drill, the promote route that creates one from a
+    // reference drill, and the template-issue route that adopts one while
+    // assigning it. All are the same question -- who may put an assignable
+    // drill in this gym -- so the literals are asserted equal here rather
+    // than left to drift into different answers.
     const authorList = /const DRILL_AUTHOR_ROLES = (\[[^\]]*\]) as const;/;
 
     const declarations = Object.entries(PERMITTED_GATE_CONSTANTS)
       .filter(([, permitted]) => permitted.includes('DRILL_AUTHOR_ROLES'))
       .map(([relative]) => routeSource(relative).match(authorList)?.[1]);
 
-    expect(declarations).toHaveLength(2);
+    expect(declarations).toHaveLength(3);
     expect(new Set(declarations).size).toBe(1);
     expect(declarations[0]).toBe("['coach', 'organization_admin', 'admin']");
   });

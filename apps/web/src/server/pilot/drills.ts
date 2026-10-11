@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
 import { cueRequiredMessage, hasCoachingCue, isConditioningLabel } from '../../lib/drillCueRule';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
@@ -280,6 +282,12 @@ export async function createDrill(params: {
  * (DrillNameTakenError), or may already have promoted this exact reference drill
  * under any name (ReferenceDrillAlreadyPromotedError). Both are unique-index
  * violations and each has its own remedy, so they are never merged.
+ *
+ * `client` puts the insert on the caller's transaction, so an adoption made as
+ * part of a larger write (issuing a workout template) commits or rolls back
+ * with it. A collision then leaves that transaction aborted: the caller lets
+ * the error out and rolls back. Omitted, this is the pooled insert it has
+ * always been.
  */
 export async function promoteReferenceDrill(params: {
   organizationId: string;
@@ -289,11 +297,14 @@ export async function promoteReferenceDrill(params: {
   focus: string;
   cues?: string[];
   difficulty?: DrillDifficulty;
-}): Promise<PilotDrill> {
+}, client?: PoolClient): Promise<PilotDrill> {
   const drillId = randomUUID();
+  const run = client
+    ? async (text: string, values: unknown[]) => (await client.query<PilotDrill>(text, values)).rows
+    : (text: string, values: unknown[]) => query<PilotDrill>(text, values);
 
   try {
-    const rows = await query<PilotDrill>(
+    const rows = await run(
       `insert into pilot.drills
          (organization_id, drill_id, name, category, focus, cues, difficulty, reference_drill_id)
        values ($1, $2, $3, $4, $5, $6::text[], $7, $8)
