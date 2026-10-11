@@ -498,7 +498,8 @@ describe('the shared chrome components run the journeys that render them (lane N
     const flags = classify(['apps/web/components/SomeNewSurface.tsx']);
 
     expect([flags.unknown_code, flags.migrations, flags.coach_e2e]).toEqual(['true', 'false', 'false']);
-    const chrome = classify(['apps/web/components/WorkAxis.tsx']);
-    expect(chrome.migrations).toBe('false');
+    // The button is not on the sign-in door, so it must not pull those suites in.
+    const button = classify(['apps/web/components/ShadowChatButton.tsx']);
+    expect([button.homepage_e2e, button.board_e2e, button.migrations]).toEqual(['false', 'false', 'false']);
   });
 });

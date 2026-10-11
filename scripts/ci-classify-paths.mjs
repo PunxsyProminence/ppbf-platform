@@ -201,12 +201,13 @@ const isSignedInJourneyPath = (file) =>
        now measures its rows. Without this line a change to the catalog itself
        ran none of the suites that assert it. */
     'apps/web/components/CardCatalog',
-    /* SHARED CHROME OF GATED SURFACES (lane N8-02). ShadowChatButton sits on
-       the athlete, coach, parent and role-summary surfaces and WorkAxis is
-       the foot of the athlete and coach workspaces, so an edit to either
-       changes what all three signed-in journeys render. Both classified
-       `unknown_code` before this line. Prefix match, so the colocated tests
-       attend the suites too. */
+    /* SHARED CHROME OF GATED SURFACES (lane N8-02). ShadowChatButton renders
+       on the athlete workspace, parent hub, role standalone view and
+       role-summary panels; WorkAxis is the foot of the athlete and coach
+       workspaces and of /login, which every journey signs in through. So an
+       edit to either changes what all three signed-in journeys render. Both
+       classified `unknown_code` before this line. Prefix match, so the
+       colocated tests attend the suites too. */
     'apps/web/components/ShadowChatButton',
     'apps/web/components/WorkAxis',
     /* THE SHARED STYLESHEETS, and this one is a policy change worth stating.
