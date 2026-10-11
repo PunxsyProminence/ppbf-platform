@@ -313,6 +313,22 @@ describe('a template whose drills the gym already runs', () => {
     expect(mockCard).toHaveBeenCalledTimes(1);
   });
 
+  test('a running drill whose reference has since been SUPERSEDED is assigned too', async () => {
+    given({
+      items: [item(1)],
+      library: {
+        'ref-1': {
+          row: reference('ref-1', { superseded_at: '2026-10-01T00:00:00.000Z' }),
+          state: 'operational',
+          operational: 'op-1',
+        },
+      },
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', adopted: [] });
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1']);
+  });
+
   test('a running drill that breaks the cue rule refuses the issue and is named', async () => {
     given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: 'op-1' } } });
     mockCueRule.mockRejectedValue(new ConflictError('Add a coaching cue to "Drill ref-1" first.', 'DRILL_CUE_REQUIRED'));
@@ -489,6 +505,82 @@ describe('an untested DRAFT drill (OD-2026-10-08-002 item 2)', () => {
 
     await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'refused' });
     expect(mockFloorTested.mock.calls[0][0]).toBe(ORG);
+  });
+});
+
+describe('a DRAFT the gym already adopted (OD-2026-10-08-002 item 2, read literally)', () => {
+  const ADOPTED_UNTESTED =
+    'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.';
+
+  test('with no floor-tested mark it is refused and named, and nothing is written', async () => {
+    given({
+      items: [item(1), item(2)],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-1' },
+        'ref-2': {
+          row: reference('ref-2', { name: 'Old Adopted Draft', field_provenance: DRAFT }),
+          state: 'operational',
+          operational: 'op-2',
+        },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Old Adopted Draft.',
+      drills: [{ steps: [2], drill_id: 'ref-2', name: 'Old Adopted Draft', untested_draft: true, reason: ADOPTED_UNTESTED }],
+    });
+    expectNothingWritten();
+  });
+
+  test('once a coach of this gym has marked it floor-tested it is assigned', async () => {
+    given({
+      items: [item(1)],
+      library: {
+        'ref-1': { row: reference('ref-1', { field_provenance: DRAFT }), state: 'operational', operational: 'op-1' },
+      },
+      floorTested: ['ref-1'],
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued', adopted: [] });
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1']);
+  });
+
+  test('an adopted drill that is NOT a draft needs no floor-tested mark', async () => {
+    given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: 'op-1' } }, floorTested: [] });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+  });
+
+  test('untested AND breaking the cue rule: both reasons, and not offered a floor test as the cure', async () => {
+    given({
+      items: [item(1)],
+      library: {
+        'ref-1': {
+          row: reference('ref-1', { name: 'Old Adopted Draft', field_provenance: DRAFT }),
+          state: 'operational',
+          operational: 'op-1',
+        },
+      },
+    });
+    mockCueRule.mockRejectedValue(new ConflictError('"Old Adopted Draft" has no coaching cue.', 'DRILL_CUE_REQUIRED'));
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Cannot be assigned as they stand: Old Adopted Draft.',
+      drills: [{
+        steps: [1],
+        drill_id: 'ref-1',
+        name: 'Old Adopted Draft',
+        untested_draft: false,
+        reason: `${ADOPTED_UNTESTED} "Old Adopted Draft" has no coaching cue.`,
+      }],
+    });
+    expectNothingWritten();
   });
 });
 

@@ -600,6 +600,80 @@ describe('a refusal writes nothing', () => {
     expect(await written(gym)).toEqual(NOTHING);
   });
 
+  test('a DRAFT the gym already adopted, with no floor-tested mark, is refused and named; the mark clears it', async () => {
+    const gym = await newGym('adopted-untested-draft');
+    await insertReference(gym, 'ref-draft', 'Adopted Before The Gate', { draft: true });
+    // Adopted before the floor-test gate existed. The promote ROUTE would
+    // refuse this today, so the writer is called directly, past that check.
+    const drillId = await adopt(gym, 'ref-draft', 'Adopted Before The Gate');
+    await insertTemplate(gym, ['ref-draft']);
+    const before = await written(gym);
+
+    const refused = await issue(gym);
+
+    expect(refused).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Adopted Before The Gate.',
+      drills: [{
+        steps: [1],
+        drill_id: 'ref-draft',
+        name: 'Adopted Before The Gate',
+        untested_draft: true,
+        reason:
+          'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.',
+      }],
+    });
+    expect(await written(gym)).toEqual(before);
+
+    await markDrillFloorTested({
+      organizationId: gym.organizationId,
+      drillId: 'ref-draft',
+      validatedByAccountId: gym.coachId,
+      validatedByRole: 'coach',
+      note: '',
+    });
+    const issued = await issue(gym);
+
+    expect(issued).toMatchObject({ outcome: 'issued', adopted: [] });
+    if (issued.outcome !== 'issued') return;
+    expect(issued.steps[0].assignment.drill_id).toBe(drillId);
+  });
+
+  test('an adopted, running drill is assigned although its reference was later WITHDRAWN', async () => {
+    const gym = await newGym('adopted-then-withdrawn');
+    await insertReference(gym, 'ref-a', 'Outlives Its Reference');
+    const drillId = await adopt(gym, 'ref-a', 'Outlives Its Reference');
+    await client.query(`update pilot.drill_library set active = false where organization_id = $1 and drill_id = 'ref-a'`, [
+      gym.organizationId,
+    ]);
+    await insertTemplate(gym, ['ref-a']);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [] });
+    if (result.outcome !== 'issued') return;
+    expect(result.steps[0].assignment.drill_id).toBe(drillId);
+    expect(await written(gym)).toMatchObject({ drills: 1, assignments: 1 });
+  });
+
+  test('an adopted, running drill is assigned although its reference was later SUPERSEDED', async () => {
+    const gym = await newGym('adopted-then-superseded');
+    await insertReference(gym, 'ref-v1', 'Superseded Under It', { lineageId: 'lin-1', version: 1 });
+    const drillId = await adopt(gym, 'ref-v1', 'Superseded Under It');
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+      [gym.organizationId],
+    );
+    await insertReference(gym, 'ref-v2', 'Superseded Under It II', { lineageId: 'lin-1', version: 2 });
+    await insertTemplate(gym, ['ref-v1']);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [] });
+    if (result.outcome !== 'issued') return;
+    expect(result.steps[0].assignment.drill_id).toBe(drillId);
+  });
+
   test('a running drill of this gym that breaks the cue rule is named, by the production cue-rule read', async () => {
     const gym = await newGym('running-no-cue');
     await insertReference(gym, 'ref-a', 'Cue-less Running Drill', { cues: false });
@@ -623,7 +697,7 @@ describe('a refusal writes nothing', () => {
     expect(await written(gym)).toEqual(before);
   });
 
-  test('a withdrawn reference and a superseded one are both named and neither is adopted', async () => {
+  test('a withdrawn reference and a superseded one the gym has NOT adopted are both named and neither is adopted', async () => {
     const gym = await newGym('withdrawn-superseded');
     await insertReference(gym, 'ref-gone', 'Withdrawn Drill', { active: false });
     await insertReference(gym, 'ref-old', 'Old Version', { lineageId: 'lin-1', version: 1, superseded: true });

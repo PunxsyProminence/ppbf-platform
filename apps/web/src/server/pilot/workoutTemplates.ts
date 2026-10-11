@@ -1,5 +1,5 @@
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
-import { NOT_FLOOR_TESTED_READINESS_MESSAGE } from '../../lib/drillFloorValidation';
+import { NOT_FLOOR_TESTED_READINESS_MESSAGE, requiresFloorValidation } from '../../lib/drillFloorValidation';
 import { writePilotAuditEvent } from './audit';
 import { issueCoachCard } from './coachCards';
 import type { PilotRole } from './contracts';
@@ -206,7 +206,14 @@ export async function getWorkoutTemplateWithItems(
 //
 // A step names a REFERENCE drill (pilot.drill_library), and only an
 // operational drill (pilot.drills) may be assigned (OD-2026-09-18-001). So:
-//   - the gym already runs the drill          -> its operational drill is assigned.
+//   - the gym already runs the drill          -> its operational drill is
+//     assigned, even when its reference has since been withdrawn or superseded
+//     (an adopted drill is the gym's). ONE exception: a draft the gym adopted
+//     that no coach of the gym has marked floor-tested is refused and named,
+//     as an unadopted one is. That is stricter than the single-assignment
+//     route, which assigns such a drill today; the difference is deliberate
+//     here (OD-2026-10-08-002 item 2 is about template issue) and that route
+//     is not changed.
 //   - the gym has not adopted it, it is ready -> it is adopted in the same
 //     transaction (promoteReferenceDrill, audited as a promotion is), then
 //     assigned. "Ready" is adoptionReadiness, the check the promote route
@@ -278,6 +285,12 @@ const RETIRED_ADOPTION_REASON =
 // so that case is not sent to a step that cannot work.
 const RETIRED_WITHDRAWN_REASON =
   'This gym adopted this drill and then retired it, and its reference has since been withdrawn, so it cannot be assigned.';
+// OD-2026-10-08-002 item 2, read literally (Overwatch ruling on lane P7): a
+// draft is refused at template issue until a coach of this gym has marked it
+// floor-tested, whether or not the gym adopted it before that mark was
+// required.
+const ADOPTED_UNTESTED_DRAFT_REASON =
+  'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.';
 const SHARED_NAME_REASON =
   'Another drill in this template has the same name, and a gym can hold only one drill under a name.';
 const OTHER_VERSION_REASON =
@@ -374,21 +387,32 @@ async function planTemplateIssue(
       continue;
     }
 
-    // The gym runs this drill: no adoption, and the reference's own state no
-    // longer decides anything (an adopted drill outlives a withdrawn
-    // reference). The cue rule on a NEW assignment still applies, and is
-    // asked here so a drill that breaks it is named with the others rather
-    // than surfacing alone from inside the transaction, where issueCoachCard
-    // asks it again on the transaction's own connection.
+    // The gym runs this drill: no adoption, and the reference being withdrawn
+    // or superseded since no longer decides anything (an adopted drill
+    // outlives its reference). Two rules still apply to a NEW issue of it, and
+    // both are asked here so the drill is named with the others rather than
+    // surfacing alone from inside the transaction (where issueCoachCard asks
+    // the cue rule again on the transaction's own connection):
+    //   - a draft stays refused until a coach of this gym has floor-tested it;
+    //   - the cue rule on a new assignment.
     if (lifecycle.state === 'operational' && lifecycle.operational_drill_id) {
+      const reasons: string[] = [];
+      if (requiresFloorValidation(reference.field_provenance) && !floorTested[referenceId]) {
+        reasons.push(ADOPTED_UNTESTED_DRAFT_REASON);
+      }
       try {
         await assertNewAssignmentMeetsCueRule(organizationId, lifecycle.operational_drill_id);
       } catch (error) {
-        if (error instanceof ConflictError) {
-          refuse(error.message);
-          continue;
+        if (!(error instanceof ConflictError)) {
+          throw error;
         }
-        throw error;
+        reasons.push(error.message);
+      }
+      if (reasons.length > 0) {
+        // Flagged as the untested-draft case only when the floor test is the
+        // one thing in the way, as for an unadopted draft below.
+        refuse(reasons.join(' '), reasons.length === 1 && reasons[0] === ADOPTED_UNTESTED_DRAFT_REASON);
+        continue;
       }
       plan.operational.set(referenceId, lifecycle.operational_drill_id);
       continue;
