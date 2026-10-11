@@ -10,8 +10,10 @@ import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime'
 // picked in the review section; it reads nothing until a coach opens it.
 //
 // STAFF ONLY (OD-2026-10-10-003 ruling 3: "no athlete or parent view"). This
-// panel is mounted on the coach screen and nowhere else, and the route it
-// calls refuses every athlete and parent.
+// panel is mounted on the coach screen and in the organization admin's
+// coach-notes block on the admin athlete-records page (AdminAthleteCoachNotes.tsx,
+// OD-2026-10-10-004 ruling 4) and nowhere else, and the route it calls refuses
+// every athlete and parent.
 //
 // EVERY staff note on the session is listed, each under its author's display
 // NAME (the server's author_name); the panel never sees an account id. Change

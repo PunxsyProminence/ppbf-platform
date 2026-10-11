@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
+import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
@@ -815,6 +816,15 @@ function AthleteRecordsConsoleContent() {
                 {busy ? 'Saving...' : hasUnsavedEdits ? 'Save Correction' : 'Nothing To Save'}
               </button>
             </form>
+
+            {/* Lane FU2: what the gym's coaches wrote about this athlete,
+                for the organization admin (OD-2026-10-10-004 ruling 4). Keyed
+                by athlete so nothing read for one athlete shows under another. */}
+            <AdminAthleteCoachNotes
+              key={`coach-notes-${selected.athlete_id}`}
+              athleteId={selected.athlete_id}
+              athleteName={selected.full_name}
+            />
 
             <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
               <div>

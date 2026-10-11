@@ -297,3 +297,78 @@ test('no older-notes line when the list is complete', async () => {
   await screen.findByText('Held pace through all six rounds');
   expect(screen.queryByText(/Older notes are kept/)).toBeNull();
 });
+
+// OD-2026-10-10-003 ruling 4: the organization admin is offered Withdraw on a
+// note whose author has left the gym -- and on no other note that is not
+// theirs. The server says which (can_withdraw); the panel never works it out.
+test('an organization admin sees Withdraw only on a departed coach\'s note, named by the author\'s display name', async () => {
+  const DEPARTED = { ...THEIRS, note_id: 'note-3', note: 'Faded late', author_name: 'Coach Dana Reyes', own: false, can_withdraw: true };
+  const ACTIVE = { ...THEIRS, own: false, can_withdraw: false };
+  let notes = [DEPARTED, ACTIVE];
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes }),
+    undefined,
+    () => {
+      notes = [ACTIVE];
+      return respond({ ok: true, note_id: 'note-3' });
+    },
+  );
+  openPanel();
+  const list = await screen.findByRole('list', { name: 'Capacity notes, newest first' });
+  const items = list.querySelectorAll('li');
+  expect(items[0].textContent).toContain('Coach Dana Reyes');
+  expect(items[0].querySelector('button')).not.toBeNull();
+  // The active coach's note carries no control at all.
+  expect(items[1].querySelector('button')).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Withdraw your note/ })).toBeNull();
+
+  const withdrawButtons = screen.getAllByRole('button', { name: /^Withdraw/ });
+  expect(withdrawButtons).toHaveLength(1);
+  expect(withdrawButtons[0].getAttribute('aria-label')).toMatch(/^Withdraw the note Coach Dana Reyes wrote on /);
+  fireEvent.click(withdrawButtons[0]);
+  await waitFor(() => expect(screen.queryByText('Faded late')).toBeNull());
+  expect(deletes).toHaveLength(1);
+  expect(deletes[0].url).toContain('/api/pilot/coach/athlete-capacity-notes?athlete_id=ath-1&note_id=note-3');
+  expect(screen.getByText('Gassed after round three')).toBeTruthy();
+});
+
+test('can_withdraw that is not a boolean is an unreadable answer, never a Withdraw button', async () => {
+  serve(() => respond({ ok: true, note_max: 2000, notes: [{ ...THEIRS, can_withdraw: 'yes' }] }));
+  openPanel();
+  expect(await screen.findByText(/could not be read just now/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Withdraw/ })).toBeNull();
+});
+
+test('a withdrawal the server refuses as not permitted re-reads the list, so a Withdraw it no longer allows does not stay', async () => {
+  // The list was read while the author was away; the author came back before the tap.
+  const STALE = { ...THEIRS, own: false, can_withdraw: true };
+  let notes = [STALE];
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes }),
+    undefined,
+    () => {
+      notes = [{ ...STALE, can_withdraw: false }];
+      return respond({ ok: false, error: 'The coach who wrote this note is still at the gym; only they may withdraw it.' }, 403);
+    },
+  );
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Withdraw the note/ }));
+  expect(await screen.findByText('The coach who wrote this note is still at the gym; only they may withdraw it.')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Withdraw/ })).toBeNull());
+  expect(gets).toHaveLength(2);
+  // The note is still listed, and the refusal still says what happened.
+  expect(screen.getByText('Gassed after round three')).toBeTruthy();
+  expect(screen.getByText('NOT WITHDRAWN')).toBeTruthy();
+});
+
+test('a withdrawal that fails for another reason does not re-read', async () => {
+  serve(
+    () => respond({ ok: true, note_max: 2000, notes: [MINE] }),
+    undefined,
+    () => respond({ ok: false }, 500),
+  );
+  openPanel();
+  fireEvent.click(await screen.findByRole('button', { name: /^Withdraw your note/ }));
+  expect(await screen.findByText('The note was not withdrawn (500).')).toBeTruthy();
+  expect(gets).toHaveLength(1);
+});

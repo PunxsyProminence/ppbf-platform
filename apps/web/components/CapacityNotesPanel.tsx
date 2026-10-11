@@ -7,8 +7,9 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // A coach's physical capacity notes for one athlete (module 013's slice,
 // OD-2026-10-08-002): what a coach saw of the athlete's capacity, in the
 // coach's own words, dated and kept as history newest first. Rendered closed
-// under the selected athlete on the coach dashboard; it reads nothing until a
-// coach opens it.
+// under the selected athlete on the coach dashboard, and in the organization
+// admin's coach-notes block on the admin athlete-records page
+// (AdminAthleteCoachNotes.tsx); it reads nothing until it is opened.
 //
 // WORDS, NOT NUMBERS. The panel shows the text the server stored and sends the
 // text the coach typed. Nothing here parses, counts, grades or colours a note:
@@ -18,7 +19,10 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // NAME (the server's author_name); the panel never sees an account id.
 //
 // HISTORY. A note is never edited. The coach who wrote one may withdraw it
-// (`own` from the server); it leaves the list, the server keeps the row.
+// (`own` from the server); it leaves the list, the server keeps the row. An
+// organization admin is also offered Withdraw on a note whose author has left
+// the gym (`can_withdraw` from the server, OD-2026-10-10-003 ruling 4) -- the
+// server decides who that is, and decides again on the withdrawal itself.
 //
 // Authorization is the route's: this panel sends the form and shows what the
 // server answers. Whether the athlete or family sees these notes is NOT
@@ -30,6 +34,7 @@ interface NoteRow {
   author_name: string;
   created_at: string;
   own: boolean;
+  can_withdraw?: boolean;
 }
 
 type Reading =
@@ -45,7 +50,8 @@ function isNoteRow(value: unknown): value is NoteRow {
     && typeof row.note === 'string'
     && typeof row.author_name === 'string'
     && typeof row.created_at === 'string'
-    && typeof row.own === 'boolean';
+    && typeof row.own === 'boolean'
+    && (row.can_withdraw === undefined || typeof row.can_withdraw === 'boolean');
 }
 
 export default function CapacityNotesPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
@@ -152,6 +158,10 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
         const payload = (await response.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
         if (!response.ok || !payload || payload.ok !== true) {
           setRefusal({ heading: 'NOT WITHDRAWN', text: describeFailure(payload, response.status, 'withdrawn') });
+          // Not permitted, or already gone: what is listed is out of date (the
+          // author came back, or somebody else withdrew it). Read again so a
+          // Withdraw the server no longer allows does not stay on screen.
+          if ((response.status === 403 || response.status === 404) && isOpen.current) await read();
           return;
         }
         if (isOpen.current) await read();
@@ -250,13 +260,15 @@ export default function CapacityNotesPanel({ athleteId, athleteName }: { athlete
                           {formatGymDateNumeric(row.created_at)} · {row.author_name}
                         </p>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{row.note}</p>
-                        {row.own ? (
+                        {row.own || row.can_withdraw === true ? (
                           <button
                             type="button"
                             className="btn btn--ghost mt-[var(--s1)]"
                             disabled={busy}
                             onClick={() => void withdraw(row.note_id)}
-                            aria-label={`Withdraw your note from ${formatGymDateNumeric(row.created_at)}`}
+                            aria-label={row.own
+                              ? `Withdraw your note from ${formatGymDateNumeric(row.created_at)}`
+                              : `Withdraw the note ${row.author_name} wrote on ${formatGymDateNumeric(row.created_at)}`}
                           >
                             Withdraw
                           </button>

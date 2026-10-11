@@ -22,12 +22,15 @@ export const dynamic = 'force-dynamic';
  *   GET    ?athlete_id=            this athlete's live notes, newest first (newest 100;
  *                                  older_notes says whether older live notes exist)
  *   POST   { athlete_id, note }    adds one note in the coach's words
- *   DELETE ?athlete_id=&note_id=   withdraws one of the caller's OWN notes
+ *   DELETE ?athlete_id=&note_id=   withdraws one of the caller's OWN notes, or -- for an
+ *                                  organization admin -- a note whose author has left
+ *                                  the gym (OD-2026-10-10-003 ruling 4)
  *
  * Plain text in, plain text out: the route stores what a coach typed and
  * reads it back. It computes nothing from a note (see athleteCapacityNotes.ts).
- * Each row answers `own` (written by this session's account) and the author's
- * display NAME; the author's account id is not in the response.
+ * Each row answers `own` (written by this session's account), `can_withdraw`
+ * (the module's answer for this reader) and the author's display NAME; the
+ * author's account id is not in the response.
  *
  * Authorization lives in the module (membership role here + the athlete
  * chokepoint); requireRole is the cheap first refusal for roles that can
@@ -54,6 +57,7 @@ function present(row: AthleteCapacityNoteRow, accountId: string) {
     author_role: row.author_role,
     created_at: row.created_at,
     own: row.author_account_id === accountId,
+    can_withdraw: row.can_withdraw,
   };
 }
 

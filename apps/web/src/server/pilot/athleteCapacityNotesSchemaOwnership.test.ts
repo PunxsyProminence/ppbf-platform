@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { CAPACITY_NOTE_MAX, CAPACITY_NOTE_ROLES } from './athleteCapacityNotes';
+import { COACH_ALLOWED_AUDIT_ENTITY_TYPES } from './auditReadAllowlist';
 
 const repositoryRoot = path.resolve(__dirname, '../../../../..');
 const read = (relative: string) => fs.readFileSync(path.join(repositoryRoot, relative), 'utf8');
@@ -29,14 +30,59 @@ describe('athlete capacity notes schema ownership', () => {
     const statements = body.match(/`[^`]*pilot\.athlete_capacity_notes[^`]*`/g) ?? [];
     expect(statements.length).toBe(4);
     for (const statement of statements) {
+      // The two reads alias the table `n`, because they also ask whether the
+      // note's author has left (a subquery over accounts and memberships).
       expect(statement).toMatch(
-        /where organization_id = \$1 and athlete_id = \$2|insert into pilot\.athlete_capacity_notes\s*\(\s*organization_id/,
+        /where (?:n\.)?organization_id = \$1 and (?:n\.)?athlete_id = \$2|insert into pilot\.athlete_capacity_notes\s*\(\s*organization_id/,
       );
     }
+    // "Has left" is asked of the note's OWN organization: a membership in
+    // another gym never counts as being here (OD-2026-10-10-003 ruling 4).
+    expect(body).toMatch(/om\.organization_id = n\.organization_id\s+and om\.active_flag = true/);
+    expect(body).toMatch(/a\.account_id = n\.author_account_id\s+and a\.active_flag = true/);
     // The one UPDATE sets deleted_at and nothing else.
     const updates = statements.filter((s) => /update pilot\.athlete_capacity_notes/.test(s));
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatch(/set deleted_at = clock_timestamp\(\)\s*\n?\s*where/);
+  });
+
+  test('a capacity-note audit row is not readable by coaches and is never mirrored', () => {
+    // The admin's withdrawal names the departed author by account id in the
+    // audit details. audit/get serves coaches only the allow-listed entity
+    // types, so the row stays with the organization admin, who sees account
+    // ids on every audit row already.
+    expect(COACH_ALLOWED_AUDIT_ENTITY_TYPES.has('athlete_capacity_note')).toBe(false);
+    const writes = code(moduleSource).match(/writePilotAuditEvent\(\{[\s\S]*?\}, client\)/g) ?? [];
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write).toContain("entity_type: 'athlete_capacity_note'");
+      expect(write).toContain('shadow_mirror: false');
+    }
+  });
+
+  test('the notes panels and the admin block are mounted only on the coach screen and the admin athlete-records page', () => {
+    // Staff only (OD-2026-10-10-003 ruling 3): no athlete or parent page may
+    // mount them. A new importer is added here deliberately, under review.
+    const webRoot = path.join(repositoryRoot, 'apps/web');
+    const sources: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) sources.push(full);
+      }
+    };
+    for (const top of ['app', 'components', 'src']) walk(path.join(webRoot, top));
+    expect(sources.length).toBeGreaterThan(100);
+
+    const importersOf = (component: string) => sources
+      .filter((file) => new RegExp(`import\\s+${component}\\s+from`).test(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(webRoot, file).replace(/\\/g, '/'))
+      .sort();
+    expect(importersOf('AdminAthleteCoachNotes')).toEqual(['app/admin/athletes/page.tsx']);
+    expect(importersOf('CapacityNotesPanel')).toEqual(['components/AdminAthleteCoachNotes.tsx', 'components/CoachWorkspace.tsx']);
+    expect(importersOf('SessionStaffNotesPanel')).toEqual(['components/AdminAthleteCoachNotes.tsx', 'components/CoachWorkspace.tsx']);
   });
 
   test('neither the module, the route nor the panel parses, scores or recommends from a note (module 013 boundaries; OD-2026-09-21-001)', () => {
