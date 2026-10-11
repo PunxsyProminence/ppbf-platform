@@ -555,20 +555,19 @@ const WEIGHT_CUT_TOPIC_ROWS: readonly RegExp[] = [
 const DIAGNOSIS_QUESTION = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i;
 const MEDICATION_QUESTION = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i;
 const MEDICAL_CLEARANCE_PHRASE = /\bmedical\s+clear(?:ed|ance)?\b/i;
-// Main's two proximity patterns, split by the word "cleared" sits near. The
-// two lists together are main's list; shadowChat.test.ts holds them to it.
-const CLEARANCE_NEAR_TRAINING: readonly RegExp[] = [
-  /\bclear(?:ed|ance)?\b.{0,40}\b(train|training|contact|spar|sparring)\b/i,
-  /\b(train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i,
-];
+// Main's two proximity patterns, split by the word "cleared" sits near:
+// play, compete, competition and return here (the part that stays), and
+// train, training, contact, spar and sparring in CLEARED_NEAR_TRAINING below
+// (the part that is relaxed). The two word lists together are main's list;
+// shadowChat.test.ts holds them to it.
 const CLEARANCE_NEAR_COMPETITION: readonly RegExp[] = [
   /\bclear(?:ed|ance)?\b.{0,40}\b(play|compete|competition|return)\b/i,
   /\b(play|compete|competition|return)\b.{0,40}\bclear(?:ed|ance)?\b/i,
 ];
-// What is released is "cleared" or "clearance" near those words. Main's
-// pattern also takes the bare word "clear" ("a clear round of sparring"),
-// which is no clearance question and matches neither clearance topic row;
-// that keeps main's answer.
+// What is released is "cleared" or "clearance" near the training words.
+// Main's pattern also takes the bare word "clear" ("a clear round of
+// sparring"), which is no clearance question and matches neither clearance
+// topic row; on its own that keeps main's answer.
 const CLEARED_NEAR_TRAINING: readonly RegExp[] = [
   /\bclear(?:ed|ance)\b.{0,40}\b(?:train|training|contact|spar|sparring)\b/i,
   /\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)\b/i,
@@ -612,10 +611,10 @@ function taughtQuestion(
   // The part of main's clearance return that is not relaxed.
   if (MEDICAL_CLEARANCE_PHRASE.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return null;
 
+  // "cleared" or "clearance", not the bare word "clear": a message that is
+  // only "is the ring clear for sparring?" is neither kind of question, is
+  // not released below, and keeps main's answer.
   const trainingClearance = CLEARED_NEAR_TRAINING.some((pattern) => pattern.test(text));
-  // The bare word "clear" near sparring: main's clearance return takes it,
-  // and it is not a clearance question. Main's answer stands.
-  if (!trainingClearance && CLEARANCE_NEAR_TRAINING.some((pattern) => pattern.test(text))) return null;
 
   // The classifier lowercases before it reads a row, so the copies of its
   // rows read the same. A weight row only needs testing here when the

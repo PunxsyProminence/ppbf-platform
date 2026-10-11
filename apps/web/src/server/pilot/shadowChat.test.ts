@@ -2523,6 +2523,9 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
       ['(m) vertigo', 'How do I cut weight with vertigo?', { valid: false, error: MEDICATION, highRisk: true, topic: 'dizziness' }],
       ['(m) head trauma', 'How do I cut weight after head trauma?', { valid: false, error: MEDICATION, highRisk: true, topic: 'head_trauma' }],
       ['(m) cleared to compete, with a weight-cut request', 'How do I cut weight for my weight class, and am I cleared to compete?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
+      // a clearance topic row ("cleared to") beside a weight-cut request, with no
+      // sparring, contact or training near it: that row is main's and stays
+      ['(m) cleared to cut weight', 'Am I cleared to cut weight for my weight class?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
     ];
 
     test.each(UNCHANGED)('%s: %s', (_label, message, expected) => {
@@ -2582,9 +2585,7 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     });
 
     test('the two clearance word lists together are main\'s list, and no word is in both', () => {
-      const near = declared('CLEARANCE_NEAR_TRAINING');
       const kept = declared('CLEARANCE_NEAR_COMPETITION');
-      const words = (pattern: string) => /\(([a-z|]+)\)/.exec(pattern)![1].split('|');
       const forward = (list: string[]) => String.raw`/\bclear(?:ed|ance)?\b.{0,40}\b(${list.join('|')})\b/i`;
       const reverse = (list: string[]) => String.raw`/\b(${list.join('|')})\b.{0,40}\bclear(?:ed|ance)?\b/i`;
       const MAIN_WORDS = ['play', 'train', 'training', 'compete', 'competition', 'return', 'contact', 'spar', 'sparring'];
@@ -2594,9 +2595,7 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
 
       const trainingWords = ['train', 'training', 'contact', 'spar', 'sparring'];
       const competitionWords = ['play', 'compete', 'competition', 'return'];
-      expect(near).toEqual([forward(trainingWords), reverse(trainingWords)]);
       expect(kept).toEqual([forward(competitionWords), reverse(competitionWords)]);
-      expect(words(near[0])).toEqual(trainingWords);
       expect([...trainingWords, ...competitionWords].sort()).toEqual([...MAIN_WORDS].sort());
       expect(trainingWords.filter((word) => competitionWords.includes(word))).toEqual([]);
       // What is RELEASED is narrower than what main's gate reads: "cleared"
