@@ -122,8 +122,9 @@ export async function recordWorkoutIssue(
 // assignment ids and answers only about those. Each caller passes the ids its
 // own, already-bounded read returned: the assignments route
 // (getAthleteAssignments behind assertActorCanAccessAthlete) and the coach
-// card list (listCoachCards, bounded by the coach's current reach). So a reader
-// sees the shape of exactly the work they could already see and nothing else.
+// card list (listCoachCards: a coach's own cards for athletes that coach
+// currently reaches, the whole gym for an organization admin). So a reader sees
+// the shape of exactly the work they could already see and nothing else.
 // Any later caller owes the same: ids from a read it has already bounded,
 // never ids from a request. workoutIssuesSchemaOwnership.test.ts pins the
 // callers.

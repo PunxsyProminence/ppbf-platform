@@ -84,7 +84,8 @@ describe('issued workout schema ownership', () => {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
         else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-          // An import of it, in any form. (privacyTiers.ts names it in a string, as the field's enforcer.)
+          // A named import of it (the only form this codebase uses for server modules; a namespace
+          // import or a re-export would not be seen). privacyTiers.ts names it in a string, not an import.
           if (/import\s*\{[^}]*\blistIssuedWorkoutsForAssignments\b[^}]*\}\s*from/.test(code(fs.readFileSync(full, 'utf8')))) {
             importers.push(path.relative(webRoot, full).replace(/\\/g, '/'));
           }

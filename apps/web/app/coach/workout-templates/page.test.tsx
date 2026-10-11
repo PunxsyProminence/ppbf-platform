@@ -741,7 +741,7 @@ describe('issue to athlete', () => {
   });
 
   describe('what came back', () => {
-    it('issued: how many Coach Cards, that the athlete sees one workout, and that the Coach Cards screen lists it the same way', async () => {
+    it('issued: how many Coach Cards, and that the athlete sees one workout', async () => {
       mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
 
       await issueTo();
@@ -749,9 +749,11 @@ describe('issue to athlete', () => {
       const status = await issuedStatus();
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(status).toHaveTextContent(
-        'The athlete sees this as one workout: each step in your order, with its block, scale level, contact level and note. The Coach Cards screen lists it the same way.',
+        'The athlete sees this as one workout: each step in your order, with its block, scale level, contact level and note.',
       );
-      expect(status).not.toHaveTextContent(/not carried|separate card/);
+      // Nothing about the Coach Cards screen: an admin can issue here, and an
+      // admin's issue is on nobody's Coach Cards screen.
+      expect(status).not.toHaveTextContent(/not carried|separate card|Coach Cards screen/);
       // Nothing adopted and nobody held: neither line is drawn.
       expect(status).not.toHaveTextContent(/Adopted for this gym/);
       expect(status).not.toHaveTextContent(/training hold/i);

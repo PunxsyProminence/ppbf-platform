@@ -1630,8 +1630,9 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
   const COOLDOWN = stepCard('asg-w4', 'Cooldown Walk', { drill_id: null });
 
   // As the server sends them: each step its own group, in the LIST's order
-  // (not the workout's), with other groups among them.
-  const ITEMS = [alone(SPARRING), SLIP_GROUP, alone(COOLDOWN), alone(SKIP), ISSUED_GROUP, alone(LADDER)];
+  // (not the workout's), with an individual card AHEAD of the workout's first
+  // card and a program group among them.
+  const ITEMS = [SLIP_GROUP, alone(SPARRING), alone(COOLDOWN), alone(SKIP), ISSUED_GROUP, alone(LADDER)];
 
   // The ordinals are the coach's and have gaps; the steps arrive out of order.
   const WORKOUT = {
@@ -1665,33 +1666,41 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
       .filter((line) => line.className === GROUP_NAME_CLASS)
       .map((line) => line.textContent);
 
-  test('the workout is drawn once, where the first of its cards stood: its template, its athlete, how many steps, the steps in the coach order under their blocks', async () => {
+  /** One step's item as [the block name it starts, or null; its title]. */
+  const blockAndTitle = (item: HTMLElement) => [
+    Array.from(item.children).find((child) => child.tagName === 'P' && child.className.startsWith('t-label'))?.textContent ?? null,
+    item.querySelector('p.font-semibold')?.textContent,
+  ];
+
+  const listReads = (calls: FetchCall[]) =>
+    calls.filter((call) => call.url.endsWith('/api/pilot/coach/cards') && (call.init?.method ?? 'GET') === 'GET').length;
+
+  test('the workout is drawn once, where the FIRST of its cards stood: its template, its athlete, how many steps, the steps in the coach order under their blocks', async () => {
     await renderList(ITEMS, [WORKOUT]);
     const workout = await screen.findByTestId('issued-workout');
 
     expect(screen.getAllByTestId('issued-workout')).toHaveLength(1);
-    // Where Body Sparring (its first card in the list) stood: ahead of the
-    // individual card and the program group, which keep their order.
-    expect(groupNames()).toEqual(['Technical Tuesday', 'Slip line', 'Jump rope']);
+    // After the individual card the server listed ahead of it, where Body
+    // Sparring (its first card in the list) stood, and ahead of the program
+    // group that stood between its cards. Not hoisted to the top, not dropped
+    // to where its last card stood.
+    expect(groupNames()).toEqual(['Slip line', 'Technical Tuesday', 'Jump rope']);
     expect(within(workout).getByText('workout · 4 steps')).toBeTruthy();
     expect(within(workout).getByText('Dana Reyes')).toBeTruthy();
     // A workout is many drills, so it has no description of its own: each
     // drill's is on its step, once.
     expect(within(workout).getAllByText('Skip Rope description.')).toHaveLength(1);
-    expect(within(stepItem(workout, 'Step 2 · Skip Rope')).getByText('Skip Rope description.')).toBeTruthy();
 
-    // Every list item of the group, in document order: a block's name each
-    // time the block changes (the coach came back to the warm-up at the end),
-    // and under it the steps, numbered as the coach numbered them.
-    const items = within(workout).getAllByRole('listitem').map((item) => item.querySelector('p.font-semibold')?.textContent ?? item.textContent);
-    expect(items).toEqual([
-      'warmup',
-      'Step 2 · Skip Rope',
-      'main work',
-      'Step 5 · Jab Ladder',
-      'Step 7 · Body Sparring',
-      'warmup',
-      'Step 9 · Cooldown Walk',
+    // One list item per step, as many as the label says, in the coach's
+    // order and numbered as the coach numbered them. A block's name is on the
+    // first step of each run of that block: the coach came back to the
+    // warm-up at the end, and it is named again there.
+    const items = within(workout).getAllByRole('listitem');
+    expect(items.map(blockAndTitle)).toEqual([
+      ['warmup', 'Step 2 · Skip Rope'],
+      ['main work', 'Step 5 · Jab Ladder'],
+      [null, 'Step 7 · Body Sparring'],
+      ['warmup', 'Step 9 · Cooldown Walk'],
     ]);
   });
 
@@ -1711,36 +1720,62 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     expect(within(stepItem(workout, 'Step 7 · Body Sparring')).getByText('Body Sparring description.')).toBeTruthy();
   });
 
-  test('the contact level is shown and nothing is said about it: a sparring step has no alert, badge, title or class a no-contact step lacks', async () => {
-    await renderList(ITEMS, [WORKOUT]);
+  test('the contact level is shown and nothing is said about it: a sparring step is drawn, attribute for attribute, as a no-contact step is', async () => {
+    // Four steps of one block that differ ONLY in contact level (and name), so
+    // the three after the first (which carries the block name) are comparable.
+    const cards = [0, 1, 2, 3].map((index) => stepCard(`asg-c${index}`, `Drill ${index}`));
+    const sameBlock = {
+      ...WORKOUT,
+      steps: ['none', 'none', 'controlled_sparring', 'open_sparring'].map((contact, index) => ({
+        ordinal: index + 1,
+        block: 'main_work',
+        scale_level: 'B',
+        contact_level: contact,
+        coach_note: 'As written.',
+        assignment_id: `asg-c${index}`,
+      })),
+    };
+    await renderList(cards.map(alone), [sameBlock]);
     const workout = await screen.findByTestId('issued-workout');
-    const sparring = stepItem(workout, 'Step 7 · Body Sparring');
-    const skip = stepItem(workout, 'Step 2 · Skip Rope');
+    const [, plain, controlled, open] = within(workout).getAllByRole('listitem');
 
     expect(within(workout).queryByRole('alert')).toBeNull();
-    expect(sparring.querySelector('.alert, .badge, [title]')).toBeNull();
-    // Its whole text: the title, its status, its description, the three lines, its one button.
-    expect(sparring.textContent).toBe(
-      'Step 7 · Body Sparring0% · assignedBody Sparring description.Scale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.View instructions',
+    expect(workout.querySelector('.alert, .badge, [title]')).toBeNull();
+    // The whole text of each: title, status, description, the three lines, one button.
+    expect(controlled.textContent).toBe(
+      'Step 3 · Drill 20% · assignedDrill 2 description.Scale: Standard (B)Contact: Controlled sparringNote: As written.View instructions',
     );
-    // Drawn with the same classes as a no-contact step, element for element.
-    const classes = (item: HTMLElement) => [item.className, ...Array.from(item.querySelectorAll('*')).map((node) => `${node.tagName}.${node.getAttribute('class') ?? ''}`)];
-    expect(classes(sparring)).toEqual(classes(skip));
+    expect(open.textContent).toBe(
+      'Step 4 · Drill 30% · assignedDrill 3 description.Scale: Standard (B)Contact: Open sparringNote: As written.View instructions',
+    );
+    // Every element and every attribute, in order, with only the values that
+    // name the step itself left out: nothing marks a sparring step.
+    const shape = (item: HTMLElement) =>
+      [item, ...Array.from(item.querySelectorAll('*'))].map((node) =>
+        `${node.tagName}|${Array.from(node.attributes)
+          .filter((attribute) => attribute.name !== 'id' && attribute.name !== 'aria-label')
+          .map((attribute) => `${attribute.name}=${attribute.value}`)
+          .join(';')}`);
+    expect(shape(controlled)).toEqual(shape(plain));
+    expect(shape(open)).toEqual(shape(plain));
   });
 
-  test("a step's status and completions are the card's own, and Verify still posts that card's completion and athlete", async () => {
+  test("a step's status and completions are the card's own; Verify posts that card's completion and athlete, and the list is drawn again from the new read", async () => {
     const calls = await renderList(ITEMS, [WORKOUT]);
     const workout = await screen.findByTestId('issued-workout');
     const ladder = stepItem(workout, 'Step 5 · Jab Ladder');
 
     expect(within(ladder).getByText('50% · in progress')).toBeTruthy();
     expect(within(ladder).getByText('Felt sharp')).toBeTruthy();
+
+    // What the list read answers AFTER the verify: recognisably different.
+    const after = installFetch({ cardsList: ITEMS, cardsWorkouts: [{ ...WORKOUT, template_name: 'Technical Tuesday, read again' }] });
     await act(async () => {
       fireEvent.click(within(ladder).getByRole('button', { name: 'Verify' }));
     });
 
     await waitFor(() => {
-      const verifyCall = calls.find((call) => call.url.includes('/api/pilot/progression/completions'));
+      const verifyCall = after.find((call) => call.url.includes('/api/pilot/progression/completions'));
       expect(verifyCall).toBeTruthy();
       expect(JSON.parse(String(verifyCall!.init!.body))).toEqual({
         completion_id: 'comp-w2',
@@ -1749,47 +1784,80 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
         verified: true,
       });
     });
-    // The list is read again after a verify, and the workout is still one group.
-    await waitFor(() => expect(calls.filter((call) => call.url.endsWith('/api/pilot/coach/cards') && (call.init?.method ?? 'GET') === 'GET').length).toBeGreaterThan(1));
+    // Drawn from the second read, still as one group.
+    await screen.findByText('Technical Tuesday, read again');
+    expect(listReads(calls) + listReads(after)).toBe(2);
     expect(screen.getAllByTestId('issued-workout')).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  test('each step opens its OWN drill, inside its own item, and closing returns focus to its button; the workout has no single opener and a step with no drill offers none', async () => {
-    const calls = await renderList([alone(SPARRING), alone(COOLDOWN), alone(SKIP), alone(LADDER)], [WORKOUT], { drillInstruction: COACH_INSTRUCTION });
+  const RELOAD_FAILS: Array<[string, Parameters<typeof installFetch>[0]]> = [
+    ['answers workouts this screen cannot read', { cardsList: ITEMS, cardsWorkouts: [{ ...WORKOUT, steps: 'four' }] }],
+    ['is refused', { cardsList: false }],
+  ];
+
+  test.each(RELOAD_FAILS)('a verify that succeeded is not called failed when the list read after it %s: the list says it could not be read', async (_label, afterVerify) => {
+    await renderList(ITEMS, [WORKOUT]);
     const workout = await screen.findByTestId('issued-workout');
 
-    // One opener per step that has a drill behind it; none for the workout as a whole.
+    const after = installFetch(afterVerify);
+    await act(async () => {
+      fireEvent.click(within(stepItem(workout, 'Step 5 · Jab Ladder')).getByRole('button', { name: 'Verify' }));
+    });
+
+    await screen.findByText(/Your cards could not be read/);
+    // The write went through, and nothing says it did not.
+    expect(after.some((call) => call.url.includes('/api/pilot/progression/completions'))).toBe(true);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Failed')).toBeNull();
+    // The stale list, with its still-pending completion, is not left on screen.
+    expect(screen.queryByTestId('issued-workout')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Verify' })).toBeNull();
+  });
+
+  test('each step opens its OWN drill, inside its own item; opening another closes it; closing returns focus to its button; the workout has no single opener and a step with no drill offers none', async () => {
+    const calls = await renderList([alone(SPARRING), alone(COOLDOWN), alone(SKIP), alone(LADDER)], [WORKOUT], { drillInstruction: COACH_INSTRUCTION });
+    const workout = await screen.findByTestId('issued-workout');
+    const reads = () => calls.filter((call) => call.url.includes('/api/pilot/progression/drill-instruction')).map((call) => call.url.split('assignment_id=')[1]);
+
+    // One opener per step that has a drill behind it, named by its step and
+    // drill; none for the workout as a whole.
     expect(within(workout).getAllByRole('button', { name: /^View instructions:/ }).map((button) => button.getAttribute('aria-label'))).toEqual([
-      'View instructions: Skip Rope',
-      'View instructions: Jab Ladder',
-      'View instructions: Body Sparring',
+      'View instructions: Step 2, Skip Rope',
+      'View instructions: Step 5, Jab Ladder',
+      'View instructions: Step 7, Body Sparring',
     ]);
     const cooldown = stepItem(workout, 'Step 9 · Cooldown Walk');
     expect(within(cooldown).queryByRole('button', { name: /instructions/ })).toBeNull();
 
     const ladder = stepItem(workout, 'Step 5 · Jab Ladder');
+    const sparring = stepItem(workout, 'Step 7 · Body Sparring');
     await act(async () => {
-      fireEvent.click(within(ladder).getByRole('button', { name: 'View instructions: Jab Ladder' }));
+      fireEvent.click(within(ladder).getByRole('button', { name: 'View instructions: Step 5, Jab Ladder' }));
     });
 
-    await waitFor(() => {
-      const reads = calls.filter((call) => call.url.includes('/api/pilot/progression/drill-instruction'));
-      expect(reads).toHaveLength(1);
-      expect(reads[0].url).toContain('assignment_id=asg-w2');
-    });
+    await waitFor(() => expect(reads()).toEqual(['asg-w2']));
     // Open in that step's own item, and nowhere else.
-    const close = await within(ladder).findByRole('button', { name: 'Hide instructions: Jab Ladder' });
-    expect(close.getAttribute('aria-expanded')).toBe('true');
-    expect(within(workout).getAllByRole('button', { name: /^Hide instructions:/ })).toHaveLength(1);
+    expect((await within(ladder).findByRole('button', { name: 'Hide instructions: Step 5, Jab Ladder' })).getAttribute('aria-expanded')).toBe('true');
     await within(ladder).findByText('Can the athlete hold rhythm for a round?');
-    expect(within(stepItem(workout, 'Step 2 · Skip Rope')).queryByText('Can the athlete hold rhythm for a round?')).toBeNull();
-    expect(within(workout).getByRole('button', { name: 'View instructions: Skip Rope' }).getAttribute('aria-expanded')).toBe('false');
+    expect(within(sparring).queryByText('Can the athlete hold rhythm for a round?')).toBeNull();
+
+    // Opening another step reads THAT step's assignment and closes the first.
+    await act(async () => {
+      fireEvent.click(within(sparring).getByRole('button', { name: 'View instructions: Step 7, Body Sparring' }));
+    });
+    await waitFor(() => expect(reads()).toEqual(['asg-w2', 'asg-w3']));
+    const close = await within(sparring).findByRole('button', { name: 'Hide instructions: Step 7, Body Sparring' });
+    await within(sparring).findByText('Can the athlete hold rhythm for a round?');
+    expect(within(ladder).queryByText('Can the athlete hold rhythm for a round?')).toBeNull();
+    expect(within(workout).getAllByRole('button', { name: /^Hide instructions:/ })).toHaveLength(1);
+    expect(within(ladder).getByRole('button', { name: 'View instructions: Step 5, Jab Ladder' }).getAttribute('aria-expanded')).toBe('false');
 
     // Closing puts focus back on the button that opened it.
     await act(async () => {
       fireEvent.click(close);
     });
-    await waitFor(() => expect(document.activeElement).toBe(within(ladder).getByRole('button', { name: 'View instructions: Jab Ladder' })));
+    await waitFor(() => expect(document.activeElement).toBe(within(sparring).getByRole('button', { name: 'View instructions: Step 7, Body Sparring' })));
     // Reading is all any of it did.
     expect(calls.filter((call) => (call.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
   });
@@ -1821,32 +1889,45 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
 
     expect(screen.queryByTestId('issued-workout')).toBeNull();
     expect(screen.queryByTestId('step-notes')).toBeNull();
-    expect(groupNames()).toEqual(['Body Sparring', 'Slip line', 'Cooldown Walk', 'Skip Rope', 'Jump rope', 'Jab Ladder']);
+    expect(groupNames()).toEqual(['Slip line', 'Body Sparring', 'Cooldown Walk', 'Skip Rope', 'Jump rope', 'Jab Ladder']);
     expect(screen.getAllByText('individual')).toHaveLength(5);
     expect(screen.queryByText(/Your cards could not be read/)).toBeNull();
   });
 
-  test('a step whose card was not sent is left out and not counted; an assignment two workouts name is a step of the first only', async () => {
-    const claimsTheSame = {
+  test('only a card standing alone becomes a step: a step with no card, a card two workouts name, a card in a program group and a repeated issue id draw nothing twice and invent nothing', async () => {
+    const claimsOthers = {
       ...WORKOUT,
       issue_id: 'issue-2',
       template_name: 'Friday Pads',
       steps: [
+        // Already a step of the first workout: stays there.
         { ordinal: 1, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-w1' },
+        // The individual Slip line card: becomes this workout's one step.
         { ordinal: 2, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-slip' },
+        // No such card was sent: draws nothing, counts for nothing.
         { ordinal: 3, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-not-sent' },
+        // A card of the program group: the server never sends a step that way, and the group is left whole.
+        { ordinal: 4, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-1' },
       ],
     };
-    await renderList(ITEMS, [WORKOUT, claimsTheSame]);
-    const [first, second] = await screen.findAllByTestId('issued-workout');
+    // The first workout's id again, claiming the program group's other card.
+    const repeatsAnId = { ...WORKOUT, template_name: 'A Repeat', steps: [{ ...WORKOUT.steps[0], assignment_id: 'asg-2' }] };
+    await renderList(ITEMS, [WORKOUT, claimsOthers, repeatsAnId]);
+    const [second, first] = await screen.findAllByTestId('issued-workout');
 
-    expect(within(first).getByText('Technical Tuesday')).toBeTruthy();
+    // Friday Pads stands where Slip line stood (first in the list), then Technical Tuesday.
+    expect(groupNames()).toEqual(['Friday Pads', 'Technical Tuesday', 'Jump rope']);
     expect(within(first).getByText('workout · 4 steps')).toBeTruthy();
-    expect(within(second).getByText('Friday Pads')).toBeTruthy();
     expect(within(second).getByText('workout · 1 step')).toBeTruthy();
+    expect(within(second).getAllByRole('listitem').map(blockAndTitle)).toEqual([['pads', 'Step 2 · Slip line']]);
     // Skip Rope is drawn once, in the first.
     expect(screen.getAllByText(/· Skip Rope$/)).toHaveLength(1);
     expect(within(first).getByText('Step 2 · Skip Rope')).toBeTruthy();
+    // The program group is whole, and the repeated id drew nothing.
+    expect(screen.getByText('group · 2')).toBeTruthy();
+    expect(screen.getByText('Cora Cards')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('A Repeat');
+    expect(screen.getAllByTestId('issued-workout')).toHaveLength(2);
   });
 
   const UNREADABLE: Array<[string, unknown]> = [
@@ -1854,14 +1935,13 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     ['a workout that is null', [null]],
     ['a workout with no id', [{ ...WORKOUT, issue_id: 7 }]],
     ['a workout with no name', [{ ...WORKOUT, template_name: undefined }]],
-    ['a workout with no date', [{ ...WORKOUT, issued_at: null }]],
     ['a workout with no steps list', [{ ...WORKOUT, steps: 'four' }]],
     ['a step that is null', [{ ...WORKOUT, steps: [null] }]],
     ['a step with no block', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], block: undefined }] }]],
-    ['a step whose scale level is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], scale_level: 3 }] }]],
-    ['a step whose note is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], coach_note: 5 }] }]],
     ['a step whose order is not a number', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], ordinal: '2' }] }]],
+    ['a step whose scale level is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], scale_level: 3 }] }]],
     ['a step whose contact level is missing', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], contact_level: null }] }]],
+    ['a step whose note is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], coach_note: 5 }] }]],
     ['a step with no assignment', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], assignment_id: 7 }] }]],
   ];
 
@@ -1872,5 +1952,13 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     expect(screen.queryByTestId('issued-workout')).toBeNull();
     expect(screen.queryByText('individual')).toBeNull();
     expect(screen.queryByText('No cards issued yet')).toBeNull();
+  });
+
+  test('what this screen does not draw cannot make the list unreadable: a workout with no date or version, or with extra keys, is drawn', async () => {
+    const bare = { issue_id: WORKOUT.issue_id, template_name: WORKOUT.template_name, steps: WORKOUT.steps, something_new: true };
+    await renderList(ITEMS, [bare]);
+
+    expect(await screen.findByTestId('issued-workout')).toBeTruthy();
+    expect(screen.queryByText(/Your cards could not be read/)).toBeNull();
   });
 });
