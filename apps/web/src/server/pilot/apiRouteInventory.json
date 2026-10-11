@@ -369,16 +369,15 @@
     "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
-    "looksWrong": "platform_owner is admitted (route.ts:27) to rewrite an org account's auth provider and null its PIN, while sibling account routes (pin-reset, revoke, unbind) exclude platform_owner.",
+    "looksWrong": "",
     "confidence": "medium",
-    "notes": "requireRole :27; repairStrandedGuardianAuthProvider (auth.ts:841) updates only role<>athlete, non-platform-owner, active, org-scoped ppbf_local accounts to microsoft. Targets guardian/staff logins, not athlete records; scoped to principal.organizationId.",
+    "notes": "requireRole(['organization_admin']) in route.ts; admin passes by alias. platform_owner refused (OD-2026-10-10-004 ruling 3). repairStrandedGuardianAuthProvider (auth.ts) updates only role<>athlete, non-platform-owner, active, org-scoped ppbf_local accounts to microsoft. Targets guardian/staff logins, not athlete records; scoped to principal.organizationId. Audited under the caller's gym.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"
@@ -640,8 +639,7 @@
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": false,
@@ -649,7 +647,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole capabilities/route.ts:27; reads pilot.admin_capability_registry for the session org (platform_owner may name another org, ignored per scope). Read only despite mechanical writesLikely; registry is org config, not athlete data.",
+    "notes": "requireRole(CAPABILITY_ROLES) in capabilities/route.ts; platform_owner refused (OD-2026-10-10-004 ruling 3). Reads pilot.admin_capability_registry for the session org only; an organization_id in the query is ignored. Read only despite mechanical writesLikely; registry is org config, not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -667,8 +665,7 @@
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": true,
@@ -676,7 +673,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole :53; upserts the capability registry JSON for the org (:62-73); no audit event written. Org config, not athlete data.",
+    "notes": "requireRole(CAPABILITY_ROLES) in capabilities/route.ts; platform_owner refused (OD-2026-10-10-004 ruling 3). Upserts the capability registry JSON for the session org only; an organization_id in the body is ignored. No audit event written. Org config, not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -694,8 +691,7 @@
     "gate": "requirePrincipal + requireRole (http.ts)",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": false,
     "writes": false,
@@ -703,7 +699,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole citation-checks/route.ts:30 via http.ts requireRole (alias-aware version). Read-only research source citation status/queue; no athlete data.",
+    "notes": "requireRole(REVIEW_ROLES) in citation-checks/route.ts via http.ts requireRole (alias-aware version); platform_owner refused (OD-2026-10-10-004 ruling 3), as on the retraction-checks twin. Read-only research source citation status/queue for principal.organizationId; no athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1259,7 +1255,6 @@
     "path": "/api/pilot/admin/gym-capabilities",
     "gate": "requirePrincipal + requireRole",
     "rolesAdmitted": [
-      "platform_owner",
       "organization_admin",
       "admin"
     ],
@@ -1269,7 +1264,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads/upserts the gym's capability-access flags (pilot.admin_gym_capability_access); not athlete data. Gate at route.ts:44-45. platform_owner may pass organization_id (out of scope: one gym).",
+    "notes": "requireRole(GYM_ADMIN_ROLES) in gym-capabilities/route.ts; platform_owner refused (OD-2026-10-10-004 ruling 3; it reads a gym's flags through platform/gym-summary). Reads the session gym's capability-access flags (pilot.admin_gym_capability_access); an organization_id in the query is ignored. Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -1284,7 +1279,7 @@
     "id": "app/api/pilot/admin/gym-capabilities/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/gym-capabilities",
-    "gate": "requirePrincipal + requireRole",
+    "gate": "requirePrincipal + requireRole + resolveWriteOrganizationId (platform_owner only for a gym it names)",
     "rolesAdmitted": [
       "platform_owner",
       "organization_admin",
@@ -1296,7 +1291,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Reads/upserts the gym's capability-access flags (pilot.admin_gym_capability_access); not athlete data. Gate at route.ts:70-71. platform_owner may pass organization_id (out of scope: one gym). No audit event.",
+    "notes": "requireRole(platform_owner + GYM_ADMIN_ROLES), then resolveWriteOrganizationId: organization_admin/admin write the session gym's flags only (a body organization_id is ignored); platform_owner is kept for the new-gym wizard only (OD-2026-10-10-004 ruling 3, \"truly platform-level\") and must name the gym in body.organization_id, else 403; the reserved platform shelf is refused 400. The platform_owner write is audited (entity gym_capability_access) under the gym acted on, in the same transaction as the upsert. Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8450,7 +8445,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates an organization; gate organizations/route.ts:38-39.",
+    "notes": "Creates an organization; gate requireRole([platform_owner]) in organizations/route.ts. The audit event is filed under the organization created, not the actor's own.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8475,7 +8470,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Sets an organization status (active/inactive/suspended/pending) from a body organization_id. Gate at route.ts:12-13. No athlete data; org-level record plus audit event.",
+    "notes": "Sets an organization status (active/inactive/suspended/pending) from a body organization_id. Gate requireRole([platform_owner]) in status/route.ts. No athlete data; org-level record plus an audit event filed under the organization acted on, not the actor's own.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9982,8 +9977,7 @@
     "rolesAdmitted": [
       "organization_admin",
       "admin",
-      "coach",
-      "platform_owner"
+      "coach"
     ],
     "athleteData": true,
     "writes": false,
@@ -9991,7 +9985,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "authority/route.ts:12-17 requireRole admin/org_admin/coach/platform_owner. Lists governance audit rows via listShadowAuthorityChecks, which uses resolveAthleteScope (shadowReadModels.ts:178: coach -> athleteIdsForCoach, org admin unrestricted, platform_owner gets only athlete-free rows). POST is a read-only listing.",
+    "notes": "authority/route.ts requireRole org_admin/admin/coach; platform_owner refused (OD-2026-10-10-004 ruling 3). Lists governance audit rows for principal.organizationId via listShadowAuthorityChecks, which uses resolveAthleteScope (shadowReadModels.ts: coach -> athleteIdsForCoach, org admin unrestricted). POST is a read-only listing.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10710,8 +10704,7 @@
     "rolesAdmitted": [
       "admin",
       "organization_admin",
-      "coach",
-      "platform_owner"
+      "coach"
     ],
     "athleteData": true,
     "writes": false,
@@ -10719,7 +10712,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "jobs/route.ts:98 requireRole. getJobsForActor (shadowJobQueue.ts:690) returns own jobs, or all non-owner-only org jobs for org admins only (actorCanReadAllOrgJobs :319), then filters subject jobs through accessibleAthleteIds (:733). Coach sees own jobs limited to reachable athletes; platform_owner own jobs only.",
+    "notes": "jobs/route.ts requireRole admin/org_admin/coach; platform_owner refused (OD-2026-10-10-004 ruling 3; it still polls its own queued answer through jobs/[jobId]). getJobsForActor (shadowJobQueue.ts) returns own jobs, or all non-owner-only org jobs for org admins only (actorCanReadAllOrgJobs), then filters subject jobs through accessibleAthleteIds. Coach sees own jobs limited to reachable athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10737,8 +10730,7 @@
     "gate": "requirePrincipal + requireRole + cancelJobForActor (actorCanAccessJob)",
     "rolesAdmitted": [
       "admin",
-      "organization_admin",
-      "platform_owner"
+      "organization_admin"
     ],
     "athleteData": true,
     "writes": true,
@@ -10746,7 +10738,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "jobs/route.ts:116 requireRole; cancelJobForActor (shadowJobQueue.ts:654) requires owner or org admin and athlete access to the job subject, then cancels a pending job and wipes its payload. Coach not admitted.",
+    "notes": "jobs/route.ts requireRole admin/org_admin; platform_owner refused (OD-2026-10-10-004 ruling 3). cancelJobForActor (shadowJobQueue.ts) requires owner or org admin and athlete access to the job subject, then cancels a pending job and wipes its payload. Coach not admitted.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11214,11 +11206,10 @@
     "id": "app/api/pilot/shadow/metrics/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/metrics",
-    "gate": "requirePrincipal + requireRole (admin, organization_admin, platform_owner) + inline platform_owner refusal on userId",
+    "gate": "requirePrincipal + requireRole (admin, organization_admin)",
     "rolesAdmitted": [
       "organization_admin",
-      "admin",
-      "platform_owner"
+      "admin"
     ],
     "athleteData": true,
     "writes": false,
@@ -11226,7 +11217,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "metrics/route.ts:73-74 role gate. Default response is org-wide aggregates (no athlete identifiers). With ?userId= (:92-120) it returns one account's SHADOW profile metrics (tier, interaction counts, recent_topics, preferred session type); platform_owner gets 404 there (:94-96) and the account must be an active member of the org. Coach not admitted.",
+    "notes": "metrics/route.ts role gate; platform_owner refused on the whole route (OD-2026-10-10-004 ruling 3): every part is one gym's data. Default response is org-wide aggregates (no athlete identifiers) plus viewerUnlocks for the caller. With ?userId= it returns one account's SHADOW profile metrics (tier, interaction counts, recent_topics, preferred session type); the account must be an active member of the org. Coach not admitted.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11254,7 +11245,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "models/route.ts:12-13 gate; returns getModelStatus() (router model availability). No athlete data.",
+    "notes": "models/route.ts gate (local MANUAL_OVERRIDE_ROLES); returns getModelStatus() (router model availability: displayName, available, tier). platform_owner is KEPT under OD-2026-10-10-004 ruling 3 (\"anything that is truly platform-level\"): the response is the deployment's model list, reads no organization and no database, and is identical for every caller (route.test.ts). No athlete data, no gym data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11670,13 +11661,12 @@
     "id": "app/api/pilot/shadow/review-projection/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/shadow/review-projection",
-    "gate": "requirePrincipal + requireRole (org admin, admin, coach, parent, platform_owner) + intakeCaseReaderScopeSql/resolveAthleteScope",
+    "gate": "requirePrincipal + requireRole (org admin, admin, coach, parent) + intakeCaseReaderScopeSql/resolveAthleteScope",
     "rolesAdmitted": [
       "organization_admin",
       "admin",
       "coach",
-      "parent",
-      "platform_owner"
+      "parent"
     ],
     "athleteData": true,
     "writes": false,
@@ -11684,7 +11674,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "review-projection/route.ts:13-14 gate; getShadowReviewProjection (shadowReadModels.ts:755-822) scopes intake cases by resolveAthleteScope + intakeCaseReaderScopeSql (coach: athleteIdsForCoach; parent: guardian children; platform_owner: athlete-free cases only). Returns intake case summary and primary_athlete_id. Read only.",
+    "notes": "review-projection/route.ts gate; platform_owner refused (OD-2026-10-10-004 ruling 3). getShadowReviewProjection (shadowReadModels.ts) scopes intake cases by resolveAthleteScope + intakeCaseReaderScopeSql (coach: athleteIdsForCoach; parent: guardian children). Returns intake case summary and primary_athlete_id. Read only.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
