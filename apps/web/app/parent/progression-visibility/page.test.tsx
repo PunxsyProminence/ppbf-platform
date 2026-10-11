@@ -609,8 +609,9 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
   });
 
   test("the answer for the child left behind, arriving late with a workout, is never drawn on the selected child's record", async () => {
-    // The first child's ASSIGNMENTS read -- the hop that carries the workouts
-    // -- is held open until the second child's record is on screen.
+    // The first child's ASSIGNMENTS answer -- the hop that carries the
+    // workouts -- has arrived but its body is still being read when the
+    // guardian switches: the check after the body is the one that must stop it.
     let releaseFirstChild: () => void = () => {};
     const firstChildAnswered = new Promise<void>((resolve) => {
       releaseFirstChild = resolve;
@@ -622,8 +623,13 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
       if (url.includes('/progression/gaps')) return jsonOk({ items: [] });
       if (url.includes('/progression/assignments')) {
         if (url.includes('athlete_id=athlete-001')) {
-          await firstChildAnswered;
-          return jsonOk({ items: WORK, workouts: [WORKOUT] });
+          return {
+            ok: true,
+            json: async () => {
+              await firstChildAnswered;
+              return { items: WORK, workouts: [WORKOUT] };
+            },
+          } as Response;
         }
         return jsonOk({ items: [siblingDrill], workouts: [] });
       }
