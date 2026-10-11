@@ -604,7 +604,7 @@ export default function AdminComplianceCenterPage() {
           <Link href="/admin/escalations" className="btn btn--ghost">
             Escalations
           </Link>
-          <Link href="/admin/waiver-status" className="btn btn--ghost">
+          <Link href="/admin/waiver-status?view=all" className="btn btn--ghost">
             Cleared tonight
           </Link>
           <Link href="/admin" className="btn btn--ghost">

@@ -46,8 +46,10 @@ import {
  * expiry) is NOT reported as "no contact": nobody decided that about the
  * athlete, and main's contact gate does not refuse their contact either, it
  * flags it. That athlete is 'cleared_to_train', with the contact clearance
- * stated beside the answer as what is on file. /coach/sports-medicine shows
- * the same record in the same words.
+ * stated beside the answer as what is on file. /coach/sports-medicine reads
+ * the same two records through the same functions and shows each as its own
+ * badge; this composes them into one answer. The two screens do not use the
+ * same badge for every status, by that ruling.
  *
  * EVERYTHING ELSE IS LISTED, NEVER WEIGHED. Waivers, photo and video consent
  * and open compliance violations are facts on file. No code on main makes any
@@ -102,7 +104,7 @@ export type ClearedTonightHoldRead = ClearedTonightHold | null | 'unavailable';
 export type ClearedTonightMedicalRead = ClearedTonightMedical | 'unavailable';
 
 /**
- * Photo and video consent, by who can give it. A minor's is the guardians'
+ * Photo and media consent, by who can give it. A minor's is the guardians'
  * (the existing check, as the worklist words it). At 18 a guardian's consent
  * stops counting for a new publication and the athlete's own cannot be
  * recorded yet (OD-2026-10-08-015), so there is no status to report.

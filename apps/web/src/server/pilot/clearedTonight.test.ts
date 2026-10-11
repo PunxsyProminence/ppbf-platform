@@ -178,10 +178,7 @@ describe('the words go no further than what a record says', () => {
 
   test('an athlete with no medical record reads cleared to train, never no contact', () => {
     for (const status of ['no_record', 'pending', 'cleared_expired']) {
-      const answer = clearedTonightAnswer(null, medicalRead(status, false));
-      expect(answer).toBe('cleared_to_train');
-      expect(answer).not.toBe('cleared_no_contact');
-      expect(answer).not.toBe('cleared');
+      expect(clearedTonightAnswer(null, medicalRead(status, false))).toBe('cleared_to_train');
     }
   });
 

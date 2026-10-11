@@ -5,7 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 
 const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
@@ -25,9 +25,9 @@ type WaiverStatus = 'signed' | 'declined' | 'withdrawn' | 'missing';
  * OD-2026-10-08-006 A-Q19: "Build one answer").
  *
  * The answer follows training holds and medical clearance, the two rules the
- * app already has. Waivers, photo and video consent and open violations are
- * listed under "Why" as what is on file and never change it. Nothing on this
- * screen stops anyone training.
+ * app already has, and "Why" lists those two. Waivers, photo and media
+ * consent and open violations are listed apart, under "Also on file", and
+ * never change it. Nothing on this screen stops anyone training.
  */
 type TonightAnswer = 'cleared' | 'cleared_to_train' | 'cleared_no_contact' | 'not_cleared' | 'unavailable';
 
@@ -51,7 +51,9 @@ interface AthleteWaiverRow {
 // Room DNA (clinic): --locked is what this room says when a clinician or a
 // hold has stopped something, which is exactly what 'not cleared' reports.
 // A read that failed is not that, and sits on --restricted as it does on
-// /coach/sports-medicine. Law 3: glyph and label, never the colour alone.
+// /coach/sports-medicine. Its label says what happened to the read, because
+// "unavailable" under a column headed Tonight reads as the athlete being
+// away. Law 3: glyph and label, never the colour alone.
 const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label: string }> = {
   cleared: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared' },
   // No hold, and no contact clearance in force because none is on file, one is
@@ -61,13 +63,13 @@ const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label:
   cleared_to_train: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared to train' },
   cleared_no_contact: { rung: 'badge--monitor', glyph: '◉', label: 'Cleared, no contact' },
   not_cleared: { rung: 'badge--locked', glyph: '✕', label: 'Not cleared' },
-  unavailable: { rung: 'badge--restricted', glyph: '▲', label: 'Unavailable' },
+  unavailable: { rung: 'badge--restricted', glyph: '▲', label: 'Could not be read' },
 };
 
 const HOLD_SCOPE_WORDS: Record<string, string> = {
   all_training: 'all training paused',
   contact_only: 'no contact',
-  conditioning_only: 'conditioning only, on record',
+  conditioning_only: 'conditioning only, recorded; the app does not act on this scope',
 };
 
 const MEDICAL_WORDS: Record<string, string> = {
@@ -82,7 +84,7 @@ const MEDICAL_WORDS: Record<string, string> = {
 const PAPER_NAMES: Record<TrackedWaiverType, string> = {
   general: 'General waiver',
   medical_release: 'Medical release',
-  photo_media: 'Photo and video consent',
+  photo_media: 'Photo and media consent',
   travel: 'Travel waiver',
 };
 
@@ -93,9 +95,21 @@ const PAPER_WORDS: Record<WaiverStatus, string> = {
   missing: 'none on file',
 };
 
+// Media consent is asked guardian by guardian (waiverCompliance.ts
+// mediaConsentAsWaiverStatus): 'signed' means every linked guardian signed,
+// 'withdrawn' or 'declined' means one of them did, and 'missing' covers no
+// guardian linked and a guardian who has not answered. "None on file" would
+// be false when one of two guardians signed, so each word says whose it is.
+const MEDIA_WORDS: Record<WaiverStatus, string> = {
+  signed: 'signed by every guardian',
+  declined: 'declined by a guardian',
+  withdrawn: 'withdrawn by a guardian',
+  missing: 'not on file from every guardian',
+};
+
 /** The medical record in its own word, with the day its clearance ends or ended. */
 function medicalWords(medical: { status: string; expires_at: string | null }): string {
-  const ends = formatGymDateNumeric(medical.expires_at);
+  const ends = formatGymDateShort(medical.expires_at);
   const word = MEDICAL_WORDS[medical.status] ?? medical.status;
   if (!ends) return word;
   if (medical.status === 'cleared') return `${word} until ${ends}`;
@@ -112,18 +126,23 @@ function contactClearanceLine(tonight: Tonight): string | null {
 }
 
 /**
- * What is on file, one plain statement per record. Statements, not warnings:
- * a paper that is not on file is said the same way as one that is.
+ * One plain statement per record, in two groups that must not be read as one.
+ * `why` is what the answer rests on: the hold and the medical clearance.
+ * `alsoOnFile` is everything else, which by ruling never changes the answer.
+ * Listed together under "Why", a missing paper or an open violation read as
+ * part of the reason an athlete was not cleared. Statements, not warnings: a
+ * paper that is not on file is said the same way as one that is.
  */
-function tonightReasons(tonight: Tonight): string[] {
+function tonightReasons(tonight: Tonight): { why: string[]; alsoOnFile: string[] } {
   const lines: string[] = [];
+  const alsoOnFile: string[] = [];
 
   if (tonight.hold === 'unavailable') {
     lines.push('Training hold: could not be read.');
   } else if (!tonight.hold) {
     lines.push('Training hold: none active.');
   } else {
-    const until = formatGymDateNumeric(tonight.hold.expires_at);
+    const until = formatGymDateShort(tonight.hold.expires_at);
     const parts = [`Training hold: ${HOLD_SCOPE_WORDS[tonight.hold.scope] ?? tonight.hold.scope}${until ? `, until ${until}` : ''}.`];
     if (tonight.hold.athlete_explanation.trim()) parts.push(tonight.hold.athlete_explanation.trim());
     if (tonight.hold.lift_condition_text.trim()) parts.push(`What earns the lift: ${tonight.hold.lift_condition_text.trim()}`);
@@ -138,25 +157,36 @@ function tonightReasons(tonight: Tonight): string[] {
 
   for (const waiver of tonight.waivers) {
     const day = waiver.recorded_on ? ` ${formatCalendarDay(waiver.recorded_on)}` : '';
-    lines.push(`${PAPER_NAMES[waiver.type]}: ${PAPER_WORDS[waiver.status]}${day}.`);
+    alsoOnFile.push(`${PAPER_NAMES[waiver.type]}: ${PAPER_WORDS[waiver.status]}${day}.`);
   }
 
-  lines.push(
+  alsoOnFile.push(
     tonight.media_consent.basis === 'guardian'
-      ? `${PAPER_NAMES.photo_media}: ${PAPER_WORDS[tonight.media_consent.status]}.`
+      ? `${PAPER_NAMES.photo_media}: ${MEDIA_WORDS[tonight.media_consent.status]}.`
       : `${PAPER_NAMES.photo_media}: the athlete is 18 or over, so a guardian's consent no longer counts for a new publication and the athlete's own cannot be recorded yet.`,
   );
 
-  lines.push(
+  alsoOnFile.push(
     tonight.open_violations === 'unavailable'
       ? 'Open compliance violations: could not be read.'
       : `Open compliance violations: ${tonight.open_violations === 0 ? 'none' : tonight.open_violations}.`,
   );
 
-  return lines;
+  return { why: lines, alsoOnFile };
 }
 
 type Filter = 'incomplete' | 'complete' | 'all';
+
+/**
+ * `?view=all` opens on every athlete. The compliance centre's "Cleared
+ * tonight" link uses it: the worklist's own default hides an athlete whose
+ * papers are all signed, and that is exactly the athlete a hold can be on.
+ * Read once, the way /admin reads its tab.
+ */
+function initialFilter(): Filter {
+  if (typeof window === 'undefined') return 'incomplete';
+  return new URLSearchParams(window.location.search).get('view') === 'all' ? 'all' : 'incomplete';
+}
 
 function isComplete(row: AthleteWaiverRow): boolean {
   return TRACKED_WAIVER_TYPES.every((type) => row.waivers[type] === 'signed');
@@ -165,7 +195,7 @@ function isComplete(row: AthleteWaiverRow): boolean {
 export default function WaiverComplianceAuditPage() {
   const [items, setItems] = useState<AthleteWaiverRow[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [filter, setFilter] = useState<Filter>('incomplete');
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [activeOnly, setActiveOnly] = useState(true);
 
   const load = useCallback(async () => {
@@ -223,9 +253,9 @@ export default function WaiverComplianceAuditPage() {
               is below.
             </p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              Tonight is one answer per athlete. It follows training holds and medical clearance only, in
-              the words those records use; the papers listed under Why are what is on file and do not change
-              it.
+              Tonight is one answer per athlete. It follows training holds and medical clearance only.
+              Papers, consent and open violations are listed under Also on file as they stand and do not
+              change it.
             </p>
             {/* A failed read is a network fact. --locked red is what this room
                 says when a clinician or a safeguarding decision has stopped
@@ -303,9 +333,20 @@ export default function WaiverComplianceAuditPage() {
                         ) : null}
                         {row.tonight ? (
                           <details className="mt-[var(--s2)]">
-                            <summary className="t-muted min-h-[44px] cursor-pointer py-[var(--s2)]">Why</summary>
-                            <ul className="t-muted space-y-[var(--s2)]">
-                              {tonightReasons(row.tonight).map((line) => (
+                            <summary
+                              aria-label={`Why, ${row.athlete_name}`}
+                              className="t-muted min-h-[44px] cursor-pointer py-[var(--s2)]"
+                            >
+                              Why
+                            </summary>
+                            <ul aria-label="Why" className="t-muted space-y-[var(--s2)]">
+                              {tonightReasons(row.tonight).why.map((line) => (
+                                <li key={line}>{line}</li>
+                              ))}
+                            </ul>
+                            <p className="t-eyebrow mt-[var(--s3)]">Also on file</p>
+                            <ul aria-label="Also on file" className="t-muted mt-[var(--s2)] space-y-[var(--s2)]">
+                              {tonightReasons(row.tonight).alsoOnFile.map((line) => (
                                 <li key={line}>{line}</li>
                               ))}
                             </ul>
