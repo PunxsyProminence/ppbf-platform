@@ -1484,6 +1484,27 @@ describe('issue to athlete', () => {
       expect(bodies[2].request_key).toBe(bodies[0].request_key);
     });
 
+    it('an answer that settles one issue ends only that issue\'s key: another athlete\'s unanswered press is still retried with its own', async () => {
+      const fetchMock = mockIssues([NO_ANSWER, () => statusResponse(201, ISSUED_BODY), () => statusResponse(200, ALREADY_BODY)]);
+
+      // Dana's press gets no answer; Sam's is issued; then back to Dana.
+      await issueTo('ath-1');
+      await screen.findByRole('alert');
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+      await issueAgain();
+      await screen.findByText(/^Issued to Sam Okafor/);
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      await issueAgain();
+      await screen.findByText(/^Issued to Dana Reyes/);
+
+      const bodies = issuePosts(fetchMock).map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+      expect(bodies.map((body) => body.athlete_id)).toEqual(['ath-1', 'ath-2', 'ath-1']);
+      expect(typeof bodies[0].request_key).toBe('string');
+      // Sam's answer did not take Dana's key with it.
+      expect(bodies[2].request_key).toBe(bodies[0].request_key);
+      expect(bodies[1].request_key).not.toBe(bodies[0].request_key);
+    });
+
     it('"already issued" with no step count says the count could not be read, never 0', async () => {
       const withoutCount: Record<string, unknown> = { ...ALREADY_BODY };
       delete withoutCount.step_count;
