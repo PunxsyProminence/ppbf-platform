@@ -50,6 +50,9 @@ let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
 let sessionCreateFails = false;
 let storedAssignments: Array<Record<string, unknown>> = [];
+/** The `workouts` the assignments read sends beside its items (lane P7c).
+ * Undefined leaves the key out, as an older server's answer would. */
+let storedWorkouts: unknown;
 /**
  * W-D2: what /api/pilot/drill-library answers for an athlete -- the reference
  * drills this gym has adopted, already filtered and projected by the server.
@@ -224,6 +227,7 @@ beforeEach(() => {
   goalUpdateFails = false;
   sessionCreateFails = false;
   storedAssignments = [];
+  storedWorkouts = undefined;
   storedReferenceDrills = [];
   storedReferenceDrillDetails = {};
   detailReadFails = false;
@@ -344,7 +348,10 @@ beforeEach(() => {
         // Never answers: the read is still in flight for the whole test.
         return new Promise<Response>(() => {});
       }
-      return jsonResponse({ items: storedAssignments });
+      return jsonResponse({
+        items: storedAssignments,
+        ...(storedWorkouts === undefined ? {} : { workouts: storedWorkouts }),
+      });
     }
     // W-D2: the Learn surface reads the reference library, not the operational
     // drill list. Matched BEFORE any bare /api/pilot/drills branch would be,
@@ -1920,6 +1927,203 @@ describe('Today shows the work a coach assigned', () => {
 // replacement: the coach's open rows, in the API's order, with the coach's
 // dose or none; honest empty and failure states; links to the Progression
 // page's own controls rather than copies of them; and nothing generated.
+// An issued workout template keeps its shape on the Floor (lane P7c,
+// OD-2026-10-10-004 ruling 5). The Floor lists OPEN work only, so it draws the
+// workout's open steps: a heading across the grid at the place of the first of
+// them, a block name wherever the block changes, the steps in the coach's
+// order, and beside each what the template says. jsdom proves the order and
+// the words; it cannot show how this reads on a gym tablet.
+describe('an issued workout keeps its shape on the Floor', () => {
+  // Sent in the server's order, which is not the workout's: a piece of work in
+  // no workout first, and another BETWEEN two of the workout's steps.
+  const WORK = [
+    assignment({ assignment_id: 'as-loose', drill_display_name: 'Shadowbox' }),
+    assignment({ assignment_id: 'as-w3', drill_display_name: 'Body Sparring' }),
+    assignment({ assignment_id: 'as-w1', drill_display_name: 'Skip Rope', duration_minutes: 5 }),
+    assignment({ assignment_id: 'as-late', drill_display_name: 'Heavy Bag' }),
+    assignment({ assignment_id: 'as-w2', drill_display_name: 'Jab Ladder', rep_count: 20, status: 'in_progress' }),
+  ];
+
+  // The ordinals are the coach's and have gaps; the steps arrive out of order.
+  const WORKOUT = {
+    issue_id: 'issue-1',
+    athlete_id: 'athlete-001',
+    template_name: 'Technical Tuesday',
+    template_version: 2,
+    issued_at: '2026-10-11T15:00:00.000Z',
+    issued_by_name: 'Coach J Rivera',
+    steps: [
+      { ordinal: 7, block: 'main_work', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds.\nCoach watching.', assignment_id: 'as-w3' },
+      { ordinal: 2, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', assignment_id: 'as-w1' },
+      { ordinal: 5, block: 'main_work', scale_level: null, contact_level: 'light_technical', coach_note: null, assignment_id: 'as-w2' },
+    ],
+  };
+
+  async function openFloorWith(work: Array<Record<string, unknown>>, workouts: unknown) {
+    storedAssignments = work;
+    storedWorkouts = workouts;
+    await renderWorkspace();
+    openTab('Floor');
+  }
+
+  /** The grid the Floor's work is drawn in, found from a piece of work on it. */
+  async function floorGrid(title: string): Promise<HTMLElement> {
+    const heading = await screen.findByRole('heading', { name: title });
+    return heading.closest('div.grid') as HTMLElement;
+  }
+
+  /** Every heading on the grid, in document order, as "level: text". */
+  const headings = (grid: HTMLElement) =>
+    within(grid).getAllByRole('heading').map((heading) => `${heading.tagName.toLowerCase()}: ${heading.textContent}`);
+
+  /** The card of one piece of work, found from its heading; it must hold that work's own log link. */
+  function cardOf(grid: HTMLElement, title: string): HTMLElement {
+    const card = within(grid).getByRole('heading', { name: title }).closest('div.mat-leather--raised') as HTMLElement;
+    expect(within(card).getAllByRole('link', { name: /^Log completion: / })).toHaveLength(1);
+    expect(within(card).getByRole('link', { name: `Log completion: ${title}` })).toBeTruthy();
+    return card;
+  }
+
+  test('the workout is drawn once, whole, where the FIRST of its open steps stood: steps in the coach order, a block name wherever the block changes', async () => {
+    await openFloorWith(WORK, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(headings(grid)).toEqual([
+      // The server listed this work first; it stays first.
+      'h4: Shadowbox',
+      'h4: Technical Tuesday',
+      'h5: warmup',
+      'h6: Skip Rope',
+      'h5: main work',
+      'h6: Jab Ladder',
+      'h6: Body Sparring',
+      // The work the server listed between two of the workout's steps is not
+      // pulled into the workout: it follows it.
+      'h4: Heavy Bag',
+    ]);
+    expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
+    expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday3 steps to do, in this order');
+    // Five pieces of open work, five cards: none drawn twice, none dropped.
+    expect(floorWorkTitles()).toEqual(['Shadowbox', 'Skip Rope', 'Jab Ladder', 'Body Sparring', 'Heavy Bag']);
+  });
+
+  test('each step says its number, then exactly: the scale level when the coach set one, the contact level as written, and the note', async () => {
+    await openFloorWith(WORK, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+    const lines = (title: string) => within(cardOf(grid, title)).getByTestId('step-notes').textContent;
+
+    expect(within(cardOf(grid, 'Skip Rope')).getByText('Step 2')).toBeTruthy();
+    expect(lines('Skip Rope')).toBe('Scale: Easier (A)Contact: No contactNote: Easy pace.');
+    // A level the coach left open is not shown and nothing stands in for it.
+    expect(within(cardOf(grid, 'Jab Ladder')).getByText('Step 5')).toBeTruthy();
+    expect(lines('Jab Ladder')).toBe('Contact: Light technical contact');
+    expect(within(cardOf(grid, 'Body Sparring')).getByText('Step 7')).toBeTruthy();
+    expect(lines('Body Sparring')).toBe('Scale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.');
+    // Work that is a step of no workout carries no step lines at all.
+    expect(within(cardOf(grid, 'Shadowbox')).queryByTestId('step-notes')).toBeNull();
+    expect(cardOf(grid, 'Shadowbox').textContent).not.toMatch(/Step \d/);
+    expect(within(grid).getAllByTestId('step-notes')).toHaveLength(3);
+  });
+
+  test('the contact level is shown and nothing is said about it: a sparring step has no alert or badge, and is opened and logged like any other', async () => {
+    await openFloorWith(WORK, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+    const sparring = cardOf(grid, 'Body Sparring');
+
+    expect(within(grid).queryByRole('alert')).toBeNull();
+    expect(sparring.querySelector('.alert, .badge, [title]')).toBeNull();
+    // Its whole text: its step, its name, its status, the three lines, its two links.
+    expect(sparring.textContent).toBe(
+      'Step 7Body SparringassignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Open drillLog completion',
+    );
+    expect(within(sparring).getByRole('link', { name: 'Open drill: Body Sparring' }).getAttribute('href'))
+      .toBe('/athlete/progression-intelligence?assignment=as-w3&intent=instruction');
+    expect(within(sparring).getByRole('link', { name: 'Log completion: Body Sparring' }).getAttribute('href'))
+      .toBe('/athlete/progression-intelligence?assignment=as-w3&intent=log');
+  });
+
+  test('a step is still the work it always was: its status and its dose', async () => {
+    await openFloorWith(WORK, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(within(cardOf(grid, 'Skip Rope')).getByText('5 min')).toBeTruthy();
+    const ladder = cardOf(grid, 'Jab Ladder');
+    expect(within(ladder).getByText('20')).toBeTruthy();
+    expect(within(ladder).getByText('in progress')).toBeTruthy();
+  });
+
+  test('only OPEN steps are on the Floor, and the heading says how many of the workout that is', async () => {
+    const work = WORK.map((item) => (item.assignment_id === 'as-w1' ? { ...item, status: 'completed' } : item));
+    await openFloorWith(work, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(headings(grid)).toEqual([
+      'h4: Shadowbox',
+      'h4: Technical Tuesday',
+      'h5: main work',
+      'h6: Jab Ladder',
+      'h6: Body Sparring',
+      'h4: Heavy Bag',
+    ]);
+    expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday2 of 3 steps still to do, in this order');
+  });
+
+  test('a workout with one step says "1 step"', async () => {
+    await openFloorWith(WORK, [{ ...WORKOUT, steps: [WORKOUT.steps[1]] }]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday1 step to do, in this order');
+  });
+
+  test('a workout whose steps are all done is not on the Floor: no heading for it, and the rest is drawn as before', async () => {
+    const allDone = WORK.map((item) => (String(item.assignment_id).startsWith('as-w') ? { ...item, status: 'completed' } : item));
+    await openFloorWith(allDone, [WORKOUT]);
+    const grid = await floorGrid('Shadowbox');
+
+    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag']);
+    expect(screen.queryByTestId('floor-issued-workout')).toBeNull();
+    expect(screen.queryByText('Technical Tuesday')).toBeNull();
+  });
+
+  const NO_WORKOUTS: Array<[string, unknown]> = [
+    ['an empty workouts list', []],
+    ['no workouts key at all (an older server)', undefined],
+  ];
+
+  test.each(NO_WORKOUTS)('with %s the Floor is drawn as it always was, in the order the API returned', async (_label, workouts) => {
+    await openFloorWith(WORK, workouts);
+    const grid = await floorGrid('Shadowbox');
+
+    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Body Sparring', 'h4: Skip Rope', 'h4: Heavy Bag', 'h4: Jab Ladder']);
+    expect(screen.queryByTestId('floor-issued-workout')).toBeNull();
+    expect(screen.queryByTestId('step-notes')).toBeNull();
+    expect(screen.queryByText("Could not load your coach's work")).toBeNull();
+  });
+
+  const UNREADABLE: Array<[string, unknown]> = [
+    ['not a list', { issue_id: 'issue-1' }],
+    ['a workout with no name', [{ ...WORKOUT, template_name: null }]],
+    ['a step with no block', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], block: undefined }] }]],
+    ['a step whose contact level is missing', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], contact_level: null }] }]],
+  ];
+
+  test.each(UNREADABLE)('workouts the Floor cannot read (%s) are a failed load in its own words, never the steps drawn loose or an empty floor', async (_label, workouts) => {
+    await openFloorWith(WORK, workouts);
+
+    expect(await screen.findByText("Could not load your coach's work")).toBeTruthy();
+    expect(screen.getByText('Your assigned work did not load.')).toBeTruthy();
+    expect(screen.queryByText('Skip Rope')).toBeNull();
+    expect(screen.queryByText('Shadowbox')).toBeNull();
+    expect(screen.queryByText('No open work from your coach.')).toBeNull();
+
+    // And Retry reads again and draws the workout once it can be read.
+    storedWorkouts = [WORKOUT];
+    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    const grid = await floorGrid('Technical Tuesday');
+    expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
+  });
+});
+
 describe('the Floor is the work a coach assigned', () => {
   test('only open work is shown, in the order the API returned it', async () => {
     storedAssignments = [

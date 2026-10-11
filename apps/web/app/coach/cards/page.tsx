@@ -9,10 +9,10 @@ import { readAssignmentInstruction, readReferenceInstruction } from '@/component
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
-import type { IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import { readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
 
 // Coach Cards -- issue work straight onto the assignment spine, to one
 // athlete or to a whole program. No gap, no detection, no new engine: a
@@ -69,47 +69,13 @@ interface CoachCard {
   completions: CardCompletion[];
 }
 
-// An issued workout template, as GET /api/pilot/coach/cards sends it beside
-// `items` (lane P7c). The step is typed from its producer, not redeclared.
-// Only what this screen draws is typed and checked: the route also sends the
-// template's version and when it was issued.
-interface CardWorkout {
-  issue_id: string;
-  template_name: string;
-  steps: IssuedWorkoutStep[];
-}
-
 interface IssuanceGroup {
   issuance_id: string | null;
   assigned_at: string;
   cards: CoachCard[];
   // Set by arrangeGroups when the cards are the steps of one issued workout
   // template: they are then in the coach's order.
-  workout?: CardWorkout;
-}
-
-const isText = (value: unknown): value is string => typeof value === 'string';
-const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
-
-/**
- * The `workouts` of a card-list answer. Absent (a server that predates the
- * field) is no workouts. Present but not the shape this screen reads is NOT
- * read as "no workouts": the steps would be drawn as loose cards and called
- * the whole list, so the read fails and the list says it could not be read.
- */
-function readCardWorkouts(raw: unknown): CardWorkout[] {
-  if (raw === undefined) return [];
-  const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
-    const w = workout as Partial<CardWorkout> | null;
-    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name)
-      && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
-        const s = step as Partial<IssuedWorkoutStep> | null;
-        return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)
-          && isTextOrNull(s.scale_level) && isText(s.contact_level) && isTextOrNull(s.coach_note) && isText(s.assignment_id);
-      });
-  });
-  if (!wellFormed) throw new Error('The workouts of the card list could not be read.');
-  return raw as CardWorkout[];
+  workout?: IssuedWorkoutView;
 }
 
 /**
@@ -123,8 +89,8 @@ function readCardWorkouts(raw: unknown): CardWorkout[] {
  * only, an issue id the answer repeats is one workout, and only cards the
  * server sent are drawn, so nothing is drawn twice or invented.
  */
-function arrangeGroups(groups: IssuanceGroup[], workouts: CardWorkout[]): IssuanceGroup[] {
-  const workoutOf = new Map<string, CardWorkout>();
+function arrangeGroups(groups: IssuanceGroup[], workouts: IssuedWorkoutView[]): IssuanceGroup[] {
+  const workoutOf = new Map<string, IssuedWorkoutView>();
   const ordinalOf = new Map<string, number>();
   const issueIds = new Set<string>();
   for (const workout of workouts) {
@@ -140,7 +106,7 @@ function arrangeGroups(groups: IssuanceGroup[], workouts: CardWorkout[]): Issuan
   const stepWorkout = (group: IssuanceGroup) =>
     group.issuance_id === null && group.cards.length === 1 ? workoutOf.get(group.cards[0].assignment_id) : undefined;
 
-  const cardsOf = new Map<CardWorkout, CoachCard[]>();
+  const cardsOf = new Map<IssuedWorkoutView, CoachCard[]>();
   for (const group of groups) {
     const workout = stepWorkout(group);
     if (workout) cardsOf.set(workout, [...(cardsOf.get(workout) ?? []), group.cards[0]]);
@@ -217,7 +183,9 @@ export default function CoachCardsPage() {
     if (!res.ok) throw new Error(`Failed to load cards: ${res.status}`);
     const data = (await res.json()) as { items?: IssuanceGroup[]; workouts?: unknown };
     if (signal?.aborted) return;
-    setGroups(arrangeGroups(data.items || [], readCardWorkouts(data.workouts)));
+    // Workouts this screen cannot read throw (src/lib/issuedWorkouts.ts), and
+    // the list then says it could not be read: never the steps as loose cards.
+    setGroups(arrangeGroups(data.items || [], readIssuedWorkouts(data.workouts)));
     // A read that succeeded clears the flag, so a recovered page stops
     // claiming it could not be read.
     setCardsUnreadable(false);

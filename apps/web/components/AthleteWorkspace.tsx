@@ -8,6 +8,7 @@ import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
+import StepNotes from './IssuedWorkoutStepNotes';
 import WorkAxis from './WorkAxis';
 import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
@@ -35,6 +36,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
+import { orderAssignedWork, readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
@@ -798,6 +800,9 @@ export default function AthleteWorkspace() {
   // list and the Today card's count, from the one read. Kept in the order the
   // API returned it -- the Floor does not re-rank a coach's list.
   const [openCoachWork, setOpenCoachWork] = useState<CoachWorkItem[]>([]);
+  // The issued workouts the open work is steps of (lane P7c), as the same
+  // read sends them beside the items.
+  const [coachWorkouts, setCoachWorkouts] = useState<IssuedWorkoutView[]>([]);
   const [assignedWorkLoading, setAssignedWorkLoading] = useState(true);
   const [assignedWorkError, setAssignedWorkError] = useState<string | null>(null);
 
@@ -1277,12 +1282,23 @@ export default function AthleteWorkspace() {
       );
       if (!response.ok) throw new Error('Your assigned work did not load.');
 
-      const data = (await response.json()) as { items?: CoachWorkItem[] };
+      const data = (await response.json()) as { items?: CoachWorkItem[]; workouts?: unknown };
+      // Read before either is set. Workouts the Floor cannot read are a failed
+      // load, in the Floor's own words: drawing their steps as loose work would
+      // show a workout out of its order and call it the whole list.
+      let workouts: IssuedWorkoutView[];
+      try {
+        workouts = readIssuedWorkouts(data.workouts);
+      } catch {
+        throw new Error('Your assigned work did not load.');
+      }
       setOpenCoachWork((data.items ?? []).filter((item) => isOpenCoachWork(item.status)));
+      setCoachWorkouts(workouts);
     } catch (error) {
       // A failed read is not an empty list: the error is what renders, and
       // nothing from an earlier read is left standing as if it were current.
       setOpenCoachWork([]);
+      setCoachWorkouts([]);
       setAssignedWorkError(error instanceof Error ? error.message : 'Your assigned work did not load.');
     } finally {
       setAssignedWorkLoading(false);
@@ -2914,14 +2930,51 @@ export default function AthleteWorkspace() {
                   form, and only its Save writes. */}
               {!assignedWorkLoading && !assignedWorkError && openCoachWork.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
-                  {openCoachWork.map((work) => {
+                  {/* An issued workout template keeps its shape here too (lane
+                      P7c): a heading across the grid at the place of its first
+                      open step, a block name wherever the block changes, then
+                      its open steps in the coach's order. Work that is a step
+                      of no workout is drawn where it stands, as before. Only
+                      OPEN work is on the Floor, so the heading says how many
+                      of the workout's steps that is. */}
+                  {orderAssignedWork(openCoachWork, coachWorkouts).map((row) => {
+                    if (row.kind === 'workout') {
+                      const total = row.workout.steps.length;
+                      return (
+                        <div key={row.key} className="md:col-span-2" data-testid="floor-issued-workout">
+                          <p className="t-eyebrow">Workout</p>
+                          <h4 className="mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">
+                            {row.workout.template_name}
+                          </h4>
+                          <p className="t-muted mt-[var(--s2)]">
+                            {row.stepCount === total
+                              ? `${total === 1 ? '1 step' : `${total} steps`} to do, in this order`
+                              : `${row.stepCount} of ${total} steps still to do, in this order`}
+                          </p>
+                        </div>
+                      );
+                    }
+                    if (row.kind === 'block') {
+                      return (
+                        <h5 key={row.key} className="t-label md:col-span-2">
+                          {row.block.replace(/_/g, ' ')}
+                        </h5>
+                      );
+                    }
+                    const { assignment: work, step } = row;
                     const name = work.drill_display_name || work.drill_name;
+                    // Under a workout and its block the drill's heading is one level further down.
+                    const WorkHeading = step ? 'h6' : 'h4';
                     return (
                       <div key={work.assignment_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
                         <div className="flex items-start justify-between gap-[var(--s4)]">
-                          <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{name}</h4>
+                          <div className="min-w-0">
+                            {step && <p className="t-label">Step {step.ordinal}</p>}
+                            <WorkHeading className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{name}</WorkHeading>
+                          </div>
                           <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
                         </div>
+                        {step && <StepNotes step={step} />}
                         <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
                           {work.rep_count != null && (
                             <div>
