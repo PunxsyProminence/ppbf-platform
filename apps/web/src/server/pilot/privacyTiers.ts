@@ -502,9 +502,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'access.ts#assertActorCanAccessAthlete',
     ],
     note:
-      'What a coach wrote beside one step of a workout template, copied onto the workout when it is issued to '
-      + 'one athlete (lane P7c, OD-2026-10-10-004 ruling 5). It is written FOR the athlete, so the athlete reads '
-      + 'it, and so do the staff who reach that athlete. The read has no gate of its own: it answers only about '
+      'The note beside one step of a workout template, copied onto the workout when it is issued to one '
+      + 'athlete (lane P7c, OD-2026-10-10-004 ruling 5). The athlete is shown it by that ruling (the issued '
+      + 'workout shows each step with the coach\'s note), and so are the staff who reach that athlete. On a '
+      + 'seeded template the note is the template author\'s text, not a coach of this gym\'s. '
+      + 'The read has no gate of its own: it answers only about '
       + 'assignment ids its caller already read behind assertActorCanAccessAthlete, and joins every step to its '
       + 'assignment on the organization. The assignments route sends it to staff and to the athlete; a linked '
       + 'guardian is not sent it until their screen is built. The same row carries the step\'s contact level, '

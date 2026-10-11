@@ -72,6 +72,42 @@ describe('issued workout schema ownership', () => {
     expect(body).toMatch(/if \(assignmentIds\.length === 0\) \{\s+return \[\];/);
   });
 
+  test('the shape read has one caller, and that caller asks only about assignments it has just read behind the athlete gate', () => {
+    // The read takes whatever ids it is given and scopes them by organization
+    // only, so WHO may call it, and with what, is the boundary. A new importer
+    // is added here deliberately, with the gated read its ids come from.
+    const webRoot = path.join(repositoryRoot, 'apps/web');
+    const importers: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          // An import of it, in any form. (privacyTiers.ts names it in a string, as the field's enforcer.)
+          if (/import\s*\{[^}]*\blistIssuedWorkoutsForAssignments\b[^}]*\}\s*from/.test(code(fs.readFileSync(full, 'utf8')))) {
+            importers.push(path.relative(webRoot, full).replace(/\\/g, '/'));
+          }
+        }
+      }
+    };
+    for (const top of ['app', 'components', 'src']) walk(path.join(webRoot, top));
+    expect(importers.sort()).toEqual(['app/api/pilot/progression/assignments/route.ts']);
+
+    const route = code(read('apps/web/app/api/pilot/progression/assignments/route.ts'));
+    const gate = route.indexOf('await assertActorCanAccessAthlete(principal, athleteId);');
+    const gatedRead = route.indexOf('const assignments = await getAthleteAssignments(');
+    const shapeRead = route.indexOf('listIssuedWorkoutsForAssignments(');
+    expect(gate).toBeGreaterThan(0);
+    expect(gatedRead).toBeGreaterThan(gate);
+    expect(shapeRead).toBeGreaterThan(gatedRead);
+    // Its ids are the gated read's own rows, and its organization the session's.
+    expect(route).toMatch(
+      /listIssuedWorkoutsForAssignments\(\s*principal\.organizationId,\s*assignments\.map\(\(assignment\) => assignment\.assignment_id\),\s*\)/,
+    );
+    expect(route.match(/listIssuedWorkoutsForAssignments\(/g)).toHaveLength(1);
+  });
+
   test('the family projection is named field by field and carries no account id', () => {
     const projection = code(moduleSource).slice(code(moduleSource).indexOf('export async function toFamilyIssuedWorkouts'));
     expect(projection).not.toMatch(/\.\.\.\s*(?:workout|step)\b/);

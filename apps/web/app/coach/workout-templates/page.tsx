@@ -57,10 +57,11 @@ interface TemplateDetail {
 //   - anything else (no answer, a 5xx, a status this screen does not know):
 //     UNKNOWN, said as unknown, with where to look before trying again.
 //
-// EACH STEP IS A SEPARATE COACH CARD FOR NOW, and the result says so plainly:
-// an assignment has nowhere to keep a step's block, order, scale level,
-// contact level or coach note, so the athlete does not receive the session's
-// shape (follow-up #1419 adds it).
+// THE ATHLETE GETS THE WORKOUT'S SHAPE (#1419): each step is still its own
+// assignment, and the issue keeps each step's block, order, scale level,
+// contact level and note, which the athlete's screen draws as one workout. The
+// result says so, and says what is still true of the coach's own Coach Cards
+// screen: it lists the steps as separate cards until that screen is changed.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -416,8 +417,9 @@ function IssueToAthlete({
             <>
               <p className="t-body font-semibold">{cardsLine}</p>
               <p className="t-body">
-                Each step is a separate Coach Card for now. The block, order, scale level, contact level and
-                coach note are not carried.
+                The athlete sees this as one workout: each step in your order, with its block, scale level,
+                contact level and note. On your Coach Cards screen each step is still listed as a separate
+                card for now.
               </p>
               {outcome.adopted.length > 0 && (
                 <p className="t-body">Adopted for this gym: {outcome.adopted.join(', ')}.</p>

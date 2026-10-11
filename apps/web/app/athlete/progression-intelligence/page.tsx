@@ -8,7 +8,7 @@ import { readAssignmentInstruction } from '@/components/drills/drillInstructionR
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { humanizeContactLevel } from '@/src/lib/drillPresentation';
+import { humanizeContactLevel, scaleLevelName } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
@@ -160,7 +160,7 @@ function readIssuedWorkouts(raw: unknown): IssuedWorkout[] {
   if (raw === undefined) return [];
   const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
     const w = workout as Partial<IssuedWorkout> | null;
-    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name) && isText(w.issued_at)
+    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name) && isText(w.issued_at) && !Number.isNaN(Date.parse(w.issued_at))
       && (w.issued_by_name === undefined || isText(w.issued_by_name))
       && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
         const s = step as Partial<IssuedWorkoutStep> | null;
@@ -187,13 +187,18 @@ type AssignedWorkRow =
  * changes (so a block the coach returns to is shown again, where the coach put
  * it). A step whose assignment was not sent is left out; a workout with no
  * step left is not drawn; an assignment two workouts both name is a step of
- * the first only, so nothing is drawn twice.
+ * the first only, and an issue id the answer repeats is one workout, so
+ * nothing is drawn twice.
  */
 function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorkout[]): AssignedWorkRow[] {
   const sent = new Set(assignments.map((assignment) => assignment.assignment_id));
   const workoutOf = new Map<string, IssuedWorkout>();
   const stepsOf = new Map<IssuedWorkout, IssuedWorkoutStep[]>();
+  const issueIds = new Set<string>();
   for (const workout of workouts) {
+    // An issue id the answer repeats is one workout: the first entry is it.
+    if (issueIds.has(workout.issue_id)) continue;
+    issueIds.add(workout.issue_id);
     const steps: IssuedWorkoutStep[] = [];
     for (const step of [...workout.steps].sort((a, b) => a.ordinal - b.ordinal)) {
       if (!sent.has(step.assignment_id) || workoutOf.has(step.assignment_id)) continue;
@@ -217,10 +222,10 @@ function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorko
     const steps = stepsOf.get(workout) ?? [];
     rows.push({ kind: 'workout', key: `workout-${workout.issue_id}`, workout, stepCount: steps.length });
     let block: string | null = null;
-    for (const step of steps) {
+    for (const [index, step] of steps.entries()) {
       if (step.block !== block) {
         block = step.block;
-        rows.push({ kind: 'block', key: `block-${workout.issue_id}-${step.ordinal}`, block });
+        rows.push({ kind: 'block', key: `block-${workout.issue_id}-${index}`, block });
       }
       rows.push({ kind: 'assignment', key: step.assignment_id, assignment: byId.get(step.assignment_id) as DrillAssignment, step });
     }
@@ -229,18 +234,24 @@ function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorko
 }
 
 /**
- * What the coach wrote beside one step of a workout, as written. A scale level
- * the coach left open is not shown; nothing is filled in, and nothing is said
- * about the contact level beyond the level itself.
+ * What the template says beside one step of a workout, as written, each line
+ * labelled so it is not taken for the drill's own level in the instruction
+ * below it. A scale level the coach left open is not shown; nothing is filled
+ * in, and nothing is said about the contact level beyond the level itself.
+ * The note is labelled "Note", not "Coach note": a template's note is whatever
+ * its author wrote, and on a seeded template that is not this gym's coach.
  */
 function StepNotes({ step }: { readonly step: IssuedWorkoutStep }) {
   return (
-    <div className="mt-[var(--s3)] space-y-[var(--s2)] break-words text-[length:var(--t-md)] text-[color:var(--bone-200)]">
-      {step.scale_level && <p>Scale {step.scale_level}</p>}
-      <p>{humanizeContactLevel(step.contact_level)}</p>
+    <div
+      data-testid="step-notes"
+      className="mt-[var(--s3)] space-y-[var(--s2)] break-words text-[length:var(--t-md)] text-[color:var(--bone-200)]"
+    >
+      {step.scale_level && <p>Scale: {scaleLevelName(step.scale_level)}</p>}
+      <p>Contact: {humanizeContactLevel(step.contact_level)}</p>
       {(step.coach_note ?? '').trim() !== '' && (
         <p className="whitespace-pre-line">
-          <span className="font-semibold">Coach note:</span> {step.coach_note}
+          <span className="font-semibold">Note:</span> {step.coach_note}
         </p>
       )}
     </div>
@@ -883,7 +894,7 @@ export default function AthleteProgressionIntelligencePage() {
                             {row.workout.template_name}
                           </h3>
                           <p className="t-muted mt-[var(--s2)]">
-                            {row.workout.issued_by_name ? `From ${row.workout.issued_by_name} · ` : ''}
+                            {row.workout.issued_by_name ? `From: ${row.workout.issued_by_name} · ` : ''}
                             {formatGymDateNumeric(row.workout.issued_at)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
                           </p>
                         </div>
@@ -911,7 +922,7 @@ export default function AthleteProgressionIntelligencePage() {
                         className={step ? 'mat-leather ml-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]' : 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]'}
                       >
                         <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
-                          <div className="flex-1">
+                          <div className="min-w-0 flex-1">
                             {step && <p className="t-label">Step {step.ordinal}</p>}
                             <DrillHeading className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
                               {assignment.drill_display_name || assignment.drill_name}

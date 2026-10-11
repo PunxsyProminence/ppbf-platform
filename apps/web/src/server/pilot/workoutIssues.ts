@@ -232,7 +232,7 @@ const FAMILY_ISSUED_BY_FLOOR = 'Your coach';
  * The family projection of issued workouts. Named field by field, never
  * spread: a spread carries the account id, and every column a later change
  * adds, to a family without anyone deciding it should. `nameFor` is asked once
- * per distinct coach; the route passes getCoachDisplayName.
+ * per distinct coach; the route passes its cached getCoachDisplayName.
  */
 export async function toFamilyIssuedWorkouts(
   workouts: IssuedWorkout[],
