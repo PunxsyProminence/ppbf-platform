@@ -2719,7 +2719,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
