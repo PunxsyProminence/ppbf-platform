@@ -2,20 +2,24 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
-// The only files where no-control-regex is switched off. Each one strips or
-// refuses control characters ON PURPOSE, and spells them as visible escapes
-// (backslash-u-0000 and the like) that anyone can read in the source.
+// WHY THE RULES BELOW ARE ON. Four files once held a literal backspace (0x08)
+// inside a regex where a word boundary was meant. The two look identical in an
+// editor and in a diff, and the pattern silently matched nothing: three test
+// assertions that could never fail, and a role scanner that read no roles
+// (#1411, #1420). The usual cause is a tool that collapses a doubled backslash
+// on the way to disk.
 //
-// The rule is on everywhere else because of the opposite case: an INVISIBLE
-// control byte inside a regex. Four files once held a literal backspace (0x08)
-// where a word boundary was meant, and each pattern silently matched nothing:
-// three test assertions that could never fail, and a role scanner that read no
-// roles (#1411, #1420).
+// no-control-regex refuses a control character inside a regex, raw or escaped.
+//
+// The only files where it is switched off. Each one names control characters
+// ON PURPOSE, as visible escapes (backslash-u-0000 and the like) that anyone
+// can read in the source: eight strip or refuse them in what people type or
+// upload, and generate.mjs marks the edge of the ASCII range.
 //
 // sourceControlCharacters.convention.test.ts asks ESLint which files the rule
 // is not enforced for and expects exactly this list, so a tenth file cannot be
-// added quietly. The same test fails on any raw control byte in ANY tracked
-// source file, these nine included.
+// added quietly. The same test fails on a raw control byte in any tracked file
+// under apps/web and packages, these nine included.
 const CONTROL_CHARACTER_HANDLERS = [
   "app/api/pilot/quotes/route.ts",
   "app/shadow/page.tsx",
@@ -28,12 +32,37 @@ const CONTROL_CHARACTER_HANDLERS = [
   "src/testing/legacyLoaderGoldenData/generate.mjs",
 ];
 
+// The same accident one step removed, which no-control-regex cannot see: a
+// regex built from a string or a template. "backslash, b" inside a string IS a
+// backspace, so a pattern assembled from it matches nothing either, and on disk
+// it is two ordinary visible characters. Nothing in this app means a backspace,
+// so one in a string or an untagged template is refused outright. String.raw
+// templates are left alone: there the two characters stay two characters.
+//
+// Spelled with fromCharCode so that this file holds no escape to collapse.
+const BACKSPACE = String.fromCharCode(8);
+const BACKSPACE_MESSAGE =
+  "This holds a backspace character. If a regex word boundary was meant, the backslash before the b was lost: "
+  + "double it inside a string, or build the pattern with String.raw.";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
     rules: {
       "no-control-regex": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: `Literal[value=/${BACKSPACE}/]`,
+          message: BACKSPACE_MESSAGE,
+        },
+        {
+          selector:
+            `TemplateLiteral:not(TaggedTemplateExpression > TemplateLiteral) > TemplateElement[value.cooked=/${BACKSPACE}/]`,
+          message: BACKSPACE_MESSAGE,
+        },
+      ],
     },
   },
   {
