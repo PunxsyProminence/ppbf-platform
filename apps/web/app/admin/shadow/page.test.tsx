@@ -7,7 +7,7 @@
 // behind it, so the controls must not offer the action.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import AdminShadowConsolePage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -185,19 +185,85 @@ async function renderConsole(role: PilotSessionState['role'], options?: { withMe
   return fetchMock;
 }
 
+// The gym-only reads on this console refuse the platform owner
+// (OD-2026-10-10-004 ruling 3; OD-2026-10-08-003): their panels are not drawn
+// and their requests are not sent. What it may still read stays.
+const GYM_ONLY_READS = ['/shadow/authority', '/shadow/review-projection', '/shadow/metrics', '/shadow/unlocks'];
+const SHARED_READS = ['/shadow/telemetry', '/shadow/feedback', '/shadow/library/review-flags'];
+
+function callsTo(fetchMock: jest.Mock, fragment: string) {
+  return fetchMock.mock.calls.filter(([url]) => String(url).includes(fragment));
+}
+
+async function renderPlatformOwnerConsole() {
+  const fetchMock = consoleFetchMock();
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<AdminShadowConsolePage />);
+  for (const fragment of SHARED_READS) {
+    await waitFor(() => expect(callsTo(fetchMock, fragment).length).toBeGreaterThan(0));
+  }
+  return fetchMock;
+}
+
+it('sends a platform owner none of the gym-only reads and draws none of their panels', async () => {
+  const fetchMock = await renderPlatformOwnerConsole();
+
+  for (const fragment of GYM_ONLY_READS) {
+    expect(callsTo(fetchMock, fragment)).toHaveLength(0);
+  }
+  expect(screen.queryByText(/SHADOW Intelligence/)).toBeNull();
+  expect(screen.queryByText('Feature Unlock Thresholds')).toBeNull();
+  expect(screen.queryByText('PENDING IMPORT QUEUE')).toBeNull();
+  expect(screen.queryByText(/Board packet intake/)).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: /show telemetry stream/i }));
+  expect(screen.queryByText('SHADOW authority read model')).toBeNull();
+  expect(screen.getByText('SHADOW telemetry read model')).toBeTruthy();
+});
+
 it('offers no intake write control to a platform owner', async () => {
-  await renderConsole('platform_owner');
+  const fetchMock = await renderPlatformOwnerConsole();
 
   expect(screen.queryByRole('button', { name: /upload pdf/i })).toBeNull();
   expect(screen.getAllByText(/read-only in a platform-owner session/i).length).toBeGreaterThan(0);
-
-  expect((screen.getByRole('button', { name: 'VIEW' }) as HTMLButtonElement).disabled).toBe(false);
-  for (const action of ['APPROVE', 'REJECT', 'IMPORT']) {
-    expect((screen.getByRole('button', { name: action }) as HTMLButtonElement).disabled).toBe(true);
-  }
-
   expect((screen.getByRole('button', { name: /approve for learning/i }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: /document security review/i })).toBeNull();
+  for (const action of ['APPROVE', 'REJECT', 'IMPORT']) {
+    expect(screen.queryByRole('button', { name: action })).toBeNull();
+  }
+
+  fireEvent.keyDown(window, { key: 'a' });
+  expect(callsTo(fetchMock, '/intake/review-action')).toHaveLength(0);
+  expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
+});
+
+it('asks nothing gym-only while the session is still being read', async () => {
+  const fetchMock = consoleFetchMock();
+  mockUsePilotSession.mockReturnValue({ ...session(null), loading: true });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<AdminShadowConsolePage />);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  for (const fragment of GYM_ONLY_READS) {
+    expect(callsTo(fetchMock, fragment)).toHaveLength(0);
+  }
+});
+
+it.each(['organization_admin', 'admin'] as const)('%s keeps every read and every panel', async (role) => {
+  const fetchMock = await renderConsole(role, { withMetrics: true });
+
+  for (const fragment of [...GYM_ONLY_READS, ...SHARED_READS]) {
+    await waitFor(() => expect(callsTo(fetchMock, fragment).length).toBeGreaterThan(0));
+  }
+  await screen.findByText(/SHADOW Intelligence/);
+  await screen.findByText('Feature Unlock Thresholds');
+  expect(screen.getByText('PENDING IMPORT QUEUE')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /show telemetry and authority streams/i }));
+  expect(screen.getByText('SHADOW authority read model')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Admin Hub' }).getAttribute('href')).toBe('/admin');
 });
 
 it('leaves the intake write controls to a gym admin', async () => {
@@ -208,18 +274,6 @@ it('leaves the intake write controls to a gym admin', async () => {
   expect((screen.getByRole('button', { name: 'APPROVE' }) as HTMLButtonElement).disabled).toBe(false);
   expect((screen.getByRole('button', { name: /approve for learning/i }) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByRole('button', { name: /document security review/i })).toBeTruthy();
-});
-
-it('records the refusal instead of calling the review route for a platform owner', async () => {
-  const fetchMock = await renderConsole('platform_owner');
-
-  fireEvent.click(screen.getByRole('button', { name: 'VIEW' }));
-  fireEvent.keyDown(window, { key: 'a' });
-
-  await screen.findByText(/STATUS: Blocked/);
-  expect(
-    fetchMock.mock.calls.some(([url]) => String(url).includes('/intake/review-action')),
-  ).toBe(false);
 });
 
 // ── After Hours room DNA ────────────────────────────────────────────────────

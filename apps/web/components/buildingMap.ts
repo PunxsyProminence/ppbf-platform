@@ -145,7 +145,10 @@ export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
   { href: '/dashboard', label: 'Bell', room: 'office', roles: OPEN,
     keywords: 'home start landing bell', hint: 'The front desk — where a session starts.' },
-  { href: '/admin', label: 'Capability Console', room: 'office', roles: ADMIN_GATE,
+  /* roles: ['admin'], NOT ADMIN_GATE: the capability routes behind this
+     console refuse platform_owner (OD-2026-10-10-004 ruling 3), and the page
+     shows that role a per-gym notice, so the door would be a dead end. */
+  { href: '/admin', label: 'Capability Console', room: 'office', roles: ['admin'],
     keywords: 'capabilities registry matrix builder admin authority',
     hint: 'Capability definitions, assignments, status and role exposure.' },
   { href: '/admin/people', label: 'People', room: 'office', roles: ADMIN_GATE,
@@ -186,7 +189,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/floor-hours', label: 'Floor Hours Ledger', room: 'office', roles: ['admin'],
     keywords: 'floor hours ledger activity minutes correction adjustment audit public clock',
     hint: 'The per-person rows behind the public clock \u2014 recorded and corrected kept apart, and corrections appended, never overwritten.' },
-  { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ADMIN_GATE,
+  /* roles: ['admin']: gym-photos refuses platform_owner (OD-2026-10-08-003),
+     and the page shows that role its admins-only notice. */
+  { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ['admin'],
     keywords: 'photos photographs wall pictures upload building frames banners boards chalk customization appearance',
     hint: 'Photographs, boards, and notices — the gym’s look and voice, one desk.' },
   { href: '/admin/organizations', label: 'Organizations', room: 'office', roles: ['platform_owner'],

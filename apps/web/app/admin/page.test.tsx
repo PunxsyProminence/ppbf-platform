@@ -76,6 +76,47 @@ async function renderPage(fetchMock: jest.Mock, role: PilotSessionState['role'] 
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 }
 
+// The platform owner's page sends nothing, so there is no call to wait on.
+async function renderAsPlatformOwner(fetchMock: jest.Mock) {
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<AdminCapabilitiesPage />);
+  await screen.findByRole('heading', { name: 'The Capability Room is set per gym' });
+}
+
+// Every read behind this room is refused to the platform owner
+// (OD-2026-10-10-004 ruling 3): it is shown where its work is instead, and
+// no gym read or save goes out on its behalf.
+describe('the platform owner', () => {
+  it('is pointed at the platform screens and sends no gym read or save', async () => {
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+
+    await renderAsPlatformOwner(fetchMock);
+    // Give any mount effect a turn to run before counting.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.getByRole('link', { name: 'Organization Provisioning' }).getAttribute('href')).toBe('/admin/organizations');
+    expect(screen.queryByRole('button', { name: 'Capability Library' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'The Capability Room' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['organization_admin', 'admin'] as const)('%s still gets the console and both reads', async (role) => {
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+
+    await renderPage(fetchMock, role);
+
+    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
+    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/gym-capabilities', 'GET')).toHaveLength(1));
+    expect(screen.getByRole('heading', { name: 'The Capability Room' })).toBeTruthy();
+    expect(screen.queryByText('The Capability Room is set per gym')).toBeNull();
+  });
+});
+
 it('reports a refused capability load and stops saving over the stored registry', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {
@@ -724,27 +765,30 @@ describe('Who Trains On What', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<AdminCapabilitiesPage />);
 
-    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
-    expect(screen.getByRole('heading', { name: 'Who Trains On What' })).toBeTruthy();
+    // The console waits for the session, so a platform owner's would-be
+    // reads are never sent; nothing on the page says no to anyone yet.
+    await screen.findByText('Loading...');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/This sign-in cannot read or change them/)).toBeNull();
+    expect(screen.queryByText('The Capability Room is set per gym')).toBeNull();
     expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(0);
     expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(0);
   });
 
-  // The route refuses platform_owner on both verbs (OD-2026-10-08-003 R2), and
-  // the roster route does not serve it either: neither is asked.
-  it("a platform owner is told tracks are the gym admin's, and no track or roster call is made", async () => {
+  // The route refuses platform_owner on both verbs (OD-2026-10-08-003 R2): the
+  // platform owner gets the per-gym notice, and no track or roster call is made.
+  it('a platform owner makes no track or roster call', async () => {
     const fetchMock = trackFetch({ roster: [ADA], stored: { 'ath-ada': ['pro'] } });
 
-    await renderPage(fetchMock, 'platform_owner');
+    await renderAsPlatformOwner(fetchMock);
 
-    await screen.findByText(/Tracks are set from the gym's own admin sign-in/);
-    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
     expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(0);
     expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(0);
     expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(0);
     expect(screen.queryByLabelText('Athlete')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Save tracks' })).toBeNull();
   });
 });
 
@@ -762,20 +806,6 @@ it('reports a capability save that the server refused', async () => {
   await renderPage(fetchMock);
 
   await screen.findByText(/Capability registry could not be saved\. This change is not saved/);
-});
-
-it('saves the capability registry for a platform owner', async () => {
-  const fetchMock = jest.fn(async (url: string) => {
-    if (String(url).includes('/api/pilot/admin/capabilities')) {
-      return jsonResponse({ ok: true, capabilities: [] });
-    }
-    return jsonResponse({ ok: true });
-  });
-
-  await renderPage(fetchMock, 'platform_owner');
-
-  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
-  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 // The console used to merge its seed blueprints into whatever the registry
@@ -860,7 +890,7 @@ it('marks the open section on the tab that opened it', async () => {
 it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
 
-  await renderPage(fetchMock, 'platform_owner');
+  await renderAsPlatformOwner(fetchMock);
   expect(screen.queryByRole('link', { name: /compliance/i })).toBeNull();
 
   jest.clearAllMocks();
@@ -884,7 +914,7 @@ it.each(['organization_admin', 'admin'] as const)(
 
 it('keeps the organization provisioning link for a platform owner', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
-  await renderPage(fetchMock, 'platform_owner');
+  await renderAsPlatformOwner(fetchMock);
   expect(screen.getByRole('link', { name: /organization provisioning/i }).getAttribute('href'))
     .toBe('/admin/organizations');
 });

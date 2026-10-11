@@ -14,9 +14,10 @@
 // The 26th-newest notice is not reachable from any screen.
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import CustomizePage from './page';
+import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -35,9 +36,28 @@ jest.mock('@/components/Chalkboard', () => ({
   default: () => <div data-testid="chalkboard" />,
 }));
 
+jest.mock('@/components/usePilotSession', () => ({
+  ...jest.requireActual('@/components/usePilotSession'),
+  usePilotSession: jest.fn(),
+}));
+
+const mockUsePilotSession = usePilotSession as jest.Mock;
+
+function session(role: PilotSessionState['role'], loading = false): PilotSessionState {
+  return {
+    role,
+    organizationId: 'org-1',
+    authProvider: 'microsoft',
+    accountId: 'someone@punxsyprominence.org',
+    mustChangePin: false,
+    loading,
+  };
+}
+
 const originalFetch = global.fetch;
 
 beforeEach(() => {
+  mockUsePilotSession.mockReturnValue(session('organization_admin'));
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ ok: true, announcements: [] }),
@@ -64,4 +84,40 @@ test('the link to the capped notices register never calls it the full record', a
   for (const link of noticesLinks) {
     expect(link.textContent ?? '').not.toMatch(/full record|complete|everything|all notices/i);
   }
+});
+
+function gymPhotoCalls(): unknown[][] {
+  return (global.fetch as unknown as jest.Mock).mock.calls.filter(([url]) => String(url).includes('/api/pilot/admin/gym-photos'));
+}
+
+// The photo route refuses the platform owner (OD-2026-10-08-003): the page
+// shows its own notice without first sending a request it knows is refused.
+test('a platform owner gets the notice and no gym-photos request', async () => {
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+
+  render(<CustomizePage />);
+
+  await screen.findByText(/ADMINS ONLY/);
+  expect(gymPhotoCalls()).toHaveLength(0);
+  expect(screen.getByRole('link', { name: 'Back to the office' }).getAttribute('href')).toBe('/admin/platform');
+});
+
+test('nothing is asked while the session is still being read', async () => {
+  mockUsePilotSession.mockReturnValue(session(null, true));
+
+  render(<CustomizePage />);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(gymPhotoCalls()).toHaveLength(0);
+  expect(screen.getByText('Opening the customization drawer')).toBeTruthy();
+});
+
+test('a gym admin still reads the photos and gets the desk', async () => {
+  render(<CustomizePage />);
+
+  await screen.findByRole('heading', { name: /look and voice/i });
+  expect(gymPhotoCalls()).toHaveLength(1);
+  expect(screen.queryByText(/ADMINS ONLY/)).toBeNull();
 });
