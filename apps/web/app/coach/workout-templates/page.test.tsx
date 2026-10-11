@@ -519,7 +519,7 @@ describe('issue to athlete', () => {
       await chooseAndAsk('ath-2');
 
       expect(
-        screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor? Each step becomes a separate Coach Card.'),
+        screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor as one workout?'),
       ).toBeInTheDocument();
       expect(issuePosts(fetchMock)).toHaveLength(0);
     });
@@ -661,7 +661,7 @@ describe('issue to athlete', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
       fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
       fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
-      const sentence = 'Issue Conditioning Circuit 45 to Dana Reyes? Each step becomes a separate Coach Card.';
+      const sentence = 'Issue Conditioning Circuit 45 to Dana Reyes as one workout?';
       expect(screen.getByText(sentence)).toBeInTheDocument();
 
       await act(async () => {
@@ -741,7 +741,7 @@ describe('issue to athlete', () => {
   });
 
   describe('what came back', () => {
-    it('issued: how many Coach Cards, that the athlete sees one workout, and that the coach\'s own list is still separate cards', async () => {
+    it('issued: how many Coach Cards, that the athlete sees one workout, and that the coach\'s own list shows it the same way', async () => {
       mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
 
       await issueTo();
@@ -749,9 +749,9 @@ describe('issue to athlete', () => {
       const status = await issuedStatus();
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(status).toHaveTextContent(
-        'The athlete sees this as one workout: each step in your order, with its block, scale level, contact level and note. On your Coach Cards screen each step is still listed as a separate card for now.',
+        'The athlete sees this as one workout: each step in your order, with its block, scale level, contact level and note. It is listed the same way on your Coach Cards screen.',
       );
-      expect(status).not.toHaveTextContent(/not carried/);
+      expect(status).not.toHaveTextContent(/not carried|separate card/);
       // Nothing adopted and nobody held: neither line is drawn.
       expect(status).not.toHaveTextContent(/Adopted for this gym/);
       expect(status).not.toHaveTextContent(/training hold/i);
@@ -1024,7 +1024,7 @@ describe('issue to athlete', () => {
 
       await chooseAndAsk();
       expect(
-        screen.getByText('Issue Boxing Fundamentals 60 to Dana Reyes? Each step becomes a separate Coach Card.'),
+        screen.getByText('Issue Boxing Fundamentals 60 to Dana Reyes as one workout?'),
       ).toHaveFocus();
 
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -1039,7 +1039,7 @@ describe('issue to athlete', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
 
       expect(
-        screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor? Each step becomes a separate Coach Card.'),
+        screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor as one workout?'),
       ).toHaveFocus();
     });
 

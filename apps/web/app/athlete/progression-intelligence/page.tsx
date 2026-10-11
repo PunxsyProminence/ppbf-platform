@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import DrillDetail from '@/components/drills/DrillDetail';
@@ -8,7 +9,6 @@ import { readAssignmentInstruction } from '@/components/drills/drillInstructionR
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { humanizeContactLevel, scaleLevelName } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
@@ -231,31 +231,6 @@ function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorko
     }
   }
   return rows;
-}
-
-/**
- * What the template says beside one step of a workout, as written, each line
- * labelled so it is not taken for the drill's own level in the instruction
- * below it. A scale level the coach left open is not shown; nothing is filled
- * in, and nothing is said about the contact level beyond the level itself.
- * The note is labelled "Note", not "Coach note": a template's note is whatever
- * its author wrote, and on a seeded template that is not this gym's coach.
- */
-function StepNotes({ step }: { readonly step: IssuedWorkoutStep }) {
-  return (
-    <div
-      data-testid="step-notes"
-      className="mt-[var(--s3)] space-y-[var(--s2)] break-words text-[length:var(--t-md)] text-[color:var(--bone-200)]"
-    >
-      {step.scale_level && <p>Scale: {scaleLevelName(step.scale_level)}</p>}
-      <p>Contact: {humanizeContactLevel(step.contact_level)}</p>
-      {(step.coach_note ?? '').trim() !== '' && (
-        <p className="whitespace-pre-line">
-          <span className="font-semibold">Note:</span> {step.coach_note}
-        </p>
-      )}
-    </div>
-  );
 }
 
 interface AssignmentCompletion {

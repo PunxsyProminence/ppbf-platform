@@ -11,6 +11,7 @@ import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pi
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { requireAssignableDrillId } from '@/src/server/pilot/progression';
+import { listIssuedWorkoutsForAssignments, type IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 
 export const runtime = 'nodejs';
 
@@ -146,6 +147,18 @@ interface IssuanceGroup {
   issuance_id: string | null;
   assigned_at: string;
   cards: CoachCardRow[];
+  /**
+   * Set when the cards are the steps of one issued workout template (lane
+   * P7c): the cards are then in the coach's order, and `steps` says, per card,
+   * its block, scale level, contact level and note.
+   */
+  workout?: {
+    issue_id: string;
+    template_name: string;
+    template_version: number;
+    issued_at: string;
+    steps: IssuedWorkoutStep[];
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -157,18 +170,59 @@ export async function GET(request: NextRequest) {
     // organization. Both reads are inside principal.organizationId only.
     const rows = await listCoachCards(principal);
 
+    // THE WORKOUT'S SHAPE (lane P7c). Asked ONLY about the cards listCoachCards
+    // just returned, which is the access boundary (current reach, re-checked on
+    // every read): the shape of a card this reader cannot see is never asked
+    // for. A failure here fails the read rather than answering with a workout
+    // flattened into loose cards.
+    const workouts = await listIssuedWorkoutsForAssignments(
+      principal.organizationId,
+      rows.map((row) => row.assignment_id),
+    );
+    const workoutOf = new Map<string, (typeof workouts)[number]>();
+    const ordinalOf = new Map<string, number>();
+    for (const workout of workouts) {
+      for (const step of workout.steps) {
+        workoutOf.set(step.assignment_id, workout);
+        ordinalOf.set(step.assignment_id, step.ordinal);
+      }
+    }
+
     // Group by issuance: rows sharing an issuance_id were one act of
-    // issuing; an individual card (issuance_id null) stands alone. Insertion
-    // order follows the rows' assigned_at desc ordering, so groups list
-    // newest first.
+    // issuing; the steps of one issued workout are one group; any other card
+    // (issuance_id null) stands alone. Insertion order follows the rows'
+    // assigned_at desc ordering, so groups list newest first, and a workout
+    // stands where the first of its cards does.
     const groups = new Map<string, IssuanceGroup>();
     for (const row of rows) {
-      const key = row.issuance_id ?? `single:${row.assignment_id}`;
+      const workout = workoutOf.get(row.assignment_id);
+      const key = workout ? `workout:${workout.issue_id}` : row.issuance_id ?? `single:${row.assignment_id}`;
       const existing = groups.get(key);
       if (existing) {
         existing.cards.push(row);
       } else {
-        groups.set(key, { issuance_id: row.issuance_id, assigned_at: row.assigned_at, cards: [row] });
+        groups.set(key, {
+          issuance_id: row.issuance_id,
+          assigned_at: row.assigned_at,
+          cards: [row],
+          ...(workout
+            ? {
+                workout: {
+                  issue_id: workout.issue_id,
+                  template_name: workout.template_name,
+                  template_version: workout.template_version,
+                  issued_at: workout.issued_at,
+                  steps: workout.steps,
+                },
+              }
+            : {}),
+        });
+      }
+    }
+    // A workout's cards in the order the coach wrote the steps.
+    for (const group of groups.values()) {
+      if (group.workout) {
+        group.cards.sort((a, b) => (ordinalOf.get(a.assignment_id) ?? 0) - (ordinalOf.get(b.assignment_id) ?? 0));
       }
     }
 

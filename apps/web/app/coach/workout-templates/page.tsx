@@ -60,8 +60,8 @@ interface TemplateDetail {
 // THE ATHLETE GETS THE WORKOUT'S SHAPE (#1419): each step is still its own
 // assignment, and the issue keeps each step's block, order, scale level,
 // contact level and note, which the athlete's screen draws as one workout. The
-// result says so, and says what is still true of the coach's own Coach Cards
-// screen: it lists the steps as separate cards until that screen is changed.
+// result says so, and that the coach's own Coach Cards screen lists it the
+// same way.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -382,7 +382,7 @@ function IssueToAthlete({
           {confirming && chosen && (
             <div className="flex flex-col gap-[var(--s3)]">
               <p ref={confirmRef} tabIndex={-1} className="t-body font-semibold">
-                Issue {template.name} to {chosen.full_name}? Each step becomes a separate Coach Card.
+                Issue {template.name} to {chosen.full_name} as one workout?
               </p>
               <button
                 type="button"
@@ -418,8 +418,7 @@ function IssueToAthlete({
               <p className="t-body font-semibold">{cardsLine}</p>
               <p className="t-body">
                 The athlete sees this as one workout: each step in your order, with its block, scale level,
-                contact level and note. On your Coach Cards screen each step is still listed as a separate
-                card for now.
+                contact level and note. It is listed the same way on your Coach Cards screen.
               </p>
               {outcome.adopted.length > 0 && (
                 <p className="t-body">Adopted for this gym: {outcome.adopted.join(', ')}.</p>

@@ -92,7 +92,26 @@ describe('issued workout schema ownership', () => {
       }
     };
     for (const top of ['app', 'components', 'src']) walk(path.join(webRoot, top));
-    expect(importers.sort()).toEqual(['app/api/pilot/progression/assignments/route.ts']);
+    expect(importers.sort()).toEqual([
+      // The coach's card list: ids from listCoachCards, whose boundary is the
+      // coach's current reach (athleteIdsForCoach), re-checked on every read.
+      'app/api/pilot/coach/cards/route.ts',
+      // The assignments read: ids from getAthleteAssignments behind assertActorCanAccessAthlete.
+      'app/api/pilot/progression/assignments/route.ts',
+    ]);
+
+    const cards = code(read('apps/web/app/api/pilot/coach/cards/route.ts'));
+    const roleGate = cards.lastIndexOf("requireRole(principal, ['coach', 'admin', 'organization_admin']);");
+    const boundedRead = cards.indexOf('const rows = await listCoachCards(principal);');
+    const cardsShapeRead = cards.indexOf('listIssuedWorkoutsForAssignments(');
+    expect(roleGate).toBeGreaterThan(0);
+    expect(boundedRead).toBeGreaterThan(roleGate);
+    expect(cardsShapeRead).toBeGreaterThan(boundedRead);
+    // Its ids are the bounded read's own rows, and its organization the session's.
+    expect(cards).toMatch(
+      /listIssuedWorkoutsForAssignments\(\s*principal\.organizationId,\s*rows\.map\(\(row\) => row\.assignment_id\),\s*\)/,
+    );
+    expect(cards.match(/listIssuedWorkoutsForAssignments\(/g)).toHaveLength(1);
 
     const route = code(read('apps/web/app/api/pilot/progression/assignments/route.ts'));
     const gate = route.indexOf('await assertActorCanAccessAthlete(principal, athleteId);');

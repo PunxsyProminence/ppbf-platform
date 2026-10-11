@@ -500,6 +500,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'workoutIssues.ts#listIssuedWorkoutsForAssignments',
       '../../../app/api/pilot/progression/assignments/route.ts#GET',
       'access.ts#assertActorCanAccessAthlete',
+      // The coach's card list: the same read, asked about listCoachCards' rows.
+      '../../../app/api/pilot/coach/cards/route.ts#GET',
+      'coachCards.ts#listCoachCards',
     ],
     note:
       'The note beside one step of a workout template, copied onto the workout when it is issued to one '
