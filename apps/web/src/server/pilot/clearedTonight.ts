@@ -45,7 +45,7 @@ import {
  * that is simply not in force (no record, pending, a cleared record past its
  * expiry) is NOT reported as "no contact": nobody decided that about the
  * athlete, and main's contact gate does not refuse their contact either, it
- * flags it. That athlete is 'cleared_to_train', with the contact clearance
+ * flags it. That athlete is 'cleared_to_train', with the medical clearance
  * stated beside the answer as what is on file. /coach/sports-medicine reads
  * the same two records through the same functions and shows each as its own
  * badge; this composes them into one answer. The two screens do not use the

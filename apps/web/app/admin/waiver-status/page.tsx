@@ -56,10 +56,10 @@ interface AthleteWaiverRow {
 // away. Law 3: glyph and label, never the colour alone.
 const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label: string }> = {
   cleared: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared' },
-  // No hold, and no contact clearance in force because none is on file, one is
+  // No hold, and no medical clearance in force because none is on file, one is
   // pending or one has expired. Nobody decided "no contact" about this
   // athlete, so the answer does not say it: same rung and glyph as cleared,
-  // with the contact clearance stated beside it as what is on file.
+  // with the medical clearance stated beside it as what is on file.
   cleared_to_train: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared to train' },
   cleared_no_contact: { rung: 'badge--monitor', glyph: '◉', label: 'Cleared, no contact' },
   not_cleared: { rung: 'badge--locked', glyph: '✕', label: 'Not cleared' },
@@ -117,12 +117,14 @@ function medicalWords(medical: { status: string; expires_at: string | null }): s
 }
 
 /**
- * The line beside a "Cleared to train" answer: what is on file about contact,
- * as a fact and not a prohibition. Only that answer carries it.
+ * The line beside a "Cleared to train" answer: the medical clearance as it is
+ * on file, a fact and not a prohibition. Only that answer carries it. It uses
+ * the record's one name, the same as under "Why" and on /coach/sports-medicine:
+ * two names in one cell read as two records.
  */
 function contactClearanceLine(tonight: Tonight): string | null {
   if (tonight.answer !== 'cleared_to_train' || tonight.medical === 'unavailable') return null;
-  return `Contact clearance: ${medicalWords(tonight.medical)}.`;
+  return `Medical clearance: ${medicalWords(tonight.medical)}.`;
 }
 
 /**

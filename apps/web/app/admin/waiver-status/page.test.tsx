@@ -286,12 +286,13 @@ test('a conditioning-only hold says the app does not act on that scope', async (
 // Overwatch's ruling for an athlete with no clearance in force and no hold:
 // nobody decided "no contact" about them, so the screen does not say it. The
 // answer is "Cleared to train", at the weight of plain "Cleared", with the
-// contact clearance stated beside it as what is on file.
+// medical clearance stated beside it as what is on file -- under the record's
+// one name, the same as under Why.
 test.each([
-  ['no_record', null, 'Contact clearance: none on file.'],
-  ['pending', null, 'Contact clearance: pending.'],
-  ['cleared_expired', '2026-09-30T16:00:00.000Z', 'Contact clearance: expired Sep 30, 2026.'],
-])('cleared to train with a %s medical record states the contact clearance as a fact', async (status, expiresAt, line) => {
+  ['no_record', null, 'Medical clearance: none on file.'],
+  ['pending', null, 'Medical clearance: pending.'],
+  ['cleared_expired', '2026-09-30T16:00:00.000Z', 'Medical clearance: expired Sep 30, 2026.'],
+])('cleared to train with a %s medical record states the medical clearance as a fact', async (status, expiresAt, line) => {
   const row = await renderRow({
     tonight: tonight({ answer: 'cleared_to_train', medical: { status, current: false, expires_at: expiresAt } }),
   });
@@ -300,20 +301,27 @@ test.each([
   // Same visual weight as plain "Cleared": no alarm rung, no alarm glyph.
   expect(badge.className).toContain('badge--cleared');
   expect(badge.textContent).toContain('✓');
-  // Stated beside the answer, not hidden in the disclosure, and as plain text.
-  const fact = within(row).getByText(line);
-  expect(fact.closest('details')).toBeNull();
+  // Stated beside the answer, not only inside the disclosure, and as plain text.
+  const beside = within(row).getAllByText(line).filter((node) => node.closest('details') === null);
+  expect(beside).toHaveLength(1);
+  const fact = beside[0];
   expect(fact.className).not.toContain('badge');
   expect(fact.closest('[role="alert"]')).toBeNull();
   expect(row.textContent).not.toMatch(/no contact/i);
+  // One record, one name: the same words under Why, and no second name.
+  expect(linesUnder(row, 'Why')).toContain(line);
+  expect(row.textContent).not.toMatch(/contact clearance/i);
 });
 
-test('only "Cleared to train" carries the contact clearance line', async () => {
+test('only "Cleared to train" carries the medical clearance beside the answer', async () => {
   const row = await renderRow({
     tonight: tonight({ answer: 'cleared_no_contact', medical: { status: 'restricted', current: false, expires_at: null } }),
   });
 
-  expect(within(row).queryByText(/^Contact clearance:/)).toBeNull();
+  const outsideTheDisclosure = within(row)
+    .getAllByText(/^Medical clearance:/)
+    .filter((node) => node.closest('details') === null);
+  expect(outsideTheDisclosure).toHaveLength(0);
   // The record's own word, under Why.
   expect(linesUnder(row, 'Why')).toContain('Medical clearance: restricted.');
 });
