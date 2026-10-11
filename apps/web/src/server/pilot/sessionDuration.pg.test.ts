@@ -72,6 +72,8 @@ const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-ap
 const PREREQUISITE_MIGRATIONS = [
   'pilot_slice_postgres_progression_migration.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
+  // The rollup's training days read pilot.attendance_reconciled.
+  'pilot_slice_postgres_attendance_precedence_migration.sql',
   'pilot_slice_postgres_readiness_provenance_migration.sql',
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_close_migration.sql',

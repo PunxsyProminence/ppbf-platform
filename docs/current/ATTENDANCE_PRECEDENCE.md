@@ -28,13 +28,13 @@ Every non-test reference to the three tables, checked individually:
 | `app/api/pilot/scheduler/attendance-summary` | `scheduler_attendance` only | No |
 | `wallDisplayDb.ts` | `scheduler_attendance` only | No |
 | `schedulerDb.ts` | `scheduler_attendance` only (sole writer) | No |
-| `performanceAnalytics.ts` | `activity_log` only, deliberately | No |
+| `performanceAnalytics.ts` | `attendance_reconciled` (OD-2026-10-07-010 Q9) | No |
 | `passbook.ts` | `attendance` only | No |
 | `intake.ts`, `intake/domain-get`, `intake/domain-upsert`, `intake/review-action` | `attendance` only (sole writer) | No |
 
-Three files name more than one table; none of them queries across them:
-`performanceAnalytics.ts` and `activityLog.ts` name the others in header
-comments explaining why they abstain, and `privacyTiers.ts` lists all three in
+Two files name more than one table; none of them queries across them:
+`activityLog.ts` names the others in header comments explaining why it
+abstains, and `privacyTiers.ts` lists all three in
 `PUBLIC_RANKING_FORBIDDEN_TABLES`, which is a ranking prohibition, not a sum.
 
 The one exported figure that reaches paper is `Attendance rate` in the roster

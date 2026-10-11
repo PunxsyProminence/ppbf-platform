@@ -269,3 +269,50 @@ describe('a failed Scorecard read', () => {
     expect(screen.queryByText(/The Scorecard could not be read/)).toBeNull();
   });
 });
+
+// The job list and the metrics read refuse the platform owner
+// (OD-2026-10-10-004 ruling 3): it gets the page's own refusal, a way to its
+// desk, and neither request.
+describe('the platform owner', () => {
+  function reportCalls(fetchMock: jest.Mock, path: string) {
+    return fetchMock.mock.calls.filter(([url]) => String(url).includes(path));
+  }
+
+  it('is refused in place and sends no jobs or metrics request', async () => {
+    const fetchMock = scoutFetchMock('platform_owner');
+    global.fetch = fetchMock as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('platform_owner'));
+
+    render(<ScoutReportPage />);
+
+    await screen.findByText('WRONG DOOR');
+    expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.queryByRole('heading', { level: 1, name: 'Scout Reports' })).toBeNull();
+    expect(reportCalls(fetchMock, '/shadow/jobs')).toHaveLength(0);
+    expect(reportCalls(fetchMock, '/shadow/metrics')).toHaveLength(0);
+  });
+
+  it.each(['organization_admin', 'admin'] as const)('%s still reads jobs and metrics', async (role) => {
+    const fetchMock = scoutFetchMock(role);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session(role));
+
+    render(<ScoutReportPage />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Scout Reports' });
+    await waitFor(() => expect(reportCalls(fetchMock, '/shadow/jobs')).toHaveLength(1));
+    expect(reportCalls(fetchMock, '/shadow/metrics')).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: 'Platform Desk' })).toBeNull();
+  });
+
+  it('a coach still reads jobs only', async () => {
+    const fetchMock = scoutFetchMock('coach');
+    global.fetch = fetchMock as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('coach'));
+
+    render(<ScoutReportPage />);
+
+    await waitFor(() => expect(reportCalls(fetchMock, '/shadow/jobs')).toHaveLength(1));
+    expect(reportCalls(fetchMock, '/shadow/metrics')).toHaveLength(0);
+  });
+});

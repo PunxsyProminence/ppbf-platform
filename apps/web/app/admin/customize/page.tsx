@@ -7,6 +7,7 @@ import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
 import { GYM_PHOTO_SLOTS, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
+import { usePilotSession } from '@/components/usePilotSession';
 
 /**
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
@@ -66,6 +67,8 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
 ];
 
 export default function AdminCustomizePage() {
+  const pilotSession = usePilotSession();
+  const isPlatformOwner = pilotSession.role === 'platform_owner';
   const [access, setAccess] = useState<'checking' | 'allowed' | 'denied'>('checking');
   const [uploaded, setUploaded] = useState<ReadonlySet<string>>(new Set());
   // Bumped per slot on upload so the <img> re-fetches past the browser cache.
@@ -75,6 +78,10 @@ export default function AdminCustomizePage() {
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
+    // The photo route refuses the platform owner (OD-2026-10-08-003): it gets
+    // the same notice without the request. Nothing is asked before the
+    // session is read.
+    if (pilotSession.loading || isPlatformOwner) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -95,7 +102,7 @@ export default function AdminCustomizePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pilotSession.loading, isPlatformOwner]);
 
   const setSlotNotice = useCallback((slotKey: string, notice: SlotNotice | null) => {
     setNotices((current) => {
@@ -162,7 +169,10 @@ export default function AdminCustomizePage() {
     }
   }, [setSlotNotice]);
 
-  if (access === 'checking') {
+  // The platform owner is shown the notice straight away (see the effect).
+  const shownAccess = isPlatformOwner ? 'denied' : access;
+
+  if (shownAccess === 'checking') {
     return (
       <main className="room room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
         <p className="working">Opening the customization drawer</p>
@@ -170,7 +180,7 @@ export default function AdminCustomizePage() {
     );
   }
 
-  if (access === 'denied') {
+  if (shownAccess === 'denied') {
     return (
       <main className="room room--office min-h-screen px-[var(--s5)] py-[var(--s6)]">
         <div className="mat-leather max-w-[610px] p-[var(--s5)]">
@@ -181,7 +191,7 @@ export default function AdminCustomizePage() {
           <p className="t-muted mt-[var(--s3)]">
             Changing how the gym looks is an administrator&apos;s decision. Ask your organization admin.
           </p>
-          <Link href="/admin" className="btn btn--ghost mt-[var(--s4)]">Back to the office</Link>
+          <Link href={isPlatformOwner ? '/admin/platform' : '/admin'} className="btn btn--ghost mt-[var(--s4)]">Back to the office</Link>
         </div>
       </main>
     );
