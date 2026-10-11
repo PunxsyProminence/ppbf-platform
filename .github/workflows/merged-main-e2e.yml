@@ -173,8 +173,9 @@
 #     * This job holds NO credentials. It requests no `id-token` permission,
 #       declares no `environment:`, reads no secret, and names no Azure
 #       resource. It cannot reach staging or production even by accident.
-#     * Every suite but one stubs the pilot API at the network boundary and
-#       needs no database -- ci.yml says so where it runs them.
+#     * Every suite but one needs no database. The journey suites stub the
+#       pilot API at the network boundary -- ci.yml says so where it runs
+#       them -- and the public-page suites sign nobody in.
 #     * THE ATHLETE SUITE IS THE ONE EXCEPTION, AND IT RUNS HERE THE WAY
 #       ci.yml RUNS IT. A-FIN-10's ten session-lifecycle proofs sign in at the
 #       athlete's real door and open /athlete/dashboard, whose role check runs
