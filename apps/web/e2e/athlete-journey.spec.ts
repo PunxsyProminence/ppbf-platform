@@ -769,7 +769,10 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
      so the only positive signal available was a string that should never have
      been disclosed. Fixing the disclosure is what made this check honest. */
   if (login.transportFailed) return false;
-  if (login.status === 503 && login.body.includes(SERVICE_UNAVAILABLE)) return false;
+  if (login.status === 503 && login.body.includes(SERVICE_UNAVAILABLE)) {
+    doorAnsweredUnavailable = true;
+    return false;
+  }
 
   if (login.status !== null && login.status !== 200) {
     throw new Error(
@@ -816,7 +819,37 @@ const SERVICE_UNAVAILABLE = 'Service temporarily unavailable. Please try again l
    that owns the runtime. */
 const ATHLETE_DB_REQUIRED = process.env.PPBF_E2E_REQUIRE_ATHLETE_DB === '1';
 
+/* ONE KNOCK PER WORKER ONCE THE DOOR HAS SAID IT HAS NO DATABASE.
+   Since #1269 (CL-A4) the login route counts an attempt BEFORE it looks the
+   account up, and only a successful sign-in clears the count. With no
+   database the lookup answers the typed 503 and nothing ever clears it, so
+   the door's per-account limiter treats ten skipping proofs as ten guesses at
+   one PIN: the second knock, a few hundred milliseconds after the first, is
+   answered 429, and openAthleteWorkspace raises on it -- correctly, because a
+   429 is the door saying no. That turned a no-database run from twenty skips
+   into failures (the merged-main nightly, 2026-10-07 onward: 10 failed, 9
+   flaky).
+
+   So the typed 503 is remembered, and only that. It is the one answer that
+   both identifies the absence positively and leaves a counted attempt
+   behind; a transport failure counts nothing and a sign-in that succeeded
+   cleared its own count, so neither needs remembering and neither is. A run
+   that DECLARES a database never reads this: there every proof still knocks,
+   and a 429 is a finding everywhere.
+
+   THE LIMIT OF THIS, stated rather than hidden: the memory is per worker
+   process. It is enough wherever the workers reach this block one at a time,
+   which is `workers: 1` -- the CI shape. A local run with no database AND
+   several workers still has each worker knock once, at about the same
+   moment, and all but the first are answered 429. Run that case with
+   --workers=1, or against the offline runtime, where the sign-in succeeds. */
+let doorAnsweredUnavailable = false;
+
 async function enterWorkspaceOrSkip(page: Page): Promise<void> {
+  if (!ATHLETE_DB_REQUIRED && doorAnsweredUnavailable) {
+    test.skip(true, SERVER_GUARDED_SKIP);
+    return;
+  }
   if (await openAthleteWorkspace(page)) return;
   if (ATHLETE_DB_REQUIRED) {
     throw new Error(
