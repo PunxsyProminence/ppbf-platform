@@ -339,24 +339,24 @@ process.stdin.on('end', async () => {
     const asked = JSON.parse(input);
     const eslint = new ESLint({ cwd: process.cwd() });
     const answer = { notLinted: [], notEnforced: {}, samples: {} };
-    for (const rule of asked.rules) answer.notEnforced[rule] = [];
+    for (const check of asked.checks) answer.notEnforced[check.label] = [];
     for (const name of asked.names) {
       const config = (await eslint.isPathIgnored(name)) ? undefined : await eslint.calculateConfigForFile(name);
       if (!config) { answer.notLinted.push(name); continue; }
-      for (const rule of asked.rules) {
-        const setting = config.rules ? config.rules[rule] : undefined;
+      for (const check of asked.checks) {
+        const setting = config.rules ? config.rules[check.rule] : undefined;
         const severity = Array.isArray(setting) ? setting[0] : setting;
         const options = Array.isArray(setting) ? setting.slice(1) : [];
         const selectors = options.map((option) => (option && typeof option === 'object' ? option.selector : option));
-        const complete = (asked.required[rule] || []).every((selector) => selectors.includes(selector));
-        if ((severity !== 2 && severity !== 'error') || !complete) answer.notEnforced[rule].push(name);
+        const complete = check.selectors.every((selector) => selectors.includes(selector));
+        if ((severity !== 2 && severity !== 'error') || !complete) answer.notEnforced[check.label].push(name);
       }
     }
     for (const sample of asked.samples) {
       const results = await eslint.lintText(sample.code, { filePath: asked.sampleFile });
       const messages = results.length > 0 ? results[0].messages : [{ ruleId: null, message: 'not linted' }];
       const reported = messages
-        .filter((message) => message.ruleId === null || asked.rules.includes(message.ruleId))
+        .filter((message) => message.ruleId === null || asked.sampleRules.includes(message.ruleId))
         .map((message) => (message.ruleId === null ? 'FATAL ' + message.message : message.ruleId));
       answer.samples[sample.label] = [...new Set(reported)].sort();
     }
@@ -425,10 +425,19 @@ const BACKSPACE_SELECTORS = [
     + ` > TemplateElement[value.cooked=/${BACKSPACE_BYTE}/]`,
 ];
 
+const SELECTOR_CANARY = 'canary';
+
 function askEslint(): EslintAnswer {
   const asked = {
-    rules: [CONTROL_REGEX_RULE, RESTRICTED_SYNTAX_RULE],
-    required: { [RESTRICTED_SYNTAX_RULE]: BACKSPACE_SELECTORS },
+    // "Not enforced" means: not an error, or missing one of the selectors named.
+    checks: [
+      { label: CONTROL_REGEX_RULE, rule: CONTROL_REGEX_RULE, selectors: [] },
+      { label: RESTRICTED_SYNTAX_RULE, rule: RESTRICTED_SYNTAX_RULE, selectors: BACKSPACE_SELECTORS },
+      // A selector nobody configured. Every linted file must come back for it,
+      // or the selector comparison above is not comparing anything.
+      { label: SELECTOR_CANARY, rule: RESTRICTED_SYNTAX_RULE, selectors: ['Program[canary="never configured"]'] },
+    ],
+    sampleRules: [CONTROL_REGEX_RULE, RESTRICTED_SYNTAX_RULE],
     names: APP_CODE,
     samples: SAMPLES,
     // An ordinary app path that no override names. The file does not exist.
@@ -465,6 +474,8 @@ describe('ESLint refuses a control character in a regex, for the app', () => {
 
   it('the backspace-in-a-string rule is an error, with both selectors, for every linted file', () => {
     expect(answer.notEnforced[RESTRICTED_SYNTAX_RULE]).toEqual([]);
+    // The comparison is live: a selector that is not in the config is missed everywhere.
+    expect(answer.notEnforced[SELECTOR_CANARY]).toHaveLength(APP_CODE.length - NOT_LINTED.length);
   });
 
   it('reports each way the defect can be written, and none of the right ways', () => {
