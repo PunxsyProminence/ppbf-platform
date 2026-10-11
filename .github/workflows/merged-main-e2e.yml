@@ -109,9 +109,11 @@
 #   registry, repoints one named Container App, and mints a PIN for one shared
 #   fixture account, so concurrency is itself the safety property and eviction
 #   is the cheap outcome. This job shares nothing: it holds no credential,
-#   touches no database, reaches no Azure resource, and every dev server it
-#   starts is local to its own runner. There is no resource for two runs to
-#   corrupt, so serializing across commits would buy nothing and cost verdicts.
+#   touches no database outside its own runner, reaches no Azure resource, and
+#   every server it starts -- the dev servers, and the offline runtime the
+#   athlete suite runs against -- is local to its own runner. There is no
+#   resource for two runs to corrupt, so serializing across commits would buy
+#   nothing and cost verdicts.
 #
 #   `cancel-in-progress: false` is load-bearing for the same reason it is in
 #   ci.yml for pushes to `main`: a cancelled verification is indistinguishable
@@ -171,14 +173,32 @@
 #     * This job holds NO credentials. It requests no `id-token` permission,
 #       declares no `environment:`, reads no secret, and names no Azure
 #       resource. It cannot reach staging or production even by accident.
-#     * The five journey suites stub the pilot API at the network boundary and
-#       need no database -- ci.yml says so where it runs them, and this job
-#       adds no service either. One golden-era proof (`.ge-locker` on
-#       /athlete/dashboard) is server-guarded and skips itself with a stated
-#       reason where no database is present, which includes this job, exactly
-#       as it does in ci.yml.
-#     * The only server it starts is the Next dev server playwright.config.ts
-#       brings up on localhost:3100 and tears down again.
+#     * Every suite but one stubs the pilot API at the network boundary and
+#       needs no database -- ci.yml says so where it runs them.
+#     * THE ATHLETE SUITE IS THE ONE EXCEPTION, AND IT RUNS HERE THE WAY
+#       ci.yml RUNS IT. A-FIN-10's ten session-lifecycle proofs sign in at the
+#       athlete's real door and open /athlete/dashboard, whose role check runs
+#       inside the Next server against Postgres, so a browser stub cannot
+#       reach it. ci.yml starts the offline runtime (docs/OFFLINE_RUNTIME.md)
+#       for that step and sets PPBF_E2E_REQUIRE_ATHLETE_DB=1; so does this job.
+#       The offline runtime is embedded Postgres on the runner with synthetic
+#       personas, cleared credentials and a process-level guard that rejects
+#       every non-loopback socket. It is not a service this job reaches: it is
+#       a process this job starts and stops.
+#
+#       This job did NOT do that at first, and the history is worth a line
+#       because it is the gap this file exists to close, one level down.
+#       Without a database those twenty proofs (ten, on two projects) SKIPPED:
+#       the last green run before the change, 37421140238 on 2026-10-06,
+#       reports "20 skipped" inside "all suites pass". Then #1269 made the
+#       login route count an attempt before looking the account up, the
+#       no-database skips became 429s from the per-account limiter, and from
+#       2026-10-07 this gate was red every night on a failure that was the
+#       harness's and not `main`'s.
+#     * The only servers it starts are the Next dev server playwright.config.ts
+#       brings up on localhost:3100 and tears down again, and that offline
+#       runtime on 127.0.0.1:3120, started for the athlete suite and stopped
+#       after it.
 #     * It is therefore safe to run unattended on a schedule.
 #
 # RELATIONSHIP TO ci.yml
@@ -339,10 +359,95 @@ jobs:
           #
           # The suites are independent in the way that matters here: each
           # `playwright test` invocation stands up and tears down its own dev
-          # server, and none of them shares state with another.
+          # server -- or, for the athlete suite, runs against an offline
+          # runtime started and stopped around it -- and none of them shares
+          # state with another.
           #
-          # No `set -e`: a failing suite must not abort the loop.
+          # A failing suite must not abort the loop. GitHub starts this shell
+          # as `bash -e -o pipefail`, so errexit IS on; what keeps one failure
+          # from ending the step is that every suite runs as the condition of
+          # an `if`, where bash does not apply errexit -- including inside a
+          # function called there. Call run_suite bare and the first red suite
+          # ends the job with the rest unreported.
           set -uo pipefail
+
+          # run_suite below recognises the athlete suite BY NAME. If the suite
+          # were renamed in the list above and in package.json but not here, it
+          # would run with no database and its ten A-FIN-10 proofs would go
+          # back to skipping inside a green run. Refused, for the same reason
+          # the list itself is checked against the manifest.
+          if ! grep -qx 'test:e2e:athlete' suites.txt; then
+            echo '::error::test:e2e:athlete is not in the verified suite list, so nothing here would start the offline runtime its A-FIN-10 proofs need. Update run_suite with the suite list.'
+            exit 1
+          fi
+
+          # THE ATHLETE SUITE NEEDS A DATABASE, so it gets the one ci.yml gives
+          # it, the same way: the offline runtime on its own port, readiness
+          # polled rather than slept on, PPBF_E2E_REQUIRE_ATHLETE_DB=1 so the
+          # ten A-FIN-10 proofs must execute rather than skip, and the runtime
+          # stopped afterwards whatever the suite did. The SAFETY PROPERTIES
+          # note in the header says why. A runtime that does not come up is a
+          # FAILURE of this suite, never a reason to fall back to skipping --
+          # and, like any other suite failure here, it does not stop the loop.
+          #
+          # Every child reads `< /dev/null` because the loop below is reading
+          # suites.txt on stdin: a child that touched stdin would swallow the
+          # remaining suite names.
+          run_suite() {
+            local suite="$1"
+
+            if [[ "$suite" != 'test:e2e:athlete' ]]; then
+              npm --workspace web run "$suite" < /dev/null
+              return
+            fi
+
+            npm --workspace web run offline -- --reset --port 3120 \
+              > "$RUNNER_TEMP/offline-runtime.log" 2>&1 < /dev/null &
+            local launcher=$!
+
+            local ready=0
+            for attempt in $(seq 1 180); do
+              if curl -sf -o /dev/null http://127.0.0.1:3120/login; then
+                echo "offline runtime ready after ${attempt}s"
+                ready=1
+                break
+              fi
+              # A launcher that has already exited is never going to answer,
+              # so the wait ends here instead of running out the full count.
+              if ! kill -0 "$launcher" 2> /dev/null; then
+                echo "the offline runtime launcher exited after ${attempt}s without becoming ready"
+                break
+              fi
+              sleep 1
+            done
+
+            local status=0
+            if [[ "$ready" -eq 1 ]]; then
+              PPBF_E2E_HOST=127.0.0.1 \
+              PPBF_E2E_PORT=3120 \
+              PPBF_E2E_REUSE_EXISTING_SERVER=1 \
+              PPBF_E2E_REQUIRE_ATHLETE_DB=1 \
+                npm --workspace web run "$suite" < /dev/null || status=$?
+            else
+              echo '::error::the offline runtime did not become ready, so the A-FIN-10 session-lifecycle proofs cannot execute'
+              cat "$RUNNER_TEMP/offline-runtime.log" || true
+              status=1
+              # ci.yml can leave a half-started launcher alone, because its job
+              # ends at that failure. This loop goes on to the next suite, so a
+              # launcher still starting is asked to end first. Best effort: the
+              # stop below is what ends a runtime that got as far as recording
+              # itself.
+              kill "$launcher" 2> /dev/null || true
+            fi
+
+            # A cleanup failure must not turn a real test result into a red
+            # suite or a green one. It still prints, so a runtime that refuses
+            # to stop is visible rather than silent.
+            npm --workspace web run offline -- stop < /dev/null \
+              || echo "::warning::the offline runtime did not stop cleanly"
+
+            return "$status"
+          }
 
           passed=0
           failed=()
@@ -350,9 +455,7 @@ jobs:
           while read -r suite; do
             [[ -n "$suite" ]] || continue
             echo "::group::${suite}"
-            # `< /dev/null` because the loop is reading suites.txt on stdin: a
-            # child that touched stdin would swallow the remaining suite names.
-            if npm --workspace web run "$suite" < /dev/null; then
+            if run_suite "$suite"; then
               passed=$((passed + 1))
             else
               failed+=("$suite")
