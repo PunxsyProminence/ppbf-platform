@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowDataDeletionQueue from '@/components/ShadowDataDeletionQueue';
@@ -16,7 +16,24 @@ interface ComplianceViolation {
   status: 'new' | 'acknowledged' | 'escalated' | 'resolved' | 'dismissed';
   created_at: string;
   description?: string;
+  // Filled by the list read; null when the athlete or rule row is not on file,
+  // and then the id is what there is to show.
+  athlete_name?: string | null;
+  rule_name?: string | null;
 }
+
+// The status tabs. 'all' is the register as loaded; every other tab asks the
+// server for that status alone, so a dismissed record older than the newest
+// rows of the whole register is still reachable from its own tab.
+const STATUS_TABS = ['all', 'new', 'acknowledged', 'escalated', 'resolved', 'dismissed'] as const;
+
+function violationsUrl(status: string): string {
+  const base = `${apiBase()}/api/pilot/compliance/violations`;
+  return status === 'all' ? base : `${base}?status=${encodeURIComponent(status)}`;
+}
+
+const athleteLabel = (v: ComplianceViolation) => v.athlete_name || v.athlete_id;
+const ruleLabel = (v: ComplianceViolation) => v.rule_name || v.rule_id;
 
 // Law 3: severity and workflow state each carry a glyph and an uppercase
 // label on the badge ladder, never colour alone. Severity climbs the four
@@ -85,58 +102,78 @@ export default function AdminComplianceCenterPage() {
   // Per-row, not a single scalar: a transition in flight on one violation
   // must never disable another row's buttons.
   const [transitioningIds, setTransitioningIds] = useState<Set<string>>(new Set());
-  const [metrics, setMetrics] = useState({
-    total: 0,
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    new: 0,
-    acknowledged: 0,
-    escalated: 0,
-    resolved: 0,
-  });
+  // Counted from the rows on screen, never held beside them: a tile that is
+  // its own state falls behind the list the moment a re-read sets one and
+  // not the other.
+  const metrics = useMemo(
+    () => ({
+      total: violations.length,
+      critical: violations.filter((v) => v.severity === 'critical').length,
+      high: violations.filter((v) => v.severity === 'high').length,
+      medium: violations.filter((v) => v.severity === 'medium').length,
+      low: violations.filter((v) => v.severity === 'low').length,
+    }),
+    [violations],
+  );
+  // The tab the admin is looking at right now, readable from a request that
+  // was sent before they changed it: a re-read after an escalate or a
+  // transition reads the tab showing when it is SENT, not the one that was
+  // showing when the button was pressed.
+  const showingTabRef = useRef(statusFilter);
+  // Every read of the register takes the next number when it is sent, and
+  // only the latest one sent may put rows on the screen. Comparing the tab
+  // NAME was not enough: tab A, then B, then back to A made an old answer
+  // for A acceptable again, and it could land after the newer read of A and
+  // put older rows and counts on screen.
+  const latestReadRef = useRef(0);
+  // True from the moment a tab's own load is sent until some read answers
+  // it. A re-read that overtakes that load has to finish its job (clear
+  // "Loading", or say the list is unavailable), because the load it
+  // overtook will be dropped when it answers.
+  const loadOwedRef = useRef(false);
 
-  // Load violations
+  // `reconcile` is the quiet re-read after an escalate or a transition: it
+  // shows no "Loading", and when it fails over rows already on screen it
+  // changes nothing, so the action's own outcome message stands.
+  const readTab = useCallback(async (tab: string, reconcile: boolean) => {
+    latestReadRef.current += 1;
+    const generation = latestReadRef.current;
+    if (!reconcile) {
+      loadOwedRef.current = true;
+      setIsLoading(true);
+    }
+    try {
+      const res = await fetch(violationsUrl(tab), { credentials: 'include' });
+      if (!res.ok) {
+        throw new Error('Unable to load compliance violations');
+      }
+
+      const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
+      if (generation !== latestReadRef.current) return;
+      setViolations(data.items ?? []);
+      setReadLimit(typeof data.limit === 'number' ? data.limit : null);
+      setDataAuthoritative(true);
+      if (!reconcile) setErrorMessage('');
+    } catch (error) {
+      if (generation !== latestReadRef.current) return;
+      if (reconcile && !loadOwedRef.current) return;
+      const message = error instanceof Error ? error.message : 'Unable to load violations';
+      setDataAuthoritative(false);
+      setViolations([]);
+      setReadLimit(null);
+      // A re-read standing in for a load keeps the action's message if there is one.
+      setErrorMessage((current) => (reconcile && current ? current : message));
+    }
+    loadOwedRef.current = false;
+    setIsLoading(false);
+  }, []);
+
+  // Load violations: on entry, and again each time the status tab changes.
   useEffect(() => {
     void (async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
-        if (!res.ok) {
-          throw new Error('Unable to load compliance violations');
-        }
-
-        const data = (await res.json()) as { items?: ComplianceViolation[]; limit?: number };
-        const allViolations = data.items ?? [];
-        setViolations(allViolations);
-        setReadLimit(typeof data.limit === 'number' ? data.limit : null);
-
-        // Calculate metrics
-        const calc = {
-          total: allViolations.length,
-          critical: allViolations.filter((v) => v.severity === 'critical').length,
-          high: allViolations.filter((v) => v.severity === 'high').length,
-          medium: allViolations.filter((v) => v.severity === 'medium').length,
-          low: allViolations.filter((v) => v.severity === 'low').length,
-          new: allViolations.filter((v) => v.status === 'new').length,
-          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
-          escalated: allViolations.filter((v) => v.status === 'escalated').length,
-          resolved: allViolations.filter((v) => v.status === 'resolved').length,
-        };
-        setMetrics(calc);
-        setDataAuthoritative(true);
-        setErrorMessage('');
-      } catch (error) {
-        setDataAuthoritative(false);
-        setViolations([]);
-        setReadLimit(null);
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
-      } finally {
-        setIsLoading(false);
-      }
+      await readTab(statusFilter, false);
     })();
-  }, []);
+  }, [statusFilter, readTab]);
 
   const getFilteredViolations = () => {
     return violations.filter((v) => {
@@ -164,30 +201,12 @@ export default function AdminComplianceCenterPage() {
 
       setSelectedViolation(null);
       setEscalateToRole('organization_admin');
-
-      // Reload violations
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
-      if (reloadRes.ok) {
-        const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-        const allViolations = data.items ?? [];
-        setViolations(allViolations);
-
-        const calc = {
-          total: allViolations.length,
-          critical: allViolations.filter((v) => v.severity === 'critical').length,
-          high: allViolations.filter((v) => v.severity === 'high').length,
-          medium: allViolations.filter((v) => v.severity === 'medium').length,
-          low: allViolations.filter((v) => v.severity === 'low').length,
-          new: allViolations.filter((v) => v.status === 'new').length,
-          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
-          escalated: allViolations.filter((v) => v.status === 'escalated').length,
-          resolved: allViolations.filter((v) => v.status === 'resolved').length,
-        };
-        setMetrics(calc);
-      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to escalate violation');
+      return;
     }
+    // Re-read the tab that is showing now.
+    await readTab(showingTabRef.current, true);
   };
 
   // The lifecycle levers the register was missing: acknowledge is receipt;
@@ -233,19 +252,11 @@ export default function AdminComplianceCenterPage() {
         next.delete(violation.violation_id);
         return next;
       });
-      // Reconcile with server truth on every terminal outcome: after a 409
-      // the rendered state is stale by definition.
-      try {
-        const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
-        if (reloadRes.ok) {
-          const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
-          setViolations(data.items ?? []);
-        }
-      } catch {
-        // The action's own outcome message stands; a failed reload must not
-        // overwrite it.
-      }
     }
+    // Reconcile with server truth on every terminal outcome: after a 409 the
+    // rendered state is stale by definition. The action's own outcome
+    // message stands; a failed re-read does not overwrite it.
+    await readTab(showingTabRef.current, true);
   };
 
   const filteredViolations = getFilteredViolations();
@@ -255,6 +266,9 @@ export default function AdminComplianceCenterPage() {
     if (!dataAuthoritative) return '--';
     return String(value);
   };
+  // The same rule for the two "X of Y loaded" counts: a read in flight or a
+  // read that failed has no count to state.
+  const countShown = metricValue;
 
   return (
     <RoleStandaloneView
@@ -331,19 +345,23 @@ export default function AdminComplianceCenterPage() {
         {/* The window the figures above were computed over. Stated only when
             there are rows and a server-reported cap to state -- a caveat over
             an unread or empty register would be furniture explaining nothing. */}
-        {dataAuthoritative && readLimit !== null && violations.length > 0 ? (
+        {!isLoading && dataAuthoritative && readLimit !== null && violations.length > 0 ? (
           <p className="t-muted">
-            These figures cover the {readLimit} most recently filed violations, newest first — not this
-            gym&rsquo;s whole compliance record. A violation filed before that window is not counted here.
+            These figures cover the {readLimit} most recently filed{statusFilter === 'all' ? '' : ` ${statusFilter}`} violations,
+            newest first — not this gym&rsquo;s whole compliance record. A violation filed before that window is
+            not counted here.
           </p>
         ) : null}
 
         <section className="mat-leather flex flex-wrap items-center gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
           <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Filter violations by status">
-            {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
+            {STATUS_TABS.map((status) => (
               <button
                 key={status}
-                onClick={() => setStatusFilter(status)}
+                onClick={() => {
+                  showingTabRef.current = status;
+                  setStatusFilter(status);
+                }}
                 aria-pressed={statusFilter === status}
                 className={`inline-flex min-h-[44px] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] transition ${
                   statusFilter === status
@@ -373,7 +391,7 @@ export default function AdminComplianceCenterPage() {
               rows on file -- the read is capped. Said as "loaded" so the
               denominator stops reading as the register's size. */}
           <div className="t-muted ml-auto">
-            Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'} loaded
+            Showing {countShown(filteredViolations.length)} of {countShown(violations.length)} loaded
           </div>
         </section>
 
@@ -389,7 +407,7 @@ export default function AdminComplianceCenterPage() {
         {/* Violations List */}
         <section>
           <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>
-            Violations ({filteredViolations.length} of {violations.length} loaded)
+            Violations ({countShown(filteredViolations.length)} of {countShown(violations.length)} loaded)
           </h2>
           <div className="space-y-[var(--s4)]">
             {/* A register that failed to load is not a register the filters
@@ -397,7 +415,11 @@ export default function AdminComplianceCenterPage() {
                 selects for a read that never happened sends them to widen
                 filters that were never the reason they see nothing -- and
                 leaves them believing the gym has no matching violations. */}
-            {!isLoading && !dataAuthoritative ? (
+            {isLoading ? (
+              <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
+                <p className="empty-msg mx-auto">Loading…</p>
+              </div>
+            ) : !dataAuthoritative ? (
               <div className="empty mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)]">
                 <p className="empty-msg mx-auto">
                   The violations register could not be loaded. This list is unavailable, not empty — violations
@@ -426,8 +448,8 @@ export default function AdminComplianceCenterPage() {
                           <i>{STATUS_BADGE[v.status].glyph}</i>{v.status}
                         </span>
                       </div>
-                      <p className="t-body font-semibold text-[color:var(--bone-100)]">Athlete: {v.athlete_id}</p>
-                      <p className="t-data">Rule: {v.rule_id}</p>
+                      <p className="t-body font-semibold text-[color:var(--bone-100)]">Athlete: {athleteLabel(v)}</p>
+                      <p className="t-data">Rule: {ruleLabel(v)}</p>
                       <p className="t-muted mt-[var(--s2)]">
                         {formatGymStamp(v.created_at)}
                       </p>
@@ -500,7 +522,7 @@ export default function AdminComplianceCenterPage() {
               <div className="p-[var(--s5)]">
                 <h3 id="escalate-violation-heading" className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Escalate Violation</h3>
                 <p className="t-body mb-[var(--s4)]">
-                  Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{selectedViolation.athlete_id}</span>
+                  Athlete: <span className="font-semibold text-[color:var(--bone-100)]">{athleteLabel(selectedViolation)}</span>
                 </p>
                 <div className="field mb-[var(--s4)]">
                   <label htmlFor="escalate-to-select" className="t-label">Escalate To</label>
@@ -546,7 +568,7 @@ export default function AdminComplianceCenterPage() {
               className="mat-wood w-full max-w-lg rounded-[var(--r-lg)] border border-[color:var(--brass-700)] p-[var(--s5)]"
             >
               <p className="t-eyebrow text-[color:var(--brass-200)]">
-                {closing.violation.severity} &middot; {closing.violation.rule_id}
+                {closing.violation.severity} &middot; {ruleLabel(closing.violation)} &middot; {athleteLabel(closing.violation)}
               </p>
               <h3
                 id="close-violation-heading"
