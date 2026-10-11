@@ -325,6 +325,7 @@ describe('an issued workout keeps its shape', () => {
     assignment('asg-1', 'Skip Rope', { duration_minutes: 5 }),
     assignment('asg-4', 'Cooldown Walk'),
     assignment('asg-2', 'Jab Ladder', { rep_count: 20 }),
+    assignment('asg-late', 'Heavy Bag'),
   ];
 
   const WORKOUT = {
@@ -389,11 +390,13 @@ describe('an issued workout keeps its shape', () => {
     return heading.closest('.mat-leather') as HTMLElement;
   }
 
-  test('the workout is drawn once, its steps in the order the coach wrote, a block heading wherever the block changes, then the other drills', async () => {
+  test('the workout is drawn once, whole, where the first of its drills stands: steps in the order the coach wrote, a block heading wherever the block changes', async () => {
     await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
     const section = await assignedSection();
 
     expect(headings(section)).toEqual([
+      // The server listed this drill first (dated work comes first); it stays first.
+      'h3: Shadowbox',
       'h3: Technical Tuesday',
       'h4: warmup',
       'h5: Skip Rope',
@@ -404,9 +407,10 @@ describe('an issued workout keeps its shape', () => {
       // again, where the coach put it, not folded into the first one.
       'h4: warmup',
       'h5: Cooldown Walk',
-      'h3: Other drills',
-      'h3: Shadowbox',
+      // And the drill the server listed after the workout's stays after it.
+      'h3: Heavy Bag',
     ]);
+    expect(section.textContent).not.toContain('Other drills');
     expect(within(section).getAllByTestId('issued-workout')).toHaveLength(1);
     const workout = within(section).getByTestId('issued-workout');
     expect(workout.textContent).toContain('From Coach J Rivera');
@@ -471,15 +475,22 @@ describe('an issued workout keeps its shape', () => {
     expect(sparring.textContent).toMatch(/cancelled/i);
     expect(within(sparring).queryByRole('button', { name: 'Log completion' })).toBeNull();
 
-    // Five assignments, five cards: none drawn twice, none dropped.
-    expect(within(section).getAllByRole('button', { name: /^Open drill:/ })).toHaveLength(5);
+    // Six assignments, six cards: none drawn twice, none dropped.
+    expect(within(section).getAllByRole('button', { name: /^Open drill:/ })).toHaveLength(6);
   });
 
-  test('assignments with no workout read exactly as before: no workout, no block or "Other drills" heading, no step lines', async () => {
+  test('assignments with no workout read as before: the server order, no workout or block heading, no step lines', async () => {
     await renderAssigned({ items: ITEMS, workouts: [] });
     const section = await assignedSection();
 
-    expect(headings(section)).toEqual(['h3: Shadowbox', 'h3: Body Sparring', 'h3: Skip Rope', 'h3: Cooldown Walk', 'h3: Jab Ladder']);
+    expect(headings(section)).toEqual([
+      'h3: Shadowbox',
+      'h3: Body Sparring',
+      'h3: Skip Rope',
+      'h3: Cooldown Walk',
+      'h3: Jab Ladder',
+      'h3: Heavy Bag',
+    ]);
     expect(within(section).queryByTestId('issued-workout')).toBeNull();
     expect(section.textContent).not.toMatch(/Step \d|No contact|Coach note|Other drills/);
   });
@@ -488,7 +499,7 @@ describe('an issued workout keeps its shape', () => {
     await renderAssigned({ items: ITEMS });
     const section = await assignedSection();
 
-    expect(headings(section)).toHaveLength(5);
+    expect(headings(section)).toHaveLength(6);
     expect(within(section).queryByTestId('issued-workout')).toBeNull();
     expect(screen.queryByText('This screen did not load')).toBeNull();
   });
@@ -500,32 +511,88 @@ describe('an issued workout keeps its shape', () => {
     const section = await assignedSection();
 
     expect(headings(section)).toEqual([
+      'h3: Shadowbox',
       'h3: Technical Tuesday',
       'h4: warmup',
       'h5: Skip Rope',
       'h4: main work',
       'h5: Jab Ladder',
-      'h3: Other drills',
-      'h3: Shadowbox',
     ]);
     expect(within(section).getByTestId('issued-workout').textContent).toContain('2 steps, in this order');
     expect(section.textContent).not.toContain('Friday Pads');
   });
 
-  test('two workouts are drawn one after the other, each with its own steps, in the order the server sent them', async () => {
+  test('each of two workouts is drawn where the first of its drills stands in the server order, with only its own steps', async () => {
     const second = {
       ...WORKOUT,
       issue_id: 'issue-2',
       template_name: 'Friday Pads',
       steps: [{ ordinal: 1, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-loose' }],
     };
-    await renderAssigned({ items: ITEMS, workouts: [second, WORKOUT] });
+    // The workouts arrive in the other order; the place of each comes from
+    // where its first drill stands among the assignments, not from that list.
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT, second] });
     const section = await assignedSection();
 
-    expect(headings(section).filter((line) => line.startsWith('h3:'))).toEqual(['h3: Friday Pads', 'h3: Technical Tuesday']);
+    expect(headings(section).filter((line) => line.startsWith('h3:'))).toEqual([
+      'h3: Friday Pads',
+      'h3: Technical Tuesday',
+      'h3: Heavy Bag',
+    ]);
     expect(headings(section).slice(0, 3)).toEqual(['h3: Friday Pads', 'h4: pads', 'h5: Shadowbox']);
-    // Every assignment is in a workout now, so there is no "Other drills".
-    expect(section.textContent).not.toContain('Other drills');
+  });
+
+  test('an assignment two workouts both name is a step of the first only: it is drawn once, and the second workout does not count it', async () => {
+    const claimsTheSame = {
+      ...WORKOUT,
+      issue_id: 'issue-2',
+      template_name: 'Friday Pads',
+      steps: [
+        { ordinal: 1, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-1' },
+        { ordinal: 2, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-late' },
+      ],
+    };
+    // A step listed twice inside one workout is drawn once as well.
+    const listedTwice = { ...WORKOUT, steps: [...WORKOUT.steps, { ...WORKOUT.steps[1] }] };
+    await renderAssigned({ items: ITEMS, workouts: [listedTwice, claimsTheSame] });
+    const section = await assignedSection();
+
+    expect(within(section).getAllByRole('heading', { name: 'Skip Rope' })).toHaveLength(1);
+    expect(within(section).getAllByRole('button', { name: /^Open drill:/ })).toHaveLength(6);
+    const [first, second] = within(section).getAllByTestId('issued-workout');
+    expect(first.textContent).toContain('Technical Tuesday');
+    expect(first.textContent).toContain('4 steps, in this order');
+    expect(second.textContent).toContain('Friday Pads');
+    expect(second.textContent).toContain('1 step, in this order');
+  });
+
+  test("opening a step's drill keeps the coach's note and levels for that step on screen", async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Open drill: Body Sparring' }));
+    });
+
+    const opened = (await screen.findByText('Your assignment')).closest('section') as HTMLElement;
+    expect(within(opened).getByText('Body Sparring')).toBeTruthy();
+    expect(within(opened).getByText('Scale C')).toBeTruthy();
+    expect(within(opened).getByText('Controlled sparring')).toBeTruthy();
+    expect(opened.textContent).toContain('Coach note: Two rounds.\nCoach watching.');
+    expect(within(opened).queryByRole('alert')).toBeNull();
+  });
+
+  test('opening a drill that is not a step of a workout shows no step lines', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Open drill: Shadowbox' }));
+    });
+
+    const opened = (await screen.findByText('Your assignment')).closest('section') as HTMLElement;
+    expect(within(opened).getByText('Shadowbox')).toBeTruthy();
+    expect(opened.textContent).not.toMatch(/Scale [ABC]|No contact|Coach note/);
   });
 
   test('the workout says one step, not "1 steps", and names no coach when the server sent none', async () => {
@@ -553,8 +620,10 @@ describe('an issued workout keeps its shape', () => {
 
     await screen.findByText('This screen did not load');
     expect(screen.getByText(/Your drills did not load\. Nothing is lost/)).toBeTruthy();
-    // Nothing of the list is drawn, in any order.
+    // Nothing of the list is drawn, in any order, and neither empty state
+    // (this fixture has no gaps, so the outer one is the one that could show).
     expect(screen.queryByText('Skip Rope')).toBeNull();
+    expect(screen.queryByText('No progression gaps assigned')).toBeNull();
     expect(screen.queryByText('No drills assigned yet')).toBeNull();
     expect(consoleError).toHaveBeenCalled();
   });

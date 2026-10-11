@@ -309,6 +309,8 @@ describe('GET /api/pilot/progression/assignments: the shape of an issued workout
     // No account id reaches a family reader, under any key.
     expect(JSON.stringify(body.workouts)).not.toContain('acct-coach');
     expect(JSON.stringify(body.workouts)).not.toContain('account_id');
+    // One name read for the whole answer: the items and the workout name the same coach.
+    expect(mockCoachName).toHaveBeenCalledTimes(1);
   });
 
   test('a level the coach left open stays null, and the contact level is passed as written', async () => {

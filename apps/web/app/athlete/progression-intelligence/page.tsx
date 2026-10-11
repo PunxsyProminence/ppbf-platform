@@ -176,26 +176,45 @@ function readIssuedWorkouts(raw: unknown): IssuedWorkout[] {
 type AssignedWorkRow =
   | { kind: 'workout'; key: string; workout: IssuedWorkout; stepCount: number }
   | { kind: 'block'; key: string; block: string }
-  | { kind: 'other'; key: string }
   | { kind: 'assignment'; key: string; assignment: DrillAssignment; step: IssuedWorkoutStep | null };
 
 /**
- * The assigned work in the order it is drawn: each issued workout as a heading,
- * then its steps in the coach's order with a block heading every time the block
+ * The assigned work in the order it is drawn. The server's order of the
+ * assignments is kept (dated work first, as it always was): an assignment that
+ * is not a step of a workout is drawn where it stands, and an issued workout
+ * is drawn WHOLE at the place of the first of its drills -- a heading, then
+ * its steps in the coach's order, with a block heading every time the block
  * changes (so a block the coach returns to is shown again, where the coach put
- * it), then every assignment that is not a step of a workout, in the order the
- * server sent. A step whose assignment was not sent is left out; a workout with
- * no step left is not drawn.
+ * it). A step whose assignment was not sent is left out; a workout with no
+ * step left is not drawn; an assignment two workouts both name is a step of
+ * the first only, so nothing is drawn twice.
  */
 function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorkout[]): AssignedWorkRow[] {
-  const byId = new Map(assignments.map((assignment) => [assignment.assignment_id, assignment]));
-  const inWorkout = new Set<string>();
-  const rows: AssignedWorkRow[] = [];
+  const sent = new Set(assignments.map((assignment) => assignment.assignment_id));
+  const workoutOf = new Map<string, IssuedWorkout>();
+  const stepsOf = new Map<IssuedWorkout, IssuedWorkoutStep[]>();
   for (const workout of workouts) {
-    const steps = workout.steps
-      .filter((step) => byId.has(step.assignment_id) && !inWorkout.has(step.assignment_id))
-      .toSorted((a, b) => a.ordinal - b.ordinal);
-    if (steps.length === 0) continue;
+    const steps: IssuedWorkoutStep[] = [];
+    for (const step of [...workout.steps].sort((a, b) => a.ordinal - b.ordinal)) {
+      if (!sent.has(step.assignment_id) || workoutOf.has(step.assignment_id)) continue;
+      workoutOf.set(step.assignment_id, workout);
+      steps.push(step);
+    }
+    stepsOf.set(workout, steps);
+  }
+
+  const byId = new Map(assignments.map((assignment) => [assignment.assignment_id, assignment]));
+  const drawn = new Set<IssuedWorkout>();
+  const rows: AssignedWorkRow[] = [];
+  for (const assignment of assignments) {
+    const workout = workoutOf.get(assignment.assignment_id);
+    if (!workout) {
+      rows.push({ kind: 'assignment', key: assignment.assignment_id, assignment, step: null });
+      continue;
+    }
+    if (drawn.has(workout)) continue;
+    drawn.add(workout);
+    const steps = stepsOf.get(workout) ?? [];
     rows.push({ kind: 'workout', key: `workout-${workout.issue_id}`, workout, stepCount: steps.length });
     let block: string | null = null;
     for (const step of steps) {
@@ -203,16 +222,29 @@ function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorko
         block = step.block;
         rows.push({ kind: 'block', key: `block-${workout.issue_id}-${step.ordinal}`, block });
       }
-      inWorkout.add(step.assignment_id);
       rows.push({ kind: 'assignment', key: step.assignment_id, assignment: byId.get(step.assignment_id) as DrillAssignment, step });
     }
   }
-  const loose = assignments.filter((assignment) => !inWorkout.has(assignment.assignment_id));
-  if (rows.length > 0 && loose.length > 0) rows.push({ kind: 'other', key: 'other-work' });
-  for (const assignment of loose) {
-    rows.push({ kind: 'assignment', key: assignment.assignment_id, assignment, step: null });
-  }
   return rows;
+}
+
+/**
+ * What the coach wrote beside one step of a workout, as written. A scale level
+ * the coach left open is not shown; nothing is filled in, and nothing is said
+ * about the contact level beyond the level itself.
+ */
+function StepNotes({ step }: { readonly step: IssuedWorkoutStep }) {
+  return (
+    <div className="mt-[var(--s3)] space-y-[var(--s2)] break-words text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+      {step.scale_level && <p>Scale {step.scale_level}</p>}
+      <p>{humanizeContactLevel(step.contact_level)}</p>
+      {(step.coach_note ?? '').trim() !== '' && (
+        <p className="whitespace-pre-line">
+          <span className="font-semibold">Coach note:</span> {step.coach_note}
+        </p>
+      )}
+    </div>
+  );
 }
 
 interface AssignmentCompletion {
@@ -589,6 +621,11 @@ export default function AthleteProgressionIntelligencePage() {
     ? assignments.find((a) => a.assignment_id === drillOpener.openKey) ?? null
     : null;
   const openedDrill = drillOpener.opened;
+  // The step of an issued workout the opened assignment is, if it is one, so
+  // the opened view carries the coach's note and levels the card carried.
+  const openedStep = openedAssignment
+    ? workouts.flatMap((workout) => workout.steps).find((step) => step.assignment_id === openedAssignment.assignment_id) ?? null
+    : null;
 
   // The assignment is what the athlete opened, so it is where focus lands --
   // the drill below it is what they came to read about it.
@@ -725,6 +762,7 @@ export default function AthleteProgressionIntelligencePage() {
                 <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
                   {openedAssignment.drill_display_description || openedAssignment.drill_description}
                 </p>
+                {openedStep && <StepNotes step={openedStep} />}
                 <dl className="mt-[var(--s4)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-3">
                   {/* Always drawn. The name arrives with the drill read; until
                       it does -- or if that read fails -- the line still says
@@ -853,16 +891,9 @@ export default function AthleteProgressionIntelligencePage() {
                     }
                     if (row.kind === 'block') {
                       return (
-                        <h4 key={row.key} className="t-label ml-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+                        <h4 key={row.key} className="t-label ml-[var(--s4)]">
                           {row.block.replace(/_/g, ' ')}
                         </h4>
-                      );
-                    }
-                    if (row.kind === 'other') {
-                      return (
-                        <h3 key={row.key} className="t-label pt-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
-                          Other drills
-                        </h3>
                       );
                     }
                     const { assignment, step } = row;
@@ -900,20 +931,7 @@ export default function AthleteProgressionIntelligencePage() {
                                 <span className="font-medium text-[color:var(--bone-200)]">{assignment.assigned_by_name}</span>
                               </p>
                             )}
-                            {/* What the coach wrote beside this step of the
-                                workout, as written. A scale level the coach
-                                left open is not shown; nothing is filled in. */}
-                            {step && (
-                              <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
-                                {step.scale_level && <p>Scale {step.scale_level}</p>}
-                                <p>{humanizeContactLevel(step.contact_level)}</p>
-                                {(step.coach_note ?? '').trim() !== '' && (
-                                  <p className="whitespace-pre-line">
-                                    <span className="font-semibold">Coach note:</span> {step.coach_note}
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                            {step && <StepNotes step={step} />}
                             {/* Learning, kept apart from doing: this opens the
                                 drill's instruction and writes nothing. Log
                                 completion, below, is the only thing on this

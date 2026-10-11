@@ -244,6 +244,9 @@ test('COACH: the REAL Morning Read digest assembles, over the REAL access scope'
 test('ATHLETE: the REAL assignment read still returns the work assigned to them', async () => {
   mockRequirePrincipal.mockResolvedValue(principal('athlete', { athleteId: 'ath-1' }));
   databaseAnswers([
+    // The workout-shape read (lane P7c) also names pilot.drill_assignments in
+    // a join, so it is answered first: this assignment is a step of no workout.
+    ['pilot.workout_issue_steps', []],
     ['pilot.drill_assignments', [{
       assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope', assigned_by_account_id: 'coach-1',
     }]],
@@ -263,6 +266,7 @@ test('ATHLETE: the REAL assignment read still returns the work assigned to them'
   // the coach's name, and no assigned_by_account_id.
   await expect(response.json()).resolves.toEqual({
     items: [{ assignment_id: 'assignment-1', athlete_id: 'ath-1', drill_name: 'Jump rope', assigned_by_name: 'Coach Jo Rivera' }],
+    workouts: [],
   });
   // The real getAthleteAssignments ran: it asked the assignments table, and
   // it asked inside this athlete's own organization.

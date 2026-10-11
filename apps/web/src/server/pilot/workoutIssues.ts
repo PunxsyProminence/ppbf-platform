@@ -119,11 +119,12 @@ export async function recordWorkoutIssue(
 // READING AN ISSUED WORKOUT BACK
 //
 // NO ACCESS BOUNDARY OF ITS OWN, ON PURPOSE. The read is asked for a list of
-// assignment ids and answers only about those. Its callers pass the ids their
-// own, already-gated assignment read returned (getAthleteAssignments behind
-// assertActorCanAccessAthlete; listCoachCards behind athleteIdsForCoach), so a
-// reader sees the shape of exactly the work they could already see and nothing
-// else. An id the caller could not read is never in the list.
+// assignment ids and answers only about those. Its caller (the assignments
+// route) passes the ids its own, already-gated read returned
+// (getAthleteAssignments behind assertActorCanAccessAthlete), so a reader sees
+// the shape of exactly the work they could already see and nothing else. An id
+// the caller could not read is never in the list. Any later caller owes the
+// same: ids from a read it has already gated, never ids from a request.
 //
 // A workout comes back with the steps whose assignments were asked for, in the
 // coach's order. A step whose assignment was not asked for (a status filter
@@ -148,6 +149,7 @@ export interface IssuedWorkout {
   athlete_id: string;
   template_name: string;
   template_version: number;
+  /** A Date on the server (timestamptz); the ISO string a reader receives once the route serialises it. */
   issued_at: string;
   issued_by_account_id: string;
   steps: IssuedWorkoutStep[];

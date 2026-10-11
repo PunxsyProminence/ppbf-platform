@@ -70,7 +70,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: assignments, workouts: await readWorkouts() });
     }
 
-    const nameFor = (accountId: string) => getCoachDisplayName(principal.organizationId, accountId);
+    // One name read per coach for the whole answer: the items and the
+    // workouts name the same people.
+    const names = new Map<string, Promise<string>>();
+    const nameFor = (accountId: string) => {
+      const known = names.get(accountId) ?? getCoachDisplayName(principal.organizationId, accountId);
+      names.set(accountId, known);
+      return known;
+    };
     const items = await toFamilyAssignments(assignments, nameFor);
     if (principal.role !== 'athlete') {
       return NextResponse.json({ items });
