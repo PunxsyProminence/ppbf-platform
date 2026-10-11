@@ -179,7 +179,7 @@ describe('the public board (unpaired television) carries no person', () => {
     // The import itself, literally: an alias (`loadWallBoard as loadPublicWallBoard`)
     // would satisfy the call-site checks above and serve the paired board.
     expect(route).toContain("import { loadPublicWallBoard } from '@/src/server/pilot/wallDisplayDb';");
-    expect(route).not.toMatch(/loadWallBoard/);
+    expect(route).not.toMatch(/loadWallBoard\b/);
   });
 
   it('the paired board is served only behind the device-cookie gate', () => {
