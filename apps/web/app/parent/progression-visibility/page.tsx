@@ -2,10 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import {
+  readDatedIssuedWorkouts,
+  sectionAssignedWork,
+  type DatedIssuedWorkout,
+  type IssuedWorkoutStepView,
+} from '@/src/lib/issuedWorkouts';
 
 // A rabbit hole renders as a paper note carrying the gym's own vocabulary
 // lesson for a term on the card. Parent surfaces sit on the warm canvas
@@ -107,12 +115,112 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
   return <span className={rung.className}><i>{rung.glyph}</i>{status.replaceAll('_', ' ')}</span>;
 };
 
+/**
+ * One assigned drill as a guardian reads it: read-only. `step` is set when the
+ * drill is a step of an issued workout; it then says its step number and what
+ * the template says beside the step -- the scale level when the coach set one,
+ * the contact level as the coach wrote it, and the note. Nothing is said about
+ * a contact level beyond the level itself.
+ *
+ * The reps and minutes are the coach's, drawn only when set (a workout step
+ * carries them, and the athlete's own page shows them). The due date is a
+ * calendar day and is drawn from its parts (lib/calendarDay.ts): read as an
+ * instant it prints the day before.
+ */
+function AssignmentRecord({
+  assignment,
+  completions,
+  step,
+}: {
+  assignment: DrillAssignment;
+  completions: AssignmentCompletion[];
+  step: IssuedWorkoutStepView | null;
+}) {
+  // Under a workout and its block the drill's heading is two levels further down.
+  const DrillHeading = step ? 'h5' : 'h3';
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
+        <div>
+          {step ? <p className="t-label">Step {step.ordinal}</p> : null}
+          <DrillHeading className="t-body font-semibold">
+            {assignment.drill_display_name || assignment.drill_name}
+          </DrillHeading>
+          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+            {assignment.drill_display_description || assignment.drill_description}
+          </p>
+        </div>
+        <StatusBadge status={assignment.status} type="assignment" />
+      </div>
+      {step ? <StepNotes step={step} /> : null}
+      <dl className="mt-[var(--s4)] flex flex-wrap gap-x-[var(--s5)] gap-y-[var(--s2)]">
+        <div>
+          <dt className="t-label">Completion</dt>
+          <dd className="t-data">{Math.min(Math.max(assignment.completion_percentage, 0), 100)}%</dd>
+        </div>
+        {assignment.rep_count != null ? (
+          <div>
+            <dt className="t-label">Reps</dt>
+            <dd className="t-data">{assignment.rep_count}</dd>
+          </div>
+        ) : null}
+        {assignment.duration_minutes != null ? (
+          <div>
+            <dt className="t-label">Duration</dt>
+            <dd className="t-data">{assignment.duration_minutes} min</dd>
+          </div>
+        ) : null}
+        {assignment.frequency_per_week ? (
+          <div>
+            <dt className="t-label">Per week</dt>
+            <dd className="t-data">{assignment.frequency_per_week}x</dd>
+          </div>
+        ) : null}
+        {assignment.due_date ? (
+          <div>
+            <dt className="t-label">Due</dt>
+            <dd className="t-data">{formatCalendarDay(assignment.due_date)}</dd>
+          </div>
+        ) : null}
+        {assignment.assigned_by_name ? (
+          <div>
+            <dt className="t-label">Assigned by</dt>
+            <dd className="t-data">{assignment.assigned_by_name}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {completions.length > 0 ? (
+        <div className="mt-[var(--s4)]">
+          <p className="t-label">Logged work</p>
+          <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+            {completions.map((completion) => (
+              <li key={completion.completion_id} className="flex flex-wrap items-center gap-[var(--s3)]">
+                <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                  {formatGymDateNumeric(completion.completed_at)}
+                </span>
+                {completion.reps_completed != null ? (
+                  <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                    {completion.reps_completed} reps
+                  </span>
+                ) : null}
+                <StatusBadge status={completion.verification_status} type="completion" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export default function ParentProgressionVisibilityPage() {
   const [children, setChildren] = useState<LinkedChild[]>([]);
   const [childrenLoading, setChildrenLoading] = useState(true);
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
+  // Which of the assignments are steps of an issued workout, and in what order.
+  const [workouts, setWorkouts] = useState<DatedIssuedWorkout[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [progressionLoading, setProgressionLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -213,10 +321,22 @@ export default function ParentProgressionVisibilityPage() {
         );
         if (signal.aborted) return;
         if (!assignRes.ok) throw new Error(`Failed to fetch assignments: ${assignRes.status}`);
-        const assignData = (await assignRes.json()) as { items?: DrillAssignment[] };
+        const assignData = (await assignRes.json()) as { items?: DrillAssignment[]; workouts?: unknown };
         if (signal.aborted) return;
         const assignmentItems = assignData.items ?? [];
+        // Read before either is set. Workouts this page cannot read are a
+        // failed read of the record, never its steps drawn as loose drills:
+        // that would show a guardian a workout out of its order and call it
+        // the whole record. An absent key (an older server) is no workouts.
+        let issued: DatedIssuedWorkout[];
+        try {
+          issued = readDatedIssuedWorkouts(assignData.workouts);
+        } catch (error) {
+          console.error({ event: 'parent-progression-workouts-unreadable', error });
+          throw new Error('Failed to load progression data.', { cause: error });
+        }
         setAssignments(assignmentItems);
+        setWorkouts(issued);
 
         // A child carries a handful of assignments at most, so this stays one
         // small request per assignment, same as the athlete's own surface.
@@ -236,12 +356,13 @@ export default function ParentProgressionVisibilityPage() {
         setCompletions(allCompletions);
       } catch (error) {
         // An abort is this page cancelling its own work, not a failure a
-        // guardian should read about -- and clearing the three lists here
+        // guardian should read about -- and clearing the lists here
         // would blank the child they just switched TO. A genuine refusal or
         // network failure still reaches the alert in the header, unchanged.
         if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setGaps([]);
         setAssignments([]);
+        setWorkouts([]);
         setCompletions([]);
         setProgressionFailed(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load progression data.');
@@ -339,30 +460,35 @@ export default function ParentProgressionVisibilityPage() {
             </div>
           ) : (
             <div className="space-y-[var(--s6)]">
-              <section>
-                <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
-                <div className="grid grid-cols-1 gap-[var(--s4)] md:grid-cols-2">
-                  {gaps.map((gap) => (
-                    <article key={gap.gap_id} className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-                      <div className="mb-[var(--s3)] flex items-start justify-between gap-[var(--s3)]">
-                        <div>
-                          <h3 className="t-body font-semibold capitalize">{gap.gap_type.replaceAll('_', ' ')}</h3>
-                          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{gap.gap_description}</p>
+              {/* Shown only when there is a gap: a child whose only work is an
+                  issued workout has none, and a heading over nothing reads as
+                  a list that failed to load. */}
+              {gaps.length > 0 ? (
+                <section>
+                  <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
+                  <div className="grid grid-cols-1 gap-[var(--s4)] md:grid-cols-2">
+                    {gaps.map((gap) => (
+                      <article key={gap.gap_id} className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+                        <div className="mb-[var(--s3)] flex items-start justify-between gap-[var(--s3)]">
+                          <div>
+                            <h3 className="t-body font-semibold capitalize">{gap.gap_type.replaceAll('_', ' ')}</h3>
+                            <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{gap.gap_description}</p>
+                          </div>
+                          <GapBadge severity={gap.severity} />
                         </div>
-                        <GapBadge severity={gap.severity} />
-                      </div>
-                      <div className="flex items-center gap-[var(--s3)]">
-                        <StatusBadge status={gap.status} type="gap" />
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                          Identified {formatGymDateNumeric(gap.created_at)}
-                        </span>
-                      </div>
-                      <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
-                      <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
-                    </article>
-                  ))}
-                </div>
-              </section>
+                        <div className="flex items-center gap-[var(--s3)]">
+                          <StatusBadge status={gap.status} type="gap" />
+                          <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                            Identified {formatGymDateNumeric(gap.created_at)}
+                          </span>
+                        </div>
+                        <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
+                        <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               <section>
                 <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
@@ -374,65 +500,56 @@ export default function ParentProgressionVisibilityPage() {
                   </div>
                 ) : (
                   <div className="space-y-[var(--s4)]">
-                    {assignments.map((assignment) => {
-                      const assignmentCompletions = completionsForAssignment(assignment.assignment_id);
+                    {/* An issued workout template keeps its shape here as it
+                        does for the athlete (lane P7c): one panel at the place
+                        of the first of its drills, holding its name, who
+                        issued it and when, a block name wherever the block
+                        changes, and its steps in the coach's order, each set
+                        off by a rule (brass-700: the weight the design sheet
+                        gives a rule on a light ground). A drill that is a step
+                        of no workout is drawn where it stands, as before. */}
+                    {sectionAssignedWork(assignments, workouts).map((section) => {
+                      if (section.kind === 'assignment') {
+                        return (
+                          <article key={section.key} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
+                            <AssignmentRecord
+                              assignment={section.assignment}
+                              completions={completionsForAssignment(section.assignment.assignment_id)}
+                              step={null}
+                            />
+                          </article>
+                        );
+                      }
+                      const { workout, stepCount } = section;
                       return (
-                        <article key={assignment.assignment_id} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
-                          <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
-                            <div>
-                              <h3 className="t-body font-semibold">
-                                {assignment.drill_display_name || assignment.drill_name}
-                              </h3>
-                              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
-                                {assignment.drill_display_description || assignment.drill_description}
-                              </p>
-                            </div>
-                            <StatusBadge status={assignment.status} type="assignment" />
+                        <article key={section.key} className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" data-testid="issued-workout">
+                          <p className="t-eyebrow">Workout</p>
+                          <h3 className="t-body mt-[var(--s2)] font-semibold" style={{ fontSize: 'var(--t-md)' }}>
+                            {workout.template_name}
+                          </h3>
+                          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                            {workout.issued_by_name ? `From: ${workout.issued_by_name} · ` : ''}
+                            {formatGymDateNumeric(workout.issued_at)} · {stepCount === 1 ? '1 step' : `${stepCount} steps`}, in this order
+                          </p>
+                          <div className="mt-[var(--s4)] space-y-[var(--s4)]">
+                            {section.parts.map((part) => (part.kind === 'block' ? (
+                              <h4 key={part.key} className="t-label">
+                                {part.block.replace(/_/g, ' ')}
+                              </h4>
+                            ) : (
+                              <div
+                                key={part.key}
+                                className="border-l-4 border-[color:var(--brass-700)] pl-[var(--s4)]"
+                                data-testid="issued-workout-step"
+                              >
+                                <AssignmentRecord
+                                  assignment={part.assignment}
+                                  completions={completionsForAssignment(part.assignment.assignment_id)}
+                                  step={part.step}
+                                />
+                              </div>
+                            )))}
                           </div>
-                          <dl className="mt-[var(--s4)] flex flex-wrap gap-x-[var(--s5)] gap-y-[var(--s2)]">
-                            <div>
-                              <dt className="t-label">Completion</dt>
-                              <dd className="t-data">{Math.min(Math.max(assignment.completion_percentage, 0), 100)}%</dd>
-                            </div>
-                            {assignment.frequency_per_week ? (
-                              <div>
-                                <dt className="t-label">Per week</dt>
-                                <dd className="t-data">{assignment.frequency_per_week}x</dd>
-                              </div>
-                            ) : null}
-                            {assignment.due_date ? (
-                              <div>
-                                <dt className="t-label">Due</dt>
-                                <dd className="t-data">{formatGymDateNumeric(assignment.due_date)}</dd>
-                              </div>
-                            ) : null}
-                            {assignment.assigned_by_name ? (
-                              <div>
-                                <dt className="t-label">Assigned by</dt>
-                                <dd className="t-data">{assignment.assigned_by_name}</dd>
-                              </div>
-                            ) : null}
-                          </dl>
-                          {assignmentCompletions.length > 0 ? (
-                            <div className="mt-[var(--s4)]">
-                              <p className="t-label">Logged work</p>
-                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-                                {assignmentCompletions.map((completion) => (
-                                  <li key={completion.completion_id} className="flex flex-wrap items-center gap-[var(--s3)]">
-                                    <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                                      {formatGymDateNumeric(completion.completed_at)}
-                                    </span>
-                                    {completion.reps_completed != null ? (
-                                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                                        {completion.reps_completed} reps
-                                      </span>
-                                    ) : null}
-                                    <StatusBadge status={completion.verification_status} type="completion" />
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
                         </article>
                       );
                     })}

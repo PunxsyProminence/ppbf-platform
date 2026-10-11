@@ -159,8 +159,9 @@ export interface IssuedWorkout {
 }
 
 /**
- * An issued workout as the athlete receives it (OD-2026-10-06-025 ruling 2:
- * families see the coach's display name, never the internal account id).
+ * An issued workout as a family reader -- the athlete, or a linked guardian --
+ * receives it (OD-2026-10-06-025 ruling 2: families see the coach's display
+ * name, never the internal account id).
  */
 export type FamilyIssuedWorkout = Omit<IssuedWorkout, 'issued_by_account_id'> & {
   issued_by_name: string;
