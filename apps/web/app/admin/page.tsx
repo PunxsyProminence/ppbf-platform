@@ -566,6 +566,9 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
   const [loadError, setLoadError] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
   const [status, setStatus] = useState<TrackSaveStatus>({ kind: 'idle' });
+  // Read by saveTracks before React has re-rendered the button as disabled, so
+  // a double press cannot start a second save beside the first.
+  const saveInFlight = useRef(false);
 
   useEffect(() => {
     // The route admits the gym's own admins only; another sign-in would be
@@ -631,9 +634,10 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
   }
 
   async function saveTracks() {
-    if (!loaded || saving || changes.size === 0) {
+    if (!loaded || saveInFlight.current || changes.size === 0) {
       return;
     }
+    saveInFlight.current = true;
     const sending = new Map(changes);
     setStatus({ kind: 'saving' });
     try {
@@ -677,6 +681,8 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean }) 
         kind: 'failed',
         message: `${toErrorMessage(error, 'Track assignments could not be saved')}. The save was not confirmed -- it may or may not have been stored. Reload to see what the server kept.`,
       });
+    } finally {
+      saveInFlight.current = false;
     }
   }
 
@@ -1864,10 +1870,15 @@ export default function AdminCapabilitiesPage() {
                   </div>
                 </div>
               </article>
-
-              <TrackAssignmentControl canAssign={isOrganizationAdminSessionRole(pilotSession.role)} />
             </section>
           )}
+
+          {/* Kept mounted, and only hidden, on the other tabs: its unsaved
+              track changes live in its own state, and a walk to the Library
+              and back must not throw them away without a word. */}
+          <div hidden={activeTab !== 'overview'}>
+            <TrackAssignmentControl canAssign={isOrganizationAdminSessionRole(pilotSession.role)} />
+          </div>
 
           {activeTab === 'library' && (
             <section className="space-y-5">

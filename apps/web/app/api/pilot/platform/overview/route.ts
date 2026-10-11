@@ -20,11 +20,6 @@ interface CapabilityRow {
   capability_access: unknown;
 }
 
-interface TrackRow {
-  organization_id: string;
-  assignments: unknown;
-}
-
 interface GymOverviewRow {
   organizationId: string;
   organizationName: string;
@@ -32,7 +27,6 @@ interface GymOverviewRow {
   board: BoardSummary | null;
   growth: GrowthMetrics | null;
   capabilityCount: number;
-  trackAssignmentCount: number;
   error?: string;
 }
 
@@ -43,16 +37,6 @@ function countEnabled(value: unknown): number {
   return Object.values(value as Record<string, unknown>).filter((entry) => entry === true).length;
 }
 
-function countAssignedTracks(value: unknown): number {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return 0;
-  }
-  return Object.values(value as Record<string, unknown>).reduce<number>(
-    (total, tracks) => total + (Array.isArray(tracks) ? tracks.length : 0),
-    0,
-  );
-}
-
 // All-gyms rollup for the platform owner. Loops the same single-org functions
 // every other admin/board screen already calls -- getBoardSummary and
 // getGrowthMetrics -- once per organization via Promise.all, rather than new
@@ -60,6 +44,13 @@ function countAssignedTracks(value: unknown): number {
 // codebase's org listing, and the schema is literally named "pilot slice").
 // Every metric surfaced here is already k-anonymity gated in boardSummary.ts;
 // nothing here reaches PHI.
+//
+// Track assignments are NOT read here. pilot.admin_track_assignments is a map
+// keyed by athlete id, one entry per real athlete of a gym, and the platform
+// account never opens an individual athlete's record (OD-2026-09-28-005; the
+// same read was taken off platform/gym-summary and admin/track-assignments
+// under OD-2026-10-08-003 R2). This route used to select every gym's whole map
+// to produce a count no screen showed.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -77,22 +68,17 @@ export async function GET(request: NextRequest) {
        order by organization_name asc`,
     );
 
-    const [capabilityRows, trackRows] = await Promise.all([
-      query<CapabilityRow>(`select organization_id, capability_access from pilot.admin_gym_capability_access`),
-      query<TrackRow>(`select organization_id, assignments from pilot.admin_track_assignments`),
-    ]);
+    const capabilityRows = await query<CapabilityRow>(
+      `select organization_id, capability_access from pilot.admin_gym_capability_access`,
+    );
 
     const capabilityCountByOrg = new Map(
       capabilityRows.map((row) => [row.organization_id, countEnabled(row.capability_access)]),
-    );
-    const trackAssignmentCountByOrg = new Map(
-      trackRows.map((row) => [row.organization_id, countAssignedTracks(row.assignments)]),
     );
 
     const gyms: GymOverviewRow[] = await Promise.all(
       organizations.map(async (org) => {
         const capabilityCount = capabilityCountByOrg.get(org.organization_id) ?? 0;
-        const trackAssignmentCount = trackAssignmentCountByOrg.get(org.organization_id) ?? 0;
         try {
           const [board, growth] = await Promise.all([
             getBoardSummary(org.organization_id),
@@ -105,7 +91,6 @@ export async function GET(request: NextRequest) {
             board,
             growth,
             capabilityCount,
-            trackAssignmentCount,
           };
         } catch (error) {
           // The raw message can carry SQL, connection, or upstream-provider
@@ -122,7 +107,6 @@ export async function GET(request: NextRequest) {
             board: null,
             growth: null,
             capabilityCount,
-            trackAssignmentCount,
             error: 'Failed to load summary',
           };
         }

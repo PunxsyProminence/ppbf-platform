@@ -7,7 +7,7 @@
 // edit that was never stored. These cover the two ways that goes wrong.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import AdminCapabilitiesPage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -404,6 +404,46 @@ describe('Who Trains On What', () => {
       'Ada Lopez (ath-ada-2)',
       'Ben Okafor',
     ]);
+  });
+
+  // The control sits on the Overview tab and holds its unsaved changes itself.
+  // Unmounting it on a tab change would drop them without a word.
+  it('unsaved track changes survive a walk to another tab and back', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capability Library' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+
+    expect(screen.getByText('Not saved yet: Ada Lopez')).toBeTruthy();
+    expect(trackButton(/USA Boxing Track/).getAttribute('aria-pressed')).toBe('true');
+    // Still one read of each: coming back did not start the control over.
+    expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(1);
+    expect(callsTo(fetchMock, ROSTER_URL, 'GET')).toHaveLength(1);
+    expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(0);
+  });
+
+  it('two presses of Save tracks before the screen redraws start one save, not two', async () => {
+    const fetchMock = trackFetch({ roster: [ADA], stored: {} });
+
+    await renderPage(fetchMock);
+    await chooseAthlete('ath-ada');
+    fireEvent.click(trackButton(/USA Boxing Track/));
+
+    // Both presses inside one act: React has not yet redrawn the button as
+    // disabled, so only the control's own guard can stop the second.
+    const button = saveButton();
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+
+    await screen.findByText('Saved.');
+    expect(callsTo(fetchMock, TRACKS_URL, 'POST')).toHaveLength(1);
+    expect(callsTo(fetchMock, TRACKS_URL, 'GET')).toHaveLength(2);
   });
 
   // The route refuses platform_owner on both verbs (OD-2026-10-08-003 R2), and
