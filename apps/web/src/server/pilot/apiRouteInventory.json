@@ -412,7 +412,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "organization_admin,platform_owner"
+        "organization_admin"
       ]
     }
   },
@@ -696,7 +696,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -724,7 +724,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -752,7 +752,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -1353,7 +1353,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -10603,7 +10603,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin,platform_owner"
+        "admin,coach,organization_admin"
       ]
     }
   },
@@ -11376,7 +11376,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin,platform_owner"
+        "admin,coach,organization_admin"
       ]
     }
   },
@@ -11404,7 +11404,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -11915,7 +11915,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,organization_admin,platform_owner"
+        "admin,organization_admin"
       ]
     }
   },
@@ -12400,7 +12400,7 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin,parent,platform_owner"
+        "admin,coach,organization_admin,parent"
       ]
     }
   },
