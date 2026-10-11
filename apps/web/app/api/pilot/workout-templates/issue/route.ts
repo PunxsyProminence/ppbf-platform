@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // holds every registered route to exactly this import.
 import { requireRole } from '@/src/server/pilot/access';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
 import { issueWorkoutTemplate } from '@/src/server/pilot/workoutTemplates';
@@ -37,6 +38,27 @@ function requireText(raw: unknown, field: string): string {
   return raw.trim();
 }
 
+// A REQUEST KEY (optional). The coach's screen makes one random id for a press
+// of Issue and sends the same one again when that press got no answer. A key
+// that already names an issue of this template to this athlete is a repeat:
+// nothing is written and the first issue is answered, with 200 rather than
+// 201 so "this request created it" is never said twice. The limits are at
+// least as strict as the column's own check (not blank, at most 200
+// characters), so nothing accepted here is refused by the database; a NUL,
+// which PostgreSQL cannot store in text, is refused here too. The key is used
+// as sent, never trimmed. A request that sends no key is issued exactly as
+// before.
+const REQUEST_KEY_MAX = 200;
+const NUL = String.fromCharCode(0);
+
+function readRequestKey(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string' || raw.trim() === '' || raw.length > REQUEST_KEY_MAX || raw.includes(NUL)) {
+    throw new ValidationError(`request_key must be text of 1 to ${REQUEST_KEY_MAX} characters`);
+  }
+  return raw;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -48,6 +70,7 @@ export async function POST(request: NextRequest) {
     const body = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
     const templateId = requireText(body.template_id, 'template_id');
     const athleteId = requireText(body.athlete_id, 'athlete_id');
+    const requestKey = readRequestKey(body.request_key);
 
     // REACH, before anything about the template is read. "No such athlete" and
     // "an athlete this coach cannot reach" collapse to the same 404 (the
@@ -66,6 +89,7 @@ export async function POST(request: NextRequest) {
       athleteId,
       actorAccountId: principal.accountId,
       actorRole: principal.role,
+      requestKey,
     });
 
     // Another gym's template id reads exactly like one that does not exist.
@@ -85,6 +109,22 @@ export async function POST(request: NextRequest) {
     // never able to fail it (readStaffHoldWarning does not throw); the key is
     // absent when the athlete is not held, exactly as on progression/assignments.
     const holdWarning = await readStaffHoldWarning(principal.role, principal.organizationId, athleteId);
+
+    // A repeat of a request that already issued this workout. Nothing was
+    // written this time, so nothing is reported as created; the hold note is
+    // said again because the first answer may never have arrived.
+    if (result.outcome === 'already_issued') {
+      return NextResponse.json({
+        ok: true,
+        already_issued: true,
+        organization_id: principal.organizationId,
+        athlete_id: athleteId,
+        issue_id: result.issue_id,
+        template: result.template,
+        step_count: result.step_count,
+        ...(holdWarning ? { hold_warning: holdWarning } : {}),
+      });
+    }
 
     return NextResponse.json(
       {
