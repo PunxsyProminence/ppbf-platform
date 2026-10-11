@@ -203,14 +203,14 @@ test('a window that closes before it opens is refused before it reaches the serv
 // A datetime-local value has no zone and means the gym's clock. The posted
 // body carries the absolute instant, so the author's device zone cannot move it.
 test('a typed window is posted as the gym-zone instants, summer and winter', async () => {
-  const fetchMock = jest.fn(async (url: unknown) => {
+  const fetchMock = jest.fn(async (url: unknown, init?: RequestInit) => {
     if (String(url).includes('/api/pilot/announcements/post')) {
       return jsonResponse({ ok: true, announcement: item() });
     }
     if (String(url).includes('/api/pilot/announcements/get')) {
       return jsonResponse({ ok: true, announcements: [] });
     }
-    throw new Error(`Unexpected fetch: ${String(url)}`);
+    throw new Error(`Unexpected fetch: ${String(url)} ${String(init?.method)}`);
   });
   await renderPage(fetchMock);
 
