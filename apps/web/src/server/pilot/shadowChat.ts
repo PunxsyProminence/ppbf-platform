@@ -98,7 +98,7 @@ export const SHADOW_FILTER_REASONS = {
   clearance_claim: 'Contains clearance claim without medical authority',
   disclosure_risk: 'May disclose protected instructions, secrets, or cross-tenant information',
   authority_override: 'Attempts to override human authority',
-  weight_cut_directive: 'Contains a rapid weight-loss or dehydration directive without medical authority',
+  weight_cut_directive: 'Tells the reader to cut weight, use heat or go without food or fluids with an amount or a time, and cites no Library source or coach-set limit for it',
   unauthorized_citation: 'Contains an unknown, malformed, or unauthorized evidence citation',
   uncited_claim: 'Makes an evidence or quantitative claim without an exact retrieved evidence citation',
   missing_deferral: 'Missing human deferral language',
@@ -581,6 +581,33 @@ const WEIGHT_CUT_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'weight_cu
 
 export type ShadowTaughtQuestion = 'weight_cut_question' | 'training_clearance_question';
 
+// A FAMILY'S QUESTION ABOUT A CUT METHOD IS MARKED, NOT BLOCKED (lane S1,
+// Overwatch 2026-10-11, lane question 6 option b).
+//
+// "I'm 12, how long should I sit in the sauna", "can I wear a sweat suit in a
+// hot car", "how do I water load", "how do I lose 8 pounds by Friday" use none
+// of main's weight-cut wording, so main answered them as ordinary questions:
+// no high-risk mark, no staff review row. That did not matter much while any
+// answer naming a sauna was withheld (and left a row of its own). It is
+// answered now. So for an athlete or a parent, a question main would have
+// allowed unmarked is marked high-risk when it names one of these, and the
+// route writes the request-risk row for staff. Nothing is withheld by this,
+// and no question main withheld is touched: it is read only at the two
+// places main returns an unmarked "allowed".
+//
+// The cost: each such question takes one of the account's review slots (3 an
+// hour, shared with every other non-critical row).
+const FAMILY_ROLES: readonly string[] = ['athlete', 'parent'];
+const CUT_METHOD_QUESTION = /\b(?:sauna|steam\s*room|sweat\s*-?\s*suits?|sweatsuits?|plastics|water\s*-?\s*load(?:ing)?|hot\s+(?:bath|tub|car)|weigh\s*-?\s*ins?|cut(?:ting)?\s+(?:\w+\s+)?weight|(?:cut|lose|drop|shed|sweat\s+off)\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilos?|kilograms?|kgs?))\b/i;
+
+function isFamilyCutMethodQuestion(text: string, role: string): boolean {
+  return FAMILY_ROLES.includes(role) && CUT_METHOD_QUESTION.test(text);
+}
+
+function markedCutMethodQuestion(): ShadowValidationResult {
+  return { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' };
+}
+
 function taughtQuestion(
   text: string,
   topic: HighRiskTopic,
@@ -604,7 +631,7 @@ function taughtQuestion(
   const clearanceTopic = topic === 'return_to_play' || topic === 'medical_clearance';
   // A clearance question that is not a training-clearance question keeps
   // main's answer, whatever else the message asks.
-  if ((mainClearanceGate || clearanceTopic) && !trainingClearance) return null;
+  if (mainClearanceGate && !trainingClearance) return null;
 
   // The classifier lowercases before it reads a row, so the copies of its
   // rows read the same. A weight row only needs testing here when the
@@ -621,7 +648,9 @@ function taughtQuestion(
 // Validate that the request aligns with SHADOW's doctrine
 export function validateShadowRequest(
   message: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Read in one place only: isFamilyCutMethodQuestion, which marks a
+  // question for staff and decides nothing about what is withheld. The name
+  // keeps its underscore so the parameter list stays main's.
   _userRole: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _organizationId: string,
@@ -676,6 +705,14 @@ export function validateShadowRequest(
   // topic, so staff still get the review row.
   if (taught) {
     return { valid: true, highRisk: true, topic: classification.topic, classification: taught };
+  }
+
+  // A family's question about a cut method: allowed as main allowed it, and
+  // marked for staff -- see isFamilyCutMethodQuestion above. This one is the
+  // educational "allowed" with no risk topic; the other is the last return.
+  const familyCutMethodQuestion = isFamilyCutMethodQuestion(text, _userRole);
+  if (familyCutMethodQuestion && classification.educationalApproach && !classification.isHighRisk) {
+    return markedCutMethodQuestion();
   }
 
   // Educational queries are allowed
@@ -757,6 +794,10 @@ export function validateShadowRequest(
       topic: classification.topic,
       classification: classification.topic,
     };
+  }
+
+  if (familyCutMethodQuestion) {
+    return markedCutMethodQuestion();
   }
 
   return { valid: true, highRisk: false, topic: 'none' };
@@ -1023,6 +1064,135 @@ async function readNearMissContext(
   }
 }
 
+// THE ONE WEIGHT-CUT RULE FOR ANSWERS (lane S1, 2026-10-11).
+//
+// Jason, question card 2026-10-11, "A: Check what you ruled (Recommended)":
+// "Replace the leftover word patterns with one rule: a reply is held back only
+// when it tells the reader to do something with an amount, a time or 'no
+// fluids' that is not backed by a cited Library source or the coach's set
+// limit. Teaching sentences pass. The checker then enforces 'real sources, no
+// invented numbers, coach decides'."
+//
+// It replaces three word patterns. After OD-2026-10-10-004 ruling 1 took
+// sauna, sweat suit, water loading and dehydrate out of them, what was left
+// withheld "aim to lose about 1 pound a week in camp" and "do not restrict
+// fluids on your own" and delivered "You should sit in the sauna for 40
+// minutes and stop drinking water." (measured by the lane and by its second
+// reviewer, who ran 88 answers through it).
+//
+// The rule reads one sentence at a time. A sentence is withheld when it has
+// no citation of its own from the allowed evidence and any of these is true:
+//
+//   NUMBER     it puts a number on the cut: an amount of weight to come off
+//              ("sweat off 6 pounds", "8 pounds by Friday", "3 kg comes
+//              off"), or a length of time, a count or a volume beside a heat
+//              or water method or a no-fluids phrase ("20 minutes in the
+//              sauna", "sauna twice a day", "2 gallons a day", "no water for
+//              12 hours"). In any grammar: "20 minutes in the sauna is where
+//              most fighters stop" tells a kid what to do as surely as an
+//              order does. A rate per week or per month is the slow way and
+//              does not count ("lose about 1 pound a week").
+//   NO FLUIDS  it tells the reader to go without fluids or food: stop
+//   OR FOOD    drinking, don't drink or eat, no water, skip dinner, restrict
+//              or limit fluids, dehydrate yourself -- as an instruction, and
+//              in a cut (a method or weigh-in is named, or it carries a time
+//              or a number). The opposite instruction passes ("do not
+//              restrict fluids on your own"), and so does saying what
+//              fighters do ("fighters stop drinking the day before").
+//   A TIME     it tells the reader to do a heat or cut method at a set time
+//              or until something happens: "cut water weight the night
+//              before", "do the sauna at home tonight", "stay in until you
+//              stop sweating", "spit into a bottle all day".
+//
+// A sentence that carries [E:<id>] with an id from the allowed evidence is
+// backed: a Library item and a coach-set limit or contact cap are both in
+// that set. The rule checks that the citation is there and allowed, not that
+// the source says what the sentence says; the uncited-claim rule has the same
+// limit.
+//
+// WHAT IT IS NOT. It does not read vomiting, laxatives, diuretics, "don't
+// tell your coach", "push through it", a clearance in other words or a
+// diagnosis in other words: none of those is an amount, a time or no fluids.
+// It is patterns: an instruction built on a verb the lists do not hold, or a
+// quantity with no number in it ("a good while"), passes. The topic it
+// reports is 'weight_cutting' only when it fires, so a delivered answer about
+// a sauna carries no weight-cut topic from this side.
+const WC_NUM = String.raw`(?:\d+(?:[.,]\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|ninety|hundred|half|(?:a\s+)?couple(?:\s+of)?)`;
+const WC_QTY = String.raw`\b${WC_NUM}(?:\s*(?:-|to|or)\s*${WC_NUM})?(?:\s+an?)?\s*`;
+const WC_WEIGHT_UNIT = String.raw`(?:pounds?|lbs?|kilos?|kilograms?|kgs?|percent|per\s+cent)\b`;
+const WC_VOLUME_UNIT = String.raw`(?:gallons?|litres?|liters?|quarts?|pints?|ounces|oz|cups?|bottles?)\b`;
+const WC_TIME_UNIT = String.raw`(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|nights?|rounds?|times|sessions?)\b`;
+const WC_LOSS = String.raw`\b(?:cut|cuts|cutting|drop|drops|dropped|dropping|lose|loses|losing|lost|shed|sheds|shedding|sweat(?:s|ed|ing)?\s+(?:off|out)|tak(?:e|es|ing)\s+off|took\s+off|get(?:s|ting)?\s+rid\s+of|got\s+rid\s+of|bring(?:s|ing)?\s+(?:\w+\s+){0,3}down|(?:be|get|come|go)\s+down|down)\b`;
+const WC_METHOD = String.raw`\b(?:sauna|steam\s*room|hot\s+(?:bath|tub|car|shower|box)|heater|heat\s+on|sweat\s*-?\s*suits?|sweatsuits?|sweats|plastics|trash\s+bags?|garbage\s+bags?|water\s*-?\s*load\w*|spit\w*)`;
+const WC_SUBJECT = String.raw`(?:${WC_METHOD}|\b(?:dehydrat\w*|weigh\s*-?\s*ins?|(?:make|makes|making|made)\s+(?:the\s+)?weight|weight\s+cut\w*|(?:cut|cuts|cutting|drop|dropping)\s+(?:\w+\s+)?weight|water\s+weight|weight\s+class))`;
+const WC_TIMING = String.raw`\b(?:tonight|tomorrow|today|overnight|this\s+(?:morning|afternoon|evening|week)|the\s+(?:night|day|morning|evening)\s+(?:before|of)|(?:night|day|morning)\s+before|(?:by|on)\s+(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|tomorrow|tonight|morning)|after\s+(?:noon|lunch|dinner|breakfast|\d{1,2}\s*(?:am|pm))|(?<!weeks\s)(?<!months\s)before\s+(?:the\s+|your\s+|a\s+)?weigh)`;
+const WC_OPEN_BOUND = String.raw`\b(?:until|till|as\s+long\s+as|all\s+(?:day|night))\b`;
+// Where an instruction can start: the start of the sentence, after a comma,
+// semicolon or colon (which also covers "Kid, wear ..."), or after a joining
+// word.
+const WC_CLAUSE = String.raw`(?:^|[,;:]\s*|\b(?:and|then|or|but|so|please|just|also|now|next|first|finally)\s+)(?:(?:then|just|also|please|now|always|simply|only)\s+)*`;
+const WC_LEAD = String.raw`(?:\b(?:you|he|she|they|we|your\s+\w+|the\s+(?:athlete|boxer|fighter|kid))(?:['’]ll|\s+(?:will|should|can|could|must|may|might|needs?\s+to|ha(?:ve|s)\s+to|ought\s+to|wants?\s+to))\s+(?:(?:\w+ly|just|also|then)\s+)?|\b(?:try|aim|plan|remember|make\s+sure|be\s+sure)\s+to\s+|\b(?:have|get|let|make)\s+(?:him|her|them|your\s+\w+|the\s+(?:athlete|boxer|fighter|kid))\s+|\bi(?:['’]d|\s+would)?\s+(?:recommend|suggest|advise)\s+(?:that\s+)?(?:(?:you|he|she|they)\s+)?)`;
+const WC_PRACTICE = String.raw`(?:sit|stay|wear|put\s+on|run|jog|bike|jump|skip\s+rope|spit|sweat|cut|drop|lose|shed|dehydrate|water\s*-?\s*load|soak|layer|bundle|wrap|chew|spend|(?:do|hit|use|take|try|get\s+in|go\s+in|hop\s+in)\s+(?:the|a|an|your|that)\s+(?:sauna|steam\s*room|hot\s+(?:bath|tub)|sweat\s*-?\s*suit|plastics))\b`;
+// Going without, as a restriction ("stop drinking", "skip dinner", "limit
+// your fluids"). A "do not" or "never" in front of one of these makes it the
+// opposite instruction.
+const WC_GO_WITHOUT = String.raw`\b(?:restrict\w*|limit\w*|cut(?:ting|s)?(?:\s+(?:out|down|back))?(?:\s+on)?|stop(?:ping|ped|s)?|skip(?:ping|ped|s)?|go(?:ing|es)?\s+without)\s+(?:(?:your|the|all|any|his|her|their)\s+)*(?:fluids?|liquids?|water(?!\s+weight|\s*-?\s*load)|drinking|food|eating|meals?|breakfast|lunch|dinner|supper|carbs)\b`;
+// Going without, as a prohibition ("don't drink anything", "no water",
+// "nothing to drink", "by not drinking", "dehydrate yourself"). The lookahead
+// keeps ordinary coaching out: "don't eat a big meal right before sparring",
+// "don't drink soda".
+const WC_PROHIBITION = String.raw`\b(?:(?:do\s+not|don['’]?t|never)\s+(?:drink|eat)\b(?!\s+(?:too|so|a\s+big|a\s+heavy|a\s+large|soda|pop|alcohol|beer|energy|coffee|milk|sugar|junk|candy|fast\s+food|right\s+before|just\s+before))|not\s+(?:drinking|eating)\b|no\s+(?:water|fluids?|liquids?|food|carbs)\b|nothing\s+to\s+(?:drink|eat)\b|dehydrate\b|water\s+to\s+zero\b)`;
+
+const WC_WEEKLY_RATE = new RegExp(String.raw`${WC_QTY}${WC_WEIGHT_UNIT}(?:\s+of\s+\w+(?:\s+\w+)?)?\s+(?:a|per|each|every)\s+(?:week|month)\b`, 'gi');
+const WC_LOSS_AMOUNT = new RegExp(String.raw`${WC_LOSS}[^.!?\n]{0,40}?${WC_QTY}${WC_WEIGHT_UNIT}|${WC_QTY}${WC_WEIGHT_UNIT}[^.!?\n]{0,20}?\b(?:comes?\s+off|came\s+off|will\s+come\s+off|by\s+(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|tomorrow|tonight|morning|the\s+weigh)|overnight|is\s+doable)`, 'i');
+const WC_COUNTED = new RegExp(String.raw`${WC_QTY}(?:${WC_TIME_UNIT}|${WC_VOLUME_UNIT})|\ban\s+hour\b|\b(?:once|twice)\s+(?:a|per|each)\s+(?:day|night|hour)\b`, 'i');
+const WC_METHOD_RE = new RegExp(WC_METHOD, 'i');
+const WC_SUBJECT_RE = new RegExp(WC_SUBJECT, 'i');
+const WC_TIMING_RE = new RegExp(WC_TIMING, 'i');
+const WC_OPEN_BOUND_RE = new RegExp(WC_OPEN_BOUND, 'i');
+const WC_LEAD_RE = new RegExp(WC_LEAD, 'i');
+const WC_DOES_METHOD = new RegExp(String.raw`(?:${WC_CLAUSE}|${WC_LEAD})(do\s+not\s+|don['’]?t\s+|never\s+|not\s+)?${WC_PRACTICE}`, 'i');
+const WC_GO_WITHOUT_RE = new RegExp(WC_GO_WITHOUT, 'gi');
+const WC_PROHIBITION_RE = new RegExp(WC_PROHIBITION, 'gi');
+const WC_OPPOSITE = /\b(?:do\s+not|don['’]?t|never|avoid|not)\s+(?:\w+\s+)?$/i;
+const WC_STARTS_CLAUSE = new RegExp(String.raw`${WC_CLAUSE}(?:(?:start|begin|keep|try)\s+)?$`, 'i');
+
+function withholdsUncitedWeightCutInstruction(response: string, allowedEvidenceIds: ReadonlySet<string>): boolean {
+  // A citation written after the full stop belongs to the sentence it follows.
+  const text = response.replace(/([.!?])\s*(\[E:[^\]\r\n]{1,200}\])/g, ' $2$1');
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
+  let previous = '';
+  for (const raw of sentences) {
+    const context = `${previous} ${raw}`;
+    previous = raw;
+    const backed = [...raw.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)].some((match) => allowedEvidenceIds.has((match[1] ?? '').trim()));
+    if (backed) continue;
+    // A list marker is not part of the sentence.
+    const sentence = raw.replace(/^\s*(?:[-*•]\s*|\d+[.)]\s*|step\s+\d+[:.]?\s*)/i, '');
+    const counted = WC_COUNTED.test(sentence);
+
+    // Going without fluids or food, as an instruction.
+    const goesWithout = [
+      ...[...sentence.matchAll(WC_GO_WITHOUT_RE)].filter((match) => !WC_OPPOSITE.test(sentence.slice(0, match.index ?? 0))),
+      ...sentence.matchAll(WC_PROHIBITION_RE),
+    ];
+    const toldToGoWithout = goesWithout.some((match) => (
+      WC_STARTS_CLAUSE.test(sentence.slice(0, match.index ?? 0)) || WC_LEAD_RE.test(sentence) || WC_DOES_METHOD.test(sentence)
+    ));
+
+    // NUMBER.
+    if (WC_LOSS_AMOUNT.test(sentence.replace(WC_WEEKLY_RATE, ' '))) return true;
+    if (counted && (WC_METHOD_RE.test(context) || goesWithout.length > 0)) return true;
+    // NO FLUIDS OR FOOD.
+    const inACut = WC_SUBJECT_RE.test(context) || WC_TIMING_RE.test(sentence) || WC_OPEN_BOUND_RE.test(sentence) || counted;
+    if (toldToGoWithout && inACut) return true;
+    // A TIME.
+    const doesMethod = WC_DOES_METHOD.exec(sentence);
+    if (doesMethod && !doesMethod[1] && WC_SUBJECT_RE.test(context) && (WC_TIMING_RE.test(sentence) || WC_OPEN_BOUND_RE.test(sentence))) return true;
+  }
+  return false;
+}
+
 // Validate and filter LLM response before display
 export function validateShadowResponse(
   response: string,
@@ -1276,29 +1446,15 @@ export function validateShadowResponse(
   // Weight cutting was gated on the REQUEST only. A response that volunteered a
   // weight-cut directive -- to a question that never mentioned weight -- passed
   // with no filter, and because the handoff topic was taken from the request,
-  // no weight-cut handoff banner either. Rapid weight loss in a youth combat
-  // sport is exactly the guidance that must not reach an athlete unreviewed, so
-  // the response is now gated on the same topic as the request.
+  // no weight-cut handoff banner either. So the response is gated as well.
   //
-  // Scoped to directives rather than the words "weight loss", so educational
-  // answers about risks and safe management -- which the request validator
-  // explicitly allows -- are not swept up.
-  //
-  // The second pattern also named sauna, sweat suit, water loading and
-  // dehydrate, so any answer containing one of those words was withheld,
-  // cited or not. OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for
-  // everyone") relaxed that for every audience; those four are gone and
-  // nothing else in this rule moved.
-  const makesWeightCutDirective = (
-    /\b(?:cut|cutting|drop|shed|lose)\b.{0,30}\b(?:water\s+weight|\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?))\b/i.test(response)
-    || /\b(?:restrict(?:ing)?\s+(?:fluids?|water))\b/i.test(response)
-    || /\b(?:you\s+(?:should|can|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you|to\s+make\s+weight)\b.{0,60}\b(?:cut\s+weight|make\s+weight|drop\s+(?:a|to)\s+.{0,20}weight\s+class)\b/i.test(response)
-  );
-  if (makesWeightCutDirective) {
-    filtered = true;
-    flag('weight_cut_directive');
-  }
-
+  // What it is gated ON changed twice in lane S1. The word patterns that were
+  // here withheld any answer naming a sauna (OD-2026-10-10-004 ruling 1
+  // relaxed that), and what remained of them withheld careful sentences and
+  // passed reckless ones. They are replaced by the one rule above
+  // (withholdsUncitedWeightCutInstruction; Jason, question card 2026-10-11).
+  // The allowed evidence ids are read here, ahead of the citation checks that
+  // also use them, because that rule needs them.
   const allowedEvidenceIds = new Set(
     (options.allowedEvidenceIds ?? options.verifiedSourceIds ?? [])
       .filter((evidenceId) => (
@@ -1306,6 +1462,12 @@ export function validateShadowResponse(
         && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(evidenceId)
       )),
   );
+  const makesWeightCutDirective = withholdsUncitedWeightCutInstruction(response, allowedEvidenceIds);
+  if (makesWeightCutDirective) {
+    filtered = true;
+    flag('weight_cut_directive');
+  }
+
   const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
   const citationIds: string[] = [];
   let hasInvalidCitation = false;
@@ -1621,7 +1783,7 @@ Every answer you write passes through a safety filter before display. Unless the
 - states a percentage, or a count of cases, athletes, participants, or studies
 With or without a citation, the filter also WITHHOLDS your entire answer if it:
 - puts "cleared" after "you" or after "the athlete is" in the same sentence, even in "ask your coach what you are cleared for". Give a recorded contact cap as a cap ("the contact cap is <value> [E:id]"), or say "what your coach has set"
-- puts cut, cutting, drop, shed or lose shortly before "water weight" or a number of pounds or kilos, says "restrict fluids" or "restrict water", or says "you should / can / need to / must ... cut weight" or "make weight"
+- on cutting weight, heat, food or fluids, gives a number, a set time or a "go without" instruction in a sentence that has no [E:id] of its own. Teach how it works in words. Give an amount, a length of time or a "when" only with the citation it comes from, in the same sentence
 Without a supplied evidence ID, explain WHY in plain coaching terms — mechanics, experience, first principles ("warming up raises muscle temperature so you can move faster with less strain") — never by appeal to research or numbers. A withheld answer reaches the athlete as "SHADOW filtered it before display", which teaches them nothing. Write so your answer can be delivered.
 
 MEDICAL SAFETY:

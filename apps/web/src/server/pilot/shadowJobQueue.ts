@@ -101,9 +101,13 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 19;
 // OD-2026-10-10-004 ruling 1): shadowChat.ts's request validator lets a
 // weight-cut question, and "cleared" near spar, contact or train, through to
 // the model; its response filter no longer withholds an answer for the words
-// sauna, sweat suit, dehydrate or water loading; the system prompt gains a
-// section that teaches those topics, and the athlete and parent registers one
-// line each. What goes into authorizedContext is unchanged; bumped because a
+// sauna, sweat suit, dehydrate or water loading, and its leftover weight-cut
+// word patterns are replaced by one rule (an instruction with an amount, a
+// time or "go without" needs a citation in its sentence; Jason, question card
+// 2026-10-11); an athlete's or parent's question about a cut method is marked
+// high-risk without being blocked; the system prompt gains a section that
+// teaches those topics, and the athlete and parent registers one line each.
+// What goes into authorizedContext is unchanged; bumped because a
 // listed file moved. A v18 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
@@ -178,7 +182,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 16, sha256: '4f6d0ba64c024bfe8ccabe6c59e36e724111bd91ae9366c412ac50047c74b4b4' },
   { version: 17, sha256: '4c722ab586bf6327f665416287e5a6aa2823c03fec472c250ac165ea09e0b5c6' },
   { version: 18, sha256: 'e870435462fbd24a2e161a760dee44c5e015b8c69d22d06a48ec4ea2b249646f' },
-  { version: 19, sha256: '1210cfb6e7213e7aff5e0a5f9cc294cafbf4a4bf875bd136a04136f25737e1fd' },
+  { version: 19, sha256: 'b5a6df7a984ee8b280805fba114fe160da99e97d49aae0b66042ef750df8c2a5' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

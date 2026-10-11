@@ -730,6 +730,18 @@ function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): bo
   return RELEASED_FROM.includes(returnOf(was));
 }
 
+// ---------------------------------------------------------------------------
+// NAMED MARK (2026-10-11, lane S1; Overwatch, lane question 6 option b).
+//
+// For an athlete or a parent, a question that names a cut method (a sauna, a
+// sweat suit, water loading, cutting weight, "lose N pounds") and that main
+// ALLOWED with no mark is now allowed with the high-risk mark, so the route
+// writes the staff review row. It withholds nothing and releases nothing:
+// both returns answer `valid: true` where main answered `valid: true`, so
+// properties 1, 2 and 3 are untouched by construction. S1d undoes its three
+// statements; the differential below runs as an athlete, and its counts
+// would move if a seed variant met it.
+// ---------------------------------------------------------------------------
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
 
@@ -902,6 +914,12 @@ describe('the premises of the argument, read from source', () => {
     validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasUrgentSymptom || hasAcuteImpactConcern);');
     validate = undo(validate, 'if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {', 'if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {', 1);
     validate = drop(validate, 'if (taught) { return { valid: true, highRisk: true, topic: classification.topic, classification: taught }; }');
+    // The named mark (see NAMED MARK below): one statement and two returns,
+    // each placed straight before one of main's two unmarked "allowed"
+    // returns.
+    validate = drop(validate, 'const familyCutMethodQuestion = isFamilyCutMethodQuestion(text, _userRole);');
+    validate = drop(validate, 'if (familyCutMethodQuestion && classification.educationalApproach && !classification.isHighRisk) { return markedCutMethodQuestion(); }');
+    validate = drop(validate, 'if (familyCutMethodQuestion) { return markedCutMethodQuestion(); }');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);

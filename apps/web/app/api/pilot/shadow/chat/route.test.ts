@@ -3421,6 +3421,22 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       expect(body.state).toBe('filtered');
     });
 
+    // Jason, question card 2026-10-11 ("A: Check what you ruled"): an
+    // instruction with an amount or a time and no citation is withheld.
+    test('an uncited sauna instruction written by the model is withheld, and a teaching answer is not', async () => {
+      const directive = await ask(role, 'How do I cut weight for my weight class?', 'Sit in the sauna for 20 minutes, get out for 5, and repeat 4 times.');
+
+      expect(directive.providerCalled).toBe(true);
+      expect(directive.body.state).toBe('filtered');
+      expect(directive.body.filtered).toBe(true);
+      expect(directive.body.response).not.toContain('20 minutes');
+      expect(directive.body.handoff).toBe(WEIGHT_BANNER);
+
+      const teaching = await ask(role, 'How do I cut weight for my weight class?');
+      expect(teaching.body.state).toBe('ok');
+      expect(teaching.body.response).toBe(TAUGHT_ANSWER);
+    });
+
     test('CONTROL: an answer the untouched rules catch is still withheld after the model writes it', async () => {
       const { body, providerCalled } = await ask(role, 'How do I cut weight for my weight class?', 'You are cleared to spar, and cut 6 pounds in the sauna tonight.');
 
@@ -3428,6 +3444,39 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       expect(body.state).toBe('filtered');
       expect(body.filtered).toBe(true);
       expect(body.response).not.toContain('sauna');
+    });
+  });
+
+  // Lane question 6, option b (Overwatch, 2026-10-11): a family's question
+  // about a cut method that main answered as an ordinary question is still
+  // answered, and now leaves a staff review row. For staff it is main's.
+  describe('a sauna question that uses none of main\'s weight-cut wording', () => {
+    const QUESTION = "I'm 12, how long should I sit in the sauna";
+
+    test.each(['athlete', 'parent'] as const)('%s: answered, and one staff review row is written', async (role) => {
+      const { status, body, providerCalled, reviews } = await ask(role, QUESTION);
+
+      expect(status).toBe(200);
+      expect(providerCalled).toBe(true);
+      expect(body.state).toBe('ok');
+      expect(body.response).toBe(TAUGHT_ANSWER);
+      expect(body.highRiskTopic).toBe('weight_cutting');
+      expect(body.handoff).toBe(WEIGHT_BANNER);
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0]).toMatchObject({
+        category: 'weight_cutting',
+        severity: 'high',
+        summary: 'A high-risk SHADOW chat request was flagged for human review.',
+      });
+    });
+
+    test.each(['coach', 'organization_admin'] as const)('%s: answered as on main, with no review row', async (role) => {
+      const { body, providerCalled, reviews } = await ask(role, QUESTION);
+
+      expect(providerCalled).toBe(true);
+      expect(body.state).toBe('ok');
+      expect(body.highRiskTopic).toBeUndefined();
+      expect(reviews).toHaveLength(0);
     });
   });
 });
