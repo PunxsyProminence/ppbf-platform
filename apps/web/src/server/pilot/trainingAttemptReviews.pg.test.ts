@@ -21,7 +21,19 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
+
+import type { PilotPrincipal } from './auth';
+import { requirePrincipal } from './http';
+
+// Lane N3-01's route-level block (bottom of this file) drives the real routes.
+// They take their principal from here; everything else in the module -- and
+// every other module, access.ts included -- stays real.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
 
 jest.setTimeout(180_000);
 
@@ -36,12 +48,18 @@ const BASE_SQL = 'pilot_slice_postgres.sql';
 const ATTEMPTS_SQL = 'pilot_slice_postgres_training_attempts_migration.sql';
 const SPARRING_SQL = 'pilot_slice_postgres_sparring_attempt_contexts_migration.sql';
 const REVIEWS_SQL = 'pilot_slice_postgres_training_attempt_reviews_migration.sql';
+// pilot.athletes.deleted_at, which the real athlete-access check reads.
+const DELETION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 
 const ORG_ID = 'org-reviews';
 const OTHER_ORG_ID = 'org-elsewhere';
 const ADMIN_ID = 'acct-reviews-admin';
 const COACH_ID = 'acct-reviews-coach';
 const ATHLETE_ID = 'ath-reviews-1';
+// Same gym as COACH_ID, coach of record for nobody and holding no cover.
+const UNASSIGNED_COACH_ID = 'acct-reviews-coach-unassigned';
+// A coach in the other gym.
+const FOREIGN_COACH_ID = 'acct-elsewhere-coach';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -92,6 +110,12 @@ async function seedTenancy(c: Client): Promise<void> {
      values ($1, 'organization_admin', $2, 'microsoft'), ($3, 'coach', $2, 'microsoft')
      on conflict do nothing`,
     [ADMIN_ID, ORG_ID, COACH_ID],
+  );
+  await c.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'coach', $2, 'microsoft'), ($3, 'coach', $4, 'microsoft')
+     on conflict do nothing`,
+    [UNASSIGNED_COACH_ID, ORG_ID, FOREIGN_COACH_ID, OTHER_ORG_ID],
   );
   await c.query(
     `insert into pilot.athletes
@@ -187,6 +211,7 @@ beforeAll(async () => {
   await migrate.query(await readMigration(ATTEMPTS_SQL));
   await migrate.query(await readMigration(SPARRING_SQL));
   await migrate.query(await readMigration(REVIEWS_SQL));
+  await migrate.query(await readMigration(DELETION_SQL));
   await seedTenancy(migrate);
   await migrate.end();
 
@@ -514,5 +539,231 @@ describe('database invariants', () => {
 
   test('recordReview on a nonexistent attempt is a hidden null, not a thrown error', async () => {
     expect(await attempts.recordReview({ organizationId: ORG_ID, attemptId: 'no-such-attempt', reviewState: 'confirmed', reviewedByAccountId: COACH_ID })).toBeNull();
+  });
+});
+
+// Lane N3-01 (work order DONE WHEN). Everything above calls the modules. This
+// block is the coach's whole path through the REAL routes -- record, list,
+// review, review history, transfer check -- with the REAL access.ts deciding
+// which athlete each coach may reach, on a real database. Only the session
+// lookup is stood in for. What it proves and the mocked route tests cannot:
+// the readout a coach is handed follows the reviews they wrote, and a coach
+// who is not this athlete's coach gets nothing and writes nothing.
+describe('through the routes: record, correct, dispute, and the transfer readout that follows', () => {
+  const mockRequirePrincipal = requirePrincipal as jest.Mock;
+
+  let attemptsRoute: typeof import('@/app/api/pilot/training-attempts/route');
+  let reviewRoute: typeof import('@/app/api/pilot/training-attempts/review/route');
+  let transferRoute: typeof import('@/app/api/pilot/coach/transfer-check/route');
+
+  interface AttemptItem {
+    attempt_id: string;
+    achieved_value: string;
+    made: boolean | null;
+    review_state: string | null;
+    corrected_achieved_value: string | null;
+    corrected_made: boolean | null;
+    effective_made: boolean | null;
+  }
+  interface ReadoutItem {
+    metric_kind: string;
+    controlled_makes: number;
+    controlled_misses: number;
+    live_makes: number;
+    live_misses: number;
+    state: string;
+  }
+
+  beforeAll(async () => {
+    attemptsRoute = await import('@/app/api/pilot/training-attempts/route');
+    reviewRoute = await import('@/app/api/pilot/training-attempts/review/route');
+    transferRoute = await import('@/app/api/pilot/coach/transfer-check/route');
+  });
+
+  function signInAs(accountId: string, organizationId: string): void {
+    const principal: PilotPrincipal = {
+      accountId,
+      role: 'coach',
+      organizationId,
+      athleteId: null,
+      sessionToken: `token-${accountId}`,
+      authProvider: 'microsoft',
+    };
+    mockRequirePrincipal.mockResolvedValue(principal);
+  }
+
+  const get = (pathAndQuery: string) => new NextRequest(`http://localhost${pathAndQuery}`);
+  const post = (pathname: string, body: unknown) =>
+    new NextRequest(`http://localhost${pathname}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  /** Records one targeted reps attempt (target 10) through the route. */
+  async function record(contextType: string, achieved: number): Promise<AttemptItem> {
+    const response = await attemptsRoute.POST(post('/api/pilot/training-attempts', {
+      athlete_id: ATHLETE_ID,
+      metric_kind: 'reps',
+      context_type: contextType,
+      target_value: 10,
+      achieved_value: achieved,
+    }));
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { item: AttemptItem }).item;
+  }
+
+  async function review(body: Record<string, unknown>): Promise<Response> {
+    return reviewRoute.POST(post('/api/pilot/training-attempts/review', body));
+  }
+
+  async function repsReadout(): Promise<ReadoutItem | undefined> {
+    const response = await transferRoute.GET(get(`/api/pilot/coach/transfer-check?athlete_id=${ATHLETE_ID}`));
+    expect(response.status).toBe(200);
+    const { items } = (await response.json()) as { items: ReadoutItem[] };
+    return items.find((item) => item.metric_kind === 'reps');
+  }
+
+  async function listed(): Promise<AttemptItem[]> {
+    const response = await attemptsRoute.GET(get(`/api/pilot/training-attempts?athlete_id=${ATHLETE_ID}`));
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { items: AttemptItem[] }).items;
+  }
+
+  async function rowCounts(): Promise<{ attempts: number; reviews: number }> {
+    const c = await client();
+    try {
+      const result = await c.query(
+        `select (select count(*)::int from pilot.training_attempts) as attempts,
+                (select count(*)::int from pilot.training_attempt_reviews) as reviews`,
+      );
+      return result.rows[0] as { attempts: number; reviews: number };
+    } finally {
+      await c.end();
+    }
+  }
+
+  test('the assigned coach records, corrects and disputes, and each readout is built from the right evidence', async () => {
+    signInAs(COACH_ID, ORG_ID);
+
+    // Practice: three makes and one miss. The verdict is the server's.
+    expect((await record('assessment', 10)).made).toBe(true);
+    await record('assessment', 11);
+    await record('assessment', 10);
+    expect((await record('assessment', 8)).made).toBe(false);
+
+    // Strong in practice, never tried live: untested, not failing.
+    expect(await repsReadout()).toMatchObject({
+      controlled_makes: 3, controlled_misses: 1, live_makes: 0, live_misses: 0, state: 'untested_live',
+    });
+
+    // Three live misses: the gain is not transferring.
+    const liveA = await record('open_sparring', 4);
+    const liveB = await record('open_sparring', 5);
+    await record('open_sparring', 6);
+    expect(await repsReadout()).toMatchObject({ live_makes: 0, live_misses: 3, state: 'not_transferring' });
+
+    // CORRECT one live miss: the coach counted ten on film. It now counts as a
+    // make (1 of 3 clears the weak line), and the athlete's own number stays.
+    const corrected = await review({
+      attempt_id: liveA.attempt_id,
+      review_state: 'corrected',
+      corrected_target_value: 10,
+      corrected_achieved_value: 10,
+      reason: 'ten clean reps on the film of this round',
+    });
+    expect(corrected.status).toBe(200);
+    expect(((await corrected.json()) as { item: { corrected_made: boolean } }).item.corrected_made).toBe(true);
+    expect(await repsReadout()).toMatchObject({ live_makes: 1, live_misses: 2, state: 'transferring' });
+
+    const afterCorrection = (await listed()).find((item) => item.attempt_id === liveA.attempt_id);
+    expect(afterCorrection).toMatchObject({
+      achieved_value: '4', made: false,
+      review_state: 'corrected', corrected_achieved_value: '10', corrected_made: true,
+      effective_made: true,
+    });
+
+    // DISPUTE another live miss: it is evidence for neither side now, which
+    // leaves two live attempts -- too few to say anything.
+    const disputed = await review({
+      attempt_id: liveB.attempt_id,
+      review_state: 'disputed',
+      reason: 'this round was logged against the wrong athlete',
+    });
+    expect(disputed.status).toBe(200);
+    expect(await repsReadout()).toMatchObject({ live_makes: 1, live_misses: 1, state: 'insufficient_evidence' });
+
+    const afterDispute = (await listed()).find((item) => item.attempt_id === liveB.attempt_id);
+    expect(afterDispute).toMatchObject({ achieved_value: '5', made: false, review_state: 'disputed', effective_made: null });
+
+    // CONFIRM it after all: the dispute is resolved back to the source miss,
+    // and the dispute is still in the history.
+    expect((await review({ attempt_id: liveB.attempt_id, review_state: 'confirmed' })).status).toBe(200);
+    expect(await repsReadout()).toMatchObject({ live_makes: 1, live_misses: 2, state: 'transferring' });
+
+    const history = await reviewRoute.GET(get(`/api/pilot/training-attempts/review?attempt_id=${liveB.attempt_id}`));
+    expect(history.status).toBe(200);
+    const states = ((await history.json()) as { items: Array<{ review_state: string }> }).items.map((item) => item.review_state);
+    expect(states.sort()).toEqual(['confirmed', 'disputed']);
+
+    expect(await rowCounts()).toEqual({ attempts: 7, reviews: 3 });
+  });
+
+  describe('a coach who is not this athlete\'s coach', () => {
+    let attemptId: string;
+
+    beforeEach(async () => {
+      signInAs(COACH_ID, ORG_ID);
+      attemptId = (await record('assessment', 8)).attempt_id;
+    });
+
+    async function expectNothingReadAndNothingWritten(refusals: Response[]): Promise<void> {
+      for (const response of refusals) {
+        const body = (await response.json()) as Record<string, unknown>;
+        expect(body).not.toHaveProperty('items');
+        expect(body).not.toHaveProperty('item');
+      }
+      expect(await rowCounts()).toEqual({ attempts: 1, reviews: 0 });
+    }
+
+    test('in the same gym: refused on every route, and nothing is written', async () => {
+      signInAs(UNASSIGNED_COACH_ID, ORG_ID);
+
+      const refusals = [
+        await attemptsRoute.GET(get(`/api/pilot/training-attempts?athlete_id=${ATHLETE_ID}`)),
+        await attemptsRoute.POST(post('/api/pilot/training-attempts', {
+          athlete_id: ATHLETE_ID, metric_kind: 'reps', context_type: 'assessment', target_value: 10, achieved_value: 10,
+        })),
+        await review({ attempt_id: attemptId, review_state: 'confirmed' }),
+        await review({
+          attempt_id: attemptId, review_state: 'corrected', corrected_target_value: 10, corrected_achieved_value: 10,
+          reason: 'not my athlete, but trying anyway',
+        }),
+        await reviewRoute.GET(get(`/api/pilot/training-attempts/review?attempt_id=${attemptId}`)),
+        await transferRoute.GET(get(`/api/pilot/coach/transfer-check?athlete_id=${ATHLETE_ID}`)),
+      ];
+
+      expect(refusals.map((response) => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
+      await expectNothingReadAndNothingWritten(refusals);
+    });
+
+    test('in another gym: the athlete is refused and the attempt does not exist', async () => {
+      signInAs(FOREIGN_COACH_ID, OTHER_ORG_ID);
+
+      const refusals = [
+        await attemptsRoute.GET(get(`/api/pilot/training-attempts?athlete_id=${ATHLETE_ID}`)),
+        await attemptsRoute.POST(post('/api/pilot/training-attempts', {
+          athlete_id: ATHLETE_ID, metric_kind: 'reps', context_type: 'assessment', target_value: 10, achieved_value: 10,
+        })),
+        // The attempt is loaded inside the caller's own gym first, so another
+        // gym's attempt id is a hidden not-found, never a "forbidden".
+        await review({ attempt_id: attemptId, review_state: 'confirmed' }),
+        await reviewRoute.GET(get(`/api/pilot/training-attempts/review?attempt_id=${attemptId}`)),
+        await transferRoute.GET(get(`/api/pilot/coach/transfer-check?athlete_id=${ATHLETE_ID}`)),
+      ];
+
+      expect(refusals.map((response) => response.status)).toEqual([403, 403, 404, 404, 403]);
+      await expectNothingReadAndNothingWritten(refusals);
+    });
   });
 });
