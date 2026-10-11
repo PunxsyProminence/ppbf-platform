@@ -330,6 +330,7 @@ describe('a template whose drills the gym already runs', () => {
         { step: 2, item_id: 'wti_2', assignment: assignment('op-2', 2) },
       ],
       adopted: [],
+      updated: [],
     });
   });
 
@@ -1212,10 +1213,12 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     expect(mockCard.mock.calls[0][1]).toBe(transactionClient);
     expect(result).toMatchObject({
       outcome: 'issued',
-      adopted: [{ drill_id: 'op-new-ref-1', reference_drill_id: 'ref-1', name: 'Drill ref-1', updated_from_drill_id: 'op-old' }],
+      // An update is not an adoption: the gym already had the drill.
+      adopted: [],
+      updated: [{ drill_id: 'op-new-ref-1', reference_drill_id: 'ref-1', name: 'Drill ref-1', updated_from_drill_id: 'op-old' }],
     });
     // The issue's own audit row names the new version it assigned.
-    expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({ adopted_drill_ids: ['op-new-ref-1'] });
+    expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({ adopted_drill_ids: [], updated_drill_ids: ['op-new-ref-1'] });
   });
 
   test("the drill's own name is not a clash with itself; another drill's is, and nothing is updated", async () => {
@@ -1276,7 +1279,7 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
     expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-new-ref-1', 'op-new-ref-1']);
     expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({
-      adopted_drill_ids: ['op-new-ref-1'],
+      adopted_drill_ids: [],
       updated_drill_ids: ['op-new-ref-1'],
     });
   });

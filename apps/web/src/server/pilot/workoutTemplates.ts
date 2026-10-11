@@ -272,12 +272,20 @@ export interface TemplateIssuedStep {
 }
 
 export interface TemplateAdoptedDrill {
-  /** The gym's new operational drill, or the new version of an updated one. */
+  /** The gym's new operational drill. */
   drill_id: string;
   reference_drill_id: string;
   name: string;
-  /** For a drill updated in place to this reference version: the version it replaced. */
-  updated_from_drill_id?: string;
+}
+
+/** A drill the gym already ran, updated in place to the reference version a step names (D1). Not an adoption. */
+export interface TemplateUpdatedDrill {
+  /** The new version of the gym's drill. */
+  drill_id: string;
+  reference_drill_id: string;
+  name: string;
+  /** The version it replaced. */
+  updated_from_drill_id: string;
 }
 
 export type TemplateIssueResult =
@@ -290,6 +298,7 @@ export type TemplateIssueResult =
       template: { template_id: string; name: string; version: number };
       steps: TemplateIssuedStep[];
       adopted: TemplateAdoptedDrill[];
+      updated: TemplateUpdatedDrill[];
     }
   // A repeat of a request that already issued this workout: nothing was
   // written this time. The template is as it was issued.
@@ -648,6 +657,7 @@ export async function issueWorkoutTemplate(params: {
     return await withTransaction(async (client) => {
       const drillByReference = new Map(plan.operational);
       const adopted: TemplateAdoptedDrill[] = [];
+      const updated: TemplateUpdatedDrill[] = [];
 
       for (const reference of plan.adoptions) {
         // The promote route's mapping, and the whole of it: focus <- purpose,
@@ -684,7 +694,7 @@ export async function issueWorkoutTemplate(params: {
             }
           }
           drillByReference.set(reference.drill_id, drill.drill_id);
-          adopted.push({
+          updated.push({
             drill_id: drill.drill_id,
             reference_drill_id: reference.drill_id,
             name: drill.name,
@@ -790,7 +800,7 @@ export async function issueWorkoutTemplate(params: {
               drill_id: issued.assignment.drill_id,
             })),
             adopted_drill_ids: adopted.map((drill) => drill.drill_id),
-            updated_drill_ids: adopted.filter((drill) => drill.updated_from_drill_id).map((drill) => drill.drill_id),
+            updated_drill_ids: updated.map((drill) => drill.drill_id),
           },
         },
         client,
@@ -802,6 +812,7 @@ export async function issueWorkoutTemplate(params: {
         template: issuedTemplate,
         steps,
         adopted,
+        updated,
       };
     });
   } catch (error) {

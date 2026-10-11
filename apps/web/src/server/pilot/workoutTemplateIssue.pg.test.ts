@@ -738,8 +738,9 @@ describe('a refusal writes nothing', () => {
 
     expect(result).toMatchObject({ outcome: 'issued' });
     if (result.outcome !== 'issued') return;
-    const newId = result.adopted[0]?.drill_id;
-    expect(result.adopted).toEqual([
+    const newId = result.updated[0]?.drill_id;
+    expect(result.adopted).toEqual([]);
+    expect(result.updated).toEqual([
       { drill_id: newId, reference_drill_id: 'ref-v2', name: 'Versioned Drill II', updated_from_drill_id: oldId },
     ]);
     expect(result.steps[0].assignment).toMatchObject({ drill_id: newId, drill_description: 'Versioned Drill II purpose.' });
@@ -777,6 +778,15 @@ describe('a refusal writes nothing', () => {
       adopted_by: 'workout_template_issue',
       template_id: TEMPLATE_ID,
     })]);
+    // The issue's own audit row: an update is not counted as an adoption.
+    const { rows: issueAudit } = await client.query(
+      `select details from pilot.audit_events
+       where organization_id = $1 and entity_type = 'workout_template_issue'`,
+      [gym.organizationId],
+    );
+    expect(issueAudit.map((row) => row.details)).toEqual([
+      expect.objectContaining({ adopted_drill_ids: [], updated_drill_ids: [newId] }),
+    ]);
 
     // A template still naming the version the gym moved on from issues the
     // drill the gym runs now: no "retired, restore it", no second update.
@@ -805,8 +815,9 @@ describe('a refusal writes nothing', () => {
 
     expect(result).toMatchObject({ outcome: 'issued' });
     if (result.outcome !== 'issued') return;
-    const newId = result.adopted[0]?.drill_id;
-    expect(result.adopted).toEqual([
+    const newId = result.updated[0]?.drill_id;
+    expect(result.adopted).toEqual([]);
+    expect(result.updated).toEqual([
       { drill_id: newId, reference_drill_id: 'ref-v2', name: 'Versioned Drill II', updated_from_drill_id: oldId },
     ]);
     expect(result.steps.map((step) => step.assignment.drill_id)).toEqual([newId, newId]);
