@@ -902,6 +902,23 @@ describe('a gym updates its drill to the newer reference version in place (OD-20
     expect(drill.supersedes_drill_id).toBe('op-jab-refined');
   });
 
+  test('the legacy shape (an earlier version running, the newest not) is in use, not retired: updated, and one version runs after', async () => {
+    const { gym, rootId } = await gymOnV1('update-legacy');
+    await refineOperational(gym, rootId, 'op-jab-2');
+    // Two statements: one active row per name is checked row by row.
+    await client.query(`update pilot.drills set active = false where organization_id = $1 and drill_id = 'op-jab-2'`, [gym]);
+    await client.query(`update pilot.drills set active = true where organization_id = $1 and drill_id = $2`, [gym, rootId]);
+
+    const { previous } = await updateTo(gym, rootId);
+
+    expect(previous.drill_id).toBe('op-jab-2');
+    expect((await versionsOf(gym, rootId)).map((row) => [row.version, row.active])).toEqual([
+      [1, false],
+      [2, false],
+      [3, true],
+    ]);
+  });
+
   test('a gym already on that version is told so, and no second version is written', async () => {
     const { gym, rootId } = await gymOnV1('update-twice');
     await updateTo(gym, rootId);
