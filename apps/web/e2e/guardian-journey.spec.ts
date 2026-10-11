@@ -156,7 +156,7 @@ test.describe('Guardian journey', () => {
                 objective_id: 'obj-1',
                 domain: 'nutrition_body_composition',
                 objective: 'Eat a real breakfast before morning conditioning.',
-                status: 'draft',
+                status: 'active',
               }],
             }],
           };

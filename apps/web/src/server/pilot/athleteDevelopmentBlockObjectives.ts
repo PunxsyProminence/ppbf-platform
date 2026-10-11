@@ -28,8 +28,14 @@ import { ForbiddenError, ValidationError } from './errors';
 // place to ask whether this actor may see it. Every read here resolves its
 // parent through getDevelopmentBlock, which is athlete-scoped since the
 // 2026-08-28 read decision ("Admin, Coach, Athlete, Guardian"), so an
-// objective is reachable by precisely the people who can reach its block.
+// objective is reachable ONLY by the people who can reach its block.
 // Restating the access rule here instead would be a second copy of it.
+//
+// ONE THING IS DECIDED HERE AND NOT ON THE BLOCK: which statuses an athlete
+// or a parent is given (OD-2026-10-09-004, FAMILY_VISIBLE_OBJECTIVE_STATUSES
+// below). That is narrower than reach -- a family that can open the block
+// still does not read its draft or cancelled objectives -- and it is a fact
+// about an objective's own status, so it has no parent to ask.
 
 // All ten Full Spectrum domains. 'nutrition_body_composition' shipped
 // withheld and was admitted by owner decision 2026-08-28, once module 200
@@ -65,6 +71,36 @@ export type FullSpectrumDomain = (typeof FULL_SPECTRUM_DOMAINS)[number];
 export type ObjectiveStatus = DevelopmentBlockStatus;
 
 export const OBJECTIVE_STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
+
+/**
+ * What an athlete or a parent may read of a block's objectives: the ones the
+ * coach has put in front of them. A draft is an objective the coach is still
+ * writing; a cancelled one was taken back. Owner decision OD-2026-10-09-004
+ * ("Hide them (Recommended)"): inside a block a family may read, athletes and
+ * parents see only active and completed objectives -- the same cut PLAN-4
+ * (OD-2026-10-08-006) makes for blocks, and the same for both roles.
+ *
+ * ONE LIST, read by the SQL below and by the family route. Coaches and
+ * organization admins are not narrowed by it anywhere.
+ */
+export const FAMILY_VISIBLE_OBJECTIVE_STATUSES = ['active', 'completed'] as const satisfies
+  readonly ObjectiveStatus[];
+
+export function isFamilyVisibleObjectiveStatus(status: string): boolean {
+  return (FAMILY_VISIBLE_OBJECTIVE_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Who reads every status: the roles that author objectives (the same three
+ * the coach route admits). EVERY OTHER ROLE gets the family cut -- written
+ * as "staff read all" rather than "athlete and parent read less" so that a
+ * role added later starts narrowed instead of starting with drafts. Today the
+ * only other roles that can reach a block at all are athlete and parent
+ * (canActorReachAthlete refuses the rest), so this is the ruling's two roles.
+ */
+function readsEveryObjectiveStatus(actor: ActorIdentity): boolean {
+  return actor.role === 'coach' || actor.role === 'organization_admin' || actor.role === 'admin';
+}
 
 export interface BlockObjectiveRow {
   organization_id: string;
@@ -166,7 +202,9 @@ export async function addBlockObjective(input: BlockObjectiveInput & {
 /**
  * Null for an objective in another organization, and null for one whose block
  * this actor cannot open. Both answer the same way as an objective id that
- * does not exist.
+ * does not exist. Null too for an athlete or a parent asking for a draft or
+ * cancelled objective (FAMILY_VISIBLE_OBJECTIVE_STATUSES), again the same
+ * answer as an id that does not exist.
  */
 export async function getBlockObjective(
   actor: ActorIdentity,
@@ -178,6 +216,7 @@ export async function getBlockObjective(
     [actor.organizationId, objectiveId],
   );
   if (!objective) return null;
+  if (!readsEveryObjectiveStatus(actor) && !isFamilyVisibleObjectiveStatus(objective.status)) return null;
   // Access lives on the parent, so ask the parent.
   return (await getDevelopmentBlock(actor, objective.block_id)) ? objective : null;
 }
@@ -189,17 +228,25 @@ export async function getBlockObjective(
  * Empty for a block in another organization -- a block id is not a key into
  * this table on its own, only the pair is -- and empty for a block this actor
  * cannot open.
+ *
+ * An athlete or a parent is given only the active and completed objectives
+ * (FAMILY_VISIBLE_OBJECTIVE_STATUSES), cut in the query so a draft or
+ * cancelled row never leaves the database for a family. Staff are given
+ * every row: for them the status list is null and the predicate is skipped,
+ * so their read is the one it was before the cut existed.
  */
 export async function listObjectivesForBlock(
   actor: ActorIdentity,
   blockId: string,
 ): Promise<BlockObjectiveRow[]> {
   if (!(await getDevelopmentBlock(actor, blockId))) return [];
+  const onlyStatuses = readsEveryObjectiveStatus(actor) ? null : [...FAMILY_VISIBLE_OBJECTIVE_STATUSES];
   return query<BlockObjectiveRow>(
     `select ${FIELDS} from pilot.athlete_development_block_objectives
      where organization_id = $1 and block_id = $2
+       and ($4::text[] is null or status = any($4::text[]))
      order by array_position($3::text[], domain), created_at asc, objective_id asc`,
-    [actor.organizationId, blockId, [...FULL_SPECTRUM_DOMAINS]],
+    [actor.organizationId, blockId, [...FULL_SPECTRUM_DOMAINS], onlyStatuses],
   );
 }
 
