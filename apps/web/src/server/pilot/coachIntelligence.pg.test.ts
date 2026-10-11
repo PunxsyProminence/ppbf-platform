@@ -40,6 +40,10 @@ const MIGRATION_FILES = [
   'pilot_slice_postgres_safety_escalations_migration.sql',
   'pilot_slice_postgres_compliance_migration.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
+  // getPerformanceRollup counts training days from this view (it unions
+  // activity_log, scheduler_attendance and attendance, all in the base schema
+  // or the migration above).
+  'pilot_slice_postgres_attendance_precedence_migration.sql',
   'pilot_slice_postgres_readiness_provenance_migration.sql',
   'pilot_slice_postgres_session_rpe_semantics_migration.sql',
   'pilot_slice_postgres_session_duration_migration.sql',

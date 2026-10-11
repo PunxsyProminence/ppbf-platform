@@ -302,7 +302,8 @@ export async function getCoachIntelligence(
       // Mirrors progressionSuggestions.ts's training_days_dropping rule
       // exactly, including the boundary: losing exactly half counts as
       // "lost at least half of" (<=), not just losing more than half (<).
-      row.training_days_early >= TRAINING_DAYS_MIN_EARLY
+      row.training_days_recorded_late > 0
+      && row.training_days_early >= TRAINING_DAYS_MIN_EARLY
       && row.training_days_late <= row.training_days_early * TRAINING_DAYS_DROP_RATIO)
     .map((row) => ({
       athlete_id: row.athlete_id,

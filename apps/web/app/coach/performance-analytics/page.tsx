@@ -7,11 +7,10 @@ import { apiBase } from '@/lib/apiBase';
 
 // Read-only rollup over data the gym already records: session logs and RPE
 // (pilot.sessions), readiness check-ins (pilot.readiness), go-forward
-// training-day evidence (pilot.activity_log), and the progression loop.
-// Numbers are labeled by their actual source -- "training days" is the
-// activity log's evidence stream, deliberately NOT an attendance percentage,
-// because attendance-source adjudication is a separately owned decision (see
-// performanceAnalytics.ts).
+// training-day evidence (the reconciled class register,
+// pilot.attendance_reconciled), and the progression loop.
+// Numbers are labeled by their actual source -- "training days" counts
+// present days in that register, deliberately NOT an attendance percentage.
 interface PerformanceItem {
   athlete_id: string;
   full_name: string;
@@ -21,6 +20,8 @@ interface PerformanceItem {
   avg_session_load: number | null;
   session_load_count: number;
   training_days: number;
+  // Days with any mark in the window; 0 means no register, not a zero.
+  training_days_recorded?: number;
   readiness_count: number;
   avg_readiness: number | null;
   readiness_early_avg: number | null;
@@ -294,7 +295,9 @@ export default function PerformanceAnalyticsPage() {
                         </span>
                       ) : null}
                     </Figure>
-                    <Figure label="Training days">{item.training_days}</Figure>
+                    <Figure label="Training days">
+                      {item.training_days_recorded === 0 ? '—' : item.training_days}
+                    </Figure>
                     <Figure label="Readiness">
                       {formatNumber(item.avg_readiness)}
                       {item.readiness_count > 0 ? (
@@ -322,9 +325,6 @@ export default function PerformanceAnalyticsPage() {
         <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
           <Link href="/coach/progression-intelligence" className="btn btn--ghost">
             Progression Intelligence
-          </Link>
-          <Link href="/coach/operations" className="btn btn--ghost">
-            Coach Operations
           </Link>
         </div>
       </div>
