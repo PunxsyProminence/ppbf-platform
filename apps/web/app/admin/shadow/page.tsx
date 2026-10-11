@@ -180,7 +180,9 @@ const INTAKE_QUEUE_UNAVAILABLE =
   'The intake queue could not be loaded. The list is unavailable, not empty. Reload to retry.';
 const INTAKE_QUEUE_LOADING = 'Loading intake queue…';
 
-function readShadowOperationalStreams() {
+// The authority stream is the gym's and refuses the platform owner
+// (OD-2026-10-10-004 ruling 3), so it is asked for only when the caller says so.
+function readShadowOperationalStreams(includeAuthority: boolean) {
   return Promise.all([
     fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
       credentials: 'include',
@@ -188,12 +190,14 @@ function readShadowOperationalStreams() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ limit: 40 }),
     }),
-    fetch(`${apiBase()}/api/pilot/shadow/authority`, {
-      credentials: 'include',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 40 }),
-    }),
+    includeAuthority
+      ? fetch(`${apiBase()}/api/pilot/shadow/authority`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 40 }),
+      })
+      : Promise.resolve(null),
   ]);
 }
 
@@ -1094,6 +1098,12 @@ function renderFeedbackReviewPanel(props: {
 export default function AdminShadowConsolePage() {
   const pilotSession = usePilotSession();
   const intakeWriteRefusal = pilotSession.role === 'platform_owner' ? INTAKE_WRITE_REFUSAL : '';
+  // The gym-only reads on this console -- authority, the intake queue
+  // (review-projection), SHADOW Intelligence (metrics) and Feature Unlocks --
+  // refuse the platform owner (OD-2026-10-10-004 ruling 3; OD-2026-10-08-003).
+  // For that role their panels are not drawn and their requests are not sent.
+  // Null is a session not read yet: nothing gym-only is asked.
+  const gymReads: boolean | null = pilotSession.loading ? null : pilotSession.role !== 'platform_owner';
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
       id: newId(),
@@ -1158,6 +1168,8 @@ export default function AdminShadowConsolePage() {
   }, [consoleLogs]);
 
   useEffect(() => {
+    if (gymReads === null) return;
+    // refreshBackendQueue itself asks only when gymReads is true.
     void refreshBackendQueue().catch((error) => {
       backendQueueReadyRef.current = false;
       setBackendQueueReady(false);
@@ -1208,14 +1220,17 @@ export default function AdminShadowConsolePage() {
       }
     };
 
-    void loadMetrics();
-  }, []);
+    if (gymReads) void loadMetrics();
+    // Runs once, when the session has been read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gymReads]);
 
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
 
   // The read state is set here, not in a caller's catch: this runs on mount
   // and again after every review action, promotion and upload.
   async function refreshBackendQueue() {
+    if (gymReads !== true) return;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
         credentials: 'include',
@@ -1365,9 +1380,9 @@ export default function AdminShadowConsolePage() {
 
   async function refreshShadowOperationalReads() {
     let telemetryResponse: Response;
-    let authorityResponse: Response;
+    let authorityResponse: Response | null;
     try {
-      [telemetryResponse, authorityResponse] = await readShadowOperationalStreams();
+      [telemetryResponse, authorityResponse] = await readShadowOperationalStreams(gymReads === true);
     } catch (error) {
       setShadowTelemetryRead('unavailable');
       setShadowAuthorityRead('unavailable');
@@ -1388,6 +1403,7 @@ export default function AdminShadowConsolePage() {
       setShadowTelemetryRead('unavailable');
     }
 
+    if (authorityResponse === null) return;
     const authorityPayload = authorityResponse.ok
       ? ((await authorityResponse.json().catch(() => null)) as Partial<ShadowAuthorityApiResponse> | null)
       : null;
@@ -1889,7 +1905,7 @@ export default function AdminShadowConsolePage() {
           FUNCTIONAL_CHANGES: NONE. */}
       <main className="ge-afterhours grid gap-[var(--s5)] xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
-        {renderMetricsPanel(growthMetrics, metricsLoading, metricsError)}
+        {gymReads === true ? renderMetricsPanel(growthMetrics, metricsLoading, metricsError) : null}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}
         {renderFeedbackReviewPanel({
           summary: feedbackSummary,
@@ -1914,7 +1930,7 @@ export default function AdminShadowConsolePage() {
         {/* ── Library Review Flags (negative-outcome verdicts) ─────── */}
         <LibraryReviewFlagsPanel />
 
-        <FeatureUnlockPanel />
+        {gymReads === true ? <FeatureUnlockPanel /> : null}
         {/* A riveted brass frame is the Front Office's Feel line -- .rivet--tl
             appears on eleven other /admin/* office surfaces, so this console
             was sharing its frame vocabulary with /admin/people. ppbf.css also
@@ -1994,6 +2010,7 @@ export default function AdminShadowConsolePage() {
             </form>
           </section>
 
+          {gymReads === true ? (
           <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
             <div className="mb-[var(--s4)] flex items-center justify-between gap-[var(--s4)]">
               <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>PENDING IMPORT QUEUE</h3>
@@ -2078,6 +2095,7 @@ export default function AdminShadowConsolePage() {
               </div>
             )}
           </section>
+          ) : null}
         </section>
 
         <aside className="space-y-[var(--s4)]">
@@ -2248,7 +2266,7 @@ export default function AdminShadowConsolePage() {
               onClick={() => setShowTelemetry((current) => !current)}
               className="btn--lever min-h-[44px] w-full justify-center"
             >
-              {showTelemetry ? 'Hide' : 'Show'} telemetry and authority streams
+              {showTelemetry ? 'Hide' : 'Show'} {gymReads === true ? 'telemetry and authority streams' : 'telemetry stream'}
             </button>
             {showTelemetry && (
               <div className="mt-[var(--s4)] max-h-[220px] space-y-[var(--s3)] overflow-y-auto border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s3)] font-mono text-[length:var(--t-xs)] text-[color:var(--brass-300)]">
@@ -2275,6 +2293,7 @@ export default function AdminShadowConsolePage() {
                   ))}
                 </div>
 
+                {gymReads === true ? (
                 <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s3)]">
                   <p className="t-eyebrow mb-[var(--s3)]">SHADOW authority read model</p>
                   {shadowAuthorityRead === 'unavailable' ? (
@@ -2290,17 +2309,28 @@ export default function AdminShadowConsolePage() {
                     </pre>
                   ))}
                 </div>
+                ) : null}
               </div>
             )}
           </section>
 
           <div className="flex gap-[var(--s3)] pt-[var(--s3)]">
-            <Link
-              href="/admin"
-              className="btn btn--ghost flex-1"
-            >
-              Admin Hub
-            </Link>
+            {/* /admin is a per-gym notice for the platform owner; its exit is its own desk. */}
+            {pilotSession.role === 'platform_owner' ? (
+              <Link
+                href="/admin/platform"
+                className="btn btn--ghost flex-1"
+              >
+                Platform Desk
+              </Link>
+            ) : (
+              <Link
+                href="/admin"
+                className="btn btn--ghost flex-1"
+              >
+                Admin Hub
+              </Link>
+            )}
             <Link
               href="/shadow"
               className="btn btn--ghost flex-1"

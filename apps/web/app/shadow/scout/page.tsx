@@ -132,8 +132,10 @@ function ScoutReportView() {
   const [generateNotice, setGenerateNotice] = useState('');
   const [generateError, setGenerateError] = useState('');
 
-  const canAccessAdmin = ['admin', 'organization_admin', 'platform_owner', 'coach'].includes(userRole);
-  const canViewOrgMetrics = ['admin', 'organization_admin', 'platform_owner'].includes(userRole);
+  // platform_owner is off both lists: the job list and the metrics read refuse
+  // it (OD-2026-10-10-004 ruling 3), so it gets the refusal below and no call.
+  const canAccessAdmin = ['admin', 'organization_admin', 'coach'].includes(userRole);
+  const canViewOrgMetrics = ['admin', 'organization_admin'].includes(userRole);
 
   const loadData = useCallback(async () => {
     setLoadingJobs(true);
@@ -275,6 +277,9 @@ function ScoutReportView() {
           />
           <div className="mt-[var(--s5)] flex flex-wrap items-center justify-center gap-[var(--s3)]">
             <Link href="/shadow" className="btn btn--ghost">SHADOW</Link>
+            {userRole === 'platform_owner' ? (
+              <Link href="/admin/platform" className="btn btn--ghost">Platform Desk</Link>
+            ) : null}
           </div>
         </div>
       </main>
