@@ -112,6 +112,8 @@ describe('the platform owner', () => {
 
     await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
     await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/gym-capabilities', 'GET')).toHaveLength(1));
+    // The save path the platform owner lost is still the gym admin's.
+    await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
     expect(screen.getByRole('heading', { name: 'The Capability Room' })).toBeTruthy();
     expect(screen.queryByText('The Capability Room is set per gym')).toBeNull();
   });
@@ -759,7 +761,7 @@ describe('Who Trains On What', () => {
 
   // While the session is still being read the role is unknown, which is not
   // the same as a sign-in that may not: nothing is asked and nobody is told no.
-  it('a session not read yet makes no call and does not tell an admin they cannot', async () => {
+  it('a session not read yet shows Loading and makes no call', async () => {
     const fetchMock = trackFetch({ roster: [ADA], stored: {} });
     mockUsePilotSession.mockReturnValue({ ...session(null), loading: true });
     global.fetch = fetchMock as unknown as typeof fetch;

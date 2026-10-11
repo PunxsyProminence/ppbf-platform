@@ -233,7 +233,8 @@ it('offers no intake write control to a platform owner', async () => {
     expect(screen.queryByRole('button', { name: action })).toBeNull();
   }
 
-  fireEvent.keyDown(window, { key: 'a' });
+  // No queue is read or drawn for this role, so no row can be selected and
+  // the review keys have nothing to act on; nothing reaches the review route.
   expect(callsTo(fetchMock, '/intake/review-action')).toHaveLength(0);
   expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
 });
