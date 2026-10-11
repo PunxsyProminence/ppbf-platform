@@ -1198,6 +1198,69 @@ describe('a retired drill cannot be changed through a change proposal (OD-2026-1
     }
   });
 
+  test('a Retire that commits while the adopt is waiting on the drill is seen: the adopt refuses', async () => {
+    // The gate is only the one that cannot be bypassed if it reads the drill
+    // AFTER the adopt holds its row. So the retirement here is held open on a
+    // second real connection: the adopt has to wait for that row, and what it
+    // decides on is what the row says once the retirement commits. A gate that
+    // decided on what it read before waiting would adopt, and this would fail.
+    //
+    // The UPDATE is the statement updateDrill issues for a retire. It is
+    // written out because updateDrill runs through the mocked query on the
+    // shared connection, which cannot hold a transaction open.
+    const database = 'ppbf_test_drillver_retired_race';
+    const client = await freshDatabase(database);
+    activeClient = client;
+    const retiring = new Client({ connectionString: connectionStringFor(database) });
+    await retiring.connect();
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+      const proposal = await propose('drill-jab');
+
+      await retiring.query('BEGIN');
+      await retiring.query(
+        `update pilot.drills set active = false, updated_at = now()
+         where organization_id = $1 and drill_id = $2`,
+        [ORG_A, 'drill-jab'],
+      );
+
+      const adopting = adopt(proposal.proposal_id).then(
+        () => ({ adopted: true, reason: null as unknown }),
+        (reason: unknown) => ({ adopted: false, reason }),
+      );
+
+      // Not a sleep: the retirement commits only once the adopt is seen
+      // waiting on a lock, so the two really did meet on the row.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 400 && waiting === 0; attempt += 1) {
+        const result = await client.query(
+          `select count(*)::int as n from pg_stat_activity
+           where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        waiting = result.rows[0].n;
+        if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(waiting).toBe(1);
+
+      await retiring.query('COMMIT');
+
+      const outcome = await adopting;
+      expect(outcome.adopted).toBe(false);
+      expect(outcome.reason).toMatchObject({ message: ADOPT_REFUSAL, code: 'DRILL_RETIRED', status: 409 });
+      expect(await versionsOf(client, 'drill-jab')).toEqual([[1, 'drill-jab', false]]);
+      expect(await proposalState(client, proposal.proposal_id)).toEqual({
+        review_state: 'proposed',
+        resulting_drill_id: null,
+      });
+    } finally {
+      await retiring.query('ROLLBACK').catch(() => {});
+      await retiring.end();
+      activeClient = null;
+      await client.end();
+    }
+  });
+
   test('the refusal is not a dead end: decline still works, and after Restore the same proposal adopts', async () => {
     const client = await freshDatabase('ppbf_test_drillver_retired_exits');
     activeClient = client;
