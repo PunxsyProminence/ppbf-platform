@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertDrillMeetsCueRule, type DrillDifficulty } from './drills';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { requireEvidenceReviewer } from './shadowLibrary';
 
 // pilot.drills, pilot.drill_change_proposals and pilot.drill_version_outcomes
@@ -107,6 +108,26 @@ function applyProposedChange(base: PilotDrillVersionRow, proposedChange: Record<
   return merged;
 }
 
+// A RETIRED DRILL IS NOT CHANGED THROUGH A CHANGE PROPOSAL (OD-2026-10-08-008
+// D3, "Refuse back-door; keep block (Recommended)").
+//
+// Adoption inserts the next version with active = true. On a drill the gym has
+// retired that would bring it back into use by a side road, past everything
+// Restore checks (drills.ts#updateDrill: the reference must still be active;
+// the drills route applies the cue rule). So both ends refuse: a change cannot
+// be proposed for a retired drill, and one proposed while the drill was in use
+// cannot be adopted after it is retired. Restore stays the one way back, and
+// each message names it.
+//
+// "Retired" is getOperationalDrillLifecycle's definition below: NO version of
+// the lineage is active. An inactive earlier version of a drill the gym still
+// runs is 'changed', not retired, and neither refusal applies to it.
+const DRILL_RETIRED_CODE = 'DRILL_RETIRED';
+const PROPOSE_ON_RETIRED_MESSAGE =
+  'This drill is retired, so a change cannot be proposed for it. Restore the drill first.';
+const ADOPT_ON_RETIRED_MESSAGE =
+  'This drill is retired, so this change cannot be adopted. Restore the drill first, or decline the proposal.';
+
 /**
  * A coach's proposed adjustment to a drill they were looking at. Deliberately
  * no role gate here beyond what the calling route enforces (the intended
@@ -123,12 +144,27 @@ export async function proposeDrillChange(input: {
   proposedChange?: Record<string, unknown>;
   observationNoteIds?: string[];
 }): Promise<DrillChangeProposalRow> {
-  const baseDrill = await queryOne<PilotDrillVersionRow>(
-    `select ${DRILL_VERSION_FIELDS} from pilot.drills where organization_id = $1 and drill_id = $2`,
+  // The base drill's lineage, and whether any version of it is in use, in one
+  // statement. Not the last word on its own -- a drill can be retired between
+  // this read and a reviewer's adopt -- which is why adoptDrillChangeProposal
+  // asks again under its lock.
+  const baseDrill = await queryOne<{ lineage_id: string; lineage_active: boolean }>(
+    `select d.lineage_id,
+            exists (
+              select 1 from pilot.drills l
+              where l.organization_id = d.organization_id
+                and l.lineage_id = d.lineage_id
+                and l.active
+            ) as lineage_active
+     from pilot.drills d
+     where d.organization_id = $1 and d.drill_id = $2`,
     [input.organizationId, input.basedOnDrillId],
   );
   if (!baseDrill) {
     throw new Error('DRILL_NOT_FOUND');
+  }
+  if (!baseDrill.lineage_active) {
+    throw new ConflictError(PROPOSE_ON_RETIRED_MESSAGE, DRILL_RETIRED_CODE);
   }
 
   const rationale = input.rationale.trim();
@@ -195,6 +231,13 @@ export interface DrillChangeProposalListing extends DrillChangeProposalRow {
    * evidence they were, and the usual answer is to decline with a note asking
    * for a re-proposal against the new version. */
   base_is_current: boolean;
+  /** Whether the drill is retired: it has versions and none is in use.
+   *
+   * True means an adopt would be refused (DRILL_RETIRED) even where
+   * base_is_current is true -- the proposal is written against the newest
+   * version, and the newest version is not running. Restore the drill and the
+   * proposal is an ordinary one again; otherwise decline it. */
+  lineage_retired: boolean;
 }
 
 /**
@@ -208,6 +251,11 @@ export interface DrillChangeProposalListing extends DrillChangeProposalRow {
  * flag that lies in exactly the edge cases a reviewer would most rely on it.
  * drillVersioning.pg.test.ts asserts the flag PREDICTS the write: where it is
  * true an adopt succeeds, where it is false the adopt throws.
+ *
+ * lineage_retired is the second half of that prediction, and matches the
+ * adopt's own in-use read the same way: base_is_current says the proposal is
+ * written against the newest version, lineage_retired says nobody runs the
+ * drill. An adopt is refused when either stands in its way.
  */
 export async function listDrillChangeProposals(
   organizationId: string,
@@ -216,7 +264,13 @@ export async function listDrillChangeProposals(
   return query<DrillChangeProposalListing>(
     `select ${PROPOSAL_FIELDS.split(', ').map((f) => `p.${f}`).join(', ')},
             cur.drill_id as current_drill_id,
-            (cur.drill_id is not null and cur.drill_id = p.based_on_drill_id) as base_is_current
+            (cur.drill_id is not null and cur.drill_id = p.based_on_drill_id) as base_is_current,
+            (cur.drill_id is not null and not exists (
+              select 1 from pilot.drills a
+              where a.organization_id = p.organization_id
+                and a.lineage_id = p.lineage_id
+                and a.active
+            )) as lineage_retired
      from pilot.drill_change_proposals p
      left join lateral (
        select d.drill_id
@@ -360,6 +414,33 @@ export async function adoptDrillChangeProposal(input: {
     if (!current) {
       throw new Error('DRILL_LINEAGE_NOT_FOUND');
     }
+
+    // THE RETIRED GATE (see the note above proposeDrillChange). The INSERT
+    // below always writes active = true, so this is the statement that would
+    // re-open a retired drill, and the refusal that cannot be bypassed lives
+    // here rather than only at propose time.
+    //
+    // An active newest version means the drill is in use and costs no query.
+    // Otherwise the lineage is asked: only when NO version is active is the
+    // drill retired. The newest version is locked above and Retire is an
+    // UPDATE of that row, so a retirement that committed first is seen here.
+    //
+    // BEFORE the staleness check on purpose. "Written against an earlier
+    // version" invites a re-proposal against the newest one, and on a retired
+    // drill that re-proposal is refused too. Retired is the true answer.
+    if (!current.active) {
+      const inUse = await client.query(
+        `select 1 as in_use
+         from pilot.drills
+         where organization_id = $1 and lineage_id = $2 and active
+         limit 1`,
+        [input.organizationId, proposal.lineage_id],
+      );
+      if (inUse.rows.length === 0) {
+        throw new ConflictError(ADOPT_ON_RETIRED_MESSAGE, DRILL_RETIRED_CODE);
+      }
+    }
+
     if (current.drill_id !== proposal.based_on_drill_id) {
       throw new Error('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
     }

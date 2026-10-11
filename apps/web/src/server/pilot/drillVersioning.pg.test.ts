@@ -106,6 +106,7 @@ import {
   listDrillChangeProposals,
   proposeDrillChange,
 } from './drillVersioning';
+import { updateDrill } from './drills';
 
 jest.setTimeout(180_000);
 
@@ -1077,6 +1078,247 @@ describe('drillVersioning.ts against real Postgres', () => {
 
       const orgADeclined = await listDrillChangeProposals(ORG_A, { reviewState: 'declined' });
       expect(orgADeclined.map((row) => row.proposal_id)).toEqual([proposalA.proposal_id]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// OD-2026-10-08-008 D3: "Refuse back-door; keep block (Recommended)".
+//
+// THE BACK DOOR. Adopting a change proposal inserts the next version of the
+// drill with active = true. Nothing looked at whether the drill was still in
+// use, so adopting a proposal on a RETIRED drill brought it back -- without any
+// of the checks Restore makes (drills.ts#updateDrill: the reference must still
+// be active; the route applies the cue rule). Retire and Restore here are the
+// real updateDrill, not hand-written SQL, so the gate is proven against the
+// rows the coach page actually leaves behind.
+//
+// "Retired" is the definition getOperationalDrillLifecycle already uses: no
+// version of the lineage is active. A drill that was only REFINED (an older
+// version inactive, a newer one in use) is not retired, and the last-but-one
+// case below holds that line so the gate cannot quietly widen.
+describe('a retired drill cannot be changed through a change proposal (OD-2026-10-08-008 D3)', () => {
+  const PROPOSE_REFUSAL = 'This drill is retired, so a change cannot be proposed for it. Restore the drill first.';
+  const ADOPT_REFUSAL =
+    'This drill is retired, so this change cannot be adopted. Restore the drill first, or decline the proposal.';
+
+  function propose(basedOnDrillId: string, rationale = 'The hand drops on the return.') {
+    return proposeDrillChange({
+      organizationId: ORG_A,
+      basedOnDrillId,
+      proposedByAccountId: COACH_A,
+      proposedByRole: 'coach',
+      rationale,
+      proposedChange: { focus: 'Return the hand to the chin.' },
+    });
+  }
+
+  function adopt(proposalId: string) {
+    return adoptDrillChangeProposal({
+      organizationId: ORG_A,
+      proposalId,
+      reviewedByAccountId: ADMIN_A,
+      reviewedByRole: 'organization_admin',
+    });
+  }
+
+  async function retire(drillId: string): Promise<void> {
+    const row = await updateDrill({ organizationId: ORG_A, drillId, active: false });
+    expect(row?.active).toBe(false);
+  }
+
+  async function versionsOf(client: Client, lineageId: string) {
+    const result = await client.query(
+      `select version, drill_id, active from pilot.drills
+       where organization_id = $1 and lineage_id = $2 order by version`,
+      [ORG_A, lineageId],
+    );
+    return result.rows.map((row) => [row.version, row.drill_id, row.active]);
+  }
+
+  async function proposalState(client: Client, proposalId: string) {
+    const result = await client.query(
+      `select review_state, resulting_drill_id from pilot.drill_change_proposals where proposal_id = $1`,
+      [proposalId],
+    );
+    return result.rows[0];
+  }
+
+  test('proposing a change to a retired drill is refused in plain words, and nothing is stored', async () => {
+    const client = await freshDatabase('ppbf_test_drillver_retired_propose');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+      await retire('drill-jab');
+
+      await expect(propose('drill-jab')).rejects.toMatchObject({
+        message: PROPOSE_REFUSAL,
+        code: 'DRILL_RETIRED',
+        status: 409,
+      });
+
+      const stored = await client.query(`select count(*)::int as n from pilot.drill_change_proposals`);
+      expect(stored.rows[0].n).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('THE BACK DOOR: a proposal filed while the drill was in use cannot bring it back once it is retired', async () => {
+    const client = await freshDatabase('ppbf_test_drillver_retired_adopt');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      // Filed while the drill is in use: legitimate, and stored.
+      const proposal = await propose('drill-jab');
+      await retire('drill-jab');
+
+      await expect(adopt(proposal.proposal_id)).rejects.toMatchObject({
+        message: ADOPT_REFUSAL,
+        code: 'DRILL_RETIRED',
+        status: 409,
+      });
+
+      // Nothing was written: no second version, the drill is still retired, and
+      // the proposal is still waiting for a decision.
+      expect(await versionsOf(client, 'drill-jab')).toEqual([[1, 'drill-jab', false]]);
+      expect(await proposalState(client, proposal.proposal_id)).toEqual({
+        review_state: 'proposed',
+        resulting_drill_id: null,
+      });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the refusal is not a dead end: decline still works, and after Restore the same proposal adopts', async () => {
+    const client = await freshDatabase('ppbf_test_drillver_retired_exits');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const kept = await propose('drill-jab', 'First reading.');
+      const dropped = await propose('drill-jab', 'Second reading.');
+      await retire('drill-jab');
+
+      await expect(adopt(kept.proposal_id)).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+
+      // Exit one: the reviewer can still clear it from the queue.
+      const declined = await declineDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: dropped.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+        reviewNote: 'The drill is retired.',
+      });
+      expect(declined.review_state).toBe('declined');
+
+      // Exit two: Restore is the way a retired drill comes back, and once it is
+      // back the proposal is an ordinary one again.
+      const restored = await updateDrill({ organizationId: ORG_A, drillId: 'drill-jab', active: true });
+      expect(restored?.active).toBe(true);
+
+      const { newDrillVersion } = await adopt(kept.proposal_id);
+      expect(await versionsOf(client, 'drill-jab')).toEqual([
+        [1, 'drill-jab', false],
+        [2, newDrillVersion.drill_id, true],
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('retired is said before stale: an old proposal on a retired drill is not told to re-propose', async () => {
+    // "Written against an earlier version" invites a re-proposal against the
+    // newest one -- which is refused, because the drill is retired. So the
+    // retired answer comes first, for the earlier version as well as the newest.
+    const client = await freshDatabase('ppbf_test_drillver_retired_stale');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const first = await propose('drill-jab', 'First reading.');
+      const stale = await propose('drill-jab', 'Second reading.');
+      const { newDrillVersion } = await adopt(first.proposal_id);
+      await retire(newDrillVersion.drill_id);
+
+      await expect(adopt(stale.proposal_id)).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+      // The earlier version belongs to the same retired drill.
+      await expect(propose('drill-jab')).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+      await expect(propose(newDrillVersion.drill_id)).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+
+      expect(await versionsOf(client, 'drill-jab')).toEqual([
+        [1, 'drill-jab', false],
+        [2, newDrillVersion.drill_id, false],
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a drill that was only refined is NOT retired: its earlier version can still be proposed against', async () => {
+    // The gate is "no version in use", not "this version is inactive". An
+    // earlier version of a drill the gym still runs keeps today's behaviour:
+    // the proposal is stored, and adopting it is refused as stale, not retired.
+    const client = await freshDatabase('ppbf_test_drillver_retired_not_refined');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const first = await propose('drill-jab', 'First reading.');
+      const { newDrillVersion } = await adopt(first.proposal_id);
+
+      const onEarlier = await propose('drill-jab', 'Written against the earlier version.');
+      expect(onEarlier.review_state).toBe('proposed');
+      await expect(adopt(onEarlier.proposal_id)).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+
+      const onCurrent = await propose(newDrillVersion.drill_id, 'Written against the current version.');
+      await expect(adopt(onCurrent.proposal_id)).resolves.toBeDefined();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('lineage_retired PREDICTS the refusal, so the queue does not offer an adopt the server will refuse', async () => {
+    // base_is_current alone would read true here: the proposal IS written
+    // against the newest version. The newest version is just not in use.
+    const client = await freshDatabase('ppbf_test_drillver_retired_flag');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+      await insertDrill(client, { drillId: 'drill-slip', name: 'Slip Line' });
+
+      const onRetired = await propose('drill-jab');
+      const onLive = await propose('drill-slip');
+      await retire('drill-jab');
+
+      const flagsFor = async (proposalId: string) => {
+        const rows = await listDrillChangeProposals(ORG_A, { reviewState: 'proposed' });
+        const row = rows.find((entry) => entry.proposal_id === proposalId);
+        expect(row).toBeDefined();
+        const { base_is_current, lineage_retired } = row as { base_is_current: boolean; lineage_retired: boolean };
+        return { base_is_current, lineage_retired };
+      };
+
+      expect(await flagsFor(onRetired.proposal_id)).toEqual({ base_is_current: true, lineage_retired: true });
+      await expect(adopt(onRetired.proposal_id)).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+
+      expect(await flagsFor(onLive.proposal_id)).toEqual({ base_is_current: true, lineage_retired: false });
+      await expect(adopt(onLive.proposal_id)).resolves.toBeDefined();
     } finally {
       activeClient = null;
       await client.end();

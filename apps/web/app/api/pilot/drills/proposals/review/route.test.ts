@@ -6,6 +6,7 @@ import {
   adoptDrillChangeProposal,
   declineDrillChangeProposal,
 } from '@/src/server/pilot/drillVersioning';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -325,6 +326,22 @@ describe('POST /api/pilot/drills/proposals/review', () => {
 
     await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
 
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  // OD-2026-10-08-008 D3. adoptDrillChangeProposal refuses a retired drill with
+  // a ConflictError, which is not one of the ALL_CAPS codes in CODE_STATUS. Held
+  // here: it still reaches the reviewer as a 409 with the reason and the two
+  // ways forward, rather than falling through to a redacted 500.
+  test('adopting onto a retired drill is refused with the reason, and nothing is audited', async () => {
+    const reason =
+      'This drill is retired, so this change cannot be adopted. Restore the drill first, or decline the proposal.';
+    mockAdopt.mockRejectedValueOnce(new ConflictError(reason, 'DRILL_RETIRED'));
+
+    const res = await POST(postRequest({ proposal_id: 'propchg_1', action: 'adopt' }));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: reason, code: 'DRILL_RETIRED' });
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });
