@@ -180,6 +180,70 @@ describe('requireRoleLiterals reads each form it documents', () => {
   });
 });
 
+// Found while repairing the scanner (#1411 review): an expression-bodied arrow
+// helper used to be given "the next brace in the file" as its body, which is
+// the body of whichever function follows it. Two inventory rows
+// (coach/intervention-review POST and PATCH) recorded a gate that only GET
+// calls, through `const optionalString = (value) => typeof value === ...`.
+describe('a helper is credited with its own body, never the next function', () => {
+  const reached = (source: string, method: string): string[] => {
+    const blanked = blankLiterals(source);
+    const handler = findHandlers(blanked).find((h) => h.method === method);
+    if (!handler) throw new Error('the fixture has no such exported HTTP handler');
+    return [...reachableNames(blanked, collectFunctionBodies(blanked), handler.span).reached].sort();
+  };
+
+  const source = lines(
+    "const text = (value: unknown): string => (typeof value === 'string' ? value : '');",
+    'export async function GET(request) {',
+    '  const principal = await requirePrincipal(request);',
+    "  requireRole(principal, ['organization_admin']);",
+    '  await accessibleAthleteIds(principal, []);',
+    '}',
+    'export async function DELETE(request) {',
+    '  const id = text(request.id);',
+    '  await remove(id);',
+    '}',
+  );
+
+  test('a handler that calls an expression-bodied helper does not inherit the next handler', () => {
+    expect(reached(source, 'DELETE')).toEqual(['remove', 'text']);
+    expect(literalsOf(source, 'DELETE')).toEqual([]);
+    expect(reached(source, 'GET')).toEqual(['accessibleAthleteIds', 'requirePrincipal', 'requireRole']);
+    expect(literalsOf(source, 'GET')).toEqual(['organization_admin']);
+  });
+
+  test('a gate inside an arrow helper still counts, block body or expression body', () => {
+    const gated = lines(
+      "const gateBlock = (principal): { ok: boolean } => {",
+      "  requireRole(principal, ['coach']);",
+      '  return { ok: true };',
+      '};',
+      "const gateExpression = async (principal) => requireRole(principal, ['board']);",
+      'export async function GET(request) {',
+      '  gateBlock(await requirePrincipal(request));',
+      '}',
+      'export async function POST(request) {',
+      '  await gateExpression(await requirePrincipal(request));',
+      '}',
+    );
+    expect(literalsOf(gated, 'GET')).toEqual(['coach']);
+    expect(literalsOf(gated, 'POST')).toEqual(['board']);
+  });
+
+  test('a parenthesised value is not a function', () => {
+    const bodies = collectFunctionBodies(blankLiterals(lines(
+      'export async function POST(request) {',
+      '  const body = (await request.json()) as { name?: string };',
+      '  const total = (body.a + body.b) * 2;',
+      '  const pick = (x) => { return x; };',
+      '  return pick(total);',
+      '}',
+    )));
+    expect([...bodies.keys()].sort()).toEqual(['POST', 'pick']);
+  });
+});
+
 // A wrong list pinned as the right one is worse than no list: the inventory
 // would then vouch for it. Where the walker cannot be sure which array a name
 // means, it must say '<NAME>'.

@@ -244,37 +244,77 @@ export function collectFunctionBodies(blanked: string): Map<string, Span> {
   const assignment = /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\s*\*?\s*[A-Za-z_$\w]*\s*)?\(/g;
   while ((match = assignment.exec(blanked)) !== null) {
     if (bodies.has(match[1])) continue;
-    const span = bodyAfterParameters(blanked, match.index + match[0].length - 1, true);
+    const parenOpen = match.index + match[0].length - 1;
+    const span = /\bfunction\b/.test(match[0])
+      ? bodyAfterParameters(blanked, parenOpen)
+      : arrowBodyAfterParameters(blanked, parenOpen);
     if (span) bodies.set(match[1], span);
   }
 
   return bodies;
 }
 
-function bodyAfterParameters(blanked: string, parenOpen: number, allowArrow = false): Span | null {
+function bodyAfterParameters(blanked: string, parenOpen: number): Span | null {
   const parenClose = matchDelimiter(blanked, parenOpen, '(', ')');
   if (parenClose === -1) return null;
-
-  let braceOpen: number;
-  if (allowArrow) {
-    const tail = blanked.slice(parenClose + 1, parenClose + 400);
-    const arrowAt = tail.indexOf('=>');
-    const braceAt = tail.indexOf('{');
-    if (arrowAt !== -1 && (braceAt === -1 || braceAt > arrowAt)) {
-      braceOpen = blanked.indexOf('{', parenClose + 1 + arrowAt);
-    } else if (braceAt !== -1) {
-      braceOpen = parenClose + 1 + braceAt;
-    } else {
-      return null;
-    }
-  } else {
-    braceOpen = blanked.indexOf('{', parenClose);
-  }
-
+  const braceOpen = blanked.indexOf('{', parenClose);
   if (braceOpen === -1) return null;
   const braceClose = matchDelimiter(blanked, braceOpen, '{', '}');
   if (braceClose === -1) return null;
   return [braceOpen, braceClose + 1] as const;
+}
+
+/**
+ * The body of `const name = (params) => ...`, or null when what follows the
+ * parentheses is not an arrow function at all (`const body = (await
+ * request.json()) as {...}` is not one).
+ *
+ * Only a return type may sit between the parameters and the arrow. A block
+ * body is the braces that directly follow the arrow; an expression body runs
+ * to the end of its statement. It is never "the next brace in the file": that
+ * reading gave an expression-bodied helper the body of whichever function was
+ * declared after it, so every handler calling the helper was credited with
+ * that function's gates and role lists.
+ */
+function arrowBodyAfterParameters(blanked: string, parenOpen: number): Span | null {
+  const parenClose = matchDelimiter(blanked, parenOpen, '(', ')');
+  if (parenClose === -1) return null;
+
+  let depth = 0;
+  let angle = 0;
+  let arrowEnd = -1;
+  const limit = Math.min(blanked.length, parenClose + 400);
+  for (let i = parenClose + 1; i < limit; i += 1) {
+    const c = blanked[i];
+    if (c === '=' && blanked[i + 1] === '>') {
+      if (depth === 0 && angle === 0) { arrowEnd = i + 2; break; }
+      i += 1; // an arrow inside the return type, e.g. `): (() => void) =>`
+    } else if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') {
+      depth -= 1;
+      if (depth < 0) return null;
+    } else if (c === '<') angle += 1;
+    else if (c === '>') angle = Math.max(0, angle - 1);
+    else if (c === ';' && depth === 0) return null;
+  }
+  if (arrowEnd === -1) return null;
+
+  let bodyStart = arrowEnd;
+  while (bodyStart < blanked.length && /\s/.test(blanked[bodyStart])) bodyStart += 1;
+  if (blanked[bodyStart] === '{') {
+    const braceClose = matchDelimiter(blanked, bodyStart, '{', '}');
+    return braceClose === -1 ? null : [bodyStart, braceClose + 1] as const;
+  }
+  depth = 0;
+  for (let i = bodyStart; i < blanked.length; i += 1) {
+    const c = blanked[i];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') {
+      depth -= 1;
+      if (depth < 0) return [bodyStart, i] as const;
+    } else if (c === ';' && depth === 0) return [bodyStart, i] as const;
+  }
+  return null;
 }
 
 export interface Handler {
