@@ -463,9 +463,10 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     expect(sparring.textContent).toBe(
       'Step 7Body SparringHow Body Sparring is done.◉assignedScale: Harder (C)Contact: Controlled sparringNote: Two rounds.\nCoach watching.Completion0%Per week3xAssigned byCoach J Rivera',
     );
-    // The same classes, element for element, as a step with no contact (only the status badge may differ).
+    // The same classes, element for element and on the step itself, as a step
+    // with no contact (only the status badge may differ).
     const shape = (step: HTMLElement) =>
-      Array.from(step.querySelectorAll('*'))
+      [step, ...Array.from(step.querySelectorAll('*'))]
         .filter((element) => !element.closest('.badge'))
         .map((element) => `${element.tagName}.${element.className}`);
     const noContact = stepOf(panel, 'Skip Rope');
