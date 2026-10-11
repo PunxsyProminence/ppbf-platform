@@ -147,6 +147,9 @@ describe('GET /api/pilot/progression/assignments', () => {
       // or the athlete in the admin's gym.
       mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
       mockQuery.mockResolvedValueOnce(rows);
+      // The workout-shape read follows for staff and the athlete when there
+      // is an assignment to ask about; none of these rows is a workout step.
+      if (role !== 'parent' && rows.length > 0) mockQuery.mockResolvedValueOnce([]);
       const res = await GET(getRequest('athlete_id=ath-1'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Record<string, unknown>[] };
@@ -205,6 +208,205 @@ describe('GET /api/pilot/progression/assignments', () => {
       expect(item).not.toHaveProperty('assigned_by_name');
       expect(mockCoachName).not.toHaveBeenCalled();
     });
+  });
+});
+
+// THE SHAPE OF AN ISSUED WORKOUT (lane P7c, OD-2026-10-10-004 ruling 5). The
+// read gains `workouts`: which of the returned assignments are steps of an
+// issued workout template, in the coach's order, with each step's block, scale
+// level, contact level and note. The real workoutIssues module runs here over
+// the faked query(), so these cases cover the route AND the read's grouping.
+describe('GET /api/pilot/progression/assignments: the shape of an issued workout', () => {
+  const assignment = (id: string) => ({
+    assignment_id: id,
+    gap_id: null,
+    athlete_id: 'ath-1',
+    drill_id: `drill-${id}`,
+    drill_name: `Drill ${id}`,
+    drill_description: '',
+    drill_display_name: `Drill ${id}`,
+    drill_display_description: '',
+    drill_category: 'footwork',
+    drill_cues: [],
+    drill_difficulty: 'beginner',
+    rep_count: null,
+    duration_minutes: 5,
+    frequency_per_week: null,
+    due_date: null,
+    status: 'assigned',
+    completion_percentage: 0,
+    assigned_by_account_id: 'acct-coach-1',
+    assigned_at: '2026-10-11T10:00:00.000Z',
+    created_at: '2026-10-11T10:00:00.000Z',
+  });
+  const ASSIGNMENTS = [assignment('asg-loose'), assignment('asg-2'), assignment('asg-1'), assignment('asg-3')];
+
+  // One row per step, as the read's SQL returns them: workout fields repeated.
+  const stepRow = (ordinal: number, overrides: Record<string, unknown> = {}) => ({
+    issue_id: 'issue-1',
+    athlete_id: 'ath-1',
+    template_name: 'Technical Tuesday',
+    template_version: 2,
+    issued_at: '2026-10-11T10:00:00.000Z',
+    issued_by_account_id: 'acct-coach-1',
+    ordinal,
+    block: 'technical',
+    scale_level: 'B',
+    contact_level: 'none',
+    coach_note: null,
+    assignment_id: `asg-${ordinal}`,
+    ...overrides,
+  });
+  const STEP_ROWS = [
+    stepRow(1, { block: 'warmup', scale_level: 'A', coach_note: 'Easy pace.' }),
+    stepRow(2, { scale_level: null, contact_level: 'light_technical' }),
+    stepRow(3, { scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.' }),
+  ];
+  const STEPS = [
+    { ordinal: 1, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', assignment_id: 'asg-1' },
+    { ordinal: 2, block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null, assignment_id: 'asg-2' },
+    { ordinal: 3, block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.', assignment_id: 'asg-3' },
+  ];
+
+  beforeEach(() => {
+    mockCoachName.mockResolvedValue('Coach J Rivera');
+  });
+
+  async function read(
+    role: 'athlete' | 'parent' | 'coach' | 'organization_admin' | 'admin',
+    assignments: unknown[],
+    stepRows: unknown[] | Error,
+    queryString = 'athlete_id=ath-1',
+  ) {
+    mockRequirePrincipal.mockResolvedValueOnce(
+      principal({ role, athleteId: role === 'athlete' ? 'ath-1' : null, accountId: `acct-${role}` }),
+    );
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce(assignments);
+    if (role !== 'parent' && assignments.length > 0) {
+      if (stepRows instanceof Error) mockQuery.mockRejectedValueOnce(stepRows);
+      else mockQuery.mockResolvedValueOnce(stepRows);
+    }
+    const res = await GET(getRequest(queryString));
+    return { res, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  test("the athlete receives the workout: its steps in the coach's order, each with its block, levels and note, and the coach by name", async () => {
+    const { res, body } = await read('athlete', ASSIGNMENTS, STEP_ROWS);
+
+    expect(res.status).toBe(200);
+    expect(body.workouts).toEqual([
+      {
+        issue_id: 'issue-1',
+        athlete_id: 'ath-1',
+        template_name: 'Technical Tuesday',
+        template_version: 2,
+        issued_at: '2026-10-11T10:00:00.000Z',
+        issued_by_name: 'Coach J Rivera',
+        steps: STEPS,
+      },
+    ]);
+    // No account id reaches a family reader, under any key.
+    expect(JSON.stringify(body.workouts)).not.toContain('acct-coach');
+    expect(JSON.stringify(body.workouts)).not.toContain('account_id');
+  });
+
+  test('a level the coach left open stays null, and the contact level is passed as written', async () => {
+    const { body } = await read('athlete', ASSIGNMENTS, STEP_ROWS);
+    const [workout] = body.workouts as Array<{ steps: Array<Record<string, unknown>> }>;
+
+    expect(workout.steps[1]).toMatchObject({ scale_level: null, contact_level: 'light_technical' });
+    expect(workout.steps[2]).toMatchObject({ contact_level: 'controlled_sparring' });
+    // Nothing is added beside what the coach wrote: no flag, warning or verdict key.
+    expect(Object.keys(workout.steps[2]).sort()).toEqual(
+      ['assignment_id', 'block', 'coach_note', 'contact_level', 'ordinal', 'scale_level'],
+    );
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)(
+    '%s receives the workout with the issuing account id and no name lookup',
+    async (role) => {
+      const { body } = await read(role, ASSIGNMENTS, STEP_ROWS);
+
+      expect(body.workouts).toEqual([
+        {
+          issue_id: 'issue-1',
+          athlete_id: 'ath-1',
+          template_name: 'Technical Tuesday',
+          template_version: 2,
+          issued_at: '2026-10-11T10:00:00.000Z',
+          issued_by_account_id: 'acct-coach-1',
+          steps: STEPS,
+        },
+      ]);
+      expect(mockCoachName).not.toHaveBeenCalled();
+    },
+  );
+
+  test('items are exactly what they were: the workout is said beside them, not instead of them', async () => {
+    const withShape = await read('coach', ASSIGNMENTS, STEP_ROWS);
+    const without = await read('coach', ASSIGNMENTS, []);
+
+    expect(withShape.body.items).toEqual(ASSIGNMENTS);
+    expect(without.body.items).toEqual(ASSIGNMENTS);
+    // Assignments in no workout: an empty list, never a missing key.
+    expect(without.body.workouts).toEqual([]);
+  });
+
+  test("the shape is asked only about the assignments this read returned, in the session's organization", async () => {
+    await read('athlete', ASSIGNMENTS, STEP_ROWS, 'athlete_id=ath-1&status=assigned');
+
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [assignmentSql, assignmentParams] = mockQuery.mock.calls[0];
+    expect(assignmentSql).toContain('from pilot.drill_assignments a');
+    expect(assignmentParams).toEqual(['org-1', 'ath-1', 'assigned']);
+    const [shapeSql, shapeParams] = mockQuery.mock.calls[1];
+    expect(shapeSql).toContain('from pilot.workout_issue_steps s');
+    expect(shapeParams).toEqual(['org-1', ['asg-loose', 'asg-2', 'asg-1', 'asg-3']]);
+  });
+
+  test('with no assignments there is nothing to ask about: no shape read, an empty list', async () => {
+    const { body } = await read('athlete', [], []);
+
+    expect(body).toEqual({ items: [], workouts: [] });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('a linked guardian is not sent the shape yet: no workouts key, and the shape is never read', async () => {
+    const { res, body } = await read('parent', ASSIGNMENTS, STEP_ROWS);
+
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty('workouts');
+    expect((body.items as unknown[]).length).toBe(4);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(body)).not.toContain('coach_note');
+  });
+
+  test('a shape read that fails fails the read: a flat list is never returned as if it were the whole answer', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { res, body } = await read('athlete', ASSIGNMENTS, new Error('relation does not exist'));
+
+      expect(res.status).toBe(500);
+      expect(body).not.toHaveProperty('items');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  test('two workouts come back in the order the read gave them, each with its own steps', async () => {
+    const rows = [
+      stepRow(1, { issue_id: 'issue-new', template_name: 'Friday Pads', assignment_id: 'asg-3' }),
+      stepRow(1, { issue_id: 'issue-old', assignment_id: 'asg-1' }),
+      stepRow(2, { issue_id: 'issue-old', assignment_id: 'asg-2' }),
+    ];
+    const { body } = await read('coach', ASSIGNMENTS, rows);
+    const workouts = body.workouts as Array<{ issue_id: string; template_name: string; steps: Array<{ assignment_id: string }> }>;
+
+    expect(workouts.map((workout) => [workout.issue_id, workout.template_name, workout.steps.map((step) => step.assignment_id)])).toEqual([
+      ['issue-new', 'Friday Pads', ['asg-3']],
+      ['issue-old', 'Technical Tuesday', ['asg-1', 'asg-2']],
+    ]);
   });
 });
 

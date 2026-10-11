@@ -8,6 +8,7 @@ import { readAssignmentInstruction } from '@/components/drills/drillInstructionR
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
+import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
@@ -118,6 +119,100 @@ interface DrillAssignment {
   // a family reader a name and never an account id; optional so a row from a
   // server that predates the field renders without the line, not blank.
   assigned_by_name?: string;
+}
+
+/*
+ * A workout template a coach issued, as the assignments read sends it beside
+ * the items (lane P7c): which assignments are its steps, in the coach's order,
+ * and what the coach wrote beside each. The drill, reps, minutes and status of
+ * a step stay on the assignment the step points at.
+ */
+interface IssuedWorkoutStep {
+  ordinal: number;
+  block: string;
+  // Null when the coach left the level to be picked on the day. Shown only
+  // when set: this screen never fills one in.
+  scale_level: string | null;
+  // The coach's entry. Shown as written.
+  contact_level: string;
+  coach_note: string | null;
+  assignment_id: string;
+}
+
+interface IssuedWorkout {
+  issue_id: string;
+  template_name: string;
+  issued_at: string;
+  issued_by_name?: string;
+  steps: IssuedWorkoutStep[];
+}
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
+
+/**
+ * The `workouts` of an assignments answer. Absent (a server that predates the
+ * field) is no workouts. Present but not the shape this screen reads is NOT
+ * read as "no workouts": drawing the steps as loose drills would show the
+ * athlete a workout out of its order and call it whole, so the read fails.
+ */
+function readIssuedWorkouts(raw: unknown): IssuedWorkout[] {
+  if (raw === undefined) return [];
+  const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
+    const w = workout as Partial<IssuedWorkout> | null;
+    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name) && isText(w.issued_at)
+      && (w.issued_by_name === undefined || isText(w.issued_by_name))
+      && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
+        const s = step as Partial<IssuedWorkoutStep> | null;
+        return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)
+          && isTextOrNull(s.scale_level) && isText(s.contact_level) && isTextOrNull(s.coach_note) && isText(s.assignment_id);
+      });
+  });
+  if (!wellFormed) throw new Error(DRILLS_DID_NOT_LOAD, { cause: { workouts: 'unreadable' } });
+  return raw as IssuedWorkout[];
+}
+
+/** One line of the assigned-work list, in the order it is drawn. */
+type AssignedWorkRow =
+  | { kind: 'workout'; key: string; workout: IssuedWorkout; stepCount: number }
+  | { kind: 'block'; key: string; block: string }
+  | { kind: 'other'; key: string }
+  | { kind: 'assignment'; key: string; assignment: DrillAssignment; step: IssuedWorkoutStep | null };
+
+/**
+ * The assigned work in the order it is drawn: each issued workout as a heading,
+ * then its steps in the coach's order with a block heading every time the block
+ * changes (so a block the coach returns to is shown again, where the coach put
+ * it), then every assignment that is not a step of a workout, in the order the
+ * server sent. A step whose assignment was not sent is left out; a workout with
+ * no step left is not drawn.
+ */
+function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorkout[]): AssignedWorkRow[] {
+  const byId = new Map(assignments.map((assignment) => [assignment.assignment_id, assignment]));
+  const inWorkout = new Set<string>();
+  const rows: AssignedWorkRow[] = [];
+  for (const workout of workouts) {
+    const steps = workout.steps
+      .filter((step) => byId.has(step.assignment_id) && !inWorkout.has(step.assignment_id))
+      .toSorted((a, b) => a.ordinal - b.ordinal);
+    if (steps.length === 0) continue;
+    rows.push({ kind: 'workout', key: `workout-${workout.issue_id}`, workout, stepCount: steps.length });
+    let block: string | null = null;
+    for (const step of steps) {
+      if (step.block !== block) {
+        block = step.block;
+        rows.push({ kind: 'block', key: `block-${workout.issue_id}-${step.ordinal}`, block });
+      }
+      inWorkout.add(step.assignment_id);
+      rows.push({ kind: 'assignment', key: step.assignment_id, assignment: byId.get(step.assignment_id) as DrillAssignment, step });
+    }
+  }
+  const loose = assignments.filter((assignment) => !inWorkout.has(assignment.assignment_id));
+  if (rows.length > 0 && loose.length > 0) rows.push({ kind: 'other', key: 'other-work' });
+  for (const assignment of loose) {
+    rows.push({ kind: 'assignment', key: assignment.assignment_id, assignment, step: null });
+  }
+  return rows;
 }
 
 interface AssignmentCompletion {
@@ -331,6 +426,7 @@ export default function AthleteProgressionIntelligencePage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
+  const [workouts, setWorkouts] = useState<IssuedWorkout[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -395,7 +491,11 @@ export default function AthleteProgressionIntelligencePage() {
         });
         if (!assignRes.ok) throw new Error(DRILLS_DID_NOT_LOAD, { cause: { status: assignRes.status } });
         const assignData = await assignRes.json();
+        // Read before either is set, so the list is never drawn with its
+        // assignments and without the shape that orders them.
+        const issuedWorkouts = readIssuedWorkouts(assignData.workouts);
         setAssignments(assignData.items || []);
+        setWorkouts(issuedWorkouts);
 
         if ((assignData.items || []).length > 0) {
           const allCompletions: AssignmentCompletion[] = [];
@@ -736,19 +836,55 @@ export default function AthleteProgressionIntelligencePage() {
                 )
               ) : (
                 <div className="space-y-[var(--s4)]">
-                  {assignments.map((assignment) => {
+                  {orderAssignedWork(assignments, workouts).map((row) => {
+                    if (row.kind === 'workout') {
+                      return (
+                        <div key={row.key} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]" data-testid="issued-workout">
+                          <p className="t-eyebrow">Workout</p>
+                          <h3 className="mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">
+                            {row.workout.template_name}
+                          </h3>
+                          <p className="t-muted mt-[var(--s2)]">
+                            {row.workout.issued_by_name ? `From ${row.workout.issued_by_name} · ` : ''}
+                            {formatGymDateNumeric(row.workout.issued_at)} · {row.stepCount === 1 ? '1 step' : `${row.stepCount} steps`}, in this order
+                          </p>
+                        </div>
+                      );
+                    }
+                    if (row.kind === 'block') {
+                      return (
+                        <h4 key={row.key} className="t-label ml-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+                          {row.block.replace(/_/g, ' ')}
+                        </h4>
+                      );
+                    }
+                    if (row.kind === 'other') {
+                      return (
+                        <h3 key={row.key} className="t-label pt-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+                          Other drills
+                        </h3>
+                      );
+                    }
+                    const { assignment, step } = row;
+                    // Inside a workout the drill sits under the workout and its
+                    // block, so its heading is one level further down.
+                    const DrillHeading = step ? 'h5' : 'h3';
                     const gap = getGapForAssignment(assignment.assignment_id);
                     const assignmentCompletions = getCompletionsForAssignment(assignment.assignment_id);
                     const progressPercent = assignment.completion_percentage;
                     const isLogging = loggingAssignmentId === assignment.assignment_id;
 
                     return (
-                      <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+                      <div
+                        key={assignment.assignment_id}
+                        className={step ? 'mat-leather ml-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]' : 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]'}
+                      >
                         <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
                           <div className="flex-1">
-                            <h3 className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
+                            {step && <p className="t-label">Step {step.ordinal}</p>}
+                            <DrillHeading className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
                               {assignment.drill_display_name || assignment.drill_name}
-                            </h3>
+                            </DrillHeading>
                             <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
                               {assignment.drill_display_description || assignment.drill_description}
                             </p>
@@ -763,6 +899,20 @@ export default function AthleteProgressionIntelligencePage() {
                                 Assigned by:{' '}
                                 <span className="font-medium text-[color:var(--bone-200)]">{assignment.assigned_by_name}</span>
                               </p>
+                            )}
+                            {/* What the coach wrote beside this step of the
+                                workout, as written. A scale level the coach
+                                left open is not shown; nothing is filled in. */}
+                            {step && (
+                              <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+                                {step.scale_level && <p>Scale {step.scale_level}</p>}
+                                <p>{humanizeContactLevel(step.contact_level)}</p>
+                                {(step.coach_note ?? '').trim() !== '' && (
+                                  <p className="whitespace-pre-line">
+                                    <span className="font-semibold">Coach note:</span> {step.coach_note}
+                                  </p>
+                                )}
+                              </div>
                             )}
                             {/* Learning, kept apart from doing: this opens the
                                 drill's instruction and writes nothing. Log

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
+import { query } from './db';
+
 // The shape of an ISSUED workout: pilot.workout_issues (one row per act of
 // issuing a template to one athlete) and pilot.workout_issue_steps (one row per
 // step, tying an assignment to its block, its place in the order, its scale
@@ -12,7 +14,8 @@ import type { PoolClient } from 'pg';
 // WRITTEN ONCE, INSIDE THE ISSUE'S OWN TRANSACTION. recordWorkoutIssue takes a
 // transaction client and has no pooled form, so the structure cannot be
 // written apart from the assignments it describes: both commit or neither
-// does. There is no UPDATE and no DELETE in this module. The rows leave only
+// does. The pooled `query` in this module is for the READ at the foot only.
+// There is no UPDATE and no DELETE in this module. The rows leave only
 // by cascade (the athlete or the assignment going).
 //
 // A READER JOINS ON THE ORGANIZATION. The step's foreign key is on
@@ -110,4 +113,149 @@ export async function recordWorkoutIssue(
     throw new Error('recordWorkoutIssue: a step named an assignment that is not this athlete\'s in this organization');
   }
   return issueId;
+}
+
+// ---------------------------------------------------------------------------
+// READING AN ISSUED WORKOUT BACK
+//
+// NO ACCESS BOUNDARY OF ITS OWN, ON PURPOSE. The read is asked for a list of
+// assignment ids and answers only about those. Its callers pass the ids their
+// own, already-gated assignment read returned (getAthleteAssignments behind
+// assertActorCanAccessAthlete; listCoachCards behind athleteIdsForCoach), so a
+// reader sees the shape of exactly the work they could already see and nothing
+// else. An id the caller could not read is never in the list.
+//
+// A workout comes back with the steps whose assignments were asked for, in the
+// coach's order. A step whose assignment was not asked for (a status filter
+// left it out) is not in it, and a workout with no step left is not returned.
+// ---------------------------------------------------------------------------
+
+/** One step of an issued workout: where the assignment sits and what the coach wrote beside it. */
+export interface IssuedWorkoutStep {
+  ordinal: number;
+  block: string;
+  /** Null when the coach left the level to be picked at delivery. */
+  scale_level: string | null;
+  /** The coach's entry, as written. */
+  contact_level: string;
+  coach_note: string | null;
+  assignment_id: string;
+}
+
+/** An issued workout as staff receive it. */
+export interface IssuedWorkout {
+  issue_id: string;
+  athlete_id: string;
+  template_name: string;
+  template_version: number;
+  issued_at: string;
+  issued_by_account_id: string;
+  steps: IssuedWorkoutStep[];
+}
+
+/**
+ * An issued workout as the athlete receives it (OD-2026-10-06-025 ruling 2:
+ * families see the coach's display name, never the internal account id).
+ */
+export type FamilyIssuedWorkout = Omit<IssuedWorkout, 'issued_by_account_id'> & {
+  issued_by_name: string;
+};
+
+type IssuedStepRow = Omit<IssuedWorkout, 'steps'> & IssuedWorkoutStep;
+
+/**
+ * The issued workouts these assignments are steps of, newest first, each with
+ * its steps in order. Assignments that are not a step of any workout (a Coach
+ * Card, a gap-driven assignment, a template issued before the shape was kept)
+ * simply have no entry.
+ */
+export async function listIssuedWorkoutsForAssignments(
+  organizationId: string,
+  assignmentIds: readonly string[],
+): Promise<IssuedWorkout[]> {
+  if (assignmentIds.length === 0) {
+    return [];
+  }
+  // The step is joined to its assignment on the organization as well as the id
+  // (the foreign key is on assignment_id alone), and the assignment must be
+  // the issue's own athlete's: a row that fails either is not a step of this
+  // workout and is not returned.
+  const rows = await query<IssuedStepRow>(
+    `select i.issue_id::text as issue_id, i.athlete_id, i.template_name, i.template_version,
+            i.issued_at, i.issued_by_account_id,
+            s.ordinal, s.block, s.scale_level, s.contact_level, s.coach_note, s.assignment_id
+     from pilot.workout_issue_steps s
+     join pilot.workout_issues i
+       on i.organization_id = s.organization_id and i.issue_id = s.issue_id
+     join pilot.drill_assignments a
+       on a.organization_id = s.organization_id and a.assignment_id = s.assignment_id
+      and a.athlete_id = i.athlete_id
+     where s.organization_id = $1 and s.assignment_id = any($2::text[])
+     order by i.issued_at desc, i.issue_id asc, s.ordinal asc`,
+    [organizationId, [...assignmentIds]],
+  );
+
+  const workouts = new Map<string, IssuedWorkout>();
+  for (const row of rows) {
+    let workout = workouts.get(row.issue_id);
+    if (!workout) {
+      workout = {
+        issue_id: row.issue_id,
+        athlete_id: row.athlete_id,
+        template_name: row.template_name,
+        template_version: row.template_version,
+        issued_at: row.issued_at,
+        issued_by_account_id: row.issued_by_account_id,
+        steps: [],
+      };
+      workouts.set(row.issue_id, workout);
+    }
+    workout.steps.push({
+      ordinal: row.ordinal,
+      block: row.block,
+      scale_level: row.scale_level,
+      contact_level: row.contact_level,
+      coach_note: row.coach_note,
+      assignment_id: row.assignment_id,
+    });
+  }
+  return [...workouts.values()];
+}
+
+// Unreachable while nameFor answers for every id it is asked; here so the
+// field is a phrase, never undefined, if it ever does not.
+const FAMILY_ISSUED_BY_FLOOR = 'Your coach';
+
+/**
+ * The family projection of issued workouts. Named field by field, never
+ * spread: a spread carries the account id, and every column a later change
+ * adds, to a family without anyone deciding it should. `nameFor` is asked once
+ * per distinct coach; the route passes getCoachDisplayName.
+ */
+export async function toFamilyIssuedWorkouts(
+  workouts: IssuedWorkout[],
+  nameFor: (accountId: string) => Promise<string>,
+): Promise<FamilyIssuedWorkout[]> {
+  const names = new Map<string, string>();
+  await Promise.all(
+    Array.from(new Set(workouts.map((workout) => workout.issued_by_account_id))).map(async (accountId) => {
+      names.set(accountId, await nameFor(accountId));
+    }),
+  );
+  return workouts.map((workout): FamilyIssuedWorkout => ({
+    issue_id: workout.issue_id,
+    athlete_id: workout.athlete_id,
+    template_name: workout.template_name,
+    template_version: workout.template_version,
+    issued_at: workout.issued_at,
+    issued_by_name: names.get(workout.issued_by_account_id) ?? FAMILY_ISSUED_BY_FLOOR,
+    steps: workout.steps.map((step): IssuedWorkoutStep => ({
+      ordinal: step.ordinal,
+      block: step.block,
+      scale_level: step.scale_level,
+      contact_level: step.contact_level,
+      coach_note: step.coach_note,
+      assignment_id: step.assignment_id,
+    })),
+  }));
 }

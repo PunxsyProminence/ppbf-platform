@@ -13,6 +13,7 @@ import {
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
+import { listIssuedWorkoutsForAssignments, toFamilyIssuedWorkouts } from '@/src/server/pilot/workoutIssues';
 
 export const runtime = 'nodejs';
 
@@ -50,14 +51,31 @@ export async function GET(request: NextRequest) {
     // the named case, so a widened gate fails toward the projection. Same
     // split as the SHADOW events feed (#1299) and drill-instruction.
     const isStaff = principal.role === 'coach' || principal.role === 'admin' || principal.role === 'organization_admin';
+
+    // THE WORKOUT'S SHAPE (lane P7c). `workouts` says which of the items above
+    // are steps of an issued workout template, and each step's block, order,
+    // scale level, contact level and coach note. It is asked ONLY about the
+    // assignments this read just returned, so it widens nobody's reach; items
+    // is unchanged, and an assignment in no workout reads as it always has.
+    // Sent to staff and to the athlete. The athlete is the named case: a
+    // linked guardian is not sent it yet (their screen follows in its own
+    // change), and a role added to this gate later gets none by default.
+    const readWorkouts = () =>
+      listIssuedWorkoutsForAssignments(
+        principal.organizationId,
+        assignments.map((assignment) => assignment.assignment_id),
+      );
+
     if (isStaff) {
-      return NextResponse.json({ items: assignments });
+      return NextResponse.json({ items: assignments, workouts: await readWorkouts() });
     }
 
-    const items = await toFamilyAssignments(assignments, (accountId) =>
-      getCoachDisplayName(principal.organizationId, accountId),
-    );
-    return NextResponse.json({ items });
+    const nameFor = (accountId: string) => getCoachDisplayName(principal.organizationId, accountId);
+    const items = await toFamilyAssignments(assignments, nameFor);
+    if (principal.role !== 'athlete') {
+      return NextResponse.json({ items });
+    }
+    return NextResponse.json({ items, workouts: await toFamilyIssuedWorkouts(await readWorkouts(), nameFor) });
   } catch (error) {
     return jsonError(error);
   }

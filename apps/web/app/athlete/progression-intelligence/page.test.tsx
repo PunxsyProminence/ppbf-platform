@@ -294,6 +294,272 @@ describe('gap-free Coach Cards on the assignments list', () => {
   });
 });
 
+// An issued workout template keeps its shape on the athlete's screen (lane
+// P7c, OD-2026-10-10-004 ruling 5): one workout, its steps in the coach's
+// order, a block heading where the block changes, and beside each step what
+// the coach wrote. jsdom proves the order and the words; it cannot show how
+// this reads on a gym tablet.
+describe('an issued workout keeps its shape', () => {
+  const assignment = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+    assignment_id: id,
+    gap_id: null,
+    drill_id: `drill-${id}`,
+    drill_name: name,
+    drill_description: `${name} description.`,
+    drill_display_name: name,
+    drill_display_description: `${name} description.`,
+    drill_difficulty: 'intermediate',
+    completion_percentage: 0,
+    status: 'assigned',
+    created_at: '2026-10-11T10:00:00.000Z',
+    assigned_by_name: 'Coach J Rivera',
+    ...extra,
+  });
+
+  // Sent in an order that is NOT the workout's, as the server's own sort
+  // (due date, then newest) would: the screen must take the order from the
+  // workout, not from the list.
+  const ITEMS = [
+    assignment('asg-loose', 'Shadowbox'),
+    assignment('asg-3', 'Body Sparring', { status: 'cancelled' }),
+    assignment('asg-1', 'Skip Rope', { duration_minutes: 5 }),
+    assignment('asg-4', 'Cooldown Walk'),
+    assignment('asg-2', 'Jab Ladder', { rep_count: 20 }),
+  ];
+
+  const WORKOUT = {
+    issue_id: 'issue-1',
+    athlete_id: 'athlete-001',
+    template_name: 'Technical Tuesday',
+    template_version: 2,
+    issued_at: '2026-10-11T15:00:00.000Z',
+    issued_by_name: 'Coach J Rivera',
+    steps: [
+      // Out of order on purpose too.
+      { ordinal: 3, block: 'main_work', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds.\nCoach watching.', assignment_id: 'asg-3' },
+      { ordinal: 1, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', assignment_id: 'asg-1' },
+      { ordinal: 4, block: 'warmup', scale_level: null, contact_level: 'none', coach_note: '   ', assignment_id: 'asg-4' },
+      { ordinal: 2, block: 'main_work', scale_level: null, contact_level: 'light_technical', coach_note: null, assignment_id: 'asg-2' },
+    ],
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function mockAssigned(body: unknown) {
+    return jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (url.includes('/progression/assignments')) {
+        return { ok: true, json: async () => body } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  async function renderAssigned(body: unknown) {
+    const fetchMock = mockAssigned(body);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      render(<AthleteProgressionIntelligencePage />);
+    });
+    return fetchMock;
+  }
+
+  /** The Drill Assignments section, located by its heading. */
+  async function assignedSection(): Promise<HTMLElement> {
+    const heading = await screen.findByRole('heading', { name: 'Drill Assignments' });
+    return heading.closest('section') as HTMLElement;
+  }
+
+  /** Every heading in the section, in document order, as "level: text". */
+  function headings(section: HTMLElement): string[] {
+    return within(section)
+      .getAllByRole('heading')
+      .filter((heading) => heading.textContent !== 'Drill Assignments')
+      .map((heading) => `${heading.tagName.toLowerCase()}: ${heading.textContent}`);
+  }
+
+  /** The card that holds one drill, found from its heading. */
+  function cardOf(section: HTMLElement, drill: string): HTMLElement {
+    const heading = within(section).getByRole('heading', { name: drill });
+    return heading.closest('.mat-leather') as HTMLElement;
+  }
+
+  test('the workout is drawn once, its steps in the order the coach wrote, a block heading wherever the block changes, then the other drills', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    expect(headings(section)).toEqual([
+      'h3: Technical Tuesday',
+      'h4: warmup',
+      'h5: Skip Rope',
+      'h4: main work',
+      'h5: Jab Ladder',
+      'h5: Body Sparring',
+      // The coach came back to the warm-up block at the end: it is shown
+      // again, where the coach put it, not folded into the first one.
+      'h4: warmup',
+      'h5: Cooldown Walk',
+      'h3: Other drills',
+      'h3: Shadowbox',
+    ]);
+    expect(within(section).getAllByTestId('issued-workout')).toHaveLength(1);
+    const workout = within(section).getByTestId('issued-workout');
+    expect(workout.textContent).toContain('From Coach J Rivera');
+    expect(workout.textContent).toContain('4 steps, in this order');
+  });
+
+  test('each step says its number, the scale level when the coach set one, the contact level as written, and the coach note', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    const skipRope = cardOf(section, 'Skip Rope');
+    expect(within(skipRope).getByText('Step 1')).toBeTruthy();
+    expect(within(skipRope).getByText('Scale A')).toBeTruthy();
+    expect(within(skipRope).getByText('No contact')).toBeTruthy();
+    expect(skipRope.textContent).toContain('Coach note: Easy pace.');
+
+    const sparring = cardOf(section, 'Body Sparring');
+    expect(within(sparring).getByText('Step 3')).toBeTruthy();
+    expect(within(sparring).getByText('Scale C')).toBeTruthy();
+    expect(within(sparring).getByText('Controlled sparring')).toBeTruthy();
+    // Both lines of the note, kept as two lines.
+    expect(sparring.textContent).toContain('Coach note: Two rounds.\nCoach watching.');
+  });
+
+  test('a scale level the coach left open is not shown and nothing is put in its place; a missing or blank note draws no note line', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    const ladder = cardOf(section, 'Jab Ladder');
+    expect(within(ladder).queryByText(/^Scale/)).toBeNull();
+    expect(within(ladder).getByText('Light technical contact')).toBeTruthy();
+    expect(ladder.textContent).not.toContain('Coach note');
+
+    const cooldown = cardOf(section, 'Cooldown Walk');
+    expect(within(cooldown).queryByText(/^Scale/)).toBeNull();
+    expect(cooldown.textContent).not.toContain('Coach note');
+  });
+
+  test('the contact level is shown and nothing is said about it: no warning, alert or added sentence on a sparring step', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    const sparring = cardOf(section, 'Body Sparring');
+    expect(within(sparring).queryByRole('alert')).toBeNull();
+    expect(within(section).queryByRole('alert')).toBeNull();
+    expect(sparring.querySelector('.alert, .badge--locked, .badge--restricted')).toBeNull();
+    expect(sparring.textContent).not.toMatch(/warning|caution|not allowed|cleared|limit|cap\b|ask your coach before/i);
+  });
+
+  test('a step is still the assignment it always was: its status, its reps and minutes, Open drill and Log completion', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [WORKOUT] });
+    const section = await assignedSection();
+
+    const skipRope = cardOf(section, 'Skip Rope');
+    expect(within(skipRope).getByText('5 min')).toBeTruthy();
+    expect(within(skipRope).getByRole('button', { name: 'Open drill: Skip Rope' })).toBeTruthy();
+    expect(within(skipRope).getByRole('button', { name: 'Log completion' })).toBeTruthy();
+    expect(within(cardOf(section, 'Jab Ladder')).getByText('20')).toBeTruthy();
+
+    // A step the coach cancelled stays in its place, says so, and offers no log.
+    const sparring = cardOf(section, 'Body Sparring');
+    expect(sparring.textContent).toMatch(/cancelled/i);
+    expect(within(sparring).queryByRole('button', { name: 'Log completion' })).toBeNull();
+
+    // Five assignments, five cards: none drawn twice, none dropped.
+    expect(within(section).getAllByRole('button', { name: /^Open drill:/ })).toHaveLength(5);
+  });
+
+  test('assignments with no workout read exactly as before: no workout, no block or "Other drills" heading, no step lines', async () => {
+    await renderAssigned({ items: ITEMS, workouts: [] });
+    const section = await assignedSection();
+
+    expect(headings(section)).toEqual(['h3: Shadowbox', 'h3: Body Sparring', 'h3: Skip Rope', 'h3: Cooldown Walk', 'h3: Jab Ladder']);
+    expect(within(section).queryByTestId('issued-workout')).toBeNull();
+    expect(section.textContent).not.toMatch(/Step \d|No contact|Coach note|Other drills/);
+  });
+
+  test('an answer with no workouts key at all (an older server, an older issue) draws the flat list', async () => {
+    await renderAssigned({ items: ITEMS });
+    const section = await assignedSection();
+
+    expect(headings(section)).toHaveLength(5);
+    expect(within(section).queryByTestId('issued-workout')).toBeNull();
+    expect(screen.queryByText('This screen did not load')).toBeNull();
+  });
+
+  test('a workout whose steps were not sent is not drawn, and a step that was not sent is left out of the count', async () => {
+    const onlyTwo = ITEMS.filter((item) => ['asg-1', 'asg-2', 'asg-loose'].includes(item.assignment_id));
+    const elsewhere = { ...WORKOUT, issue_id: 'issue-2', template_name: 'Friday Pads', steps: [{ ...WORKOUT.steps[0], assignment_id: 'asg-not-sent' }] };
+    await renderAssigned({ items: onlyTwo, workouts: [WORKOUT, elsewhere] });
+    const section = await assignedSection();
+
+    expect(headings(section)).toEqual([
+      'h3: Technical Tuesday',
+      'h4: warmup',
+      'h5: Skip Rope',
+      'h4: main work',
+      'h5: Jab Ladder',
+      'h3: Other drills',
+      'h3: Shadowbox',
+    ]);
+    expect(within(section).getByTestId('issued-workout').textContent).toContain('2 steps, in this order');
+    expect(section.textContent).not.toContain('Friday Pads');
+  });
+
+  test('two workouts are drawn one after the other, each with its own steps, in the order the server sent them', async () => {
+    const second = {
+      ...WORKOUT,
+      issue_id: 'issue-2',
+      template_name: 'Friday Pads',
+      steps: [{ ordinal: 1, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-loose' }],
+    };
+    await renderAssigned({ items: ITEMS, workouts: [second, WORKOUT] });
+    const section = await assignedSection();
+
+    expect(headings(section).filter((line) => line.startsWith('h3:'))).toEqual(['h3: Friday Pads', 'h3: Technical Tuesday']);
+    expect(headings(section).slice(0, 3)).toEqual(['h3: Friday Pads', 'h4: pads', 'h5: Shadowbox']);
+    // Every assignment is in a workout now, so there is no "Other drills".
+    expect(section.textContent).not.toContain('Other drills');
+  });
+
+  test('the workout says one step, not "1 steps", and names no coach when the server sent none', async () => {
+    const single = { ...WORKOUT, issued_by_name: undefined, steps: [WORKOUT.steps[1]] };
+    await renderAssigned({ items: ITEMS, workouts: [single] });
+    const section = await assignedSection();
+
+    const workout = within(section).getByTestId('issued-workout');
+    expect(workout.textContent).toContain('1 step, in this order');
+    expect(workout.textContent).not.toContain('From');
+  });
+
+  const UNREADABLE: Array<[string, unknown]> = [
+    ['not a list', { issue_id: 'issue-1' }],
+    ['a workout with no steps list', [{ ...WORKOUT, steps: undefined }]],
+    ['a step with no assignment', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], assignment_id: undefined }] }]],
+    ['a step whose contact level is missing', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], contact_level: null }] }]],
+    ['a step whose order is not a number', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], ordinal: 'first' }] }]],
+    ['a workout with no name', [{ ...WORKOUT, template_name: null }]],
+  ];
+
+  test.each(UNREADABLE)('workouts the screen cannot read (%s) are a failed load, never a flat list passed off as the whole workout', async (_label, workouts) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await renderAssigned({ items: ITEMS, workouts });
+
+    await screen.findByText('This screen did not load');
+    expect(screen.getByText(/Your drills did not load\. Nothing is lost/)).toBeTruthy();
+    // Nothing of the list is drawn, in any order.
+    expect(screen.queryByText('Skip Rope')).toBeNull();
+    expect(screen.queryByText('No drills assigned yet')).toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+  });
+});
+
 // The one thing an athlete must never be handed on their own screen: the
 // developer's half of the conversation. This page used to render
 // `Failed to fetch gaps: ${res.status}` and `Log failed (${res.status})`
