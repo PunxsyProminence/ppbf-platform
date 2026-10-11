@@ -46,7 +46,10 @@ jest.mock('./audit', () => ({
 }));
 
 jest.mock('./workoutIssues', () => ({
+  // The real error class: the writer tells it apart by type.
+  WorkoutIssueRequestKeyTakenError: jest.requireActual('./workoutIssues').WorkoutIssueRequestKeyTakenError,
   recordWorkoutIssue: jest.fn(),
+  findWorkoutIssueByRequestKey: jest.fn(),
 }));
 
 jest.mock('./progression', () => {
@@ -63,7 +66,7 @@ import { updateDrillToReferenceVersion } from './drillVersioning';
 import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferenceDrill } from './drills';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
-import { recordWorkoutIssue } from './workoutIssues';
+import { findWorkoutIssueByRequestKey, recordWorkoutIssue, WorkoutIssueRequestKeyTakenError } from './workoutIssues';
 import { issueWorkoutTemplate } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
@@ -79,6 +82,7 @@ const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCueRule = assertNewAssignmentMeetsCueRule as jest.Mock;
 const mockRecordIssue = recordWorkoutIssue as jest.Mock;
 const mockUpdate = updateDrillToReferenceVersion as jest.Mock;
+const mockFindByKey = findWorkoutIssueByRequestKey as jest.Mock;
 
 const ORG = 'org-1';
 const TEMPLATE_ID = 'wtp_1';
@@ -217,6 +221,9 @@ beforeEach(() => {
   cardCount = 0;
   mockCueRule.mockResolvedValue(undefined);
   mockRecordIssue.mockResolvedValue('issue-1');
+  // Reset, not only cleared: a case here queues one-time answers.
+  mockFindByKey.mockReset();
+  mockFindByKey.mockResolvedValue(null);
   mockCard.mockImplementation(async (params: { drillId: string }) => {
     cardCount += 1;
     return assignment(params.drillId, cardCount);
@@ -887,18 +894,19 @@ describe('drill names, decided before anything is written', () => {
   });
 });
 
-describe('the issued workout keeps its shape (lane P7c)', () => {
-  const ITEMS = [
-    item(1, { block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.' }),
-    item(2, { block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null }),
-    item(3, { block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.', duration_minutes: null }),
-  ];
-  const LIBRARY = {
-    'ref-1': { state: 'operational', operational: 'op-1' },
-    'ref-2': { state: 'operational', operational: 'op-2' },
-    'ref-3': { state: 'operational', operational: 'op-3' },
-  };
+// The workout the shape cases and the request key cases issue: three steps the gym already runs.
+const ITEMS = [
+  item(1, { block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.' }),
+  item(2, { block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null }),
+  item(3, { block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds, coach watching.', duration_minutes: null }),
+];
+const LIBRARY = {
+  'ref-1': { state: 'operational', operational: 'op-1' },
+  'ref-2': { state: 'operational', operational: 'op-2' },
+  'ref-3': { state: 'operational', operational: 'op-3' },
+};
 
+describe('the issued workout keeps its shape (lane P7c)', () => {
   test('every step is recorded on the transaction with its block, order, levels and note exactly as the template item has them', async () => {
     given({ items: ITEMS, library: LIBRARY });
 
@@ -912,6 +920,7 @@ describe('the issued workout keeps its shape (lane P7c)', () => {
       athleteId: ATHLETE,
       template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday', version: 2 },
       issuedByAccountId: 'coach-1',
+      requestKey: null,
       steps: [
         { ordinal: 1, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', template_item_id: 'wti_1', assignment_id: 'assignment_1' },
         // A level the coach left open stays open, and a missing note stays missing.
@@ -939,6 +948,178 @@ describe('the issued workout keeps its shape (lane P7c)', () => {
 
     await expect(issueWorkoutTemplate(PARAMS)).rejects.toThrow('insert refused');
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// ONE ISSUE PER REQUEST KEY (lane P7c, PR F). What the writer decides about a
+// key; that the database keeps a key to one issue, and what two sends at the
+// same moment do, is workoutIssues.pg.test.ts.
+describe('a request key names one issue', () => {
+  const FIRST = {
+    issue_id: 'issue-first',
+    athlete_id: ATHLETE,
+    template_id: TEMPLATE_ID,
+    template_name: 'Technical Tuesday As Issued',
+    template_version: 2,
+    step_count: 3,
+  };
+  const REPEAT = {
+    outcome: 'already_issued',
+    issue_id: 'issue-first',
+    // The name the workout was issued under, from the issue, not from the template today.
+    template: { template_id: TEMPLATE_ID, name: 'Technical Tuesday As Issued', version: 2 },
+    step_count: 3,
+  };
+
+  test.each([
+    ['no key', PARAMS],
+    ['a null key', { ...PARAMS, requestKey: null }],
+  ])('with %s nothing is looked up, and the issue is written with a null key', async (_label, params) => {
+    given({ items: ITEMS, library: LIBRARY });
+
+    const result = await issueWorkoutTemplate(params);
+
+    expect(result.outcome).toBe('issued');
+    expect(mockFindByKey).not.toHaveBeenCalled();
+    expect(mockRecordIssue.mock.calls[0][1].requestKey).toBeNull();
+  });
+
+  test("a key that names nothing yet is looked up in the session's organization before the template is read, then written with the issue", async () => {
+    given({ items: ITEMS, library: LIBRARY });
+
+    const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+    expect(result.outcome).toBe('issued');
+    expect(mockFindByKey).toHaveBeenCalledTimes(1);
+    expect(mockFindByKey).toHaveBeenCalledWith(ORG, 'key-1');
+    expect(mockFindByKey.mock.invocationCallOrder[0]).toBeLessThan(mockQueryOne.mock.invocationCallOrder[0]);
+    expect(mockRecordIssue.mock.calls[0][1].requestKey).toBe('key-1');
+  });
+
+  test('a key that already names this issue is answered with it: no template read, no transaction, no card, no audit event', async () => {
+    mockFindByKey.mockResolvedValue(FIRST);
+
+    const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+    expect(result).toEqual(REPEAT);
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+    expectNothingWritten();
+  });
+
+  test.each([
+    ['another athlete', { ...FIRST, athlete_id: 'athlete-other' }],
+    ['another template', { ...FIRST, template_id: 'wtp_other' }],
+  ])('a key that names an issue for %s is refused, never answered with that issue and never issued again', async (_label, other) => {
+    mockFindByKey.mockResolvedValue(other);
+
+    await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+      message: 'This request was already used to issue a different workout.',
+    });
+    expectNothingWritten();
+  });
+
+  test('the key is taken INSIDE the transaction (the same request, sent twice at once): the answer is the issue that took it, and no audit event is written', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+    mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce(FIRST);
+    mockRecordIssue.mockRejectedValue(new WorkoutIssueRequestKeyTakenError());
+
+    const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+    expect(result).toEqual(REPEAT);
+    expect(mockFindByKey).toHaveBeenCalledTimes(2);
+    expect(mockFindByKey).toHaveBeenLastCalledWith(ORG, 'key-1');
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a key taken inside the transaction by an issue for another athlete is refused, not answered with it', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+    mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...FIRST, athlete_id: 'athlete-other' });
+    mockRecordIssue.mockRejectedValue(new WorkoutIssueRequestKeyTakenError());
+
+    await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+    });
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a key reported taken that then names nothing is not swallowed: the error leaves as it came', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+    mockRecordIssue.mockRejectedValue(new WorkoutIssueRequestKeyTakenError());
+
+    await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toBeInstanceOf(WorkoutIssueRequestKeyTakenError);
+    expect(mockFindByKey).toHaveBeenCalledTimes(2);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  const ADOPTS = { items: [item(1)], library: { 'ref-1': { state: 'available' as const } } };
+  const COLLISIONS: Array<[string, () => Error]> = [
+    ['the name', () => new DrillNameTakenError('Jab Ladder')],
+    ['the reference', () => new ReferenceDrillAlreadyPromotedError('ref-1')],
+  ];
+
+  test.each(COLLISIONS)(
+    "the same request met at the drill library (%s index), because the template adopts a drill: answered as the repeat, never as 'nothing was issued'",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce(FIRST);
+      mockPromote.mockRejectedValue(collision());
+
+      const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+      expect(result).toEqual(REPEAT);
+      expect(mockFindByKey).toHaveBeenCalledTimes(2);
+      expect(mockRecordIssue).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(COLLISIONS)(
+    "a drill library collision (%s index) that was somebody else's adoption is still the conflict to retry: the key names nothing",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockPromote.mockRejectedValue(collision());
+
+      await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+        status: 409,
+        code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+      });
+      expect(mockFindByKey).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  test.each(COLLISIONS)(
+    "a drill library collision (%s index) whose key names ANOTHER athlete's issue is refused as a reused key, not answered with that issue and not called a library change",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...FIRST, athlete_id: 'athlete-other' });
+      mockPromote.mockRejectedValue(collision());
+
+      await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+        status: 409,
+        code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+      });
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(COLLISIONS)('with no key a drill library collision (%s index) looks nothing up', async (_label, collision) => {
+    given(ADOPTS);
+    mockPromote.mockRejectedValue(collision());
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' });
+    expect(mockFindByKey).not.toHaveBeenCalled();
+  });
+
+  test('any other failure of the write is not looked up as a repeat', async () => {
+    given({ items: ITEMS, library: LIBRARY });
+    mockRecordIssue.mockRejectedValue(new Error('insert refused'));
+
+    await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toThrow('insert refused');
+    expect(mockFindByKey).toHaveBeenCalledTimes(1);
   });
 });
 

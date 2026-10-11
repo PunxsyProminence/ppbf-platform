@@ -10,7 +10,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
-import { orderAssignedWork, readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
+import { orderAssignedWork, readDatedIssuedWorkouts, type DatedIssuedWorkout } from '@/src/lib/issuedWorkouts';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
@@ -130,23 +130,9 @@ interface DrillAssignment {
  * who issued it, so a workout with no readable date, or a name that is not
  * text, is refused here too.
  */
-interface DatedWorkout extends IssuedWorkoutView {
-  issued_at: string;
-  issued_by_name?: string;
-}
-
-function readDatedWorkouts(raw: unknown): DatedWorkout[] {
+function readDatedWorkouts(raw: unknown): DatedIssuedWorkout[] {
   try {
-    return readIssuedWorkouts(raw).map((workout) => {
-      const { issued_at, issued_by_name } = workout;
-      if (typeof issued_at !== 'string' || Number.isNaN(Date.parse(issued_at))) {
-        throw new Error('a workout has no readable date');
-      }
-      if (issued_by_name !== undefined && typeof issued_by_name !== 'string') {
-        throw new Error('a workout names its coach with something that is not text');
-      }
-      return { ...workout, issued_at, issued_by_name };
-    });
+    return readDatedIssuedWorkouts(raw);
   } catch (cause) {
     throw new Error(DRILLS_DID_NOT_LOAD, { cause });
   }
@@ -363,7 +349,7 @@ export default function AthleteProgressionIntelligencePage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
-  const [workouts, setWorkouts] = useState<DatedWorkout[]>([]);
+  const [workouts, setWorkouts] = useState<DatedIssuedWorkout[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

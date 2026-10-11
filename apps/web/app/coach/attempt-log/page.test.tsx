@@ -373,3 +373,174 @@ test('a coach does see the review mutation controls', async () => {
   expect(screen.getByRole('button', { name: 'Correct' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Dispute' })).toBeTruthy();
 });
+
+// Lane N3-01. The picker lists the whole gym; attempts are per athlete, and a
+// coach is refused on an athlete who is not theirs (OD-2026-10-05-024 item 2).
+// What these pin: the rows on screen always belong to the athlete picked -- a
+// refused athlete shows nothing from the athlete before, and neither a review
+// nor a record that finishes late can paint one athlete under another's name.
+// And the record form sends a target only when it is a real one.
+
+const ROSTER = [
+  { athlete_id: 'ath-1', full_name: 'Jordan P.' },
+  { athlete_id: 'ath-2', full_name: 'Casey R.' },
+];
+
+const CASEY_ATTEMPT = {
+  ...MISSED_ATTEMPT,
+  attempt_id: 'att-9',
+  athlete_name: 'Casey R.',
+  note: 'held the pace',
+  review_state: null,
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+const okJson = (body: unknown) => ({ ok: true, json: async () => body }) as Response;
+
+// Two athletes. `listFor` answers each athlete's list read; `post` answers
+// every POST (record or review) and records what was sent.
+function mockRosterFetch(options: {
+  listFor: (athleteId: string) => Response | Promise<Response>;
+  post?: () => Response | Promise<Response>;
+  posts?: Array<Record<string, unknown>>;
+}) {
+  return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/athletes/list')) return okJson({ items: ROSTER });
+    if (init?.method === 'POST') {
+      options.posts?.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return options.post ? options.post() : okJson({ item: {} });
+    }
+    if (url.includes('/training-attempts/review')) return okJson({ items: [] });
+    return options.listFor(url.includes('athlete_id=ath-2') ? 'ath-2' : 'ath-1');
+  }) as unknown as typeof fetch;
+}
+
+async function pick(athleteId: string) {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: athleteId } });
+  });
+}
+
+test('an athlete the server refuses shows nothing from the athlete before -- no rows, no review controls', async () => {
+  global.fetch = mockRosterFetch({
+    listFor: (athleteId) => (athleteId === 'ath-1'
+      ? okJson({ items: [{ ...MISSED_ATTEMPT, review_state: null }] })
+      : ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden' }) }) as Response),
+  });
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await pick('ath-1');
+  expect(await screen.findByText('gassed at 300m')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
+
+  await pick('ath-2');
+  expect(await screen.findByText('Unable to load attempts.')).toBeTruthy();
+
+  // Jordan's attempt is not Casey's, and must not sit under Casey's name.
+  expect(screen.queryByText('gassed at 300m')).toBeNull();
+  expect(screen.queryByText('missed')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Correct' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Dispute' })).toBeNull();
+});
+
+test('a review that finishes after the coach switches athlete never paints the old athlete under the new one', async () => {
+  const review = deferred<Response>();
+  global.fetch = mockRosterFetch({
+    listFor: (athleteId) => okJson({
+      items: [athleteId === 'ath-1' ? { ...MISSED_ATTEMPT, review_state: null } : CASEY_ATTEMPT],
+    }),
+    post: () => review.promise,
+  });
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await pick('ath-1');
+  await screen.findByText('gassed at 300m');
+
+  // Confirm Jordan's attempt; the answer is still on its way...
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
+  // ...when the coach moves to Casey.
+  await pick('ath-2');
+  expect(await screen.findByText('held the pace')).toBeTruthy();
+
+  // The review lands and reloads JORDAN's attempts. They belong to nobody on
+  // screen now.
+  await act(async () => { review.resolve(okJson({ item: {} })); });
+
+  expect(screen.getByText('held the pace')).toBeTruthy();
+  expect(screen.queryByText('gassed at 300m')).toBeNull();
+});
+
+test('a refusal for one athlete does not stay on screen once the coach picks nobody', async () => {
+  global.fetch = mockRosterFetch({
+    listFor: () => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden' }) }) as Response,
+  });
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await pick('ath-2');
+  expect(await screen.findByText('Unable to load attempts.')).toBeTruthy();
+
+  // Nobody picked: nothing was refused for nobody.
+  await pick('');
+  expect(screen.queryByText('Unable to load attempts.')).toBeNull();
+});
+
+test('the athlete picker is held while a record is in flight', async () => {
+  const record = deferred<Response>();
+  global.fetch = mockRosterFetch({
+    listFor: () => okJson({ items: [{ ...MISSED_ATTEMPT, review_state: null }] }),
+    post: () => record.promise,
+  });
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await pick('ath-1');
+  await screen.findByText('gassed at 300m');
+  const picker = screen.getByLabelText('Athlete') as HTMLSelectElement;
+  expect(picker.disabled).toBe(false);
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Achieved'), { target: { value: '12' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Record attempt' })); });
+  expect(picker.disabled).toBe(true);
+
+  await act(async () => { record.resolve(okJson({ item: {} })); });
+  expect(picker.disabled).toBe(false);
+});
+
+describe('the record form sends a target only when it is a real one', () => {
+  async function recordWithTarget(target: string): Promise<Array<Record<string, unknown>>> {
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = mockRosterFetch({ listFor: () => okJson({ items: [] }), posts });
+
+    await act(async () => { render(<AttemptLogPage />); });
+    await pick('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/^Target/), { target: { value: target } });
+      fireEvent.change(screen.getByLabelText('Achieved'), { target: { value: '12' } });
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Record attempt' })); });
+    return posts;
+  }
+
+  // "1O" is the letter O. Sent as a number it is NaN, which JSON turns into
+  // null: the attempt would be stored as a measurement with no verdict.
+  test.each(['1O', 'abc', '0', '-5'])('a target of "%s" never leaves the page', async (target) => {
+    const posts = await recordWithTarget(target);
+
+    expect(posts).toHaveLength(0);
+    expect(screen.getByText('Target must be a number above 0, or leave it blank for a measurement.')).toBeTruthy();
+  });
+
+  test('a real target posts as that number', async () => {
+    const posts = await recordWithTarget('10');
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ athlete_id: 'ath-1', target_value: 10, achieved_value: 12 });
+    expect(posts[0]).not.toHaveProperty('made');
+  });
+});

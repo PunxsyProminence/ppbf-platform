@@ -41,8 +41,15 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
 }));
 
+import { getOrganizationClearedTonight } from './clearedTonight';
+import { findContactEventBlockingHold, findRegistrationBlockingHold } from './trainingHolds';
 import { getOrganizationWaiverStatus } from './waiverCompliance';
 
 jest.setTimeout(180_000);
@@ -391,6 +398,236 @@ describe('getOrganizationWaiverStatus against real Postgres', () => {
 
       const statuses = await getOrganizationWaiverStatus(ORG_A);
       expect(statuses[0].activeFlag).toBe(false);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// LANE N4-01 (OD-2026-10-08-006 A-Q19, "Build one answer"). The unit suite
+// mocks every read; this runs the composed read against the real tables, where
+// the things a mock cannot show live: which hold row counts as active, which
+// medical row is the latest, and whether another gym's rows can reach this one.
+async function insertHold(
+  client: Client,
+  params: { organizationId: string; athleteId: string; scope: string; status?: string; placedAt?: string; expiresAt?: string | null },
+): Promise<void> {
+  await client.query(
+    `insert into pilot.training_holds (
+       organization_id, hold_id, athlete_id, scope, reason_category, reason_text, athlete_explanation,
+       lift_condition_text, placed_by_account_id, placed_by_role, placed_at, expires_at, status
+     ) values ($1, $2, $3, $4, 'medical', 'STAFF-ONLY reason', 'Rest this week.', 'A note from your doctor.',
+               $5, 'coach', coalesce($6::timestamptz, now()), $7::timestamptz, $8)`,
+    [
+      params.organizationId,
+      randomUUID(),
+      params.athleteId,
+      params.scope,
+      COACH_ID,
+      params.placedAt ?? null,
+      params.expiresAt ?? null,
+      params.status ?? 'active',
+    ],
+  );
+}
+
+async function insertMedical(
+  client: Client,
+  params: { organizationId: string; athleteId: string; status: string; effectiveAt: string; expiresAt?: string | null },
+): Promise<void> {
+  await client.query(
+    `insert into pilot.shadow_medical_administrative_status (
+       organization_id, athlete_id, status, restriction_flags, source_reference, set_by_account_id, set_by_role,
+       effective_at, expires_at
+     ) values ($1, $2, $3, '{"detail":"STAFF-ONLY flags"}'::jsonb, 'STAFF-ONLY source', $4, 'coach', $5::timestamptz, $6::timestamptz)`,
+    [params.organizationId, params.athleteId, params.status, COACH_ID, params.effectiveAt, params.expiresAt ?? null],
+  );
+}
+
+async function insertViolation(
+  client: Client,
+  params: { organizationId: string; ruleId: string; athleteId: string; status: string },
+): Promise<void> {
+  await client.query(
+    `insert into pilot.compliance_violations (
+       violation_id, organization_id, rule_id, athlete_id, detected_by_account_id, violation_timestamp, severity, status
+     ) values ($1, $2, $3, $4, $5, now(), 'high', $6)`,
+    [`violation-${randomUUID()}`, params.organizationId, params.ruleId, params.athleteId, COACH_ID, params.status],
+  );
+}
+
+async function insertRule(client: Client, organizationId: string, ruleId: string, ruleName: string): Promise<void> {
+  await client.query(
+    `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic)
+     values ($1, $2, $3, 'safety', 'description', 'manual')`,
+    [ruleId, organizationId, ruleName],
+  );
+}
+
+describe('cleared tonight against real Postgres', () => {
+  afterEach(() => {
+    activeClient = null;
+  });
+
+  test('one answer per athlete from the real hold, medical, waiver and violation rows of this gym only', async () => {
+    const client = await freshDatabase('ppbf_test_cleared_tonight_roster');
+    activeClient = client;
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const CLEARED = 'ATH-TONIGHT-1-CLEARED';
+      const HELD = 'ATH-TONIGHT-2-HELD';
+      const LAPSED = 'ATH-TONIGHT-3-LAPSED-HOLD';
+      const RECLEARED = 'ATH-TONIGHT-4-RECLEARED';
+      const NO_RECORD = 'ATH-TONIGHT-5-NO-MEDICAL';
+      const ADULT = 'ATH-TONIGHT-6-ADULT';
+      const RESTRICTED = 'ATH-TONIGHT-7-RESTRICTED';
+      const NOT_CLEARED = 'ATH-TONIGHT-8-NOT-CLEARED';
+      for (const [athleteId, name] of [
+        [CLEARED, 'Avery Cleared'], [HELD, 'Blake Held'], [LAPSED, 'Casey Lapsed'],
+        [RECLEARED, 'Devon Recleared'], [NO_RECORD, 'Emery Norecord'], [ADULT, 'Finley Adult'],
+        [RESTRICTED, 'Gray Restricted'], [NOT_CLEARED, 'Harper Notcleared'],
+      ]) {
+        await insertAthlete(client, ORG_A, athleteId, name);
+      }
+      await client.query(`update pilot.athletes set dob = '2000-01-15' where organization_id = $1 and athlete_id = $2`, [ORG_A, ADULT]);
+      // The other gym issues the SAME athlete id, held, with an open violation.
+      await insertAthlete(client, ORG_B, CLEARED, 'Other Gym Child');
+      await insertHold(client, { organizationId: ORG_B, athleteId: CLEARED, scope: 'all_training' });
+      await insertMedical(client, { organizationId: ORG_B, athleteId: CLEARED, status: 'not_cleared', effectiveAt: '2026-10-01T00:00:00Z' });
+      await insertRule(client, ORG_B, 'rule-tonight-b', 'Other gym rule');
+      await insertViolation(client, { organizationId: ORG_B, ruleId: 'rule-tonight-b', athleteId: CLEARED, status: 'new' });
+
+      for (const athleteId of [CLEARED, HELD, LAPSED, ADULT]) {
+        await insertMedical(client, { organizationId: ORG_A, athleteId, status: 'cleared', effectiveAt: '2026-09-01T00:00:00Z' });
+      }
+      // Two records a person entered, and no hold on either athlete.
+      await insertMedical(client, { organizationId: ORG_A, athleteId: RESTRICTED, status: 'restricted', effectiveAt: '2026-09-01T00:00:00Z' });
+      await insertMedical(client, { organizationId: ORG_A, athleteId: NOT_CLEARED, status: 'not_cleared', effectiveAt: '2026-09-01T00:00:00Z' });
+      // The latest medical row decides, not the first or the strictest.
+      await insertMedical(client, { organizationId: ORG_A, athleteId: RECLEARED, status: 'not_cleared', effectiveAt: '2026-08-01T00:00:00Z' });
+      await insertMedical(client, { organizationId: ORG_A, athleteId: RECLEARED, status: 'cleared', effectiveAt: '2026-09-15T00:00:00Z' });
+
+      await insertHold(client, { organizationId: ORG_A, athleteId: HELD, scope: 'all_training' });
+      // Still stored 'active', but its clock ran out yesterday.
+      await insertHold(client, {
+        organizationId: ORG_A, athleteId: LAPSED, scope: 'contact_only',
+        placedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+        expiresAt: new Date(Date.now() - 86_400_000).toISOString(),
+      });
+      // A hold somebody lifted is history.
+      await insertHold(client, { organizationId: ORG_A, athleteId: RECLEARED, scope: 'all_training', status: 'lifted' });
+
+      await insertWaiver(client, {
+        organizationId: ORG_A, athleteId: CLEARED, waiverType: 'general', status: 'signed',
+        signedAt: '2026-09-02T12:00:00Z', createdAt: '2026-09-02T15:00:00Z',
+      });
+      await insertRule(client, ORG_A, 'rule-tonight-a', 'Headgear worn');
+      for (const status of ['new', 'escalated', 'dismissed', 'resolved']) {
+        await insertViolation(client, { organizationId: ORG_A, ruleId: 'rule-tonight-a', athleteId: CLEARED, status });
+      }
+
+      const rows = await getOrganizationClearedTonight(ORG_A);
+      const byId = new Map(rows.map((row) => [row.athleteId, row]));
+
+      expect(rows).toHaveLength(8);
+      expect(Object.fromEntries(rows.map((row) => [row.athleteId, row.tonight.answer]))).toEqual({
+        [CLEARED]: 'cleared',
+        [HELD]: 'not_cleared',
+        [LAPSED]: 'cleared',
+        [RECLEARED]: 'cleared',
+        [NO_RECORD]: 'cleared_to_train',
+        [ADULT]: 'cleared',
+        [RESTRICTED]: 'cleared_no_contact',
+        // A not_cleared record with no hold never reads cleared.
+        [NOT_CLEARED]: 'not_cleared',
+      });
+
+      const cleared = byId.get(CLEARED)!;
+      expect(cleared.tonight.hold).toBeNull();
+      expect(cleared.tonight.medical).toEqual({ status: 'cleared', current: true, expires_at: null });
+      expect(cleared.tonight.waivers).toEqual([
+        { type: 'general', status: 'signed', recorded_on: '2026-09-02' },
+        { type: 'medical_release', status: 'missing', recorded_on: null },
+        { type: 'travel', status: 'missing', recorded_on: null },
+      ]);
+      // Open by compliance.ts's own definition: new and escalated, not the two closed ones.
+      expect(cleared.tonight.open_violations).toBe(2);
+      // No guardian linked: the existing consent check's "missing".
+      expect(cleared.tonight.media_consent).toEqual({ basis: 'guardian', status: 'missing' });
+
+      expect(byId.get(HELD)!.tonight.hold).toEqual({
+        scope: 'all_training',
+        athlete_explanation: 'Rest this week.',
+        lift_condition_text: 'A note from your doctor.',
+        expires_at: null,
+      });
+      expect(byId.get(LAPSED)!.tonight.hold).toBeNull();
+      expect(byId.get(RECLEARED)!.tonight.hold).toBeNull();
+      expect(byId.get(NO_RECORD)!.tonight.medical).toEqual({ status: 'no_record', current: false, expires_at: null });
+      expect(byId.get(NO_RECORD)!.tonight.open_violations).toBe(0);
+      expect(byId.get(ADULT)!.tonight.media_consent).toEqual({ basis: 'adult_own_consent' });
+
+      const sent = JSON.stringify(rows);
+      expect(sent).not.toContain('STAFF-ONLY');
+      expect(sent).not.toContain('Other Gym Child');
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // NOT A SECOND RULE. For every hold scope the answer must say exactly what
+  // the two enforcement reads say: the registration stop
+  // (findRegistrationBlockingHold) and the contact stop
+  // (findContactEventBlockingHold). Medical is cleared throughout, so the
+  // hold alone decides here.
+  test.each([
+    ['all_training', 'not_cleared'],
+    ['contact_only', 'cleared_no_contact'],
+    ['conditioning_only', 'cleared'],
+    [null, 'cleared'],
+  ])('a %s hold reads as the enforcement reads say it does', async (scope, expected) => {
+    const client = await freshDatabase(`ppbf_test_cleared_tonight_${scope ?? 'no_hold'}`);
+    activeClient = client;
+    try {
+      await insertAthlete(client, ORG_A, ATHLETE_ID, 'Compliance Athlete');
+      await insertMedical(client, { organizationId: ORG_A, athleteId: ATHLETE_ID, status: 'cleared', effectiveAt: '2026-09-01T00:00:00Z' });
+      if (scope) {
+        await insertHold(client, { organizationId: ORG_A, athleteId: ATHLETE_ID, scope });
+      }
+
+      const [row] = await getOrganizationClearedTonight(ORG_A);
+      const stopsRegistration = (await findRegistrationBlockingHold(ORG_A, ATHLETE_ID)) !== null;
+      const stopsContact = (await findContactEventBlockingHold(ORG_A, ATHLETE_ID)) !== null;
+
+      expect(row.tonight.answer).toBe(expected);
+      expect(row.tonight.answer === 'not_cleared').toBe(stopsRegistration);
+      expect(row.tonight.answer !== 'cleared').toBe(stopsContact);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // The medical time bound is the stored row's, read by isClearanceCurrent.
+  test('a clearance whose stated expiry has passed is not a clearance tonight', async () => {
+    const client = await freshDatabase('ppbf_test_cleared_tonight_expired_medical');
+    activeClient = client;
+    try {
+      await insertAthlete(client, ORG_A, ATHLETE_ID, 'Compliance Athlete');
+      await insertMedical(client, {
+        organizationId: ORG_A, athleteId: ATHLETE_ID, status: 'cleared',
+        effectiveAt: '2026-01-01T00:00:00Z', expiresAt: '2026-02-01T00:00:00Z',
+      });
+
+      const [row] = await getOrganizationClearedTonight(ORG_A);
+
+      // The expiry leaves as ISO, read from the real timestamptz column.
+      expect(row.tonight.medical).toEqual({ status: 'cleared_expired', current: false, expires_at: '2026-02-01T00:00:00.000Z' });
+      expect(row.tonight.answer).toBe('cleared_to_train');
     } finally {
       activeClient = null;
       await client.end();

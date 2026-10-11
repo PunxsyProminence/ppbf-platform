@@ -511,8 +511,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'seeded template the note is the template author\'s text, not a coach of this gym\'s. '
       + 'The read has no gate of its own: it answers only about assignment ids its caller has already read, '
       + 'and joins every step to its assignment on the organization. It has two callers. The assignments '
-      + 'route passes ids it read behind assertActorCanAccessAthlete, and sends the note to staff and to the '
-      + 'athlete; a linked guardian is not sent it until their screen is built. The coach card list passes '
+      + 'route passes ids it read behind assertActorCanAccessAthlete, and sends the note to staff, to the '
+      + 'athlete, and to a linked guardian, who reads what their child reads (that gate requires the '
+      + 'guardian link; the guardian is sent the coach\'s name and no account id). The coach card list passes '
       + 'the rows of listCoachCards (a coach\'s own cards for athletes that coach currently reaches; the '
       + 'whole gym for an organization admin). The same row carries the step\'s contact level, the coach\'s '
       + 'entry, shown as written.',

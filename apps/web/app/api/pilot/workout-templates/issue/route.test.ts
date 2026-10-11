@@ -149,6 +149,7 @@ describe('the request', () => {
       athleteId: 'athlete-1',
       actorAccountId: 'coach-1',
       actorRole: 'coach',
+      requestKey: null,
     });
   });
 });
@@ -282,5 +283,119 @@ describe('an athlete with an active training hold (OD-2026-10-06-024 ruling 1: w
 
     expect(res.status).toBe(201);
     expect((await res.json()).hold_warning).toBe('unreadable');
+  });
+});
+
+// ONE PRESS, ONE ISSUE (lane P7c, PR F). The coach's screen sends a request key
+// with a press of Issue and the same key again when that press got no answer.
+// The writer decides what a key means (proven against real PostgreSQL in
+// workoutIssues.pg.test.ts); this is what the route accepts and what each
+// outcome becomes on the wire.
+describe('a request key', () => {
+  const ALREADY = {
+    outcome: 'already_issued',
+    issue_id: ISSUED.issue_id,
+    template: ISSUED.template,
+    step_count: 2,
+  };
+
+  test('the key is handed to the writer exactly as sent, never trimmed; a request with none hands it null', async () => {
+    await POST(post({ ...BODY, request_key: 'a1b2c3d4-0000-4000-8000-000000000001' }));
+    await POST(post(BODY));
+    await POST(post({ ...BODY, request_key: null }));
+    // The same characters must come back on a retry, so the route changes none of them.
+    await POST(post({ ...BODY, request_key: '  Key With Spaces  ' }));
+
+    expect(mockIssue.mock.calls.map(([params]) => params.requestKey)).toEqual([
+      'a1b2c3d4-0000-4000-8000-000000000001',
+      null,
+      null,
+      '  Key With Spaces  ',
+    ]);
+  });
+
+  test('a key of exactly 200 characters is accepted', async () => {
+    const res = await POST(post({ ...BODY, request_key: 'k'.repeat(200) }));
+
+    expect(res.status).toBe(201);
+    expect(mockIssue.mock.calls[0][0].requestKey).toBe('k'.repeat(200));
+  });
+
+  test.each([
+    ['an empty key', ''],
+    ['a blank key', '   '],
+    ['a key of 201 characters', 'k'.repeat(201)],
+    ['a numeric key', 7],
+    ['a key that is an object', { key: 'x' }],
+    ['a key that is true', true],
+    // PostgreSQL cannot store a NUL in text: refused here, not a 500 from the database.
+    ['a key holding a NUL', `a${String.fromCharCode(0)}b`],
+  ] as Array<[string, unknown]>)('%s is a 400 that says so, and nothing is read or written', async (_label, requestKey) => {
+    const res = await POST(post({ ...BODY, request_key: requestKey }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('request_key must be text of 1 to 200 characters');
+    expect(mockReach).not.toHaveBeenCalled();
+    expect(mockIssue).not.toHaveBeenCalled();
+  });
+
+  test('a role that may not issue is refused before its key is looked at', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+
+    const res = await POST(post({ ...BODY, request_key: 7 }));
+
+    expect(res.status).toBe(403);
+  });
+
+  test('the reach check still comes before the writer is asked about any key', async () => {
+    mockReach.mockRejectedValue(new Error('forbidden'));
+
+    const res = await POST(post({ ...BODY, request_key: 'key-1' }));
+
+    expect(res.status).toBe(404);
+    expect(mockIssue).not.toHaveBeenCalled();
+  });
+
+  test('a repeat of an issued request is a 200 that names the first issue and reports nothing as created', async () => {
+    mockIssue.mockResolvedValue(ALREADY);
+
+    const res = await POST(post({ ...BODY, request_key: 'key-1' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      already_issued: true,
+      organization_id: 'org-1',
+      athlete_id: 'athlete-1',
+      issue_id: ISSUED.issue_id,
+      template: ISSUED.template,
+      step_count: 2,
+    });
+  });
+
+  test('a repeat still says the training hold: the first answer may never have arrived', async () => {
+    mockIssue.mockResolvedValue(ALREADY);
+    mockHold.mockResolvedValue({ hold_id: 'hold-1', scope: 'all_training' });
+
+    const res = await POST(post({ ...BODY, request_key: 'key-1' }));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).hold_warning).toEqual({ hold_id: 'hold-1', scope: 'all_training' });
+    expect(mockHold).toHaveBeenCalledWith('coach', 'org-1', 'athlete-1');
+  });
+
+  test('a key already used for a different workout keeps the writer\'s 409 and code', async () => {
+    mockIssue.mockRejectedValue(
+      new ConflictError('This request was already used to issue a different workout.', 'WORKOUT_ISSUE_REQUEST_KEY_REUSED'),
+    );
+
+    const res = await POST(post({ ...BODY, request_key: 'key-1' }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'This request was already used to issue a different workout.',
+      code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
+    });
+    expect(mockHold).not.toHaveBeenCalled();
   });
 });

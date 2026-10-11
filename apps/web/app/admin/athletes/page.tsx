@@ -154,8 +154,8 @@ function WrongRoleNotice() {
           <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link href="/admin" className="btn btn--ghost">
-            Admin Home
+          <Link href="/admin/platform" className="btn btn--ghost">
+            Platform Desk
           </Link>
         </div>
       </div>

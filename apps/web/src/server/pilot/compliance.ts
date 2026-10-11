@@ -96,6 +96,13 @@ export interface ComplianceViolation {
   status: 'new' | 'acknowledged' | 'escalated' | 'resolved' | 'dismissed';
   escalation_status: 'pending' | 'in_progress' | 'resolved' | 'escalated_to_board';
   created_at: string;
+  /**
+   * Who and what the record is about, in words. Only the list read
+   * (getOrganizationViolations) fills these; null there when the athlete or
+   * rule row is not in this organization.
+   */
+  athlete_name?: string | null;
+  rule_name?: string | null;
 }
 
 // An organization admin runs the gym and legitimately reads exact violation
@@ -542,8 +549,20 @@ export async function getOrganizationViolations(
   // dismissed -- and an open one stays until somebody closes it (Jason,
   // 2026-09-30, OD-2026-09-30-004 "B"). "Open" is this module's one definition
   // of it, inlined: the values are this file's own constants, never input.
+  //
+  // athlete_name and rule_name ride on the row so a screen can name the record
+  // instead of printing two ids. Each is matched on the violation's own
+  // organization as well as the id, so a name never crosses gyms, and each is
+  // a column of a row the caller was already given: the route's athlete scope
+  // (athleteIds, athleteId) decides which rows come back, not this.
   let sql = `
-    select violation_id, rule_id, video_session_id, athlete_id, severity, status, escalation_status, created_at
+    select violation_id, rule_id, video_session_id, athlete_id, severity, status, escalation_status, created_at,
+      (select named_athlete.full_name from pilot.athletes named_athlete
+        where named_athlete.organization_id = pilot.compliance_violations.organization_id
+          and named_athlete.athlete_id = pilot.compliance_violations.athlete_id) as athlete_name,
+      (select named_rule.rule_name from pilot.compliance_rules named_rule
+        where named_rule.organization_id = pilot.compliance_violations.organization_id
+          and named_rule.rule_id = pilot.compliance_violations.rule_id) as rule_name
     from pilot.compliance_violations
     where organization_id = $1
       and (status in (${COMPLIANCE_VIOLATION_OPEN_STATUSES.map((status) => `'${status}'`).join(', ')})
@@ -580,6 +599,28 @@ export async function getOrganizationViolations(
   params.push(filters?.limit || 50);
 
   return query<ComplianceViolation>(sql, params);
+}
+
+/**
+ * How many violations each athlete has that are still open, by this module's
+ * one definition of open. A count per athlete and nothing else: the
+ * cleared-tonight answer (clearedTonight.ts) lists it as a fact on file and
+ * never reads it as a verdict, because resolving or dismissing a violation
+ * does not clear an athlete and an open one stops nothing.
+ *
+ * An athlete with none has no entry. Not capped, unlike the register read
+ * above: it is an aggregate, so there is no newest-slice window to mistake
+ * for the whole.
+ */
+export async function countOpenViolationsByAthlete(organizationId: string): Promise<Map<string, number>> {
+  const rows = await query<{ athlete_id: string; open_count: number }>(
+    `select athlete_id, count(*)::int as open_count
+       from pilot.compliance_violations
+      where organization_id = $1 and status = any($2::text[])
+      group by athlete_id`,
+    [organizationId, [...COMPLIANCE_VIOLATION_OPEN_STATUSES]],
+  );
+  return new Map(rows.map((row) => [row.athlete_id, row.open_count]));
 }
 
 export async function getComplianceRuleById(

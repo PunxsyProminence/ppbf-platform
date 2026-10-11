@@ -57,9 +57,10 @@ export async function GET(request: NextRequest) {
     // scale level, contact level and coach note. It is asked ONLY about the
     // assignments this read just returned, so it widens nobody's reach; items
     // is unchanged, and an assignment in no workout reads as it always has.
-    // Sent to staff and to the athlete. The athlete is the named case: a
-    // linked guardian is not sent it yet (their screen follows in its own
-    // change), and a role added to this gate later gets none by default.
+    // Sent to staff, to the athlete, and to a linked guardian, who reads what
+    // their child reads and nothing more (the family projection below). The
+    // athlete and the guardian are the named cases: a role added to this gate
+    // later gets none by default.
     const readWorkouts = () =>
       listIssuedWorkoutsForAssignments(
         principal.organizationId,
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
       return known;
     };
     const items = await toFamilyAssignments(assignments, nameFor);
-    if (principal.role !== 'athlete') {
+    if (principal.role !== 'athlete' && principal.role !== 'parent') {
       return NextResponse.json({ items });
     }
     return NextResponse.json({ items, workouts: await toFamilyIssuedWorkouts(await readWorkouts(), nameFor) });

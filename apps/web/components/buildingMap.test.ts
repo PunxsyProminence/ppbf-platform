@@ -151,9 +151,21 @@ describe('visibleDoors', () => {
   // (roleRoutes.ts), so it must not behave as a wildcard.
   it('does not treat platform_owner as a wildcard', () => {
     const hrefs = visibleDoors('platform_owner').map((d) => d.href);
-    expect(hrefs).toContain('/admin');
+    expect(hrefs).toContain('/admin/platform');
     expect(hrefs).not.toContain('/athlete/dashboard');
     expect(hrefs).not.toContain('/guardian');
+  });
+
+  // The capability console and the customize desk show the platform owner a
+  // notice only (their routes refuse it), so their doors are not advertised to
+  // it; the gym admin keeps both.
+  it('hides the capability console and customize doors from the platform owner only', () => {
+    const owner = visibleDoors('platform_owner').map((d) => d.href);
+    const admin = visibleDoors('admin').map((d) => d.href);
+    for (const href of ['/admin', '/admin/customize']) {
+      expect(owner).not.toContain(href);
+      expect(admin).toContain(href);
+    }
   });
 
   // R2-F-004: the Organizations page gate admits platform_owner only, so the

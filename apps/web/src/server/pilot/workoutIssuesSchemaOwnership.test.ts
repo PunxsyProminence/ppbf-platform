@@ -44,10 +44,10 @@ describe('issued workout schema ownership', () => {
     for (const statement of writes) {
       expect(statement).toMatch(/insert into pilot\.workout_issue(?:s|_steps)\s*\(\s*organization_id/);
     }
-    // The read half reads: one statement, no insert.
+    // The read half reads: the shape read and the request key lookup, no insert.
     const reads = readHalf().match(/`[^`]*pilot\.workout_issue[^`]*`/g) ?? [];
-    expect(reads).toHaveLength(1);
-    expect(reads[0]).toMatch(/^`select /);
+    expect(reads).toHaveLength(2);
+    for (const statement of reads) expect(statement).toMatch(/^`select /);
     expect(readHalf()).not.toMatch(/insert\s+into/i);
   });
 
@@ -61,7 +61,8 @@ describe('issued workout schema ownership', () => {
 
   test('the read is scoped to the organization, asked only about named assignments, and joins a step to its assignment on the organization and the athlete', () => {
     const body = readHalf();
-    expect(body.match(/\bquery</g)).toHaveLength(1);
+    // Two pooled reads: this one and the request key lookup (its own case below).
+    expect(body.match(/\bquery</g)).toHaveLength(2);
     expect(body).not.toMatch(/\bclient\b/);
     expect(body).toMatch(/where s\.organization_id = \$1 and s\.assignment_id = any\(\$2::text\[\]\)/);
     expect(body).toMatch(/join pilot\.workout_issues i\s+on i\.organization_id = s\.organization_id and i\.issue_id = s\.issue_id/);
@@ -70,6 +71,49 @@ describe('issued workout schema ownership', () => {
     );
     // No assignment ids, no statement: an empty list never becomes "everything".
     expect(body).toMatch(/if \(assignmentIds\.length === 0\) \{\s+return \[\];/);
+  });
+
+  test('a request key is written once, by the issue insert, and compared only inside its own organization', () => {
+    const body = code(moduleSource);
+    // Written: the eighth value of the issue insert, from the caller's key.
+    expect(writeHalf()).toMatch(/issued_by_account_id, request_key\)\s+values \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8\)/);
+    expect(writeHalf()).toMatch(/params\.issuedByAccountId,\s+params\.requestKey,\s+\],/);
+    // Compared: one lookup, by organization AND key, never by key alone.
+    expect(body.match(/request_key = /g)).toHaveLength(1);
+    expect(readHalf()).toMatch(/from pilot\.workout_issues i\s+where i\.organization_id = \$1 and i\.request_key = \$2`,\s+\[organizationId, requestKey\]/);
+    // The index the write names when a key is taken is the one the migration creates.
+    const index = /const REQUEST_KEY_INDEX = '([a-z_]+)';/.exec(body)?.[1] ?? '';
+    expect(index).not.toBe('');
+    expect(migration).toMatch(new RegExp(`create unique index if not exists ${index}\\s+on pilot\\.workout_issues\\(organization_id, request_key\\)`));
+    expect(writeHalf()).toMatch(/code === '23505' && constraint === REQUEST_KEY_INDEX/);
+  });
+
+  test('the request key lookup has exactly one caller: the issue writer, which compares the athlete and the template before answering', () => {
+    const importers: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== 'node_modules' && entry.name !== '.next') walk(full);
+        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          const source = fs.readFileSync(full, 'utf8');
+          if (/import\s*\{[^}]*\bfindWorkoutIssueByRequestKey\b[^}]*\}/.test(source)) {
+            importers.push(path.relative(repositoryRoot, full).split(path.sep).join('/'));
+          }
+        }
+      }
+    };
+    walk(path.join(repositoryRoot, 'apps/web/src'));
+    walk(path.join(repositoryRoot, 'apps/web/app'));
+    expect(importers).toEqual(['apps/web/src/server/pilot/workoutTemplates.ts']);
+
+    const writer = code(writerSource);
+    expect(writer.match(/findWorkoutIssueByRequestKey\(/g)).toHaveLength(1);
+    expect(writer).toMatch(/findWorkoutIssueByRequestKey\(organizationId, requestKey\);\s+if \(!first\) return null;\s+if \(first\.athlete_id !== athleteId \|\| first\.template_id !== templateId\) \{\s+throw new ConflictError\(/);
+    // The lookup comes first in the issue, before the template is read.
+    const issue = writer.slice(writer.indexOf('export async function issueWorkoutTemplate'));
+    expect(issue.indexOf('repeatOfIssuedRequest(')).toBeGreaterThan(0);
+    expect(issue.indexOf('repeatOfIssuedRequest(')).toBeLessThan(issue.indexOf('getWorkoutTemplateWithItems('));
   });
 
   test('the shape read has exactly two callers, and each asks only about the rows of its own bounded read', () => {

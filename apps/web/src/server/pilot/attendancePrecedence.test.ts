@@ -77,9 +77,6 @@ const LEGACY_READERS = new Set<string>([
   'app/api/pilot/admin/export/roster/route.ts',
   // Writer of pilot.activity_log.
   'src/server/pilot/activityLog.ts',
-  // Reads activity_log's boxing rows only, deliberately, and labels the result
-  // "training days" rather than "attendance %" so it cannot be read as a rate.
-  'src/server/pilot/performanceAnalytics.ts',
   // `select 1 from pilot.activity_log` -- an existence check that a cited
   // activity really happened, not a participation count.
   'src/server/pilot/interventionEvidence.ts',

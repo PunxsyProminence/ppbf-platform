@@ -14,7 +14,8 @@ import { query } from './db';
 // WRITTEN ONCE, INSIDE THE ISSUE'S OWN TRANSACTION. recordWorkoutIssue takes a
 // transaction client and has no pooled form, so the structure cannot be
 // written apart from the assignments it describes: both commit or neither
-// does. The pooled `query` in this module is for the READ at the foot only.
+// does. The pooled `query` in this module is for the READS only, both below
+// the write: the shape read and the request key lookup.
 // There is no UPDATE and no DELETE in this module. The rows leave only
 // by cascade (the athlete or the assignment going).
 //
@@ -35,6 +36,26 @@ import { query } from './db';
 // route has passed the role gate and assertActorCanAccessAthlete, and the
 // organization id is the session's.
 
+// ONE ISSUE PER REQUEST KEY. A request key is a random id the coach's screen
+// makes for one press of Issue and sends again if that press got no answer.
+// The partial unique index named here makes it name at most one issue in an
+// organization, so a second send returns the first issue instead of issuing
+// the workout twice. A key is optional: an issue sent without one is written
+// with null and nothing is compared.
+const REQUEST_KEY_INDEX = 'pilot_workout_issues_one_per_request_key';
+
+/**
+ * The request key already names an issue in this organization. Thrown from
+ * inside the issue's transaction, which must be left to roll back: nothing of
+ * the second issue is kept.
+ */
+export class WorkoutIssueRequestKeyTakenError extends Error {
+  constructor() {
+    super('recordWorkoutIssue: this request key already names an issued workout');
+    this.name = 'WorkoutIssueRequestKeyTakenError';
+  }
+}
+
 /** One step of the workout as it is being issued. */
 export interface WorkoutIssueStepInput {
   ordinal: number;
@@ -51,7 +72,8 @@ export interface WorkoutIssueStepInput {
 /**
  * Writes one issued workout and its steps on the caller's transaction and
  * returns the new issue id. A step list that is empty is a caller bug: an
- * issue with no steps would be a workout nothing can show.
+ * issue with no steps would be a workout nothing can show. A request key that
+ * already names an issue here throws WorkoutIssueRequestKeyTakenError.
  */
 export async function recordWorkoutIssue(
   client: PoolClient,
@@ -60,6 +82,8 @@ export async function recordWorkoutIssue(
     athleteId: string;
     template: { template_id: string; name: string; version: number };
     issuedByAccountId: string;
+    /** Null when the request sent none. */
+    requestKey: string | null;
     steps: WorkoutIssueStepInput[];
   },
 ): Promise<string> {
@@ -67,20 +91,30 @@ export async function recordWorkoutIssue(
     throw new Error('recordWorkoutIssue: an issued workout has at least one step');
   }
   const issueId = randomUUID();
-  await client.query(
-    `insert into pilot.workout_issues
-       (organization_id, issue_id, athlete_id, template_id, template_name, template_version, issued_by_account_id)
-     values ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      params.organizationId,
-      issueId,
-      params.athleteId,
-      params.template.template_id,
-      params.template.name,
-      params.template.version,
-      params.issuedByAccountId,
-    ],
-  );
+  try {
+    await client.query(
+      `insert into pilot.workout_issues
+         (organization_id, issue_id, athlete_id, template_id, template_name, template_version,
+          issued_by_account_id, request_key)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        params.organizationId,
+        issueId,
+        params.athleteId,
+        params.template.template_id,
+        params.template.name,
+        params.template.version,
+        params.issuedByAccountId,
+        params.requestKey,
+      ],
+    );
+  } catch (error) {
+    const { code, constraint } = error as { code?: string; constraint?: string };
+    if (code === '23505' && constraint === REQUEST_KEY_INDEX) {
+      throw new WorkoutIssueRequestKeyTakenError();
+    }
+    throw error;
+  }
 
   // One statement for every step. The assignment is looked up in THIS
   // organization and for THIS athlete as the row is written, so a step can
@@ -159,8 +193,9 @@ export interface IssuedWorkout {
 }
 
 /**
- * An issued workout as the athlete receives it (OD-2026-10-06-025 ruling 2:
- * families see the coach's display name, never the internal account id).
+ * An issued workout as a family reader -- the athlete, or a linked guardian --
+ * receives it (OD-2026-10-06-025 ruling 2: families see the coach's display
+ * name, never the internal account id).
  */
 export type FamilyIssuedWorkout = Omit<IssuedWorkout, 'issued_by_account_id'> & {
   issued_by_name: string;
@@ -263,4 +298,41 @@ export async function toFamilyIssuedWorkouts(
       assignment_id: step.assignment_id,
     })),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST KEY LOOKUP. A read, on the pool, like the shape read above; it
+// sits here, below the write, because the write half of this module touches
+// the tables only through its caller's transaction.
+// ---------------------------------------------------------------------------
+
+/** The issue a request key names, as far as a repeat of the request needs it. */
+export interface WorkoutIssueForRequestKey {
+  issue_id: string;
+  athlete_id: string;
+  template_id: string;
+  template_name: string;
+  template_version: number;
+  step_count: number;
+}
+
+/**
+ * The issue this request key names in this organization, or null. Read on the
+ * pool, so it sees only what has committed. AUTHORIZATION IS THE CALLER'S, as
+ * for the write: the caller compares the athlete and the template with the
+ * ones its request named before answering with any of this.
+ */
+export async function findWorkoutIssueByRequestKey(
+  organizationId: string,
+  requestKey: string,
+): Promise<WorkoutIssueForRequestKey | null> {
+  const rows = await query<WorkoutIssueForRequestKey>(
+    `select i.issue_id, i.athlete_id, i.template_id, i.template_name, i.template_version,
+            (select count(*)::int from pilot.workout_issue_steps s
+              where s.organization_id = i.organization_id and s.issue_id = i.issue_id) as step_count
+     from pilot.workout_issues i
+     where i.organization_id = $1 and i.request_key = $2`,
+    [organizationId, requestKey],
+  );
+  return rows[0] ?? null;
 }

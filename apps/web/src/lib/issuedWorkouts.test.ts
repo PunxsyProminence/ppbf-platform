@@ -1,6 +1,7 @@
 import {
   IssuedWorkoutsUnreadableError,
   orderAssignedWork,
+  readDatedIssuedWorkouts,
   readIssuedWorkouts,
   sectionAssignedWork,
   type IssuedWorkoutStepView,
@@ -79,6 +80,38 @@ describe('readIssuedWorkouts', () => {
 
   test.each(UNREADABLE)('%s is refused, never read as "no workouts"', (_label, raw) => {
     expect(() => readIssuedWorkouts(raw)).toThrow(IssuedWorkoutsUnreadableError);
+  });
+});
+
+describe('readDatedIssuedWorkouts', () => {
+  const DATED = { ...workout('issue-1', [step(1, 'a')]), issued_at: '2026-10-11T15:00:00.000Z', issued_by_name: 'Coach J Rivera' };
+
+  test('a workout with a date, with or without a coach name, is returned with both as they were sent', () => {
+    expect(readDatedIssuedWorkouts(undefined)).toEqual([]);
+    expect(readDatedIssuedWorkouts([DATED])).toEqual([DATED]);
+    const nameless = { ...workout('issue-1', [step(1, 'a')]), issued_at: DATED.issued_at };
+    const [read] = readDatedIssuedWorkouts([nameless]);
+    expect(read.issued_at).toBe(DATED.issued_at);
+    expect(read.issued_by_name).toBeUndefined();
+    expect(read.steps).toEqual(DATED.steps);
+  });
+
+  const UNREADABLE: Array<[string, unknown]> = [
+    ['no date', [{ ...DATED, issued_at: undefined }]],
+    ['a null date', [{ ...DATED, issued_at: null }]],
+    ['a date that is not a date', [{ ...DATED, issued_at: 'last Tuesday-ish' }]],
+    // Date.parse would read a date out of a number; only the text check refuses it.
+    ['a date that is a number', [{ ...DATED, issued_at: 5 }]],
+    ['a coach name that is a number', [{ ...DATED, issued_by_name: 5 }]],
+    ['a coach name that is null', [{ ...DATED, issued_by_name: null }]],
+    ['one bad workout among good ones', [DATED, { ...DATED, issue_id: 'issue-2', issued_at: null }]],
+    // Everything readIssuedWorkouts refuses is refused here too.
+    ['not a list', { issue_id: 'issue-1' }],
+    ['a step with no block', [{ ...DATED, steps: [{ ...step(1, 'a'), block: undefined }] }]],
+  ];
+
+  test.each(UNREADABLE)('%s is refused, never read as "no workouts"', (_label, raw) => {
+    expect(() => readDatedIssuedWorkouts(raw)).toThrow(IssuedWorkoutsUnreadableError);
   });
 });
 

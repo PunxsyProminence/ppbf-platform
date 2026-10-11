@@ -40,7 +40,9 @@ const STATE_DISPLAY: Record<ReadoutRow['state'], { className: string; glyph: str
   },
   insufficient_evidence: {
     className: 'badge badge--filed', glyph: '▣', label: 'insufficient evidence',
-    copy: 'Not enough targeted attempts to say anything either way. No flag is made from a thin record.',
+    // True for every way the rule stays silent: under the minimum on a side,
+    // or plenty of practice attempts that are not yet mostly made.
+    copy: 'Not enough here yet for the rule to say anything either way: too few targeted attempts on one side, or practice is not yet holding.',
   },
 };
 
@@ -76,11 +78,23 @@ export default function TransferCheckPage() {
     });
     if (!response.ok) throw new Error('Unable to load the transfer check.');
     const payload = (await response.json()) as { items?: ReadoutRow[] };
+    // An answer for an athlete the coach has since switched away from.
+    if (signal?.aborted) return;
     setItems(payload.items ?? []);
   }, []);
 
-  // Loading flag raised in the change handler, lowered here
-  // (react-hooks/set-state-in-effect).
+  // A readout belongs to the athlete it was read for: picking another athlete
+  // clears it, so one athlete's flags never render under another's name --
+  // including an athlete the server refuses (the picker lists the whole gym,
+  // the readout is per athlete). Loading flag raised here, lowered in the
+  // effect (react-hooks/set-state-in-effect).
+  const selectAthlete = (id: string) => {
+    setItems([]);
+    setErrorMessage(null);
+    setListLoading(id !== '');
+    setAthleteId(id);
+  };
+
   useEffect(() => {
     if (!athleteId) return;
     const controller = new AbortController();
@@ -126,7 +140,7 @@ export default function TransferCheckPage() {
           <div className="field mb-[var(--s5)] md:max-w-sm">
             <label className="t-label" htmlFor="transfer-athlete">Athlete</label>
             <select id="transfer-athlete" className="select" value={athleteId}
-              onChange={(e) => { setListLoading(e.target.value !== ''); setAthleteId(e.target.value); }}>
+              onChange={(e) => selectAthlete(e.target.value)}>
               <option value="">Select an athlete…</option>
               {athletes.map((athlete) => (
                 <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>

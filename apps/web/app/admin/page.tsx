@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
-import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
+import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -845,8 +845,7 @@ function formatDateLabel(value: string): string {
   return formatGymDateNumeric(date) ?? '';
 }
 
-export default function AdminCapabilitiesPage() {
-  const pilotSession = usePilotSession();
+function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: PilotSessionState }) {
   // The People console is organization-scoped; every route behind it rejects a
   // platform owner. Showing the entry point to someone who can only receive a
   // 403 from it is worse than not showing it at all -- they get Organization
@@ -856,10 +855,10 @@ export default function AdminCapabilitiesPage() {
   // organization-scoped and refuses a platform owner, so the entry point would
   // only lead to a 403.
   const canOpenComplianceCenter = isOrganizationAdminSessionRole(pilotSession.role);
-  // /admin/organizations admits the platform owner only (its page gate checks
-  // role === 'platform_owner'), so an organization admin who follows either
-  // provisioning link lands on a refusal. Show the links only where they open.
-  const canProvisionOrganizations = pilotSession.role === 'platform_owner';
+  // The organization provisioning links that used to sit here were for the
+  // platform owner, who now gets the per-gym notice (see the role switch below)
+  // and reaches provisioning from there; an organization admin following them
+  // landed on a refusal.
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
   const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
@@ -1438,7 +1437,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   return (
-    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
+    <>
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <header className="relative border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-6 py-4">
           {/* The desk lamp. .lamp draws the shade and the pool under it -- the
@@ -1595,14 +1594,6 @@ export default function AdminCapabilitiesPage() {
                 >
                   COMPLIANCE CENTER
                   <span className="stamp stamp--brass stamp--flat">Planned</span>
-                </Link>
-              )}
-              {canProvisionOrganizations && (
-                <Link
-                  href="/admin/organizations"
-                  className="btn btn--ghost"
-                >
-                  ORGANIZATION PROVISIONING
                 </Link>
               )}
               <button
@@ -1810,14 +1801,6 @@ export default function AdminCapabilitiesPage() {
                       Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
                     </p>
                   </div>
-                  {canProvisionOrganizations && (
-                    <Link
-                      href="/admin/organizations"
-                      className="btn btn--ghost"
-                    >
-                      Open Gym Admin Provisioning
-                    </Link>
-                  )}
                 </div>
 
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -3014,6 +2997,64 @@ export default function AdminCapabilitiesPage() {
           </section>
         </div>
       </main>
+    </>
+  );
+}
+
+/**
+ * Every part of this console is one gym's record: the capability registry
+ * and the gym admin access flags are read from routes that refuse the
+ * platform owner (OD-2026-10-10-004 ruling 3), and an editor it could open
+ * but never save is worse than no editor. The platform owner is pointed at
+ * the platform screens instead, the way /admin/athletes already does.
+ */
+function CapabilityRoomWrongRoleNotice() {
+  return (
+    <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
+        <p className="t-eyebrow">Different Console</p>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>The Capability Room is set per gym</h1>
+        <p className="t-body">
+          This room holds one organization&apos;s capabilities and what its admins may switch. As platform owner you
+          create organizations and appoint their admins, and they set it from there.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-[var(--s3)]">
+          <Link href="/admin/platform" className="btn">
+            Platform Desk
+          </Link>
+          <Link href="/admin/organizations" className="btn btn--ghost">
+            Organization Provisioning
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function AdminCapabilitiesRoleSwitch() {
+  const pilotSession = usePilotSession();
+
+  // Nothing is asked until the session is read, so no gym read goes out on
+  // behalf of a platform owner.
+  if (pilotSession.loading) {
+    return (
+      <main className="room room--office room--lit-center grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <p className="t-body">Loading...</p>
+      </main>
+    );
+  }
+
+  if (pilotSession.role === 'platform_owner') {
+    return <CapabilityRoomWrongRoleNotice />;
+  }
+
+  return <AdminCapabilitiesConsole pilotSession={pilotSession} />;
+}
+
+export default function AdminCapabilitiesPage() {
+  return (
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
+      <AdminCapabilitiesRoleSwitch />
     </RoleSessionGate>
   );
 }

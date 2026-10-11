@@ -42,6 +42,9 @@ function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerfo
     avg_session_load: null,
     session_load_count: 0,
     training_days: 10,
+    training_days_recorded: 10,
+    training_days_recorded_early: 5,
+    training_days_recorded_late: 5,
     training_days_early: 5,
     training_days_late: 5,
     readiness_count: 8,
@@ -166,6 +169,26 @@ describe('assignments_stalled', () => {
     const mental = suggestions.filter((s) => s.gap_type === 'mental');
     expect(mental).toHaveLength(1);
     expect(mental[0].rule).toBe('training_days_dropping');
+  });
+});
+
+describe('training_days_dropping needs a register in the newer half', () => {
+  test('no marks at all in the newer half is "nobody took the register", not a drop', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow({ training_days_early: 6, training_days_late: 0, training_days_recorded_late: 0 })],
+      [],
+      NO_OPEN_GAPS,
+    );
+    expect(suggestions.some((s) => s.rule === 'training_days_dropping')).toBe(false);
+  });
+
+  test('a real register with fewer present days still fires', () => {
+    const suggestions = deriveSuggestions(
+      [rollupRow({ training_days_early: 6, training_days_late: 1, training_days_recorded_late: 4 })],
+      [],
+      NO_OPEN_GAPS,
+    );
+    expect(suggestions.some((s) => s.rule === 'training_days_dropping')).toBe(true);
   });
 });
 

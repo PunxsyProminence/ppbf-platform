@@ -49,9 +49,11 @@ interface TemplateDetail {
 // THE SCREEN NEVER SAYS "NOTHING WAS ISSUED" UNLESS THE SERVER SAID SO. The
 // route answers 201 only after its transaction has committed, and nothing
 // stops the same template being issued twice, so a coach told "nothing was
-// issued" issues again and the athlete gets every card twice. Three answers,
+// issued" issues again and the athlete gets every card twice. Four answers,
 // kept apart:
 //   - 201: issued, always -- even when the body cannot be read;
+//   - 200 saying `already_issued`: this press repeated one that had gone
+//     through (see the request key below); issued once, and said so;
 //   - 400 / 401 / 403 / 404 / 409: the server refused before or inside the
 //     write, so nothing was issued, and the screen says so;
 //   - anything else (no answer, a 5xx, a status this screen does not know):
@@ -63,6 +65,27 @@ interface TemplateDetail {
 // result says so. It says nothing about the Coach Cards screen: that screen
 // lists a coach's own issues the same way, but an admin can issue here too,
 // and an admin's issue is on nobody's Coach Cards screen.
+//
+// ONE PRESS, ONE ISSUE. Each issue is sent with a request key: a random id
+// kept for that template and athlete until the server says what became of
+// THAT request (issued, already issued, or the key refused as used for another
+// workout). When a press gets no answer and the coach presses again, the same
+// key goes out, and the server answers with the first issue instead of issuing
+// twice. Every other answer keeps the key, a refusal included: a 400, 401,
+// 403, 404 or any other 409 refuses THIS press and says nothing about an
+// earlier one that may have landed. Keeping a key that names nothing costs
+// nothing; the next press simply issues under it. One consequence, kept on
+// purpose: after a press with no answer, the next press for that athlete is
+// treated as the retry even if the coach meant a second issue, and says so;
+// the press after that is a new issue.
+//
+// THE KEYS LIVE IN THE PAGE, NOT IN THE ISSUE CONTROL. The control is taken
+// down whenever another template is opened, and a coach whose press got no
+// answer may well open another template and come back. So the page holds the
+// keys, by template AND athlete, and hands them to whichever control is up:
+// coming back sends the same key. They last as long as the page does. A full
+// reload still starts again, so the "check before trying again" sentences
+// below stay as they are.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -139,8 +162,25 @@ function cardCountFrom(payload: Record<string, unknown>): number | null {
   return typeof assignments === 'number' ? assignments : null;
 }
 
+/**
+ * The request keys of the issues that have no settled answer yet, held by the
+ * page (see ONE PRESS, ONE ISSUE above). Null marks an issue whose key could
+ * not be made.
+ */
+type RequestKeys = Map<string, string | null>;
+
+/** One template issued to one athlete: what a request key belongs to. */
+function requestKeyFor(templateId: string, athleteId: string): string {
+  return JSON.stringify([templateId, athleteId]);
+}
+
+/** A new request key, or null where the browser cannot make a random id (then none is sent). */
+function newRequestKey(): string | null {
+  return typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : null;
+}
+
 type IssueOutcome =
-  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote }
+  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote; already?: boolean }
   // A 201 whose body could not be read: the cards exist, the details do not.
   | { kind: 'issued_unread'; athleteName: string }
   | { kind: 'refused'; message: string; drills: RefusedDrill[] }
@@ -175,10 +215,13 @@ const ALERT_TEXT = 'text-[length:var(--t-md)] font-semibold text-[var(--locked-i
 function IssueToAthlete({
   template,
   onBusyChange,
+  requestKeys,
 }: {
   readonly template: Template;
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
+  /** The page's keys of unsettled issues: they outlive this control. */
+  readonly requestKeys: { readonly current: RequestKeys };
 }) {
   // null until the read answers, so "still loading" is never drawn as "nobody".
   const [athletes, setAthletes] = useState<ReachableAthlete[] | null>(null);
@@ -244,6 +287,12 @@ function IssueToAthlete({
     setOutcome(null);
     setBusy(true);
     onBusyChange(true);
+    // The key of this template's issue to this athlete, or a new one. It is
+    // kept through every answer that does not say what became of this request.
+    const keys = requestKeys.current;
+    const issueOf = requestKeyFor(template.template_id, chosen.athlete_id);
+    if (!keys.has(issueOf)) keys.set(issueOf, newRequestKey());
+    const requestKey = keys.get(issueOf) ?? null;
     try {
       let response: Response;
       try {
@@ -251,7 +300,11 @@ function IssueToAthlete({
           credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ template_id: template.template_id, athlete_id: chosen.athlete_id }),
+          body: JSON.stringify({
+            template_id: template.template_id,
+            athlete_id: chosen.athlete_id,
+            ...(requestKey ? { request_key: requestKey } : {}),
+          }),
         });
       } catch {
         setOutcome({ kind: 'failed', message: ISSUE_NO_ANSWER });
@@ -260,7 +313,26 @@ function IssueToAthlete({
       const parsed: unknown = await response.json().catch(() => null);
       const payload = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 
-      if (response.status === 201) {
+      // Only an answer about THIS request ends it, so that the next press for
+      // this athlete is a new issue with a new key: it was issued, it had
+      // already been issued, or its key was refused as another workout's.
+      const settled = response.status === 201
+        || (response.status === 200 && payload?.already_issued === true)
+        || (response.status === 409 && payload?.code === 'WORKOUT_ISSUE_REQUEST_KEY_REUSED');
+      if (settled) keys.delete(issueOf);
+
+      if (response.status === 200 && payload?.already_issued === true) {
+        // An earlier press of this same issue went through; this one wrote
+        // nothing. Issued once.
+        setOutcome({
+          kind: 'issued',
+          athleteName: chosen.full_name,
+          cards: typeof payload.step_count === 'number' ? payload.step_count : null,
+          adopted: [],
+          hold: holdNoteFrom(payload.hold_warning),
+          already: true,
+        });
+      } else if (response.status === 201) {
         // Committed, whatever else is true. An unreadable body loses the
         // details, never the fact.
         setOutcome(payload
@@ -309,6 +381,10 @@ function IssueToAthlete({
       ? `Issued to ${outcome.athleteName}. The number of Coach Cards could not be read.`
       : `Issued to ${outcome.athleteName}: ${outcome.cards} Coach ${outcome.cards === 1 ? 'Card' : 'Cards'}.`)
     : '';
+  // Said only when this press repeated one that had already gone through. It
+  // speaks of this press, not of a total: the coach may have issued this
+  // template to this athlete before, on purpose.
+  const alreadyLine = 'Your earlier try had gone through. This press did not issue it again.';
 
   return (
     <div
@@ -417,6 +493,7 @@ function IssueToAthlete({
           {outcome?.kind === 'issued' && (
             <>
               <p className="t-body font-semibold">{cardsLine}</p>
+              {outcome.already && <p className="t-body">{alreadyLine}</p>}
               <p className="t-body">
                 The athlete sees this as one workout: each step in your order, with its block, scale level,
                 contact level and note.
@@ -492,6 +569,9 @@ function CoachWorkoutTemplates() {
   // control, and an issue whose control is gone answers to nobody: the cards
   // would exist with nothing on screen to say so.
   const [issuing, setIssuing] = useState(false);
+  // The request key of every issue that has no settled answer yet, by template
+  // and athlete. Held here, above the issue control, which comes and goes.
+  const requestKeys = useRef<RequestKeys>(new Map());
   // Counts detail reads, so only the LATEST one may change what is open. Two
   // reads can overlap (tap one template, then another, on slow wifi), and a
   // late answer to the first would otherwise swap the template under an open
@@ -712,8 +792,12 @@ function CoachWorkoutTemplates() {
                 {/* Opening another template unmounts this whole block while
                     the new one loads (openTemplate clears `detail`), so the
                     control always starts clean: no athlete, no confirm step,
-                    no result left over from the template open before. */}
-                {detail.items.length > 0 && <IssueToAthlete template={detail.template} onBusyChange={setIssuing} />}
+                    no result left over from the template open before. The
+                    request keys are the one thing that must NOT start clean,
+                    so they are this component's and are handed down. */}
+                {detail.items.length > 0 && (
+                  <IssueToAthlete template={detail.template} onBusyChange={setIssuing} requestKeys={requestKeys} />
+                )}
               </>
             )}
           </section>
