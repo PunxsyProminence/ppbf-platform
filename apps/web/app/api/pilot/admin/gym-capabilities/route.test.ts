@@ -180,6 +180,57 @@ describe('POST: the platform owner only for a gym it names', () => {
     expect(committed).toEqual([]);
   });
 
+  // The route does not ask whether the named gym is new. Naming an established
+  // gym, or the gym of its own session, is admitted like any other named gym,
+  // and leaves its record in that gym's log.
+  test('the platform owner naming the gym of its own session writes it, audited under that gym', async () => {
+    as('platform_owner', 'org-session');
+
+    const response = await post({ capabilityAccess: FLAGS, organization_id: 'org-session' });
+
+    expect(response.status).toBe(200);
+    expect(committed).toHaveLength(1);
+    expect(committed[0].params[0]).toBe('org-session');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      actor_role: 'platform_owner',
+      organization_id: 'org-session',
+      entity_id: 'org-session',
+    });
+  });
+
+  test('a gym that does not exist: the write fails, nothing is committed or audited', async () => {
+    as('platform_owner');
+    mockTransaction.mockImplementation(async (body) => {
+      clientQuery.mockRejectedValue(new Error('violates foreign key constraint'));
+      return body(client as never);
+    });
+
+    const response = await post({ capabilityAccess: FLAGS, organization_id: 'no-such-gym' });
+
+    expect(response.status).toBe(500);
+    expect(committed).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['platform_owner', 'organization_admin'])(
+    '%s: a body that is not a JSON object is refused, and no flags are overwritten',
+    async (role) => {
+      as(role, 'org-gym-1');
+
+      for (const raw of ['null', '[]', '[{"organization_id":"org-gym-2"}]', '"org-gym-2"', '7', '{not json']) {
+        const response = await POST(new NextRequest(URL_BASE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: raw,
+        }));
+        expect([raw, response.status]).toEqual([raw, 400]);
+      }
+      expectNothingTouched();
+      expect(committed).toEqual([]);
+    },
+  );
+
   test('the platform evidence shelf is not a gym: refused, nothing written', async () => {
     as('platform_owner');
 

@@ -112,7 +112,8 @@ test('a gym that could not be created leaves no audit row', async () => {
 
   const response = await post({ organization_id: '__platform__', organization_name: 'Shelf' });
 
-  expect(response.status).not.toBe(200);
+  // 500 today: the helper's refusal carries no prefix jsonError maps.
+  expect(response.status).toBe(500);
   expect(mockAudit).not.toHaveBeenCalled();
 });
 

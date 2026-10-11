@@ -34,9 +34,11 @@ function toCapabilityAccess(value: unknown): Record<string, boolean> {
 // refused on GET (it reads a gym's flags through platform/gym-summary), and
 // admitted on POST only when the body names the gym with organization_id.
 // Without that id the write would land on the gym of its own session, which is
-// exactly the gym work the ruling removes, so it is refused. Every other role
-// keeps resolving strictly from its own session; an organization_id it sends
-// is ignored.
+// exactly the gym work the ruling removes, so it is refused. The route does not
+// check that the named gym is new: any gym the platform owner names is
+// admitted, its own session gym included, and every such write is audited
+// under the gym acted on. Every other role keeps resolving strictly from its
+// own session; an organization_id it sends is ignored.
 const GYM_ADMIN_ROLES = ['organization_admin', 'admin'] as const;
 
 function resolveWriteOrganizationId(
@@ -83,7 +85,15 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['platform_owner', ...GYM_ADMIN_ROLES]);
 
-    const body = (await request.json()) as { capabilityAccess?: unknown; organization_id?: unknown };
+    // A body that is not a JSON object is refused rather than read as "no
+    // flags": an array or a string used to store an empty set over the gym's
+    // flags, and null answered 500.
+    const body = (await request.json().catch(() => null)) as
+      | { capabilityAccess?: unknown; organization_id?: unknown }
+      | null;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new Error('Request body must be a JSON object');
+    }
     const organizationId = resolveWriteOrganizationId(principal, body.organization_id);
     const capabilityAccess = toCapabilityAccess(body.capabilityAccess);
 
