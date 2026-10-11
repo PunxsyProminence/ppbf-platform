@@ -129,6 +129,15 @@ describe('requireRoleLiterals reads each form it documents', () => {
       '  requireRole(principal, TIERS.has(request.tier) ? [...REVIEW_ROLES] : [...RAISE_ROLES]);',
       '}',
     ))).toEqual(['admin,coach,organization_admin', 'admin,organization_admin']);
+    // `?.` and `??` in the condition are not the conditional's own `?`.
+    expect(literalsOf(lines(
+      "const RAISE_ROLES = ['coach'] as const;",
+      "const REVIEW_ROLES = ['board'] as const;",
+      'export async function PATCH(request) {',
+      '  requireRole(principal, (request?.wide ?? request.all) ? REVIEW_ROLES : RAISE_ROLES);',
+      '  requireRole(principal, request?.wide ? REVIEW_ROLES : RAISE_ROLES);',
+      '}',
+    ))).toEqual(['board', 'coach']);
     // One unreadable branch and the whole expression is reported, not half of it.
     expect(literalsOf(lines(
       "const REVIEW_ROLES = ['organization_admin', 'admin'] as const;",
@@ -261,6 +270,30 @@ describe('requireRoleLiterals does not resolve a name it cannot be sure of', () 
     );
     expect(literalsOf(source, 'GET')).toEqual(['<roles>']);
     expect(literalsOf(source, 'POST')).toEqual(['<roles>']);
+  });
+
+  test('a module constant redeclared inside a handler', () => {
+    expect(literalsOf(lines(
+      "const ROLES = ['organization_admin'];",
+      'export async function GET(request) {',
+      "  const ROLES = ['athlete', 'parent'];",
+      '  requireRole(principal, ROLES);',
+      '}',
+    ))).toEqual(['<ROLES>']);
+  });
+
+  test("one handler's local constant is not another handler's imported one", () => {
+    const source = lines(
+      "import { ROLES } from './elsewhere';",
+      'export async function GET(request) {',
+      '  requireRole(principal, ROLES);',
+      '}',
+      'export async function POST(request) {',
+      "  const ROLES = ['athlete'];",
+      '  requireRole(principal, [...ROLES]);',
+      '}',
+    );
+    expect(literalsOf(source, 'GET')).toEqual(['<ROLES>']);
   });
 
   test('a module constant shadowed by a parameter of the same name', () => {
