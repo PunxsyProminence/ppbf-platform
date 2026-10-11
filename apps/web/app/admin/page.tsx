@@ -855,10 +855,10 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
   // organization-scoped and refuses a platform owner, so the entry point would
   // only lead to a 403.
   const canOpenComplianceCenter = isOrganizationAdminSessionRole(pilotSession.role);
-  // /admin/organizations admits the platform owner only (its page gate checks
-  // role === 'platform_owner'), so an organization admin who follows either
-  // provisioning link lands on a refusal. Show the links only where they open.
-  const canProvisionOrganizations = pilotSession.role === 'platform_owner';
+  // The organization provisioning links that used to sit here were for the
+  // platform owner, who now gets the per-gym notice (see the role switch below)
+  // and reaches provisioning from there; an organization admin following them
+  // landed on a refusal.
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
   const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
@@ -1596,14 +1596,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   <span className="stamp stamp--brass stamp--flat">Planned</span>
                 </Link>
               )}
-              {canProvisionOrganizations && (
-                <Link
-                  href="/admin/organizations"
-                  className="btn btn--ghost"
-                >
-                  ORGANIZATION PROVISIONING
-                </Link>
-              )}
               <button
                 type="button"
                 onClick={exportCapabilities}
@@ -1809,14 +1801,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                       Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
                     </p>
                   </div>
-                  {canProvisionOrganizations && (
-                    <Link
-                      href="/admin/organizations"
-                      className="btn btn--ghost"
-                    >
-                      Open Gym Admin Provisioning
-                    </Link>
-                  )}
                 </div>
 
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
