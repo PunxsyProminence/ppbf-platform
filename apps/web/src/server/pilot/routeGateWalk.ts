@@ -337,69 +337,192 @@ export function reachableNames(
   return { reached, spans };
 }
 
+function trimSpan(blanked: string, [start, end]: Span): Span {
+  let a = start;
+  let b = end;
+  while (a < b && /\s/.test(blanked[a])) a += 1;
+  while (b > a && /\s/.test(blanked[b - 1])) b -= 1;
+  return [a, b] as const;
+}
+
+/** The offset of every comma in the text that sits inside no bracket of any kind. */
+function topLevelCommas(blankedText: string): number[] {
+  const found: number[] = [];
+  let depth = 0;
+  for (let i = 0; i < blankedText.length; i += 1) {
+    const c = blankedText[i];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth -= 1;
+    else if (c === ',' && depth === 0) found.push(i);
+  }
+  return found;
+}
+
+/**
+ * Every name a parameter list binds anywhere in the file. Deliberately
+ * over-inclusive -- a type named inside a parameter list counts too -- because
+ * the only use is to refuse to resolve a role constant that a parameter of the
+ * same name could be shadowing where requireRole is called.
+ */
+function parameterNames(blanked: string): Set<string> {
+  const names = new Set<string>();
+  const take = (text: string): void => {
+    for (const word of text.matchAll(/[A-Za-z_$][\w$]*/g)) names.add(word[0]);
+  };
+  const functionOpen = /\bfunction\b\s*\*?\s*[A-Za-z_$\w]*\s*(?:<[^>(]*>)?\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = functionOpen.exec(blanked)) !== null) {
+    const open = match.index + match[0].length - 1;
+    const close = matchDelimiter(blanked, open, '(', ')');
+    if (close !== -1) take(blanked.slice(open + 1, close));
+  }
+  for (const arrow of blanked.matchAll(/\(([^()]*)\)\s*(?::[^=;{}]*)?=>/g)) take(arrow[1]);
+  for (const arrow of blanked.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) names.add(arrow[1]);
+  return names;
+}
+
+/** What may follow the closing bracket of an array constant that is still just that array. */
+const ARRAY_CONSTANT_TAIL = /^[ \t]*(?:as\s+const)?[ \t]*(?:satisfies\s+[^;\n]+?)?[ \t]*;?[ \t]*(?:\r?\n|$)/;
+
 /**
  * Module-level array constants in the file, e.g.
  * `const ADMIN_ROLES = ['organization_admin', 'admin'] as const;`, resolved to
  * their string elements. A spread of another same-file constant
- * (`[...ADMIN_ROLES, 'coach']`) is followed; anything else is kept verbatim.
+ * (`[...ADMIN_ROLES, 'coach']`) is followed.
+ *
+ * A constant is resolved only when the walker can be sure which array a use of
+ * its name means. It must be declared with `const` at column 0, found in the
+ * BLANKED text (so a declaration inside a comment or a string is not one); the
+ * closing bracket must end the declaration (`.filter(...)` after it makes it a
+ * different array); the name must be bound exactly once by const/let/var and by
+ * no parameter list; and nothing may push, unshift, splice, pop, shift or fill
+ * it. Anything else is left out, and a call that names it comes back as
+ * '<NAME>' -- "look here" rather than a wrong list pinned as the right one.
+ * A destructured local of the same name is not detected.
  */
-export function collectArrayConstants(source: string): Map<string, string[]> {
-  const raw = new Map<string, string>();
-  const pattern = /(?:^|\n)\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*\[([^\]]*)\]/g;
+export function collectArrayConstants(source: string, blanked: string = blankLiterals(source)): Map<string, string[]> {
+  const bound = new Map<string, number>();
+  for (const binding of blanked.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) {
+    bound.set(binding[1], (bound.get(binding[1]) ?? 0) + 1);
+  }
+  const shadowed = parameterNames(blanked);
+  const mutated = new Set<string>();
+  for (const call of blanked.matchAll(/([A-Za-z_$][\w$]*)\s*\.\s*(?:push|unshift|splice|pop|shift|fill)\s*\(/g)) {
+    mutated.add(call[1]);
+  }
+
+  const bodies = new Map<string, Span>();
+  const pattern = /(?:^|\n)(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?=\s*\[/g;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(source)) !== null) raw.set(match[1], match[2]);
+  while ((match = pattern.exec(blanked)) !== null) {
+    const name = match[1];
+    const open = match.index + match[0].length - 1;
+    const close = matchDelimiter(blanked, open, '[', ']');
+    if (close === -1) continue;
+    if (!ARRAY_CONSTANT_TAIL.test(blanked.slice(close + 1))) continue;
+    if (bound.get(name) !== 1 || shadowed.has(name) || mutated.has(name)) continue;
+    bodies.set(name, [open + 1, close] as const);
+  }
+
   const resolved = new Map<string, string[]>();
   const resolve = (name: string, seen: Set<string>): string[] | null => {
     if (resolved.has(name)) return resolved.get(name) as string[];
-    const body = raw.get(name);
+    const body = bodies.get(name);
     if (body === undefined || seen.has(name)) return null;
     seen.add(name);
-    const items = resolveArrayBody(body, (inner) => resolve(inner, seen));
+    const items = resolveArrayBody(source, blanked, body, (inner) => resolve(inner, seen));
     if (items) resolved.set(name, items);
     return items;
   };
-  for (const name of raw.keys()) resolve(name, new Set());
+  for (const name of bodies.keys()) resolve(name, new Set());
   return resolved;
 }
 
 /**
- * The elements of an array literal body as role names. A quoted string is
- * taken as-is; `...NAME` or bare `NAME` is looked up through `lookup`; an
- * element that cannot be resolved makes the whole array unresolvable (null).
+ * The elements of an array literal body (the span between its brackets) as
+ * role names. Structure is read from the blanked text, so a comment between
+ * elements and a trailing comma are nothing; the value of a quoted string is
+ * read from the original source. `...NAME` or bare `NAME` is looked up through
+ * `lookup`; an element that cannot be resolved -- a template literal, a call,
+ * a cast -- makes the whole array unresolvable (null).
  */
-function resolveArrayBody(body: string, lookup: (name: string) => string[] | null): string[] | null {
+function resolveArrayBody(
+  source: string,
+  blanked: string,
+  [start, end]: Span,
+  lookup: (name: string) => string[] | null,
+): string[] | null {
   const out: string[] = [];
-  for (const rawItem of body.split(',')) {
-    const item = rawItem.trim();
-    if (item.length === 0) continue;
-    const quoted = /^['"`]([^'"`]*)['"`]$/.exec(item);
-    if (quoted) { out.push(quoted[1]); continue; }
-    const ref = /^(?:\.\.\.)?([A-Za-z_$][\w$]*)$/.exec(item);
-    if (ref) {
-      const inner = lookup(ref[1]);
-      if (!inner) return null;
-      out.push(...inner);
+  let from = start;
+  for (const to of [...topLevelCommas(blanked.slice(start, end)).map((i) => start + i), end]) {
+    const segmentStart = from;
+    const [a, b] = trimSpan(blanked, [from, to]);
+    from = to + 1;
+    if (a === b) {
+      // Nothing but a comment or a trailing comma -- unless a template literal
+      // was blanked away whole, backticks included.
+      if (source.slice(segmentStart, to).includes('`')) return null;
       continue;
     }
-    return null;
+    const quote = blanked[a];
+    if ((quote === "'" || quote === '"') && b - a >= 2 && blanked[b - 1] === quote && blanked.slice(a + 1, b - 1).trim() === '') {
+      out.push(source.slice(a + 1, b - 1));
+      continue;
+    }
+    const ref = /^(?:\.\.\.)?([A-Za-z_$][\w$]*)$/.exec(blanked.slice(a, b));
+    const inner = ref ? lookup(ref[1]) : null;
+    if (!inner) return null;
+    out.push(...inner);
   }
   return out;
 }
 
+/** One role list -- an array literal or a same-file constant -- sorted, de-duplicated and comma-joined; null if it cannot be read. */
+function resolveRoleList(source: string, blanked: string, span: Span, constants: Map<string, string[]>): string | null {
+  const [a, b] = trimSpan(blanked, span);
+  let items: string[] | null = null;
+  if (blanked[a] === '[' && matchDelimiter(blanked, a, '[', ']') === b - 1) {
+    items = resolveArrayBody(source, blanked, [a + 1, b - 1] as const, (name) => constants.get(name) ?? null);
+  } else if (/^[A-Za-z_$][\w$]*$/.test(blanked.slice(a, b))) {
+    items = constants.get(blanked.slice(a, b)) ?? null;
+  }
+  return items ? [...new Set(items)].sort().join(',') : null;
+}
+
+/** The `?` and `:` of a conditional expression that spans the whole argument, if it is one. */
+function topLevelTernary(blanked: string, [start, end]: Span): { question: number; colon: number } | null {
+  let depth = 0;
+  let question = -1;
+  for (let i = start; i < end; i += 1) {
+    const c = blanked[i];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') depth -= 1;
+    else if (depth !== 0) continue;
+    else if (c === '?' && question === -1) {
+      // `?.` and `??` are not the conditional operator.
+      if (blanked[i + 1] === '.' || blanked[i + 1] === '?') { i += 1; continue; }
+      question = i;
+    } else if (c === ':' && question !== -1) return { question, colon: i };
+  }
+  return null;
+}
+
 /**
- * The role arrays passed to requireRole inside the given spans, read from the
- * ORIGINAL source (the blanked copy has no string contents). Returns each
+ * The role arrays passed to requireRole inside the given spans. Returns each
  * distinct array as a sorted, de-duplicated, comma-joined list of role names.
  * An inline literal and a same-file constant (including spreads of one) both
- * resolve; an argument that cannot be resolved -- an imported constant, a
- * computed expression -- comes back as the expression wrapped in angle
- * brackets, e.g. '<READ_ROLES>', so the inventory says where to look rather
- * than guessing.
+ * resolve, and a conditional between two such lists yields both. An argument
+ * that cannot be resolved -- an imported constant, a computed expression, a
+ * name collectArrayConstants would not vouch for -- comes back as the
+ * expression wrapped in angle brackets, e.g. '<READ_ROLES>', so the inventory
+ * says where to look rather than guessing.
  */
 export function requireRoleLiterals(source: string, blanked: string, spans: Span[]): string[] {
-  const constants = collectArrayConstants(source);
+  const constants = collectArrayConstants(source, blanked);
   const found = new Set<string>();
-  const callPattern = /\brequireRole\s*\(/g;
+  // requireRole as a whole identifier: not preceded by a character that could
+  // be part of a longer name. (A plain word boundary would accept `$requireRole`.)
+  const callPattern = /(?:^|[^\w$])requireRole\s*\(/g;
   for (const [start, end] of spans) {
     const slice = blanked.slice(start, end);
     let match: RegExpExecArray | null;
@@ -407,33 +530,25 @@ export function requireRoleLiterals(source: string, blanked: string, spans: Span
       const openAt = start + match.index + match[0].length - 1;
       const closeAt = matchDelimiter(blanked, openAt, '(', ')');
       if (closeAt === -1) continue;
-      const args = source.slice(openAt + 1, closeAt);
-      const comma = topLevelComma(blanked.slice(openAt + 1, closeAt));
-      if (comma === -1) continue;
-      const second = args.slice(comma + 1).trim();
-      const arrayMatch = /^\[([\s\S]*)\]$/.exec(second);
-      const resolved = arrayMatch
-        ? resolveArrayBody(arrayMatch[1], (name) => constants.get(name) ?? null)
-        : (constants.get(second) ?? null);
-      if (resolved) {
-        found.add([...new Set(resolved)].sort().join(','));
+      const commas = topLevelCommas(blanked.slice(openAt + 1, closeAt)).map((i) => openAt + 1 + i);
+      if (commas.length === 0) continue;
+      // The second argument only: up to a third argument or a trailing comma.
+      const argument = trimSpan(blanked, [commas[0] + 1, commas.length > 1 ? commas[1] : closeAt]);
+      const ternary = topLevelTernary(blanked, argument);
+      const lists = ternary
+        ? [
+          resolveRoleList(source, blanked, [ternary.question + 1, ternary.colon], constants),
+          resolveRoleList(source, blanked, [ternary.colon + 1, argument[1]], constants),
+        ]
+        : [resolveRoleList(source, blanked, argument, constants)];
+      if (lists.every((list): list is string => list !== null)) {
+        for (const list of lists) found.add(list);
       } else {
-        found.add(`<${second.replace(/\s+/g, ' ')}>`);
+        found.add(`<${source.slice(argument[0], argument[1]).replace(/\s+/g, ' ')}>`);
       }
     }
   }
   return [...found].sort();
-}
-
-function topLevelComma(blankedArgs: string): number {
-  let depth = 0;
-  for (let i = 0; i < blankedArgs.length; i += 1) {
-    const c = blankedArgs[i];
-    if (c === '(' || c === '[' || c === '{') depth += 1;
-    else if (c === ')' || c === ']' || c === '}') depth -= 1;
-    else if (c === ',' && depth === 0) return i;
-  }
-  return -1;
 }
 
 export interface WalkedHandler {

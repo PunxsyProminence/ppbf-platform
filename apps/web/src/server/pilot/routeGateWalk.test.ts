@@ -4,21 +4,21 @@
 // only thing that reads which roles a handler passes to requireRole, and
 // apiRouteInventory.json pins what it reads. From the walker's first commit
 // (#1302) its call pattern held one backspace byte (0x08) where the regex word
-// boundary was meant: an escape that was unescaped once too often on its way
-// into the file. A backspace is invisible in an editor and in a diff, the
+// boundary was meant. A backspace is invisible in an editor and in a diff, the
 // pattern matched nothing, every inventory row recorded "roleLiterals": [],
 // and the drift test compared empty with empty and passed. No role list was
 // pinned, so a pull request widening a route's roles was not caught.
 //
 // WHAT THIS FAILS ON.
-//   1. The walker returning anything but the real role list of a named route.
-//   2. requireRoleLiterals misreading any of the forms it documents: an inline
-//      array, a same-file constant, a spread of one, an imported constant, a
-//      call inside a same-file helper -- or matching a longer identifier that
-//      merely ends in "requireRole".
-//   3. A control or invisible character anywhere in the walker or in the
-//      convention tests that consume it. Read as BYTES and checked by code
-//      point, with no regex of its own to go wrong the same way.
+//   1. The walker returning anything but the real role list of two named
+//      routes (one inline array, one same-file constant).
+//   2. requireRoleLiterals misreading any form it documents, or -- worse than
+//      reading nothing -- resolving a name to the wrong array: a constant that
+//      a parameter or a second declaration shadows, one that exists only in a
+//      comment, one that is filtered or pushed to after it is declared.
+//   3. Any byte in the walker or in the convention tests that consume it that
+//      is not printable ASCII or a line ending. Checked on the raw BYTES, with
+//      no regex of its own to go wrong the same way.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,27 +38,34 @@ function lines(...source: string[]): string {
   return source.join(String.fromCharCode(LINE_FEED));
 }
 
-/** The role lists the first handler in `source` reaches, as the walker reads them. */
-function literalsOf(source: string): string[] {
+/** The role lists one handler in `source` reaches, as the walker reads them. */
+function literalsOf(source: string, method?: string): string[] {
   const blanked = blankLiterals(source);
   const bodies = collectFunctionBodies(blanked);
-  const [handler] = findHandlers(blanked);
-  if (!handler) throw new Error('the fixture has no exported HTTP handler');
+  const handlers = findHandlers(blanked);
+  const handler = method ? handlers.find((h) => h.method === method) : handlers[0];
+  if (!handler) throw new Error('the fixture has no such exported HTTP handler');
   return requireRoleLiterals(source, blanked, reachableNames(blanked, bodies, handler.span).spans);
 }
 
-describe('the walker reads the roles a real handler passes to requireRole', () => {
-  // The named route. Its POST is `requireRole(principal, ['organization_admin',
-  // 'admin'])` at app/api/admin/volunteers/route.ts:31, inline, with no branch
-  // and no imported constant. If the route's roles are changed on purpose this
-  // expectation moves with the inventory row, in the same pull request.
-  const NAMED_ROUTE = 'app/api/admin/volunteers/route.ts#POST';
+describe('the walker reads the roles real handlers pass to requireRole', () => {
+  const walked = walkApiRoutes();
+  const rolesOf = (id: string): string[] | undefined => walked.find((h) => h.id === id)?.roleLiterals;
 
-  test(`${NAMED_ROUTE} admits admin and organization_admin`, () => {
-    const handler = walkApiRoutes().find((h) => h.id === NAMED_ROUTE);
-    expect(handler).toBeDefined();
-    expect(handler?.authorizationGates).toContain('requireRole');
-    expect(handler?.roleLiterals).toEqual(['admin,organization_admin']);
+  // The named routes. If a route's roles are changed on purpose, its
+  // expectation moves with its inventory row, in the same pull request.
+
+  // `requireRole(principal, ['organization_admin', 'admin'])`, inline, at
+  // app/api/admin/volunteers/route.ts:31.
+  test('app/api/admin/volunteers/route.ts#POST admits admin and organization_admin (an inline array)', () => {
+    expect(rolesOf('app/api/admin/volunteers/route.ts#POST')).toEqual(['admin,organization_admin']);
+  });
+
+  // `requireRole(principal, [...ADMIN_ROLES])` at
+  // app/api/pilot/admin/credentials/route.ts:63, where line 58 declares
+  // `const ADMIN_ROLES = ['organization_admin', 'admin'] as const;`.
+  test('app/api/pilot/admin/credentials/route.ts#GET admits admin and organization_admin (a same-file constant)', () => {
+    expect(rolesOf('app/api/pilot/admin/credentials/route.ts#GET')).toEqual(['admin,organization_admin']);
   });
 });
 
@@ -81,12 +88,13 @@ describe('requireRoleLiterals reads each form it documents', () => {
       '}',
     ))).toEqual(['admin,coach']);
     expect(literalsOf(lines(
-      "const READ_ROLES = ['coach', 'admin'] as const;",
+      "export const READ_ROLES: readonly PilotRole[] = ['coach', 'admin'] as const satisfies readonly PilotRole[];",
+      "const WRITE_ROLES = [...READ_ROLES, 'board'];",
       'export async function POST(request) {',
       '  const principal = await requirePrincipal(request);',
-      "  requireRole(principal, [...READ_ROLES, 'parent']);",
+      "  requireRole(principal, [...WRITE_ROLES, 'parent']);",
       '}',
-    ))).toEqual(['admin,coach,parent']);
+    ))).toEqual(['admin,board,coach,parent']);
   });
 
   test('an imported constant comes back as its expression, not as a guess', () => {
@@ -112,11 +120,47 @@ describe('requireRoleLiterals reads each form it documents', () => {
     ))).toEqual(['admin,coach', 'board']);
   });
 
+  test('a conditional between two same-file lists yields both lists', () => {
+    expect(literalsOf(lines(
+      "const RAISE_ROLES = ['organization_admin', 'admin', 'coach'] as const;",
+      "const REVIEW_ROLES = ['organization_admin', 'admin'] as const;",
+      'export async function PATCH(request) {',
+      '  const principal = await requirePrincipal(request);',
+      '  requireRole(principal, TIERS.has(request.tier) ? [...REVIEW_ROLES] : [...RAISE_ROLES]);',
+      '}',
+    ))).toEqual(['admin,coach,organization_admin', 'admin,organization_admin']);
+    // One unreadable branch and the whole expression is reported, not half of it.
+    expect(literalsOf(lines(
+      "const REVIEW_ROLES = ['organization_admin', 'admin'] as const;",
+      'export async function PATCH(request) {',
+      '  const principal = await requirePrincipal(request);',
+      '  requireRole(principal, request.wide ? [...IMPORTED_ROLES] : [...REVIEW_ROLES]);',
+      '}',
+    ))).toEqual(['<request.wide ? [...IMPORTED_ROLES] : [...REVIEW_ROLES]>']);
+  });
+
+  test('a comment between elements, a trailing comma and a third argument change nothing', () => {
+    expect(literalsOf(lines(
+      'const READ_ROLES = [',
+      "  'coach', // the head coach",
+      "  /* and */ 'admin',",
+      '] as const;',
+      'export async function GET(request) {',
+      '  const principal = await requirePrincipal(request);',
+      '  requireRole(',
+      '    principal,',
+      "    [...READ_ROLES, 'parent', /* family */],",
+      '  );',
+      "  requireRole(principal, ['board'], 'ignored');",
+      '}',
+    ))).toEqual(['admin,coach,parent', 'board']);
+  });
+
   test('a role named only in a comment or a string is not a call', () => {
     expect(literalsOf(lines(
       'export async function GET(request) {',
       "  // requireRole(principal, ['athlete']);",
-      "  const note = \"requireRole(principal, ['parent'])\";",
+      '  const note = "requireRole(principal, [1])";',
       "  requireRole(principal, ['coach']);",
       '}',
     ))).toEqual(['coach']);
@@ -130,47 +174,121 @@ describe('requireRoleLiterals reads each form it documents', () => {
       'export async function GET(request) {',
       '  const principal = await requirePrincipal(request);',
       "  neverrequireRole(principal, ['athlete']);",
+      "  $requireRole(principal, ['parent']);",
       '}',
     ))).toEqual([]);
   });
 });
 
+// A wrong list pinned as the right one is worse than no list: the inventory
+// would then vouch for it. Where the walker cannot be sure which array a name
+// means, it must say '<NAME>'.
+describe('requireRoleLiterals does not resolve a name it cannot be sure of', () => {
+  test('two handlers each with their own local constant of the same name', () => {
+    const source = lines(
+      'export async function GET(request) {',
+      "  const roles = ['organization_admin'];",
+      '  requireRole(principal, roles);',
+      '}',
+      'export async function POST(request) {',
+      "  const roles = ['organization_admin', 'coach', 'parent'];",
+      '  requireRole(principal, roles);',
+      '}',
+    );
+    expect(literalsOf(source, 'GET')).toEqual(['<roles>']);
+    expect(literalsOf(source, 'POST')).toEqual(['<roles>']);
+  });
+
+  test('a module constant shadowed by a parameter of the same name', () => {
+    expect(literalsOf(lines(
+      "const roles = ['organization_admin'];",
+      'function gate(principal, roles) {',
+      '  requireRole(principal, roles);',
+      '}',
+      'export async function GET(request) {',
+      "  gate(principal, ['athlete', 'parent']);",
+      '}',
+    ))).toEqual(['<roles>']);
+    expect(literalsOf(lines(
+      "const roles = ['organization_admin'];",
+      'const gate = (principal, roles) => {',
+      '  requireRole(principal, [...roles]);',
+      '};',
+      'export async function GET(request) {',
+      "  gate(principal, ['athlete', 'parent']);",
+      '}',
+    ))).toEqual(['<[...roles]>']);
+  });
+
+  test('a declaration that exists only inside a comment or a template string', () => {
+    expect(literalsOf(lines(
+      "const READ_ROLES = ['organization_admin'] as const;",
+      '/*',
+      "const READ_ROLES = ['organization_admin', 'coach', 'parent'];",
+      '*/',
+      'const help = `',
+      "const READ_ROLES = ['athlete'];",
+      '`;',
+      'export async function GET(request) {',
+      '  requireRole(principal, READ_ROLES);',
+      '}',
+    ))).toEqual(['organization_admin']);
+  });
+
+  test('an array that is filtered, or pushed to, after it is declared', () => {
+    expect(literalsOf(lines(
+      "const STAFF = ['coach', 'parent'].filter((role) => role !== 'parent');",
+      'export async function GET(request) {',
+      '  requireRole(principal, STAFF);',
+      '}',
+    ))).toEqual(['<STAFF>']);
+    expect(literalsOf(lines(
+      "const ALLOWED = ['coach'];",
+      'export async function GET(request) {',
+      "  if (request.family) ALLOWED.push('parent');",
+      '  requireRole(principal, ALLOWED);',
+      '}',
+    ))).toEqual(['<ALLOWED>']);
+  });
+
+  test('an element that is not a plain string or a known constant', () => {
+    expect(literalsOf(lines(
+      'export async function GET(request) {',
+      "  requireRole(principal, ['coach', `admin`]);",
+      '}',
+    ))).toEqual(["<['coach', `admin`]>"]);
+  });
+});
+
 /**
- * Characters that change what source means without being visible in an editor
- * or a diff: the C0 controls other than line feed (and a carriage return that
- * is half of a CRLF), DEL, the C1 controls, and the Unicode format and
- * separator characters that hide or reorder text. A tab is refused too: none
- * of the guarded files has one, and inside a regex it is one more thing nobody
- * can see.
+ * Every byte that is not printable ASCII (0x20 to 0x7E), a line feed, or the
+ * carriage return of a CRLF pair. That refuses the control characters (a tab
+ * included: none of the guarded files has one), DEL, and every non-ASCII
+ * character, visible or not -- these files are pure ASCII, and "ASCII only"
+ * needs no table of which Unicode characters happen to be invisible.
  */
-function invisibleCharacters(bytes: Buffer): string[] {
-  const text = bytes.toString('utf8');
+function unexpectedBytes(bytes: Buffer): string[] {
   const found: string[] = [];
   let line = 1;
   let column = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
+  for (let i = 0; i < bytes.length; i += 1) {
+    const byte = bytes[i];
     column += 1;
-    if (code === LINE_FEED) {
+    if (byte === LINE_FEED) {
       line += 1;
       column = 0;
       continue;
     }
-    if (code === CARRIAGE_RETURN && text.charCodeAt(i + 1) === LINE_FEED) continue;
-    const invisible = code < 0x20
-      || (code >= 0x7f && code <= 0x9f)
-      || code === 0xad
-      || (code >= 0x200b && code <= 0x200f)
-      || (code >= 0x2028 && code <= 0x202e)
-      || (code >= 0x2060 && code <= 0x2069)
-      || code === 0xfeff
-      || code === 0xfffd;
-    if (invisible) found.push(`line ${line}, column ${column}: U+${code.toString(16).toUpperCase().padStart(4, '0')}`);
+    if (byte === CARRIAGE_RETURN && bytes[i + 1] === LINE_FEED) continue;
+    if (byte < 0x20 || byte > 0x7e) {
+      found.push(`line ${line}, byte ${column}: 0x${byte.toString(16).toUpperCase().padStart(2, '0')}`);
+    }
   }
   return found;
 }
 
-describe('no control or invisible character hides in the walker or its convention tests', () => {
+describe('the walker and its convention tests hold only printable ASCII', () => {
+  // The walker and every file that imports it.
   const GUARDED_FILES = [
     'routeGateWalk.ts',
     'routeGateWalk.test.ts',
@@ -180,27 +298,28 @@ describe('no control or invisible character hides in the walker or its conventio
   ];
 
   test.each(GUARDED_FILES)('%s', (name) => {
-    const offenders = invisibleCharacters(fs.readFileSync(path.join(__dirname, name)));
+    const offenders = unexpectedBytes(fs.readFileSync(path.join(__dirname, name)));
     if (offenders.length > 0) {
       throw new Error(
-        `${name} holds characters that cannot be seen in an editor or a diff. `
-        + 'In a regex literal one of these silently replaces the escape that was meant '
-        + '(#1411: a backspace where a word boundary belonged). Remove or retype them: '
-        + offenders.join('; '),
+        `${name} holds bytes that are not printable ASCII. In a regex literal a control `
+        + 'character silently replaces the escape that was meant (#1411: a backspace where a '
+        + 'word boundary belonged), and it cannot be seen in an editor or a diff. Retype '
+        + 'them as escapes or plain ASCII: ' + offenders.slice(0, 20).join('; '),
       );
     }
   });
 
   test('the scan itself sees a backspace inside a regex literal, and passes clean source', () => {
     const backspace = String.fromCharCode(8);
-    const poisoned = Buffer.from(lines('const ok = 1;', `const callPattern = /${backspace}requireRole/g;`), 'utf8');
-    expect(invisibleCharacters(poisoned)).toEqual(['line 2, column 22: U+0008']);
-    for (const code of [0, 9, 11, 27, 127, 133, 173, 0x200b, 0x2028, 0x202e, 0xfeff]) {
-      expect(invisibleCharacters(Buffer.from(`a${String.fromCharCode(code)}b`, 'utf8'))).toHaveLength(1);
+    const poisoned = Buffer.from(lines('const ok = 1;', `const callPattern = /${backspace}requireRole/g;`), 'latin1');
+    expect(unexpectedBytes(poisoned)).toEqual(['line 2, byte 22: 0x08']);
+    for (const byte of [0, 9, 11, 27, 127, 128, 160, 255]) {
+      expect(unexpectedBytes(Buffer.from([97, byte, 98]))).toHaveLength(1);
     }
-    expect(invisibleCharacters(Buffer.from([0x61, 0xff, 0x62]))).toHaveLength(1);
+    // A zero-width space is three bytes in UTF-8, none of them ASCII.
+    expect(unexpectedBytes(Buffer.from(`a${String.fromCharCode(0x200b)}b`, 'utf8'))).toHaveLength(3);
     const crlf = String.fromCharCode(CARRIAGE_RETURN, LINE_FEED);
-    expect(invisibleCharacters(Buffer.from(`const a = 1;${crlf}const b = 'caf${String.fromCharCode(0xe9)}';${crlf}`, 'utf8'))).toEqual([]);
-    expect(invisibleCharacters(Buffer.from(`lone${String.fromCharCode(CARRIAGE_RETURN)}return`, 'utf8'))).toHaveLength(1);
+    expect(unexpectedBytes(Buffer.from(`const a = 1;${crlf}const b = '~';${crlf}`, 'latin1'))).toEqual([]);
+    expect(unexpectedBytes(Buffer.from(`lone${String.fromCharCode(CARRIAGE_RETURN)}return`, 'latin1'))).toHaveLength(1);
   });
 });

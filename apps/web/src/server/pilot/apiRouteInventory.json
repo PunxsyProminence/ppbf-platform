@@ -1558,7 +1558,8 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "<WEIGHT_BEARING_TIERS.has(body.to_tier) ? [...REVIEW_ROLES] : [...RAISE_ROLES]>"
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
       ]
     }
   },
