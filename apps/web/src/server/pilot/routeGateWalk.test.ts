@@ -240,6 +240,49 @@ describe('a helper is credited with its own body, never the next function', () =
     expect(literalsOf(gated, 'POST')).toEqual(['board']);
   });
 
+  // Nothing in this repo enforces semicolons, so the end of an expression
+  // body cannot depend on one.
+  test('an expression body without a semicolon stops where the next statement starts', () => {
+    const unterminated = lines(
+      'const plusOne = (x) => x + 1',
+      "const gate = (principal) => requireRole(principal, ['board'])",
+      '',
+      'export async function GET(request) {',
+      '  return plusOne(request.n);',
+      '}',
+      'export async function POST(request) {',
+      "  const refusal = () => new Error('no')",
+      '  await assertActorCanAccessAthlete(principal, request.id)',
+      '  throw refusal()',
+      '}',
+      'export async function DELETE(request) {',
+      "  const refusal = () => new Error('no')",
+      '  throw refusal()',
+      '}',
+    );
+    expect(reached(unterminated, 'GET')).toEqual(['plusOne']);
+    expect(literalsOf(unterminated, 'GET')).toEqual([]);
+    expect(reached(unterminated, 'DELETE')).toEqual(['Error', 'refusal']);
+    const declarators = lines(
+      "const plusOne = (x) => x + 1, gate = (principal) => requireRole(principal, ['board']);",
+      'export async function GET(request) {',
+      '  return plusOne(request.n);',
+      '}',
+    );
+    expect(reached(declarators, 'GET')).toEqual(['plusOne']);
+    // A body continued on deeper-indented lines is still one body.
+    const continued = lines(
+      'const gate = (principal) =>',
+      '  principal.staff',
+      "    ? requireRole(principal, ['coach'])",
+      "    : requireRole(principal, ['parent'])",
+      'export async function GET(request) {',
+      '  gate(principal)',
+      '}',
+    );
+    expect(literalsOf(continued, 'GET')).toEqual(['coach', 'parent']);
+  });
+
   test('a parenthesised value is not a function', () => {
     const bodies = collectFunctionBodies(blankLiterals(lines(
       'export async function POST(request) {',
@@ -317,6 +360,39 @@ describe('requireRoleLiterals does not resolve a name it cannot be sure of', () 
     ))).toEqual(['<[...roles]>']);
   });
 
+  test('a module constant shadowed by a binding in each shape the scan knows', () => {
+    const shadowedBy = (binding: string[]): string[] => literalsOf(lines(
+      "const ROLES = ['organization_admin'];",
+      ...binding,
+      'export async function GET(request) {',
+      "  gate(principal, ['athlete', 'parent']);",
+      '}',
+    ));
+    const body = ['  requireRole(principal, ROLES);', '}'];
+    // a default value that is a call
+    expect(shadowedBy(['const gate = (principal, ROLES = defaults()) => {', ...body])).toEqual(['<ROLES>']);
+    // an object return type after the parameters
+    expect(shadowedBy(['const gate = (principal: P, ROLES: string[]): { ok: boolean } => {', ...body])).toEqual(['<ROLES>']);
+    // a function-typed parameter before it
+    expect(shadowedBy(['const gate = (principal, done: () => void, ROLES: string[]) => {', ...body])).toEqual(['<ROLES>']);
+    // a rest parameter
+    expect(shadowedBy(['function gate(principal, ...ROLES) {', ...body])).toEqual(['<ROLES>']);
+    // a catch clause
+    expect(shadowedBy(['function gate(principal) {', '  try { check(); } catch (ROLES) {', '  requireRole(principal, ROLES);', '  }', '}'])).toEqual(['<ROLES>']);
+    // destructuring, object and array
+    expect(shadowedBy(['function gate(principal, options) {', '  const { ROLES } = options;', ...body])).toEqual(['<ROLES>']);
+    expect(shadowedBy(['function gate(principal, options) {', '  const [first, ROLES] = options;', ...body])).toEqual(['<ROLES>']);
+  });
+
+  test('a constant whose expression carries on after the bracket, on the same line or the next', () => {
+    const use = ['export async function GET(request) {', '  requireRole(principal, STAFF);', '}'];
+    expect(literalsOf(lines("const STAFF = ['coach', 'parent']", "  .filter((role) => role !== 'parent');", ...use))).toEqual(['<STAFF>']);
+    expect(literalsOf(lines("const STAFF = ['coach']", '  .concat(ADMIN);', ...use))).toEqual(['<STAFF>']);
+    expect(literalsOf(lines("const STAFF = ['coach'] as const", '  [0];', ...use))).toEqual(['<STAFF>']);
+    // No semicolon, and the next line is a new statement: still that array.
+    expect(literalsOf(lines("const STAFF = ['coach', 'admin'] as const", '', ...use))).toEqual(['admin,coach']);
+  });
+
   test('a declaration that exists only inside a comment or a template string', () => {
     expect(literalsOf(lines(
       "const READ_ROLES = ['organization_admin'] as const;",
@@ -354,6 +430,11 @@ describe('requireRoleLiterals does not resolve a name it cannot be sure of', () 
       "  requireRole(principal, ['coach', `admin`]);",
       '}',
     ))).toEqual(["<['coach', `admin`]>"]);
+    expect(literalsOf(lines(
+      'export async function GET(request) {',
+      "  requireRole(principal, ['coach', /admin/]);",
+      '}',
+    ))).toEqual(["<['coach', /admin/]>"]);
   });
 });
 

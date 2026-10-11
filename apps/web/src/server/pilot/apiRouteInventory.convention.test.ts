@@ -261,7 +261,7 @@ describe('every API handler has a row in the committed inventory, and the row st
 
   // Non-empty is not enough: a scanner that answered '<something>' for every
   // call would satisfy the test above. Most role lists are inline arrays or
-  // same-file constants and must come back as role names (296 of the 386
+  // same-file constants and must come back as role names (297 of the 386
   // handlers that reach requireRole when this was written; the rest import
   // their list). The floor is half, on disk and as walked.
   test('most handlers that reach requireRole have a role list read down to role names', () => {

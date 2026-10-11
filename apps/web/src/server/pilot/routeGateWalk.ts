@@ -245,9 +245,10 @@ export function collectFunctionBodies(blanked: string): Map<string, Span> {
   while ((match = assignment.exec(blanked)) !== null) {
     if (bodies.has(match[1])) continue;
     const parenOpen = match.index + match[0].length - 1;
+    const keywordAt = match.index + match[0].search(/\S/);
     const span = /\bfunction\b/.test(match[0])
       ? bodyAfterParameters(blanked, parenOpen)
-      : arrowBodyAfterParameters(blanked, parenOpen);
+      : arrowBodyAfterParameters(blanked, parenOpen, keywordAt - (blanked.lastIndexOf('\n', keywordAt) + 1));
     if (span) bodies.set(match[1], span);
   }
 
@@ -270,13 +271,17 @@ function bodyAfterParameters(blanked: string, parenOpen: number): Span | null {
  * request.json()) as {...}` is not one).
  *
  * Only a return type may sit between the parameters and the arrow. A block
- * body is the braces that directly follow the arrow; an expression body runs
- * to the end of its statement. It is never "the next brace in the file": that
- * reading gave an expression-bodied helper the body of whichever function was
- * declared after it, so every handler calling the helper was credited with
- * that function's gates and role lists.
+ * body is the braces that directly follow the arrow. An expression body runs
+ * to the end of its statement: a semicolon, a comma (the next declarator), a
+ * closing bracket it did not open, or a new line indented no deeper than the
+ * declaration itself (`declarationIndent`), which is where the next statement
+ * starts in code written without semicolons. It is not "the next brace in the
+ * file": that reading gave an expression-bodied helper the body of whichever
+ * function was declared after it, so every handler calling the helper was
+ * credited with that function's gates and role lists. An expression continued
+ * on a line indented no deeper than its own `const` is cut short at that line.
  */
-function arrowBodyAfterParameters(blanked: string, parenOpen: number): Span | null {
+function arrowBodyAfterParameters(blanked: string, parenOpen: number, declarationIndent: number): Span | null {
   const parenClose = matchDelimiter(blanked, parenOpen, '(', ')');
   if (parenClose === -1) return null;
 
@@ -312,9 +317,22 @@ function arrowBodyAfterParameters(blanked: string, parenOpen: number): Span | nu
     else if (c === ')' || c === ']' || c === '}') {
       depth -= 1;
       if (depth < 0) return [bodyStart, i] as const;
-    } else if (c === ';' && depth === 0) return [bodyStart, i] as const;
+    } else if (depth !== 0) continue;
+    else if (c === ';' || c === ',') return [bodyStart, i] as const;
+    else if (c === '\n') {
+      // Skip blank lines (a comment is blank here), then compare indentation.
+      let lineStart = i + 1;
+      let indent = 0;
+      for (;;) {
+        indent = 0;
+        while (blanked[lineStart + indent] === ' ' || blanked[lineStart + indent] === '\t') indent += 1;
+        if (blanked[lineStart + indent] !== '\n') break;
+        lineStart += indent + 1;
+      }
+      if (lineStart + indent >= blanked.length || indent <= declarationIndent) return [bodyStart, i] as const;
+    }
   }
-  return null;
+  return [bodyStart, blanked.length] as const;
 }
 
 export interface Handler {
@@ -399,30 +417,52 @@ function topLevelCommas(blankedText: string): number[] {
 }
 
 /**
- * Every name a parameter list binds anywhere in the file. Deliberately
- * over-inclusive -- a type named inside a parameter list counts too -- because
- * the only use is to refuse to resolve a role constant that a parameter of the
- * same name could be shadowing where requireRole is called.
+ * Names that something other than a module-level `const NAME = [` may bind:
+ * a parameter, a catch clause, a destructuring declaration. Deliberately
+ * over-inclusive -- a type named inside a parameter list counts, and so does
+ * any `NAME:` or `NAME =` that follows `(` or `,` (an object key, a named
+ * argument) -- because the only use is to refuse to resolve a role constant
+ * that such a binding could be shadowing where requireRole is called. It is a
+ * text scan, not a scope analysis: a binding in a shape not listed here is
+ * missed.
  */
-function parameterNames(blanked: string): Set<string> {
+function shadowingNames(blanked: string): Set<string> {
   const names = new Set<string>();
   const take = (text: string): void => {
     for (const word of text.matchAll(/[A-Za-z_$][\w$]*/g)) names.add(word[0]);
   };
-  const functionOpen = /\bfunction\b\s*\*?\s*[A-Za-z_$\w]*\s*(?:<[^>(]*>)?\s*\(/g;
-  let match: RegExpExecArray | null;
-  while ((match = functionOpen.exec(blanked)) !== null) {
-    const open = match.index + match[0].length - 1;
-    const close = matchDelimiter(blanked, open, '(', ')');
+  const takeDelimited = (open: number, openChar: string, closeChar: string): void => {
+    const close = matchDelimiter(blanked, open, openChar, closeChar);
     if (close !== -1) take(blanked.slice(open + 1, close));
+  };
+  let match: RegExpExecArray | null;
+  const functionOpen = /\bfunction\b\s*\*?\s*[A-Za-z_$\w]*\s*(?:<[^>(]*>)?\s*\(/g;
+  while ((match = functionOpen.exec(blanked)) !== null) takeDelimited(match.index + match[0].length - 1, '(', ')');
+  const destructuring = /\b(?:const|let|var)\s*([{[])/g;
+  while ((match = destructuring.exec(blanked)) !== null) {
+    takeDelimited(match.index + match[0].length - 1, match[1], match[1] === '{' ? '}' : ']');
   }
   for (const arrow of blanked.matchAll(/\(([^()]*)\)\s*(?::[^=;{}]*)?=>/g)) take(arrow[1]);
   for (const arrow of blanked.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) names.add(arrow[1]);
+  for (const typed of blanked.matchAll(/[(,]\s*(?:\.\.\.)?([A-Za-z_$][\w$]*)\s*\??\s*[:=](?![=>])/g)) names.add(typed[1]);
+  for (const caught of blanked.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g)) names.add(caught[1]);
   return names;
 }
 
-/** What may follow the closing bracket of an array constant that is still just that array. */
-const ARRAY_CONSTANT_TAIL = /^[ \t]*(?:as\s+const)?[ \t]*(?:satisfies\s+[^;\n]+?)?[ \t]*;?[ \t]*(?:\r?\n|$)/;
+/**
+ * Whether the bracket at `close` ends an array constant's declaration, so the
+ * constant IS that array. `as const` and `satisfies T` may follow. After them
+ * comes a semicolon, the end of the file, or a new line that starts a new
+ * statement -- not one that carries on the expression (`.filter(...)`,
+ * `.concat(...)`, an index, a call, an operator), which makes it a different
+ * array.
+ */
+function endsItsDeclaration(blanked: string, close: number): boolean {
+  const tail = blanked.slice(close + 1).replace(/^\s*as\s+const\b/, '').replace(/^\s*satisfies\s+[^;\n]+/, '');
+  const next = /\S/.exec(tail);
+  if (!next || next[0] === ';') return true;
+  return tail.slice(0, next.index).includes('\n') && /[A-Za-z_$@}]/.test(next[0]);
+}
 
 /**
  * Module-level array constants in the file, e.g.
@@ -430,22 +470,25 @@ const ARRAY_CONSTANT_TAIL = /^[ \t]*(?:as\s+const)?[ \t]*(?:satisfies\s+[^;\n]+?
  * their string elements. A spread of another same-file constant
  * (`[...ADMIN_ROLES, 'coach']`) is followed.
  *
- * A constant is resolved only when the walker can be sure which array a use of
- * its name means. It must be declared with `const` at column 0, found in the
- * BLANKED text (so a declaration inside a comment or a string is not one); the
- * closing bracket must end the declaration (`.filter(...)` after it makes it a
- * different array); the name must be bound exactly once by const/let/var and by
- * no parameter list; and nothing may push, unshift, splice, pop, shift or fill
- * it. Anything else is left out, and a call that names it comes back as
- * '<NAME>' -- "look here" rather than a wrong list pinned as the right one.
- * A destructured local of the same name is not detected.
+ * A constant is resolved only when the walker has no sign that a use of its
+ * name could mean another array. It must be declared with `const` at column
+ * 0, found in the BLANKED text (so a declaration inside a comment or a string
+ * is not one); the closing bracket must end the declaration (see
+ * endsItsDeclaration); the name must be bound exactly once by const/let/var
+ * and by nothing shadowingNames reports; and nothing may push, unshift,
+ * splice, pop, shift or fill it. Anything else is left out, and a call that
+ * names it comes back as '<NAME>' -- "look here" rather than a wrong list
+ * pinned as the right one.
+ *
+ * NOT detected: an element assigned by index, `NAME.length = 0`, and a
+ * mutation made through another name for the same array.
  */
 export function collectArrayConstants(source: string, blanked: string = blankLiterals(source)): Map<string, string[]> {
   const bound = new Map<string, number>();
   for (const binding of blanked.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) {
     bound.set(binding[1], (bound.get(binding[1]) ?? 0) + 1);
   }
-  const shadowed = parameterNames(blanked);
+  const shadowed = shadowingNames(blanked);
   const mutated = new Set<string>();
   for (const call of blanked.matchAll(/([A-Za-z_$][\w$]*)\s*\.\s*(?:push|unshift|splice|pop|shift|fill)\s*\(/g)) {
     mutated.add(call[1]);
@@ -459,7 +502,7 @@ export function collectArrayConstants(source: string, blanked: string = blankLit
     const open = match.index + match[0].length - 1;
     const close = matchDelimiter(blanked, open, '[', ']');
     if (close === -1) continue;
-    if (!ARRAY_CONSTANT_TAIL.test(blanked.slice(close + 1))) continue;
+    if (!endsItsDeclaration(blanked, close)) continue;
     if (bound.get(name) !== 1 || shadowed.has(name) || mutated.has(name)) continue;
     bodies.set(name, [open + 1, close] as const);
   }
@@ -483,8 +526,8 @@ export function collectArrayConstants(source: string, blanked: string = blankLit
  * role names. Structure is read from the blanked text, so a comment between
  * elements and a trailing comma are nothing; the value of a quoted string is
  * read from the original source. `...NAME` or bare `NAME` is looked up through
- * `lookup`; an element that cannot be resolved -- a template literal, a call,
- * a cast -- makes the whole array unresolvable (null).
+ * `lookup`; an element that cannot be resolved -- a template literal, a regex,
+ * a call, a cast -- makes the whole array unresolvable (null).
  */
 function resolveArrayBody(
   source: string,
@@ -499,9 +542,10 @@ function resolveArrayBody(
     const [a, b] = trimSpan(blanked, [from, to]);
     from = to + 1;
     if (a === b) {
-      // Nothing but a comment or a trailing comma -- unless a template literal
-      // was blanked away whole, backticks included.
-      if (source.slice(segmentStart, to).includes('`')) return null;
+      // Blank in the blanked text: a trailing comma or a comment, which are
+      // nothing -- or a template or regex literal blanked away whole, which
+      // is an element that cannot be read.
+      if (!isOnlyComments(source.slice(segmentStart, to))) return null;
       continue;
     }
     const quote = blanked[a];
@@ -515,6 +559,17 @@ function resolveArrayBody(
     out.push(...inner);
   }
   return out;
+}
+
+/** True when the text holds nothing but whitespace and comments. */
+function isOnlyComments(text: string): boolean {
+  let rest = text.trim();
+  while (rest.length > 0) {
+    const end = rest.startsWith('//') ? rest.indexOf('\n') : rest.startsWith('/*') ? rest.indexOf('*/') + 1 : -2;
+    if (end === -2) return false;
+    rest = end <= 0 ? '' : rest.slice(end + 1).trim();
+  }
+  return true;
 }
 
 /** One role list -- an array literal or a same-file constant -- sorted, de-duplicated and comma-joined; null if it cannot be read. */
