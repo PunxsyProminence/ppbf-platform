@@ -6,10 +6,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
-import {
-  TEMPLATE_STEP_FIELDS_NOT_CARRIED,
-  issueWorkoutTemplate,
-} from '@/src/server/pilot/workoutTemplates';
+import { issueWorkoutTemplate } from '@/src/server/pilot/workoutTemplates';
 
 export const runtime = 'nodejs';
 
@@ -94,14 +91,14 @@ export async function POST(request: NextRequest) {
         ok: true,
         organization_id: principal.organizationId,
         athlete_id: athleteId,
+        // The issued workout: the row that holds each step's block, order,
+        // scale level, contact level and coach note beside its assignment.
+        issue_id: result.issue_id,
         template: result.template,
-        // What was created, and only that: one separate assignment per step.
+        // What was created: one assignment per step, in one workout.
         created: { assignments: result.steps.length, adopted_drills: result.adopted.length },
         steps: result.steps,
         adopted_drills: result.adopted,
-        // The step columns an assignment has nowhere to store. Named so a
-        // client cannot take the session's structure to have travelled.
-        not_carried: [...TEMPLATE_STEP_FIELDS_NOT_CARRIED],
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       },
       { status: 201 },
