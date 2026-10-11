@@ -1910,13 +1910,14 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
         { ordinal: 4, block: 'pads', scale_level: 'B', contact_level: 'none', coach_note: null, assignment_id: 'asg-1' },
       ],
     };
-    // The first workout's id again, claiming the program group's other card.
-    const repeatsAnId = { ...WORKOUT, template_name: 'A Repeat', steps: [{ ...WORKOUT.steps[0], assignment_id: 'asg-2' }] };
-    await renderList(ITEMS, [WORKOUT, claimsOthers, repeatsAnId]);
+    // The first workout's id again, claiming an individual card nothing else
+    // names: without the one-workout-per-id rule it would be drawn as a third.
+    const repeatsAnId = { ...WORKOUT, template_name: 'A Repeat', steps: [{ ...WORKOUT.steps[0], assignment_id: 'asg-legacy' }] };
+    await renderList([...ITEMS, LEGACY_GROUP], [WORKOUT, claimsOthers, repeatsAnId]);
     const [second, first] = await screen.findAllByTestId('issued-workout');
 
     // Friday Pads stands where Slip line stood (first in the list), then Technical Tuesday.
-    expect(groupNames()).toEqual(['Friday Pads', 'Technical Tuesday', 'Jump rope']);
+    expect(groupNames()).toEqual(['Friday Pads', 'Technical Tuesday', 'Jump rope', 'Heavy bag']);
     expect(within(first).getByText('workout · 4 steps')).toBeTruthy();
     expect(within(second).getByText('workout · 1 step')).toBeTruthy();
     expect(within(second).getAllByRole('listitem').map(blockAndTitle)).toEqual([['pads', 'Step 2 · Slip line']]);
