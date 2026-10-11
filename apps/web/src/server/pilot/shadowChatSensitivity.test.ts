@@ -250,10 +250,6 @@ const EMERGENCY_TEXT = 'Potential emergency: stop participation and contact loca
 // file's job is to say what main's results MEANT at b4f58159.
 const CRITICAL = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom'];
 
-// The two classifications lane S1's taught return carries (see NAMED RELEASE
-// below). Main never gives either.
-const OWNER_RELEASE_CLASSIFICATIONS = ['weight_cut_question', 'training_clearance_question'];
-
 const withheld = (v: Verdict): boolean => v.valid === false;
 const emergency = (v: Verdict): boolean => v.valid === false && v.error === EMERGENCY_TEXT;
 const critical = (v: Verdict): boolean => CRITICAL.includes(v.classification ?? '');
@@ -262,7 +258,6 @@ const same = (a: Verdict, b: Verdict): boolean => JSON.stringify(a) === JSON.str
 
 /** Which of main's nine returns produced this result, in source order. */
 function returnOf(v: Verdict): string {
-  if (v.valid && OWNER_RELEASE_CLASSIFICATIONS.includes(v.classification ?? '')) return 'S1 taught (owner release)';
   if (v.valid) return 'classification' in v ? 'R2 educational, allowed' : 'R9 nothing matched, allowed';
   if (v.error === 'Medication and prescription recommendations require prescription authority and professional medical oversight.') return 'R1 prescription or weight cut';
   if (v.classification === 'urgent_personal_symptom') return 'R3 urgent';
@@ -667,9 +662,8 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 // rule the app already had, other than the weight-cut and 'cleared' gates,
 // withholds it by its own unchanged patterns." So a release is explained
 // when all of this holds:
-//   - the current verdict is exactly the taught shape -- valid, not marked
-//     high-risk ("Nothing is held back or logged for staff"), the
-//     classifier's topic, one of the two classifications;
+//   - the current verdict is exactly what main gives an ordinary allowed
+//     question -- valid, not marked high-risk, no topic, no classification;
 //   - it is a message one of the two gates is about: main's own weight-cut
 //     wording is in the folded message, or "cleared" / "clearance" (not the
 //     bare word "clear") is within 40 characters of train / training /
@@ -700,11 +694,12 @@ const RELEASED_FROM = ['R1 prescription or weight cut', 'R2 educational, allowed
 function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): boolean {
   const folded = normaliseForMatching(message);
   const lowered = folded.toLowerCase();
-  const topic = classifyHighRiskTopic(message).topic;
   const weightWording = RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE);
   const clearedNearTraining = RELEASED_CLEARED_NEAR.test(folded);
-  const taughtShape = (same(is, { valid: true, highRisk: false, topic, classification: 'weight_cut_question' }) && weightWording)
-    || (same(is, { valid: true, highRisk: false, topic, classification: 'training_clearance_question' }) && clearedNearTraining);
+  // Released as an ordinary allowed question: no mark, no topic, no
+  // classification (OD-2026-10-10-006, "Nothing is held back or logged for
+  // staff"; Jason, question card 2026-10-11, "A: No banner (Recommended)").
+  const taughtShape = same(is, { valid: true, highRisk: false, topic: 'none' }) && (weightWording || clearedNearTraining);
   if (!taughtShape) return false;
 
   let blanked = folded
@@ -891,7 +886,7 @@ describe('the premises of the argument, read from source', () => {
     // condition, one return.
     validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasPersonalContext && hasPersonalHealthConcern);');
     validate = undo(validate, 'if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {', 'if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {', 1);
-    validate = drop(validate, 'if (taught) { return { valid: true, highRisk: false, topic: classification.topic, classification: taught }; }');
+    validate = drop(validate, 'if (taught) { return allowedAsOrdinaryQuestion(); }');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -1625,7 +1620,7 @@ describe('main against the current code: every look-alike at every position of e
     // and the owner's ruling now has taught (NAMED RELEASE above).
     if (message === 'cut weight\uFEFFfor my weight class') {
       expect(emergency(main(message)) || critical(main(message))).toBe(false);
-      expect(now(message)).toEqual({ valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' });
+      expect(now(message)).toEqual({ valid: true, highRisk: false, topic: 'none' });
       expect(explainedByOwnerRelease(message, main(message), now(message))).toBe(true);
       return;
     }
@@ -1709,7 +1704,7 @@ describe('main against the current code: every look-alike at every position of e
       const message = withApostrophe(String.fromCharCode(unit));
       expect(main(message)).toEqual({ valid: true, highRisk: true, topic: topicOnMain, classification: topicOnMain });
       expect(now(message)).toEqual(topicOnMain === 'weight_cutting'
-        ? { valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' }
+        ? { valid: true, highRisk: false, topic: 'none' }
         : main(message));
     }
   });
@@ -2081,13 +2076,16 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R8 high-risk fallback -> R3 urgent': 5113,
     'R9 nothing matched, allowed -> R3 urgent': 155,
     // Lane S1, the owner's release: three more kinds, and the only ones in
-    // this table that are not a move to R3 or a topic change. Each is a
+    // this table that are not a move to R3 or a topic change. A released
+    // message gets main's answer for an ordinary question, which is what R9
+    // gives; the count at the bottom of this table says how many of these
+    // the owner's rulings explain (all of them). Each is a
     // weight-cut or training-clearance seed in which the look-alike leaves
     // the question readable. From R8: a look-alike that breaks main's R1
     // phrase ("how do i cut weight") and leaves the topic row matching.
-    'R1 prescription or weight cut -> S1 taught (owner release)': 2076,
-    'R6 clearance -> S1 taught (owner release)': 1434,
-    'R8 high-risk fallback -> S1 taught (owner release)': 1278,
+    'R1 prescription or weight cut -> R9 nothing matched, allowed': 2076,
+    'R6 clearance -> R9 nothing matched, allowed': 1434,
+    'R8 high-risk fallback -> R9 nothing matched, allowed': 1278,
   },
   // Every message the current code answers where main withheld, each one
   // checked against the ruling's own terms by explainedByOwnerRelease. None

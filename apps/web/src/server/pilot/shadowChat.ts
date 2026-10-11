@@ -517,11 +517,21 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
 //                the return_to_play and medical_clearance topic rows where
 //                it was the word "cleared" or "clearance" that matched them.
 // A message those caught, and nothing else of main's catches, is returned by
-// validateShadowRequest as taught: valid, under main's topic, with no
-// high-risk mark (so the route writes no request-risk row for it), and with a
-// classification of its own because the route answers 'weight_cutting',
-// 'return_to_play' and 'medical_clearance' with a fixed line and never calls
-// the model (FALLBACK_RESPONSES, app/api/pilot/shadow/chat/route.ts).
+// validateShadowRequest as an ordinary allowed question: valid, no high-risk
+// mark, no topic, no classification. So the route calls the model (it
+// answers the classifications 'weight_cutting', 'return_to_play' and
+// 'medical_clearance' from a fixed line: FALLBACK_RESPONSES,
+// app/api/pilot/shadow/chat/route.ts), writes no request-risk row, names no
+// topic in its reply and shows no handoff banner under the answer.
+//   - no mark, no row: the option Jason picked reads "Nothing is held back or
+//     logged for staff" (OD-2026-10-10-006; Overwatch, lane question 11);
+//   - no topic, so no banner: Jason, question card 2026-10-11, "A: No banner
+//     (Recommended)" -- "Released weight-cut and 'cleared to spar' answers
+//     show no extra line. Matches your rulings: teach, coach decides.
+//     Banners on other topics (concussion, return to play, medical
+//     clearance) stay as they are."
+// Marks, topics and banners that main's other rules give for their own
+// matches are untouched.
 //
 // WHAT ELSE OF MAIN'S CATCHES A MESSAGE, each by main's own pattern and
 // nothing added. This returns null for it, and a null changes nothing in
@@ -576,7 +586,10 @@ const CLEARED_NEAR_TRAINING: readonly RegExp[] = [
 // dehydration (only beside weight-cut wording; see otherRiskTopicMatches).
 const WEIGHT_CUT_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration'];
 
-export type ShadowTaughtQuestion = 'weight_cut_question' | 'training_clearance_question';
+/** What a released question gets: main's own answer for an ordinary question. */
+function allowedAsOrdinaryQuestion(): ShadowValidationResult {
+  return { valid: true, highRisk: false, topic: 'none' };
+}
 
 /**
  * Whether a risk topic row of main's, other than the two gates' own, matches
@@ -605,11 +618,11 @@ function taughtQuestion(
   topic: HighRiskTopic,
   hasRapidWeightCutLanguage: boolean,
   reportsPersonalPainOrInjury: boolean,
-): ShadowTaughtQuestion | null {
-  if (reportsPersonalPainOrInjury) return null;
-  if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return null;
+): boolean {
+  if (reportsPersonalPainOrInjury) return false;
+  if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return false;
   // The part of main's clearance return that is not relaxed.
-  if (MEDICAL_CLEARANCE_PHRASE.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return null;
+  if (MEDICAL_CLEARANCE_PHRASE.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return false;
 
   // "cleared" or "clearance", not the bare word "clear": a message that is
   // only "is the ring clear for sparring?" is neither kind of question, is
@@ -623,13 +636,14 @@ function taughtQuestion(
     || topic === 'weight_cutting'
     || topic === 'rapid_weight_loss'
     || (topic === 'dehydration' && WEIGHT_CUT_TOPIC_ROWS.some((pattern) => pattern.test(text.toLowerCase())));
-  if (!weightCutWording && !trainingClearance) return null;
-  if (otherRiskTopicMatches(text, weightCutWording, trainingClearance)) return null;
+  if (!weightCutWording && !trainingClearance) return false;
+  if (otherRiskTopicMatches(text, weightCutWording, trainingClearance)) return false;
 
+  // A weight-cut question under none, a weight row or dehydration; or a
+  // training-clearance question under a clearance row.
   const clearanceTopic = topic === 'return_to_play' || topic === 'medical_clearance';
-  if (weightCutWording && WEIGHT_CUT_QUESTION_TOPICS.includes(topic)) return 'weight_cut_question';
-  if (trainingClearance && (clearanceTopic || weightCutWording)) return 'training_clearance_question';
-  return null;
+  if (weightCutWording && WEIGHT_CUT_QUESTION_TOPICS.includes(topic)) return true;
+  return trainingClearance && (clearanceTopic || weightCutWording);
 }
 
 // Validate that the request aligns with SHADOW's doctrine
@@ -687,14 +701,11 @@ export function validateShadowRequest(
     };
   }
 
-  // Taught, not withheld (OD-2026-10-10-004 ruling 1). Under main's topic,
-  // and with NO high-risk mark, so the route writes no staff review row for
-  // it: the option Jason picked reads "Nothing is held back or logged for
-  // staff" (OD-2026-10-10-006), and Overwatch ruled lane question 11 that way
-  // on 2026-10-11. Marks main's other rules give for their own matches are
-  // untouched.
+  // Taught, not withheld (OD-2026-10-10-004 ruling 1): answered as an
+  // ordinary allowed question, with no mark, no topic and so no banner --
+  // see taughtQuestion above.
   if (taught) {
-    return { valid: true, highRisk: false, topic: classification.topic, classification: taught };
+    return allowedAsOrdinaryQuestion();
   }
 
   // Educational queries are allowed

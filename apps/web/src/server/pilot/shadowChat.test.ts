@@ -210,7 +210,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         'athlete',
         'org-123',
       );
-      expect(result).toEqual({ valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' });
+      expect(result).toEqual({ valid: true, highRisk: false, topic: 'none' });
     });
 
     test.each([
@@ -266,9 +266,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       'I need to lose 10 pounds this week.',
     ])('a personal rapid weight-cut request is taught, with no high-risk mark: %s', (message) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
-      expect(result.valid).toBe(true);
-      expect(result.highRisk).toBe(false);
-      expect(result.classification).toBe('weight_cut_question');
+      expect(result).toEqual({ valid: true, highRisk: false, topic: 'none' });
     });
 
     test('allows general education about an urgent symptom without personal guidance', () => {
@@ -2316,6 +2314,8 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
   // calls the model (FALLBACK_RESPONSES, app/api/pilot/shadow/chat/route.ts,
   // a private const: route.test.ts runs the real one).
   const CANNED = ['concussion', 'weight_cutting', 'return_to_play', 'medical_clearance'];
+  // What main gives an ordinary question nothing of its catches.
+  const ORDINARY = { valid: true, highRisk: false, topic: 'none' };
   const MEDICATION = 'Medication and prescription recommendations require prescription authority and professional medical oversight.';
   const CLEARANCE = 'Medical clearance decisions require professional medical authority.';
   const HIGH_RISK = 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.';
@@ -2416,18 +2416,24 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
   ];
 
   describe.each(ROLES)('for a %s', (role) => {
-    test.each(WEIGHT_CUT)('a weight-cut question reaches the model: %s', (message, topic) => {
+    // A released question is answered as an ordinary allowed question:
+    //   - no high-risk mark, so the route writes no staff review row: "Nothing
+    //     is held back or logged for staff" (OD-2026-10-10-006, the option
+    //     Jason picked; Overwatch, lane question 11 option b, 2026-10-11);
+    //   - no topic, so the route names none and shows no banner: Jason,
+    //     question card 2026-10-11, "A: No banner (Recommended)";
+    //   - no classification, so the route's fixed lines cannot answer it.
+    // The second column of each list is the topic main gave the sentence. It
+    // is kept there for the reader and is not what the branch returns.
+    test.each(WEIGHT_CUT)('a weight-cut question reaches the model: %s', (message) => {
       const result = validateShadowRequest(message, role, 'org-123');
-      // No high-risk mark, so the route writes no staff review row: "Nothing
-      // is held back or logged for staff" (OD-2026-10-10-006, the option
-      // Jason picked; Overwatch, lane question 11 option b, 2026-10-11).
-      expect(result).toEqual({ valid: true, highRisk: false, topic, classification: 'weight_cut_question' });
+      expect(result).toEqual(ORDINARY);
       expect(CANNED).not.toContain(result.classification);
     });
 
-    test.each(TRAINING_CLEARANCE)('"cleared" near spar, contact or train reaches the model: %s', (message, topic) => {
+    test.each(TRAINING_CLEARANCE)('"cleared" near spar, contact or train reaches the model: %s', (message) => {
       const result = validateShadowRequest(message, role, 'org-123');
-      expect(result).toEqual({ valid: true, highRisk: false, topic, classification: 'training_clearance_question' });
+      expect(result).toEqual(ORDINARY);
       expect(CANNED).not.toContain(result.classification);
     });
   });

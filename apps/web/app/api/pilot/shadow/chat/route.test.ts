@@ -3368,11 +3368,14 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       // question 11 option b).
       expect(reviews).toHaveLength(0);
       expect(body.requiresHumanReview).toBe(false);
-      // The topic is main's, unchanged, and the route still reads it: it
-      // names the topic in the reply and shows the banner main gives that
-      // topic (shadowHandoff.ts, not changed).
-      expect(body.highRiskTopic).toBe(topic);
-      expect(body.handoff).toBe(banner);
+      // No topic and no banner under the answer: Jason, question card
+      // 2026-10-11, "A: No banner (Recommended)" -- "Released weight-cut and
+      // 'cleared to spar' answers show no extra line." On main, `topic` and
+      // `banner` in this table are what the same sentence carried (with a
+      // refusal); they are kept in the table for the control below.
+      expect(body.highRiskTopic).toBeUndefined();
+      expect(body.handoff).toBeUndefined();
+      expect([topic, banner]).not.toContain(undefined);
     });
 
     test('the prompt the model gets carries the teaching section and this audience\'s register', async () => {
@@ -3423,6 +3426,22 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
 
       expect(providerCalled).toBe(false);
       expect(body.state).toBe('filtered');
+    });
+
+    // "Banners on other topics (concussion, return to play, medical
+    // clearance) stay as they are", and so does the weight-cut banner where
+    // one of main's other rules still sets that topic.
+    test.each([
+      ['weight-cut topic, held by main\'s medication rule', 'Should I take a water pill to make weight?', WEIGHT_BANNER],
+      ['weight-cut topic, main\'s stock line', 'What causes fainting during a weight cut?', WEIGHT_BANNER],
+      ['medical clearance, main\'s stock line', 'What is required for medical clearance?', CLEARANCE_BANNER],
+      ['medical clearance, held by main\'s clearance rule', 'Does he need medical clearance to spar?', CLEARANCE_BANNER],
+      ['return to play, held by main\'s clearance rule', 'Am I cleared to compete?', RETURN_TO_PLAY_BANNER],
+    ])('CONTROL: the banner still shows where a rule of main\'s sets the topic: %s', async (_label, message, banner) => {
+      const { body, providerCalled } = await ask(role, message);
+
+      expect(providerCalled).toBe(false);
+      expect(body.handoff).toBe(banner);
     });
 
     // OD-2026-10-10-005 ruling 2: no reply is withheld for weight-cut
