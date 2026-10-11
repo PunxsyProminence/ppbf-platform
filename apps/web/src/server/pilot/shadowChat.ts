@@ -517,8 +517,8 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
 //                the return_to_play and medical_clearance topic rows where
 //                it was the word "cleared" or "clearance" that matched them.
 // A message those caught, and nothing else of main's catches, is returned by
-// validateShadowRequest as taught: valid, under main's topic and main's
-// high-risk mark (so the route still writes its request-risk row), with a
+// validateShadowRequest as taught: valid, under main's topic, with no
+// high-risk mark (so the route writes no request-risk row for it), and with a
 // classification of its own because the route answers 'weight_cutting',
 // 'return_to_play' and 'medical_clearance' with a fixed line and never calls
 // the model (FALLBACK_RESPONSES, app/api/pilot/shadow/chat/route.ts).
@@ -688,10 +688,14 @@ export function validateShadowRequest(
     };
   }
 
-  // Taught, not withheld (OD-2026-10-10-004 ruling 1). High-risk under main's
-  // topic, so staff still get the review row.
+  // Taught, not withheld (OD-2026-10-10-004 ruling 1). Under main's topic,
+  // and with NO high-risk mark, so the route writes no staff review row for
+  // it: the option Jason picked reads "Nothing is held back or logged for
+  // staff" (OD-2026-10-10-006), and Overwatch ruled lane question 11 that way
+  // on 2026-10-11. Marks main's other rules give for their own matches are
+  // untouched.
   if (taught) {
-    return { valid: true, highRisk: true, topic: classification.topic, classification: taught };
+    return { valid: true, highRisk: false, topic: classification.topic, classification: taught };
   }
 
   // Educational queries are allowed

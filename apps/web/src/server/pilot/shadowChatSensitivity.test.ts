@@ -667,8 +667,9 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 // rule the app already had, other than the weight-cut and 'cleared' gates,
 // withholds it by its own unchanged patterns." So a release is explained
 // when all of this holds:
-//   - the current verdict is exactly the taught shape -- valid, high-risk,
-//     the classifier's topic, one of the two classifications;
+//   - the current verdict is exactly the taught shape -- valid, not marked
+//     high-risk ("Nothing is held back or logged for staff"), the
+//     classifier's topic, one of the two classifications;
 //   - it is a message one of the two gates is about: main's own weight-cut
 //     wording is in the folded message, or "cleared" / "clearance" (not the
 //     bare word "clear") is within 40 characters of train / training /
@@ -702,8 +703,8 @@ function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): bo
   const topic = classifyHighRiskTopic(message).topic;
   const weightWording = RELEASED_WEIGHT_WORDING.test(lowered) || lowered.includes(RELEASED_WEIGHT_PHRASE);
   const clearedNearTraining = RELEASED_CLEARED_NEAR.test(folded);
-  const taughtShape = (same(is, { valid: true, highRisk: true, topic, classification: 'weight_cut_question' }) && weightWording)
-    || (same(is, { valid: true, highRisk: true, topic, classification: 'training_clearance_question' }) && clearedNearTraining);
+  const taughtShape = (same(is, { valid: true, highRisk: false, topic, classification: 'weight_cut_question' }) && weightWording)
+    || (same(is, { valid: true, highRisk: false, topic, classification: 'training_clearance_question' }) && clearedNearTraining);
   if (!taughtShape) return false;
 
   let blanked = folded
@@ -890,7 +891,7 @@ describe('the premises of the argument, read from source', () => {
     // condition, one return.
     validate = drop(validate, 'const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasPersonalContext && hasPersonalHealthConcern);');
     validate = undo(validate, 'if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {', 'if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {', 1);
-    validate = drop(validate, 'if (taught) { return { valid: true, highRisk: true, topic: classification.topic, classification: taught }; }');
+    validate = drop(validate, 'if (taught) { return { valid: true, highRisk: false, topic: classification.topic, classification: taught }; }');
     const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
     expect(validate).toEqual(mainValidateShape.statements);
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
@@ -1624,7 +1625,7 @@ describe('main against the current code: every look-alike at every position of e
     // and the owner's ruling now has taught (NAMED RELEASE above).
     if (message === 'cut weight\uFEFFfor my weight class') {
       expect(emergency(main(message)) || critical(main(message))).toBe(false);
-      expect(now(message)).toEqual({ valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' });
+      expect(now(message)).toEqual({ valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' });
       expect(explainedByOwnerRelease(message, main(message), now(message))).toBe(true);
       return;
     }
@@ -1708,7 +1709,7 @@ describe('main against the current code: every look-alike at every position of e
       const message = withApostrophe(String.fromCharCode(unit));
       expect(main(message)).toEqual({ valid: true, highRisk: true, topic: topicOnMain, classification: topicOnMain });
       expect(now(message)).toEqual(topicOnMain === 'weight_cutting'
-        ? { valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' }
+        ? { valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' }
         : main(message));
     }
   });

@@ -210,7 +210,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         'athlete',
         'org-123',
       );
-      expect(result).toEqual({ valid: true, highRisk: true, topic: 'weight_cutting', classification: 'weight_cut_question' });
+      expect(result).toEqual({ valid: true, highRisk: false, topic: 'weight_cutting', classification: 'weight_cut_question' });
     });
 
     test.each([
@@ -264,10 +264,10 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     test.each([
       'I need to make weight for Friday.',
       'I need to lose 10 pounds this week.',
-    ])('a personal rapid weight-cut request is taught and still marked high-risk: %s', (message) => {
+    ])('a personal rapid weight-cut request is taught, with no high-risk mark: %s', (message) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
       expect(result.valid).toBe(true);
-      expect(result.highRisk).toBe(true);
+      expect(result.highRisk).toBe(false);
       expect(result.classification).toBe('weight_cut_question');
     });
 
@@ -2339,9 +2339,8 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     // A minor, named as one. The ruling covers every audience; the prompt
     // tunes the teaching to age. Reviewer A listed this for the owner to know.
     ['My 9 year old needs to lose 6 pounds this week', 'rapid_weight_loss'],
-    // Reviewer B, for the owner to know: a kid who says the coach is not to
-    // be told is still asking a weight-cut question, and it reaches the
-    // model. It keeps the high-risk mark, so the staff review row is written.
+    // A kid who says the coach is not to be told is still asking a
+    // weight-cut question, and it reaches the model like any other.
     ["don't tell my coach, how do I cut weight fast", 'weight_cutting'],
     ["I'm 13 and 6 pounds over. How do I make weight by Saturday without my coach finding out", 'weight_cutting'],
     ['should I skip meals to make weight', 'weight_cutting'],
@@ -2419,15 +2418,16 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
   describe.each(ROLES)('for a %s', (role) => {
     test.each(WEIGHT_CUT)('a weight-cut question reaches the model: %s', (message, topic) => {
       const result = validateShadowRequest(message, role, 'org-123');
-      // highRisk stays true so the route still writes the staff review row
-      // (OD-2026-09-30-006: "Everything high-risk, as now").
-      expect(result).toEqual({ valid: true, highRisk: true, topic, classification: 'weight_cut_question' });
+      // No high-risk mark, so the route writes no staff review row: "Nothing
+      // is held back or logged for staff" (OD-2026-10-10-006, the option
+      // Jason picked; Overwatch, lane question 11 option b, 2026-10-11).
+      expect(result).toEqual({ valid: true, highRisk: false, topic, classification: 'weight_cut_question' });
       expect(CANNED).not.toContain(result.classification);
     });
 
     test.each(TRAINING_CLEARANCE)('"cleared" near spar, contact or train reaches the model: %s', (message, topic) => {
       const result = validateShadowRequest(message, role, 'org-123');
-      expect(result).toEqual({ valid: true, highRisk: true, topic, classification: 'training_clearance_question' });
+      expect(result).toEqual({ valid: true, highRisk: false, topic, classification: 'training_clearance_question' });
       expect(CANNED).not.toContain(result.classification);
     });
   });

@@ -3354,7 +3354,7 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       // made to cut, are answered like any other weight-cut question.
       ["I haven't had water in 2 days, how do I make weight", 'weight_cutting', WEIGHT_BANNER],
       ["my dad says I can't eat until I make weight", 'weight_cutting', WEIGHT_BANNER],
-    ])('the model answers, the answer is delivered, and staff still get one review row: %s', async (message, topic, banner) => {
+    ])('the model answers, the answer is delivered, and no staff review row is written: %s', async (message, topic, banner) => {
       const { status, body, providerCalled, reviews } = await ask(role, message);
 
       expect(status).toBe(200);
@@ -3363,16 +3363,16 @@ describe('S1: weight-cut and training-clearance questions reach the model', () =
       expect(body.filtered).toBe(false);
       // The answer names a sauna and is delivered as the model wrote it.
       expect(body.response).toBe(TAUGHT_ANSWER);
-      // Still a high-risk request under main's topic: one request-risk row,
-      // and the banner main gives that topic (shadowHandoff.ts, not changed).
+      // Not marked high-risk, so nothing is logged for staff ("Nothing is
+      // held back or logged for staff", OD-2026-10-10-006; Overwatch, lane
+      // question 11 option b).
+      expect(reviews).toHaveLength(0);
+      expect(body.requiresHumanReview).toBe(false);
+      // The topic is main's, unchanged, and the route still reads it: it
+      // names the topic in the reply and shows the banner main gives that
+      // topic (shadowHandoff.ts, not changed).
       expect(body.highRiskTopic).toBe(topic);
       expect(body.handoff).toBe(banner);
-      expect(reviews).toHaveLength(1);
-      expect(reviews[0]).toMatchObject({
-        category: topic,
-        severity: 'high',
-        summary: 'A high-risk SHADOW chat request was flagged for human review.',
-      });
     });
 
     test('the prompt the model gets carries the teaching section and this audience\'s register', async () => {
