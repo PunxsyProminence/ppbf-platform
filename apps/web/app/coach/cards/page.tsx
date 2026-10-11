@@ -183,9 +183,15 @@ export default function CoachCardsPage() {
     if (!res.ok) throw new Error(`Failed to load cards: ${res.status}`);
     const data = (await res.json()) as { items?: IssuanceGroup[]; workouts?: unknown };
     if (signal?.aborted) return;
-    // Workouts this screen cannot read throw (src/lib/issuedWorkouts.ts), and
-    // the list then says it could not be read: never the steps as loose cards.
-    setGroups(arrangeGroups(data.items || [], readIssuedWorkouts(data.workouts)));
+    // Workouts this screen cannot read are a failed list read, in this
+    // screen's own words: never the steps drawn as loose cards.
+    let workouts: IssuedWorkoutView[];
+    try {
+      workouts = readIssuedWorkouts(data.workouts);
+    } catch {
+      throw new Error('The workouts of the card list could not be read.');
+    }
+    setGroups(arrangeGroups(data.items || [], workouts));
     // A read that succeeded clears the flag, so a recovered page stops
     // claiming it could not be read.
     setCardsUnreadable(false);

@@ -126,14 +126,20 @@ interface DrillAssignment {
  * The `workouts` of the assignments answer (src/lib/issuedWorkouts.ts), or a
  * failed load. Workouts this screen cannot read are NOT read as "no workouts":
  * drawing the steps as loose drills would show the athlete a workout out of
- * its order and call it whole. This screen draws the date each was issued, so
- * a workout with no readable date is refused here too.
+ * its order and call it whole. This screen draws the date each was issued and
+ * who issued it, so a workout with no readable date, or a name that is not
+ * text, is refused here too.
  */
 function readDatedWorkouts(raw: unknown): IssuedWorkoutView[] {
   try {
     const workouts = readIssuedWorkouts(raw);
-    if (workouts.some((workout) => workout.issued_at === undefined || Number.isNaN(Date.parse(workout.issued_at)))) {
-      throw new Error('a workout has no readable date');
+    for (const workout of workouts) {
+      if (typeof workout.issued_at !== 'string' || Number.isNaN(Date.parse(workout.issued_at))) {
+        throw new Error('a workout has no readable date');
+      }
+      if (workout.issued_by_name !== undefined && typeof workout.issued_by_name !== 'string') {
+        throw new Error('a workout names its coach with something that is not text');
+      }
     }
     return workouts;
   } catch (cause) {

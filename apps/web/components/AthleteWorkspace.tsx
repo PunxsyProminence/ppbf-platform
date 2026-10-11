@@ -2937,7 +2937,7 @@ export default function AthleteWorkspace() {
                       of no workout is drawn where it stands, as before. Only
                       OPEN work is on the Floor, so the heading says how many
                       of the workout's steps that is. */}
-                  {orderAssignedWork(openCoachWork, coachWorkouts).map((row) => {
+                  {orderAssignedWork(openCoachWork, coachWorkouts).map((row, index, rows) => {
                     if (row.kind === 'workout') {
                       const total = row.workout.steps.length;
                       return (
@@ -2965,8 +2965,16 @@ export default function AthleteWorkspace() {
                     const name = work.drill_display_name || work.drill_name;
                     // Under a workout and its block the drill's heading is one level further down.
                     const WorkHeading = step ? 'h6' : 'h4';
+                    // Work that is in no workout and follows a workout's last
+                    // step starts a new row of the grid, so it is never drawn
+                    // beside that step as if it were one more of them.
+                    const before = rows[index - 1];
+                    const endsWorkout = step === null && before?.kind === 'assignment' && before.step !== null;
                     return (
-                      <div key={work.assignment_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
+                      <div
+                        key={work.assignment_id}
+                        className={`mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]${endsWorkout ? ' md:col-start-1' : ''}`}
+                      >
                         <div className="flex items-start justify-between gap-[var(--s4)]">
                           <div className="min-w-0">
                             {step && <p className="t-label">Step {step.ordinal}</p>}

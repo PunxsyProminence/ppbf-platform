@@ -24,7 +24,11 @@ export interface IssuedWorkoutStepView {
   assignment_id: string;
 }
 
-/** An issued workout. The optional fields are sent to some readers and not others. */
+/**
+ * An issued workout. The optional fields are sent to some readers and not
+ * others, and readIssuedWorkouts does not check them: a screen that draws one
+ * checks it itself.
+ */
 export interface IssuedWorkoutView {
   issue_id: string;
   template_name: string;
@@ -35,7 +39,6 @@ export interface IssuedWorkoutView {
 
 const isText = (value: unknown): value is string => typeof value === 'string';
 const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
-const isTextIfSent = (value: unknown): boolean => value === undefined || isText(value);
 
 /** Thrown by readIssuedWorkouts. Its message is for a log, never for a screen. */
 export class IssuedWorkoutsUnreadableError extends Error {
@@ -52,16 +55,16 @@ export class IssuedWorkoutsUnreadableError extends Error {
  * called the whole list. So it throws, and the caller says the list could not
  * be read, in its own words.
  *
- * Only what every screen draws is required. `issued_at` and `issued_by_name`
- * must be text when they are sent; a screen that draws the date checks that it
- * is one.
+ * Only what every screen draws is required, so a field one screen does not
+ * draw cannot make that screen's list unreadable. `issued_at` and
+ * `issued_by_name` are not looked at here: the athlete's assignments page,
+ * which draws both, checks both.
  */
 export function readIssuedWorkouts(raw: unknown): IssuedWorkoutView[] {
   if (raw === undefined) return [];
   const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
     const w = workout as Partial<IssuedWorkoutView> | null;
     return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name)
-      && isTextIfSent(w.issued_at) && isTextIfSent(w.issued_by_name)
       && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
         const s = step as Partial<IssuedWorkoutStepView> | null;
         return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)

@@ -1950,6 +1950,9 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     await renderList(ITEMS, workouts);
 
     await screen.findByText(/Your cards could not be read/);
+    // Said in this screen's own words, not the shared reader's log line.
+    expect(screen.getByText('The workouts of the card list could not be read.')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('beside the assignments');
     expect(screen.queryByTestId('issued-workout')).toBeNull();
     expect(screen.queryByText('individual')).toBeNull();
     expect(screen.queryByText('No cards issued yet')).toBeNull();
@@ -1957,7 +1960,8 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
 
   test('what this screen does not draw cannot make the list unreadable: a workout with no date or version, or with extra keys, is drawn', async () => {
     const bare = { issue_id: WORKOUT.issue_id, template_name: WORKOUT.template_name, steps: WORKOUT.steps, something_new: true };
-    await renderList(ITEMS, [bare]);
+    // Left out altogether, or sent as something that is not text: neither is drawn here.
+    await renderList(ITEMS, [{ ...bare, issued_at: null, issued_by_name: 5 }]);
 
     expect(await screen.findByTestId('issued-workout')).toBeTruthy();
     expect(screen.queryByText(/Your cards could not be read/)).toBeNull();

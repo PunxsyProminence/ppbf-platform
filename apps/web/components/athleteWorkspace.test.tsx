@@ -1920,13 +1920,6 @@ describe('Today shows the work a coach assigned', () => {
   });
 });
 
-// A-FIN-04: THE FLOOR IS THE WORK A COACH ASSIGNED. It used to be a plan this
-// component generated at check-in -- 'Dynamic Warmup + Mobility', 'Technical
-// Boxing Block', 'Cooldown + Session Journal', identical for every athlete --
-// POSTed to /api/pilot/floor-plans and shown as the day's work. These pin the
-// replacement: the coach's open rows, in the API's order, with the coach's
-// dose or none; honest empty and failure states; links to the Progression
-// page's own controls rather than copies of them; and nothing generated.
 // An issued workout template keeps its shape on the Floor (lane P7c,
 // OD-2026-10-10-004 ruling 5). The Floor lists OPEN work only, so it draws the
 // workout's open steps: a heading across the grid at the place of the first of
@@ -2030,7 +2023,8 @@ describe('an issued workout keeps its shape on the Floor', () => {
     const grid = await floorGrid('Technical Tuesday');
     const sparring = cardOf(grid, 'Body Sparring');
 
-    expect(within(grid).queryByRole('alert')).toBeNull();
+    // No alert anywhere on the Floor, not only inside the grid.
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(sparring.querySelector('.alert, .badge, [title]')).toBeNull();
     // Its whole text: its step, its name, its status, the three lines, its two links.
     expect(sparring.textContent).toBe(
@@ -2085,6 +2079,42 @@ describe('an issued workout keeps its shape on the Floor', () => {
     expect(screen.queryByText('Technical Tuesday')).toBeNull();
   });
 
+  test('the workout stands where the first of its OPEN steps stood, not where a finished one did', async () => {
+    // Its first two steps in the server's order are done; only Jab Ladder,
+    // listed last, is open. So the workout is drawn there, after both pieces
+    // of other work, and says one of its three steps is left.
+    const work = WORK.map((item) => (['as-w3', 'as-w1'].includes(String(item.assignment_id)) ? { ...item, status: 'completed' } : item));
+    await openFloorWith(work, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(headings(grid)).toEqual(['h4: Shadowbox', 'h4: Heavy Bag', 'h4: Technical Tuesday', 'h5: main work', 'h6: Jab Ladder']);
+    expect(within(grid).getByTestId('floor-issued-workout').textContent).toBe('WorkoutTechnical Tuesday1 of 3 steps still to do, in this order');
+  });
+
+  test('work that follows the last step of a workout starts a new row of the grid; nothing else is moved', async () => {
+    await openFloorWith(WORK, [WORKOUT]);
+    const grid = await floorGrid('Technical Tuesday');
+    const startsRow = (title: string) => cardOf(grid, title).className.split(' ').includes('md:col-start-1');
+
+    // Heavy Bag is in no workout and comes straight after the workout's last
+    // step: without this it would sit beside that step as if it were one more.
+    expect(startsRow('Heavy Bag')).toBe(true);
+    // Work before the workout, and the workout's own steps, flow as they did.
+    expect(startsRow('Shadowbox')).toBe(false);
+    for (const title of ['Skip Rope', 'Jab Ladder', 'Body Sparring']) expect(startsRow(title)).toBe(false);
+    // The heading and each block name take the whole row.
+    expect(within(grid).getByTestId('floor-issued-workout').className).toContain('md:col-span-2');
+    for (const block of within(grid).getAllByRole('heading', { level: 5 })) expect(block.className).toContain('md:col-span-2');
+  });
+
+  test('what the Floor does not draw cannot fail its load: a workout whose date or coach name is not text is still drawn', async () => {
+    await openFloorWith(WORK, [{ ...WORKOUT, issued_at: null, issued_by_name: 5 }]);
+    const grid = await floorGrid('Technical Tuesday');
+
+    expect(within(grid).getAllByTestId('floor-issued-workout')).toHaveLength(1);
+    expect(screen.queryByText("Could not load your coach's work")).toBeNull();
+  });
+
   const NO_WORKOUTS: Array<[string, unknown]> = [
     ['an empty workouts list', []],
     ['no workouts key at all (an older server)', undefined],
@@ -2124,6 +2154,13 @@ describe('an issued workout keeps its shape on the Floor', () => {
   });
 });
 
+// A-FIN-04: THE FLOOR IS THE WORK A COACH ASSIGNED. It used to be a plan this
+// component generated at check-in -- 'Dynamic Warmup + Mobility', 'Technical
+// Boxing Block', 'Cooldown + Session Journal', identical for every athlete --
+// POSTed to /api/pilot/floor-plans and shown as the day's work. These pin the
+// replacement: the coach's open rows, in the API's order, with the coach's
+// dose or none; honest empty and failure states; links to the Progression
+// page's own controls rather than copies of them; and nothing generated.
 describe('the Floor is the work a coach assigned', () => {
   test('only open work is shown, in the order the API returned it', async () => {
     storedAssignments = [
