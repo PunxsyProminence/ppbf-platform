@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import type {
-  TemplateIssueRefusedDrill,
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
 } from '@/src/server/pilot/workoutTemplates';
@@ -47,6 +46,17 @@ interface TemplateDetail {
 //   - a training hold: said beside the result. The issue was NOT blocked
 //     (OD-2026-10-06-024 ruling 1, warn only), and no other warning is added.
 //
+// THE SCREEN NEVER SAYS "NOTHING WAS ISSUED" UNLESS THE SERVER SAID SO. The
+// route answers 201 only after its transaction has committed, and nothing
+// stops the same template being issued twice, so a coach told "nothing was
+// issued" issues again and the athlete gets every card twice. Three answers,
+// kept apart:
+//   - 201: issued, always -- even when the body cannot be read;
+//   - 400 / 401 / 403 / 404 / 409: the server refused before or inside the
+//     write, so nothing was issued, and the screen says so;
+//   - anything else (no answer, a 5xx, a status this screen does not know):
+//     UNKNOWN, said as unknown, with where to look before trying again.
+//
 // EACH STEP IS A SEPARATE COACH CARD FOR NOW, and the result says so plainly:
 // an assignment has nowhere to keep a step's block, order, scale level,
 // contact level or coach note, so the athlete does not receive the session's
@@ -61,6 +71,12 @@ interface TemplateDetail {
 interface ReachableAthlete {
   athlete_id: string;
   full_name: string;
+}
+
+function isReachableAthlete(value: unknown): value is ReachableAthlete {
+  if (value === null || typeof value !== 'object') return false;
+  const athlete = value as Record<string, unknown>;
+  return typeof athlete.athlete_id === 'string' && typeof athlete.full_name === 'string';
 }
 
 // The scope labels the progression screen prints for the same warning.
@@ -79,22 +95,31 @@ function holdNoteFrom(value: unknown): HoldNote {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'object') return 'unreadable';
   const scope = (value as Record<string, unknown>).scope;
-  if (typeof scope !== 'string' || !Object.hasOwn(HOLD_SCOPE_LABEL, scope)) return 'unreadable';
+  if (typeof scope !== 'string' || !Object.prototype.hasOwnProperty.call(HOLD_SCOPE_LABEL, scope)) return 'unreadable';
   return { scopeLabel: HOLD_SCOPE_LABEL[scope] };
 }
 
-type IssueOutcome =
-  | { kind: 'issued'; athleteName: string; cards: number; adopted: string[]; hold: HoldNote }
-  | { kind: 'refused'; message: string; drills: TemplateIssueRefusedDrill[] }
-  | { kind: 'failed'; message: string };
+/** One refused drill as this screen draws it, whatever shape the answer had. */
+interface RefusedDrill {
+  name: string;
+  steps: number[];
+  reason: string;
+}
 
-const ISSUE_NOT_FOUND =
-  'That athlete or template could not be found, or you can no longer reach that athlete. Nothing was issued.';
-const ISSUE_FAILED = 'The template could not be issued. Nothing was issued.';
-// No answer came back, so this screen does not know which way it went.
-const ISSUE_NO_ANSWER =
-  'No answer came back, so this template may or may not have been issued. '
-  + "Check the athlete's Coach Cards before trying again.";
+// Checked rather than cast: a refusal is the answer the coach most needs to
+// read, and one malformed entry must not take the whole page down with it.
+function refusedDrillsFrom(value: unknown): RefusedDrill[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (entry === null || typeof entry !== 'object') return [];
+    const drill = entry as Record<string, unknown>;
+    return [{
+      name: typeof drill.name === 'string' && drill.name.trim() !== '' ? drill.name : 'A step with no name',
+      steps: Array.isArray(drill.steps) ? drill.steps.filter((step): step is number => typeof step === 'number') : [],
+      reason: typeof drill.reason === 'string' ? drill.reason : '',
+    }];
+  });
+}
 
 function namedDrills(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -104,40 +129,103 @@ function namedDrills(value: unknown): string[] {
   });
 }
 
-function IssueToAthlete({ template }: { readonly template: Template }) {
+/** How many cards the answer says it made, or null when it does not say. */
+function cardCountFrom(payload: Record<string, unknown>): number | null {
+  if (Array.isArray(payload.steps)) return payload.steps.length;
+  const created = payload.created;
+  const assignments = created !== null && typeof created === 'object' ? (created as Record<string, unknown>).assignments : undefined;
+  return typeof assignments === 'number' ? assignments : null;
+}
+
+type IssueOutcome =
+  | { kind: 'issued'; athleteName: string; cards: number | null; adopted: string[]; hold: HoldNote }
+  // A 201 whose body could not be read: the cards exist, the details do not.
+  | { kind: 'issued_unread'; athleteName: string }
+  | { kind: 'refused'; message: string; drills: RefusedDrill[] }
+  | { kind: 'failed'; message: string };
+
+const NOTHING_ISSUED = 'Nothing was issued.';
+const ISSUE_FAILED = `The template could not be issued. ${NOTHING_ISSUED}`;
+const ISSUE_NOT_FOUND =
+  `That athlete or template could not be found, or you can no longer reach that athlete. ${NOTHING_ISSUED}`;
+const ISSUE_SIGNED_OUT = `You are signed out, so nothing was issued. Sign in again.`;
+const ISSUE_NOT_ALLOWED = `This account may not issue templates. ${NOTHING_ISSUED}`;
+// No answer came back, so this screen does not know which way it went.
+const ISSUE_NO_ANSWER =
+  'No answer came back, so this template may or may not have been issued. '
+  + "Check the athlete's Coach Cards before trying again.";
+// An answer came back that does not say which way it went.
+const ISSUE_UNKNOWN =
+  'This screen could not tell whether the template was issued. '
+  + "Check the athlete's Coach Cards before trying again.";
+const ATHLETES_FAILED = 'The athletes could not be loaded. This is a failure to load, not an empty list of athletes.';
+
+/** The server's own sentence for a refusal it made before or inside the write. */
+function refusedBeforeWriting(payload: Record<string, unknown> | null): string {
+  const said = typeof payload?.error === 'string' ? payload.error.trim() : '';
+  if (said === '') return ISSUE_FAILED;
+  return /nothing was issued/i.test(said) ? said : `${said} ${NOTHING_ISSUED}`;
+}
+
+const ALERT_TEXT = 'text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]';
+
+function IssueToAthlete({
+  template,
+  onBusyChange,
+}: {
+  readonly template: Template;
+  /** Told while an issue is running, so the page can keep this control mounted until it answers. */
+  readonly onBusyChange: (busy: boolean) => void;
+}) {
   // null until the read answers, so "still loading" is never drawn as "nobody".
   const [athletes, setAthletes] = useState<ReachableAthlete[] | null>(null);
-  const [athletesError, setAthletesError] = useState('');
+  const [athletesFailed, setAthletesFailed] = useState(false);
   const [athleteId, setAthleteId] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<IssueOutcome | null>(null);
 
+  // Where focus goes after each step. Each step replaces what was on screen,
+  // so without this a keyboard or screen-reader user is dropped at the top of
+  // the page with nothing read out.
+  const [focusOn, setFocusOn] = useState<'confirm' | 'result' | 'issue' | null>(null);
+  const confirmRef = useRef<HTMLParagraphElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const issueButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    let current = true;
-    void (async () => {
-      try {
-        // The athletes this coach may act ON, not everyone in the gym: the
-        // picker never offers an athlete the issue would then refuse.
-        const response = await fetch(`${apiBase()}/api/pilot/coach/athletes`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error('The athletes could not be loaded.');
-        const payload = (await response.json()) as { items?: ReachableAthlete[] };
-        if (!current) return;
-        setAthletes(payload.items ?? []);
-        setAthletesError('');
-      } catch (error) {
-        if (!current) return;
-        setAthletes([]);
-        setAthletesError(error instanceof Error ? error.message : 'The athletes could not be loaded.');
-      }
-    })();
-    return () => {
-      current = false;
-    };
+    if (focusOn === 'confirm') confirmRef.current?.focus();
+    if (focusOn === 'result') resultRef.current?.focus();
+    if (focusOn === 'issue') issueButtonRef.current?.focus();
+  }, [focusOn]);
+
+  // No state is set before the first await (see `load` in the page below).
+  const loadAthletes = useCallback(async () => {
+    try {
+      // The athletes this coach may act ON, not everyone in the gym: the
+      // picker never offers an athlete the issue would then refuse.
+      const response = await fetch(`${apiBase()}/api/pilot/coach/athletes`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('athletes read failed');
+      const payload = (await response.json()) as { items?: unknown } | null;
+      // A wrong-shaped answer is a failed read, not a gym with no athletes.
+      if (!Array.isArray(payload?.items)) throw new Error('athletes read had no list');
+      setAthletes(
+        payload.items.filter(isReachableAthlete).sort((a, b) => a.full_name.localeCompare(b.full_name)),
+      );
+      setAthletesFailed(false);
+    } catch {
+      setAthletes([]);
+      setAthletesFailed(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      await loadAthletes();
+    })();
+  }, [loadAthletes]);
 
   const chosen = (athletes ?? []).find((athlete) => athlete.athlete_id === athleteId) ?? null;
 
@@ -147,6 +235,7 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
     // dead when a second tap arrives.
     if (!chosen) return;
     setBusy(true);
+    onBusyChange(true);
     try {
       let response: Response;
       try {
@@ -160,40 +249,58 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
         setOutcome({ kind: 'failed', message: ISSUE_NO_ANSWER });
         return;
       }
-      const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      const parsed: unknown = await response.json().catch(() => null);
+      const payload = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 
-      if (response.status === 201 && payload) {
-        const steps = Array.isArray(payload.steps) ? payload.steps.length : 0;
-        setOutcome({
-          kind: 'issued',
-          athleteName: chosen.full_name,
-          cards: steps,
-          adopted: namedDrills(payload.adopted_drills),
-          hold: holdNoteFrom(payload.hold_warning),
-        });
-        return;
-      }
-      if (response.status === 409 && payload?.code === 'WORKOUT_TEMPLATE_ISSUE_REFUSED') {
+      if (response.status === 201) {
+        // Committed, whatever else is true. An unreadable body loses the
+        // details, never the fact.
+        setOutcome(payload
+          ? {
+            kind: 'issued',
+            athleteName: chosen.full_name,
+            cards: cardCountFrom(payload),
+            adopted: namedDrills(payload.adopted_drills),
+            hold: holdNoteFrom(payload.hold_warning),
+          }
+          : { kind: 'issued_unread', athleteName: chosen.full_name });
+      } else if (response.status === 409 && payload?.code === 'WORKOUT_TEMPLATE_ISSUE_REFUSED') {
         setOutcome({
           kind: 'refused',
-          message: typeof payload.error === 'string' ? payload.error : 'Nothing was issued.',
-          drills: Array.isArray(payload.drills) ? (payload.drills as TemplateIssueRefusedDrill[]) : [],
+          message: typeof payload.error === 'string' ? payload.error : NOTHING_ISSUED,
+          drills: refusedDrillsFrom(payload.drills),
         });
-        return;
-      }
-      if (response.status === 404) {
+      } else if (response.status === 404) {
         setOutcome({ kind: 'failed', message: ISSUE_NOT_FOUND });
-        return;
+      } else if (response.status === 401) {
+        setOutcome({ kind: 'failed', message: ISSUE_SIGNED_OUT });
+      } else if (response.status === 403) {
+        setOutcome({ kind: 'failed', message: ISSUE_NOT_ALLOWED });
+      } else if (response.status === 400 || response.status === 409) {
+        // The server's own sentence: a template no longer in use, a drill
+        // retired in the meantime, a library that changed mid-issue.
+        setOutcome({ kind: 'failed', message: refusedBeforeWriting(payload) });
+      } else {
+        // A 5xx or a status this screen does not know. A server error's text
+        // is not repeated, and it is not read as "nothing happened".
+        setOutcome({ kind: 'failed', message: ISSUE_UNKNOWN });
       }
-      // Any other conflict carries the server's own sentence (a template no
-      // longer in use, a library that changed mid-issue: "try again").
-      const said = response.status === 409 && typeof payload?.error === 'string' ? payload.error : '';
-      setOutcome({ kind: 'failed', message: said || ISSUE_FAILED });
+    } catch {
+      // Anything thrown after the request left: the write may have landed.
+      setOutcome({ kind: 'failed', message: ISSUE_UNKNOWN });
     } finally {
       setBusy(false);
+      onBusyChange(false);
       setConfirming(false);
+      setFocusOn('result');
     }
   };
+
+  const cardsLine = outcome?.kind === 'issued'
+    ? (outcome.cards === null
+      ? `Issued to ${outcome.athleteName}. The number of Coach Cards could not be read.`
+      : `Issued to ${outcome.athleteName}: ${outcome.cards} Coach ${outcome.cards === 1 ? 'Card' : 'Cards'}.`)
+    : '';
 
   return (
     <div
@@ -204,13 +311,23 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
 
       {athletes === null && <p className="t-body mt-[var(--s3)]">Loading athletes...</p>}
 
-      {athletes !== null && athletesError && (
-        <p role="alert" className="t-body mt-[var(--s3)] font-semibold text-[var(--locked-ink)]">
-          {athletesError} This is a failure to load, not an empty list of athletes.
-        </p>
+      {athletes !== null && athletesFailed && (
+        <div role="alert" className="mt-[var(--s3)] flex flex-col gap-[var(--s3)]">
+          <p className={ALERT_TEXT}>{ATHLETES_FAILED}</p>
+          <button
+            type="button"
+            className="btn btn--ghost btn--kiosk"
+            onClick={() => {
+              setAthletes(null);
+              void loadAthletes();
+            }}
+          >
+            Try again
+          </button>
+        </div>
       )}
 
-      {athletes !== null && !athletesError && athletes.length === 0 && (
+      {athletes !== null && !athletesFailed && athletes.length === 0 && (
         <p className="t-body mt-[var(--s3)]">You have no athletes you can issue this to.</p>
       )}
 
@@ -236,29 +353,46 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
             ))}
           </select>
 
-          {!confirming && (
-            <button
-              type="button"
-              className="btn btn--kiosk"
-              disabled={!chosen || busy}
-              onClick={() => {
-                setOutcome(null);
-                setConfirming(true);
-              }}
-            >
-              Issue to athlete
-            </button>
-          )}
+          {/* Stays in its place, disabled, while the confirm step is open: a
+              second tap on the same spot then lands on a dead button, never
+              on Confirm. */}
+          <button
+            ref={issueButtonRef}
+            type="button"
+            className="btn btn--kiosk"
+            disabled={!chosen || busy || confirming}
+            onClick={() => {
+              setOutcome(null);
+              setConfirming(true);
+              setFocusOn('confirm');
+            }}
+          >
+            Issue to athlete
+          </button>
 
           {confirming && chosen && (
             <div className="flex flex-col gap-[var(--s3)]">
-              <p className="t-body font-semibold">
+              <p ref={confirmRef} tabIndex={-1} className="t-body font-semibold">
                 Issue {template.name} to {chosen.full_name}? Each step becomes a separate Coach Card.
               </p>
-              <button type="button" className="btn btn--kiosk" disabled={busy} onClick={() => void issue()}>
+              <button
+                type="button"
+                className="btn btn--kiosk"
+                disabled={busy}
+                aria-busy={busy}
+                onClick={() => void issue()}
+              >
                 {busy ? 'Issuing...' : 'Confirm issue'}
               </button>
-              <button type="button" className="btn btn--ghost btn--kiosk" disabled={busy} onClick={() => setConfirming(false)}>
+              <button
+                type="button"
+                className="btn btn--ghost btn--kiosk"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(false);
+                  setFocusOn('issue');
+                }}
+              >
                 Cancel
               </button>
             </div>
@@ -266,53 +400,63 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
         </div>
       )}
 
-      {outcome?.kind === 'issued' && (
-        <div role="status" className="mt-[var(--s4)] flex flex-col gap-[var(--s2)]">
-          <p className="t-body font-semibold">
-            Issued to {outcome.athleteName}: {outcome.cards} Coach {outcome.cards === 1 ? 'Card' : 'Cards'}.
-          </p>
-          <p className="t-body">
-            Each step is a separate Coach Card for now. The block, order, scale level, contact level and
-            coach note are not carried.
-          </p>
-          {outcome.adopted.length > 0 && (
-            <p className="t-body">Adopted for this gym: {outcome.adopted.join(', ')}.</p>
+      {/* The result. Focus is sent here when an answer lands. The status
+          region is always mounted, so what is put into it is announced. */}
+      <div ref={resultRef} tabIndex={-1} className="mt-[var(--s4)]">
+        <div role="status" className="flex flex-col gap-[var(--s2)]">
+          {outcome?.kind === 'issued' && (
+            <>
+              <p className="t-body font-semibold">{cardsLine}</p>
+              <p className="t-body">
+                Each step is a separate Coach Card for now. The block, order, scale level, contact level and
+                coach note are not carried.
+              </p>
+              {outcome.adopted.length > 0 && (
+                <p className="t-body">Adopted for this gym: {outcome.adopted.join(', ')}.</p>
+              )}
+              {/* OD-2026-10-06-024 ruling 1: told beside the action, after the
+                  fact, and nothing was blocked. The progression screen's wording. */}
+              {outcome.hold !== null && outcome.hold !== 'unreadable' && (
+                <p className="t-body font-semibold">
+                  This athlete has an active training hold ({outcome.hold.scopeLabel}). Issuing was NOT blocked;
+                  confirm the hold&apos;s scope covers these drills.
+                </p>
+              )}
+              {outcome.hold === 'unreadable' && (
+                <p className="t-body font-semibold">
+                  Whether this athlete is under a training hold could not be read; check the training holds record.
+                </p>
+              )}
+            </>
           )}
-          {/* OD-2026-10-06-024 ruling 1: told beside the action, after the
-              fact, and nothing was blocked. The progression screen's wording. */}
-          {outcome.hold !== null && outcome.hold !== 'unreadable' && (
+          {outcome?.kind === 'issued_unread' && (
             <p className="t-body font-semibold">
-              This athlete has an active training hold ({outcome.hold.scopeLabel}). Issuing was NOT blocked;
-              confirm the hold&apos;s scope covers these drills.
-            </p>
-          )}
-          {outcome.hold === 'unreadable' && (
-            <p className="t-body font-semibold">
-              Whether this athlete is under a training hold could not be read; check the training holds record.
+              Issued to {outcome.athleteName}, but the details could not be read here. Check the athlete&apos;s
+              Coach Cards rather than issuing it again.
             </p>
           )}
         </div>
-      )}
 
-      {outcome?.kind === 'refused' && (
-        <div role="alert" className="mt-[var(--s4)] flex flex-col gap-[var(--s2)]">
-          <p className="t-body font-semibold text-[var(--locked-ink)]">{outcome.message}</p>
-          <ul className="flex flex-col gap-[var(--s2)]">
-            {outcome.drills.map((drill) => (
-              <li key={`${drill.drill_id ?? 'typed'}-${drill.steps.join('-')}`} className="t-body">
-                <span className="font-semibold">{drill.name}</span>
-                {` (step ${drill.steps.join(', ')}): ${drill.reason}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {outcome?.kind === 'refused' && (
+          <div role="alert" className="flex flex-col gap-[var(--s2)]">
+            <p className={ALERT_TEXT}>{outcome.message}</p>
+            <ul className="flex flex-col gap-[var(--s2)]">
+              {outcome.drills.map((drill, index) => (
+                // Index key: the list is drawn once per answer and never reordered.
+                <li key={index} className="t-body">
+                  <span className="font-semibold">{drill.name}</span>
+                  {drill.steps.length > 0 && ` (${drill.steps.length === 1 ? 'step' : 'steps'} ${drill.steps.join(', ')})`}
+                  {drill.reason !== '' && `: ${drill.reason}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      {outcome?.kind === 'failed' && (
-        <p role="alert" className="t-body mt-[var(--s4)] font-semibold text-[var(--locked-ink)]">
-          {outcome.message}
-        </p>
-      )}
+        {outcome?.kind === 'failed' && (
+          <p role="alert" className={ALERT_TEXT}>{outcome.message}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -334,6 +478,10 @@ function CoachWorkoutTemplates() {
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  // True while an issue is running. Opening a template unmounts the issue
+  // control, and an issue whose control is gone answers to nobody: the cards
+  // would exist with nothing on screen to say so.
+  const [issuing, setIssuing] = useState(false);
 
   // No state is set before the first await, matching the session-scripts
   // page: a synchronous setState inside an effect cascades a render before
@@ -452,6 +600,10 @@ function CoachWorkoutTemplates() {
                   type="button"
                   onClick={() => void openTemplate(template.template_id)}
                   className="btn btn--ghost mt-[var(--s4)]"
+                  // Not while an issue runs (its answer would be lost), and not
+                  // for the template already showing (a stray tap would wipe
+                  // the result the coach is reading).
+                  disabled={issuing || (openTemplateId === template.template_id && detail !== null)}
                 >
                   {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                 </button>
@@ -539,7 +691,7 @@ function CoachWorkoutTemplates() {
                     the new one loads (openTemplate clears `detail`), so the
                     control always starts clean: no athlete, no confirm step,
                     no result left over from the template open before. */}
-                {detail.items.length > 0 && <IssueToAthlete template={detail.template} />}
+                {detail.items.length > 0 && <IssueToAthlete template={detail.template} onBusyChange={setIssuing} />}
               </>
             )}
           </section>

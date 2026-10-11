@@ -249,9 +249,12 @@ describe('coach workout templates page', () => {
   });
 
   it('browsing and opening a template sends only reads: nothing is written until an issue is confirmed', async () => {
-    const fetchMock = mockFetch((url) => (url.includes('template_id')
-      ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] })
-      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+    const fetchMock = mockFetch((url) => {
+      if (url.includes('/api/pilot/coach/athletes')) return jsonResponse({ ok: true, items: [] });
+      return url.includes('template_id')
+        ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] })
+        : jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+    });
 
     render(<CoachWorkoutTemplatesPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
@@ -376,6 +379,15 @@ async function issueTo(athleteId = 'ath-1') {
   });
 }
 
+/** The status region once an issue has been announced in it (it is always mounted, empty until then). */
+async function issuedStatus() {
+  await screen.findByText(/^Issued to /);
+  return screen.getByRole('status');
+}
+
+const UNKNOWN_SENTENCE =
+  "This screen could not tell whether the template was issued. Check the athlete's Coach Cards before trying again.";
+
 describe('issue to athlete', () => {
   describe('the picker', () => {
     it('is filled from the athletes this coach can reach, not from the whole gym list', async () => {
@@ -393,17 +405,77 @@ describe('issue to athlete', () => {
       expect(urls.some((url) => url.includes('/api/pilot/athletes/list'))).toBe(false);
     });
 
-    it('a failed athlete read says so, and is not shown as having no athletes', async () => {
-      mockIssuePage({ athletes: jsonResponse({}, false) });
+    it('is sorted by name, whatever order the roster came in', async () => {
+      mockIssuePage({
+        athletes: jsonResponse({
+          ok: true,
+          items: [
+            { athlete_id: 'ath-3', full_name: 'Zoe Park' },
+            { athlete_id: 'ath-1', full_name: 'Dana Reyes' },
+            { athlete_id: 'ath-2', full_name: 'Sam Okafor' },
+          ],
+        }),
+      });
+
+      const picker = await openTemplate();
+
+      expect(within(picker).getAllByRole('option').map((option) => option.textContent)).toEqual([
+        'Choose an athlete',
+        'Dana Reyes',
+        'Sam Okafor',
+        'Zoe Park',
+      ]);
+    });
+
+    const FAILED_READS: Array<[string, () => Response]> = [
+      ['a refused read', () => jsonResponse({}, false)],
+      ['an answer with no list in it (the wrong key)', () => jsonResponse({ ok: true, athletes: ATHLETES })],
+      ['an answer whose list is not a list', () => jsonResponse({ ok: true, items: 'none' })],
+      ['no answer at all', () => {
+        throw new TypeError('Failed to fetch');
+      }],
+    ];
+
+    it.each(FAILED_READS)('%s says the athletes could not be loaded, never that there are none', async (_label, answer) => {
+      mockFetch((url) => {
+        if (url.includes(ATHLETES_URL)) return answer();
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+      });
 
       render(<CoachWorkoutTemplatesPage />);
       fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
 
       const alert = await screen.findByRole('alert');
-      expect(alert).toHaveTextContent(/The athletes could not be loaded/);
-      expect(alert).toHaveTextContent(/not an empty list of athletes/);
+      expect(alert).toHaveTextContent(
+        'The athletes could not be loaded. This is a failure to load, not an empty list of athletes.',
+      );
+      // The browser's own error text is not put on a coach's screen.
+      expect(alert).not.toHaveTextContent(/Failed to fetch/);
       expect(screen.queryByText(/no athletes you can issue this to/i)).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Athlete')).not.toBeInTheDocument();
+    });
+
+    it('Try again reads the athletes again, and the picker appears when that read answers', async () => {
+      let reads = 0;
+      mockFetch((url) => {
+        if (url.includes(ATHLETES_URL)) {
+          reads += 1;
+          return reads === 1 ? jsonResponse({}, false) : jsonResponse({ ok: true, items: ATHLETES });
+        }
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+      });
+
+      render(<CoachWorkoutTemplatesPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+      const retry = await screen.findByRole('button', { name: 'Try again' });
+      expect(retry).toHaveClass('btn', 'btn--kiosk');
+      fireEvent.click(retry);
+
+      expect(await screen.findByLabelText('Athlete')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(reads).toBe(2);
     });
 
     it('a coach who reaches nobody is told so, and is offered no picker and no button', async () => {
@@ -447,6 +519,20 @@ describe('issue to athlete', () => {
       expect(
         screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor? Each step becomes a separate Coach Card.'),
       ).toBeInTheDocument();
+      expect(issuePosts(fetchMock)).toHaveLength(0);
+    });
+
+    it('during the confirm step the Issue button stays in its place, disabled: a double tap cannot land on Confirm', async () => {
+      const fetchMock = mockIssuePage();
+
+      await chooseAndAsk();
+
+      const issueButton = screen.getByRole('button', { name: 'Issue to athlete' });
+      expect(issueButton).toBeDisabled();
+      // It comes before Confirm in the document, where it was a moment ago.
+      const confirm = screen.getByRole('button', { name: 'Confirm issue' });
+      expect(issueButton.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      fireEvent.click(issueButton);
       expect(issuePosts(fetchMock)).toHaveLength(0);
     });
 
@@ -498,6 +584,7 @@ describe('issue to athlete', () => {
       expect(running).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
       expect(screen.getByLabelText('Athlete')).toBeDisabled();
+      expect(running).toHaveAttribute('aria-busy', 'true');
       fireEvent.click(running);
       fireEvent.click(running);
       expect(issuePosts(fetchMock)).toHaveLength(1);
@@ -511,13 +598,66 @@ describe('issue to athlete', () => {
     });
   });
 
+  describe('an issue that is running keeps its screen until it answers', () => {
+    it('no template can be opened while an issue runs, so its answer always has somewhere to land', async () => {
+      let answer: (response: Response) => void = () => {};
+      const pending = new Promise<Response>((resolve) => {
+        answer = resolve;
+      });
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ISSUE_URL)) return pending;
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await issueTo();
+      await screen.findByRole('button', { name: 'Issuing...' });
+
+      const openButtons = () => [
+        screen.getByRole('button', { name: 'Showing template' }),
+        screen.getByRole('button', { name: 'Open template' }),
+      ];
+      for (const button of openButtons()) expect(button).toBeDisabled();
+      const detailReads = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('template_id')).length;
+      const before = detailReads();
+      for (const button of openButtons()) fireEvent.click(button);
+      expect(detailReads()).toBe(before);
+
+      await act(async () => {
+        answer(statusResponse(201, ISSUED_BODY));
+        await pending;
+      });
+
+      // The answer is on screen, and the other template can be opened again.
+      expect(await issuedStatus()).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+      expect(screen.getByRole('button', { name: 'Open template' })).toBeEnabled();
+    });
+
+    it('the template already showing cannot be re-opened by a stray tap, which would wipe the result being read', async () => {
+      const fetchMock = mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
+
+      await issueTo();
+      await issuedStatus();
+      const showing = screen.getByRole('button', { name: 'Showing template' });
+      expect(showing).toBeDisabled();
+      const detailReads = fetchMock.mock.calls.filter((call) => String(call[0]).includes('template_id')).length;
+      fireEvent.click(showing);
+
+      expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes('template_id'))).toHaveLength(detailReads);
+      expect(screen.getByRole('status')).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+    });
+  });
+
   describe('what came back', () => {
     it('issued: how many Coach Cards, and plainly that each step is a separate card', async () => {
       mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
 
       await issueTo();
 
-      const status = await screen.findByRole('status');
+      const status = await issuedStatus();
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(status).toHaveTextContent(
         'Each step is a separate Coach Card for now. The block, order, scale level, contact level and coach note are not carried.',
@@ -534,7 +674,44 @@ describe('issue to athlete', () => {
 
       await issueTo();
 
-      expect(await screen.findByRole('status')).toHaveTextContent('Issued to Dana Reyes: 1 Coach Card.');
+      expect(await issuedStatus()).toHaveTextContent('Issued to Dana Reyes: 1 Coach Card.');
+    });
+
+    it('with no step list in the answer the count comes from what the server says it created', async () => {
+      const withoutSteps: Record<string, unknown> = { ...ISSUED_BODY, created: { assignments: 3, adopted_drills: 0 } };
+      delete withoutSteps.steps;
+      mockIssuePage({ issue: () => statusResponse(201, withoutSteps) });
+
+      await issueTo();
+
+      expect(await issuedStatus()).toHaveTextContent('Issued to Dana Reyes: 3 Coach Cards.');
+    });
+
+    it('an answer that gives no count is still an issue, and says the count could not be read rather than 0', async () => {
+      mockIssuePage({ issue: () => statusResponse(201, { ok: true }) });
+
+      await issueTo();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent('Issued to Dana Reyes. The number of Coach Cards could not be read.');
+      expect(status).not.toHaveTextContent(/0 Coach Cards/);
+    });
+
+    it('a 201 whose body cannot be read IS an issue: said as issued, details unread, and not to issue it again', async () => {
+      // The route answers 201 only after its transaction commits. Reading this
+      // as "nothing was issued" is how an athlete ends up with every card twice.
+      mockIssuePage({
+        issue: () => ({ ok: true, status: 201, json: async () => { throw new Error('not json'); } }) as unknown as Response,
+      });
+
+      await issueTo();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent(
+        "Issued to Dana Reyes, but the details could not be read here. Check the athlete's Coach Cards rather than issuing it again.",
+      );
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Nothing was issued/)).not.toBeInTheDocument();
     });
 
     it('names the drills the gym adopted on the way', async () => {
@@ -550,7 +727,7 @@ describe('issue to athlete', () => {
 
       await issueTo();
 
-      expect(await screen.findByRole('status')).toHaveTextContent('Adopted for this gym: Touch to Reposition, Pivot Out.');
+      expect(await issuedStatus()).toHaveTextContent('Adopted for this gym: Touch to Reposition, Pivot Out.');
     });
 
     it('a training hold is said beside the result, and says the issue was NOT blocked', async () => {
@@ -570,7 +747,7 @@ describe('issue to athlete', () => {
 
       await issueTo();
 
-      const status = await screen.findByRole('status');
+      const status = await issuedStatus();
       // Issued all the same.
       expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(status).toHaveTextContent(
@@ -589,7 +766,7 @@ describe('issue to athlete', () => {
 
       await issueTo();
 
-      const status = await screen.findByRole('status');
+      const status = await issuedStatus();
       expect(status).toHaveTextContent(
         'Whether this athlete is under a training hold could not be read; check the training holds record.',
       );
@@ -606,20 +783,58 @@ describe('issue to athlete', () => {
       const rows = within(alert).getAllByRole('listitem');
       expect(rows.map((row) => row.textContent)).toEqual([
         'Slip Rope Shuffle (step 2): It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.',
-        'Jab Ladder (step 3, 5): This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
+        'Jab Ladder (steps 3, 5): This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
       ]);
       expect(screen.queryByText(/Issued to/)).not.toBeInTheDocument();
-      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
     });
 
-    it.each([
+    it('a refusal with a typed step, and with entries this screen cannot read, is still drawn: nothing crashes the page', async () => {
+      mockIssuePage({
+        issue: () => statusResponse(409, {
+          error: 'Nothing was issued. Cannot be assigned as they stand: Jump rope, easy.',
+          code: 'WORKOUT_TEMPLATE_ISSUE_REFUSED',
+          drills: [
+            { steps: [2], drill_id: null, name: 'Jump rope, easy', untested_draft: false, reason: 'This step is typed text, not a drill from the library, so it cannot be assigned.' },
+            null,
+            { name: 'No Steps Listed', reason: 'It has no stop rules.' },
+            { steps: [4], name: '   ' },
+            'not an object',
+          ],
+        }),
+      });
+
+      await issueTo();
+
+      const alert = await screen.findByRole('alert');
+      expect(within(alert).getAllByRole('listitem').map((row) => row.textContent)).toEqual([
+        'Jump rope, easy (step 2): This step is typed text, not a drill from the library, so it cannot be assigned.',
+        'No Steps Listed: It has no stop rules.',
+        'A step with no name (step 4)',
+      ]);
+    });
+
+    it('a refusal with no drill list still shows the server sentence', async () => {
+      mockIssuePage({
+        issue: () => statusResponse(409, { error: 'Nothing was issued.', code: 'WORKOUT_TEMPLATE_ISSUE_REFUSED' }),
+      });
+
+      await issueTo();
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Nothing was issued.');
+      expect(within(alert).queryAllByRole('listitem')).toHaveLength(0);
+    });
+
+    // The server refused before or inside the write: nothing exists, and the screen may say so.
+    const NOT_ISSUED: Array<[string, () => Response, string]> = [
       [
         'an athlete or template the server will not name (404)',
         () => statusResponse(404, { error: 'Not found' }),
         'That athlete or template could not be found, or you can no longer reach that athlete. Nothing was issued.',
       ],
       [
-        'another conflict, in the words the server used',
+        'a conflict that already says nothing was issued keeps the words the server used',
         () => statusResponse(409, {
           error: 'The drill library changed while this template was being issued. Nothing was issued; try again.',
           code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
@@ -627,23 +842,66 @@ describe('issue to athlete', () => {
         'The drill library changed while this template was being issued. Nothing was issued; try again.',
       ],
       [
-        'a server failure, without repeating whatever it said',
-        () => statusResponse(500, { error: 'relation "pilot.drills" does not exist' }),
+        'a conflict that does not say so has it added',
+        () => statusResponse(409, { error: 'This workout template has no steps to issue.', code: 'WORKOUT_TEMPLATE_EMPTY' }),
+        'This workout template has no steps to issue. Nothing was issued.',
+      ],
+      [
+        'a drill retired in the meantime (400), in the words the server used',
+        () => statusResponse(400, {
+          error: 'That drill is not an active drill in this gym, so it cannot be assigned.',
+          code: 'DRILL_NOT_ASSIGNABLE',
+        }),
+        'That drill is not an active drill in this gym, so it cannot be assigned. Nothing was issued.',
+      ],
+      [
+        'a 400 with nothing to read',
+        () => ({ ok: false, status: 400, json: async () => { throw new Error('not json'); } }) as unknown as Response,
         'The template could not be issued. Nothing was issued.',
       ],
       [
-        'a 201 this screen cannot read is not announced as issued',
-        () => ({ ok: true, status: 201, json: async () => { throw new Error('not json'); } }) as unknown as Response,
-        'The template could not be issued. Nothing was issued.',
+        'a session that has ended (401)',
+        () => statusResponse(401, { error: 'Unauthorized' }),
+        'You are signed out, so nothing was issued. Sign in again.',
       ],
-    ] as Array<[string, () => Response, string]>)('%s', async (_label, issue, message) => {
+      [
+        'a role that may not issue (403)',
+        () => statusResponse(403, { error: 'Forbidden' }),
+        'This account may not issue templates. Nothing was issued.',
+      ],
+    ];
+
+    it.each(NOT_ISSUED)('not issued -- %s', async (_label, issue, message) => {
       mockIssuePage({ issue });
 
       await issueTo();
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(message);
+      expect(alert.textContent).toBe(message);
       expect(screen.queryByText(/Issued to/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/does not exist/)).not.toBeInTheDocument();
+    });
+
+    // The answer does not say which way it went. The write may have landed, so
+    // the screen must not say it did not -- and must not repeat a server error.
+    const CANNOT_TELL: Array<[string, () => Response]> = [
+      ['a server error (500)', () => statusResponse(500, { error: 'relation "pilot.drills" does not exist' })],
+      ['a gateway error with no JSON (502)', () => ({ ok: false, status: 502, json: async () => { throw new Error('<html>'); } }) as unknown as Response],
+      ['too many requests (429)', () => statusResponse(429, { error: 'Too many requests' })],
+      ['a 200 that is not the route\'s own 201 (a sign-in page, a proxy)', () => ({ ok: true, status: 200, json: async () => { throw new Error('<html>'); } }) as unknown as Response],
+      ['a 200 with a JSON body that is still not a 201', () => statusResponse(200, ISSUED_BODY)],
+    ];
+
+    it.each(CANNOT_TELL)('cannot tell -- %s: said as unknown, never as issued and never as nothing issued', async (_label, issue) => {
+      mockIssuePage({ issue });
+
+      await issueTo();
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe(UNKNOWN_SENTENCE);
+      expect(screen.queryByText(/Nothing was issued/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Issued to/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/does not exist|Too many requests/)).not.toBeInTheDocument();
     });
 
     it('no answer at all: says it may or may not have been issued, and to check before trying again', async () => {
@@ -662,6 +920,49 @@ describe('issue to athlete', () => {
       expect(alert).not.toHaveTextContent(/Nothing was issued/);
       // The controls come back; the coach is not left on a dead screen.
       await waitFor(() => expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled());
+    });
+  });
+
+  describe('focus follows the step, so each one is read out and nobody is dropped at the top of the page', () => {
+    it('tapping Issue moves focus to the confirm sentence; Cancel returns it to the Issue button', async () => {
+      mockIssuePage();
+
+      await chooseAndAsk();
+      expect(
+        screen.getByText('Issue Boxing Fundamentals 60 to Dana Reyes? Each step becomes a separate Coach Card.'),
+      ).toHaveFocus();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.getByRole('button', { name: 'Issue to athlete' })).toHaveFocus();
+    });
+
+    it.each([
+      ['an issue', () => statusResponse(201, ISSUED_BODY)],
+      ['a refusal', () => statusResponse(409, REFUSED_BODY)],
+      ['an answer that cannot be told', () => statusResponse(500, {})],
+    ] as Array<[string, () => Response]>)('when %s lands, focus is on the result', async (_label, issue) => {
+      mockIssuePage({ issue });
+
+      await issueTo();
+      await waitFor(() => expect(screen.getByRole('status').parentElement).toHaveFocus());
+    });
+  });
+
+  describe('a refusal or failure is drawn in the error ink, not the body ink', () => {
+    // `.t-body` sets its own colour in the unlayered sheet, which outranks a
+    // Tailwind colour utility. So the error text must NOT wear t-body, or it
+    // renders exactly like a success.
+    it.each([
+      ['a refusal', () => statusResponse(409, REFUSED_BODY), REFUSED_BODY.error],
+      ['a failure', () => statusResponse(404, {}), 'That athlete or template could not be found, or you can no longer reach that athlete. Nothing was issued.'],
+    ] as Array<[string, () => Response, string]>)('%s', async (_label, issue, sentence) => {
+      mockIssuePage({ issue });
+
+      await issueTo();
+
+      const text = await screen.findByText(sentence);
+      expect(text).toHaveClass('text-[var(--locked-ink)]', 'text-[length:var(--t-md)]');
+      expect(text).not.toHaveClass('t-body');
     });
   });
 
@@ -708,7 +1009,7 @@ describe('issue to athlete', () => {
       const control = surface as HTMLElement;
       expect(within(control).getByLabelText('Athlete')).toHaveClass('select', 'input--kiosk');
       const buttons = within(control).getAllByRole('button');
-      expect(buttons.map((button) => button.textContent)).toEqual(['Confirm issue', 'Cancel']);
+      expect(buttons.map((button) => button.textContent)).toEqual(['Issue to athlete', 'Confirm issue', 'Cancel']);
       for (const button of buttons) expect(button).toHaveClass('btn', 'btn--kiosk');
 
       await act(async () => {
@@ -717,10 +1018,18 @@ describe('issue to athlete', () => {
       await screen.findByRole('alert');
       expect(within(control).getByRole('button', { name: 'Issue to athlete' })).toHaveClass('btn', 'btn--kiosk');
 
-      // No element in the control pins a size under the kiosk floor.
+      // No element in the control pins a size under the kiosk floor: not a
+      // small rung of the ladder, not a pixel size, not an inline style.
       const smaller = Array.from(control.querySelectorAll('*')).filter((element) =>
-        /--t-(xs|sm)\b|\btext-(xs|sm)\b/.test(element.getAttribute('class') ?? ''));
+        /--t-(xs|sm)\b|\btext-(xs|sm)\b|text-\[\d/.test(element.getAttribute('class') ?? '')
+        || (element.getAttribute('style') ?? '').includes('font-size'));
       expect(smaller).toHaveLength(0);
+      // And every piece of text in it sits in an element that carries a floored voice or the floor itself.
+      const textHolders = Array.from(control.querySelectorAll('p, li, label, h3'));
+      expect(textHolders.length).toBeGreaterThan(0);
+      for (const holder of textHolders) {
+        expect(holder.getAttribute('class') ?? '').toMatch(/\bt-(body|label)\b|text-\[length:var\(--t-md\)\]/);
+      }
     });
   });
 });
