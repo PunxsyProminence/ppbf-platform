@@ -343,10 +343,12 @@ type AdoptableReference = DrillWithDetail & {
 /**
  * The read-only pass: what each step's drill is to this gym right now. Writes
  * nothing, and takes no lock, so its answer can be stale by the time the
- * transaction runs. The transaction re-decides exactly two things: the unique
- * indexes on pilot.drills (a name or a reference taken in the meantime) and
+ * transaction runs. The transaction re-decides: the unique indexes on
+ * pilot.drills (a name or a reference taken in the meantime),
  * issueCoachCard's insert-from-an-active-drill (a drill retired in the
- * meantime). Both end in a rollback and a conflict, never a partial write.
+ * meantime), and, for an update in place, updateDrillToReferenceVersion's
+ * checks under its lineage lock (retired, already updated, a name clash).
+ * Each ends in a rollback and a conflict, never a partial write.
  * NOT re-decided: a reference withdrawn or superseded, another version of a
  * drill adopted, or the template replaced, between this pass and the write --
  * the same windows the promote route has between its checks and its insert.
@@ -414,8 +416,21 @@ async function planTemplateIssue(
     //   - a draft stays refused until a coach of this gym has floor-tested it;
     //   - the cue rule on a new assignment.
     if (lifecycle.state === 'operational' && lifecycle.operational_drill_id) {
+      // The floor test is the drill the gym runs: after an update in place a
+      // step naming an older version is the gym's newer one (D1).
+      const runs = reference.superseded_at === null
+        ? null
+        : (await queryOne<{ reference_drill_id: string | null }>(
+            `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,
+            [organizationId, lifecycle.operational_drill_id],
+          ))?.reference_drill_id ?? null;
+      const runsOther = runs !== null && runs !== referenceId;
+      const runsReference = runsOther ? await getDrillWithDetail(organizationId, runs) : reference;
+      const runsTested = runsOther
+        ? Boolean((await listFloorValidations(organizationId, [runs]))[runs])
+        : Boolean(floorTested[referenceId]);
       const reasons: string[] = [];
-      if (requiresFloorValidation(reference.field_provenance) && !floorTested[referenceId]) {
+      if (requiresFloorValidation(runsReference?.field_provenance ?? reference.field_provenance) && !runsTested) {
         reasons.push(ADOPTED_UNTESTED_DRAFT_REASON);
       }
       try {
@@ -476,7 +491,11 @@ async function planTemplateIssue(
          where d.organization_id = $1 and d.drill_id = $2`,
         [organizationId, otherVersion.operational_drill_id],
       );
-      if (!gymDrill?.lineage_active) {
+      if (!gymDrill) {
+        refuse(UNREADABLE_DRILL_REASON);
+        continue;
+      }
+      if (!gymDrill.lineage_active) {
         refuse(RETIRED_OTHER_VERSION_REASON);
         continue;
       }
@@ -604,6 +623,13 @@ export async function issueWorkoutTemplate(params: {
             },
             client,
           );
+          // Every step on this gym drill now assigns the new version, including
+          // a step naming the older reference version the plan mapped to it.
+          for (const [stepReference, drillId] of drillByReference) {
+            if (drillId === reference.update.drillId || drillId === previous.drill_id) {
+              drillByReference.set(stepReference, drill.drill_id);
+            }
+          }
           drillByReference.set(reference.drill_id, drill.drill_id);
           adopted.push({
             drill_id: drill.drill_id,
@@ -710,6 +736,7 @@ export async function issueWorkoutTemplate(params: {
               drill_id: issued.assignment.drill_id,
             })),
             adopted_drill_ids: adopted.map((drill) => drill.drill_id),
+            updated_drill_ids: adopted.filter((drill) => drill.updated_from_drill_id).map((drill) => drill.drill_id),
           },
         },
         client,

@@ -495,9 +495,10 @@ export interface ReferenceLifecycle {
  * Which drill, when there could be several: an ACTIVE one first (the gym runs
  * it), then the newest reference version, then the newest operational version
  * -- the same "live row, else the lineage head" rule the adopted-state
- * operational_drill_id follows. Every operational version of one gym lineage
- * carries the same reference_drill_id (a refinement inherits it,
- * drillVersioning.ts), so the newest operational version IS that lineage's head.
+ * operational_drill_id follows. A refinement inherits reference_drill_id and an
+ * update in place (D1) moves it forward on the new version only, so the newest
+ * reference version a gym lineage pins, then its newest operational version, IS
+ * that lineage's head.
  * The same ordering is why the row's `active` answers for the whole set: an
  * inactive first row means the gym runs no version of the lineage, which is
  * what the restore guard asks (with the pinned version's `active`) before it

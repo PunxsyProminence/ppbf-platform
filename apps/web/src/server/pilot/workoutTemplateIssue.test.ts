@@ -1066,6 +1066,86 @@ describe('a step naming a newer version of a drill the gym runs updates it while
     expectNothingWritten();
   });
 
+  test('a gym drill the lineage read named but that cannot be read is named as unreadable, not as retired', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: null,
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-1', reason: 'This drill could not be read from the library.' }],
+    });
+    expectNothingWritten();
+  });
+
+  test('a template naming the older version too assigns the updated drill on both steps', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-0' }), item(2, { drill_id: 'ref-1' })],
+      library: {
+        'ref-0': { state: 'operational', operational: 'op-old', row: reference('ref-0', { superseded_at: '2026-10-01T00:00:00.000Z' }) },
+        'ref-1': { state: 'newer_version_available', operational: 'op-old' },
+      },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-1' ? GYM_VERSION : null));
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-new-ref-1', 'op-new-ref-1']);
+    expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({
+      adopted_drill_ids: ['op-new-ref-1'],
+      updated_drill_ids: ['op-new-ref-1'],
+    });
+  });
+
+  test("after an update, a step naming the older version takes the floor test of the version the gym runs", async () => {
+    // The gym runs ref-2's drill; the step names ref-0, which it moved on from.
+    const draftRef = (id: string) => reference(id, { field_provenance: DRAFT });
+    given({
+      items: [item(1, { drill_id: 'ref-0' })],
+      library: {
+        'ref-0': { state: 'operational', operational: 'op-new', row: reference('ref-0', { superseded_at: '2026-10-01T00:00:00.000Z' }) },
+      },
+    });
+    const templateRow = template();
+    mockQueryOne.mockImplementation(async (text: string) =>
+      /from pilot[.]drills o/.test(text) ? { reference_drill_id: 'ref-2' } : templateRow);
+    mockReference.mockImplementation(async (_org: string, id: string) =>
+      (id === 'ref-2' ? draftRef(id) : reference(id, { superseded_at: '2026-10-01T00:00:00.000Z' })));
+
+    // ref-2 is a draft no coach has floor-tested: refused, though ref-0 needs none.
+    mockFloorTested.mockResolvedValue({});
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-0', untested_draft: true }],
+    });
+    expect(mockFloorTested).toHaveBeenCalledWith(ORG, ['ref-2']);
+
+    // Once ref-2 is floor-tested, the step issues the drill the gym runs.
+    mockFloorTested.mockImplementation(async (_org: string, ids: string[]) =>
+      (ids.includes('ref-2') ? { 'ref-2': { drill_id: 'ref-2' } } : {}));
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    expect(mockCard.mock.calls.at(-1)?.[0].drillId).toBe('op-new');
+  });
+
+  test('a concurrent update that got there first reads as the library having changed: nothing is issued', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+    mockUpdate.mockRejectedValue(new ReferenceDrillAlreadyPromotedError('ref-1'));
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+    });
+    expect(mockCard).not.toHaveBeenCalled();
+  });
+
   test('a drill retired between the plan and the write is refused by the write: nothing is issued', async () => {
     given({
       items: [item(1)],

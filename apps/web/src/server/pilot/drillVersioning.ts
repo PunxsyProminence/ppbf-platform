@@ -68,13 +68,15 @@ export interface PilotDrillVersionRow {
    * The reference drill this operational lineage was promoted from, or null for
    * a lineage the gym authored itself -- OD-2026-09-16-001.
    *
-   * INHERITED BY EVERY VERSION, never re-derived. A refinement changes what the
+   * INHERITED BY A REFINEMENT, never re-derived. A refinement changes what the
    * gym's drill SAYS; it does not change which reference drill the lineage came
    * from, and it must not silently re-point at a newer reference version. That
    * is why adoption copies this value forward rather than looking it up again,
    * and why pilot_drills_one_reference_per_org is scoped to lineage ROOTS: the
    * successor legitimately carries the same value as the predecessor it
-   * supersedes.
+   * supersedes. The one deliberate move is updateDrillToReferenceVersion (D1):
+   * its new version points at the newer reference, and older versions keep
+   * pointing at the one they were built from.
    */
   reference_drill_id: string | null;
   created_at: string;
@@ -374,9 +376,11 @@ export interface ReferenceVersionContent {
  * 2026-10-11: "A: Start clean (Recommended)"); open change proposals are left to
  * read stale, as after any adopt.
  *
- * The caller has judged the reference (active, ready) and the role. Decided here,
- * under the lineage lock: retired (DRILL_RETIRED), already on that version, and
- * a name clash -- each refused with nothing written. One transaction, the
+ * The caller has judged the reference (active, ready, the lineage head) and the
+ * role. Decided here, under the lineage lock: retired (DRILL_RETIRED), already on
+ * that version, and a name clash -- each refused with nothing written -- and,
+ * as an integrity check, that the target is a NEWER version of the reference
+ * the gym pins (a stale request after another update must not move it back). One transaction, the
  * caller's when `client` is given, audit row included.
  */
 export async function updateDrillToReferenceVersion(
@@ -410,8 +414,8 @@ export async function updateDrillToReferenceVersion(
     }
 
     // The newest version, whether any version is in use, and whether the target
-    // belongs to the reference lineage the gym pins (an integrity check on the
-    // caller; both callers pass one that does).
+    // is a newer version in the reference lineage the gym pins (an integrity
+    // check on the caller; both callers pass one that is, barring a race).
     const headResult = await tx.query<PilotDrillVersionRow & { lineage_active: boolean; same_reference_lineage: boolean }>(
       `select ${DRILL_VERSION_FIELDS.split(', ').map((field) => `h.${field}`).join(', ')},
               exists (
@@ -423,6 +427,7 @@ export async function updateDrillToReferenceVersion(
                 join pilot.drill_library target
                   on target.organization_id = pinned.organization_id
                  and target.lineage_id = pinned.lineage_id
+                 and target.version > pinned.version
                 where pinned.organization_id = h.organization_id
                   and pinned.drill_id = h.reference_drill_id
                   and target.drill_id = $3
@@ -444,7 +449,7 @@ export async function updateDrillToReferenceVersion(
       throw new ReferenceDrillAlreadyPromotedError(input.referenceDrillId);
     }
     if (!sameReferenceLineage) {
-      throw new Error('REFERENCE_VERSION_NOT_IN_DRILL_LINEAGE');
+      throw new Error('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
     }
 
     // Deactivated before the insert, as in the adopt (one active row per name);

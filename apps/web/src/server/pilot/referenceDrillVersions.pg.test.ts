@@ -939,13 +939,20 @@ describe('a gym updates its drill to the newer reference version in place (OD-20
     expect(await auditRowsFor(gym)).toEqual([]);
   });
 
-  test('a reference drill outside the lineage the gym pins is not written', async () => {
+  test('a reference drill outside the lineage the gym pins, or an older version of it, is not written', async () => {
     const { gym, rootId } = await gymOnV1('update-wrong-lineage');
     await insertReference(gym, { drillId: 'ref-hook', name: 'Hook Return', lineageId: 'lin-hook' });
     const before = await versionsOf(gym, rootId);
 
-    await expect(updateTo(gym, rootId, 'ref-hook')).rejects.toThrow('REFERENCE_VERSION_NOT_IN_DRILL_LINEAGE');
+    await expect(updateTo(gym, rootId, 'ref-hook')).rejects.toThrow('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
     expect(await versionsOf(gym, rootId)).toEqual(before);
+
+    // A stale request after the gym moved on to v3 cannot move it back to v2.
+    await revise(gym, 'ref-jab-v2', { drillId: 'ref-jab-v3' });
+    await updateTo(gym, rootId, 'ref-jab-v3');
+    const onV3 = await versionsOf(gym, rootId);
+    await expect(updateTo(gym, rootId, 'ref-jab-v2')).rejects.toThrow('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
+    expect(await versionsOf(gym, rootId)).toEqual(onV3);
   });
 
   test("another gym holding the very same ids is untouched, and still sees the newer version as available to it", async () => {
@@ -1006,7 +1013,7 @@ describe('a gym updates its drill to the newer reference version in place (OD-20
       for (let attempt = 0; attempt < 400 && waiting === 0; attempt += 1) {
         const result = await client.query(
           `select count(*)::int as n from pg_stat_activity
-           where datname = current_database() and wait_event_type = 'Lock'`,
+           where datname = current_database() and wait_event_type = 'Lock' and query ilike '%for update%'`,
         );
         waiting = result.rows[0].n;
         if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 25));

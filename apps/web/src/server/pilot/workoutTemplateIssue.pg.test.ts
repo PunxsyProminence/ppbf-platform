@@ -790,6 +790,28 @@ describe('a refusal writes nothing', () => {
     expect(again.steps[0].assignment.drill_id).toBe(newId);
   });
 
+  test('a template naming BOTH versions issues: the update moves the older-version step onto the new drill too', async () => {
+    const gym = await newGym('both-versions');
+    await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
+    const oldId = await adopt(gym, 'ref-v1', 'Versioned Drill');
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+      [gym.organizationId],
+    );
+    await insertReference(gym, 'ref-v2', 'Versioned Drill II', { lineageId: 'lin-1', version: 2 });
+    await insertTemplate(gym, ['ref-v1', 'ref-v2']);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'issued' });
+    if (result.outcome !== 'issued') return;
+    const newId = result.adopted[0]?.drill_id;
+    expect(result.adopted).toEqual([
+      { drill_id: newId, reference_drill_id: 'ref-v2', name: 'Versioned Drill II', updated_from_drill_id: oldId },
+    ]);
+    expect(result.steps.map((step) => step.assignment.drill_id)).toEqual([newId, newId]);
+  });
+
   test('a step naming the newer version of a drill the gym retired is refused and named; nothing is written', async () => {
     const gym = await newGym('other-version-retired');
     await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
