@@ -265,3 +265,18 @@ test('the footer links Progression Intelligence and no longer links Coach Operat
   expect(screen.queryByRole('link', { name: 'Coach Operations' })).toBeNull();
   expect(document.querySelector('a[href="/coach/operations"]')).toBeNull();
 });
+
+test('no register for the window reads as a dash, a verified zero reads as 0', async () => {
+  global.fetch = mockFetch(() =>
+    okWith([
+      { ...ITEM, athlete_id: 'a-none', full_name: 'No Register', training_days: 0, training_days_recorded: 0 },
+      { ...ITEM, athlete_id: 'a-zero', full_name: 'Marked Absent', training_days: 0, training_days_recorded: 3 },
+    ]),
+  );
+  render(<PerformanceAnalyticsPage />);
+
+  await screen.findByText('No Register');
+  const labels = screen.getAllByText('Training days');
+  const texts = labels.map((l) => (l.parentElement as HTMLElement).textContent);
+  expect([...texts].sort()).toEqual(['Training days0', 'Training days—']);
+});
