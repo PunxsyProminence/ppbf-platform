@@ -239,7 +239,7 @@ it('offers no intake write control to a platform owner', async () => {
   expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
 });
 
-it('asks nothing gym-only while the session is still being read', async () => {
+it('asks nothing while the session is still being read', async () => {
   const fetchMock = consoleFetchMock();
   mockUsePilotSession.mockReturnValue({ ...session(null), loading: true });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -248,7 +248,9 @@ it('asks nothing gym-only while the session is still being read', async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  for (const fragment of GYM_ONLY_READS) {
+  // Not even the console's shared reads: it starts once, when the role is
+  // known. (The library review-flags panel reads on its own; that is shared.)
+  for (const fragment of [...GYM_ONLY_READS, '/shadow/telemetry', '/shadow/feedback']) {
     expect(callsTo(fetchMock, fragment)).toHaveLength(0);
   }
 });

@@ -1169,7 +1169,8 @@ export default function AdminShadowConsolePage() {
 
   useEffect(() => {
     if (gymReads === null) return;
-    if (gymReads) void refreshBackendQueue().catch((error) => {
+    // refreshBackendQueue itself asks only when gymReads is true.
+    void refreshBackendQueue().catch((error) => {
       backendQueueReadyRef.current = false;
       setBackendQueueReady(false);
       setPendingQueue([]);
