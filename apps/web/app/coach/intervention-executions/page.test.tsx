@@ -367,4 +367,36 @@ describe('correcting a record', () => {
     expect(valueOf('Deviations (required if you claimed any)')).toBe('');
     expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
   });
+
+  test('closing out one record while another is being corrected does not carry the other record\'s facts across', async () => {
+    const other = { ...EXECUTION, execution_id: 'ex-other', athlete_name: 'Sam R.', actual_exposure: {}, adherence: 'unknown', deviations: '' };
+    const patches: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') patches.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      const items = String(input).includes('/intervention-executions') ? [EXECUTION, other] : [];
+      return { ok: true, json: async () => ({ items }) } as Response;
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionExecutionsPage />);
+    });
+
+    // Correct the first record (three rounds, under-delivered, a deviation)...
+    await act(async () => {
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Correct record' }))[0]);
+    });
+    expect(valueOf('Rounds')).toBe('3');
+    // ...then, without cancelling, close out the second.
+    await press('Close out');
+
+    expect(screen.queryByLabelText('What was wrong? (required)')).toBeNull();
+    expect(valueOf('Adherence')).toBe('unknown');
+    expect(valueOf('Rounds')).toBe('');
+    expect(valueOf('Deviations (required if you claimed any)')).toBe('');
+
+    await press('Record close-out');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({
+      action: 'close', execution_id: 'ex-other', adherence: 'unknown', deviations: '', actual_exposure: {},
+    });
+  });
 });
