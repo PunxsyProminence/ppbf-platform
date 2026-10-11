@@ -52,6 +52,10 @@ const EXPOSURE_DIMENSIONS: Array<{ key: string; label: string }> = [
   { key: 'task_exposures', label: 'Task exposures' },
 ];
 
+// Shown when a write went through and only the reload after it failed: the
+// work is saved, and saying "Failed" would invite doing it twice.
+const NOT_REFRESHED = 'The list could not be refreshed. Reload the page to see the latest.';
+
 const EMPTY_FORM = {
   title: '',
   target_problem: '',
@@ -73,6 +77,9 @@ export default function InterventionProtocolsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [athleteId, setAthleteId] = useState('');
   const [exposure, setExposure] = useState<Record<string, string>>({});
+  // A revision is a full re-statement filed as the next version, so it uses
+  // the same form, loaded with the protocol being revised.
+  const [revising, setRevising] = useState<ProtocolRow | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, {
@@ -107,6 +114,34 @@ export default function InterventionProtocolsPage() {
     return () => controller.abort();
   }, [reload]);
 
+  const clearForm = () => {
+    setRevising(null);
+    setForm(EMPTY_FORM);
+    setAthleteId('');
+    setExposure({});
+  };
+
+  const startRevising = (protocol: ProtocolRow) => {
+    setRevising(protocol);
+    setForm({
+      title: protocol.title,
+      target_problem: protocol.target_problem,
+      hypothesis: protocol.hypothesis,
+      intervention_description: protocol.intervention_description,
+      intended_task_context: protocol.intended_task_context,
+      expected_outcome: protocol.expected_outcome,
+      contradicting_evidence: protocol.contradicting_evidence,
+      alternative_explanations: protocol.alternative_explanations,
+      evaluation_plan: protocol.evaluation_plan,
+    });
+    setAthleteId(protocol.athlete_id ?? '');
+    setExposure(Object.fromEntries(
+      Object.entries(protocol.intended_exposure).map(([dimension, amount]) => [dimension, String(amount)]),
+    ));
+    // The form sits above the list; bring it to the coach.
+    document.getElementById('proto-form')?.scrollIntoView?.({ block: 'start' });
+  };
+
   const handleCreate = async () => {
     const intendedExposure: Record<string, number> = {};
     for (const [dimension, raw] of Object.entries(exposure)) {
@@ -121,10 +156,17 @@ export default function InterventionProtocolsPage() {
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, {
-        method: 'POST',
+        method: revising ? 'PATCH' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        // A revision names the version it replaces and nothing about the
+        // athlete: the new version stays in its lineage, on the same athlete.
+        body: JSON.stringify(revising ? {
+          action: 'revise',
+          protocol_id: revising.protocol_id,
+          ...form,
+          intended_exposure: intendedExposure,
+        } : {
           ...form,
           athlete_id: athleteId || undefined,
           intended_exposure: intendedExposure,
@@ -132,15 +174,20 @@ export default function InterventionProtocolsPage() {
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Create failed (${response.status})`);
+        throw new Error(err.error || `${revising ? 'Revision' : 'Create'} failed (${response.status})`);
       }
-      setForm(EMPTY_FORM);
-      setAthleteId('');
-      setExposure({});
-      await reload();
+      // The write is in. A revision is shown from the server's own answer,
+      // so a reload that fails cannot leave the superseded version on screen.
+      const filed = ((await response.json().catch(() => ({}))) as { item?: ProtocolRow }).item;
+      const replaced = revising?.protocol_id;
+      clearForm();
+      if (replaced && filed?.protocol_id) {
+        setProtocols((rows) => rows.map((shown) => (shown.protocol_id === replaced ? filed : shown)));
+      }
       setErrorMessage(null);
+      await reload().catch(() => setErrorMessage(NOT_REFRESHED));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to file the protocol.');
+      setErrorMessage(error instanceof Error ? error.message : `Unable to file the ${revising ? 'revision' : 'protocol'}.`);
     } finally {
       setBusy(false);
     }
@@ -159,6 +206,8 @@ export default function InterventionProtocolsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Retire failed (${response.status})`);
       }
+      // A retired protocol cannot be revised; do not leave its revision open.
+      if (revising?.protocol_id === protocolId) clearForm();
       await reload();
       setErrorMessage(null);
     } catch (error) {
@@ -191,23 +240,29 @@ export default function InterventionProtocolsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
+              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
               <div className="alert-body">
-                <p className="alert-title">Failed</p>
+                <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
               </div>
             </div>
           )}
 
-          <section className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
-            <h2 className="t-label mb-[var(--s3)]">File a protocol</h2>
+          <section id="proto-form" className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+            <h2 className="t-label mb-[var(--s3)]">
+              {revising ? `Revise protocol (files version ${revising.version + 1})` : 'File a protocol'}
+            </h2>
             <div className="grid gap-[var(--s3)] md:grid-cols-2">
               <div className="field md:col-span-2">
                 <label className="t-label" htmlFor="proto-athlete">Athlete (leave unset for an org-general protocol)</label>
-                <select id="proto-athlete" className="select" value={athleteId}
+                <select id="proto-athlete" className="select" value={athleteId} disabled={revising !== null}
                   onChange={(e) => setAthleteId(e.target.value)}>
                   <option value="">Org-general</option>
+                  {/* The revised protocol's athlete is shown even when the roster did not load them. */}
+                  {revising?.athlete_id && !athletes.some((athlete) => athlete.athlete_id === revising.athlete_id) && (
+                    <option value={revising.athlete_id}>{revising.athlete_name ?? revising.athlete_id}</option>
+                  )}
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                   ))}
@@ -240,10 +295,13 @@ export default function InterventionProtocolsPage() {
               </div>
             </fieldset>
 
-            <div className="mt-[var(--s4)]">
+            <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
               <button type="button" className="btn" disabled={busy} onClick={() => void handleCreate()}>
-                {busy ? 'Filing…' : 'File protocol'}
+                {busy ? 'Filing…' : revising ? 'File revision' : 'File protocol'}
               </button>
+              {revising && (
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={clearForm}>Cancel</button>
+              )}
             </div>
           </section>
 
@@ -270,10 +328,16 @@ export default function InterventionProtocolsPage() {
                         v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {protocol.created_at.slice(0, 10)}
                       </span>
                       {protocol.status === 'active' && (
-                        <button type="button" className="btn btn--ghost" disabled={busy}
-                          onClick={() => void handleRetire(protocol.protocol_id)}>
-                          Retire
-                        </button>
+                        <>
+                          <button type="button" className="btn btn--ghost" disabled={busy}
+                            onClick={() => startRevising(protocol)}>
+                            Revise
+                          </button>
+                          <button type="button" className="btn btn--ghost" disabled={busy}
+                            onClick={() => void handleRetire(protocol.protocol_id)}>
+                            Retire
+                          </button>
+                        </>
                       )}
                     </div>
                     <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>

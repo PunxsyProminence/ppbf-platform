@@ -884,6 +884,63 @@ describe('the evidence read: what was actually recorded', () => {
     }
   });
 
+  test('a corrected execution is one execution, not two', async () => {
+    const client = await seededDatabase('br_corrected');
+    try {
+      await seedEvidence(client);
+
+      /* What correctExecution leaves behind (interventionExecutions.ts): the
+         original stamped superseded, and a new version in the same lineage
+         carrying the same dates. Both rows stay in the table for good -- the
+         original is the history of the record, not a second delivery.
+
+         One started execution and the one planned-and-unstarted execution are
+         each corrected here, so both halves of the read are exercised. */
+      for (const [original, adherence] of [
+        ['exec-in', 'under_delivered'],
+        ['exec-unstarted', 'unknown'],
+      ] as const) {
+        await client.query(
+          `update pilot.intervention_executions set status = 'superseded'
+           where organization_id = $1 and execution_id = $2`,
+          [ORG_ID, original],
+        );
+        await client.query(
+          `insert into pilot.intervention_executions
+             (organization_id, execution_id, lineage_id, version, supersedes_execution_id,
+              athlete_id, protocol_id, protocol_version, recorded_by_account_id, adherence,
+              actual_start, planned_start, status, correction_reason, created_at, updated_at)
+           select organization_id, $3, lineage_id, 2, execution_id,
+                  athlete_id, protocol_id, protocol_version, recorded_by_account_id, $4,
+                  actual_start, planned_start, 'in_progress', 'logged the wrong adherence', now(), now()
+           from pilot.intervention_executions
+           where organization_id = $1 and execution_id = $2`,
+          [ORG_ID, original, `${original}-v2`, adherence],
+        );
+      }
+
+      const sources = await blockEvidence(ORG_ID, ATHLETE_ID, 'blk-1', STARTS_ON, ENDS_ON);
+      const by = Object.fromEntries(sources.map((s) => [s.key, s]));
+
+      // Still two started executions and one planned one, exactly as before
+      // the corrections -- and the started one reads as its CORRECTED self.
+      expect(by.intervention_executions.recorded).toBe(2);
+      expect(by.intervention_executions.openInWindow).toBe(1);
+      expect(by.intervention_executions.recent.map((entry) => entry.detail))
+        .toEqual(['delivered_as_planned', 'under_delivered']);
+
+      // Nothing was removed to get there: four rows across the two lineages.
+      const kept = await client.query(
+        `select count(*)::int as n from pilot.intervention_executions
+         where organization_id = $1 and lineage_id in ('exec-in', 'exec-unstarted')`,
+        [ORG_ID],
+      );
+      expect(kept.rows[0].n).toBe(4);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('nothing in the evidence read computes a ratio or a verdict', async () => {
     const client = await seededDatabase('br_no_verdict');
     try {

@@ -158,3 +158,224 @@ test('linking evidence posts a semantic role and typed source', async () => {
     source_id: 'assess-4',
   });
 });
+
+// Lane N3-02: unlinking evidence. The stand-in below answers the way the
+// route does -- a removal stamps the link and the next GET returns it stamped
+// -- so "what the coach sees next" is read off a reload, not off the click.
+
+type ChainFixture = Omit<typeof CHAIN_ITEM, 'evidence'> & { evidence: Array<(typeof CHAIN_ITEM)['evidence'][number]> };
+
+function unlinkServer(options: { refuse?: { status: number; error?: string }; start?: ChainFixture } = {}) {
+  const patches: Array<Record<string, unknown>> = [];
+  let current: ChainFixture = options.start ?? CHAIN_ITEM;
+  const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      patches.push(body);
+      if (options.refuse) {
+        const { status, error } = options.refuse;
+        return { ok: false, status, json: async () => (error ? { error } : {}) } as Response;
+      }
+      current = {
+        ...current,
+        evidence: current.evidence.map((link) => (link.link_id === body.link_id
+          ? { ...link, status: 'removed', removed_reason: String(body.removed_reason) }
+          : link)),
+      };
+      return { ok: true, json: async () => ({ item: {} }) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [current] }) } as Response;
+  }) as unknown as typeof fetch;
+  return { fetchMock, patches };
+}
+
+async function openPage(): Promise<void> {
+  await act(async () => {
+    render(<InterventionReviewPage />);
+  });
+  await screen.findByText('Decision');
+}
+
+async function click(name: string, index = 0): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole('button', { name })[index]);
+  });
+}
+
+async function typeReason(value: string): Promise<void> {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Why does this no longer count? (required)'), { target: { value } });
+  });
+}
+
+describe('unlinking evidence', () => {
+  test('each active link can be removed; a link is not removed without a reason, and nothing is sent', async () => {
+    const server = unlinkServer();
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(2);
+
+    await click('Remove link');
+    await click('Remove it');
+    expect(server.patches).toHaveLength(0);
+    expect(screen.getByRole('alert').textContent).toContain('Say why this link no longer counts before removing it.');
+
+    await typeReason('   ');
+    await click('Remove it');
+    expect(server.patches).toHaveLength(0);
+  });
+
+  test('removing sends the link and the reason, and the reloaded row is stamped removed with no control left on it', async () => {
+    const server = unlinkServer();
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    await click('Remove link');
+    await typeReason("  that was another athlete's round  ");
+    await click('Remove it');
+
+    expect(server.patches).toEqual([
+      { action: 'remove_evidence', link_id: 'l-1', removed_reason: "that was another athlete's round" },
+    ]);
+    // The row is still on the record, saying why it no longer counts...
+    expect(screen.getByText(/training attempt att-9/).textContent)
+      .toContain("(removed: that was another athlete's round)");
+    // ...the form is gone, and only the other link can still be removed.
+    expect(screen.queryByRole('button', { name: 'Remove it' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a link that arrives already removed shows its reason and offers nothing', async () => {
+    const [first, second] = CHAIN_ITEM.evidence;
+    const server = unlinkServer({
+      start: { ...CHAIN_ITEM, evidence: [{ ...first, status: 'removed', removed_reason: 'linked twice' }, second] },
+    });
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    expect(screen.getByText(/training attempt att-9/).textContent).toContain('(removed: linked twice)');
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(1);
+  });
+
+  test('a link whose source is inadmissible keeps its stamp, and can be removed like any other', async () => {
+    const server = unlinkServer();
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    // The second active link is the film-study one with no accepted proposal.
+    await click('Remove link', 1);
+    await typeReason('proposal was never accepted');
+    await click('Remove it');
+
+    expect(server.patches).toEqual([
+      { action: 'remove_evidence', link_id: 'l-2', removed_reason: 'proposal was never accepted' },
+    ]);
+    const row = screen.getByText(/film study prop-7/);
+    expect(row.textContent).toContain('inadmissible — no accepted proposal');
+    expect(row.textContent).toContain('(removed: proposal was never accepted)');
+  });
+
+  test.each<[number, string | undefined, string]>([
+    [403, 'Forbidden: coach is not assigned to athlete', 'Forbidden: coach is not assigned to athlete'],
+    [404, undefined, 'Unable to remove the link. (404)'],
+  ])('a removal the server refuses (%i) says so and leaves the link as it was', async (status, error, shown) => {
+    const server = unlinkServer({ refuse: { status, error } });
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    await click('Remove link');
+    await typeReason('not mine to remove');
+    await click('Remove it');
+
+    expect(server.patches).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toContain(shown);
+    expect(screen.getByRole('alert').textContent).toContain('Failed');
+    expect(screen.getByText(/training attempt att-9/).textContent).not.toContain('(removed');
+    // Still open with what was typed, so nothing has to be re-entered.
+    expect((screen.getByLabelText('Why does this no longer count? (required)') as HTMLInputElement).value)
+      .toBe('not mine to remove');
+  });
+
+  test('a removal that is saved while the reload fails is shown as saved: form closed and the link stamped removed', async () => {
+    const patches: unknown[] = [];
+    let saved = false;
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)));
+        saved = true;
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    await openPage();
+
+    await click('Remove link');
+    await typeReason('linked the wrong attempt');
+    await click('Remove it');
+
+    expect(patches).toHaveLength(1);
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('Saved');
+    expect(alert).toContain('The list could not be refreshed. Reload the page to see the latest.');
+    expect(alert).not.toContain('Failed');
+    // No open form inviting a second removal, which the server would answer 404...
+    expect(screen.queryByRole('button', { name: 'Remove it' })).toBeNull();
+    // ...and the link reads as the server left it, though the reload never came back.
+    expect(screen.getByText(/training attempt att-9/).textContent).toContain('(removed: linked the wrong attempt)');
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(1);
+    // The other link is untouched.
+    expect(screen.getByText(/film study prop-7/).textContent).not.toContain('(removed');
+  });
+
+  test('linking evidence shares that handling: saved while the reload fails closes the form and says saved', async () => {
+    let saved = false;
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        saved = true;
+        return { ok: true, json: async () => ({ item: {} }) } as Response;
+      }
+      if (saved) return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, json: async () => ({ items: [CHAIN_ITEM] }) } as Response;
+    }) as unknown as typeof fetch;
+    await openPage();
+
+    await click('Link evidence');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Source record id'), { target: { value: 'att-12' } });
+    });
+    await click('Link it');
+
+    expect(screen.getByRole('alert').textContent).toContain('Saved');
+    expect(screen.queryByRole('button', { name: 'Link it' })).toBeNull();
+  });
+
+  test('Cancel closes the form and sends nothing', async () => {
+    const server = unlinkServer();
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    await click('Remove link');
+    await typeReason('changed my mind');
+    await click('Cancel');
+
+    expect(server.patches).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Remove it' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Remove link' })).toHaveLength(2);
+
+    // Reopened, the reason typed before is not waiting to be sent by accident.
+    await click('Remove link');
+    expect((screen.getByLabelText('Why does this no longer count? (required)') as HTMLInputElement).value).toBe('');
+  });
+
+  test('an execution with no evidence says so and offers nothing to remove', async () => {
+    const server = unlinkServer({ start: { ...CHAIN_ITEM, evidence: [] } });
+    global.fetch = server.fetchMock;
+    await openPage();
+
+    expect(screen.getByText('No evidence linked yet.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove link' })).toBeNull();
+  });
+});

@@ -4632,9 +4632,6 @@ export default function CoachWorkspace() {
                 <Link href="/coach/video-analysis" className="btn">
                   Open Video Analysis Surface
                 </Link>
-                <Link href="/athlete/video-analysis" className="btn btn--ghost">
-                  Athlete Feedback Surface
-                </Link>
               </div>
               <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                 <p className="t-label">Automatic technique scoring - parked, not scheduled</p>

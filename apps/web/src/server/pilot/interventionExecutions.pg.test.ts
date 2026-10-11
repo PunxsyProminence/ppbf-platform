@@ -34,6 +34,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { ConflictError } from './errors';
+
 let activeClient: Client | null = null;
 
 jest.mock('./db', () => ({
@@ -112,6 +114,7 @@ const OTHER_ATHLETE_ID = 'ath-elsewhere-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let evidenceSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let protocolsSql: string;
 let decisionLoopSql: string;
@@ -238,6 +241,7 @@ beforeAll(async () => {
   sessionScriptsSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_session_scripts_migration.sql'), 'utf8');
   protocolsSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_intervention_protocols_migration.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  evidenceSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_intervention_evidence_migration.sql'), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -659,6 +663,9 @@ describe('the real intervention-execution lifecycle against real rows', () => {
     activeClient = client;
     try {
       await client.query(migrationSql);
+      // correctExecution carries the execution's evidence links and outcome
+      // reviews onto the new version, so the tables they live in must exist.
+      await client.query(evidenceSql);
       const started = await startExecution({
         organizationId: ORG_ID,
         athleteId: ATHLETE_ID,
@@ -672,6 +679,69 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         actualExposure: { rounds: 5 },
         adherence: 'delivered_as_planned',
       });
+
+      // What hangs off the record before it is corrected: one live link, one
+      // link already removed, and a verdict that superseded an earlier one.
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, status, removed_reason, linked_by_account_id)
+         values ($1, 'link-live', $2, 'baseline', 'training_attempt', 'att-1', 'active', '', $3),
+                ($1, 'link-struck', $2, 'retention', 'training_attempt', 'att-2', 'removed', 'wrong drill', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
+            performance_notes, hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-old', $2, null, 'unknown', 'too early to say', 'unresolved', 'unresolved', 'superseded', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
+            performance_notes, hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-new', $2, 'rev-old', 'improved', 'held through the third', 'supported',
+                 'prior_belief_strengthened', 'active', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+
+      // Two bystanders that must NOT move. One is another execution in the
+      // same gym. The other is an execution in ANOTHER gym that happens to
+      // carry the same execution_id (the key is the pair, so it can).
+      await insertExecution(client, 'exec-bystander');
+      await client.query(
+        `insert into pilot.intervention_protocols
+           (organization_id, protocol_id, lineage_id, version, title, target_problem, hypothesis,
+            intervention_description, expected_outcome, created_by_account_id)
+         values ($1, 'proto-1', 'proto-1', 1, 'Elsewhere block', 'p', 'h', 'i', 'e', $2)`,
+        [OTHER_ORG_ID, OTHER_ADMIN_ID],
+      );
+      await insertExecution(client, originalId, { organization_id: OTHER_ORG_ID, athlete_id: OTHER_ATHLETE_ID });
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
+         values ($1, 'link-bystander', 'exec-bystander', 'baseline', 'training_attempt', 'att-1', $2),
+                ($3, 'link-elsewhere', $4, 'baseline', 'training_attempt', 'att-9', $5)`,
+        [ORG_ID, COACH_ID, OTHER_ORG_ID, originalId, OTHER_ADMIN_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-bystander', 'exec-bystander', 'unknown', 'not this one', 'unresolved', 'unresolved', 'active', $2),
+                ($3, 'rev-elsewhere', $4, 'unknown', 'not this gym', 'unresolved', 'unresolved', 'active', $5)`,
+        [ORG_ID, COACH_ID, OTHER_ORG_ID, originalId, OTHER_ADMIN_ID],
+      );
+
+      const attached = async () => ({
+        links: (await client.query(
+          `select * from pilot.intervention_evidence_links order by organization_id, link_id`,
+        )).rows as Array<Record<string, unknown>>,
+        reviews: (await client.query(
+          `select * from pilot.intervention_outcome_reviews order by organization_id, review_id`,
+        )).rows as Array<Record<string, unknown>>,
+      });
+      const before = await attached();
 
       const corrected = await correctExecution({
         organizationId: ORG_ID,
@@ -703,13 +773,148 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       expect(current.map((row) => row.execution_id)).toContain(corrected!.execution_id);
       expect(current.map((row) => row.execution_id)).not.toContain(originalId);
 
-      // A superseded record cannot itself be corrected again.
+      // The evidence and the reviews came with it: all four rows now hang
+      // off the correction, and nothing about them changed but that pointer.
+      // The bystanders -- the other execution, and the other gym's execution
+      // of the same id -- are exactly as they were.
+      const moved = await attached();
+      const repointed = (rows: Array<Record<string, unknown>>) => rows.map((row) => (
+        row.organization_id === ORG_ID && row.execution_id === originalId
+          ? { ...row, execution_id: corrected!.execution_id }
+          : row
+      ));
+      expect(before.links.map((row) => [row.link_id, row.execution_id])).toEqual([
+        ['link-elsewhere', originalId],
+        ['link-bystander', 'exec-bystander'],
+        ['link-live', originalId],
+        ['link-struck', originalId],
+      ]);
+      expect(moved.links).toEqual(repointed(before.links));
+      expect(moved.reviews).toEqual(repointed(before.reviews));
+      expect(moved.links.map((row) => [row.link_id, row.execution_id])).toEqual([
+        ['link-elsewhere', originalId],
+        ['link-bystander', 'exec-bystander'],
+        ['link-live', corrected!.execution_id],
+        ['link-struck', corrected!.execution_id],
+      ]);
+
+      // A superseded record cannot itself be corrected again -- and the
+      // refusal leaves the evidence where the correction put it.
       await expect(correctExecution({
         organizationId: ORG_ID,
         executionId: originalId,
         correctionReason: 'trying to correct history itself',
         correctedByAccountId: COACH_ID,
       })).resolves.toBeNull();
+      expect(await attached()).toEqual(moved);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a closed execution with a standing review cannot be corrected back to in progress; every other correction still can', async () => {
+    const client = await freshDatabase('executions_reopen');
+    activeClient = client;
+    try {
+      await client.query(migrationSql);
+      await client.query(evidenceSql);
+
+      // Closed and reviewed, with a piece of evidence on it.
+      await insertExecution(client, 'exec-reviewed', { status: 'completed' });
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
+         values ($1, 'link-reviewed', 'exec-reviewed', 'baseline', 'training_attempt', 'att-1', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-standing', 'exec-reviewed', 'improved', 'held through the third', 'supported',
+                 'prior_belief_strengthened', 'active', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      // Closed, and nobody has reviewed it.
+      await insertExecution(client, 'exec-unreviewed', { status: 'completed' });
+      // Closed, and its only review has itself been superseded: no verdict stands.
+      await insertExecution(client, 'exec-withdrawn', { status: 'completed' });
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-withdrawn', 'exec-withdrawn', 'unknown', 'too early', 'unresolved', 'unresolved', 'superseded', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+
+      const everything = async () => ({
+        executions: (await client.query(`select * from pilot.intervention_executions order by organization_id, execution_id`)).rows,
+        links: (await client.query(`select * from pilot.intervention_evidence_links order by organization_id, link_id`)).rows,
+        reviews: (await client.query(`select * from pilot.intervention_outcome_reviews order by organization_id, review_id`)).rows,
+      });
+      const before = await everything();
+
+      // A verdict is a statement about finished work. Reopening the work
+      // underneath it would leave the verdict standing on a record that says
+      // the work is still going -- which reviewOutcome itself refuses to write.
+      const reopening = correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-reviewed',
+        correctionReason: 'it had not actually finished',
+        outcome: 'in_progress',
+        correctedByAccountId: COACH_ID,
+      });
+      await expect(reopening).rejects.toBeInstanceOf(ConflictError);
+      await expect(reopening).rejects.toThrow(/outcome review/);
+      // Refused whole: no new version, nothing stamped, nothing moved.
+      expect(await everything()).toEqual(before);
+
+      // The same record corrected and KEPT closed goes through, review and evidence with it.
+      const kept = await correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-reviewed',
+        correctionReason: 'it was stopped, not completed',
+        outcome: 'stopped',
+        stopChangeReason: 'shoulder tightened in round four',
+        correctedByAccountId: COACH_ID,
+      });
+      expect(kept).toMatchObject({ version: 2, status: 'stopped' });
+      const carried = await everything();
+      expect(carried.reviews.find((row) => row.review_id === 'rev-standing'))
+        .toMatchObject({ execution_id: kept!.execution_id, status: 'active' });
+      expect(carried.links.find((row) => row.link_id === 'link-reviewed'))
+        .toMatchObject({ execution_id: kept!.execution_id });
+
+      // Reopening is refused only for a verdict that STANDS: a record nobody
+      // reviewed, and one whose only review was itself superseded, both reopen.
+      for (const executionId of ['exec-unreviewed', 'exec-withdrawn']) {
+        await expect(correctExecution({
+          organizationId: ORG_ID,
+          executionId,
+          correctionReason: 'it had not actually finished',
+          outcome: 'in_progress',
+          correctedByAccountId: COACH_ID,
+        })).resolves.toMatchObject({ version: 2, status: 'in_progress' });
+      }
+
+      // And it is the REOPENING that is refused, not correcting. A record that
+      // is in progress and somehow already carries a review (nothing writes
+      // that today; the database allows it) can still have its facts corrected.
+      await insertExecution(client, 'exec-odd');
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, performance_result, performance_notes,
+            hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-odd', 'exec-odd', 'unknown', 'reviewed early', 'unresolved', 'unresolved', 'active', $2)`,
+        [ORG_ID, COACH_ID],
+      );
+      await expect(correctExecution({
+        organizationId: ORG_ID,
+        executionId: 'exec-odd',
+        correctionReason: 'wrong round count',
+        actualExposure: { rounds: 4 },
+        correctedByAccountId: COACH_ID,
+      })).resolves.toMatchObject({ version: 2, status: 'in_progress', actual_exposure: { rounds: 4 } });
     } finally {
       await client.end();
     }

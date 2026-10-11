@@ -38,6 +38,7 @@ jest.mock('./db', () => ({
 }));
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { listExecutions, correctExecution } from './interventionExecutions';
 import { getActiveReview, reviewOutcome } from './interventionEvidence';
 import { reviseProtocol } from './interventionProtocols';
@@ -50,6 +51,7 @@ interface Store {
   intervention_protocols: StoredRow[];
   intervention_executions: StoredRow[];
   intervention_outcome_reviews: StoredRow[];
+  intervention_evidence_links: StoredRow[];
 }
 
 let store: Store;
@@ -62,7 +64,10 @@ let faultOn: RegExp | null = null;
 let staleRead: { pattern: RegExp; rows: StoredRow[] } | null = null;
 
 function emptyStore(): Store {
-  return { intervention_protocols: [], intervention_executions: [], intervention_outcome_reviews: [] };
+  return {
+    intervention_protocols: [], intervention_executions: [], intervention_outcome_reviews: [],
+    intervention_evidence_links: [],
+  };
 }
 
 function snapshot(): Store {
@@ -70,6 +75,7 @@ function snapshot(): Store {
     intervention_protocols: store.intervention_protocols.map((r) => ({ ...r })),
     intervention_executions: store.intervention_executions.map((r) => ({ ...r })),
     intervention_outcome_reviews: store.intervention_outcome_reviews.map((r) => ({ ...r })),
+    intervention_evidence_links: store.intervention_evidence_links.map((r) => ({ ...r })),
   };
 }
 
@@ -185,7 +191,24 @@ function execute(sql: string, params: unknown[] = []): StoredRow[] {
     return updateStatus(sql, params, 'intervention_executions', 'execution_id', params[2] as string);
   }
 
+  /* ---- what a correction carries onto the new version ---- */
+  const carried = /update pilot\.(intervention_evidence_links|intervention_outcome_reviews) set execution_id = \$3/.exec(sql);
+  if (carried) {
+    const table = carried[1] as 'intervention_evidence_links' | 'intervention_outcome_reviews';
+    applyChecked((candidate) => {
+      for (const row of candidate[table]) {
+        if (row.organization_id === params[0] && row.execution_id === params[1]) row.execution_id = params[2];
+      }
+    });
+    return [];
+  }
+
   /* ---- outcome reviews ---- */
+  if (/select 1 from pilot\.intervention_outcome_reviews/.test(sql)) {
+    return store.intervention_outcome_reviews
+      .filter((r) => r.organization_id === params[0] && r.execution_id === params[1] && r.status === 'active')
+      .map(() => ({ '?column?': 1 }));
+  }
   if (/select review_id from pilot\.intervention_outcome_reviews/.test(sql)) {
     return store.intervention_outcome_reviews
       .filter((r) => r.organization_id === params[0] && r.execution_id === params[1] && r.status === 'active')
@@ -330,6 +353,20 @@ function seedReview(overrides: StoredRow = {}): void {
   });
 }
 
+function seedLink(overrides: StoredRow = {}): void {
+  store.intervention_evidence_links.push({
+    organization_id: ORG,
+    link_id: 'link-0',
+    execution_id: 'exec-1',
+    evidence_role: 'baseline',
+    source_kind: 'training_attempt',
+    source_id: 'att-1',
+    status: 'active',
+    removed_reason: '',
+    ...overrides,
+  });
+}
+
 const revision = {
   organizationId: ORG,
   protocolId: 'proto-1',
@@ -449,8 +486,71 @@ describe('correctExecution', () => {
     expect(store.intervention_executions).toHaveLength(1);
   });
 
+  test('the evidence and the review follow the record onto the correction', async () => {
+    seedExecution();
+    seedLink();
+    seedLink({ link_id: 'link-struck', source_id: 'att-2', status: 'removed', removed_reason: 'wrong drill' });
+    seedReview();
+
+    const corrected = await correctExecution(correction);
+
+    // Left on the superseded row, no current read would ever list them.
+    expect(store.intervention_evidence_links.map((r) => [r.link_id, r.execution_id, r.status])).toEqual([
+      ['link-0', corrected?.execution_id, 'active'],
+      ['link-struck', corrected?.execution_id, 'removed'],
+    ]);
+    expect(store.intervention_outcome_reviews.map((r) => [r.review_id, r.execution_id, r.status])).toEqual([
+      ['review-0', corrected?.execution_id, 'active'],
+    ]);
+  });
+
+  test('a failure while carrying the review over leaves the evidence, the review and the record where they were', async () => {
+    seedExecution();
+    seedLink();
+    seedReview();
+    // The links have already been re-pointed when this lands.
+    faultOn = /update pilot\.intervention_outcome_reviews set execution_id/;
+
+    await expect(correctExecution(correction)).rejects.toThrow(/connection terminated/);
+
+    // Half-carried would be the worst outcome: evidence on a version that
+    // was never raised, and the verdict on one that is no longer current.
+    expect(store.intervention_evidence_links.map((r) => r.execution_id)).toEqual(['exec-1']);
+    expect(store.intervention_outcome_reviews.map((r) => r.execution_id)).toEqual(['exec-1']);
+    const listed = await listExecutions(ORG, 'ath-1');
+    expect(listed.map((r) => [r.execution_id, r.status])).toEqual([['exec-1', 'completed']]);
+    expect(store.intervention_executions).toHaveLength(1);
+  });
+
+  test('reopening a reviewed execution is refused whole: no new version, and the evidence and review stay put', async () => {
+    seedExecution();
+    seedLink();
+    seedReview();
+    const before = snapshot();
+
+    await expect(correctExecution({ ...correction, outcome: 'in_progress' })).rejects.toBeInstanceOf(ConflictError);
+
+    // The refusal lands after the links and the review were re-pointed, so
+    // only the rollback puts them back.
+    expect(store).toEqual(before);
+  });
+
+  test('reopening is refused only while a review stands; kept closed, or never reviewed, the correction goes through', async () => {
+    seedExecution();
+    seedReview();
+    const kept = await correctExecution({ ...correction, outcome: 'stopped' });
+    expect(kept?.status).toBe('stopped');
+
+    store = emptyStore();
+    seedExecution();
+    seedReview({ status: 'superseded' });
+    const reopened = await correctExecution({ ...correction, outcome: 'in_progress' });
+    expect(reopened?.status).toBe('in_progress');
+  });
+
   test('a second correction that read the same record loses cleanly: null, and nothing stranded', async () => {
     seedExecution();
+    seedLink();
     const recordAsBothWritersReadIt = { ...store.intervention_executions[0] };
 
     const first = await correctExecution(correction);
@@ -463,6 +563,9 @@ describe('correctExecution', () => {
     expect(second).toBeNull();
     expect(liveExecutions()).toHaveLength(1);
     expect(store.intervention_executions).toHaveLength(2);
+    // The evidence stays on the correction that won, not on the loser's
+    // rolled-back version and not back on the original.
+    expect(store.intervention_evidence_links.map((r) => r.execution_id)).toEqual([first?.execution_id]);
   });
 });
 
