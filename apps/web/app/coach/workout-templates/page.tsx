@@ -164,7 +164,8 @@ const ATHLETES_FAILED = 'The athletes could not be loaded. This is a failure to 
 function refusedBeforeWriting(payload: Record<string, unknown> | null): string {
   const said = typeof payload?.error === 'string' ? payload.error.trim() : '';
   if (said === '') return ISSUE_FAILED;
-  return /nothing was issued/i.test(said) ? said : `${said} ${NOTHING_ISSUED}`;
+  if (/nothing was issued/i.test(said)) return said;
+  return `${/[.!?]$/.test(said) ? said : `${said}.`} ${NOTHING_ISSUED}`;
 }
 
 const ALERT_TEXT = 'text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]';
@@ -209,11 +210,13 @@ function IssueToAthlete({
       });
       if (!response.ok) throw new Error('athletes read failed');
       const payload = (await response.json()) as { items?: unknown } | null;
-      // A wrong-shaped answer is a failed read, not a gym with no athletes.
+      // A wrong-shaped answer is a failed read, not a gym with no athletes --
+      // and so is a list with an entry this screen cannot read: dropping it
+      // would quietly take an athlete out of the picker.
       if (!Array.isArray(payload?.items)) throw new Error('athletes read had no list');
-      setAthletes(
-        payload.items.filter(isReachableAthlete).sort((a, b) => a.full_name.localeCompare(b.full_name)),
-      );
+      const readable = payload.items.filter(isReachableAthlete);
+      if (readable.length !== payload.items.length) throw new Error('athletes read had an unreadable entry');
+      setAthletes(readable.sort((a, b) => a.full_name.localeCompare(b.full_name)));
       setAthletesFailed(false);
     } catch {
       setAthletes([]);
@@ -234,6 +237,9 @@ function IssueToAthlete({
     // `busy`, and React re-renders between two taps, so the button is already
     // dead when a second tap arrives.
     if (!chosen) return;
+    // The earlier result goes only now, when a new issue is actually sent. A
+    // stray tap on Issue followed by Cancel must not erase "Issued to ...".
+    setOutcome(null);
     setBusy(true);
     onBusyChange(true);
     try {
@@ -345,6 +351,9 @@ function IssueToAthlete({
               setAthleteId(event.target.value);
               setConfirming(false);
               setOutcome(null);
+              // So the next Issue tap moves focus again even if the last
+              // thing focused was also the confirm sentence.
+              setFocusOn(null);
             }}
           >
             <option value="">Choose an athlete</option>
@@ -362,7 +371,6 @@ function IssueToAthlete({
             className="btn btn--kiosk"
             disabled={!chosen || busy || confirming}
             onClick={() => {
-              setOutcome(null);
               setConfirming(true);
               setFocusOn('confirm');
             }}
@@ -482,6 +490,12 @@ function CoachWorkoutTemplates() {
   // control, and an issue whose control is gone answers to nobody: the cards
   // would exist with nothing on screen to say so.
   const [issuing, setIssuing] = useState(false);
+  // Counts detail reads, so only the LATEST one may change what is open. Two
+  // reads can overlap (tap one template, then another, on slow wifi), and a
+  // late answer to the first would otherwise swap the template under an open
+  // issue control: the confirm sentence would name one template and send
+  // another, or a result would sit under a template it was not issued from.
+  const detailRead = useRef(0);
 
   // No state is set before the first await, matching the session-scripts
   // page: a synchronous setState inside an effect cascades a render before
@@ -511,6 +525,9 @@ function CoachWorkoutTemplates() {
   }, [load]);
 
   const openTemplate = useCallback(async (templateId: string) => {
+    detailRead.current += 1;
+    const thisRead = detailRead.current;
+    const latest = () => detailRead.current === thisRead;
     // Clearing the previous template's detail and error together, so one
     // template's items -- or its failure -- never render under another
     // template's name while the new read is in flight.
@@ -526,12 +543,14 @@ function CoachWorkoutTemplates() {
       if (!response.ok) throw new Error('That workout template could not be opened.');
       const payload = (await response.json()) as Partial<TemplateDetail>;
       if (!payload.template) throw new Error('That workout template could not be opened.');
-      setDetail({ template: payload.template, items: payload.items ?? [] });
+      if (latest()) setDetail({ template: payload.template, items: payload.items ?? [] });
     } catch (error) {
-      setDetail(null);
-      setDetailError(error instanceof Error ? error.message : 'That workout template could not be opened.');
+      if (latest()) {
+        setDetail(null);
+        setDetailError(error instanceof Error ? error.message : 'That workout template could not be opened.');
+      }
     } finally {
-      setDetailLoading(false);
+      if (latest()) setDetailLoading(false);
     }
   }, []);
 
@@ -601,9 +620,10 @@ function CoachWorkoutTemplates() {
                   onClick={() => void openTemplate(template.template_id)}
                   className="btn btn--ghost mt-[var(--s4)]"
                   // Not while an issue runs (its answer would be lost), and not
-                  // for the template already showing (a stray tap would wipe
-                  // the result the coach is reading).
-                  disabled={issuing || (openTemplateId === template.template_id && detail !== null)}
+                  // for the template already showing with its issue control (a
+                  // stray tap would wipe the result the coach is reading). A
+                  // template with no steps has no control, and can be re-read.
+                  disabled={issuing || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                 >
                   {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                 </button>

@@ -431,6 +431,8 @@ describe('issue to athlete', () => {
       ['a refused read', () => jsonResponse({}, false)],
       ['an answer with no list in it (the wrong key)', () => jsonResponse({ ok: true, athletes: ATHLETES })],
       ['an answer whose list is not a list', () => jsonResponse({ ok: true, items: 'none' })],
+      ['a list with an entry that cannot be read (it would silently leave the picker)', () => jsonResponse({ ok: true, items: [ATHLETES[0], { athlete_id: 'ath-9' }] })],
+      ['a list where no entry can be read', () => jsonResponse({ ok: true, items: [{ name: 'Dana' }, null] })],
       ['no answer at all', () => {
         throw new TypeError('Failed to fetch');
       }],
@@ -634,6 +636,93 @@ describe('issue to athlete', () => {
       // The answer is on screen, and the other template can be opened again.
       expect(await issuedStatus()).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
       expect(screen.getByRole('button', { name: 'Open template' })).toBeEnabled();
+    });
+
+    it('two template reads that overlap: a late answer to the first never swaps the template under the issue control', async () => {
+      // Tap A (slow), tap B (answers), pick an athlete and reach the confirm
+      // step on B. Then A's answer arrives late. The screen must still be B's.
+      let answerFirst: (response: Response) => void = () => {};
+      const first = new Promise<Response>((resolve) => {
+        answerFirst = resolve;
+      });
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ISSUE_URL)) return statusResponse(201, ISSUED_BODY);
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id=wt-1')) return first;
+        if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      render(<CoachWorkoutTemplatesPage />);
+      const openButtons = await screen.findAllByRole('button', { name: 'Open template' });
+      fireEvent.click(openButtons[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+      fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      const sentence = 'Issue Conditioning Circuit 45 to Dana Reyes? Each step becomes a separate Coach Card.';
+      expect(screen.getByText(sentence)).toBeInTheDocument();
+
+      await act(async () => {
+        answerFirst(jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] }));
+        await first;
+      });
+
+      // Still the second template: heading, confirm sentence, and what Confirm sends.
+      expect(screen.getByRole('heading', { level: 2, name: 'Conditioning Circuit 45' })).toBeInTheDocument();
+      expect(screen.getByText(sentence)).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+      });
+      await issuedStatus();
+      const posts = issuePosts(fetchMock);
+      expect(posts).toHaveLength(1);
+      expect(JSON.parse(String((posts[0] as unknown as [unknown, RequestInit])[1].body))).toEqual({ template_id: 'wt-2', athlete_id: 'ath-1' });
+    });
+
+    it('a late FAILED answer to an earlier read does not close the template that is open', async () => {
+      let answerFirst: (response: Response) => void = () => {};
+      const first = new Promise<Response>((resolve) => {
+        answerFirst = resolve;
+      });
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id=wt-1')) return first;
+        if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      render(<CoachWorkoutTemplatesPage />);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+      await screen.findByLabelText('Athlete');
+
+      await act(async () => {
+        answerFirst(jsonResponse({}, false));
+        await first;
+      });
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Conditioning Circuit 45' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Athlete')).toBeInTheDocument();
+      expect(screen.queryByText(/could not be opened/i)).not.toBeInTheDocument();
+    });
+
+    it('a showing template with no steps has no control to protect, so it can still be re-read', async () => {
+      const fetchMock = mockIssuePage({ items: [] });
+
+      render(<CoachWorkoutTemplatesPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+      await screen.findByText('This template has no items yet.');
+      const showing = screen.getByRole('button', { name: 'Showing template' });
+      expect(showing).toBeEnabled();
+      const reads = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('template_id')).length;
+      const before = reads();
+      fireEvent.click(showing);
+
+      await waitFor(() => expect(reads()).toBe(before + 1));
     });
 
     it('the template already showing cannot be re-opened by a stray tap, which would wipe the result being read', async () => {
@@ -855,6 +944,11 @@ describe('issue to athlete', () => {
         'That drill is not an active drill in this gym, so it cannot be assigned. Nothing was issued.',
       ],
       [
+        'a 400 whose sentence has no full stop still reads as two sentences',
+        () => statusResponse(400, { error: 'Missing athlete_id' }),
+        'Missing athlete_id. Nothing was issued.',
+      ],
+      [
         'a 400 with nothing to read',
         () => ({ ok: false, status: 400, json: async () => { throw new Error('not json'); } }) as unknown as Response,
         'The template could not be issued. Nothing was issued.',
@@ -936,6 +1030,18 @@ describe('issue to athlete', () => {
       expect(screen.getByRole('button', { name: 'Issue to athlete' })).toHaveFocus();
     });
 
+    it('asking again for another athlete moves focus to the NEW confirm sentence', async () => {
+      mockIssuePage();
+
+      await chooseAndAsk('ath-1');
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+
+      expect(
+        screen.getByText('Issue Boxing Fundamentals 60 to Sam Okafor? Each step becomes a separate Coach Card.'),
+      ).toHaveFocus();
+    });
+
     it.each([
       ['an issue', () => statusResponse(201, ISSUED_BODY)],
       ['a refusal', () => statusResponse(409, REFUSED_BODY)],
@@ -967,6 +1073,30 @@ describe('issue to athlete', () => {
   });
 
   describe('a result belongs to the question that was asked', () => {
+    it('a stray tap on Issue, then Cancel, does not erase the result: it goes only when a new issue is sent', async () => {
+      const fetchMock = mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
+
+      await issueTo('ath-1');
+      await issuedStatus();
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      expect(screen.getByRole('status')).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByRole('status')).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+      expect(issuePosts(fetchMock)).toHaveLength(1);
+    });
+
+    it('choosing a different athlete closes the confirm step, so Confirm can never send the athlete picked before', async () => {
+      const fetchMock = mockIssuePage();
+
+      await chooseAndAsk('ath-1');
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+
+      expect(screen.queryByRole('button', { name: 'Confirm issue' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/to Dana Reyes\?/)).not.toBeInTheDocument();
+      expect(issuePosts(fetchMock)).toHaveLength(0);
+    });
+
     it('choosing a different athlete clears the result', async () => {
       mockIssuePage({ issue: () => statusResponse(201, ISSUED_BODY) });
 
@@ -1021,7 +1151,7 @@ describe('issue to athlete', () => {
       // No element in the control pins a size under the kiosk floor: not a
       // small rung of the ladder, not a pixel size, not an inline style.
       const smaller = Array.from(control.querySelectorAll('*')).filter((element) =>
-        /--t-(xs|sm)\b|\btext-(xs|sm)\b|text-\[\d/.test(element.getAttribute('class') ?? '')
+        /--t-(xs|sm)\b|\btext-(xs|sm)\b|text-\[[\d.]/.test(element.getAttribute('class') ?? '')
         || (element.getAttribute('style') ?? '').includes('font-size'));
       expect(smaller).toHaveLength(0);
       // And every piece of text in it sits in an element that carries a floored voice or the floor itself.
