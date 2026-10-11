@@ -10,6 +10,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { orderAssignedWork, readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
@@ -121,116 +122,34 @@ interface DrillAssignment {
   assigned_by_name?: string;
 }
 
-/*
- * A workout template a coach issued, as the assignments read sends it beside
- * the items (lane P7c): which assignments are its steps, in the coach's order,
- * and what the coach wrote beside each. The drill, reps, minutes and status of
- * a step stay on the assignment the step points at.
+/**
+ * The `workouts` of the assignments answer (src/lib/issuedWorkouts.ts), or a
+ * failed load. Workouts this screen cannot read are NOT read as "no workouts":
+ * drawing the steps as loose drills would show the athlete a workout out of
+ * its order and call it whole. This screen draws the date each was issued and
+ * who issued it, so a workout with no readable date, or a name that is not
+ * text, is refused here too.
  */
-interface IssuedWorkoutStep {
-  ordinal: number;
-  block: string;
-  // Null when the coach left the level to be picked on the day. Shown only
-  // when set: this screen never fills one in.
-  scale_level: string | null;
-  // The coach's entry. Shown as written.
-  contact_level: string;
-  coach_note: string | null;
-  assignment_id: string;
-}
-
-interface IssuedWorkout {
-  issue_id: string;
-  template_name: string;
+interface DatedWorkout extends IssuedWorkoutView {
   issued_at: string;
   issued_by_name?: string;
-  steps: IssuedWorkoutStep[];
 }
 
-const isText = (value: unknown): value is string => typeof value === 'string';
-const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
-
-/**
- * The `workouts` of an assignments answer. Absent (a server that predates the
- * field) is no workouts. Present but not the shape this screen reads is NOT
- * read as "no workouts": drawing the steps as loose drills would show the
- * athlete a workout out of its order and call it whole, so the read fails.
- */
-function readIssuedWorkouts(raw: unknown): IssuedWorkout[] {
-  if (raw === undefined) return [];
-  const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
-    const w = workout as Partial<IssuedWorkout> | null;
-    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name) && isText(w.issued_at) && !Number.isNaN(Date.parse(w.issued_at))
-      && (w.issued_by_name === undefined || isText(w.issued_by_name))
-      && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
-        const s = step as Partial<IssuedWorkoutStep> | null;
-        return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)
-          && isTextOrNull(s.scale_level) && isText(s.contact_level) && isTextOrNull(s.coach_note) && isText(s.assignment_id);
-      });
-  });
-  if (!wellFormed) throw new Error(DRILLS_DID_NOT_LOAD, { cause: { workouts: 'unreadable' } });
-  return raw as IssuedWorkout[];
-}
-
-/** One line of the assigned-work list, in the order it is drawn. */
-type AssignedWorkRow =
-  | { kind: 'workout'; key: string; workout: IssuedWorkout; stepCount: number }
-  | { kind: 'block'; key: string; block: string }
-  | { kind: 'assignment'; key: string; assignment: DrillAssignment; step: IssuedWorkoutStep | null };
-
-/**
- * The assigned work in the order it is drawn. The server's order of the
- * assignments is kept (dated work first, as it always was): an assignment that
- * is not a step of a workout is drawn where it stands, and an issued workout
- * is drawn WHOLE at the place of the first of its drills -- a heading, then
- * its steps in the coach's order, with a block heading every time the block
- * changes (so a block the coach returns to is shown again, where the coach put
- * it). A step whose assignment was not sent is left out; a workout with no
- * step left is not drawn; an assignment two workouts both name is a step of
- * the first only, and an issue id the answer repeats is one workout, so
- * nothing is drawn twice.
- */
-function orderAssignedWork(assignments: DrillAssignment[], workouts: IssuedWorkout[]): AssignedWorkRow[] {
-  const sent = new Set(assignments.map((assignment) => assignment.assignment_id));
-  const workoutOf = new Map<string, IssuedWorkout>();
-  const stepsOf = new Map<IssuedWorkout, IssuedWorkoutStep[]>();
-  const issueIds = new Set<string>();
-  for (const workout of workouts) {
-    // An issue id the answer repeats is one workout: the first entry is it.
-    if (issueIds.has(workout.issue_id)) continue;
-    issueIds.add(workout.issue_id);
-    const steps: IssuedWorkoutStep[] = [];
-    for (const step of [...workout.steps].sort((a, b) => a.ordinal - b.ordinal)) {
-      if (!sent.has(step.assignment_id) || workoutOf.has(step.assignment_id)) continue;
-      workoutOf.set(step.assignment_id, workout);
-      steps.push(step);
-    }
-    stepsOf.set(workout, steps);
-  }
-
-  const byId = new Map(assignments.map((assignment) => [assignment.assignment_id, assignment]));
-  const drawn = new Set<IssuedWorkout>();
-  const rows: AssignedWorkRow[] = [];
-  for (const assignment of assignments) {
-    const workout = workoutOf.get(assignment.assignment_id);
-    if (!workout) {
-      rows.push({ kind: 'assignment', key: assignment.assignment_id, assignment, step: null });
-      continue;
-    }
-    if (drawn.has(workout)) continue;
-    drawn.add(workout);
-    const steps = stepsOf.get(workout) ?? [];
-    rows.push({ kind: 'workout', key: `workout-${workout.issue_id}`, workout, stepCount: steps.length });
-    let block: string | null = null;
-    for (const [index, step] of steps.entries()) {
-      if (step.block !== block) {
-        block = step.block;
-        rows.push({ kind: 'block', key: `block-${workout.issue_id}-${index}`, block });
+function readDatedWorkouts(raw: unknown): DatedWorkout[] {
+  try {
+    return readIssuedWorkouts(raw).map((workout) => {
+      const { issued_at, issued_by_name } = workout;
+      if (typeof issued_at !== 'string' || Number.isNaN(Date.parse(issued_at))) {
+        throw new Error('a workout has no readable date');
       }
-      rows.push({ kind: 'assignment', key: step.assignment_id, assignment: byId.get(step.assignment_id) as DrillAssignment, step });
-    }
+      if (issued_by_name !== undefined && typeof issued_by_name !== 'string') {
+        throw new Error('a workout names its coach with something that is not text');
+      }
+      return { ...workout, issued_at, issued_by_name };
+    });
+  } catch (cause) {
+    throw new Error(DRILLS_DID_NOT_LOAD, { cause });
   }
-  return rows;
 }
 
 interface AssignmentCompletion {
@@ -444,7 +363,7 @@ export default function AthleteProgressionIntelligencePage() {
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
-  const [workouts, setWorkouts] = useState<IssuedWorkout[]>([]);
+  const [workouts, setWorkouts] = useState<DatedWorkout[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -511,7 +430,7 @@ export default function AthleteProgressionIntelligencePage() {
         const assignData = await assignRes.json();
         // Read before either is set, so the list is never drawn with its
         // assignments and without the shape that orders them.
-        const issuedWorkouts = readIssuedWorkouts(assignData.workouts);
+        const issuedWorkouts = readDatedWorkouts(assignData.workouts);
         setAssignments(assignData.items || []);
         setWorkouts(issuedWorkouts);
 

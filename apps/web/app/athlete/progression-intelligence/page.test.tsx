@@ -639,6 +639,8 @@ describe('an issued workout keeps its shape', () => {
     ['a workout with no name', [{ ...WORKOUT, template_name: null }]],
     ['a workout with no date', [{ ...WORKOUT, issued_at: null }]],
     ['a workout whose date is not a date', [{ ...WORKOUT, issued_at: 'last Tuesday-ish' }]],
+    // A number is not a date either, though Date.parse would read one out of it.
+    ['a workout whose date is a number', [{ ...WORKOUT, issued_at: 5 }]],
     ['a coach name that is not text', [{ ...WORKOUT, issued_by_name: 42 }]],
     ['a workout with no steps list', [{ ...WORKOUT, steps: undefined }]],
     ['a step that is null', [{ ...WORKOUT, steps: [null] }]],
