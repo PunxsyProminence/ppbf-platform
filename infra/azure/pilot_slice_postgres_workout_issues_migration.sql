@@ -28,7 +28,8 @@
 -- WRITTEN ONCE. The application inserts these rows inside the transaction that
 -- writes the assignments and never updates or deletes them. They leave only by
 -- cascade: with the athlete (the retention purge deletes pilot.athletes) or
--- with the assignment.
+-- with the assignment. (organization_id also cascades, as on every table
+-- here, but an organization that still has athletes cannot be deleted.)
 --
 -- EVERY READER JOINS ON THE ORGANIZATION. pilot.drill_assignments is keyed by
 -- assignment_id alone, so the step's foreign key cannot carry the

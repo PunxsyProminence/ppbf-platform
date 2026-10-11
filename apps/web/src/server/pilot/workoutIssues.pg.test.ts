@@ -227,8 +227,19 @@ interface StepFixture {
 const WORKOUT: StepFixture[] = [
   { drill: 'ref-a', block: 'warmup', scale: 'A', contact: 'none', note: 'Easy pace.', minutes: 5, reps: null },
   { drill: 'ref-b', block: 'technical', scale: null, contact: 'light_technical', note: null, minutes: null, reps: 20 },
-  { drill: 'ref-c', block: 'technical', scale: 'C', contact: 'controlled_sparring', note: 'Two rounds, coach watching.', minutes: null, reps: null },
-  { drill: 'ref-a', block: 'warmup', scale: 'B', contact: 'none', note: null, minutes: 3, reps: null },
+  // Text an array parameter could mangle: quotes, braces, a comma, a
+  // backslash, a line break. It must come back character for character.
+  {
+    drill: 'ref-c',
+    block: 'technical, pads',
+    scale: 'C',
+    contact: 'controlled_sparring',
+    note: 'He said "relax", {8,9}\\ two rounds\nCoach watching.',
+    minutes: null,
+    reps: null,
+  },
+  // A note that is the WORD null is a note, not a missing one.
+  { drill: 'ref-a', block: 'warmup', scale: 'B', contact: 'none', note: 'NULL', minutes: 3, reps: null },
 ];
 
 /** A gym that runs the three drills and holds the template above. Returns reference id -> gym drill id. */
@@ -648,6 +659,23 @@ describe('the database refuses what the module never writes', () => {
       [gym.organizationId],
     );
     expect(rows).toEqual(ladder.map((contact) => ({ contact_level: contact, scale_level: null })));
+  });
+
+  test('two steps of one workout cannot share an ordinal, and a step must have a block', async () => {
+    const { gym, drills } = await gymWithWorkout('step-key');
+    const first = await card(gym, drills['ref-a']);
+    const second = await card(gym, drills['ref-b']);
+
+    await expect(record(gym, [step(first, 1), step(second, 1)])).rejects.toMatchObject({
+      constraint: 'pilot_workout_issue_steps_pkey',
+    });
+    // 23502: not-null violation.
+    await expect(record(gym, [step(first, 1, { block: null as never })])).rejects.toMatchObject({
+      code: '23502',
+      column: 'block',
+    });
+
+    expect(await counts(gym)).toEqual({ issues: 0, steps: 0, assignments: 2 });
   });
 
   test('one assignment cannot be a step of two workouts', async () => {
