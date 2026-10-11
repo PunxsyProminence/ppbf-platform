@@ -122,6 +122,9 @@ function actorFor(
 }
 
 const ADMIN = actorFor(ADMIN_ID, 'organization_admin');
+// The same account under the legacy row name for organization_admin
+// (roleAlias.ts). Staff, so it reads every objective status.
+const LEGACY_ADMIN = actorFor(ADMIN_ID, 'admin');
 const OTHER_ADMIN = actorFor(OTHER_ADMIN_ID, 'organization_admin', OTHER_ORG_ID);
 const COACH = actorFor(COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
@@ -1052,10 +1055,10 @@ describe('which statuses a family reads', () => {
     }
   });
 
-  test('a coach and an organization admin still read every status', async () => {
+  test('a coach and an organization admin (under either role name) still read every status', async () => {
     const client = await seededByStatus('adbo_staff_statuses');
     try {
-      for (const actor of [COACH, ADMIN]) {
+      for (const actor of [COACH, ADMIN, LEGACY_ADMIN]) {
         const listed = await listObjectivesForBlock(actor, BLOCK_ID);
         expect(listed.map((row) => [row.objective_id, row.status]).sort()).toEqual([
           ['obj-s-active', 'active'],

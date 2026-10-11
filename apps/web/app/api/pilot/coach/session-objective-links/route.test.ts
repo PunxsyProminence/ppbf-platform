@@ -232,7 +232,7 @@ describe('reading', () => {
     );
   });
 
-  test.each(['coach', 'organization_admin'])('a %s still receives draft and cancelled objectives on the block-wide read', async (role) => {
+  test.each(['coach', 'organization_admin', 'admin'])('a %s still receives draft and cancelled objectives on the block-wide read', async (role) => {
     /* OD-2026-10-09-004 hides draft and cancelled objectives from athletes
        and parents only. This route is staff's, so all four statuses stay. */
     mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));

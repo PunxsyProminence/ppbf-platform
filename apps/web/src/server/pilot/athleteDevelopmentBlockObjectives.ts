@@ -28,8 +28,14 @@ import { ForbiddenError, ValidationError } from './errors';
 // place to ask whether this actor may see it. Every read here resolves its
 // parent through getDevelopmentBlock, which is athlete-scoped since the
 // 2026-08-28 read decision ("Admin, Coach, Athlete, Guardian"), so an
-// objective is reachable by precisely the people who can reach its block.
+// objective is reachable ONLY by the people who can reach its block.
 // Restating the access rule here instead would be a second copy of it.
+//
+// ONE THING IS DECIDED HERE AND NOT ON THE BLOCK: which statuses an athlete
+// or a parent is given (OD-2026-10-09-004, FAMILY_VISIBLE_OBJECTIVE_STATUSES
+// below). That is narrower than reach -- a family that can open the block
+// still does not read its draft or cancelled objectives -- and it is a fact
+// about an objective's own status, so it has no parent to ask.
 
 // All ten Full Spectrum domains. 'nutrition_body_composition' shipped
 // withheld and was admitted by owner decision 2026-08-28, once module 200

@@ -197,10 +197,10 @@ describe('reading a block\'s objectives', () => {
       .toEqual(['obj-1', 'obj-2']);
   });
 
-  test.each(['coach', 'organization_admin'])('a %s still receives draft and cancelled objectives -- the family cut is not made here', async (role) => {
+  test.each(['coach', 'organization_admin', 'admin'])('a %s still receives draft and cancelled objectives -- the family cut is not made here', async (role) => {
     /* OD-2026-10-09-004 hides draft and cancelled objectives from athletes
        and parents only. Staff author them, so staff keep reading all four
-       statuses, in a draft block as much as in a live one. */
+       statuses. */
     mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));
     mockGetBlock.mockResolvedValue(block({ status: 'active' }));
     mockList.mockResolvedValue(

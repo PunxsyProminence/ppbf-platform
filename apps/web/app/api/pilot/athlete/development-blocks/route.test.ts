@@ -17,9 +17,13 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
  * guardian's view of their child's.
  *
  * Owner decision 2026-08-28: everything, verbatim, including the
- * nutrition_body_composition domain. So the assertions here are not about
- * what is hidden -- nothing is -- they are about the three ways a read-only
- * family surface can still be wrong:
+ * nutrition_body_composition domain. No domain is hidden and no word is
+ * changed. What IS cut, since, is by status: a family is sent active and
+ * completed blocks (OD-2026-10-08-006) and, inside them, active and completed
+ * objectives (OD-2026-10-09-004) -- see "which blocks a family sees" and
+ * "which objectives a family sees" below. Beyond that cut, the assertions
+ * here are about the three ways a read-only family surface can still be
+ * wrong:
  *
  *   1. an athlete reading a subject that is not themselves. The athlete arm
  *      takes the id from the SESSION and never from the query string, so this
