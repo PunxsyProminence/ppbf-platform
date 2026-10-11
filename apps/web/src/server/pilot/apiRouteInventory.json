@@ -23,7 +23,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -49,7 +51,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -75,7 +79,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -105,7 +111,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -133,7 +141,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -161,7 +171,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -191,7 +203,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -220,7 +234,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -249,7 +265,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -279,7 +297,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -307,7 +327,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -333,7 +355,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -359,7 +383,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -385,7 +411,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -411,7 +439,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -437,7 +467,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -511,7 +543,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -538,7 +572,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -565,7 +601,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -591,7 +629,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -655,7 +695,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -681,7 +723,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -707,7 +751,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -806,7 +852,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -832,7 +880,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -858,7 +908,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -884,7 +936,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -910,7 +964,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -960,7 +1016,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -986,7 +1044,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1012,7 +1072,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1038,7 +1100,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1064,7 +1128,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1090,7 +1156,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1116,7 +1184,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1142,7 +1212,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1168,7 +1240,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1194,7 +1268,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1220,7 +1296,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1246,7 +1324,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -1272,7 +1352,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -1299,7 +1381,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -1325,7 +1409,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1351,7 +1437,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1377,7 +1465,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1404,7 +1494,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -1431,7 +1523,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -1458,7 +1552,10 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1484,7 +1581,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
     }
   },
   {
@@ -1510,7 +1609,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
     }
   },
   {
@@ -1536,7 +1637,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
     }
   },
   {
@@ -1564,7 +1667,9 @@
         "requireRole",
         "assertViewerMayReachSubject"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -1590,7 +1695,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1616,7 +1723,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1643,7 +1752,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -1669,7 +1780,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1695,7 +1808,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1722,7 +1837,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES, 'coach']>"
+      ]
     }
   },
   {
@@ -1748,7 +1865,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
     }
   },
   {
@@ -1774,7 +1893,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MEMBERSHIP_ROLES]>"
+      ]
     }
   },
   {
@@ -1800,7 +1921,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1826,7 +1949,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1853,7 +1978,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -1879,7 +2006,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1905,7 +2034,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -1931,7 +2062,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2029,7 +2162,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2055,7 +2190,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2081,7 +2218,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2107,7 +2246,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2133,7 +2274,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -2161,7 +2304,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -2186,7 +2331,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,board,coach,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -2261,7 +2408,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,board,coach,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -2288,7 +2437,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,organization_admin"
+      ]
     }
   },
   {
@@ -2313,7 +2464,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2338,7 +2491,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2363,7 +2518,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2388,7 +2545,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2415,7 +2574,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,parent"
+      ]
     }
   },
   {
@@ -2442,7 +2603,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,parent"
+      ]
     }
   },
   {
@@ -2468,7 +2631,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,parent"
+      ]
     }
   },
   {
@@ -2493,7 +2658,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2519,7 +2686,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2545,7 +2714,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete"
+      ]
     }
   },
   {
@@ -2574,7 +2745,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -2603,7 +2776,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -2630,7 +2805,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -2660,7 +2837,9 @@
         "assertActorCanAccessAthlete",
         "assertAthleteUpdateAllowed"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -2688,7 +2867,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -2934,7 +3115,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...PASSWORD_ROLES]>"
+      ]
     }
   },
   {
@@ -2983,7 +3166,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -3009,7 +3194,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board,platform_owner"
+      ]
     }
   },
   {
@@ -3034,7 +3221,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board"
+      ]
     }
   },
   {
@@ -3059,7 +3248,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board"
+      ]
     }
   },
   {
@@ -3084,7 +3275,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board"
+      ]
     }
   },
   {
@@ -3216,7 +3409,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board,platform_owner"
+      ]
     }
   },
   {
@@ -3241,7 +3436,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board"
+      ]
     }
   },
   {
@@ -3266,7 +3463,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "board"
+      ]
     }
   },
   {
@@ -3292,7 +3491,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -3318,7 +3519,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -3695,7 +3898,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -3912,7 +4117,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -3941,7 +4148,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -3969,7 +4178,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -3996,7 +4207,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...PATHWAY_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -4023,7 +4236,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...PATHWAY_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -4051,7 +4266,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4079,7 +4296,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4107,7 +4326,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4132,7 +4353,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach"
+      ]
     }
   },
   {
@@ -4160,7 +4383,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4188,7 +4413,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -4215,7 +4442,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...CONTACT_CAP_ROLES]>"
+      ]
     }
   },
   {
@@ -4242,7 +4471,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...CONTACT_CAP_ROLES]>"
+      ]
     }
   },
   {
@@ -4270,7 +4501,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4298,7 +4531,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4325,7 +4560,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...CAPACITY_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -4352,7 +4589,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...CAPACITY_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -4379,7 +4618,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...CAPACITY_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -4406,7 +4647,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MINOR_LIMIT_ROLES]>"
+      ]
     }
   },
   {
@@ -4433,7 +4676,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...MINOR_LIMIT_ROLES]>"
+      ]
     }
   },
   {
@@ -4461,7 +4706,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4489,7 +4736,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4516,7 +4765,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4543,7 +4794,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4571,7 +4824,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -4598,7 +4853,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4626,7 +4883,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -4653,7 +4913,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4680,7 +4942,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4708,7 +4972,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4735,7 +5001,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4762,7 +5030,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4791,7 +5061,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SELF_UPLOAD_ROLES]>"
+      ]
     }
   },
   {
@@ -4820,7 +5092,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SELF_UPLOAD_ROLES]>"
+      ]
     }
   },
   {
@@ -4852,7 +5126,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
@@ -4879,7 +5155,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4906,7 +5184,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4933,7 +5213,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4960,7 +5242,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -4988,7 +5272,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5016,7 +5302,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5044,7 +5332,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5073,7 +5363,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DEVELOPMENT_ROLES]>"
+      ]
     }
   },
   {
@@ -5102,7 +5394,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DEVELOPMENT_ROLES]>"
+      ]
     }
   },
   {
@@ -5131,7 +5425,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DEVELOPMENT_ROLES]>"
+      ]
     }
   },
   {
@@ -5158,7 +5454,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5186,7 +5484,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5214,7 +5514,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -5243,7 +5545,9 @@
         "accessibleAthleteIds",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -5271,7 +5575,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -5299,7 +5605,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -5327,7 +5635,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -5355,7 +5665,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5384,7 +5696,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5412,7 +5726,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5440,7 +5756,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5468,7 +5786,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5496,7 +5816,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5524,7 +5846,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5553,7 +5877,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5579,10 +5905,11 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete",
-        "accessibleAthleteIds"
+        "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5608,10 +5935,11 @@
       ],
       "authorizationGates": [
         "requireRole",
-        "assertActorCanAccessAthlete",
-        "accessibleAthleteIds"
+        "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5638,7 +5966,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5665,7 +5995,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5694,7 +6026,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin",
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5722,7 +6057,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -5750,7 +6087,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5778,7 +6117,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5805,7 +6146,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5832,7 +6175,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5859,7 +6204,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5886,7 +6233,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5913,7 +6262,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -5940,7 +6291,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...STAFF_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -5967,7 +6320,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...STAFF_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -5994,7 +6349,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...STAFF_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -6021,7 +6378,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...STAFF_NOTE_ROLES]>"
+      ]
     }
   },
   {
@@ -6049,7 +6408,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6077,7 +6438,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6105,7 +6468,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6131,7 +6496,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6158,7 +6525,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6184,7 +6553,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6211,7 +6582,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6240,7 +6613,9 @@
         "assertActorCanAccessAthlete",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6268,7 +6643,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6294,7 +6671,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6348,7 +6727,10 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6376,7 +6758,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6404,7 +6789,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6432,7 +6820,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin",
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -6464,7 +6855,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
@@ -6491,7 +6884,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6517,7 +6912,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -6544,7 +6941,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6595,7 +6994,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6622,7 +7023,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6654,7 +7057,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
@@ -6681,7 +7086,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6708,7 +7115,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6882,7 +7291,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6911,7 +7322,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6941,7 +7354,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -6970,7 +7385,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -6999,7 +7416,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -7028,7 +7447,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -7057,7 +7478,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -7130,7 +7553,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7157,7 +7582,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7184,7 +7611,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7211,7 +7640,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7238,7 +7669,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7266,7 +7699,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -7293,7 +7728,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,parent"
+      ]
     }
   },
   {
@@ -7323,7 +7760,9 @@
         "requireRole",
         "assertActorCanAccessIntakeCase"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -7351,7 +7790,9 @@
         "requireRole",
         "assertActorCanAccessIntakeCase"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7379,7 +7820,9 @@
         "requireRole",
         "assertActorCanAccessIntakeCase"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7409,7 +7852,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -7438,7 +7883,10 @@
         "assertActorCanAccessAthlete",
         "assertShadowAuthority"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin",
+        "organization_admin"
+      ]
     }
   },
   {
@@ -7467,7 +7915,9 @@
         "assertActorCanAccessIntakeCase",
         "assertShadowAuthority"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -7495,7 +7945,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -7521,7 +7973,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach"
+      ]
     }
   },
   {
@@ -7548,7 +8002,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -7574,7 +8030,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7600,7 +8058,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7627,7 +8087,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -7653,7 +8115,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7679,7 +8143,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COMPETITION_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7706,7 +8172,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -7732,7 +8200,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7759,7 +8229,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -7785,7 +8257,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7811,7 +8285,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7838,7 +8314,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -7864,7 +8342,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7890,7 +8370,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...LEAGUE_WRITE_ROLES]>"
+      ]
     }
   },
   {
@@ -7917,7 +8399,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -7970,7 +8454,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -7996,7 +8482,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8021,7 +8509,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8046,7 +8536,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8071,7 +8563,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8096,7 +8590,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8121,7 +8617,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "parent"
+      ]
     }
   },
   {
@@ -8149,7 +8647,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -8179,7 +8679,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -8205,7 +8707,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -8231,7 +8735,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -8257,7 +8763,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -8284,7 +8792,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -8328,7 +8838,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8353,7 +8865,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8378,7 +8892,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8403,7 +8919,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8428,7 +8946,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8453,7 +8973,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8478,7 +9000,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8503,7 +9027,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8528,7 +9054,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8553,7 +9081,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8578,7 +9108,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8604,7 +9136,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -8629,7 +9163,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8654,7 +9190,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8679,7 +9217,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -8779,7 +9319,9 @@
         "requireRole",
         "assertViewerMayReachSubject"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -8832,7 +9374,9 @@
         "requireRole",
         "assertViewerMayReachSubject"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -8906,7 +9450,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -8934,7 +9480,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -8964,7 +9512,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -8992,7 +9542,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9022,7 +9574,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -9051,7 +9605,10 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin",
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9081,7 +9638,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
@@ -9111,7 +9670,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -9141,7 +9702,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -9169,7 +9732,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9196,7 +9761,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9223,7 +9790,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -9250,7 +9819,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -9297,7 +9868,9 @@
         "requireRole",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9325,7 +9898,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9353,7 +9928,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9380,7 +9957,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9407,7 +9986,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9434,7 +10015,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9460,7 +10043,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -9486,7 +10071,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -9594,7 +10181,9 @@
         "accessibleAthleteIds",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9622,7 +10211,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9650,7 +10241,9 @@
         "requireRole",
         "assertCoachAssignedToAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9769,7 +10362,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
@@ -9796,7 +10391,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9823,7 +10420,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9850,7 +10449,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9879,7 +10480,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9908,7 +10511,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9937,7 +10542,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9966,7 +10573,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -9993,7 +10602,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10025,7 +10636,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -10059,7 +10672,9 @@
         "assertActorCanAccessAthlete",
         "assertConversationAccess"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -10156,7 +10771,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -10184,7 +10801,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -10212,7 +10831,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -10240,7 +10861,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -10272,7 +10895,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -10299,7 +10924,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10326,7 +10953,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10353,7 +10982,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10385,7 +11016,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -10411,7 +11044,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -10437,7 +11072,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10466,7 +11103,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10494,7 +11133,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10522,7 +11163,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10549,7 +11192,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10578,7 +11223,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10608,7 +11255,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -10636,7 +11285,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -10668,7 +11319,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -10693,7 +11346,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "platform_owner"
+      ]
     }
   },
   {
@@ -10720,7 +11375,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10746,7 +11403,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -10778,7 +11437,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -10805,7 +11466,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -10832,7 +11495,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -10859,7 +11524,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -10891,7 +11558,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -10919,7 +11588,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -10946,7 +11617,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -10973,7 +11646,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11000,7 +11675,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11032,7 +11709,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11059,7 +11738,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11086,7 +11767,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11113,7 +11796,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11141,7 +11826,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -11170,7 +11857,9 @@
         "assertActorCanAccessAthlete",
         "assertShadowAuthority"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PHI_ROLES]>"
+      ]
     }
   },
   {
@@ -11225,7 +11914,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -11253,7 +11944,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin,platform_owner"
+      ]
     }
   },
   {
@@ -11281,7 +11974,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -11309,7 +12004,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -11341,7 +12038,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11369,7 +12068,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -11397,7 +12098,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -11425,7 +12128,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
     }
   },
   {
@@ -11502,7 +12207,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11535,7 +12242,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11567,7 +12276,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...ORGANIZATION_MEMBER_ROLES]>"
+      ]
     }
   },
   {
@@ -11600,7 +12311,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11627,7 +12340,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11654,7 +12369,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
     }
   },
   {
@@ -11682,7 +12399,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin,parent,platform_owner"
+      ]
     }
   },
   {
@@ -11708,7 +12427,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -11734,7 +12455,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -11766,7 +12489,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -11798,7 +12523,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -11830,7 +12557,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -11862,7 +12591,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -11895,7 +12626,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent,platform_owner,staff,volunteer"
+      ]
     }
   },
   {
@@ -11927,7 +12660,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...SHADOW_PROJECTION_READ_ROLES]>"
+      ]
     }
   },
   {
@@ -11954,7 +12689,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -11980,7 +12717,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,organization_admin"
+      ]
     }
   },
   {
@@ -12009,7 +12748,9 @@
         "assertActorCanAccessIntakeCase",
         "assertShadowAuthority"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12037,7 +12778,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
     }
   },
   {
@@ -12244,7 +12987,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "organization_admin"
+      ]
     }
   },
   {
@@ -12297,7 +13042,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach"
+      ]
     }
   },
   {
@@ -12323,7 +13070,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach"
+      ]
     }
   },
   {
@@ -12352,7 +13101,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -12381,7 +13132,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin"
+      ]
     }
   },
   {
@@ -12504,7 +13257,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12533,7 +13288,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12591,7 +13348,9 @@
         "requireRole",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12620,7 +13379,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12649,7 +13410,9 @@
         "assertActorCanAccessAthlete",
         "accessibleAthleteIds"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12677,7 +13440,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12704,7 +13469,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12731,7 +13498,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12760,7 +13529,9 @@
         "assertActorCanAccessAthlete",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12791,7 +13562,9 @@
         "assertActorCanAccessAthlete",
         "athleteIdsForCoach"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "admin,athlete,coach,organization_admin,parent"
+      ]
     }
   },
   {
@@ -12820,7 +13593,9 @@
         "accessibleAthleteIds",
         "authorizeVideoScanReview"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...VIDEO_REVIEW_VIEW_ROLES]>"
+      ]
     }
   },
   {
@@ -12847,7 +13622,9 @@
         "requireRole",
         "authorizeVideoScanReview"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...VIDEO_REVIEW_DECIDE_ROLES]>"
+      ]
     }
   },
   {
@@ -12875,7 +13652,9 @@
         "requireRole",
         "assertActorCanAccessAthlete"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "coach,organization_admin"
+      ]
     }
   },
   {
@@ -12949,7 +13728,9 @@
       "authorizationGates": [
         "requireRole"
       ],
-      "roleLiterals": []
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
     }
   },
   {
