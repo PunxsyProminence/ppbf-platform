@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, queryOne, withTransaction } from './db';
 import { assertDrillMeetsCueRule } from './drills';
 import { ConflictError, ValidationError } from './errors';
@@ -299,9 +301,24 @@ export function drillNotAssignable(): ValidationError {
  * read also works on a pilot.drills built without the drill-reference-
  * provenance migration (the fixture firewall on assignableDrillPredicate):
  * there it reads null and the category decides, as for a hand-authored drill.
+ *
+ * `client` puts the read (and the reference read behind it) on the caller's
+ * transaction. Two things follow, and both are why a writer that runs inside a
+ * transaction passes it: the rule SEES a drill created earlier on that same
+ * transaction, which a pooled read cannot; and the transaction never waits on
+ * the pool for a second connection while holding one. Omitted, both reads are
+ * the pooled reads they have always been.
  */
-export async function assertNewAssignmentMeetsCueRule(organizationId: string, drillId: string): Promise<void> {
-  const drill = await queryOne<{ name: string; category: string; cues: string[] | null; reference_drill_id: string | null }>(
+export async function assertNewAssignmentMeetsCueRule(
+  organizationId: string,
+  drillId: string,
+  client?: PoolClient,
+): Promise<void> {
+  type CueRuleRow = { name: string; category: string; cues: string[] | null; reference_drill_id: string | null };
+  const readOne = client
+    ? async (text: string, values: unknown[]) => (await client.query<CueRuleRow>(text, values)).rows[0] ?? null
+    : (text: string, values: unknown[]) => queryOne<CueRuleRow>(text, values);
+  const drill = await readOne(
     `select d.name, d.category, d.cues, to_jsonb(d) ->> 'reference_drill_id' as reference_drill_id
      from pilot.drills d
      where ${assignableDrillPredicate('$1', '$2')}`,
@@ -310,13 +327,16 @@ export async function assertNewAssignmentMeetsCueRule(organizationId: string, dr
   if (!drill) {
     return;
   }
+  // Spread rather than passed as `client`: a caller with no transaction reaches
+  // the rule with the single argument it always has, not a trailing undefined.
+  const onClient: [] | [PoolClient] = client ? [client] : [];
   await assertDrillMeetsCueRule({
     organizationId,
     name: drill.name,
     category: drill.category,
     cues: drill.cues ?? [],
     referenceDrillId: drill.reference_drill_id,
-  });
+  }, ...onClient);
 }
 
 /**

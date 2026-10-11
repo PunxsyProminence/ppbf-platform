@@ -203,6 +203,10 @@ export async function getDrill(organizationId: string, drillId: string): Promise
  * pilot.drills has no discipline of its own. An adopted drill's category never
  * decides: the reference is what the gym adopted. The reference is read only
  * when the drill has no cue.
+ *
+ * `client` puts that one read on the caller's transaction, so a rule asked
+ * from inside a transaction takes no second connection from the pool. Omitted,
+ * it is the pooled read it has always been.
  */
 export async function assertDrillMeetsCueRule(drill: {
   organizationId: string;
@@ -210,12 +214,15 @@ export async function assertDrillMeetsCueRule(drill: {
   category: string;
   cues: readonly string[];
   referenceDrillId: string | null;
-}): Promise<void> {
+}, client?: PoolClient): Promise<void> {
   if (hasCoachingCue(drill.cues)) {
     return;
   }
   if (drill.referenceDrillId) {
-    const reference = await queryOne<{ discipline: string }>(
+    const readOne = client
+      ? async (text: string, values: unknown[]) => (await client.query<{ discipline: string }>(text, values)).rows[0] ?? null
+      : (text: string, values: unknown[]) => queryOne<{ discipline: string }>(text, values);
+    const reference = await readOne(
       `select discipline from pilot.drill_library where organization_id = $1 and drill_id = $2`,
       [drill.organizationId, drill.referenceDrillId],
     );

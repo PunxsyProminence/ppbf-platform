@@ -21,6 +21,7 @@ jest.mock('./db', () => {
 import {
   DrillNameTakenError,
   DrillRestoreRefusedError,
+  assertDrillMeetsCueRule,
   createDrill,
   getDrill,
   listDrills,
@@ -503,5 +504,64 @@ describe('promoteReferenceDrill: the optional transaction client', () => {
 
     await expect(promoteReferenceDrill(PARAMS, client as never)).rejects.toBeInstanceOf(DrillNameTakenError);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('assertDrillMeetsCueRule: the optional transaction client', () => {
+  // Lane P7 (#1401). The one read this rule makes -- the reference's discipline,
+  // for a cue-less adopted drill -- can ride a caller's transaction, so a rule
+  // asked from inside one takes no second connection from the pool.
+  const ADOPTED = {
+    organizationId: 'org-1',
+    name: 'Sled Push',
+    category: 'strength',
+    cues: [],
+    referenceDrillId: 'drl_ref',
+  };
+
+  test('with no client the reference is read from the pool, called with exactly (text, values)', async () => {
+    mockQueryOne.mockResolvedValueOnce({ discipline: 'conditioning' });
+
+    await expect(assertDrillMeetsCueRule(ADOPTED)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockQueryOne.mock.calls[0]).toHaveLength(2);
+    expect(flat(mockQueryOne.mock.calls[0][0])).toBe(
+      'select discipline from pilot.drill_library where organization_id = $1 and drill_id = $2',
+    );
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'drl_ref']);
+  });
+
+  test('with a client the SAME statement and values go to the client, and the pool is not read', async () => {
+    mockQueryOne.mockResolvedValueOnce({ discipline: 'conditioning' });
+    await assertDrillMeetsCueRule(ADOPTED);
+    const [pooledText, pooledValues] = mockQueryOne.mock.calls[0];
+    mockQueryOne.mockClear();
+
+    const client = { query: jest.fn(async () => ({ rows: [{ discipline: 'conditioning' }] })) };
+    await expect(assertDrillMeetsCueRule(ADOPTED, client as never)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [text, values] = client.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(text).toBe(pooledText);
+    expect(values).toEqual(pooledValues);
+  });
+
+  test('with a client the verdict comes from what the client read: a technique reference is still refused', async () => {
+    const client = { query: jest.fn(async () => ({ rows: [{ discipline: 'boxing' }] })) };
+
+    await expect(assertDrillMeetsCueRule(ADOPTED, client as never)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED' });
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('a drill with a cue reads nothing on either path', async () => {
+    const client = { query: jest.fn() };
+
+    await assertDrillMeetsCueRule({ ...ADOPTED, cues: ['Drive through the hips'] });
+    await assertDrillMeetsCueRule({ ...ADOPTED, cues: ['Drive through the hips'] }, client as never);
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
   });
 });

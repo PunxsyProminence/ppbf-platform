@@ -378,7 +378,8 @@ async function planTemplateIssue(
     // longer decides anything (an adopted drill outlives a withdrawn
     // reference). The cue rule on a NEW assignment still applies, and is
     // asked here so a drill that breaks it is named with the others rather
-    // than surfacing alone from inside the transaction.
+    // than surfacing alone from inside the transaction, where issueCoachCard
+    // asks it again on the transaction's own connection.
     if (lifecycle.state === 'operational' && lifecycle.operational_drill_id) {
       try {
         await assertNewAssignmentMeetsCueRule(organizationId, lifecycle.operational_drill_id);

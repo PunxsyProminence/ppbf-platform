@@ -115,13 +115,12 @@ function newAssignmentId(): string {
  * for gap-driven assignments. A single INSERT is atomic on its own, so no
  * explicit transaction is opened.
  *
- * `client` puts the insert on the caller's transaction, so a card issued as one
- * step of a larger write (issuing a workout template) commits or rolls back
- * with it. The cue-rule read above the insert stays pooled either way, and a
- * pooled read cannot see a drill created on that same uncommitted transaction:
- * a caller that adopts a drill and cards it together judges the cue rule
- * itself before it writes. Omitted, this is the pooled insert it has always
- * been.
+ * `client` puts the insert AND the cue-rule read above it on the caller's
+ * transaction, so a card issued as one step of a larger write (issuing a
+ * workout template) commits or rolls back with it, the rule sees a drill
+ * adopted earlier on that same transaction, and nothing here takes a second
+ * connection from the pool while the caller holds one. Omitted, both are the
+ * pooled read and the pooled insert they have always been.
  */
 export async function issueCoachCard(params: {
   organizationId: string;
@@ -129,7 +128,10 @@ export async function issueCoachCard(params: {
   assignedByAccountId: string;
 } & CardContent, client?: PoolClient): Promise<DrillAssignment> {
   const drillId = requireAssignableDrillId(params.drillId);
-  await assertNewAssignmentMeetsCueRule(params.organizationId, drillId);
+  // Spread rather than passed as `client`: with no transaction the rule is
+  // called with the two arguments it always has, not a trailing undefined.
+  const onClient: [] | [PoolClient] = client ? [client] : [];
+  await assertNewAssignmentMeetsCueRule(params.organizationId, drillId, ...onClient);
   const run = client
     ? async (text: string, values: unknown[]) => (await client.query<DrillAssignment>(text, values)).rows
     : (text: string, values: unknown[]) => query<DrillAssignment>(text, values);

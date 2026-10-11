@@ -83,7 +83,7 @@ jest.mock('./db', () => ({
 }));
 
 import { issueCoachCard } from './coachCards';
-import { withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { markDrillFloorTested } from './drillFloorValidations';
 import { promoteReferenceDrill, updateDrill } from './drills';
 import { issueWorkoutTemplate, type TemplateIssueResult } from './workoutTemplates';
@@ -471,6 +471,34 @@ describe('issuing a template', () => {
         drill_id: step.assignment.drill_id,
       })),
     });
+  });
+
+  test('inside its transaction an issue takes NO second connection: every statement between BEGIN and COMMIT is on the transaction', async () => {
+    const gym = await newGym('no-pool-in-transaction');
+    await insertReference(gym, 'ref-run', 'Running Drill');
+    await insertReference(gym, 'ref-new', 'New Drill');
+    await adopt(gym, 'ref-run', 'Running Drill');
+    await insertTemplate(gym, ['ref-run', 'ref-new']);
+
+    // The pool here is max 10 with no acquire timeout in production (db.ts),
+    // so a pooled statement made while the transaction holds a connection is
+    // a hang waiting to happen under load. Counted across the whole callback.
+    const pooled = () => (query as jest.Mock).mock.calls.length + (queryOne as jest.Mock).mock.calls.length;
+    const mockedTransaction = withTransaction as jest.Mock;
+    const realTransaction = mockedTransaction.getMockImplementation() as (fn: unknown) => Promise<unknown>;
+    let duringTransaction = -1;
+    mockedTransaction.mockImplementationOnce(async (fn: unknown) => {
+      const before = pooled();
+      try {
+        return await realTransaction(fn);
+      } finally {
+        duringTransaction = pooled() - before;
+      }
+    });
+
+    await expect(issue(gym)).resolves.toMatchObject({ outcome: 'issued', adopted: [{ reference_drill_id: 'ref-new' }] });
+
+    expect(duringTransaction).toBe(0);
   });
 
   test('the template is never rewritten: its rows are byte-for-byte what they were', async () => {
@@ -885,6 +913,69 @@ describe("the optional client on promoteReferenceDrill and issueCoachCard joins 
     }
 
     expect(await written(gym)).toMatchObject({ drills: 1, assignments: 1 });
+  });
+
+  test('the cue rule SEES a drill adopted earlier in the same transaction: a cue-less technique drill is refused there', async () => {
+    const gym = await newGym('client-cue-rule');
+    await insertReference(gym, 'ref-a', 'Cue-less In Transaction', { cues: false });
+    const own = await ownConnection();
+    try {
+      await own.query('BEGIN');
+      // Adopted with NO cue, on this transaction only. Readiness would refuse
+      // this adoption; the writer is called directly so the card's own rule
+      // is what is on trial.
+      const drill = await promoteReferenceDrill(
+        { organizationId: gym.organizationId, referenceDrillId: 'ref-a', name: 'Cue-less In Transaction', category: 'footwork', focus: 'Focus.', cues: [] },
+        own as never,
+      );
+
+      // The pooled rule cannot see the uncommitted drill, so it has nothing to
+      // judge and leaves the row to the insert -- which cannot see it either.
+      await expect(
+        issueCoachCard({ organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: drill.drill_id }),
+      ).rejects.toMatchObject({ code: 'DRILL_NOT_ASSIGNABLE' });
+
+      // On the transaction the rule reads the drill, and its boxing reference, and refuses it.
+      await expect(
+        issueCoachCard(
+          { organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: drill.drill_id },
+          own as never,
+        ),
+      ).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED' });
+
+      const { rows } = await own.query(`select count(*)::int as n from pilot.drill_assignments where organization_id = $1`, [gym.organizationId]);
+      expect(rows[0].n).toBe(0);
+      await own.query('ROLLBACK');
+    } finally {
+      await own.end();
+    }
+  });
+
+  test('a card issued on a client makes NO pooled statement at all, read or write', async () => {
+    const gym = await newGym('client-no-pool');
+    await insertReference(gym, 'ref-a', 'Drill A', { cues: false });
+    const pooled = () => (query as jest.Mock).mock.calls.length + (queryOne as jest.Mock).mock.calls.length;
+    const own = await ownConnection();
+    try {
+      await own.query('BEGIN');
+      const before = pooled();
+      // A cue-less drill adopted from a boxing reference takes the rule down
+      // its longest path: the drill read AND the reference read.
+      const drill = await promoteReferenceDrill(
+        { organizationId: gym.organizationId, referenceDrillId: 'ref-a', name: 'Drill A', category: 'footwork', focus: 'Focus.', cues: [] },
+        own as never,
+      );
+      await expect(
+        issueCoachCard(
+          { organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: drill.drill_id },
+          own as never,
+        ),
+      ).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED' });
+      expect(pooled() - before).toBe(0);
+      await own.query('ROLLBACK');
+    } finally {
+      await own.end();
+    }
   });
 
   test('with no client each is the single pooled, immediately committed write it always was', async () => {
