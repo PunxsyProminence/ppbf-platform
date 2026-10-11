@@ -1,4 +1,5 @@
 import type { SessionRpeMethod } from './contracts';
+import { gymDayIso } from '../../lib/gymTime';
 import { query } from './db';
 import {
   READINESS_VALUE_MAX,
@@ -26,14 +27,13 @@ const SESSION_RPE_SELF_REPORT: SessionRpeMethod = 'athlete_post_session_self_rep
 // attendance evidence per docs/current/ACTIVE_WORK.md), and the progression
 // tables. This module issues no DDL and writes nothing.
 //
-// Attendance deliberately reads ONLY pilot.activity_log's boxing_training
-// rows. Three attendance-shaped tables exist (pilot.attendance,
-// pilot.scheduler_attendance, pilot.activity_log) and activityLog.ts's own
-// header says a human decides which source wins on conflict. This surface
-// does not adjudicate that: it reports the go-forward evidence stream and
-// labels it "training days", not "attendance %", so it cannot contradict the
-// scheduler's own attendance reporting (attendanceReporting.ts) which serves
-// a different question from a different table.
+// TRAINING DAYS read pilot.attendance_reconciled (attendancePrecedence.ts's
+// view), not pilot.activity_log. OD-2026-10-07-010 Q9: coach screens count
+// training days from the class register. The view collapses every attendance
+// source to one row per athlete-day in the gym's calendar, so a day with two
+// classes or two source rows is one day. This is a day count labelled
+// "training days", not an attendance rate: it has no denominator.
+// Source precedence is the view's own and is not restated or adjudicated here.
 
 export interface AthletePerformanceRow {
   athlete_id: string;
@@ -49,7 +49,12 @@ export interface AthletePerformanceRow {
   // How many sessions that average is over, so "no load yet" and "load from
   // one session" are visibly different.
   session_load_count: number;
+  // Distinct gym-local days with a PRESENT mark in the reconciled register.
   training_days: number;
+  // Distinct gym-local days in the window with ANY mark (present, absent or
+  // excused). 0 = no register for the window; >0 with training_days 0 is a
+  // verified zero.
+  training_days_recorded: number;
   // Distinct training days in the older half vs the newer half of the window,
   // for the deterministic consistency rule in progressionSuggestions.ts.
   training_days_early: number;
@@ -91,6 +96,7 @@ interface ReadinessAgg {
 interface TrainingDaysAgg {
   athlete_id: string;
   training_days: number;
+  training_days_recorded: number;
   training_days_early: number;
   training_days_late: number;
 }
@@ -208,15 +214,15 @@ export async function getPerformanceRollup(
     ),
     query<TrainingDaysAgg>(
       `select athlete_id,
-              count(distinct occurred_on)::int as training_days,
-              (count(distinct occurred_on) filter (where occurred_on < $4::date))::int as training_days_early,
-              (count(distinct occurred_on) filter (where occurred_on >= $4::date))::int as training_days_late
-       from pilot.activity_log
+              (count(*) filter (where status = 'present'))::int as training_days,
+              count(*)::int as training_days_recorded,
+              (count(*) filter (where status = 'present' and attendance_date < $4::date))::int as training_days_early,
+              (count(*) filter (where status = 'present' and attendance_date >= $4::date))::int as training_days_late
+       from pilot.attendance_reconciled
        where organization_id = $1 and athlete_id = any($2::text[])
-         and activity_domain = 'boxing_training' and attendance_status = 'present'
-         and occurred_on >= $3::date
+         and attendance_date >= $3::date
        group by athlete_id`,
-      [organizationId, ids, cutoffDate, midpointIso.slice(0, 10)],
+      [organizationId, ids, gymDayIso(cutoff), gymDayIso(midpoint)],
     ),
     query<GapsAgg>(
       `select athlete_id,
@@ -254,6 +260,7 @@ export async function getPerformanceRollup(
     avg_session_load: bySessions.get(athleteId)?.avg_session_load ?? null,
     session_load_count: bySessions.get(athleteId)?.session_load_count ?? 0,
     training_days: byTraining.get(athleteId)?.training_days ?? 0,
+    training_days_recorded: byTraining.get(athleteId)?.training_days_recorded ?? 0,
     training_days_early: byTraining.get(athleteId)?.training_days_early ?? 0,
     training_days_late: byTraining.get(athleteId)?.training_days_late ?? 0,
     readiness_count: byReadiness.get(athleteId)?.readiness_count ?? 0,

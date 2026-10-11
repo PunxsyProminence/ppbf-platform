@@ -44,7 +44,7 @@ const mockQuery = query as jest.Mock;
 const QUERIES = [
   { index: 0, name: 'sessions', table: 'pilot.sessions' },
   { index: 1, name: 'readiness', table: 'pilot.readiness' },
-  { index: 2, name: 'training days', table: 'pilot.activity_log' },
+  { index: 2, name: 'training days', table: 'pilot.attendance_reconciled' },
   { index: 3, name: 'progression gaps', table: 'pilot.progression_gaps' },
   { index: 4, name: 'drill assignments', table: 'pilot.drill_assignments' },
 ] as const;
@@ -271,5 +271,104 @@ describe('Avg RPE averages only real post-session self-reports', () => {
     expect(String(sql)).toContain('date >= $3::date');
     expect(params[0]).toBe('org-1');
     expect(params[1]).toEqual(['ath-1', 'ath-2']);
+  });
+});
+
+describe('training days come from the reconciled register (OD-2026-10-07-010 Q9)', () => {
+  function trainingRow(row: Record<string, unknown>) {
+    mockQuery.mockImplementation(async (sql: string) =>
+      sql.includes('pilot.attendance_reconciled') ? [row] : [],
+    );
+  }
+
+  test('reads the reconciled view and never pilot.activity_log', async () => {
+    resolveAllFiveEmpty();
+
+    await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    const sql = mockQuery.mock.calls[2][0] as string;
+    expect(sql).toContain('pilot.attendance_reconciled');
+    expect(sql).not.toContain('activity_log');
+    for (const call of mockQuery.mock.calls) {
+      expect(call[0] as string).not.toContain('pilot.activity_log');
+    }
+  });
+
+  test('counts one row per athlete-day, present only, never raw event rows', async () => {
+    resolveAllFiveEmpty();
+
+    await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    const sql = mockQuery.mock.calls[2][0] as string;
+    expect(sql).toContain("count(*) filter (where status = 'present')");
+    expect(sql).toContain('count(*)::int as training_days_recorded');
+  });
+
+  test('the window bounds are gym-local calendar days', async () => {
+    resolveAllFiveEmpty();
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-12T02:30:00Z'));
+    try {
+      await getPerformanceRollup('org-1', ['ath-1'], 28);
+    } finally {
+      jest.useRealTimers();
+    }
+
+    const params = mockQuery.mock.calls[2][1] as unknown[];
+    // 02:30Z on the 12th is 10:30pm ET on the 11th: the gym's day is the 11th,
+    // so the window ends there and its midpoint is 14 days earlier.
+    expect(params[3]).toBe('2026-09-27');
+    expect(params[2]).toBe('2026-09-13');
+  });
+
+  test('no register rows: zero days and zero recorded (no register)', async () => {
+    resolveAllFiveEmpty();
+
+    const [row] = await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    expect(row.training_days).toBe(0);
+    expect(row.training_days_recorded).toBe(0);
+  });
+
+  test('marks but none present: a verified zero, distinguishable from no register', async () => {
+    trainingRow({
+      athlete_id: 'ath-1',
+      training_days: 0,
+      training_days_recorded: 3,
+      training_days_early: 0,
+      training_days_late: 0,
+    });
+
+    const [row] = await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    expect(row.training_days).toBe(0);
+    expect(row.training_days_recorded).toBe(3);
+  });
+
+  test('present days pass through with the early/late halves', async () => {
+    trainingRow({
+      athlete_id: 'ath-1',
+      training_days: 5,
+      training_days_recorded: 6,
+      training_days_early: 3,
+      training_days_late: 2,
+    });
+
+    const [row] = await getPerformanceRollup('org-1', ['ath-1'], 28);
+
+    expect(row).toMatchObject({
+      training_days: 5,
+      training_days_recorded: 6,
+      training_days_early: 3,
+      training_days_late: 2,
+    });
+  });
+
+  test('a register read failure rejects instead of reporting zero', async () => {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('pilot.attendance_reconciled')) throw new Error('view unavailable');
+      return [];
+    });
+
+    await expect(getPerformanceRollup('org-1', ['ath-1'], 28)).rejects.toThrow('view unavailable');
   });
 });

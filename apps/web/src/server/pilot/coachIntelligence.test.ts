@@ -165,6 +165,7 @@ describe('fading_attendance agrees with progressionSuggestions.training_days_dro
       avg_session_load: null,
       session_load_count: 0,
       training_days: 0,
+      training_days_recorded: 0,
       training_days_early: 0,
       training_days_late: 0,
       readiness_count: 0,

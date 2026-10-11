@@ -42,6 +42,7 @@ function rollupRow(overrides: Partial<AthletePerformanceRow> = {}): AthletePerfo
     avg_session_load: null,
     session_load_count: 0,
     training_days: 10,
+    training_days_recorded: 10,
     training_days_early: 5,
     training_days_late: 5,
     readiness_count: 8,

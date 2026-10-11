@@ -251,3 +251,17 @@ test('no session with both answers reads as a dash, not zero load', async () => 
   const label = await screen.findByText('Avg session load (RPE × min, unvalidated)');
   expect((label.parentElement as HTMLElement).textContent).toBe('Avg session load (RPE × min, unvalidated)—');
 });
+
+// OD-2026-10-08-006 A-Q18: the Coach Operations prototype button is gone; the
+// working Progression Intelligence link stays.
+test('the footer links Progression Intelligence and no longer links Coach Operations', async () => {
+  global.fetch = mockFetch(() => okWith([ITEM]));
+  render(<PerformanceAnalyticsPage />);
+
+  await screen.findByText('Jordan Doe');
+  expect(screen.getByRole('link', { name: 'Progression Intelligence' }).getAttribute('href')).toBe(
+    '/coach/progression-intelligence',
+  );
+  expect(screen.queryByRole('link', { name: 'Coach Operations' })).toBeNull();
+  expect(document.querySelector('a[href="/coach/operations"]')).toBeNull();
+});

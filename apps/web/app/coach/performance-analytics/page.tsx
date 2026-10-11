@@ -323,9 +323,6 @@ export default function PerformanceAnalyticsPage() {
           <Link href="/coach/progression-intelligence" className="btn btn--ghost">
             Progression Intelligence
           </Link>
-          <Link href="/coach/operations" className="btn btn--ghost">
-            Coach Operations
-          </Link>
         </div>
       </div>
     </RoleStandaloneView>
