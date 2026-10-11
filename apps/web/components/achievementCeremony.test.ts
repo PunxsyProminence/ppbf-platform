@@ -19,11 +19,14 @@
  *   achievement back off somebody.
  */
 
+import { renderHook } from '@testing-library/react';
+
 import {
   achievementCeremonyKey,
   decideAchievementCeremony,
   readCelebrated,
   resetAchievementCeremonyMemory,
+  useAchievementCeremony,
   writeCelebrated,
 } from './achievementCeremony';
 
@@ -143,5 +146,128 @@ describe('the stored record', () => {
   it('drops anything in storage that is not a key', () => {
     window.localStorage.setItem(achievementCeremonyKey('ath_4'), JSON.stringify(['a', 7, null, '']));
     expect(readCelebrated(achievementCeremonyKey('ath_4'))).toEqual(['a']);
+  });
+});
+
+/**
+ * The hook itself. Until these it had no test of its own: the rule above was
+ * pinned, and the code that hands the rule its list was not. That code used to
+ * join the list on an invisible NUL byte and split it again inside the effect;
+ * it now carries the list as JSON, which needs no separator. Every case here
+ * except the last passes against both, which is the proof that the change kept
+ * the behaviour.
+ */
+describe('the hook hands the rule the list it was given', () => {
+  interface Props {
+    earned: readonly string[];
+    active: boolean;
+    athleteId?: string;
+  }
+
+  function mount(initial: Props) {
+    const onCross = jest.fn();
+    const rendered = renderHook((props: Props) => useAchievementCeremony({ ...props, onCross }), {
+      initialProps: initial,
+    });
+    return { ...rendered, onCross };
+  }
+
+  /** As if the tablet had never seen this athlete: no memory, nothing stored. */
+  function forgetEverything() {
+    resetAchievementCeremonyMemory();
+    window.localStorage.clear();
+  }
+
+  const KEY = achievementCeremonyKey('ath_h');
+
+  it('seeds on the first active sighting: no seal, no bell, the list written down', () => {
+    const { result, onCross } = mount({ earned: ['craft.b', 'craft.a'], active: true, athleteId: 'ath_h' });
+
+    expect(result.current).toBeNull();
+    expect(onCross).not.toHaveBeenCalled();
+    expect(readCelebrated(KEY)).toEqual(['craft.a', 'craft.b']);
+  });
+
+  it('seeds an empty record from an empty list, so the first real one still rings', () => {
+    const { result, rerender, onCross } = mount({ earned: [], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toEqual([]);
+
+    rerender({ earned: ['craft.a'], active: true, athleteId: 'ath_h' });
+    expect(result.current).toBe('craft.a');
+    expect(onCross.mock.calls).toEqual([['craft.a']]);
+  });
+
+  it('rings once for a crossing, and for the last of several landing together', () => {
+    const { result, rerender, onCross } = mount({ earned: ['craft.a'], active: true, athleteId: 'ath_h' });
+
+    rerender({ earned: ['craft.a', 'craft.b'], active: true, athleteId: 'ath_h' });
+    expect(result.current).toBe('craft.b');
+    expect(onCross.mock.calls).toEqual([['craft.b']]);
+
+    rerender({ earned: ['craft.a', 'craft.b', 'craft.c', 'craft.d'], active: true, athleteId: 'ath_h' });
+    expect(result.current).toBe('craft.d');
+    expect(onCross.mock.calls).toEqual([['craft.b'], ['craft.d']]);
+    expect(readCelebrated(KEY)).toEqual(['craft.a', 'craft.b', 'craft.c', 'craft.d']);
+  });
+
+  it('does not look again when a new array holds the same keys, and does when the keys change', () => {
+    const { rerender } = mount({ earned: ['craft.a', 'craft.b'], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toEqual(['craft.a', 'craft.b']);
+
+    // With the record wiped, a detection that ran again would seed it again.
+    forgetEverything();
+    rerender({ earned: ['craft.a', 'craft.b'], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toBeNull();
+
+    // The same keys in another order are a different list, as they always were.
+    rerender({ earned: ['craft.b', 'craft.a'], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toEqual(['craft.a', 'craft.b']);
+
+    forgetEverything();
+    rerender({ earned: ['craft.b', 'craft.a', 'craft.c'], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toEqual(['craft.a', 'craft.b', 'craft.c']);
+  });
+
+  it('reads and writes nothing while inactive, then seeds when it becomes active', () => {
+    const { result, rerender, onCross } = mount({ earned: ['craft.a'], active: false, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toBeNull();
+
+    rerender({ earned: ['craft.a'], active: true, athleteId: 'ath_h' });
+    expect(readCelebrated(KEY)).toEqual(['craft.a']);
+    expect(result.current).toBeNull();
+    expect(onCross).not.toHaveBeenCalled();
+  });
+
+  it('keeps the record per athlete when the athlete changes under the same list', () => {
+    const { rerender } = mount({ earned: ['craft.a'], active: true, athleteId: 'ath_h' });
+
+    rerender({ earned: ['craft.a'], active: true, athleteId: 'ath_other' });
+    expect(readCelebrated(achievementCeremonyKey('ath_other'))).toEqual(['craft.a']);
+    expect(readCelebrated(KEY)).toEqual(['craft.a']);
+  });
+
+  it('keeps a key whole when it holds punctuation a separator might have been', () => {
+    const awkward = [
+      'goal:a,b',
+      'goal:"quoted"',
+      'goal:[bracket]',
+      'goal:a|b',
+      'goal: spaced ',
+      `goal:${String.fromCharCode(92)}slash`,
+      `goal:${String.fromCharCode(9)}tab`,
+    ];
+    mount({ earned: awkward, active: true, athleteId: 'ath_h' });
+
+    expect(readCelebrated(KEY)).toEqual([...awkward].sort());
+  });
+
+  it('keeps a key whole even when it holds the old separator itself', () => {
+    // The one case the NUL join got wrong: it cut this key in two. Neither
+    // caller can produce it (catalogue keys, and `goal:` plus a goal id), so
+    // nothing an athlete sees changes.
+    const withNul = `goal:left${String.fromCharCode(0)}right`;
+    mount({ earned: [withNul, 'goal:plain'], active: true, athleteId: 'ath_h' });
+
+    expect(readCelebrated(KEY)).toEqual([withNul, 'goal:plain'].sort());
   });
 });
