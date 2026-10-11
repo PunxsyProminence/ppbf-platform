@@ -657,7 +657,7 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 // the two guarded functions, as emergencyReport does.
 //
 // WHAT COUNTS AS THE RULING'S RELEASE is written out here a second time, from
-// the decisions and not from the code it checks. OD-2026-10-10-006 (Jason,
+// the decisions. OD-2026-10-10-006 (Jason,
 // "B: SHADOW answers") gives the test: "A request is withheld only where a
 // rule the app already had, other than the weight-cut and 'cleared' gates,
 // withholds it by its own unchanged patterns." So a release is explained
@@ -670,12 +670,19 @@ function explainedByEmergencyFirst(message: string, was: Verdict, is: Verdict): 
 //     contact / spar / sparring;
 //   - NO OTHER RULE OF MAIN'S CATCHES IT. That is asked of the frozen copy of
 //     main in this file: with the two gates' own words blanked out of the
-//     folded message, main ALLOWS it. (Blanked by strings of the same length:
-//     "weight" always, "lose" where main's "lose N pounds this week" phrase
-//     stands, and "clear" only for a training-clearance question.) One
-//     exception, which Overwatch confirmed on 2026-10-10: main's dehydration
-//     row may be what still holds a message that is also a weight-cut
-//     question;
+//     folded message, main ALLOWS it. (Blanked by underscores of the same
+//     length: "weight" always; "lose" where main's "lose N pounds this week"
+//     phrase stands; "dehydrat" for a weight-cut question, because Overwatch
+//     confirmed on 2026-10-10 that a dehydration question that is also a
+//     weight-cut question is taught; "clear" only for a training-clearance
+//     question.)
+//     WHAT IS AND IS NOT INDEPENDENT HERE. The question is put to the frozen
+//     copy of main, not to the code under test. The blanking is the same
+//     idea the code under test uses, so a mistake in the idea is shared: the
+//     lane's third reviewer found two (the letter x as the blank, and the
+//     dehydration row hiding the rows below it) by running main beside the
+//     branch, which this check could not have done. Both are fixed in both
+//     places;
 //   - main did not answer it as an emergency or at a critical
 //     classification, and main left by R1, R2, R6 or R8 -- never by R3
 //     (urgent), R4 (personal health), R5 (diagnosis) or R7 (medication).
@@ -702,14 +709,17 @@ function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): bo
   const taughtShape = same(is, { valid: true, highRisk: false, topic: 'none' }) && (weightWording || clearedNearTraining);
   if (!taughtShape) return false;
 
+  // Underscores, one for each character: a word character, so no boundary
+  // moves, and in no pattern of main's, so a blank cannot make a match.
   let blanked = folded
-    .replace(/weight/gi, 'xxxxxx')
-    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, 'xxxx');
-  if (clearedNearTraining) blanked = blanked.replace(/clear/gi, 'xxxxx');
-  const withoutTheGates = mainValidate(blanked, 'athlete', 'org-123');
-  const nothingElseCatchesIt = withoutTheGates.valid === true
-    || (weightWording && withoutTheGates.topic === 'dehydration' && returnOf(withoutTheGates) === 'R8 high-risk fallback');
-  if (!nothingElseCatchesIt) return false;
+    .replace(/weight/gi, '______')
+    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, '____');
+  if (weightWording) blanked = blanked.replace(/dehydrat/gi, '________');
+  if (clearedNearTraining) blanked = blanked.replace(/clear/gi, '_____');
+  // "medical" or "doctor" straight before "clear" is an alternative of main's
+  // medical_clearance row that blanking "clear" would hide.
+  if (/(medical|doctor)\s+clear/i.test(folded)) return false;
+  if (mainValidate(blanked, 'athlete', 'org-123').valid !== true) return false;
 
   if (emergency(was) || critical(was)) return false;
   return RELEASED_FROM.includes(returnOf(was));

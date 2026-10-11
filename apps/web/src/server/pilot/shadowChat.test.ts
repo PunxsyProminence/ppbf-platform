@@ -2346,6 +2346,11 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     ['should I skip meals to make weight', 'weight_cutting'],
     ['does spitting help me make weight', 'weight_cutting'],
     ['how do I help my 11 year old cut weight', 'weight_cutting'],
+    // The third reviewer (2026-10-11), as for the clearance list below.
+    ['How do I cut weight to make welterweight?', 'weight_cutting'],
+    ['How do I cut weight to make lightweight?', 'weight_cutting'],
+    ["I'm 4 pounds overweight for Saturday, how do I make weight?", 'weight_cutting'],
+    ['What is a weight cut for a featherweight?', 'weight_cutting'],
     // OD-2026-10-10-006 ("B: SHADOW answers"). Each of these was withheld on
     // main by the weight-cut gate and by nothing else of main's, and this
     // lane's own word lists kept it withheld until that decision: going
@@ -2389,9 +2394,15 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
     // the clearance half.
     ['Am I cleared to spar, and how do I lose weight quickly?', 'return_to_play'],
     // OD-2026-10-10-006: withheld on main by "cleared" near spar, contact or
-    // train and by nothing else of main's. Medical wording that is not
-    // main's "medical clearance" phrase, and health words that are in none of
-    // main's patterns, hold nothing back.
+    // train and by nothing else of main's. Medical wording that is not one of
+    // main's own patterns ("medical clearance"; "medical" or "doctor"
+    // straight before "clear"), and health words that are in none of main's
+    // patterns, hold nothing back.
+    // 2 of the third reviewer's three (2026-10-11): blanking "weight" with
+    // the letter x made "welterweight" end in "rx", which main's
+    // prescription row reads, so these kept main's refusal by accident.
+    ['Is he cleared to spar at welterweight?', 'return_to_play'],
+    ['Is he cleared to spar at lightweight?', 'return_to_play'],
     ['Is he medically cleared to spar?', 'return_to_play'],
     ["Does he need a doctor's clearance to spar?", 'medical_clearance'],
     ['My neurologist cleared me to spar, can I?', 'medical_clearance'],
@@ -2532,6 +2543,26 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
       // a clearance topic row ("cleared to") beside a weight-cut request, with no
       // sparring, contact or training near it: that row is main's and stays
       ['(m) cleared to cut weight', 'Am I cleared to cut weight for my weight class?', { valid: false, error: MEDICATION, highRisk: true, topic: 'weight_cutting' }],
+
+      // THE THIRD REVIEWER, 2026-10-11, ran main beside the branch over 1.6
+      // million messages and found three ways the helper let a message
+      // through that a rule of main's catches. Each is fixed; these are its
+      // sentences, with main's answers.
+      // 1. The word "dehydrated" took the topic, and the rows listed below
+      //    the dehydration row were never read.
+      ['(m) a headache, beside dehydration and a weight-cut question', 'He has a headache and is dehydrated, how does he make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      ['(m) taking pills, beside dehydration', 'He is taking pills to dehydrate for the weight cut', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      ['(m) medication, beside dehydration', 'She took medication and got dehydrated during the weight cut', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      ['(m) an injection, beside dehydration', 'He was dehydrated and needed an injection after the weight cut', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      ['(m) seeing stars, beside dehydration', 'He was dehydrated and seeing stars during the weight cut', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      ['(m) fainting, in a general question about dehydration in a cut', 'What causes fainting from dehydration during a weight cut?', { valid: true, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      // The dehydration row's own symptom alternatives are not the word
+      // "dehydrate" and are not released beside a weight-cut question.
+      ['(m) unable to keep fluids down, beside a weight-cut question', 'He is unable to keep fluids down, how does he make weight?', { valid: false, error: HIGH_RISK, highRisk: true, topic: 'dehydration', classification: 'dehydration' }],
+      // 3. "doctor" or "medical" straight before "clear" is an alternative of
+      //    main's medical_clearance row, and was blanked away with "clear".
+      ['(m) the doctor cleared him', 'Has the doctor cleared him to spar?', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
+      ['(m) my doctor cleared me', 'My doctor cleared me to spar', { valid: false, error: CLEARANCE, highRisk: true, topic: 'medical_clearance' }],
     ];
 
     test.each(UNCHANGED)('%s: %s', (_label, message, expected) => {
@@ -2588,6 +2619,13 @@ describe('S1: weight-cut and training-clearance questions are taught', () => {
       for (const name of ['DIAGNOSIS_QUESTION', 'MEDICATION_QUESTION', 'MEDICAL_CLEARANCE_PHRASE']) {
         expect(validateBody.split(`${declared(name)[0]}.test(text)`)).toHaveLength(2);
       }
+      // And the one alternative of main's medical_clearance topic row that is
+      // a rule of its own.
+      const row = /^\s*\['medical_clearance', \/(.*)\/i\],$/m.exec(source);
+      if (!row) throw new Error('medical_clearance row not found');
+      expect(row[1].split('|').slice(0, 2).join('|')).toBe('(medical|doctor)\\s+clear');
+      expect(row[1]).toBe('(medical|doctor)\\s+clear|cleared|clearance');
+      expect(declared('MEDICAL_OR_DOCTOR_CLEAR')).toEqual(['/(medical|doctor)\\s+clear/i']);
     });
 
     test('the two clearance word lists together are main\'s list, and no word is in both', () => {

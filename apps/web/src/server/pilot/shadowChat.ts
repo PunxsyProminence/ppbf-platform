@@ -542,8 +542,10 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
 //     its health-concern words, both read by the caller and passed in;
 //   - a diagnosis question and a medication question: main's two patterns,
 //     copied below and pinned to their source by shadowChat.test.ts;
-//   - "medical clearance", and "cleared" near play, compete, competition or
-//     return: the part of main's clearance return that is not relaxed;
+//   - "medical clearance", "medical" or "doctor" straight before "clear",
+//     and "cleared" near play, compete, competition or return: the part of
+//     main's clearance return, and the alternative of its medical_clearance
+//     topic row, that are not relaxed;
 //   - any other risk topic row of main's that matches the message (the
 //     symptom topics: concussion, dizziness, chest pain, fainting, the
 //     urgent-symptom row and the rest). That is asked of main's own
@@ -565,6 +567,11 @@ const WEIGHT_CUT_TOPIC_ROWS: readonly RegExp[] = [
 const DIAGNOSIS_QUESTION = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i;
 const MEDICATION_QUESTION = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i;
 const MEDICAL_CLEARANCE_PHRASE = /\bmedical\s+clear(?:ed|ance)?\b/i;
+// The first alternative of main's medical_clearance topic row. The row's
+// other two alternatives are the bare words "cleared" and "clearance", which
+// are the gate being relaxed; this one is a rule of its own ("the doctor
+// cleared him to spar") and stays.
+const MEDICAL_OR_DOCTOR_CLEAR = /(medical|doctor)\s+clear/i;
 // Main's two proximity patterns, split by the word "cleared" sits near:
 // play, compete, competition and return here (the part that stays), and
 // train, training, contact, spar and sparring in CLEARED_NEAR_TRAINING below
@@ -594,23 +601,41 @@ function allowedAsOrdinaryQuestion(): ShadowValidationResult {
 /**
  * Whether a risk topic row of main's, other than the two gates' own, matches
  * the message. Asked of classifyHighRiskTopic itself, so the rows are main's
- * and are not copied: the two gates' words are blanked first (each by a
- * string of the same length, so no character-counted window moves), and
- * whatever topic the classifier then gives is a row that matched on its own.
- * "weight" is in every alternative of the weight_cutting row and in two of
- * the three of the rapid_weight_loss row; the third is blanked by name.
- * "clear" is blanked only for a training-clearance question, which leaves
- * the clearance rows' "return ... play" alternative standing.
+ * and are not copied: the two gates' words are blanked first, and whatever
+ * topic the classifier then gives is a row that matched on its own.
+ *
+ * Blanked with underscores, one for each character. An underscore is a word
+ * character, so no word boundary and no character-counted window moves; and
+ * no row of main's has an underscore in it, so a blank cannot make a match.
+ * (The third reviewer, 2026-10-11: blanked with the letter x, "welterweight"
+ * became a word ending "rx", which main's prescription row reads, and every
+ * "-rweight" question kept main's refusal.)
+ *
+ *   "weight"     in every alternative of the weight_cutting row and in two of
+ *                the three of the rapid_weight_loss row; the third, "lose N
+ *                pounds this week", is blanked by name.
+ *   "dehydrat"   only for a weight-cut question: Overwatch confirmed that a
+ *                dehydration question that is also a weight-cut question is
+ *                taught. The word is blanked and the classifier asked again,
+ *                because the dehydration row sits above most of the others
+ *                and the classifier stops at the first row that matches: left
+ *                in, "he has a headache and is dehydrated, how does he make
+ *                weight?" would be answered for the dehydration row and the
+ *                headache never read (the third reviewer). The row's other
+ *                two alternatives ("extreme thirst", "unable to keep fluids
+ *                down") are symptoms and are not blanked.
+ *   "clear"      only for a training-clearance question. That leaves the
+ *                clearance rows' "return ... play" alternative standing; the
+ *                row's "(medical|doctor) clear" alternative is tested by the
+ *                caller before this is reached.
  */
 function otherRiskTopicMatches(text: string, weightCutWording: boolean, trainingClearance: boolean): boolean {
   let blanked = text
-    .replace(/weight/gi, 'xxxxxx')
-    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, 'xxxx');
-  if (trainingClearance) blanked = blanked.replace(/clear/gi, 'xxxxx');
-  const topic = classifyHighRiskTopic(blanked).topic;
-  if (topic === 'none') return false;
-  if (topic === 'dehydration' && weightCutWording) return false;
-  return true;
+    .replace(/weight/gi, '______')
+    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, '____');
+  if (weightCutWording) blanked = blanked.replace(/dehydrat/gi, '________');
+  if (trainingClearance) blanked = blanked.replace(/clear/gi, '_____');
+  return classifyHighRiskTopic(blanked).topic !== 'none';
 }
 
 function taughtQuestion(
@@ -622,7 +647,7 @@ function taughtQuestion(
   if (reportsPersonalPainOrInjury) return false;
   if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return false;
   // The part of main's clearance return that is not relaxed.
-  if (MEDICAL_CLEARANCE_PHRASE.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return false;
+  if (MEDICAL_CLEARANCE_PHRASE.test(text) || MEDICAL_OR_DOCTOR_CLEAR.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return false;
 
   // "cleared" or "clearance", not the bare word "clear": a message that is
   // only "is the ring clear for sparring?" is neither kind of question, is

@@ -1827,7 +1827,18 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(payload.handoff).toBeUndefined();
     const [stored] = mockAppendConversationExchange.mock.calls[0];
     expect(stored.responseState).toBe('ok');
-    expect(stored.topic).not.toBe('weight_cutting');
+    // The request's own topic: the same one an ordinary answer to the same
+    // question is stored under.
+    const storedTopic = stored.topic;
+    expect(storedTopic).not.toBe('weight_cutting');
+    jest.clearAllMocks();
+    mockRequirePrincipal.mockResolvedValue(principal());
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Keep your guard up and move your feet.' } }] }),
+    }) as unknown as typeof fetch;
+    await POST(postRequest({ message: 'Explain this training concern.' }));
+    expect(mockAppendConversationExchange.mock.calls[0][0].topic).toBe(storedTopic);
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
 
@@ -3301,9 +3312,9 @@ describe('a bad field beside an intact question', () => {
 // OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone"). Until this
 // lane the route never called the model for these: validateShadowRequest
 // withheld them, or allowed them with a classification the route answers
-// from FALLBACK_RESPONSES. The validator now returns a classification of its
-// own for them, so this file runs the real route and the real validator to
-// show the model is called. route.ts itself is not changed. All four of its
+// from FALLBACK_RESPONSES. The validator now returns them as ordinary allowed
+// questions, so this file runs the real route and the real validator to show
+// the model is called. route.ts itself is not changed. All four of its
 // stock lines are still reachable, which the controls below show: the
 // weight-cut one now only for an educational weight-cut question that another
 // risk row of main's also matches (reviewer A corrected an earlier comment
