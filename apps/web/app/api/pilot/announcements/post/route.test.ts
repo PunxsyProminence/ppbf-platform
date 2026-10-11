@@ -217,6 +217,71 @@ describe('POST /api/pilot/announcements/post', () => {
     }));
   });
 
+  describe('schedule bounds with no zone mean the gym clock', () => {
+    async function post(starts_at: string | null, ends_at: string | null) {
+      mockResolvePrincipal.mockResolvedValueOnce(principal());
+      return POST(request({ message: 'Hello', author_name: 'Coach', starts_at, ends_at }));
+    }
+
+    test('a zone-less time is stored as the gym instant, EDT in summer and EST in winter', async () => {
+      const res = await post('2026-07-15T18:00', '2026-12-15T18:00');
+
+      expect(res.status).toBe(200);
+      expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+        startsAt: '2026-07-15T22:00:00.000Z',
+        endsAt: '2026-12-15T23:00:00.000Z',
+      }));
+    });
+
+    test('daylight-saving edges: repeated 1:30 am is the first, the skipped 2:30 am lands on 1:30 EST', async () => {
+      await post('2026-11-01T01:30', '2026-11-01T02:30');
+      expect(mockCreateAnnouncement).toHaveBeenLastCalledWith(expect.objectContaining({
+        startsAt: '2026-11-01T05:30:00.000Z',
+        endsAt: '2026-11-01T07:30:00.000Z',
+      }));
+
+      await post('2026-03-08T01:30', '2026-03-08T03:30');
+      expect(mockCreateAnnouncement).toHaveBeenLastCalledWith(expect.objectContaining({
+        startsAt: '2026-03-08T06:30:00.000Z',
+        endsAt: '2026-03-08T07:30:00.000Z',
+      }));
+    });
+
+    test('a local midnight is its own UTC day boundary, not the UTC date', async () => {
+      await post('2026-07-15T00:00', '2026-07-15T23:59');
+
+      expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+        startsAt: '2026-07-15T04:00:00.000Z',
+        endsAt: '2026-07-16T03:59:00.000Z',
+      }));
+    });
+
+    test('a value that carries Z or an offset is kept as the instant it names', async () => {
+      await post('2026-07-15T18:00:00Z', '2026-07-15T20:00:00-04:00');
+
+      expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+        startsAt: '2026-07-15T18:00:00.000Z',
+        endsAt: '2026-07-16T00:00:00.000Z',
+      }));
+    });
+
+    test('an already-stored instant sent back is not re-read as gym time', async () => {
+      await post('2026-07-15T22:00:00.000Z', null);
+
+      expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+        startsAt: '2026-07-15T22:00:00.000Z',
+        endsAt: null,
+      }));
+    });
+
+    test('an impossible zone-less time is refused and nothing is created', async () => {
+      const res = await post('2026-02-30T18:00', null);
+
+      expect(res.status).toBe(400);
+      expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+    });
+  });
+
   test('refuses a placement outside the vocabulary the database will accept', async () => {
     mockResolvePrincipal.mockResolvedValueOnce(principal());
 

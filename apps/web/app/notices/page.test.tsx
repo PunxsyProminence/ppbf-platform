@@ -200,6 +200,37 @@ test('a window that closes before it opens is refused before it reaches the serv
   expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes('/announcements/post'))).toHaveLength(0);
 });
 
+// A datetime-local value has no zone and means the gym's clock. The posted
+// body carries the absolute instant, so the author's device zone cannot move it.
+test('a typed window is posted as the gym-zone instants, summer and winter', async () => {
+  const fetchMock = jest.fn(async (url: unknown, init?: RequestInit) => {
+    if (String(url).includes('/api/pilot/announcements/post')) {
+      return jsonResponse({ ok: true, announcement: item() });
+    }
+    if (String(url).includes('/api/pilot/announcements/get')) {
+      return jsonResponse({ ok: true, announcements: [] });
+    }
+    throw new Error(`Unexpected fetch: ${String(url)} ${String(init?.method)}`);
+  });
+  await renderPage(fetchMock);
+
+  fireEvent.change(screen.getByPlaceholderText('What should this surface say?'), { target: { value: 'Hello' } });
+  fireEvent.change(screen.getByPlaceholderText('Your name, as members will see it'), { target: { value: 'Coach' } });
+  // 6:00 pm in July is EDT (22:00Z); 6:00 pm in January is EST (23:00Z).
+  fireEvent.change(screen.getByLabelText(/Starts \(optional\)/), { target: { value: '2099-07-15T18:00' } });
+  fireEvent.change(screen.getByLabelText(/Ends \(optional\)/), { target: { value: '2100-01-15T18:00' } });
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+  });
+
+  const postCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/announcements/post'));
+  expect(JSON.parse(String((postCall?.[1] as RequestInit).body))).toMatchObject({
+    starts_at: '2099-07-15T22:00:00.000Z',
+    ends_at: '2100-01-15T23:00:00.000Z',
+  });
+});
+
 test('retiring an item marks it retired in place', async () => {
   const fetchMock = jest.fn(async (url: unknown) => {
     if (String(url).includes('/api/pilot/announcements/update')) {
