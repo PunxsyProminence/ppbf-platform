@@ -1675,6 +1675,10 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     expect(groupNames()).toEqual(['Technical Tuesday', 'Slip line', 'Jump rope']);
     expect(within(workout).getByText('workout · 4 steps')).toBeTruthy();
     expect(within(workout).getByText('Dana Reyes')).toBeTruthy();
+    // A workout is many drills, so it has no description of its own: each
+    // drill's is on its step, once.
+    expect(within(workout).getAllByText('Skip Rope description.')).toHaveLength(1);
+    expect(within(stepItem(workout, 'Step 2 · Skip Rope')).getByText('Skip Rope description.')).toBeTruthy();
 
     // Every list item of the group, in document order: a block's name each
     // time the block changes (the coach came back to the warm-up at the end),
@@ -1848,9 +1852,14 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
   const UNREADABLE: Array<[string, unknown]> = [
     ['not a list', { issue_id: 'issue-1' }],
     ['a workout that is null', [null]],
+    ['a workout with no id', [{ ...WORKOUT, issue_id: 7 }]],
     ['a workout with no name', [{ ...WORKOUT, template_name: undefined }]],
+    ['a workout with no date', [{ ...WORKOUT, issued_at: null }]],
     ['a workout with no steps list', [{ ...WORKOUT, steps: 'four' }]],
+    ['a step that is null', [{ ...WORKOUT, steps: [null] }]],
     ['a step with no block', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], block: undefined }] }]],
+    ['a step whose scale level is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], scale_level: 3 }] }]],
+    ['a step whose note is not text', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], coach_note: 5 }] }]],
     ['a step whose order is not a number', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], ordinal: '2' }] }]],
     ['a step whose contact level is missing', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], contact_level: null }] }]],
     ['a step with no assignment', [{ ...WORKOUT, steps: [{ ...WORKOUT.steps[0], assignment_id: 7 }] }]],

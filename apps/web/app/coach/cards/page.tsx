@@ -116,16 +116,16 @@ function readCardWorkouts(raw: unknown): CardWorkout[] {
  * (newest first). The cards that are steps of one issued workout are gathered
  * into ONE group, in the coach's order, standing where the first of them
  * stood; a card that is a step of no workout stays in the group it came in. An
- * assignment two workouts both name is a step of the first only, and a step
- * whose card was not sent is left out, so nothing is drawn twice or invented.
+ * assignment two workouts both name is a step of the first only, and only
+ * cards the server sent are drawn (a step with no card draws nothing and is
+ * not counted), so nothing is drawn twice or invented.
  */
 function arrangeGroups(groups: IssuanceGroup[], workouts: CardWorkout[]): IssuanceGroup[] {
-  const sent = new Set(groups.flatMap((group) => group.cards.map((card) => card.assignment_id)));
   const workoutOf = new Map<string, CardWorkout>();
   const ordinalOf = new Map<string, number>();
   for (const workout of workouts) {
     for (const step of workout.steps) {
-      if (!sent.has(step.assignment_id) || workoutOf.has(step.assignment_id)) continue;
+      if (workoutOf.has(step.assignment_id)) continue;
       workoutOf.set(step.assignment_id, workout);
       ordinalOf.set(step.assignment_id, step.ordinal);
     }
