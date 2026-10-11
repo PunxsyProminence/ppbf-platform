@@ -108,7 +108,14 @@ import {
   listReferenceLifecycles,
   type ReferenceLifecycle,
 } from './drillLibraryV3';
-import { promoteReferenceDrill, updateDrill } from './drills';
+import {
+  DrillNameTakenError,
+  ReferenceDrillAlreadyPromotedError,
+  createDrill,
+  promoteReferenceDrill,
+  updateDrill,
+} from './drills';
+import { updateDrillToReferenceVersion } from './drillVersioning';
 
 jest.setTimeout(300_000);
 
@@ -746,6 +753,283 @@ describe('claim tags never reach an athlete (real database)', () => {
       expect(athlete?.stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop when the hands drop.']);
       expect(athlete?.universal_stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop on any sign of injury']);
       expect(JSON.stringify(athlete)).not.toMatch(/\[[A-Z][A-Z0-9]-\d{3}\]/);
+    }
+  });
+});
+
+describe('a gym updates its drill to the newer reference version in place (OD-2026-10-08-008 D1, real database)', () => {
+  const RETIRED_MESSAGE =
+    'This drill is retired, so it cannot be updated to the newer version. Restore the drill first.';
+  const CONTENT = {
+    name: 'Jab Return',
+    category: 'footwork',
+    focus: 'Jab Return v2 purpose.',
+    cues: ['Hand home first'],
+    difficulty: 'intermediate' as const,
+  };
+
+  function updateTo(organizationId: string, drillId: string, referenceDrillId = 'ref-jab-v2', content = CONTENT) {
+    return updateDrillToReferenceVersion({
+      organizationId,
+      drillId,
+      referenceDrillId,
+      content,
+      actorAccountId: 'acct-coach',
+      actorRole: 'coach',
+    });
+  }
+
+  /** A gym that adopted v1 of a reference drill that has since been revised to v2. */
+  async function gymOnV1(label: string): Promise<{ gym: string; rootId: string }> {
+    const gym = await newGym(label);
+    await insertReference(gym, { drillId: 'ref-jab-v1', name: 'Jab Return', lineageId: 'lin-jab' });
+    const rootId = await promote(gym, 'ref-jab-v1', 'Jab Return');
+    await revise(gym, 'ref-jab-v1', { drillId: 'ref-jab-v2' });
+    return { gym, rootId };
+  }
+
+  async function versionsOf(gym: string, lineageId: string) {
+    const { rows } = await client.query(
+      `select version, drill_id, active, reference_drill_id, supersedes_drill_id, superseded_by_drill_id,
+              superseded_at is not null as superseded
+       from pilot.drills where organization_id = $1 and lineage_id = $2 order by version`,
+      [gym, lineageId],
+    );
+    return rows;
+  }
+
+  async function auditRowsFor(gym: string) {
+    const { rows } = await client.query(
+      `select event_type, actor_account_id, actor_role, entity_type, entity_id, details
+       from pilot.audit_events where organization_id = $1 and event_type = 'update' order by audit_id`,
+      [gym],
+    );
+    return rows;
+  }
+
+  test('writes a new version of the SAME gym drill pointing at the newer reference; the old one is kept as history', async () => {
+    const { gym, rootId } = await gymOnV1('update');
+    // A coach's own edit on the old version (Q2 "Start clean"): it stays there.
+    await updateDrill({ organizationId: gym, drillId: rootId, focus: 'Our own wording.' });
+
+    const { drill, previous } = await updateTo(gym, rootId);
+
+    expect(previous.drill_id).toBe(rootId);
+    expect(drill).toMatchObject({
+      organization_id: gym,
+      lineage_id: rootId,
+      version: 2,
+      active: true,
+      supersedes_drill_id: rootId,
+      reference_drill_id: 'ref-jab-v2',
+      name: 'Jab Return',
+      focus: 'Jab Return v2 purpose.',
+      cues: ['Hand home first'],
+    });
+    expect(await versionsOf(gym, rootId)).toEqual([
+      {
+        version: 1, drill_id: rootId, active: false, reference_drill_id: 'ref-jab-v1',
+        supersedes_drill_id: null, superseded_by_drill_id: drill.drill_id, superseded: true,
+      },
+      {
+        version: 2, drill_id: drill.drill_id, active: true, reference_drill_id: 'ref-jab-v2',
+        supersedes_drill_id: rootId, superseded_by_drill_id: null, superseded: false,
+      },
+    ]);
+    // The coach's edit is history on v1, not carried into v2.
+    const { rows: old } = await client.query(
+      `select focus from pilot.drills where organization_id = $1 and drill_id = $2`,
+      [gym, rootId],
+    );
+    expect(old[0].focus).toBe('Our own wording.');
+
+    // One audit row, on the same write, saying what moved.
+    expect(await auditRowsFor(gym)).toEqual([
+      {
+        event_type: 'update',
+        actor_account_id: 'acct-coach',
+        actor_role: 'coach',
+        entity_type: 'drill',
+        entity_id: drill.drill_id,
+        details: {
+          action: 'reference_version_update',
+          lineage_id: rootId,
+          version: 2,
+          from_drill_id: rootId,
+          from_reference_drill_id: 'ref-jab-v1',
+          reference_drill_id: 'ref-jab-v2',
+          name: 'Jab Return',
+          category: 'footwork',
+          difficulty: 'intermediate',
+        },
+      },
+    ]);
+
+    // Q1: the version the gym moved on from reads as the gym's running drill,
+    // never "retired", and both versions lead to the drill it runs now.
+    expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'operational', operational_drill_id: drill.drill_id },
+      'ref-jab-v2': { state: 'operational', operational_drill_id: drill.drill_id },
+    });
+  });
+
+  test('a retired drill is refused, DRILL_RETIRED, and nothing is written', async () => {
+    const { gym, rootId } = await gymOnV1('update-retired');
+    await updateDrill({ organizationId: gym, drillId: rootId, active: false });
+    const before = await versionsOf(gym, rootId);
+
+    await expect(updateTo(gym, rootId)).rejects.toMatchObject({
+      message: RETIRED_MESSAGE,
+      code: 'DRILL_RETIRED',
+      status: 409,
+    });
+    expect(await versionsOf(gym, rootId)).toEqual(before);
+    expect(await auditRowsFor(gym)).toEqual([]);
+  });
+
+  test('a drill refined by the gym is updated from its newest version, and the refinement is kept', async () => {
+    const { gym, rootId } = await gymOnV1('update-refined');
+    await refineOperational(gym, rootId, 'op-jab-refined');
+
+    const { drill, previous } = await updateTo(gym, rootId);
+
+    expect(previous.drill_id).toBe('op-jab-refined');
+    expect((await versionsOf(gym, rootId)).map((row) => [row.version, row.active, row.reference_drill_id])).toEqual([
+      [1, false, 'ref-jab-v1'],
+      [2, false, 'ref-jab-v1'],
+      [3, true, 'ref-jab-v2'],
+    ]);
+    expect(drill.supersedes_drill_id).toBe('op-jab-refined');
+  });
+
+  test('the legacy shape (an earlier version running, the newest not) is in use, not retired: updated, and one version runs after', async () => {
+    const { gym, rootId } = await gymOnV1('update-legacy');
+    await refineOperational(gym, rootId, 'op-jab-2');
+    // Two statements: one active row per name is checked row by row.
+    await client.query(`update pilot.drills set active = false where organization_id = $1 and drill_id = 'op-jab-2'`, [gym]);
+    await client.query(`update pilot.drills set active = true where organization_id = $1 and drill_id = $2`, [gym, rootId]);
+
+    const { previous } = await updateTo(gym, rootId);
+
+    expect(previous.drill_id).toBe('op-jab-2');
+    expect((await versionsOf(gym, rootId)).map((row) => [row.version, row.active])).toEqual([
+      [1, false],
+      [2, false],
+      [3, true],
+    ]);
+  });
+
+  test('a gym already on that version is told so, and no second version is written', async () => {
+    const { gym, rootId } = await gymOnV1('update-twice');
+    await updateTo(gym, rootId);
+
+    await expect(updateTo(gym, rootId)).rejects.toBeInstanceOf(ReferenceDrillAlreadyPromotedError);
+    expect((await versionsOf(gym, rootId)).length).toBe(2);
+    expect((await auditRowsFor(gym)).length).toBe(1);
+  });
+
+  test("a name another of the gym's drills holds is refused as the name clash, and nothing is written", async () => {
+    const { gym, rootId } = await gymOnV1('update-name');
+    await createDrill({ organizationId: gym, name: 'Jab Return Plus', category: 'footwork', focus: 'Theirs.' });
+    const before = await versionsOf(gym, rootId);
+
+    await expect(updateTo(gym, rootId, 'ref-jab-v2', { ...CONTENT, name: 'Jab Return Plus' }))
+      .rejects.toBeInstanceOf(DrillNameTakenError);
+    expect(await versionsOf(gym, rootId)).toEqual(before);
+    expect(await auditRowsFor(gym)).toEqual([]);
+  });
+
+  test('a reference drill outside the lineage the gym pins, or an older version of it, is not written', async () => {
+    const { gym, rootId } = await gymOnV1('update-wrong-lineage');
+    await insertReference(gym, { drillId: 'ref-hook', name: 'Hook Return', lineageId: 'lin-hook' });
+    const before = await versionsOf(gym, rootId);
+
+    await expect(updateTo(gym, rootId, 'ref-hook')).rejects.toThrow('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
+    expect(await versionsOf(gym, rootId)).toEqual(before);
+
+    // A stale request after the gym moved on to v3 cannot move it back to v2.
+    await revise(gym, 'ref-jab-v2', { drillId: 'ref-jab-v3' });
+    await updateTo(gym, rootId, 'ref-jab-v3');
+    const onV3 = await versionsOf(gym, rootId);
+    await expect(updateTo(gym, rootId, 'ref-jab-v2')).rejects.toThrow('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
+    expect(await versionsOf(gym, rootId)).toEqual(onV3);
+  });
+
+  test("another gym holding the very same ids is untouched, and still sees the newer version as available to it", async () => {
+    const { gym, rootId } = await gymOnV1('update-gym-a');
+    const other = await newGym('update-gym-b');
+    await insertReference(other, { drillId: 'ref-jab-v1', name: 'Jab Return', lineageId: 'lin-jab' });
+    const otherRoot = await promote(other, 'ref-jab-v1', 'Jab Return');
+    await revise(other, 'ref-jab-v1', { drillId: 'ref-jab-v2' });
+    const otherBefore = await versionsOf(other, otherRoot);
+
+    await updateTo(gym, rootId);
+
+    expect(await versionsOf(other, otherRoot)).toEqual(otherBefore);
+    expect(await lifecyclesOf(other, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'operational', operational_drill_id: otherRoot },
+      'ref-jab-v2': { state: 'newer_version_available', operational_drill_id: otherRoot },
+    });
+    // And the other gym's own drill id, handed to this gym's update, names nothing here.
+    await expect(updateTo(gym, otherRoot)).rejects.toThrow('DRILL_NOT_FOUND');
+  });
+
+  test('retired after the update: both versions read retired and Restore brings back the drill the gym ran last', async () => {
+    const { gym, rootId } = await gymOnV1('update-then-retire');
+    const { drill } = await updateTo(gym, rootId);
+    await updateDrill({ organizationId: gym, drillId: drill.drill_id, active: false });
+
+    expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'retired', operational_drill_id: drill.drill_id },
+      'ref-jab-v2': { state: 'retired', operational_drill_id: drill.drill_id },
+    });
+    const restored = await updateDrill({ organizationId: gym, drillId: drill.drill_id, active: true });
+    expect(restored?.active).toBe(true);
+  });
+
+  test('a Retire that commits while the update waits on the drill is seen: the update refuses and writes nothing', async () => {
+    // The retirement is held open on a second real connection, so the update
+    // has to wait for the drill's row; what it decides on is what the row says
+    // once the retirement commits. The UPDATE is the statement updateDrill
+    // issues for a retire, written out to hold the transaction open.
+    const { gym, rootId } = await gymOnV1('update-race');
+    const retiring = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await retiring.connect();
+    try {
+      await retiring.query('BEGIN');
+      await retiring.query(
+        `update pilot.drills set active = false, updated_at = now() where organization_id = $1 and drill_id = $2`,
+        [gym, rootId],
+      );
+
+      const updating = updateTo(gym, rootId).then(
+        () => ({ updated: true, reason: null as unknown }),
+        (reason: unknown) => ({ updated: false, reason }),
+      );
+
+      // Not a sleep: the retirement commits only once the update is seen
+      // waiting on a lock, so the two really did meet on the row.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 400 && waiting === 0; attempt += 1) {
+        const result = await client.query(
+          `select count(*)::int as n from pg_stat_activity
+           where datname = current_database() and wait_event_type = 'Lock' and query ilike '%for update%'`,
+        );
+        waiting = result.rows[0].n;
+        if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(waiting).toBe(1);
+
+      await retiring.query('COMMIT');
+
+      const outcome = await updating;
+      expect(outcome.updated).toBe(false);
+      expect(outcome.reason).toMatchObject({ message: RETIRED_MESSAGE, code: 'DRILL_RETIRED' });
+      expect((await versionsOf(gym, rootId)).map((row) => [row.version, row.active])).toEqual([[1, false]]);
+      expect(await auditRowsFor(gym)).toEqual([]);
+    } finally {
+      await retiring.query('ROLLBACK').catch(() => {});
+      await retiring.end();
     }
   });
 });

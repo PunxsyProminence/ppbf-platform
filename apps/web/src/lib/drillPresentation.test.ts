@@ -88,9 +88,10 @@ describe('setupAndEquipment', () => {
       setup: 'Partners at technical distance.',
       equipment: 'focus mitts',
     });
+    // A blank equipment column means none is needed (OD-2026-10-08-008 D8).
     expect(setupAndEquipment('Use controlled partner touch.', '')).toEqual({
       setup: 'Use controlled partner touch.',
-      equipment: null,
+      equipment: 'No equipment needed',
     });
   });
 
@@ -106,9 +107,17 @@ describe('setupAndEquipment', () => {
 });
 
 describe('equipmentLabel', () => {
-  test('reads "none" as none needed, and blank as nothing to say', () => {
+  test('reads "none" as none needed, and real equipment as itself', () => {
     expect(equipmentLabel('none')).toBe('No equipment needed');
     expect(equipmentLabel('gloves')).toBe('gloves');
-    expect(equipmentLabel('')).toBeNull();
+  });
+
+  // OD-2026-10-08-008 D8: "Treat blank as 'none needed' (Recommended)".
+  test('reads blank equipment as none needed, never as nothing to say', () => {
+    expect(equipmentLabel('')).toBe('No equipment needed');
+    expect(equipmentLabel('   ')).toBe('No equipment needed');
+    expect(equipmentLabel(null)).toBe('No equipment needed');
+    expect(equipmentLabel(undefined)).toBe('No equipment needed');
+    expect(setupAndEquipment('', '')).toEqual({ setup: null, equipment: 'No equipment needed' });
   });
 });

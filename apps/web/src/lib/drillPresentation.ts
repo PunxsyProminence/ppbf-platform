@@ -65,11 +65,14 @@ export function scaleLevelName(level: string): string {
   }
 }
 
-/** An equipment value as a reader should see it: "none" means none is needed. */
-export function equipmentLabel(equipment: string | null | undefined): string | null {
+/**
+ * An equipment value as a reader should see it: "none" means none is needed,
+ * and so does a blank one (OD-2026-10-08-008 D8, "Treat blank as 'none
+ * needed' (Recommended)"), for coaches and athletes alike.
+ */
+export function equipmentLabel(equipment: string | null | undefined): string {
   const value = (equipment ?? '').trim();
-  if (!value) return null;
-  return value.toLowerCase() === 'none' ? 'No equipment needed' : value;
+  return !value || value.toLowerCase() === 'none' ? 'No equipment needed' : value;
 }
 
 /**
@@ -85,7 +88,7 @@ export function equipmentLabel(equipment: string | null | undefined): string | n
 export function setupAndEquipment(
   setup: string | null | undefined,
   equipment: string | null | undefined,
-): { setup: string | null; equipment: string | null } {
+): { setup: string | null; equipment: string } {
   const setupText = (setup ?? '').trim();
   const equipmentText = (equipment ?? '').trim();
   const setupIsEquipment = setupText !== ''

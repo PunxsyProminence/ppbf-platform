@@ -139,7 +139,7 @@ export class DrillRestoreRefusedError extends Error {
 
 const UNIQUE_VIOLATION = '23505';
 
-function isDrillNameCollision(error: unknown): boolean {
+export function isDrillNameCollision(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
     return false;
   }

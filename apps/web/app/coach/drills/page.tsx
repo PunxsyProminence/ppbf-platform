@@ -56,17 +56,18 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
   newer_version_retired: 'Newer version of a drill this gym retired',
 };
 
-// What a coach reads on that drill instead of a Promote button. The same
-// facts the promote route refuses with: the gym keeps its drill, and the
-// update step is not built yet (it waits on an owner decision, IMP-15).
+// What a coach reads on that drill instead of a Promote button: what is true
+// today. The server updates the gym's drill in place (OD-2026-10-08-008 D1);
+// from this page that happens when a template using this version is issued.
+// The button is the coach-screen PR's. Wording PROPOSED for Jason's look.
 const NEWER_VERSION_EXPLANATION =
-  "This gym already has an earlier version of this drill. Updating the gym's drill to this version is not built yet, so it cannot be promoted as a separate drill.";
+  "This gym runs an earlier version of this drill. The gym's drill moves to this version when a workout template that uses this version is issued.";
 
 // What Restore does on the newer version's card, before it is taken. It brings
 // back the gym's OWN drill at the version the gym adopted -- not this version --
 // which is why the sentence says so.
 const NEWER_VERSION_RESTORE_CONSEQUENCE =
-  'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Updating it to this version is not built yet.';
+  'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Once it is back, it moves to this version when a workout template that uses this version is issued.';
 
 // DISCOVERY (W-D4C): every filter reads a durable, structured column -- an
 // enum the database CHECKs, the discipline registry, the stored category, the

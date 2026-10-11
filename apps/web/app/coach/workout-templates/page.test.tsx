@@ -822,6 +822,24 @@ describe('issue to athlete', () => {
       expect(await issuedStatus()).toHaveTextContent('Adopted for this gym: Touch to Reposition, Pivot Out.');
     });
 
+    it('names a drill moved to the newer version on its own line, never as adopted (OD-2026-10-08-008 D1)', async () => {
+      mockIssuePage({
+        issue: () => statusResponse(201, {
+          ...ISSUED_BODY,
+          adopted_drills: [],
+          updated_drills: [
+            { drill_id: 'op-1-v2', reference_drill_id: 'ref-1-v2', name: 'Touch to Reposition', updated_from_drill_id: 'op-1' },
+          ],
+        }),
+      });
+
+      await issueTo();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent('Moved to the newer version: Touch to Reposition.');
+      expect(status).not.toHaveTextContent(/Adopted for this gym/);
+    });
+
     it('a training hold is said beside the result, and says the issue was NOT blocked', async () => {
       mockIssuePage({
         issue: () => statusResponse(201, {

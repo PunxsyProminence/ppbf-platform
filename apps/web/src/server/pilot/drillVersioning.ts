@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
-import { assertDrillMeetsCueRule, type DrillDifficulty } from './drills';
+import type { PoolClient } from 'pg';
+
+import { writePilotAuditEvent } from './audit';
+import {
+  DrillNameTakenError,
+  ReferenceDrillAlreadyPromotedError,
+  assertDrillMeetsCueRule,
+  isDrillNameCollision,
+  type DrillDifficulty,
+} from './drills';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
@@ -59,13 +68,15 @@ export interface PilotDrillVersionRow {
    * The reference drill this operational lineage was promoted from, or null for
    * a lineage the gym authored itself -- OD-2026-09-16-001.
    *
-   * INHERITED BY EVERY VERSION, never re-derived. A refinement changes what the
+   * INHERITED BY A REFINEMENT, never re-derived. A refinement changes what the
    * gym's drill SAYS; it does not change which reference drill the lineage came
    * from, and it must not silently re-point at a newer reference version. That
    * is why adoption copies this value forward rather than looking it up again,
    * and why pilot_drills_one_reference_per_org is scoped to lineage ROOTS: the
    * successor legitimately carries the same value as the predecessor it
-   * supersedes.
+   * supersedes. The one deliberate move is updateDrillToReferenceVersion (D1):
+   * its new version points at the newer reference, and older versions keep
+   * pointing at the one they were built from.
    */
   reference_drill_id: string | null;
   created_at: string;
@@ -338,6 +349,185 @@ export async function getDrillLineage(organizationId: string, lineageId: string)
      order by version asc`,
     [organizationId, lineageId],
   );
+}
+
+// UPDATE IN PLACE TO A NEWER REFERENCE VERSION (OD-2026-10-08-008 D1, "B Update
+// in place (Recommended)"). Same refusal and same meaning of "retired" as the
+// change-proposal gate above (D3): no version of the lineage is active.
+const UPDATE_ON_RETIRED_MESSAGE =
+  'This drill is retired, so it cannot be updated to the newer version. Restore the drill first.';
+
+/** What the gym's new version says: the promote route's mapping of the newer reference. */
+export interface ReferenceVersionContent {
+  name: string;
+  category: string;
+  focus: string;
+  cues: string[];
+  difficulty: DrillDifficulty;
+}
+
+/**
+ * Moves a gym's drill (`drillId`: any of its versions) to a newer version of the
+ * reference it was adopted from. Writes v(n+1) of the SAME lineage from
+ * `content` (the promote mapping), pointing at the newer reference -- the one
+ * place reference_drill_id moves -- and deactivates and supersedes the old
+ * newest version. Every version stays, so issued work keeps the instruction it
+ * pinned. The coach's edits on the old version stay there (Jason, question card
+ * 2026-10-11: "A: Start clean (Recommended)"); open change proposals are left to
+ * read stale, as after any adopt.
+ *
+ * The caller has judged the reference (active, ready, the lineage head) and the
+ * role. Decided here, under the lineage lock: retired (DRILL_RETIRED), already on
+ * that version, and a name clash -- each refused with nothing written -- and,
+ * as an integrity check, that the target is a NEWER version of the reference
+ * the gym pins (a stale request after another update must not move it back). One transaction, the
+ * caller's when `client` is given, audit row included.
+ */
+export async function updateDrillToReferenceVersion(
+  input: {
+    organizationId: string;
+    drillId: string;
+    referenceDrillId: string;
+    content: ReferenceVersionContent;
+    actorAccountId: string;
+    actorRole: PilotRole;
+    auditDetails?: Record<string, unknown>;
+  },
+  client?: PoolClient,
+): Promise<{ drill: PilotDrillVersionRow; previous: PilotDrillVersionRow }> {
+  const run = async (tx: PoolClient) => {
+    // Every row of the lineage, locked in a statement of its own as a restore
+    // does (drills.ts#updateDrill), so the reads below see any Retire, Restore
+    // or adopt that held these rows first.
+    const locked = await tx.query(
+      `select 1 from pilot.drills l
+       where l.organization_id = $1
+         and l.lineage_id = (
+           select d.lineage_id from pilot.drills d
+           where d.organization_id = $1 and d.drill_id = $2
+         )
+       for update`,
+      [input.organizationId, input.drillId],
+    );
+    if (locked.rows.length === 0) {
+      throw new Error('DRILL_NOT_FOUND');
+    }
+
+    // The newest version, whether any version is in use, and whether the target
+    // is a newer version in the reference lineage the gym pins (an integrity
+    // check on the caller; both callers pass one that is, barring a race).
+    const headResult = await tx.query<PilotDrillVersionRow & { lineage_active: boolean; same_reference_lineage: boolean }>(
+      `select ${DRILL_VERSION_FIELDS.split(', ').map((field) => `h.${field}`).join(', ')},
+              exists (
+                select 1 from pilot.drills a
+                where a.organization_id = h.organization_id and a.lineage_id = h.lineage_id and a.active
+              ) as lineage_active,
+              exists (
+                select 1 from pilot.drill_library pinned
+                join pilot.drill_library target
+                  on target.organization_id = pinned.organization_id
+                 and target.lineage_id = pinned.lineage_id
+                 and target.version > pinned.version
+                where pinned.organization_id = h.organization_id
+                  and pinned.drill_id = h.reference_drill_id
+                  and target.drill_id = $3
+              ) as same_reference_lineage
+       from pilot.drills d
+       join pilot.drills h
+         on h.organization_id = d.organization_id and h.lineage_id = d.lineage_id
+       where d.organization_id = $1 and d.drill_id = $2
+       order by h.version desc
+       limit 1`,
+      [input.organizationId, input.drillId, input.referenceDrillId],
+    );
+    const { lineage_active: lineageActive, same_reference_lineage: sameReferenceLineage, ...previous } = headResult.rows[0];
+
+    if (!lineageActive) {
+      throw new ConflictError(UPDATE_ON_RETIRED_MESSAGE, DRILL_RETIRED_CODE);
+    }
+    if (previous.reference_drill_id === input.referenceDrillId) {
+      throw new ReferenceDrillAlreadyPromotedError(input.referenceDrillId);
+    }
+    if (!sameReferenceLineage) {
+      throw new Error('REFERENCE_VERSION_NOT_NEWER_IN_DRILL_LINEAGE');
+    }
+
+    // Deactivated before the insert, as in the adopt (one active row per name);
+    // every active version, so exactly one runs afterwards.
+    await tx.query(
+      `update pilot.drills
+       set active = false,
+           superseded_at = case when drill_id = $3 then now() else superseded_at end,
+           updated_at = now()
+       where organization_id = $1 and lineage_id = $2 and (active or drill_id = $3)`,
+      [input.organizationId, previous.lineage_id, previous.drill_id],
+    );
+
+    const newDrillId = randomUUID();
+    let inserted;
+    try {
+      inserted = await tx.query<PilotDrillVersionRow>(
+        `insert into pilot.drills
+           (organization_id, drill_id, name, category, focus, cues, difficulty, active,
+            version, lineage_id, supersedes_drill_id, reference_drill_id)
+         values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10,$11)
+         returning ${DRILL_VERSION_FIELDS}`,
+        [
+          input.organizationId,
+          newDrillId,
+          input.content.name,
+          input.content.category,
+          input.content.focus,
+          input.content.cues,
+          input.content.difficulty,
+          previous.version + 1,
+          previous.lineage_id,
+          previous.drill_id,
+          input.referenceDrillId,
+        ],
+      );
+    } catch (error) {
+      if (isDrillNameCollision(error)) {
+        throw new DrillNameTakenError(input.content.name);
+      }
+      throw error;
+    }
+    const drill = inserted.rows[0];
+
+    await tx.query(
+      `update pilot.drills set superseded_by_drill_id = $3
+       where organization_id = $1 and drill_id = $2`,
+      [input.organizationId, previous.drill_id, newDrillId],
+    );
+
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: input.actorAccountId,
+        actor_role: input.actorRole,
+        organization_id: input.organizationId,
+        entity_type: 'drill',
+        entity_id: drill.drill_id,
+        details: {
+          action: 'reference_version_update',
+          lineage_id: drill.lineage_id,
+          version: drill.version,
+          from_drill_id: previous.drill_id,
+          from_reference_drill_id: previous.reference_drill_id,
+          reference_drill_id: drill.reference_drill_id,
+          name: drill.name,
+          category: drill.category,
+          difficulty: drill.difficulty,
+          ...input.auditDetails,
+        },
+      },
+      tx,
+    );
+
+    return { drill, previous };
+  };
+
+  return client ? run(client) : withTransaction(run);
 }
 
 /**

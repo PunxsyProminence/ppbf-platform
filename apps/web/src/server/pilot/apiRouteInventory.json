@@ -6933,7 +6933,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Adopts a reference drill into the gym operational drill list (promoteReferenceDrill) and writes audit event; no athlete data. Role gate is the first statement after requirePrincipal in POST.",
+    "notes": "Adopts a reference drill into the gym operational drill list (promoteReferenceDrill) and writes audit event; for a newer version of a drill the gym already has, updates that drill in place instead (updateDrillToReferenceVersion: new version, pointer moved, audit row in the same transaction; a retired drill is refused DRILL_RETIRED). No athlete data. Role gate is the first statement after requirePrincipal in POST.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

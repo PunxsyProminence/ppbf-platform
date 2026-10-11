@@ -448,13 +448,21 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
  * nothing here reads prose, and nothing is stored: the state is derived on
  * every read, so it cannot drift from the rows it describes.
  *
+ * A gym that UPDATED its drill to a newer version of this reference in place
+ * (OD-2026-10-08-008 D1, drillVersioning.ts#updateDrillToReferenceVersion)
+ * keeps old versions pointing at this one. So 'operational' asks whether a gym
+ * drill that ever pointed here still runs (any version of its lineage active),
+ * and 'retired' is left for one that does not: a reference the gym moved on
+ * from reads operational, never retired, while the gym runs the drill.
+ *
  * operational_drill_id is the operational identity the next lifecycle action
  * acts on. While the gym runs the drill it is the ACTIVE row pointing at this
  * reference -- the one Retire takes out, even in the rare lineage where an
- * earlier version is the active one. Once retired it is the adopted lineage's
- * HEAD (highest version) -- the one Restore brings back -- found through the
- * lineage root, which pilot_drills_one_reference_per_org makes unique per
- * reference. For the two newer-version states it is the gym's drill for the
+ * earlier version is the active one. Otherwise it is the HEAD (highest version)
+ * of the gym lineage that pointed here: the one Restore brings back once
+ * retired, and the running drill after an update in place moved the pointer on.
+ * Without an update every version of a lineage points at one reference, so
+ * that head is the one pilot_drills_one_reference_per_org's root leads to. For the two newer-version states it is the gym's drill for the
  * OTHER version (OTHER_VERSION_ADOPTION below): the link from the gym's drill to
  * the newer head, and the drill a Restore offered on the head brings back.
  * Null when the gym never adopted any version of it.
@@ -487,9 +495,10 @@ export interface ReferenceLifecycle {
  * Which drill, when there could be several: an ACTIVE one first (the gym runs
  * it), then the newest reference version, then the newest operational version
  * -- the same "live row, else the lineage head" rule the adopted-state
- * operational_drill_id follows. Every operational version of one gym lineage
- * carries the same reference_drill_id (a refinement inherits it,
- * drillVersioning.ts), so the newest operational version IS that lineage's head.
+ * operational_drill_id follows. A refinement inherits reference_drill_id and an
+ * update in place (D1) moves it forward on the new version only, so the newest
+ * reference version a gym lineage pins, then its newest operational version, IS
+ * that lineage's head.
  * The same ordering is why the row's `active` answers for the whole set: an
  * inactive first row means the gym runs no version of the lineage, which is
  * what the restore guard asks (with the pinned version's `active`) before it
@@ -522,9 +531,12 @@ export async function listReferenceLifecycles(
             case
               when exists (
                 select 1 from pilot.drills od
+                join pilot.drills live
+                  on live.organization_id = od.organization_id
+                 and live.lineage_id = od.lineage_id
+                 and live.active
                 where od.organization_id = d.organization_id
                   and od.reference_drill_id = d.drill_id
-                  and od.active
               ) then 'operational'
               when exists (
                 select 1 from pilot.drills od
@@ -551,13 +563,12 @@ export async function listReferenceLifecycles(
               ),
               (
                 select head.drill_id
-                from pilot.drills root
+                from pilot.drills pin
                 join pilot.drills head
-                  on head.organization_id = root.organization_id
-                 and head.lineage_id = root.lineage_id
-                where root.organization_id = d.organization_id
-                  and root.reference_drill_id = d.drill_id
-                  and root.supersedes_drill_id is null
+                  on head.organization_id = pin.organization_id
+                 and head.lineage_id = pin.lineage_id
+                where pin.organization_id = d.organization_id
+                  and pin.reference_drill_id = d.drill_id
                 order by head.version desc
                 limit 1
               ),

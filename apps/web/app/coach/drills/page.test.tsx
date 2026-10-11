@@ -343,10 +343,10 @@ const RETIRED_WITHDRAWN_NOTICE =
   'Retired. It can no longer be newly assigned. Its reference has been withdrawn, so it cannot be restored.';
 const NEWER_VERSION_LABEL = "Newer version of this gym's drill";
 const NEWER_VERSION_EXPLANATION =
-  "This gym already has an earlier version of this drill. Updating the gym's drill to this version is not built yet, so it cannot be promoted as a separate drill.";
+  "This gym runs an earlier version of this drill. The gym's drill moves to this version when a workout template that uses this version is issued.";
 const NEWER_VERSION_RETIRED_LABEL = 'Newer version of a drill this gym retired';
 const NEWER_VERSION_RESTORE_CONSEQUENCE =
-  'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Updating it to this version is not built yet.';
+  'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Once it is back, it moves to this version when a workout template that uses this version is issued.';
 const RETIRE_WITHDRAWN_CONSEQUENCE =
   'Retiring stops new assignments. Its reference has been withdrawn, so athletes already cannot read it, and once retired it cannot be restored.';
 

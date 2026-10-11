@@ -33,6 +33,10 @@ jest.mock('./drills', () => {
   return { ...actual, promoteReferenceDrill: jest.fn() };
 });
 
+jest.mock('./drillVersioning', () => ({
+  updateDrillToReferenceVersion: jest.fn(),
+}));
+
 jest.mock('./coachCards', () => ({
   issueCoachCard: jest.fn(),
 }));
@@ -58,6 +62,7 @@ import { issueCoachCard } from './coachCards';
 import { query, queryOne, withTransaction } from './db';
 import { listFloorValidations } from './drillFloorValidations';
 import { getDrillWithDetail, getOtherVersionAdoption, listReferenceLifecycles } from './drillLibraryV3';
+import { updateDrillToReferenceVersion } from './drillVersioning';
 import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferenceDrill } from './drills';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
@@ -76,6 +81,7 @@ const mockCard = issueCoachCard as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockCueRule = assertNewAssignmentMeetsCueRule as jest.Mock;
 const mockRecordIssue = recordWorkoutIssue as jest.Mock;
+const mockUpdate = updateDrillToReferenceVersion as jest.Mock;
 const mockFindByKey = findWorkoutIssueByRequestKey as jest.Mock;
 
 const ORG = 'org-1';
@@ -171,11 +177,18 @@ function given(opts: {
   library?: Record<string, LibraryEntry>;
   floorTested?: string[];
   /** Names the gym's ACTIVE drills already hold (the plan's one read of pilot.drills). */
-  takenNames?: string[];
+  takenNames?: Array<string | { name: string; lineage_id: string }>;
+  /** The gym's drill for another version of a step's drill: its lineage and whether any version runs. */
+  gymDrill?: { lineage_id: string; lineage_active: boolean } | null;
 }) {
-  mockQueryOne.mockResolvedValue(opts.template === undefined ? template() : opts.template);
+  const templateRow = opts.template === undefined ? template() : opts.template;
+  mockQueryOne.mockImplementation(async (text: string) =>
+    /from pilot\.drills d/.test(text) ? (opts.gymDrill ?? null) : templateRow,
+  );
   mockQuery.mockImplementation(async (text: string) =>
-    /from pilot\.drills d/.test(text) ? (opts.takenNames ?? []).map((name) => ({ name })) : (opts.items ?? []),
+    /from pilot\.drills d/.test(text)
+      ? (opts.takenNames ?? []).map((taken) => (typeof taken === 'string' ? { name: taken, lineage_id: `lineage-${taken}` } : taken))
+      : (opts.items ?? []),
   );
   const library = opts.library ?? {};
   mockLifecycles.mockResolvedValue(
@@ -317,6 +330,7 @@ describe('a template whose drills the gym already runs', () => {
         { step: 2, item_id: 'wti_2', assignment: assignment('op-2', 2) },
       ],
       adopted: [],
+      updated: [],
     });
   });
 
@@ -688,14 +702,26 @@ describe('every other step that cannot be assigned refuses the whole issue and i
     expectNothingWritten();
   });
 
-  test('the gym retired its drill for another version: still refused, never adopted beside it', async () => {
-    given({ items: [item(1)], library: { 'ref-1': { state: 'newer_version_retired', operational: 'op-other' } } });
+  test('the gym retired its drill for another version: still refused and named, never updated or adopted beside it', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_retired', operational: 'op-other' } },
+      gymDrill: { lineage_id: 'lin-other', lineage_active: false },
+    });
     mockOtherVersion.mockResolvedValue({ operational_drill_id: 'op-other', adopted_reference_drill_id: 'ref-0' });
 
     await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
       outcome: 'refused',
-      drills: [{ drill_id: 'ref-1', untested_draft: false }],
+      drills: [{
+        drill_id: 'ref-1',
+        untested_draft: false,
+        reason: 'This gym adopted an earlier version of this drill and then retired it. Restore it in the drill library first.',
+      }],
     });
+    // The question is asked about the gym drill the lineage read named, in this gym.
+    const gymDrillRead = mockQueryOne.mock.calls.find(([text]) => /from pilot\.drills d/.test(text));
+    expect(gymDrillRead?.[1]).toEqual([ORG, 'op-other']);
+    expect(mockUpdate).not.toHaveBeenCalled();
     expectNothingWritten();
   });
 
@@ -711,21 +737,19 @@ describe('every other step that cannot be assigned refuses the whole issue and i
     expect(mockPromote).toHaveBeenCalledTimes(1);
   });
 
-  test('the gym holds another version of the drill: the template is not pointed at it', async () => {
-    given({ items: [item(1)], library: { 'ref-1': { state: 'newer_version_available', operational: 'op-other' } } });
+  test('a newer version of a drill the gym runs, not ready, is named and nothing is updated', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-other', row: reference('ref-1', { stop_rules: [] }) } },
+      gymDrill: { lineage_id: 'lin-other', lineage_active: true },
+    });
     mockOtherVersion.mockResolvedValue({ operational_drill_id: 'op-other', adopted_reference_drill_id: 'ref-0' });
 
-    const result = await issueWorkoutTemplate(PARAMS);
-
-    expect(mockOtherVersion).toHaveBeenCalledWith(ORG, 'ref-1');
-    expect(result).toMatchObject({
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
       outcome: 'refused',
-      drills: [{
-        steps: [1],
-        drill_id: 'ref-1',
-        reason: 'This gym already has another version of this drill, and this template names a different one.',
-      }],
+      drills: [{ steps: [1], drill_id: 'ref-1' }],
     });
+    expect(mockUpdate).not.toHaveBeenCalled();
     expectNothingWritten();
   });
 
@@ -1142,6 +1166,186 @@ describe('a write that fails inside the transaction', () => {
     await expect(issueWorkoutTemplate(PARAMS)).rejects.toBe(notAssignable);
     // The issue's own audit event is never reached.
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('a step naming a newer version of a drill the gym runs updates it while issuing (Jason, question card 2026-10-11)', () => {
+  const GYM_VERSION = { operational_drill_id: 'op-old', adopted_reference_drill_id: 'ref-0' };
+
+  beforeEach(() => {
+    mockUpdate.mockImplementation(async (input: { referenceDrillId: string; content: { name: string } }) => ({
+      drill: { drill_id: `op-new-${input.referenceDrillId}`, name: input.content.name },
+      previous: { drill_id: 'op-old' },
+    }));
+  });
+
+  test("the gym's drill is updated in place on the transaction, then the new version is assigned", async () => {
+    given({
+      items: [item(1, { rep_count: 12 })],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(mockUpdate.mock.calls).toEqual([[
+      {
+        organizationId: ORG,
+        drillId: 'op-old',
+        referenceDrillId: 'ref-1',
+        content: {
+          name: 'Drill ref-1',
+          category: 'technical',
+          focus: 'Return the rear hand to guard.',
+          difficulty: 'intermediate',
+          cues: ['Chin behind the shoulder', 'Hand home first'],
+        },
+        actorAccountId: 'coach-1',
+        actorRole: 'coach',
+        auditDetails: { adopted_by: 'workout_template_issue', template_id: TEMPLATE_ID },
+      },
+      transactionClient,
+    ]]);
+    // Never a second drill beside the gym's.
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-new-ref-1', repCount: 12 });
+    expect(mockCard.mock.calls[0][1]).toBe(transactionClient);
+    expect(result).toMatchObject({
+      outcome: 'issued',
+      // An update is not an adoption: the gym already had the drill.
+      adopted: [],
+      updated: [{ drill_id: 'op-new-ref-1', reference_drill_id: 'ref-1', name: 'Drill ref-1', updated_from_drill_id: 'op-old' }],
+    });
+    // The issue's own audit row names the new version it assigned.
+    expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({ adopted_drill_ids: [], updated_drill_ids: ['op-new-ref-1'] });
+  });
+
+  test("the drill's own name is not a clash with itself; another drill's is, and nothing is updated", async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+      takenNames: [{ name: 'Drill ref-1', lineage_id: 'lin-old' }],
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+
+    jest.clearAllMocks();
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+      takenNames: [{ name: 'Drill ref-1', lineage_id: 'lin-someone-else' }],
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-1', reason: expect.stringContaining('This gym already has a drill named "Drill ref-1"') }],
+    });
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expectNothingWritten();
+  });
+
+  test('a gym drill the lineage read named but that cannot be read is named as unreadable, not as retired', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: null,
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-1', reason: 'This drill could not be read from the library.' }],
+    });
+    expectNothingWritten();
+  });
+
+  test('a template naming the older version too assigns the updated drill on both steps', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-0' }), item(2, { drill_id: 'ref-1' })],
+      library: {
+        'ref-0': { state: 'operational', operational: 'op-old', row: reference('ref-0', { superseded_at: '2026-10-01T00:00:00.000Z' }) },
+        'ref-1': { state: 'newer_version_available', operational: 'op-old' },
+      },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-1' ? GYM_VERSION : null));
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-new-ref-1', 'op-new-ref-1']);
+    expect(mockAudit.mock.calls.at(-1)?.[0].details).toMatchObject({
+      adopted_drill_ids: [],
+      updated_drill_ids: ['op-new-ref-1'],
+    });
+  });
+
+  test("after an update, a step naming the older version takes the floor test of the version the gym runs", async () => {
+    // The gym runs ref-2's drill; the step names ref-0, which it moved on from.
+    const draftRef = (id: string) => reference(id, { field_provenance: DRAFT });
+    given({
+      items: [item(1, { drill_id: 'ref-0' })],
+      library: {
+        'ref-0': { state: 'operational', operational: 'op-new', row: reference('ref-0', { superseded_at: '2026-10-01T00:00:00.000Z' }) },
+      },
+    });
+    const templateRow = template();
+    mockQueryOne.mockImplementation(async (text: string) =>
+      /from pilot[.]drills o/.test(text) ? { reference_drill_id: 'ref-2' } : templateRow);
+    mockReference.mockImplementation(async (_org: string, id: string) =>
+      (id === 'ref-2' ? draftRef(id) : reference(id, { superseded_at: '2026-10-01T00:00:00.000Z' })));
+
+    // ref-2 is a draft no coach has floor-tested: refused, though ref-0 needs none.
+    mockFloorTested.mockResolvedValue({});
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-0', untested_draft: true }],
+    });
+    expect(mockFloorTested).toHaveBeenCalledWith(ORG, ['ref-2']);
+
+    // Once ref-2 is floor-tested, the step issues the drill the gym runs.
+    mockFloorTested.mockImplementation(async (_org: string, ids: string[]) =>
+      (ids.includes('ref-2') ? { 'ref-2': { drill_id: 'ref-2' } } : {}));
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'issued' });
+    expect(mockCard.mock.calls.at(-1)?.[0].drillId).toBe('op-new');
+  });
+
+  test('a concurrent update that got there first reads as the library having changed: nothing is issued', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+    mockUpdate.mockRejectedValue(new ReferenceDrillAlreadyPromotedError('ref-1'));
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+    });
+    expect(mockCard).not.toHaveBeenCalled();
+  });
+
+  test('a drill retired between the plan and the write is refused by the write: nothing is issued', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { state: 'newer_version_available', operational: 'op-old' } },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+    const retired = new ConflictError(
+      'This drill is retired, so it cannot be updated to the newer version. Restore the drill first.',
+      'DRILL_RETIRED',
+    );
+    mockUpdate.mockRejectedValue(retired);
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toBe(retired);
+    expect(mockCard).not.toHaveBeenCalled();
+    expect(mockRecordIssue).not.toHaveBeenCalled();
   });
 });
 
