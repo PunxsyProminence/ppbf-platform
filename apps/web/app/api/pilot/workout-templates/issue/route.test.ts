@@ -130,6 +130,8 @@ describe('the request', () => {
     ['a numeric template_id', { template_id: 7, athlete_id: 'athlete-1' }],
     ['no athlete_id', { template_id: 'wtp_1' }],
     ['a malformed body', '{not json'],
+    ['a JSON null body', 'null'],
+    ['a JSON string body', '"wtp_1"'],
   ] as Array<[string, unknown]>)('%s is a 400 and nothing is written', async (_label, body) => {
     const res = await POST(post(body));
 

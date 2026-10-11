@@ -1,5 +1,5 @@
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
-import { requiresFloorValidation } from '../../lib/drillFloorValidation';
+import { NOT_FLOOR_TESTED_READINESS_MESSAGE } from '../../lib/drillFloorValidation';
 import { writePilotAuditEvent } from './audit';
 import { issueCoachCard } from './coachCards';
 import type { PilotRole } from './contracts';
@@ -274,6 +274,12 @@ const TYPED_STEP_REASON =
   'This step is typed text, not a drill from the library, so it cannot be assigned.';
 const RETIRED_ADOPTION_REASON =
   'This gym adopted this drill and then retired it. Restore it in the drill library first.';
+// Restore is refused once the reference is withdrawn (drills.ts restore guard),
+// so that case is not sent to a step that cannot work.
+const RETIRED_WITHDRAWN_REASON =
+  'This gym adopted this drill and then retired it, and its reference has since been withdrawn, so it cannot be assigned.';
+const SHARED_NAME_REASON =
+  'Another drill in this template has the same name, and a gym can hold only one drill under a name.';
 const OTHER_VERSION_REASON =
   'This gym already has another version of this drill, and this template names a different one.';
 const UNREADABLE_DRILL_REASON = 'This drill could not be read from the library.';
@@ -296,7 +302,7 @@ interface TemplateIssuePlan {
   refused: TemplateIssueRefusedDrill[];
   /** reference drill id -> the gym's active operational drill id. */
   operational: Map<string, string>;
-  /** Reference drills to adopt in the transaction, in step order. */
+  /** Reference drills to adopt in the transaction, in drill-id order. */
   adoptions: AdoptableReference[];
 }
 
@@ -305,9 +311,14 @@ type AdoptableReference = DrillWithDetail & { difficulty: DrillDifficulty };
 
 /**
  * The read-only pass: what each step's drill is to this gym right now. Writes
- * nothing. The transaction that follows re-decides everything that can change
- * underneath it (the unique indexes on pilot.drills, and issueCoachCard's
- * insert-from-an-active-drill), so a stale answer here cannot become a write.
+ * nothing, and takes no lock, so its answer can be stale by the time the
+ * transaction runs. The transaction re-decides exactly two things: the unique
+ * indexes on pilot.drills (a name or a reference taken in the meantime) and
+ * issueCoachCard's insert-from-an-active-drill (a drill retired in the
+ * meantime). Both end in a rollback and a conflict, never a partial write.
+ * NOT re-decided: a reference withdrawn or superseded, another version of a
+ * drill adopted, or the template replaced, between this pass and the write --
+ * the same windows the promote route has between its checks and its insert.
  */
 async function planTemplateIssue(
   organizationId: string,
@@ -341,20 +352,22 @@ async function planTemplateIssue(
 
   const lifecycles = await listReferenceLifecycles(organizationId, referenceIds);
   const floorTested = await listFloorValidations(organizationId, referenceIds);
+  const refuseDrill = (referenceId: string, name: string, reason: string, untestedDraft = false) => {
+    plan.refused.push({
+      steps: stepsByReference.get(referenceId) ?? [],
+      drill_id: referenceId,
+      name,
+      untested_draft: untestedDraft,
+      reason,
+    });
+  };
+  const candidates: AdoptableReference[] = [];
 
   for (const referenceId of referenceIds) {
-    const steps = stepsByReference.get(referenceId) ?? [];
     const reference = await getDrillWithDetail(organizationId, referenceId);
     const lifecycle = lifecycles[referenceId];
-    const refuse = (reason: string, untestedDraft = false) => {
-      plan.refused.push({
-        steps,
-        drill_id: referenceId,
-        name: reference?.name ?? referenceId,
-        untested_draft: untestedDraft,
-        reason,
-      });
-    };
+    const refuse = (reason: string, untestedDraft = false) =>
+      refuseDrill(referenceId, reference?.name ?? referenceId, reason, untestedDraft);
 
     if (!reference || !lifecycle) {
       refuse(UNREADABLE_DRILL_REASON);
@@ -383,18 +396,23 @@ async function planTemplateIssue(
     // Adopted once and retired: the promote route refuses a second promotion
     // and sends the coach to Restore, so issuing does not revive it either.
     if (lifecycle.state === 'retired') {
-      refuse(RETIRED_ADOPTION_REASON);
+      refuse(reference.active ? RETIRED_ADOPTION_REASON : RETIRED_WITHDRAWN_REASON);
       continue;
     }
 
     // Not adopted. The same readiness check, on the same inputs, the promote
     // route enforces -- so issuing a template can adopt nothing a coach could
     // not adopt by hand. An untested draft is the case the owner ruled on by
-    // name; it is flagged so the caller can say so first.
+    // name; it is flagged so the caller can say so first -- but only when the
+    // floor test is the ONE thing missing, so a coach is never told a floor
+    // test will clear a drill that something else still holds back.
     const tested = Boolean(floorTested[referenceId]);
     const readiness = adoptionReadiness({ ...reference, floor_tested_by_this_gym: tested });
     if (!readiness.ready) {
-      refuse(readiness.missing.join(' '), requiresFloorValidation(reference.field_provenance) && !tested);
+      refuse(
+        readiness.missing.join(' '),
+        readiness.missing.length === 1 && readiness.missing[0] === NOT_FLOOR_TESTED_READINESS_MESSAGE,
+      );
       continue;
     }
 
@@ -414,8 +432,40 @@ async function planTemplateIssue(
       continue;
     }
 
-    plan.adoptions.push({ ...reference, difficulty });
+    candidates.push({ ...reference, difficulty });
   }
+
+  // NAMES, for every drill about to be adopted, in one read. A gym holds one
+  // ACTIVE drill per name (pilot_drills_one_name_per_org), and an adopted
+  // drill takes the reference's name. Asked here rather than left to the index
+  // so EVERY clash is named in one answer; the index stops a transaction at
+  // the first. The library allows one name per discipline, so two drills of
+  // one template can share a name the gym can hold only once.
+  const taken = candidates.length === 0
+    ? new Set<string>()
+    : new Set(
+        (await query<{ name: string }>(
+          `select d.name from pilot.drills d
+           where d.organization_id = $1 and d.active and d.name = any($2::text[])`,
+          [organizationId, candidates.map((reference) => reference.name)],
+        )).map((row) => row.name),
+      );
+  for (const reference of candidates) {
+    if (taken.has(reference.name)) {
+      refuseDrill(
+        reference.drill_id,
+        reference.name,
+        `${new DrillNameTakenError(reference.name).message}, so this one cannot be adopted under that name.`,
+      );
+    } else if (candidates.some((other) => other.drill_id !== reference.drill_id && other.name === reference.name)) {
+      refuseDrill(reference.drill_id, reference.name, SHARED_NAME_REASON);
+    } else {
+      plan.adoptions.push(reference);
+    }
+  }
+  // One fixed order for every issue, so two issues adopting the same two
+  // drills take the index locks in the same order and cannot deadlock.
+  plan.adoptions.sort((a, b) => (a.drill_id < b.drill_id ? -1 : a.drill_id > b.drill_id ? 1 : 0));
 
   // In step order, so the answer reads the way the template does.
   plan.refused.sort((a, b) => Math.min(...a.steps) - Math.min(...b.steps));
@@ -444,8 +494,8 @@ export async function issueWorkoutTemplate(params: {
   }
   const { template, items } = detail;
 
-  // The list read offers only current, active templates. A direct call with
-  // the id of a withdrawn or replaced one does not get to issue it.
+  // Only a current template is issued: not a withdrawn one (the list read
+  // leaves those out) and not one a newer version has replaced.
   if (!template.active || template.superseded_at !== null) {
     throw new ConflictError(
       'This workout template is no longer in use, so it cannot be issued.',
@@ -567,24 +617,15 @@ export async function issueWorkoutTemplate(params: {
       };
     });
   } catch (error) {
-    // Decided by the unique indexes inside the transaction, which has rolled
-    // back by the time either is seen here: nothing was written.
-    if (error instanceof DrillNameTakenError) {
-      const named = plan.adoptions.filter((reference) => reference.name === error.drillName);
-      const drills: TemplateIssueRefusedDrill[] = named.map((reference) => ({
-        steps: items.filter((item) => item.drill_id === reference.drill_id).map((item) => item.ordinal),
-        drill_id: reference.drill_id,
-        name: reference.name,
-        untested_draft: false,
-        reason: `${error.message}, so this one cannot be adopted under that name.`,
-      }));
-      if (drills.length > 0) {
-        return { outcome: 'refused', message: refusalMessage(drills), drills };
-      }
-    }
-    if (error instanceof ReferenceDrillAlreadyPromotedError) {
+    // A unique index refused an adoption inside the transaction, which has
+    // rolled back by the time this is seen: nothing was written. The plan
+    // found the name and the reference free a moment ago, so someone adopted
+    // or named a drill in between. Which index reports it depends on index
+    // order, so neither is described to the coach as a standing name clash;
+    // the next attempt plans against what is there now and says exactly why.
+    if (error instanceof DrillNameTakenError || error instanceof ReferenceDrillAlreadyPromotedError) {
       throw new ConflictError(
-        'A drill in this template was adopted while the template was being issued. Nothing was issued; try again.',
+        'The drill library changed while this template was being issued. Nothing was issued; try again.',
         'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
       );
     }

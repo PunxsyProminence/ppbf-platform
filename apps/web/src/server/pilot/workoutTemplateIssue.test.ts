@@ -160,9 +160,13 @@ function given(opts: {
   items?: Record<string, unknown>[];
   library?: Record<string, LibraryEntry>;
   floorTested?: string[];
+  /** Names the gym's ACTIVE drills already hold (the plan's one read of pilot.drills). */
+  takenNames?: string[];
 }) {
   mockQueryOne.mockResolvedValue(opts.template === undefined ? template() : opts.template);
-  mockQuery.mockResolvedValue(opts.items ?? []);
+  mockQuery.mockImplementation(async (text: string) =>
+    /from pilot\.drills d/.test(text) ? (opts.takenNames ?? []).map((name) => ({ name })) : (opts.items ?? []),
+  );
   const library = opts.library ?? {};
   mockLifecycles.mockResolvedValue(
     Object.fromEntries(
@@ -532,6 +536,72 @@ describe('every other step that cannot be assigned refuses the whole issue and i
     expectNothingWritten();
   });
 
+  test('a draft that is untested AND missing something else is not offered a floor test as the cure', async () => {
+    given({
+      items: [item(1)],
+      library: {
+        'ref-1': { row: reference('ref-1', { name: 'Half Built', field_provenance: DRAFT, stop_rules: [] }), state: 'available' },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Cannot be assigned as they stand: Half Built.',
+      drills: [{
+        steps: [1],
+        drill_id: 'ref-1',
+        name: 'Half Built',
+        untested_draft: false,
+        reason: `It has no stop rules. ${NOT_FLOOR_TESTED}`,
+      }],
+    });
+    expectNothingWritten();
+  });
+
+  test('a retired adoption whose reference was since withdrawn is not sent to Restore, which would refuse it', async () => {
+    given({
+      items: [item(1)],
+      library: { 'ref-1': { row: reference('ref-1', { active: false }), state: 'retired', operational: 'op-old' } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({
+      outcome: 'refused',
+      drills: [{
+        drill_id: 'ref-1',
+        reason:
+          'This gym adopted this drill and then retired it, and its reference has since been withdrawn, so it cannot be assigned.',
+      }],
+    });
+    expectNothingWritten();
+  });
+
+  test('the gym retired its drill for another version: still refused, never adopted beside it', async () => {
+    given({ items: [item(1)], library: { 'ref-1': { state: 'newer_version_retired', operational: 'op-other' } } });
+    mockOtherVersion.mockResolvedValue({ operational_drill_id: 'op-other', adopted_reference_drill_id: 'ref-0' });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ drill_id: 'ref-1', untested_draft: false }],
+    });
+    expectNothingWritten();
+  });
+
+  test("an 'operational' lifecycle with no drill id is not assigned on trust: it goes through the adoption checks", async () => {
+    // Not a state the lifecycle read produces; if it ever did, the step must
+    // not be carded from an id nobody has. It is treated as unadopted, and the
+    // reference index decides inside the transaction.
+    given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: null } } });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockCueRule).not.toHaveBeenCalled();
+    expect(mockPromote).toHaveBeenCalledTimes(1);
+  });
+
   test('the gym holds another version of the drill: the template is not pointed at it', async () => {
     given({ items: [item(1)], library: { 'ref-1': { state: 'newer_version_available', operational: 'op-other' } } });
     mockOtherVersion.mockResolvedValue({ operational_drill_id: 'op-other', adopted_reference_drill_id: 'ref-0' });
@@ -594,25 +664,119 @@ describe('every other step that cannot be assigned refuses the whole issue and i
   });
 });
 
-describe('a write that fails inside the transaction', () => {
-  test('a name already taken by a drill the gym wrote refuses the issue and names the drill', async () => {
-    given({ items: [item(1)], library: { 'ref-1': { row: reference('ref-1', { name: 'Jab Ladder' }), state: 'available' } } });
-    mockPromote.mockRejectedValue(new DrillNameTakenError('Jab Ladder'));
+describe('drill names, decided before anything is written', () => {
+  test('every drill whose name a gym drill already holds is named in one answer', async () => {
+    given({
+      items: [item(1), item(2), item(3)],
+      library: {
+        'ref-1': { row: reference('ref-1', { name: 'Jab Ladder' }), state: 'available' },
+        'ref-2': { row: reference('ref-2', { name: 'Free Name' }), state: 'available' },
+        'ref-3': { row: reference('ref-3', { name: 'Slip Line' }), state: 'available' },
+      },
+      takenNames: ['Jab Ladder', 'Slip Line'],
+    });
 
     const result = await issueWorkoutTemplate(PARAMS);
 
     expect(result).toEqual({
       outcome: 'refused',
-      message: 'Nothing was issued. Cannot be assigned as they stand: Jab Ladder.',
-      drills: [{
-        steps: [1],
-        drill_id: 'ref-1',
-        name: 'Jab Ladder',
-        untested_draft: false,
-        reason: 'This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
-      }],
+      message: 'Nothing was issued. Cannot be assigned as they stand: Jab Ladder, Slip Line.',
+      drills: [
+        {
+          steps: [1],
+          drill_id: 'ref-1',
+          name: 'Jab Ladder',
+          untested_draft: false,
+          reason: 'This gym already has a drill named "Jab Ladder", so this one cannot be adopted under that name.',
+        },
+        {
+          steps: [3],
+          drill_id: 'ref-3',
+          name: 'Slip Line',
+          untested_draft: false,
+          reason: 'This gym already has a drill named "Slip Line", so this one cannot be adopted under that name.',
+        },
+      ],
+    });
+    expectNothingWritten();
+  });
+
+  test('the name read is scoped to this gym, to active drills, and to the names about to be adopted', async () => {
+    given({
+      items: [item(1), item(2)],
+      library: {
+        'ref-1': { row: reference('ref-1', { name: 'To Adopt' }), state: 'available' },
+        'ref-2': { state: 'operational', operational: 'op-2' },
+      },
+    });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    const nameReads = mockQuery.mock.calls.filter(([text]) => /from pilot\.drills d/.test(text));
+    expect(nameReads).toHaveLength(1);
+    expect(nameReads[0][0]).toMatch(/d\.organization_id = \$1 and d\.active and d\.name = any\(\$2::text\[\]\)/);
+    expect(nameReads[0][1]).toEqual([ORG, ['To Adopt']]);
+  });
+
+  test('nothing to adopt: pilot.drills is not read for names at all', async () => {
+    given({ items: [item(1)], library: { 'ref-1': { state: 'operational', operational: 'op-1' } } });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockQuery.mock.calls.filter(([text]) => /from pilot\.drills d/.test(text))).toHaveLength(0);
+  });
+
+  test('two drills of one template sharing a name are both refused, with the true reason', async () => {
+    given({
+      items: [item(1), item(2)],
+      library: {
+        'ref-1': { row: reference('ref-1', { name: 'Stance Hold', discipline: 'boxing' }), state: 'available' },
+        'ref-2': { row: reference('ref-2', { name: 'Stance Hold', discipline: 'wrestling' }), state: 'available' },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({
+      outcome: 'refused',
+      drills: [
+        { steps: [1], drill_id: 'ref-1', reason: 'Another drill in this template has the same name, and a gym can hold only one drill under a name.' },
+        { steps: [2], drill_id: 'ref-2', reason: 'Another drill in this template has the same name, and a gym can hold only one drill under a name.' },
+      ],
+    });
+    expectNothingWritten();
+  });
+
+  test('drills are adopted in drill-id order whatever the step order, so two issues cannot deadlock on the indexes', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-b' }), item(2, { drill_id: 'ref-a' })],
+      library: { 'ref-a': { state: 'available' }, 'ref-b': { state: 'available' } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(mockPromote.mock.calls.map(([params]) => params.referenceDrillId)).toEqual(['ref-a', 'ref-b']);
+    // The cards still follow the template's step order.
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-ref-b', 'op-ref-a']);
+    expect(result).toMatchObject({ outcome: 'issued', steps: [{ step: 1 }, { step: 2 }] });
+  });
+});
+
+describe('a write that fails inside the transaction', () => {
+  test('a name taken between the plan and the write is a conflict to retry, not a standing name clash', async () => {
+    // The plan found the name free. Which unique index reports a competing
+    // adoption depends on index order, so a name collision HERE means the
+    // library changed underneath the issue; the retry plans against what is
+    // there now and gives the true reason.
+    given({ items: [item(1)], library: { 'ref-1': { row: reference('ref-1', { name: 'Jab Ladder' }), state: 'available' } } });
+    mockPromote.mockRejectedValue(new DrillNameTakenError('Jab Ladder'));
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({
+      status: 409,
+      code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
     });
     expect(mockCard).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('a drill adopted by someone else in the meantime is a conflict to retry, not a silent success', async () => {

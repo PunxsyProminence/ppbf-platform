@@ -45,7 +45,10 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...DRILL_AUTHOR_ROLES]);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body that is not a JSON object (unparseable, null, a bare string) names
+    // nothing, and is answered as the missing field it amounts to.
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
     const templateId = requireText(body.template_id, 'template_id');
     const athleteId = requireText(body.athlete_id, 'athlete_id');
 

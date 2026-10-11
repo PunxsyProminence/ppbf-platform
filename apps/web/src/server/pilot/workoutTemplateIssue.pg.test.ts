@@ -83,6 +83,7 @@ jest.mock('./db', () => ({
 }));
 
 import { issueCoachCard } from './coachCards';
+import { withTransaction } from './db';
 import { markDrillFloorTested } from './drillFloorValidations';
 import { promoteReferenceDrill, updateDrill } from './drills';
 import { issueWorkoutTemplate, type TemplateIssueResult } from './workoutTemplates';
@@ -172,17 +173,34 @@ async function insertReference(
   gym: Gym,
   drillId: string,
   name: string,
-  opts: { draft?: boolean; cues?: boolean; stopRules?: boolean; lineageId?: string; version?: number } = {},
+  opts: {
+    draft?: boolean;
+    cues?: boolean;
+    stopRules?: boolean;
+    lineageId?: string;
+    version?: number;
+    active?: boolean;
+    superseded?: boolean;
+  } = {},
 ): Promise<void> {
   await client.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, version, name, discipline, category, difficulty,
         target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like,
-        field_provenance)
+        field_provenance, active, superseded_at)
      values ($1,$2,$3,$4,$5,'boxing','footwork','advanced', $5 || ' target.', $5 || ' purpose.',
              $5 || ' setup.', $5 || ' execution.', $5 || ' good.', $5 || ' bad.',
-             coalesce($6::text, 'PPBF source manual v3'))`,
-    [gym.organizationId, drillId, opts.lineageId ?? drillId, opts.version ?? 1, name, opts.draft ? DRAFT : null],
+             coalesce($6::text, 'PPBF source manual v3'), $7, case when $8::boolean then now() else null end)`,
+    [
+      gym.organizationId,
+      drillId,
+      opts.lineageId ?? drillId,
+      opts.version ?? 1,
+      name,
+      opts.draft ? DRAFT : null,
+      opts.active ?? true,
+      opts.superseded ?? false,
+    ],
   );
   await client.query(
     `insert into pilot.drill_scale_levels
@@ -256,12 +274,28 @@ function issue(gym: Gym, athleteId = ATHLETE_ID): Promise<TemplateIssueResult> {
   });
 }
 
-/** Everything an issue can write, counted for one gym on the committed ("pool") connection. */
-async function written(gym: Gym): Promise<{ drills: number; assignments: number; audit: number }> {
-  const { rows } = await client.query<{ drills: number; assignments: number; audit: number }>(
+interface Written {
+  drills: number;
+  assignments: number;
+  audit: number;
+  shadowEvents: number;
+  telemetry: number;
+}
+
+const NOTHING: Written = { drills: 0, assignments: 0, audit: 0, shadowEvents: 0, telemetry: 0 };
+
+/**
+ * Everything an issue can write, counted for one gym on the committed ("pool")
+ * connection -- including the two mirrors writePilotAuditEvent writes beside
+ * each audit row, which ride the same transaction and must roll back with it.
+ */
+async function written(gym: Gym): Promise<Written> {
+  const { rows } = await client.query<Written>(
     `select (select count(*)::int from pilot.drills where organization_id = $1) as drills,
             (select count(*)::int from pilot.drill_assignments where organization_id = $1) as assignments,
-            (select count(*)::int from pilot.audit_events where organization_id = $1) as audit`,
+            (select count(*)::int from pilot.audit_events where organization_id = $1) as audit,
+            (select count(*)::int from pilot.shadow_events where organization_id = $1) as "shadowEvents",
+            (select count(*)::int from pilot.shadow_telemetry_events where organization_id = $1) as telemetry`,
     [gym.organizationId],
   );
   return rows[0];
@@ -364,7 +398,7 @@ describe('issuing a template', () => {
     if (result.outcome !== 'issued') return;
 
     // Two drills adopted -- 'ref-new' once, though two steps name it.
-    expect(result.adopted.map((drill) => drill.reference_drill_id)).toEqual(['ref-new', 'ref-draft']);
+    expect(result.adopted.map((drill) => drill.reference_drill_id)).toEqual(['ref-draft', 'ref-new']);
     const drills = await client.query<{ drill_id: string; name: string; reference_drill_id: string; focus: string; cues: string[]; difficulty: string; active: boolean }>(
       `select drill_id, name, reference_drill_id, focus, cues, difficulty, active
        from pilot.drills where organization_id = $1 order by name`,
@@ -417,11 +451,11 @@ describe('issuing a template', () => {
     );
     const fromIssue = audit.rows.slice(before.audit);
     expect(fromIssue.map((row) => [row.entity_type, row.entity_id])).toEqual([
-      ['drill', newId],
       ['drill', draftId],
+      ['drill', newId],
       ['workout_template_issue', TEMPLATE_ID],
     ]);
-    expect(fromIssue[0].details).toMatchObject({
+    expect(fromIssue[1].details).toMatchObject({
       reference_drill_id: 'ref-new',
       adopted_by: 'workout_template_issue',
       template_id: TEMPLATE_ID,
@@ -429,7 +463,7 @@ describe('issuing a template', () => {
     expect(fromIssue[2]).toMatchObject({ actor_account_id: gym.coachId, actor_role: 'coach' });
     expect(fromIssue[2].details).toMatchObject({
       athlete_id: ATHLETE_ID,
-      adopted_drill_ids: [newId, draftId],
+      adopted_drill_ids: [draftId, newId],
       steps: result.steps.map((step) => ({
         step: step.step,
         item_id: step.item_id,
@@ -535,7 +569,108 @@ describe('a refusal writes nothing', () => {
       ['Cue-less Drill', 'It has no coaching cue. A technique drill needs at least one; a conditioning drill does not.'],
       ['Stop-less Drill', 'It has no stop rules.'],
     ]);
-    expect(await written(gym)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+    expect(await written(gym)).toEqual(NOTHING);
+  });
+
+  test('a running drill of this gym that breaks the cue rule is named, by the production cue-rule read', async () => {
+    const gym = await newGym('running-no-cue');
+    await insertReference(gym, 'ref-a', 'Cue-less Running Drill', { cues: false });
+    // Adopted before the cue rule: a technique drill the gym runs with no cue.
+    await client.query(
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, cues, reference_drill_id)
+       values ($1, 'op-nocue', 'Cue-less Running Drill', 'footwork', 'Focus.', '{}', 'ref-a')`,
+      [gym.organizationId],
+    );
+    await insertTemplate(gym, ['ref-a']);
+    const before = await written(gym);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({
+      outcome: 'refused',
+      drills: [{ steps: [1], drill_id: 'ref-a', name: 'Cue-less Running Drill', untested_draft: false }],
+    });
+    if (result.outcome !== 'refused') return;
+    expect(result.drills[0].reason).toContain('has no coaching cue');
+    expect(await written(gym)).toEqual(before);
+  });
+
+  test('a withdrawn reference and a superseded one are both named and neither is adopted', async () => {
+    const gym = await newGym('withdrawn-superseded');
+    await insertReference(gym, 'ref-gone', 'Withdrawn Drill', { active: false });
+    await insertReference(gym, 'ref-old', 'Old Version', { lineageId: 'lin-1', version: 1, superseded: true });
+    await insertReference(gym, 'ref-head', 'New Version', { lineageId: 'lin-1', version: 2 });
+    await insertTemplate(gym, ['ref-gone', 'ref-old']);
+
+    const result = await issue(gym);
+
+    expect(result.outcome).toBe('refused');
+    if (result.outcome !== 'refused') return;
+    expect(result.drills.map((drill) => [drill.name, drill.reason])).toEqual([
+      ['Withdrawn Drill', 'The reference drill has been withdrawn.'],
+      ['Old Version', 'A newer version of this reference drill exists.'],
+    ]);
+    expect(await written(gym)).toEqual(NOTHING);
+  });
+
+  test('the gym already runs another version of the drill: the template is refused, not pointed at it', async () => {
+    const gym = await newGym('other-version');
+    await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
+    await adopt(gym, 'ref-v1', 'Versioned Drill');
+    // The library then gains v2 under a new name; the template names v2.
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+      [gym.organizationId],
+    );
+    await insertReference(gym, 'ref-v2', 'Versioned Drill II', { lineageId: 'lin-1', version: 2 });
+    await insertTemplate(gym, ['ref-v2']);
+    const before = await written(gym);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({
+      outcome: 'refused',
+      drills: [{
+        drill_id: 'ref-v2',
+        name: 'Versioned Drill II',
+        reason: 'This gym already has another version of this drill, and this template names a different one.',
+      }],
+    });
+    expect(await written(gym)).toEqual(before);
+
+    // The version the gym DOES run is still issuable from a template that names it.
+    await client.query(
+      `update pilot.workout_template_items set drill_id = 'ref-v1' where organization_id = $1`,
+      [gym.organizationId],
+    );
+    await expect(issue(gym)).resolves.toMatchObject({ outcome: 'issued', adopted: [] });
+  });
+
+  test("a drill the gym refined is assigned as its CURRENT version, the gym's active row for that reference", async () => {
+    const gym = await newGym('refined');
+    await insertReference(gym, 'ref-a', 'Refined Drill');
+    const firstId = await adopt(gym, 'ref-a', 'Refined Drill');
+    // A refinement, written the way adoptDrillChangeProposal writes it: v1
+    // deactivated and superseded, v2 active in the same lineage with the SAME
+    // reference pointer.
+    const { rows } = await client.query<{ lineage_id: string }>(
+      `update pilot.drills set active = false, superseded_at = now() where organization_id = $1 and drill_id = $2
+       returning lineage_id`,
+      [gym.organizationId, firstId],
+    );
+    await client.query(
+      `insert into pilot.drills
+         (organization_id, drill_id, name, category, focus, cues, active, lineage_id, supersedes_drill_id, reference_drill_id, version)
+       values ($1, 'op-v2', 'Refined Drill', 'footwork', 'Refined focus.', '{cue}', true, $2, $3, 'ref-a', 2)`,
+      [gym.organizationId, rows[0].lineage_id, firstId],
+    );
+    await insertTemplate(gym, ['ref-a']);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [] });
+    if (result.outcome !== 'issued') return;
+    expect(result.steps[0].assignment).toMatchObject({ drill_id: 'op-v2', drill_description: 'Refined focus.' });
   });
 
   test("another gym's template id reads as not_found, and neither gym is written to", async () => {
@@ -546,41 +681,100 @@ describe('a refusal writes nothing', () => {
 
     await expect(issue(here)).resolves.toEqual({ outcome: 'not_found' });
 
-    expect(await written(here)).toEqual({ drills: 0, assignments: 0, audit: 0 });
-    expect(await written(there)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+    expect(await written(here)).toEqual(NOTHING);
+    expect(await written(there)).toEqual(NOTHING);
   });
 });
 
-describe('all or nothing: a failure inside the transaction leaves no part of the issue behind', () => {
-  test('a second adoption that collides on a drill name rolls back the first adoption too, and names the drill', async () => {
-    const gym = await newGym('name-collision');
-    await insertReference(gym, 'ref-first', 'First Drill');
-    await insertReference(gym, 'ref-clash', 'Taken Name');
-    // A drill the gym wrote itself, already holding the name the second adoption needs.
+describe('drill names are decided before anything is written', () => {
+  test('every drill whose name an ACTIVE gym drill holds is named at once; a retired holder does not block', async () => {
+    const gym = await newGym('names');
+    await insertReference(gym, 'ref-a', 'Taken One');
+    await insertReference(gym, 'ref-b', 'Taken Two');
+    await insertReference(gym, 'ref-c', 'Held By Retired');
     await client.query(
-      `insert into pilot.drills (organization_id, drill_id, name, category, focus) values ($1, 'own-drill', 'Taken Name', 'bagwork', 'Focus.')`,
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, active)
+       values ($1, 'own-1', 'Taken One', 'bagwork', 'Focus.', true),
+              ($1, 'own-2', 'Taken Two', 'bagwork', 'Focus.', true),
+              ($1, 'own-3', 'Held By Retired', 'bagwork', 'Focus.', false)`,
       [gym.organizationId],
     );
-    await insertTemplate(gym, ['ref-first', 'ref-clash']);
+    await insertTemplate(gym, ['ref-a', 'ref-b', 'ref-c']);
     const before = await written(gym);
 
     const result = await issue(gym);
 
-    expect(result).toEqual({
-      outcome: 'refused',
-      message: 'Nothing was issued. Cannot be assigned as they stand: Taken Name.',
-      drills: [{
-        steps: [2],
-        drill_id: 'ref-clash',
-        name: 'Taken Name',
-        untested_draft: false,
-        reason: 'This gym already has a drill named "Taken Name", so this one cannot be adopted under that name.',
-      }],
-    });
-    // 'First Drill' was inserted on the transaction before the collision. It is gone with it.
+    expect(result.outcome).toBe('refused');
+    if (result.outcome !== 'refused') return;
+    expect(result.drills.map((drill) => [drill.steps, drill.name, drill.reason])).toEqual([
+      [[1], 'Taken One', 'This gym already has a drill named "Taken One", so this one cannot be adopted under that name.'],
+      [[2], 'Taken Two', 'This gym already has a drill named "Taken Two", so this one cannot be adopted under that name.'],
+    ]);
     expect(await written(gym)).toEqual(before);
+  });
+});
+
+describe('all or nothing: a failure inside the transaction leaves no part of the issue behind', () => {
+  test('an adoption that loses a race inside the transaction rolls back the adoption made before it', async () => {
+    const gym = await newGym('adoption-race');
+    await insertReference(gym, 'ref-a-first', 'First Drill');
+    await insertReference(gym, 'ref-b-raced', 'Raced Drill');
+    await insertTemplate(gym, ['ref-a-first', 'ref-b-raced']);
+
+    // Another coach adopts the second drill AFTER this issue has planned and
+    // BEFORE its transaction writes: committed on the pool connection at the
+    // moment the transaction opens. The issue then adopts 'First Drill' on its
+    // transaction and collides on 'Raced Drill'.
+    const mockedTransaction = withTransaction as jest.Mock;
+    const realTransaction = mockedTransaction.getMockImplementation() as (fn: unknown) => Promise<unknown>;
+    mockedTransaction.mockImplementationOnce(async (fn: unknown) => {
+      await adopt(gym, 'ref-b-raced', 'Raced Drill');
+      return realTransaction(fn);
+    });
+
+    await expect(issue(gym)).rejects.toMatchObject({ status: 409, code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' });
+
+    // Only the other coach's drill exists. 'First Drill' went with the rollback,
+    // and so did its audit row and both mirrors.
     const { rows } = await client.query(`select name from pilot.drills where organization_id = $1`, [gym.organizationId]);
-    expect(rows).toEqual([{ name: 'Taken Name' }]);
+    expect(rows).toEqual([{ name: 'Raced Drill' }]);
+    expect(await written(gym)).toEqual({ ...NOTHING, drills: 1 });
+
+    // The retry plans against what is there now, and issues.
+    await expect(issue(gym)).resolves.toMatchObject({
+      outcome: 'issued',
+      adopted: [{ reference_drill_id: 'ref-a-first' }],
+    });
+    expect(await written(gym)).toMatchObject({ drills: 2, assignments: 2 });
+  });
+
+  test('a failure at COMMIT leaves nothing: not the drills, not the cards, not the audit rows or their mirrors', async () => {
+    const gym = await newGym('commit-fails');
+    await insertReference(gym, 'ref-a', 'Drill A');
+    await insertTemplate(gym, ['ref-a']);
+    // Deferred to commit, so EVERY write of the issue -- the last audit row
+    // included -- has been made on the transaction when the failure arrives.
+    await client.query(
+      `create or replace function pilot.p7_test_fail_at_commit() returns trigger language plpgsql as $$
+       begin
+         if new.organization_id = '${gym.organizationId}' then
+           raise exception 'p7 test: commit refused';
+         end if;
+         return new;
+       end $$`,
+    );
+    await client.query(
+      `create constraint trigger p7_test_fail_at_commit after insert on pilot.drill_assignments
+       deferrable initially deferred for each row execute function pilot.p7_test_fail_at_commit()`,
+    );
+    try {
+      await expect(issue(gym)).rejects.toThrow('p7 test: commit refused');
+    } finally {
+      await client.query('drop trigger p7_test_fail_at_commit on pilot.drill_assignments');
+      await client.query('drop function pilot.p7_test_fail_at_commit()');
+    }
+
+    expect(await written(gym)).toEqual(NOTHING);
   });
 
   test('a card that fails after an adoption and an earlier card rolls both back', async () => {
@@ -614,7 +808,7 @@ describe('all or nothing: a failure inside the transaction leaves no part of the
       await client.query('drop function pilot.p7_test_refuse_second_card()');
     }
 
-    expect(await written(gym)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+    expect(await written(gym)).toEqual(NOTHING);
 
     // And the same template issues cleanly once nothing refuses it: the failed
     // attempt left no half-adopted drill to trip over.
@@ -631,7 +825,7 @@ describe('all or nothing: a failure inside the transaction leaves no part of the
     // itself is still held by the athlete foreign key, inside the transaction.
     await expect(issue(gym, 'athlete-of-nobody')).rejects.toThrow(/pilot_drill_assignments_fk_athlete/);
 
-    expect(await written(gym)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+    expect(await written(gym)).toEqual(NOTHING);
   });
 });
 
@@ -660,14 +854,14 @@ describe("the optional client on promoteReferenceDrill and issueCoachCard joins 
       expect(card).toMatchObject({ drill_id: drill.drill_id, drill_name: 'Drill A', gap_id: null });
 
       // Uncommitted: the "pool" connection sees neither row.
-      expect(await written(gym)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+      expect(await written(gym)).toEqual(NOTHING);
 
       await own.query('ROLLBACK');
     } finally {
       await own.end();
     }
 
-    expect(await written(gym)).toEqual({ drills: 0, assignments: 0, audit: 0 });
+    expect(await written(gym)).toEqual(NOTHING);
   });
 
   test('committed: both rows land together', async () => {
