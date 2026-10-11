@@ -494,8 +494,10 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
 // real sources, age-tuned, and the coach decides (OD-2026-10-01-001: "we can
 // educate it in a safe way", "the app should rarely say dont").
 //
-// So a message that is ONLY a weight-cut question, or ONLY a question about
-// being cleared to spar, train or take contact, now reaches the model. It is
+// So a weight-cut question, or a question about being cleared to spar, train
+// or take contact, that carries none of the words listed below now reaches
+// the model. ("None of the words listed" is the whole test: nothing here
+// understands a sentence.) It is
 // still marked high-risk under main's topic, so the route still writes the
 // request-risk review row for staff; its classification is a name of its own
 // because the route answers 'weight_cutting', 'return_to_play' and
@@ -540,6 +542,18 @@ const WEIGHT_CUT_TOPIC_ROWS: readonly RegExp[] = [
 ];
 const HEALTH_CONCERN_WORDS = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i;
 const HEALTH_CONTEXT_WORDING = /\b(?:seiz\w*|convuls\w*|pass(?:es|ed|ing)?\s+out|black(?:s|ed|ing)?\s+out|knock(?:ed|ing)?\s*out|knockouts?|ko'?d?|concus\w*|faint\w*|syncope|dizz\w*|collaps\w*|unconscious|blood|bleed\w*|bled|breath\w*|chok\w*|chest\s+pains?|heart\s+(?:pains?|problems?|conditions?|issues?|attacks?)|cardiac|confus\w*|can(?:not|\s*'?\s*t|\s+not)\s+(?:remember|feel|see|move|breathe?|stand|walk)|vomit\w*|throw(?:s|ing)?\s+up|threw\s+up|puk\w*|purg\w*|starv\w*|fractur\w*|broken|torn|sprain\w*|stitch\w*|surger\w*|surgical|operation|operated|crutch\w*|sick|illness|fever|flu|covid|asthma|diabet\w*|heat\s*stroke|heat\s+exhaustion|cramp\w*|urine|pee(?:ing)?\s+blood|kidneys?|pills?|laxatives?|diuretics?|lasix|medicat\w*|medicines?|drugs?|steroids?|inject\w*|needles?|eating\s+disorder|anorexi\w*|bulimi\w*|stop(?:ped|ping)?\s+eating|not\s+eating|after\s+(?:an?|my|his|her|their|the|that)\s+(?:hit|knock\w*|injur\w*|fall|ko))\b/i;
+// Reviewer B, 2026-10-10: a kid or a parent reports distress, going without
+// food or water, or being made to cut, in words the list above does not
+// hold -- "I stopped sweating in the sauna", "I haven't had water in 2
+// days", "my dad locks me in the car with the heat on to make weight". Main
+// withheld each of these (by the weight-cut gate, with its fixed line and a
+// staff review row), so they keep main's answer.
+//
+// THESE TWO LISTS ARE LISTS. Plain speech outruns them, as it outruns main's
+// own vocabularies: a report worded some other way is read as a weight-cut
+// question and reaches the model, still marked high-risk. Neither list is the
+// emergency path, and neither adds a word to it.
+const DISTRESS_OR_COERCION_WORDING = /\b(?:stop(?:s|ped)?\s+sweating|not\s+sweating|can(?:not|\s*'?\s*t)\s+sweat|went\s+(?:black|dark|blank)|going\s+(?:black|dark)|see(?:ing)?\s+(?:spots|stars)|tunnel\s+vision|pounding|throbbing|migraines?|spinning|light\s*-?\s*headed|woozy|shak(?:y|ing|es)|trembl\w*|pale|clammy|chills|out\s+of\s+it|deliri\w*|hallucinat\w*|racing|palpitation\w*|(?:haven'?t|hasn'?t|have\s+not|has\s+not|didn'?t|did\s+not)\s+(?:eaten|eat|had|drunk|drank|drink|peed|pee)|not\s+eaten|no\s+(?:food|water|fluids?)\s+(?:for|in|since)|without\s+(?:food|water|eating|drinking)|days?\s+without|ex-?lax|dulcolax|(?:makes?|made|making|forc(?:e|es|ed|ing)|lock(?:s|ed|ing)?)\s+(?:me|him|her|us|them)|(?:won'?t|will\s+not|doesn'?t|does\s+not|don'?t|not)\s+let(?:ting)?\s+(?:me|him|her|us|them)|can(?:not|\s*'?\s*t)\s+(?:eat|drink)|not\s+allowed\s+to|punish\w*)\b/i;
 const DIAGNOSIS_QUESTION = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i;
 const MEDICATION_QUESTION = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i;
 const MEDICAL_CLEARANCE_PHRASE = /\bmedical\s+clear(?:ed|ance)?\b/i;
@@ -575,7 +589,7 @@ function taughtQuestion(
 ): ShadowTaughtQuestion | null {
   if (hasAcuteSign) return null;
   if (TRUE_EMERGENCY_SIGNS.test(text) || EMERGENCY_TOPIC_PATTERNS.some((pattern) => pattern.test(text))) return null;
-  if (HEALTH_CONCERN_WORDS.test(text) || HEALTH_CONTEXT_WORDING.test(text)) return null;
+  if (HEALTH_CONCERN_WORDS.test(text) || HEALTH_CONTEXT_WORDING.test(text) || DISTRESS_OR_COERCION_WORDING.test(text)) return null;
   if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return null;
 
   const mainClearanceGate = MEDICAL_CLEARANCE_PHRASE.test(text)

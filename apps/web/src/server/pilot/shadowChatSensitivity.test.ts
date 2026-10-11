@@ -706,6 +706,8 @@ const NEVER_RELEASED_WITH: readonly RegExp[] = [
   // acute signs and medication in plain words
   /\b(?:seiz\w*|convuls\w*|pass(?:es|ed|ing)?\s+out|black(?:s|ed|ing)?\s+out|knock(?:ed|ing)?\s*out|knockouts?|concus\w*|faint\w*|dizz\w*|collaps\w*|unconscious|blood|bleed\w*|breath\w*|chest\s+pains?|cardiac|confus\w*|vomit\w*|throw(?:s|ing)?\s+up|starv\w*|fractur\w*|broken|torn|surger\w*|sick|fever|cramp\w*|pills?|laxatives?|diuretics?|lasix|medicat\w*|medicines?|drugs?|inject\w*)\b/i,
   /\bcan(?:not|\s*'?\s*t|\s+not)\s+(?:remember|feel|see|move|breathe?|stand|walk)\b/i,
+  // distress, going without food or water, being made to (reviewer B, 2026-10-10)
+  /\b(?:stop(?:s|ped)?\s+sweating|not\s+sweating|went\s+(?:black|dark)|pounding|throbbing|light\s*-?\s*headed|shak(?:y|ing)|pale|out\s+of\s+it|racing|(?:haven'?t|hasn'?t)\s+(?:eaten|had|drunk)|without\s+(?:food|water)|ex-?lax|(?:makes?|made|forc(?:e|es|ed|ing)|lock(?:s|ed|ing)?)\s+(?:me|him|her|us|them)|(?:won'?t|doesn'?t)\s+let\s+(?:me|him|her|us|them)|can(?:not|\s*'?\s*t)\s+(?:eat|drink))\b/i,
 ];
 
 function explainedByOwnerRelease(message: string, was: Verdict, is: Verdict): boolean {
