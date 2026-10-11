@@ -5,8 +5,8 @@
 // three screens that list assigned work -- the athlete's assignments page, the
 // athlete's Floor and the coach's card list -- so they cannot come to disagree
 // about what a readable answer is. The ORDERING is shared by the two athlete
-// screens; the card list arranges cards inside its own issuance groups
-// (app/coach/cards/page.tsx) and uses only the reader.
+// screens and the guardian's; the card list arranges cards inside its own
+// issuance groups (app/coach/cards/page.tsx) and uses only the reader.
 //
 // The server sends the assignments as it always has and, beside them, the
 // workouts: which assignments are steps of one, in the coach's order, and what
@@ -59,8 +59,8 @@ export class IssuedWorkoutsUnreadableError extends Error {
  *
  * Only what every screen draws is required, so a field one screen does not
  * draw cannot make that screen's list unreadable. `issued_at` and
- * `issued_by_name` are not looked at here: the athlete's assignments page,
- * which draws both, checks both.
+ * `issued_by_name` are not looked at here: a screen that draws them reads
+ * with readDatedIssuedWorkouts.
  */
 export function readIssuedWorkouts(raw: unknown): IssuedWorkoutView[] {
   if (raw === undefined) return [];
@@ -75,6 +75,28 @@ export function readIssuedWorkouts(raw: unknown): IssuedWorkoutView[] {
   });
   if (!wellFormed) throw new IssuedWorkoutsUnreadableError();
   return raw as IssuedWorkoutView[];
+}
+
+/** An issued workout whose date and coach's name have been checked too. */
+export interface DatedIssuedWorkout extends IssuedWorkoutView {
+  issued_at: string;
+  /** Absent when the server sent no name. Never an account id: a family reader is sent a name. */
+  issued_by_name?: string;
+}
+
+/**
+ * readIssuedWorkouts for a screen that also draws the date each workout was
+ * issued and who issued it: the athlete's assignments page and the guardian's.
+ * A workout with no readable date, or a name that is not text, is refused
+ * here the same way -- thrown, never read as "no workouts".
+ */
+export function readDatedIssuedWorkouts(raw: unknown): DatedIssuedWorkout[] {
+  return readIssuedWorkouts(raw).map((workout) => {
+    const { issued_at, issued_by_name } = workout;
+    if (typeof issued_at !== 'string' || Number.isNaN(Date.parse(issued_at))) throw new IssuedWorkoutsUnreadableError();
+    if (issued_by_name !== undefined && typeof issued_by_name !== 'string') throw new IssuedWorkoutsUnreadableError();
+    return { ...workout, issued_at, issued_by_name };
+  });
 }
 
 /** One line of an assigned-work list, in the order it is drawn. */

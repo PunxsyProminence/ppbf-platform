@@ -147,9 +147,9 @@ describe('GET /api/pilot/progression/assignments', () => {
       // or the athlete in the admin's gym.
       mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
       mockQuery.mockResolvedValueOnce(rows);
-      // The workout-shape read follows for staff and the athlete when there
-      // is an assignment to ask about; none of these rows is a workout step.
-      if (role !== 'parent' && rows.length > 0) mockQuery.mockResolvedValueOnce([]);
+      // The workout-shape read follows for every reader when there is an
+      // assignment to ask about; none of these rows is a workout step.
+      if (rows.length > 0) mockQuery.mockResolvedValueOnce([]);
       const res = await GET(getRequest('athlete_id=ath-1'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Record<string, unknown>[] };
@@ -283,7 +283,7 @@ describe('GET /api/pilot/progression/assignments: the shape of an issued workout
     );
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     mockQuery.mockResolvedValueOnce(assignments);
-    if (role !== 'parent' && assignments.length > 0) {
+    if (assignments.length > 0) {
       if (stepRows instanceof Error) mockQuery.mockRejectedValueOnce(stepRows);
       else mockQuery.mockResolvedValueOnce(stepRows);
     }
@@ -374,14 +374,50 @@ describe('GET /api/pilot/progression/assignments: the shape of an issued workout
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
-  test('a linked guardian is not sent the shape yet: no workouts key, and the shape is never read', async () => {
-    const { res, body } = await read('parent', ASSIGNMENTS, STEP_ROWS);
+  test('a linked guardian receives what their child receives: the same workout, the coach by name, no account id', async () => {
+    const guardian = await read('parent', ASSIGNMENTS, STEP_ROWS);
+    const athlete = await read('athlete', ASSIGNMENTS, STEP_ROWS);
 
-    expect(res.status).toBe(200);
-    expect(body).not.toHaveProperty('workouts');
-    expect((body.items as unknown[]).length).toBe(4);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(body)).not.toContain('coach_note');
+    expect(guardian.res.status).toBe(200);
+    expect(guardian.body.workouts).toEqual([
+      {
+        issue_id: 'issue-1',
+        athlete_id: 'ath-1',
+        template_name: 'Technical Tuesday',
+        template_version: 2,
+        issued_at: '2026-10-11T10:00:00.000Z',
+        issued_by_name: 'Coach J Rivera',
+        steps: STEPS,
+      },
+    ]);
+    // Key for key what the athlete is sent, and nothing more.
+    expect(guardian.body).toEqual(athlete.body);
+    expect(JSON.stringify(guardian.body)).not.toContain('acct-coach');
+    expect(JSON.stringify(guardian.body)).not.toContain('account_id');
+  });
+
+  test("the guardian's shape read is asked after the guardian-link check, about that child's assignments only", async () => {
+    await read('parent', ASSIGNMENTS, STEP_ROWS);
+
+    // The link check (assertActorCanAccessAthlete) ran, as the guardian, for the child asked about.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain('acct-parent');
+    expect(JSON.stringify(mockQueryOne.mock.calls[0])).toContain('ath-1');
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [shapeSql, shapeParams] = mockQuery.mock.calls[1];
+    expect(shapeSql).toContain('from pilot.workout_issue_steps s');
+    expect(shapeParams).toEqual(['org-1', ['asg-loose', 'asg-2', 'asg-1', 'asg-3']]);
+  });
+
+  test('a guardian who is not linked to the child is refused before anything is read: no assignments, no shape', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null, accountId: 'acct-parent' }));
+    mockQueryOne.mockResolvedValueOnce(null); // no guardian link
+
+    const res = await GET(getRequest('athlete_id=ath-1'));
+
+    expect(res.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(JSON.stringify(await res.json())).not.toContain('workouts');
   });
 
   test('a shape read that fails fails the read: a flat list is never returned as if it were the whole answer', async () => {
