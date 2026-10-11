@@ -1414,6 +1414,58 @@ describe('issue to athlete', () => {
       expect(bodies[1].request_key).not.toBe(bodies[0].request_key);
     });
 
+    it('opening another template and coming back sends the SAME key: the press that got no answer is still the one being retried', async () => {
+      // The issue control is taken down when another template opens. The keys
+      // are the page's, so they are still there when the coach comes back.
+      let sends = 0;
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(ISSUE_URL)) {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          return sends === 2 ? statusResponse(200, ALREADY_BODY) : statusResponse(201, ISSUED_BODY);
+        }
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+        if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      const pressIssue = async () => {
+        fireEvent.change(await screen.findByLabelText('Athlete'), { target: { value: 'ath-1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+        });
+      };
+
+      render(<CoachWorkoutTemplatesPage />);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+      await pressIssue();
+      await screen.findByRole('alert');
+
+      // Away to the other template: the first one's issue control is gone.
+      fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+      await screen.findByRole('heading', { level: 2, name: 'Conditioning Circuit 45' });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      // And back.
+      fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+      await screen.findByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' });
+      await pressIssue();
+
+      const status = await issuedStatus();
+      expect(status).toHaveTextContent('Your earlier try had gone through. This press did not issue it again.');
+      const bodies = () => issuePosts(fetchMock).map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+      expect(bodies().map((body) => body.template_id)).toEqual(['wt-1', 'wt-1']);
+      expect(typeof bodies()[0].request_key).toBe('string');
+      expect(bodies()[1].request_key).toBe(bodies()[0].request_key);
+
+      // That answer settled it: the next press is a new issue with a new key.
+      await issueAgain();
+      await waitFor(() => expect(bodies()).toHaveLength(3));
+      expect(bodies()[2].request_key).not.toBe(bodies()[0].request_key);
+    });
+
     it('each athlete has its own key, and an unanswered one is still that athlete\'s after choosing someone else and coming back', async () => {
       const fetchMock = mockIssues([NO_ANSWER, NO_ANSWER, () => statusResponse(200, ALREADY_BODY)]);
 
