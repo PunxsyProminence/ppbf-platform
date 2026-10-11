@@ -582,6 +582,28 @@ export async function getOrganizationViolations(
   return query<ComplianceViolation>(sql, params);
 }
 
+/**
+ * How many violations each athlete has that are still open, by this module's
+ * one definition of open. A count per athlete and nothing else: the
+ * cleared-tonight answer (clearedTonight.ts) lists it as a fact on file and
+ * never reads it as a verdict, because resolving or dismissing a violation
+ * does not clear an athlete and an open one stops nothing.
+ *
+ * An athlete with none has no entry. Not capped, unlike the register read
+ * above: it is an aggregate, so there is no newest-slice window to mistake
+ * for the whole.
+ */
+export async function countOpenViolationsByAthlete(organizationId: string): Promise<Map<string, number>> {
+  const rows = await query<{ athlete_id: string; open_count: number }>(
+    `select athlete_id, count(*)::int as open_count
+       from pilot.compliance_violations
+      where organization_id = $1 and status = any($2::text[])
+      group by athlete_id`,
+    [organizationId, [...COMPLIANCE_VIOLATION_OPEN_STATUSES]],
+  );
+  return new Map(rows.map((row) => [row.athlete_id, row.open_count]));
+}
+
 export async function getComplianceRuleById(
   organizationId: string,
   ruleId: string,

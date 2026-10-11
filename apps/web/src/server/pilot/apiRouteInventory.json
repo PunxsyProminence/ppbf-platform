@@ -2266,7 +2266,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Org-wide roster rollup of athlete name and waiver status per type (getOrganizationWaiverStatus). Gate at route.ts:17-18. Read-only; coach not admitted.",
+    "notes": "Org-wide roster rollup of athlete name and waiver status per type, plus each athlete's one cleared-tonight answer and the records it rests on: active training hold (never reason_text), medical clearance status (never restriction flags, source or author), paper waiver status and day, photo-video consent, open violation count (getOrganizationClearedTonight, lane N4-01). Gate at route.ts:21-22. Read-only; coach not admitted.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

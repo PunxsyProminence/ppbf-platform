@@ -18,6 +18,7 @@ import {
   getOrganizationWaiverStatus,
   MEDIA_CONSENT_TRACKED_TYPE,
   mediaConsentAsWaiverStatus,
+  readOrganizationWaiverRoster,
   requireWaiverStatus,
   TRACKED_WAIVER_TYPES,
   WAIVER_STATUSES,
@@ -42,6 +43,53 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+// Lane N4-01: the roster read behind the worklist, with the two facts the
+// cleared-tonight answer lists (clearedTonight.ts) and the worklist does not.
+describe('readOrganizationWaiverRoster', () => {
+  test('carries each current row’s recorded day and the athlete’s date of birth', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, dob: '2012-05-01', waiver_type: 'general', status: 'signed', recorded_on: '2026-09-02' },
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, dob: '2012-05-01', waiver_type: 'travel', status: 'withdrawn', recorded_on: '2026-09-20' },
+    ]);
+
+    const [entry] = await readOrganizationWaiverRoster('org-1');
+
+    expect(entry.dob).toBe('2012-05-01');
+    expect(entry.recordedOn).toEqual({ general: '2026-09-02', travel: '2026-09-20' });
+    expect(entry.waivers).toEqual({ general: 'signed', medical_release: 'missing', photo_media: 'missing', travel: 'withdrawn' });
+
+    const [sql] = mockQuery.mock.calls[0] as [string, unknown[]];
+    // The day is the same row's: read inside the same latest-row-per-type pick
+    // as the status, never by a second query that could choose another row.
+    expect(sql).toContain('select distinct on (waiver_type) waiver_type, status, signed_at');
+    expect(sql).toContain("to_char(w.signed_at at time zone 'UTC', 'YYYY-MM-DD') as recorded_on");
+  });
+
+  // An unrecognised stored status reads 'missing' (fail closed). A date beside
+  // it would say "none on file, recorded on a day", which is not a fact.
+  test('a status that reads missing carries no recorded day', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, dob: null, waiver_type: 'general', status: 'pending', recorded_on: '2026-09-02' },
+    ]);
+
+    const [entry] = await readOrganizationWaiverRoster('org-1');
+
+    expect(entry.waivers.general).toBe('missing');
+    expect(entry.recordedOn).toEqual({});
+    expect(entry.dob).toBeNull();
+  });
+
+  test('the worklist read is the same roster without the two extra facts', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, dob: '2012-05-01', waiver_type: 'general', status: 'signed', recorded_on: '2026-09-02' },
+    ]);
+
+    const [entry] = await getOrganizationWaiverStatus('org-1');
+
+    expect(Object.keys(entry).sort()).toEqual(['activeFlag', 'athleteId', 'athleteName', 'waivers']);
+  });
 });
 
 describe('getOrganizationWaiverStatus', () => {

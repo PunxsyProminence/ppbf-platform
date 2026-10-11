@@ -2,19 +2,34 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getOrganizationWaiverStatus } from '@/src/server/pilot/waiverCompliance';
+import { getOrganizationClearedTonight, type ClearedTonight } from '@/src/server/pilot/clearedTonight';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
-jest.mock('@/src/server/pilot/waiverCompliance', () => ({
-  getOrganizationWaiverStatus: jest.fn(),
+jest.mock('@/src/server/pilot/clearedTonight', () => ({
+  getOrganizationClearedTonight: jest.fn(),
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
-const mockGetStatus = jest.mocked(getOrganizationWaiverStatus);
+const mockGetStatus = jest.mocked(getOrganizationClearedTonight);
+
+// One athlete's answer, as clearedTonight.ts hands it over (already in the
+// shape the route sends).
+const TONIGHT: ClearedTonight = {
+  answer: 'cleared_no_contact',
+  hold: { scope: 'contact_only', athlete_explanation: 'No sparring this week.', lift_condition_text: 'Coach sign-off.', expires_at: null },
+  medical: { status: 'cleared', current: true, expires_at: null },
+  waivers: [
+    { type: 'general', status: 'signed', recorded_on: '2026-09-02' },
+    { type: 'medical_release', status: 'missing', recorded_on: null },
+    { type: 'travel', status: 'missing', recorded_on: null },
+  ],
+  media_consent: { basis: 'guardian', status: 'signed' },
+  open_violations: 0,
+};
 
 function principal(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,6 +60,7 @@ test('an admin gets the org-wide waiver status, snake_cased at the boundary', as
       athleteName: 'Jordan T.',
       activeFlag: true,
       waivers: { general: 'signed', medical_release: 'missing', photo_media: 'signed', travel: 'missing' },
+      tonight: TONIGHT,
     },
   ]);
 
@@ -58,6 +74,8 @@ test('an admin gets the org-wide waiver status, snake_cased at the boundary', as
       athlete_name: 'Jordan T.',
       active_flag: true,
       waivers: { general: 'signed', medical_release: 'missing', photo_media: 'signed', travel: 'missing' },
+      // The one cleared-tonight answer rides on the same row, copied as given.
+      tonight: TONIGHT,
     },
   ]);
   expect(mockGetStatus).toHaveBeenCalledWith('org-a');

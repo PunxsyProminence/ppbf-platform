@@ -90,6 +90,15 @@ test('a new violation offers acknowledge, escalate, and dismiss -- not resolve',
   expect(screen.queryByRole('button', { name: 'Resolve' })).toBeNull();
 });
 
+// Lane N4-01: the one cleared-tonight answer lives on Waiver Compliance. The
+// link opens that screen on every athlete, not on its "Missing a waiver"
+// default, which would hide an athlete on a hold whose papers are all signed.
+test('the Cleared tonight link opens Waiver Compliance on every athlete', async () => {
+  await renderWithViolations([violation()]);
+
+  expect(screen.getByRole('link', { name: 'Cleared tonight' }).getAttribute('href')).toBe('/admin/waiver-status?view=all');
+});
+
 test('an escalated violation offers resolve only -- it comes back down the ladder, never dismissed', async () => {
   await renderWithViolations([violation({ status: 'escalated' })]);
 
