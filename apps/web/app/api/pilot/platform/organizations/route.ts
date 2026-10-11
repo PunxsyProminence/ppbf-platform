@@ -60,7 +60,9 @@ export async function POST(request: NextRequest) {
       event_type: 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
-      organization_id: principal.organizationId,
+      // The organization acted ON, not the actor's own: the row has to appear
+      // in the log of the gym that was just created.
+      organization_id: organizationId,
       entity_type: 'organization',
       entity_id: organizationId,
       details: { organization_name: organizationName },

@@ -69,7 +69,10 @@ export interface OrgMetrics {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'organization_admin', 'platform_owner']);
+    // Everything below is one gym's data, read for principal.organizationId:
+    // the aggregates, viewerUnlocks and the per-member view. platform_owner is
+    // refused on the whole route (OD-2026-10-10-004 ruling 3).
+    requireRole(principal, ['admin', 'organization_admin']);
     await assertShadowRuntimeReadiness({
       requiredTables: [
         'shadow_feedback',
@@ -92,11 +95,7 @@ export async function GET(request: NextRequest) {
     const userId = url.searchParams.get('userId');
 
     if (userId) {
-      if (
-        principal.role === 'platform_owner'
-        || !userId.trim()
-        || userId.length > 200
-      ) {
+      if (!userId.trim() || userId.length > 200) {
         return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
       }
       const activeOrganizationAccount = await queryOne<{ account_id: string }>(

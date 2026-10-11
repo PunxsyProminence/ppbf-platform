@@ -75,6 +75,40 @@ describe('POST /api/pilot/admin/accounts/repair-auth-provider', () => {
     expect(mockRepair).not.toHaveBeenCalled();
   });
 
+  // The repair reaches only accounts of the caller's own gym, so it is gym
+  // work: the platform owner is refused before anything is changed or audited
+  // (OD-2026-10-10-004 ruling 3).
+  test.each([
+    ['naming an account', { account_id: 'acct-stranded' }],
+    ['with no account named', {}],
+  ])('refuses the platform owner %s, and repairs nothing', async (_label, body) => {
+    mockPrincipal.mockResolvedValue({
+      accountId: 'owner-1',
+      organizationId: 'org-1',
+      role: 'platform_owner',
+    } as never);
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(403);
+    expect(mockRepair).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the legacy admin role still repairs, filed under its own gym', async () => {
+    mockPrincipal.mockResolvedValue({
+      accountId: 'admin-2',
+      organizationId: 'org-1',
+      role: 'admin',
+    } as never);
+    const response = await POST(makeRequest({ account_id: 'acct-stranded' }));
+    expect(response.status).toBe(200);
+    expect(mockRepair).toHaveBeenCalledWith('acct-stranded', 'org-1');
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      actor_role: 'admin',
+      organization_id: 'org-1',
+      entity_id: 'acct-stranded',
+    });
+  });
+
   test('requires account_id', async () => {
     const response = await POST(makeRequest({}));
     expect(response.status).toBe(400);

@@ -6,36 +6,23 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-// The registry is stored per organization, so a platform_owner edit has to name
-// the organization it targets. Supplying organization_id selects it; every other
-// role resolves strictly from their own session and cannot reach another gym's
-// registry. Mirrors resolveOrganizationId in the gym-capabilities route.
-function resolveOrganizationId(
-  principal: { role: string; organizationId: string },
-  requestedOrganizationId: string | null | undefined,
-): string {
-  const requested = requestedOrganizationId?.trim();
-  if (principal.role === 'platform_owner' && requested) {
-    return requested;
-  }
-  return principal.organizationId;
-}
+// The registry is one gym's own list, read and saved from /admin, so this is
+// gym work: platform_owner is refused on both verbs (OD-2026-10-10-004 ruling
+// 3). It used to pass, and could name another gym with organization_id; no
+// screen sends one. Every caller now reads and writes the gym of its own
+// session, and an organization_id in the request is ignored.
+const CAPABILITY_ROLES = ['organization_admin', 'admin'] as const;
 
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['platform_owner', 'organization_admin', 'admin']);
-
-    const organizationId = resolveOrganizationId(
-      principal,
-      request.nextUrl.searchParams.get('organization_id'),
-    );
+    requireRole(principal, [...CAPABILITY_ROLES]);
 
     const row = await queryOne<{ capabilities: unknown }>(
       `select capabilities
        from pilot.admin_capability_registry
        where organization_id = $1`,
-      [organizationId],
+      [principal.organizationId],
     );
 
     return NextResponse.json({
@@ -50,14 +37,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['platform_owner', 'organization_admin', 'admin']);
+    requireRole(principal, [...CAPABILITY_ROLES]);
 
-    const body = (await request.json()) as { capabilities?: unknown; organization_id?: string };
+    const body = (await request.json()) as { capabilities?: unknown };
     if (!Array.isArray(body.capabilities)) {
       throw new Error('capabilities must be an array');
     }
-
-    const organizationId = resolveOrganizationId(principal, body.organization_id);
 
     await query(
       `insert into pilot.admin_capability_registry (
@@ -70,7 +55,7 @@ export async function POST(request: NextRequest) {
        set capabilities = excluded.capabilities,
            updated_by_account_id = excluded.updated_by_account_id,
            updated_at = now()`,
-      [organizationId, JSON.stringify(body.capabilities), principal.accountId],
+      [principal.organizationId, JSON.stringify(body.capabilities), principal.accountId],
     );
 
     return NextResponse.json({ ok: true });
