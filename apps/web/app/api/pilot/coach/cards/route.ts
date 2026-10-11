@@ -11,6 +11,7 @@ import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pi
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { requireAssignableDrillId } from '@/src/server/pilot/progression';
+import { listIssuedWorkoutsForAssignments, type IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 
 export const runtime = 'nodejs';
 
@@ -148,6 +149,20 @@ interface IssuanceGroup {
   cards: CoachCardRow[];
 }
 
+/**
+ * An issued workout template as the coach's list receives it beside `items`
+ * (lane P7c): which cards are its steps, and what the template says beside
+ * each. The steps are those of the cards this read returned, in the coach's
+ * order.
+ */
+interface CardWorkout {
+  issue_id: string;
+  template_name: string;
+  template_version: number;
+  issued_at: string;
+  steps: IssuedWorkoutStep[];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -172,7 +187,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ items: Array.from(groups.values()) });
+    // THE WORKOUT'S SHAPE (lane P7c). `workouts` says which of the cards above
+    // are steps of an issued workout template, in the coach's order, with each
+    // step's block, scale level, contact level and note. It is asked ONLY about
+    // the cards listCoachCards just returned, which is the access boundary
+    // (current reach, re-checked on every read): the shape of a card this
+    // reader cannot see is never asked for. `items` is exactly what it was, so
+    // a screen that does not know `workouts` draws what it always drew. A
+    // failure here fails the read rather than answering with the shape missing.
+    const issued = await listIssuedWorkoutsForAssignments(
+      principal.organizationId,
+      rows.map((row) => row.assignment_id),
+    );
+    // Named key by key: the staff shape also carries the athlete and the
+    // issuing account, which every card here already says.
+    const workouts = issued.map((workout): CardWorkout => ({
+      issue_id: workout.issue_id,
+      template_name: workout.template_name,
+      template_version: workout.template_version,
+      issued_at: workout.issued_at,
+      steps: workout.steps,
+    }));
+
+    return NextResponse.json({ items: Array.from(groups.values()), workouts });
   } catch (error) {
     return jsonError(error);
   }

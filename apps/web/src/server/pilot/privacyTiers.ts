@@ -494,6 +494,29 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'staff notes on their session is not decided, so nothing shows it to them. The list returns no '
       + 'account id, only written_by_me; showing the author\'s display name is the route\'s job.',
   },
+  'workout_issue_steps.coach_note': {
+    tier: 'athlete_record',
+    enforcedBy: [
+      'workoutIssues.ts#listIssuedWorkoutsForAssignments',
+      '../../../app/api/pilot/progression/assignments/route.ts#GET',
+      'access.ts#assertActorCanAccessAthlete',
+      // The coach's card list: the same read, asked about listCoachCards' rows.
+      '../../../app/api/pilot/coach/cards/route.ts#GET',
+      'coachCards.ts#listCoachCards',
+    ],
+    note:
+      'The note beside one step of a workout template, copied onto the workout when it is issued to one '
+      + 'athlete (lane P7c, OD-2026-10-10-004 ruling 5). The athlete is shown it by that ruling (the issued '
+      + 'workout shows each step with the coach\'s note), and so are the staff who reach that athlete. On a '
+      + 'seeded template the note is the template author\'s text, not a coach of this gym\'s. '
+      + 'The read has no gate of its own: it answers only about assignment ids its caller has already read, '
+      + 'and joins every step to its assignment on the organization. It has two callers. The assignments '
+      + 'route passes ids it read behind assertActorCanAccessAthlete, and sends the note to staff and to the '
+      + 'athlete; a linked guardian is not sent it until their screen is built. The coach card list passes '
+      + 'the rows of listCoachCards (a coach\'s own cards for athletes that coach currently reaches; the '
+      + 'whole gym for an organization admin). The same row carries the step\'s contact level, the coach\'s '
+      + 'entry, shown as written.',
+  },
   'athlete_pathway_minor_allowances.reason': {
     tier: 'organization',
     enforcedBy: ['adultPathway.ts#assertPathwayAccess'],
@@ -569,6 +592,10 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.session_staff_notes',
   // A coach's plain-text capacity notes for one athlete (module 013 slice).
   'pilot.athlete_capacity_notes',
+  // A workout issued to one child: the coach's note and the contact level
+  // beside each step (lane P7c). Two entries: neither name prefixes the other.
+  'pilot.workout_issues',
+  'pilot.workout_issue_steps',
   // Head-contact exposure per child: a safety record (overwatch 2026-10-04).
   'pilot.sparring_exposure',
   'pilot.athlete_pathway_minor_allowances',

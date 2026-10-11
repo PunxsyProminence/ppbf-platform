@@ -12,6 +12,7 @@ import {
   formatGymTimeOfDay,
   formatGymWeekday,
   GYM_TIME_ZONE,
+  gymDayIso,
   parseInstantAsGymTime,
 } from './gymTime';
 
@@ -178,5 +179,46 @@ describe('parseInstantAsGymTime', () => {
     expect(parseInstantAsGymTime('2026-07-15T25:00')).toBeNull();
     expect(parseInstantAsGymTime('2026-07-15T18:61')).toBeNull();
     expect(parseInstantAsGymTime('not a date')).toBeNull();
+  });
+});
+
+/**
+ * The gym's "today". The UTC date is the wrong answer for the whole back half of
+ * a training night, so the boundary is the gym's midnight, including on the two
+ * days a year the clocks move.
+ */
+describe('gymDayIso', () => {
+  test('an evening session is still the gym day although UTC has rolled over', () => {
+    // 2026-07-15 23:30 EDT is 03:30Z on the 16th.
+    expect(gymDayIso('2026-07-16T03:30:00Z')).toBe('2026-07-15');
+    expect(gymDayIso('2026-01-16T04:30:00Z')).toBe('2026-01-15');
+  });
+
+  test('the day turns at the gym midnight, EDT and EST', () => {
+    expect(gymDayIso('2026-07-16T03:59:59Z')).toBe('2026-07-15');
+    expect(gymDayIso('2026-07-16T04:00:00Z')).toBe('2026-07-16');
+    expect(gymDayIso('2026-01-16T04:59:59Z')).toBe('2026-01-15');
+    expect(gymDayIso('2026-01-16T05:00:00Z')).toBe('2026-01-16');
+  });
+
+  test('the days the clocks move keep their own boundaries', () => {
+    // Spring forward 2026-03-08: midnight is still EST (05:00Z).
+    expect(gymDayIso('2026-03-08T04:59:59Z')).toBe('2026-03-07');
+    expect(gymDayIso('2026-03-08T05:00:00Z')).toBe('2026-03-08');
+    // The next midnight is EDT (04:00Z).
+    expect(gymDayIso('2026-03-09T03:59:59Z')).toBe('2026-03-08');
+    expect(gymDayIso('2026-03-09T04:00:00Z')).toBe('2026-03-09');
+    // Fall back 2026-11-01: midnight is still EDT (04:00Z), the next is EST (05:00Z).
+    expect(gymDayIso('2026-11-01T03:59:59Z')).toBe('2026-10-31');
+    expect(gymDayIso('2026-11-01T04:00:00Z')).toBe('2026-11-01');
+    expect(gymDayIso('2026-11-02T04:59:59Z')).toBe('2026-11-01');
+    expect(gymDayIso('2026-11-02T05:00:00Z')).toBe('2026-11-02');
+  });
+
+  test('a Date input and the default (now) work, and unusable input is null', () => {
+    expect(gymDayIso(new Date('2026-07-16T03:30:00Z'))).toBe('2026-07-15');
+    expect(gymDayIso()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(gymDayIso('not a date')).toBeNull();
+    expect(gymDayIso(null)).toBeNull();
   });
 });

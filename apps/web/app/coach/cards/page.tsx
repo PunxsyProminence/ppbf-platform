@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
+import type { IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -67,10 +69,98 @@ interface CoachCard {
   completions: CardCompletion[];
 }
 
+// An issued workout template, as GET /api/pilot/coach/cards sends it beside
+// `items` (lane P7c). The step is typed from its producer, not redeclared.
+// Only what this screen draws is typed and checked: the route also sends the
+// template's version and when it was issued.
+interface CardWorkout {
+  issue_id: string;
+  template_name: string;
+  steps: IssuedWorkoutStep[];
+}
+
 interface IssuanceGroup {
   issuance_id: string | null;
   assigned_at: string;
   cards: CoachCard[];
+  // Set by arrangeGroups when the cards are the steps of one issued workout
+  // template: they are then in the coach's order.
+  workout?: CardWorkout;
+}
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
+
+/**
+ * The `workouts` of a card-list answer. Absent (a server that predates the
+ * field) is no workouts. Present but not the shape this screen reads is NOT
+ * read as "no workouts": the steps would be drawn as loose cards and called
+ * the whole list, so the read fails and the list says it could not be read.
+ */
+function readCardWorkouts(raw: unknown): CardWorkout[] {
+  if (raw === undefined) return [];
+  const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
+    const w = workout as Partial<CardWorkout> | null;
+    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name)
+      && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
+        const s = step as Partial<IssuedWorkoutStep> | null;
+        return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)
+          && isTextOrNull(s.scale_level) && isText(s.contact_level) && isTextOrNull(s.coach_note) && isText(s.assignment_id);
+      });
+  });
+  if (!wellFormed) throw new Error('The workouts of the card list could not be read.');
+  return raw as CardWorkout[];
+}
+
+/**
+ * The groups in the order they are drawn. The server's groups keep their order
+ * (newest first). A step of an issued workout arrives as a card standing alone
+ * (the issue writes one individual card per step), so the alone-standing cards
+ * that are steps of one workout are gathered into ONE group, in the coach's
+ * order, standing where the first of them stood. Every other group -- a
+ * program issuance, an individual card in no workout -- is passed through
+ * untouched. An assignment two workouts both name is a step of the first
+ * only, an issue id the answer repeats is one workout, and only cards the
+ * server sent are drawn, so nothing is drawn twice or invented.
+ */
+function arrangeGroups(groups: IssuanceGroup[], workouts: CardWorkout[]): IssuanceGroup[] {
+  const workoutOf = new Map<string, CardWorkout>();
+  const ordinalOf = new Map<string, number>();
+  const issueIds = new Set<string>();
+  for (const workout of workouts) {
+    if (issueIds.has(workout.issue_id)) continue;
+    issueIds.add(workout.issue_id);
+    for (const step of workout.steps) {
+      if (workoutOf.has(step.assignment_id)) continue;
+      workoutOf.set(step.assignment_id, workout);
+      ordinalOf.set(step.assignment_id, step.ordinal);
+    }
+  }
+  /** The workout a group is one step of: only a card standing alone can be one. */
+  const stepWorkout = (group: IssuanceGroup) =>
+    group.issuance_id === null && group.cards.length === 1 ? workoutOf.get(group.cards[0].assignment_id) : undefined;
+
+  const cardsOf = new Map<CardWorkout, CoachCard[]>();
+  for (const group of groups) {
+    const workout = stepWorkout(group);
+    if (workout) cardsOf.set(workout, [...(cardsOf.get(workout) ?? []), group.cards[0]]);
+  }
+
+  const arranged: IssuanceGroup[] = [];
+  for (const group of groups) {
+    const workout = stepWorkout(group);
+    if (!workout) {
+      arranged.push(group);
+      continue;
+    }
+    const cards = cardsOf.get(workout);
+    // Drawn where the first of its cards stood; the rest were gathered there.
+    if (!cards) continue;
+    cardsOf.delete(workout);
+    cards.sort((a, b) => (ordinalOf.get(a.assignment_id) ?? 0) - (ordinalOf.get(b.assignment_id) ?? 0));
+    arranged.push({ issuance_id: null, assigned_at: group.assigned_at, cards, workout });
+  }
+  return arranged;
 }
 
 interface IssuanceReport {
@@ -125,9 +215,9 @@ export default function CoachCardsPage() {
   const loadCards = useCallback(async (signal?: AbortSignal) => {
     const res = await fetch(`${apiBase()}/api/pilot/coach/cards`, { credentials: 'include', signal });
     if (!res.ok) throw new Error(`Failed to load cards: ${res.status}`);
-    const data = (await res.json()) as { items?: IssuanceGroup[] };
+    const data = (await res.json()) as { items?: IssuanceGroup[]; workouts?: unknown };
     if (signal?.aborted) return;
-    setGroups(data.items || []);
+    setGroups(arrangeGroups(data.items || [], readCardWorkouts(data.workouts)));
     // A read that succeeded clears the flag, so a recovered page stops
     // claiming it could not be read.
     setCardsUnreadable(false);
@@ -248,6 +338,18 @@ export default function CoachCardsPage() {
     instruction.open(key, `card-group-instructions-${groupKey}`, (signal) => readAssignmentInstruction(assignmentId, signal));
   };
 
+  // After a write that SUCCEEDED the list is read again. If that read fails,
+  // the write is not what failed: the list says it could not be read (which is
+  // not a statement that nothing was issued), and no "Failed" alert is raised
+  // over a card the athlete already has or a completion already verified.
+  const reloadCardsAfterWrite = async () => {
+    try {
+      await loadCards();
+    } catch {
+      setCardsUnreadable(true);
+    }
+  };
+
   const handleIssue = async () => {
     setErrorMessage('');
     if (mode === 'athlete' && !form.athlete_id) {
@@ -294,7 +396,7 @@ export default function CoachCardsPage() {
       setReport(mode === 'program' ? (payload as IssuanceReport) : null);
       if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
       setForm({ ...EMPTY_FORM });
-      await loadCards();
+      await reloadCardsAfterWrite();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to issue card');
     } finally {
@@ -321,7 +423,7 @@ export default function CoachCardsPage() {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || 'Verify failed');
       }
-      await loadCards();
+      await reloadCardsAfterWrite();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Verify failed');
     } finally {
@@ -621,16 +723,29 @@ export default function CoachCardsPage() {
             <div className="space-y-[var(--s4)]">
               {groups.map((group) => {
                 const first = group.cards[0];
-                const groupKey = group.issuance_id ?? first.assignment_id;
+                const workout = group.workout;
+                const stepOf = new Map((workout?.steps ?? []).map((step) => [step.assignment_id, step]));
+                const groupKey = workout ? `workout-${workout.issue_id}` : group.issuance_id ?? first.assignment_id;
                 const groupOpen = instruction.openKey === `group:${groupKey}`;
                 const groupName = first.drill_display_name || first.drill_name;
                 return (
-                  <div key={groupKey} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <div
+                    key={groupKey}
+                    className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]"
+                    data-testid={workout ? 'issued-workout' : undefined}
+                  >
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">
-                        {first.drill_display_name || first.drill_name}
+                        {workout ? workout.template_name : first.drill_display_name || first.drill_name}
                       </p>
-                      {group.issuance_id ? (
+                      {workout ? (
+                        <>
+                          <span className="t-label">
+                            workout · {group.cards.length === 1 ? '1 step' : `${group.cards.length} steps`}
+                          </span>
+                          <span className="t-body font-semibold">{first.athlete_name}</span>
+                        </>
+                      ) : group.issuance_id ? (
                         <span className="badge badge--monitor"><i aria-hidden="true">◉</i>group · {group.cards.length}</span>
                       ) : (
                         <span className="badge badge--cleared"><i aria-hidden="true">✓</i>individual</span>
@@ -644,11 +759,14 @@ export default function CoachCardsPage() {
                         </span>
                       )}
                     </div>
-                    <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
-                      {first.drill_display_description || first.drill_description}
-                    </p>
+                    {/* A workout is many drills: each step shows its own description below. */}
+                    {!workout && (
+                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                        {first.drill_display_description || first.drill_description}
+                      </p>
+                    )}
                     {/* A legacy card has no drill behind it, so nothing to open. */}
-                    {first.drill_id && (
+                    {!workout && first.drill_id && (
                       <div className="mt-[var(--s2)]">
                         <button
                           type="button"
@@ -667,56 +785,93 @@ export default function CoachCardsPage() {
                     )}
 
                     <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
-                      {group.cards.map((card) => (
-                        <li key={card.assignment_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
-                          <div className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
-                            <p className="t-body font-semibold">{card.athlete_name}</p>
-                            <p className="t-data text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
-                              {card.completion_percentage}% · {card.status.replaceAll('_', ' ')}
-                            </p>
-                          </div>
-                          {card.completions.length > 0 && (
-                            <div className="mt-[var(--s2)] space-y-[var(--s2)]">
-                              {card.completions.map((completion) => (
-                                <div
-                                  key={completion.completion_id}
-                                  className="flex flex-wrap items-center justify-between gap-[var(--s2)]"
-                                >
-                                  <div>
-                                    <span className="t-data text-[length:var(--t-xs)]">{formatGymStamp(completion.completed_at)}</span>
-                                    <span className="t-data ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
-                                      {completion.verification_status}
-                                    </span>
-                                    {completion.notes ? (
-                                      <p className="t-muted mt-[var(--s1)] text-[length:var(--t-xs)]">{completion.notes}</p>
-                                    ) : null}
-                                  </div>
-                                  {completion.verification_status === 'pending' && (
-                                    <div className="flex gap-[var(--s2)]">
-                                      <button
-                                        type="button"
-                                        className="btn btn--ghost"
-                                        disabled={busy}
-                                        onClick={() => void handleVerify(card, completion, true)}
-                                      >
-                                        Verify
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn--ghost"
-                                        disabled={busy}
-                                        onClick={() => void handleVerify(card, completion, false)}
-                                      >
-                                        Dispute
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                      {group.cards.map((card, index) => {
+                        const step = stepOf.get(card.assignment_id);
+                        const before = index > 0 ? stepOf.get(group.cards[index - 1].assignment_id) : undefined;
+                        const stepOpen = instruction.openKey === `group:${card.assignment_id}`;
+                        const stepName = step ? `Step ${step.ordinal}, ${card.drill_display_name || card.drill_name}` : '';
+                        return (
+                          <li key={card.assignment_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
+                            {/* The block's name, on the first step of each run of a block, so
+                                the list holds one item per step and no others. */}
+                            {step && step.block !== before?.block && (
+                              <p className="t-label mb-[var(--s2)]">{step.block.replace(/_/g, ' ')}</p>
+                            )}
+                            <div className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                              <p className="t-body font-semibold">
+                                {step ? `Step ${step.ordinal} · ${card.drill_display_name || card.drill_name}` : card.athlete_name}
+                              </p>
+                              <p className="t-data text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
+                                {card.completion_percentage}% · {card.status.replaceAll('_', ' ')}
+                              </p>
                             </div>
-                          )}
-                        </li>
-                      ))}
+                            {step && (
+                              <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                                {card.drill_display_description || card.drill_description}
+                              </p>
+                            )}
+                            {step && <StepNotes step={step} />}
+                            {/* Each step is its own drill, so each opens its own instructions. */}
+                            {step && card.drill_id && (
+                              <div className="mt-[var(--s2)]">
+                                <button
+                                  type="button"
+                                  id={`card-group-instructions-${card.assignment_id}`}
+                                  className="btn btn--ghost"
+                                  aria-expanded={stepOpen}
+                                  aria-label={`${stepOpen ? 'Hide' : 'View'} instructions: ${stepName}`}
+                                  onClick={() => toggleGroupInstructions(card.assignment_id, card.assignment_id)}
+                                >
+                                  {stepOpen ? 'Hide instructions' : 'View instructions'}
+                                </button>
+                                {stepOpen && (
+                                  <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                                )}
+                              </div>
+                            )}
+                            {card.completions.length > 0 && (
+                              <div className="mt-[var(--s2)] space-y-[var(--s2)]">
+                                {card.completions.map((completion) => (
+                                  <div
+                                    key={completion.completion_id}
+                                    className="flex flex-wrap items-center justify-between gap-[var(--s2)]"
+                                  >
+                                    <div>
+                                      <span className="t-data text-[length:var(--t-xs)]">{formatGymStamp(completion.completed_at)}</span>
+                                      <span className="t-data ml-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-400)]">
+                                        {completion.verification_status}
+                                      </span>
+                                      {completion.notes ? (
+                                        <p className="t-muted mt-[var(--s1)] text-[length:var(--t-xs)]">{completion.notes}</p>
+                                      ) : null}
+                                    </div>
+                                    {completion.verification_status === 'pending' && (
+                                      <div className="flex gap-[var(--s2)]">
+                                        <button
+                                          type="button"
+                                          className="btn btn--ghost"
+                                          disabled={busy}
+                                          onClick={() => void handleVerify(card, completion, true)}
+                                        >
+                                          Verify
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn--ghost"
+                                          disabled={busy}
+                                          onClick={() => void handleVerify(card, completion, false)}
+                                        >
+                                          Dispute
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 );

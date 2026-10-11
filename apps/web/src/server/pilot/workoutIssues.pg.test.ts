@@ -15,6 +15,9 @@
 //     pilot.athletes; the cascades are the only thing that removes these rows.
 //   * THE DATABASE REFUSES what the module never writes: an unknown level, an
 //     assignment in two workouts, a repeated request key in one gym.
+//   * THE READ ANSWERS ONLY WHAT IT IS ASKED, in the coach's order, and a step
+//     tied (by hand, past the writer) to another gym's or another athlete's
+//     assignment is returned to nobody.
 //   * READINESS IS RED when any one of the guards it names (four checks, four
 //     foreign keys, three indexes) is missing or looser. It does not look at
 //     primary keys, column types or the organization and account foreign keys.
@@ -85,8 +88,14 @@ jest.mock('./db', () => ({
 }));
 
 import { issueCoachCard } from './coachCards';
+import { query } from './db';
 import { promoteReferenceDrill } from './drills';
-import { recordWorkoutIssue, type WorkoutIssueStepInput } from './workoutIssues';
+import {
+  listIssuedWorkoutsForAssignments,
+  recordWorkoutIssue,
+  toFamilyIssuedWorkouts,
+  type WorkoutIssueStepInput,
+} from './workoutIssues';
 import { issueWorkoutTemplate, type TemplateIssueResult } from './workoutTemplates';
 
 jest.setTimeout(180_000);
@@ -789,6 +798,158 @@ describe('the rows leave only by cascade', () => {
       { ordinal: 3, status: 'cancelled' },
       { ordinal: 4, status: 'assigned' },
     ]);
+  });
+});
+
+describe('reading an issued workout back (listIssuedWorkoutsForAssignments)', () => {
+  /** A step row written by hand, past the module's own join, to stage a row the writer refuses. */
+  async function rawStep(organizationId: string, issueId: string, ordinal: number, assignmentId: string): Promise<void> {
+    await client.query(
+      `insert into pilot.workout_issue_steps
+         (organization_id, issue_id, ordinal, block, scale_level, contact_level, coach_note, template_item_id, assignment_id)
+       values ($1, $2::uuid, $3, 'planted', null, 'none', 'planted note', 'wti_planted', $4)`,
+      [organizationId, issueId, ordinal, assignmentId],
+    );
+  }
+
+  async function issued(gym: Gym, athleteId = ATHLETE_ID) {
+    const result = await issue(gym, athleteId);
+    if (result.outcome !== 'issued') throw new Error('fixture did not issue');
+    return result;
+  }
+
+  const idsOf = (result: { steps: Array<{ assignment: { assignment_id: string } }> }) =>
+    result.steps.map((entry) => entry.assignment.assignment_id);
+
+  test('the workout comes back as the coach wrote it: every step in order with its block, levels, note and assignment', async () => {
+    const { gym } = await gymWithWorkout('read');
+    const result = await issued(gym);
+    // Asked in an order that is not the workout's.
+    const asked = [...idsOf(result)].reverse();
+
+    const workouts = await listIssuedWorkoutsForAssignments(gym.organizationId, asked);
+
+    expect(workouts).toHaveLength(1);
+    expect(workouts[0]).toMatchObject({
+      issue_id: result.issue_id,
+      athlete_id: ATHLETE_ID,
+      template_name: 'Shape Fixture',
+      template_version: 3,
+      issued_by_account_id: gym.coachId,
+    });
+    expect(new Date(workouts[0].issued_at).getTime()).toBeGreaterThan(0);
+    expect(workouts[0].steps).toEqual(
+      WORKOUT.map((fixture, index) => ({
+        ordinal: index + 1,
+        block: fixture.block,
+        scale_level: fixture.scale,
+        contact_level: fixture.contact,
+        coach_note: fixture.note,
+        assignment_id: result.steps[index].assignment.assignment_id,
+      })),
+    );
+  });
+
+  test('it answers only about the assignments it is asked about: some steps, none, or no ids at all', async () => {
+    const { gym, drills } = await gymWithWorkout('read-asked');
+    const result = await issued(gym);
+    const ids = idsOf(result);
+    const loose = await card(gym, drills['ref-a']);
+
+    const some = await listIssuedWorkoutsForAssignments(gym.organizationId, [ids[2], ids[0], loose]);
+    expect(some).toHaveLength(1);
+    expect(some[0].steps.map((entry) => [entry.ordinal, entry.assignment_id])).toEqual([[1, ids[0]], [3, ids[2]]]);
+
+    // A Coach Card is a step of no workout, and a workout none of whose steps
+    // was asked about is not returned.
+    await expect(listIssuedWorkoutsForAssignments(gym.organizationId, [loose])).resolves.toEqual([]);
+
+    // No ids: nothing, and no statement at all -- never "every workout".
+    const pooled = () => (query as jest.Mock).mock.calls.length;
+    const before = pooled();
+    await expect(listIssuedWorkoutsForAssignments(gym.organizationId, [])).resolves.toEqual([]);
+    expect(pooled()).toBe(before);
+  });
+
+  test("another gym's reader gets nothing for these assignment ids, and this gym gets nothing for another gym's", async () => {
+    const here = await gymWithWorkout('read-here');
+    const there = await gymWithWorkout('read-there');
+    const mine = idsOf(await issued(here.gym));
+    const theirs = idsOf(await issued(there.gym));
+
+    await expect(listIssuedWorkoutsForAssignments(there.gym.organizationId, mine)).resolves.toEqual([]);
+    await expect(listIssuedWorkoutsForAssignments(here.gym.organizationId, theirs)).resolves.toEqual([]);
+    // Each reads its own, all four steps.
+    expect((await listIssuedWorkoutsForAssignments(here.gym.organizationId, [...mine, ...theirs]))[0].steps).toHaveLength(4);
+  });
+
+  test("a step planted in one gym on another gym's assignment is returned to neither", async () => {
+    const here = await gymWithWorkout('planted-here');
+    const there = await gymWithWorkout('planted-there');
+    const result = await issued(here.gym);
+    const foreign = await card(there.gym, there.drills['ref-a']);
+    // The database allows it (the foreign key is on assignment_id alone); the
+    // read's join on the organization is what keeps it out.
+    await rawStep(here.gym.organizationId, result.issue_id, 99, foreign);
+
+    const mine = await listIssuedWorkoutsForAssignments(here.gym.organizationId, [...idsOf(result), foreign]);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].steps.map((entry) => entry.ordinal)).toEqual([1, 2, 3, 4]);
+    expect(JSON.stringify(mine)).not.toContain('planted note');
+    await expect(listIssuedWorkoutsForAssignments(there.gym.organizationId, [foreign])).resolves.toEqual([]);
+  });
+
+  test("a step planted on ANOTHER athlete's assignment of the same gym is not part of this athlete's workout", async () => {
+    const { gym, drills } = await gymWithWorkout('planted-athlete');
+    const result = await issued(gym);
+    const theirs = await card(gym, drills['ref-b'], OTHER_ATHLETE_ID);
+    await rawStep(gym.organizationId, result.issue_id, 99, theirs);
+
+    // Asked as the other athlete's reader would be (their own assignment id):
+    // the planted step belongs to a workout issued to someone else, so the
+    // other athlete is shown nothing of it -- not the note, not the workout.
+    await expect(listIssuedWorkoutsForAssignments(gym.organizationId, [theirs])).resolves.toEqual([]);
+    const mine = await listIssuedWorkoutsForAssignments(gym.organizationId, [...idsOf(result), theirs]);
+    expect(mine[0].steps.map((entry) => entry.ordinal)).toEqual([1, 2, 3, 4]);
+  });
+
+  test('two workouts come back newest first, each with only its own steps', async () => {
+    const { gym } = await gymWithWorkout('read-two');
+    const older = await issued(gym);
+    const newer = await issued(gym);
+    await client.query(`update pilot.workout_issues set issued_at = now() - interval '2 days' where issue_id = $1::uuid`, [older.issue_id]);
+
+    const workouts = await listIssuedWorkoutsForAssignments(gym.organizationId, [...idsOf(older), ...idsOf(newer)]);
+
+    expect(workouts.map((workout) => workout.issue_id)).toEqual([newer.issue_id, older.issue_id]);
+    expect(workouts[0].steps.map((entry) => entry.assignment_id)).toEqual(idsOf(newer));
+    expect(workouts[1].steps.map((entry) => entry.assignment_id)).toEqual(idsOf(older));
+  });
+
+  test('a cancelled step is still returned in its place', async () => {
+    const { gym } = await gymWithWorkout('read-cancelled');
+    const result = await issued(gym);
+    await client.query(`update pilot.drill_assignments set status = 'cancelled' where assignment_id = $1`, [idsOf(result)[1]]);
+
+    const [workout] = await listIssuedWorkoutsForAssignments(gym.organizationId, idsOf(result));
+
+    expect(workout.steps.map((entry) => entry.ordinal)).toEqual([1, 2, 3, 4]);
+  });
+
+  test('the family projection of a real read names the coach and carries no account id', async () => {
+    const { gym } = await gymWithWorkout('read-family');
+    const result = await issued(gym);
+    const workouts = await listIssuedWorkoutsForAssignments(gym.organizationId, idsOf(result));
+    const nameFor = jest.fn(async () => 'Coach J Rivera');
+
+    const family = await toFamilyIssuedWorkouts(workouts, nameFor);
+
+    expect(nameFor).toHaveBeenCalledTimes(1);
+    expect(nameFor).toHaveBeenCalledWith(gym.coachId);
+    expect(family[0]).toMatchObject({ issue_id: result.issue_id, issued_by_name: 'Coach J Rivera' });
+    expect(family[0].steps).toEqual(workouts[0].steps);
+    expect(family[0]).not.toHaveProperty('issued_by_account_id');
+    expect(JSON.stringify(family)).not.toContain(gym.coachId);
   });
 });
 
