@@ -468,3 +468,37 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     expect(guarded[0]).toMatch(/\n\s+run: npm run test:migrations\s*(\n|$)/);
   });
 });
+
+describe('the shared chrome components run the journeys that render them (lane N8-02)', () => {
+  // Both were `unknown_code`: no predicate matched either name, so an edit to
+  // the button or the work axis ran no browser suite at all.
+  it.each([
+    'apps/web/components/ShadowChatButton.tsx',
+    'apps/web/components/ShadowChatButton.test.ts',
+    'apps/web/components/WorkAxis.tsx',
+    'apps/web/components/WorkAxis.test.tsx',
+  ])('sends %s to the three signed-in journeys', (file) => {
+    const flags = classify([file]);
+
+    expect([flags.coach_e2e, flags.athlete_e2e, flags.guardian_e2e, flags.unknown_code]).toEqual([
+      'true',
+      'true',
+      'true',
+      'false',
+    ]);
+  });
+
+  it('also sends WorkAxis to the sign-in door suites, because /login renders it', () => {
+    const flags = classify(['apps/web/components/WorkAxis.tsx']);
+
+    expect([flags.homepage_e2e, flags.board_e2e]).toEqual(['true', 'true']);
+  });
+
+  it('does not widen to unrelated components or to the migration suite', () => {
+    const flags = classify(['apps/web/components/SomeNewSurface.tsx']);
+
+    expect([flags.unknown_code, flags.migrations, flags.coach_e2e]).toEqual(['true', 'false', 'false']);
+    const chrome = classify(['apps/web/components/WorkAxis.tsx']);
+    expect(chrome.migrations).toBe('false');
+  });
+});
