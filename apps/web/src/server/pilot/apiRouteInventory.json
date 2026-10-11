@@ -13700,6 +13700,36 @@
     }
   },
   {
+    "id": "app/api/pilot/workout-templates/issue/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/workout-templates/issue",
+    "gate": "requirePrincipal + requireRole(DRILL_AUTHOR_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Issues a saved workout template to one athlete (issueWorkoutTemplate, workoutTemplates.ts): one gap-free assignment per step and any unadopted-but-ready reference drill adopted, in one transaction with audit events; refuses the whole issue and names the drills when a step cannot be assigned. Role gate is the first statement after requirePrincipal; reach check before the template is read, an unreachable athlete answers the hidden 404. Hold warning read after commit.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/workout-templates/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/workout-templates",
