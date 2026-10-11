@@ -14,6 +14,7 @@ import {
   isDrillDifficulty,
   promoteReferenceDrill,
 } from '@/src/server/pilot/drills';
+import { updateDrillToReferenceVersion } from '@/src/server/pilot/drillVersioning';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
@@ -33,8 +34,8 @@ export const runtime = 'nodejs';
 // athlete. It also does not synchronize -- the reference row is pinned by
 // version, and a later reference version is a different row. For a drill the
 // gym has not adopted, a coach adopts the current version deliberately or not
-// at all; for one it has, the later version is refused below until the
-// coach-reviewed update step exists (IMP-15).
+// at all; for one it has, promoting the later version updates the gym's drill
+// to it in place (OD-2026-10-08-008 D1) rather than adding a second drill.
 //
 // WHY POST-ONLY AND ITS OWN FILE. The gate sweep in coachingContentAccess.test.ts
 // asserts that drills/route.ts carries exactly two author gates, and this is a
@@ -68,15 +69,6 @@ function requireText(raw: unknown, field: string): string {
 function conflict(message: string): NextResponse {
   return NextResponse.json({ error: message }, { status: 409 });
 }
-
-// The refusal for a newer version of a drill this gym already has. Worded as
-// what is true and what is missing: the gym keeps its drill, and the step that
-// would move it to this version does not exist yet. The coach page says the
-// same on the drill (app/coach/drills/page.tsx, 'newer_version_available').
-// Not exported: a Next.js route file may export only handlers and segment
-// config, so route.test.ts writes the sentence out.
-const NEWER_VERSION_NOT_BUILT_MESSAGE =
-  "This gym already has an earlier version of this drill. Updating the gym's drill to this newer version is not built yet, so this version cannot be promoted as a separate drill.";
 
 export async function POST(request: NextRequest) {
   // Kept for the catch below, which words the already-promoted refusal.
@@ -133,34 +125,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // A NEWER VERSION OF A DRILL THIS GYM ALREADY HAS (owner ruling R2: a
-    // revised drill is v(n+1) and the old version is kept for the gyms that
-    // adopted it). Past readiness this reference is the current head, so any
-    // other version the gym adopted -- running or retired -- is an earlier one.
-    //
-    // Promoting it anyway would not update anything. A renamed v2 would become
-    // a SECOND operational drill of one reference lineage beside the gym's v1;
-    // a same-named one would be refused as a name collision while v1 runs, and
-    // succeed once v1 is retired -- which is "retire the old drill and adopt the
-    // new one fresh", one of the two update designs still before the owner
-    // (IMP-15; OD-2026-09-17-001 clause 5 wants the coach step that decision
-    // shapes). So it is refused, in plain words, until that step exists.
-    //
-    // Read here rather than trusted from the page, so a direct API call gets
-    // the same answer. A failed read is NOT treated as "no other version": the
-    // error goes to jsonError and nothing is written.
-    const otherVersion = await getOtherVersionAdoption(principal.organizationId, reference.drill_id);
-    if (otherVersion) {
-      return NextResponse.json(
-        {
-          error: NEWER_VERSION_NOT_BUILT_MESSAGE,
-          code: 'NEWER_VERSION_UPDATE_NOT_BUILT',
-          operational_drill_id: otherVersion.operational_drill_id,
-        },
-        { status: 409 },
-      );
-    }
-
     // Both sides carry the same four-literal vocabulary, so this transfers
     // untranslated -- and is still checked, because a reference row that somehow
     // holds another value must not be silently coerced into 'intermediate'.
@@ -187,14 +151,50 @@ export async function POST(request: NextRequest) {
       .filter((cue) => cue.length > 0)
       .slice(0, MAX_CUES);
 
-    const drill = await promoteReferenceDrill({
-      organizationId: principal.organizationId,
-      referenceDrillId: reference.drill_id,
+    const content = {
       name: reference.name,
       category: reference.category,
       focus: requireText(reference.purpose, 'purpose'),
       difficulty: reference.difficulty,
       cues,
+    };
+
+    // A NEWER VERSION OF A DRILL THIS GYM ALREADY HAS (owner ruling R2: a
+    // revised drill is v(n+1) and the old version is kept for the gyms that
+    // adopted it). Past readiness this reference is the current head, so any
+    // other version the gym adopted -- running or retired -- is an earlier one.
+    //
+    // It updates the gym's drill in place (OD-2026-10-08-008 D1, "B Update in
+    // place (Recommended)"): a new version of the SAME gym drill, built from
+    // this reference with the mapping above and pointing at it, the old
+    // versions kept as history -- never a second operational drill beside it.
+    // A retired gym drill is refused (DRILL_RETIRED): Restore comes first. The
+    // write, its checks and its audit row are one transaction
+    // (drillVersioning.ts#updateDrillToReferenceVersion).
+    //
+    // Read here rather than trusted from the page, so a direct API call gets
+    // the same answer. A failed read is NOT treated as "no other version": the
+    // error goes to jsonError and nothing is written.
+    const otherVersion = await getOtherVersionAdoption(principal.organizationId, reference.drill_id);
+    if (otherVersion) {
+      const { drill, previous } = await updateDrillToReferenceVersion({
+        organizationId: principal.organizationId,
+        drillId: otherVersion.operational_drill_id,
+        referenceDrillId: reference.drill_id,
+        content,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+      });
+      return NextResponse.json(
+        { ok: true, organization_id: principal.organizationId, drill, updated_from_drill_id: previous.drill_id },
+        { status: 200 },
+      );
+    }
+
+    const drill = await promoteReferenceDrill({
+      organizationId: principal.organizationId,
+      referenceDrillId: reference.drill_id,
+      ...content,
     });
 
     // The same evidence a hand-authored drill writes, plus the reference it came

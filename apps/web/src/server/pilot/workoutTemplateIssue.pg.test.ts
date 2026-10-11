@@ -721,11 +721,80 @@ describe('a refusal writes nothing', () => {
     expect(await written(gym)).toEqual(NOTHING);
   });
 
-  test('the gym already runs another version of the drill: the template is refused, not pointed at it', async () => {
+  test("a step naming the newer version updates the gym's drill in place while issuing, then assigns it (Jason, question card 2026-10-11)", async () => {
     const gym = await newGym('other-version');
     await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
-    await adopt(gym, 'ref-v1', 'Versioned Drill');
+    const oldId = await adopt(gym, 'ref-v1', 'Versioned Drill');
     // The library then gains v2 under a new name; the template names v2.
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+      [gym.organizationId],
+    );
+    await insertReference(gym, 'ref-v2', 'Versioned Drill II', { lineageId: 'lin-1', version: 2 });
+    await insertTemplate(gym, ['ref-v2']);
+    const before = await written(gym);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'issued' });
+    if (result.outcome !== 'issued') return;
+    const newId = result.adopted[0]?.drill_id;
+    expect(result.adopted).toEqual([
+      { drill_id: newId, reference_drill_id: 'ref-v2', name: 'Versioned Drill II', updated_from_drill_id: oldId },
+    ]);
+    expect(result.steps[0].assignment).toMatchObject({ drill_id: newId, drill_description: 'Versioned Drill II purpose.' });
+
+    // The SAME gym drill, one version on: the pointer moved, the old version kept.
+    const { rows: versions } = await client.query(
+      `select drill_id, version, active, reference_drill_id from pilot.drills
+       where organization_id = $1 and lineage_id = $2 order by version`,
+      [gym.organizationId, oldId],
+    );
+    expect(versions).toEqual([
+      { drill_id: oldId, version: 1, active: false, reference_drill_id: 'ref-v1' },
+      { drill_id: newId, version: 2, active: true, reference_drill_id: 'ref-v2' },
+    ]);
+    // One new drill row, one card, the update's audit row and the issue's, one issue.
+    expect(await written(gym)).toEqual({
+      drills: before.drills + 1,
+      assignments: before.assignments + 1,
+      audit: before.audit + 2,
+      shadowEvents: before.shadowEvents + 2,
+      telemetry: before.telemetry + 2,
+      issues: before.issues + 1,
+      issueSteps: before.issueSteps + 1,
+    });
+    const { rows: audit } = await client.query(
+      `select details from pilot.audit_events
+       where organization_id = $1 and event_type = 'update' and entity_id = $2`,
+      [gym.organizationId, newId],
+    );
+    expect(audit.map((row) => row.details)).toEqual([expect.objectContaining({
+      action: 'reference_version_update',
+      from_drill_id: oldId,
+      from_reference_drill_id: 'ref-v1',
+      reference_drill_id: 'ref-v2',
+      adopted_by: 'workout_template_issue',
+      template_id: TEMPLATE_ID,
+    })]);
+
+    // A template still naming the version the gym moved on from issues the
+    // drill the gym runs now: no "retired, restore it", no second update.
+    await client.query(
+      `update pilot.workout_template_items set drill_id = 'ref-v1' where organization_id = $1`,
+      [gym.organizationId],
+    );
+    const again = await issue(gym);
+    expect(again).toMatchObject({ outcome: 'issued', adopted: [] });
+    if (again.outcome !== 'issued') return;
+    expect(again.steps[0].assignment.drill_id).toBe(newId);
+  });
+
+  test('a step naming the newer version of a drill the gym retired is refused and named; nothing is written', async () => {
+    const gym = await newGym('other-version-retired');
+    await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
+    const oldId = await adopt(gym, 'ref-v1', 'Versioned Drill');
+    await updateDrill({ organizationId: gym.organizationId, drillId: oldId, active: false });
     await client.query(
       `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
       [gym.organizationId],
@@ -741,17 +810,10 @@ describe('a refusal writes nothing', () => {
       drills: [{
         drill_id: 'ref-v2',
         name: 'Versioned Drill II',
-        reason: 'This gym already has another version of this drill, and this template names a different one.',
+        reason: 'This gym adopted an earlier version of this drill and then retired it. Restore it in the drill library first.',
       }],
     });
     expect(await written(gym)).toEqual(before);
-
-    // The version the gym DOES run is still issuable from a template that names it.
-    await client.query(
-      `update pilot.workout_template_items set drill_id = 'ref-v1' where organization_id = $1`,
-      [gym.organizationId],
-    );
-    await expect(issue(gym)).resolves.toMatchObject({ outcome: 'issued', adopted: [] });
   });
 
   test("a drill the gym refined is assigned as its CURRENT version, the gym's active row for that reference", async () => {

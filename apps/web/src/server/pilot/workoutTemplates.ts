@@ -18,6 +18,7 @@ import {
   promoteReferenceDrill,
   type DrillDifficulty,
 } from './drills';
+import { updateDrillToReferenceVersion } from './drillVersioning';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule, type DrillAssignment } from './progression';
 import { recordWorkoutIssue } from './workoutIssues';
@@ -220,6 +221,12 @@ export async function getWorkoutTemplateWithItems(
 //     transaction (promoteReferenceDrill, audited as a promotion is), then
 //     assigned. "Ready" is adoptionReadiness, the check the promote route
 //     enforces, so a floor-tested draft is ready and an untested one is not.
+//   - it is a newer version of a drill the gym runs, and it is ready -> the
+//     gym's drill is updated to it in place in the same transaction
+//     (updateDrillToReferenceVersion, as the promote route does; Jason,
+//     question card 2026-10-11: "A: Update while issuing (Recommended)"), then
+//     the new version is assigned. A step naming an OLDER version than the
+//     gym's updated drill is the first case: the gym runs that drill.
 //   - anything else                           -> the WHOLE issue is refused and
 //     every such drill is named with its reason. Nothing is written.
 //
@@ -261,10 +268,12 @@ export interface TemplateIssuedStep {
 }
 
 export interface TemplateAdoptedDrill {
-  /** The gym's new operational drill. */
+  /** The gym's new operational drill, or the new version of an updated one. */
   drill_id: string;
   reference_drill_id: string;
   name: string;
+  /** For a drill updated in place to this reference version: the version it replaced. */
+  updated_from_drill_id?: string;
 }
 
 export type TemplateIssueResult =
@@ -295,8 +304,8 @@ const ADOPTED_UNTESTED_DRAFT_REASON =
   'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.';
 const SHARED_NAME_REASON =
   'Another drill in this template has the same name, and a gym can hold only one drill under a name.';
-const OTHER_VERSION_REASON =
-  'This gym already has another version of this drill, and this template names a different one.';
+const RETIRED_OTHER_VERSION_REASON =
+  'This gym adopted an earlier version of this drill and then retired it. Restore it in the drill library first.';
 const UNREADABLE_DRILL_REASON = 'This drill could not be read from the library.';
 
 function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
@@ -317,12 +326,19 @@ interface TemplateIssuePlan {
   refused: TemplateIssueRefusedDrill[];
   /** reference drill id -> the gym's active operational drill id. */
   operational: Map<string, string>;
-  /** Reference drills to adopt in the transaction, in drill-id order. */
+  /** Reference drills to adopt, or to update the gym's drill to, in the transaction, in drill-id order. */
   adoptions: AdoptableReference[];
 }
 
-/** A reference drill whose difficulty is already known to be in the operational vocabulary. */
-type AdoptableReference = DrillWithDetail & { difficulty: DrillDifficulty };
+/**
+ * A reference drill whose difficulty is already known to be in the operational
+ * vocabulary. `update` is set when it is a newer version of a drill the gym
+ * runs: the gym drill to update, and its lineage (whose own name is not a clash).
+ */
+type AdoptableReference = DrillWithDetail & {
+  difficulty: DrillDifficulty;
+  update: { drillId: string; lineageId: string } | null;
+};
 
 /**
  * The read-only pass: what each step's drill is to this gym right now. Writes
@@ -443,12 +459,28 @@ async function planTemplateIssue(
       continue;
     }
 
-    // A different version of a drill this gym already has (running or
-    // retired). The promote route refuses it until the coach-reviewed update
-    // step exists; the template is not quietly pointed at the gym's version.
-    if (await getOtherVersionAdoption(organizationId, referenceId)) {
-      refuse(OTHER_VERSION_REASON);
-      continue;
+    // A newer version of a drill this gym already has: issuing updates the
+    // gym's drill to it in place, as the promote route does. Retired is
+    // refused and named here (no version of the gym's lineage active), so it
+    // is named with the others; the write asks again under its lock.
+    let update: AdoptableReference['update'] = null;
+    const otherVersion = await getOtherVersionAdoption(organizationId, referenceId);
+    if (otherVersion) {
+      const gymDrill = await queryOne<{ lineage_id: string; lineage_active: boolean }>(
+        `select d.lineage_id,
+                exists (
+                  select 1 from pilot.drills l
+                  where l.organization_id = d.organization_id and l.lineage_id = d.lineage_id and l.active
+                ) as lineage_active
+         from pilot.drills d
+         where d.organization_id = $1 and d.drill_id = $2`,
+        [organizationId, otherVersion.operational_drill_id],
+      );
+      if (!gymDrill?.lineage_active) {
+        refuse(RETIRED_OTHER_VERSION_REASON);
+        continue;
+      }
+      update = { drillId: otherVersion.operational_drill_id, lineageId: gymDrill.lineage_id };
     }
 
     // The promote route checks the same vocabulary before it writes: a
@@ -459,7 +491,7 @@ async function planTemplateIssue(
       continue;
     }
 
-    candidates.push({ ...reference, difficulty });
+    candidates.push({ ...reference, difficulty, update });
   }
 
   // NAMES, for every drill about to be adopted, in one read. A gym holds one
@@ -468,17 +500,19 @@ async function planTemplateIssue(
   // so EVERY clash is named in one answer; the index stops a transaction at
   // the first. The library allows one name per discipline, so two drills of
   // one template can share a name the gym can hold only once.
-  const taken = candidates.length === 0
-    ? new Set<string>()
-    : new Set(
-        (await query<{ name: string }>(
-          `select d.name from pilot.drills d
-           where d.organization_id = $1 and d.active and d.name = any($2::text[])`,
-          [organizationId, candidates.map((reference) => reference.name)],
-        )).map((row) => row.name),
+  // A drill being updated holds its own name already; only another lineage's
+  // drill under that name is a clash.
+  const takenRows = candidates.length === 0
+    ? []
+    : await query<{ name: string; lineage_id: string }>(
+        `select d.name, d.lineage_id from pilot.drills d
+         where d.organization_id = $1 and d.active and d.name = any($2::text[])`,
+        [organizationId, candidates.map((reference) => reference.name)],
       );
   for (const reference of candidates) {
-    if (taken.has(reference.name)) {
+    const clash = takenRows.some((row) =>
+      row.name === reference.name && (reference.update === null || row.lineage_id !== reference.update.lineageId));
+    if (clash) {
       refuseDrill(
         reference.drill_id,
         reference.name,
@@ -546,19 +580,41 @@ export async function issueWorkoutTemplate(params: {
       for (const reference of plan.adoptions) {
         // The promote route's mapping, and the whole of it: focus <- purpose,
         // the first twelve non-blank cues in the reference's own order.
+        const content = {
+          name: reference.name,
+          category: reference.category,
+          focus: reference.purpose.trim(),
+          difficulty: reference.difficulty,
+          cues: reference.cues
+            .map((cue) => cue.cue_text.trim())
+            .filter((cue) => cue.length > 0)
+            .slice(0, MAX_ADOPTED_CUES),
+        };
+        if (reference.update) {
+          // Audited inside, with what caused it.
+          const { drill, previous } = await updateDrillToReferenceVersion(
+            {
+              organizationId: params.organizationId,
+              drillId: reference.update.drillId,
+              referenceDrillId: reference.drill_id,
+              content,
+              actorAccountId: params.actorAccountId,
+              actorRole: params.actorRole,
+              auditDetails: { adopted_by: 'workout_template_issue', template_id: template.template_id },
+            },
+            client,
+          );
+          drillByReference.set(reference.drill_id, drill.drill_id);
+          adopted.push({
+            drill_id: drill.drill_id,
+            reference_drill_id: reference.drill_id,
+            name: drill.name,
+            updated_from_drill_id: previous.drill_id,
+          });
+          continue;
+        }
         const drill = await promoteReferenceDrill(
-          {
-            organizationId: params.organizationId,
-            referenceDrillId: reference.drill_id,
-            name: reference.name,
-            category: reference.category,
-            focus: reference.purpose.trim(),
-            difficulty: reference.difficulty,
-            cues: reference.cues
-              .map((cue) => cue.cue_text.trim())
-              .filter((cue) => cue.length > 0)
-              .slice(0, MAX_ADOPTED_CUES),
-          },
+          { organizationId: params.organizationId, referenceDrillId: reference.drill_id, ...content },
           client,
         );
         // The evidence a promotion writes, plus what caused this one.
