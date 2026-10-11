@@ -279,7 +279,8 @@ class ExecutionCorrectionLostRace extends Error {}
 /** Correction is supersession: a NEW version row with a stated reason; the
  * original keeps its values forever and is stamped superseded. Actual
  * facts are re-stated; identity, links, and the planned snapshot are
- * carried from the original untouched. */
+ * carried from the original untouched, and the evidence links and outcome
+ * reviews attached to the original move to the new version with it. */
 export async function correctExecution(input: ExecutionFactsInput & {
   organizationId: string;
   executionId: string;
@@ -367,6 +368,37 @@ export async function correctExecution(input: ExecutionFactsInput & {
     if (stamped.rows.length === 0) {
       throw new ExecutionCorrectionLostRace();
     }
+
+    // THE EVIDENCE AND THE REVIEW FOLLOW THE RECORD.
+    //
+    // Evidence links and outcome reviews are keyed on execution_id, and a
+    // correction mints a new one. Left where they were, they hang off a
+    // superseded row that no current read lists: the review screen shows the
+    // corrected execution with no evidence and no verdict, and linkEvidence
+    // refuses a superseded execution, so nothing can be re-attached either.
+    // Fixing a typo would cost the coach the record of what the work showed.
+    //
+    // So they are re-pointed at the new version here, inside the same
+    // transaction as the supersession: every row, removed links and
+    // superseded verdicts included, because the history of the evidence is
+    // part of the record too. The new version has no rows of its own yet, so
+    // neither one-per-execution index can be contended. Nothing is rewritten
+    // but the pointer -- who linked it, when it was last touched, and why it
+    // was removed all stay, which is why updated_at is not in these SETs.
+    //
+    // Both tables come from the intervention-evidence migration, which lands
+    // after this module's own. A database with executions but without it
+    // cannot correct one; every pg schema that runs this function applies it.
+    await client.query(
+      `update pilot.intervention_evidence_links set execution_id = $3
+       where organization_id = $1 and execution_id = $2`,
+      [input.organizationId, input.executionId, newId],
+    );
+    await client.query(
+      `update pilot.intervention_outcome_reviews set execution_id = $3
+       where organization_id = $1 and execution_id = $2`,
+      [input.organizationId, input.executionId, newId],
+    );
 
     await client.query(
       `update pilot.intervention_executions set status = $3, updated_at = now()

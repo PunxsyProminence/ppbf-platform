@@ -112,6 +112,7 @@ const OTHER_ATHLETE_ID = 'ath-elsewhere-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let evidenceSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let protocolsSql: string;
 let decisionLoopSql: string;
@@ -238,6 +239,7 @@ beforeAll(async () => {
   sessionScriptsSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_session_scripts_migration.sql'), 'utf8');
   protocolsSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_intervention_protocols_migration.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  evidenceSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_intervention_evidence_migration.sql'), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -659,6 +661,9 @@ describe('the real intervention-execution lifecycle against real rows', () => {
     activeClient = client;
     try {
       await client.query(migrationSql);
+      // correctExecution carries the execution's evidence links and outcome
+      // reviews onto the new version, so the tables they live in must exist.
+      await client.query(evidenceSql);
       const started = await startExecution({
         organizationId: ORG_ID,
         athleteId: ATHLETE_ID,
@@ -672,6 +677,40 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         actualExposure: { rounds: 5 },
         adherence: 'delivered_as_planned',
       });
+
+      // What hangs off the record before it is corrected: one live link, one
+      // link already removed, and a verdict that superseded an earlier one.
+      await client.query(
+        `insert into pilot.intervention_evidence_links
+           (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, status, removed_reason, linked_by_account_id)
+         values ($1, 'link-live', $2, 'baseline', 'training_attempt', 'att-1', 'active', '', $3),
+                ($1, 'link-struck', $2, 'retention', 'training_attempt', 'att-2', 'removed', 'wrong drill', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
+            performance_notes, hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-old', $2, null, 'unknown', 'too early to say', 'unresolved', 'unresolved', 'superseded', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+      await client.query(
+        `insert into pilot.intervention_outcome_reviews
+           (organization_id, review_id, execution_id, supersedes_review_id, performance_result,
+            performance_notes, hypothesis_result, learning_signal, status, reviewed_by_account_id)
+         values ($1, 'rev-new', $2, 'rev-old', 'improved', 'held through the third', 'supported',
+                 'prior_belief_strengthened', 'active', $3)`,
+        [ORG_ID, originalId, COACH_ID],
+      );
+      const attached = async () => ({
+        links: (await client.query(
+          `select * from pilot.intervention_evidence_links where organization_id = $1 order by link_id`, [ORG_ID],
+        )).rows,
+        reviews: (await client.query(
+          `select * from pilot.intervention_outcome_reviews where organization_id = $1 order by review_id`, [ORG_ID],
+        )).rows,
+      });
+      const before = await attached();
 
       const corrected = await correctExecution({
         organizationId: ORG_ID,
@@ -703,13 +742,24 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       expect(current.map((row) => row.execution_id)).toContain(corrected!.execution_id);
       expect(current.map((row) => row.execution_id)).not.toContain(originalId);
 
-      // A superseded record cannot itself be corrected again.
+      // The evidence and the reviews came with it: all four rows now hang
+      // off the correction, and nothing about them changed but that pointer.
+      const moved = await attached();
+      const repointed = (rows: Array<Record<string, unknown>>) =>
+        rows.map((row) => ({ ...row, execution_id: corrected!.execution_id }));
+      expect(before.links.map((row) => row.execution_id)).toEqual([originalId, originalId]);
+      expect(moved.links).toEqual(repointed(before.links));
+      expect(moved.reviews).toEqual(repointed(before.reviews));
+
+      // A superseded record cannot itself be corrected again -- and the
+      // refusal leaves the evidence where the correction put it.
       await expect(correctExecution({
         organizationId: ORG_ID,
         executionId: originalId,
         correctionReason: 'trying to correct history itself',
         correctedByAccountId: COACH_ID,
       })).resolves.toBeNull();
+      expect(await attached()).toEqual(moved);
     } finally {
       await client.end();
     }

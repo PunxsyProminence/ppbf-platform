@@ -73,6 +73,9 @@ export default function InterventionProtocolsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [athleteId, setAthleteId] = useState('');
   const [exposure, setExposure] = useState<Record<string, string>>({});
+  // A revision is a full re-statement filed as the next version, so it uses
+  // the same form, loaded with the protocol being revised.
+  const [revising, setRevising] = useState<ProtocolRow | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, {
@@ -107,6 +110,34 @@ export default function InterventionProtocolsPage() {
     return () => controller.abort();
   }, [reload]);
 
+  const clearForm = () => {
+    setRevising(null);
+    setForm(EMPTY_FORM);
+    setAthleteId('');
+    setExposure({});
+  };
+
+  const startRevising = (protocol: ProtocolRow) => {
+    setRevising(protocol);
+    setForm({
+      title: protocol.title,
+      target_problem: protocol.target_problem,
+      hypothesis: protocol.hypothesis,
+      intervention_description: protocol.intervention_description,
+      intended_task_context: protocol.intended_task_context,
+      expected_outcome: protocol.expected_outcome,
+      contradicting_evidence: protocol.contradicting_evidence,
+      alternative_explanations: protocol.alternative_explanations,
+      evaluation_plan: protocol.evaluation_plan,
+    });
+    setAthleteId(protocol.athlete_id ?? '');
+    setExposure(Object.fromEntries(
+      Object.entries(protocol.intended_exposure).map(([dimension, amount]) => [dimension, String(amount)]),
+    ));
+    // The form sits above the list; bring it to the coach.
+    document.getElementById('proto-form')?.scrollIntoView?.({ block: 'start' });
+  };
+
   const handleCreate = async () => {
     const intendedExposure: Record<string, number> = {};
     for (const [dimension, raw] of Object.entries(exposure)) {
@@ -121,10 +152,17 @@ export default function InterventionProtocolsPage() {
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, {
-        method: 'POST',
+        method: revising ? 'PATCH' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        // A revision names the version it replaces and nothing about the
+        // athlete: the new version stays in its lineage, on the same athlete.
+        body: JSON.stringify(revising ? {
+          action: 'revise',
+          protocol_id: revising.protocol_id,
+          ...form,
+          intended_exposure: intendedExposure,
+        } : {
           ...form,
           athlete_id: athleteId || undefined,
           intended_exposure: intendedExposure,
@@ -132,15 +170,13 @@ export default function InterventionProtocolsPage() {
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Create failed (${response.status})`);
+        throw new Error(err.error || `${revising ? 'Revision' : 'Create'} failed (${response.status})`);
       }
-      setForm(EMPTY_FORM);
-      setAthleteId('');
-      setExposure({});
+      clearForm();
       await reload();
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to file the protocol.');
+      setErrorMessage(error instanceof Error ? error.message : `Unable to file the ${revising ? 'revision' : 'protocol'}.`);
     } finally {
       setBusy(false);
     }
@@ -200,12 +236,14 @@ export default function InterventionProtocolsPage() {
             </div>
           )}
 
-          <section className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
-            <h2 className="t-label mb-[var(--s3)]">File a protocol</h2>
+          <section id="proto-form" className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+            <h2 className="t-label mb-[var(--s3)]">
+              {revising ? `Revise protocol (files version ${revising.version + 1})` : 'File a protocol'}
+            </h2>
             <div className="grid gap-[var(--s3)] md:grid-cols-2">
               <div className="field md:col-span-2">
                 <label className="t-label" htmlFor="proto-athlete">Athlete (leave unset for an org-general protocol)</label>
-                <select id="proto-athlete" className="select" value={athleteId}
+                <select id="proto-athlete" className="select" value={athleteId} disabled={revising !== null}
                   onChange={(e) => setAthleteId(e.target.value)}>
                   <option value="">Org-general</option>
                   {athletes.map((athlete) => (
@@ -240,10 +278,13 @@ export default function InterventionProtocolsPage() {
               </div>
             </fieldset>
 
-            <div className="mt-[var(--s4)]">
+            <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
               <button type="button" className="btn" disabled={busy} onClick={() => void handleCreate()}>
-                {busy ? 'Filing…' : 'File protocol'}
+                {busy ? 'Filing…' : revising ? 'File revision' : 'File protocol'}
               </button>
+              {revising && (
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={clearForm}>Cancel</button>
+              )}
             </div>
           </section>
 
@@ -270,10 +311,16 @@ export default function InterventionProtocolsPage() {
                         v{protocol.version} · {protocol.athlete_name ?? 'org-general'} · {protocol.created_at.slice(0, 10)}
                       </span>
                       {protocol.status === 'active' && (
-                        <button type="button" className="btn btn--ghost" disabled={busy}
-                          onClick={() => void handleRetire(protocol.protocol_id)}>
-                          Retire
-                        </button>
+                        <>
+                          <button type="button" className="btn btn--ghost" disabled={busy}
+                            onClick={() => startRevising(protocol)}>
+                            Revise
+                          </button>
+                          <button type="button" className="btn btn--ghost" disabled={busy}
+                            onClick={() => void handleRetire(protocol.protocol_id)}>
+                            Retire
+                          </button>
+                        </>
                       )}
                     </div>
                     <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>

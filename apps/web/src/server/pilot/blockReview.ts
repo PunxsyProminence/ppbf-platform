@@ -354,11 +354,17 @@ export async function blockEvidence(
       ),
       /* actual_start, for the same reason: an execution that has not started
          has none, and its created_at would place a plan inside the window as
-         though it had been delivered. */
+         though it had been delivered.
+
+         Current records only. A correction leaves the version it replaced in
+         the table, stamped superseded and carrying the same dates; counted,
+         one delivery corrected once reads as two. Same predicate
+         listExecutions uses. */
       query<{ when: string; detail: string }>(
         `select ${gymDay('e.actual_start')}::text as when, e.adherence as detail
          from pilot.intervention_executions e
          where e.organization_id = $1 and e.athlete_id = $2
+           and e.status <> 'superseded'
            and ${gymDay('e.actual_start')} between $3::date and $4::date
          order by e.actual_start desc`,
         window,
@@ -418,6 +424,7 @@ export async function blockEvidence(
       queryOne<{ open_in_window: string }>(
         `select count(*)::text as open_in_window from pilot.intervention_executions e
          where e.organization_id = $1 and e.athlete_id = $2
+           and e.status <> 'superseded'
            and e.actual_start is null
            and ${gymDay('e.planned_start')} between $3::date and $4::date`,
         window,

@@ -69,6 +69,11 @@ const ADHERENCE_OPTIONS: Array<{ value: string; label: string }> = [
 
 const CONTEXT_OPTIONS = ['unknown', 'controlled', 'constrained_live', 'live'];
 
+const EMPTY_FACTS = {
+  outcome: 'completed', adherence: 'unknown', trained_context: 'unknown',
+  deviations: '', deviation_reason: '', stop_change_reason: '', notes: '',
+};
+
 function exposureText(exposure: Record<string, number>): string {
   const entries = Object.entries(exposure);
   if (entries.length === 0) return 'none recorded';
@@ -85,11 +90,13 @@ export default function InterventionExecutionsPage() {
   const [athleteId, setAthleteId] = useState('');
   const [protocolId, setProtocolId] = useState('');
   const [closing, setClosing] = useState<string | null>(null);
-  const [closeForm, setCloseForm] = useState({
-    outcome: 'completed', adherence: 'unknown', trained_context: 'unknown',
-    deviations: '', deviation_reason: '', stop_change_reason: '', notes: '',
-  });
+  const [closeForm, setCloseForm] = useState(EMPTY_FACTS);
   const [closeExposure, setCloseExposure] = useState<Record<string, string>>({});
+  // A correction re-states the actual facts, so it borrows the close-out
+  // fields (prefilled from the record) and adds the one thing only a
+  // correction needs: why.
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const [correctionReason, setCorrectionReason] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
@@ -157,17 +164,99 @@ export default function InterventionExecutionsPage() {
     }
   };
 
-  const handleClose = async (executionId: string) => {
+  const closeFactsForm = () => {
+    setClosing(null);
+    setCorrecting(null);
+    setCorrectionReason('');
+    setCloseForm(EMPTY_FACTS);
+    setCloseExposure({});
+  };
+
+  const startCorrecting = (row: ExecutionRow) => {
+    setClosing(null);
+    setCorrecting(row.execution_id);
+    setCorrectionReason('');
+    setCloseForm({
+      ...EMPTY_FACTS,
+      outcome: row.status === 'stopped' ? 'stopped' : 'completed',
+      adherence: row.adherence,
+      trained_context: row.trained_context,
+      deviations: row.deviations,
+      stop_change_reason: row.stop_change_reason,
+      notes: row.notes,
+    });
+    setCloseExposure(Object.fromEntries(
+      Object.entries(row.actual_exposure).map(([dimension, amount]) => [dimension, String(amount)]),
+    ));
+  };
+
+  /** The exposure fields as numbers, or null (with the reason shown) when one is not a positive number. */
+  const readExposure = (): Record<string, number> | null => {
     const actualExposure: Record<string, number> = {};
     for (const [dimension, raw] of Object.entries(closeExposure)) {
       if (raw.trim() === '') continue;
       const amount = Number(raw);
       if (!Number.isFinite(amount) || amount <= 0) {
         setErrorMessage(`${dimension.replaceAll('_', ' ')} must be a positive number.`);
-        return;
+        return null;
       }
       actualExposure[dimension] = amount;
     }
+    return actualExposure;
+  };
+
+  const handleCorrect = async (row: ExecutionRow) => {
+    const reason = correctionReason.trim();
+    if (!reason) {
+      setErrorMessage('Say what was wrong with the record before correcting it.');
+      return;
+    }
+    const closed = row.status !== 'in_progress';
+    if (closed && closeForm.outcome === 'stopped' && !closeForm.stop_change_reason.trim()) {
+      setErrorMessage('A stopped execution needs its stop/change reason.');
+      return;
+    }
+    const actualExposure = readExposure();
+    if (!actualExposure) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        // Only what this form shows. A field it does not show (task
+        // constraint, partner context, deviation reason) is left out, and the
+        // server carries the recorded value forward.
+        body: JSON.stringify({
+          action: 'correct',
+          execution_id: row.execution_id,
+          correction_reason: reason,
+          ...(closed ? { outcome: closeForm.outcome } : {}),
+          adherence: closeForm.adherence,
+          trained_context: closeForm.trained_context,
+          deviations: closeForm.deviations,
+          stop_change_reason: closeForm.stop_change_reason,
+          notes: closeForm.notes,
+          actual_exposure: actualExposure,
+        }),
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Correction failed (${response.status})`);
+      }
+      closeFactsForm();
+      await reload();
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to correct the execution.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClose = async (executionId: string) => {
+    const actualExposure = readExposure();
+    if (!actualExposure) return;
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
@@ -191,12 +280,7 @@ export default function InterventionExecutionsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Close failed (${response.status})`);
       }
-      setClosing(null);
-      setCloseForm({
-        outcome: 'completed', adherence: 'unknown', trained_context: 'unknown',
-        deviations: '', deviation_reason: '', stop_change_reason: '', notes: '',
-      });
-      setCloseExposure({});
+      closeFactsForm();
       await reload();
       setErrorMessage(null);
     } catch (error) {
@@ -327,27 +411,48 @@ export default function InterventionExecutionsPage() {
                     {row.notes ? (
                       <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>{row.notes}</p>
                     ) : null}
+                    {row.correction_reason ? (
+                      <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>
+                        <strong>Corrected because:</strong> {row.correction_reason}
+                      </p>
+                    ) : null}
 
-                    {row.status === 'in_progress' && closing !== row.execution_id && (
-                      <div className="mt-[var(--s2)]">
+                    {closing !== row.execution_id && correcting !== row.execution_id && (
+                      <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                        {row.status === 'in_progress' && (
+                          <button type="button" className="btn btn--ghost" disabled={busy}
+                            onClick={() => { closeFactsForm(); setClosing(row.execution_id); }}>
+                            Close out
+                          </button>
+                        )}
                         <button type="button" className="btn btn--ghost" disabled={busy}
-                          onClick={() => setClosing(row.execution_id)}>
-                          Close out
+                          onClick={() => startCorrecting(row)}>
+                          Correct record
                         </button>
                       </div>
                     )}
 
-                    {closing === row.execution_id && (
+                    {(closing === row.execution_id || correcting === row.execution_id) && (
                       <div className="mt-[var(--s3)] border-t border-[color:var(--hide-800)] pt-[var(--s3)]">
-                        <div className="grid gap-[var(--s2)] md:grid-cols-3">
-                          <div className="field">
-                            <label className="t-label" htmlFor={`close-outcome-${row.execution_id}`}>Outcome</label>
-                            <select id={`close-outcome-${row.execution_id}`} className="select" value={closeForm.outcome}
-                              onChange={(e) => setCloseForm((f) => ({ ...f, outcome: e.target.value }))}>
-                              <option value="completed">Completed</option>
-                              <option value="stopped">Stopped early</option>
-                            </select>
+                        {correcting === row.execution_id && (
+                          <div className="field mb-[var(--s2)]">
+                            <label className="t-label" htmlFor={`correct-reason-${row.execution_id}`}>What was wrong? (required)</label>
+                            <input id={`correct-reason-${row.execution_id}`} className="input" value={correctionReason}
+                              onChange={(e) => setCorrectionReason(e.target.value)} />
                           </div>
+                        )}
+                        <div className="grid gap-[var(--s2)] md:grid-cols-3">
+                          {/* An in-progress record is closed with Close out, not by a correction. */}
+                          {!(correcting === row.execution_id && row.status === 'in_progress') && (
+                            <div className="field">
+                              <label className="t-label" htmlFor={`close-outcome-${row.execution_id}`}>Outcome</label>
+                              <select id={`close-outcome-${row.execution_id}`} className="select" value={closeForm.outcome}
+                                onChange={(e) => setCloseForm((f) => ({ ...f, outcome: e.target.value }))}>
+                                <option value="completed">Completed</option>
+                                <option value="stopped">Stopped early</option>
+                              </select>
+                            </div>
+                          )}
                           <div className="field">
                             <label className="t-label" htmlFor={`close-adherence-${row.execution_id}`}>Adherence</label>
                             <select id={`close-adherence-${row.execution_id}`} className="select" value={closeForm.adherence}
@@ -400,12 +505,19 @@ export default function InterventionExecutionsPage() {
                           </div>
                         </div>
                         <div className="mt-[var(--s2)] flex gap-[var(--s2)]">
-                          <button type="button" className="btn" disabled={busy}
-                            onClick={() => void handleClose(row.execution_id)}>
-                            {busy ? 'Recording…' : 'Record close-out'}
-                          </button>
+                          {correcting === row.execution_id ? (
+                            <button type="button" className="btn" disabled={busy}
+                              onClick={() => void handleCorrect(row)}>
+                              {busy ? 'Recording…' : 'Record correction'}
+                            </button>
+                          ) : (
+                            <button type="button" className="btn" disabled={busy}
+                              onClick={() => void handleClose(row.execution_id)}>
+                              {busy ? 'Recording…' : 'Record close-out'}
+                            </button>
+                          )}
                           <button type="button" className="btn btn--ghost" disabled={busy}
-                            onClick={() => setClosing(null)}>
+                            onClick={closeFactsForm}>
                             Cancel
                           </button>
                         </div>

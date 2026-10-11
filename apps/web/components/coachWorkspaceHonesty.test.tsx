@@ -598,6 +598,19 @@ describe('Film Study names the human workflow that exists and the machine one th
       .toBe('/coach/video-analysis');
   });
 
+  test('the tab offers a coach no door into the athlete-only video page', async () => {
+    // "Athlete Feedback Surface" linked to /athlete/video-analysis, which
+    // admits athletes only: a coach who clicked it was sent straight back
+    // out. The coach's own film page is the button above; there is no
+    // coach-side view of the athlete's page to send them to instead.
+    await renderWorkspace();
+    openTab('Film Study');
+
+    expect(screen.queryByRole('link', { name: 'Athlete Feedback Surface' })).toBeNull();
+    expect(document.querySelector('a[href="/athlete/video-analysis"]')).toBeNull();
+    expect(document.querySelectorAll('a[href^="/athlete/"]')).toHaveLength(0);
+  });
+
   test('automatic technique scoring is still refused, and is not promised as coming soon', async () => {
     // BACKLOG-video-skill-scoring is parked by owner decision, not queued.
     // "Coming soon" would be a schedule nobody agreed to for machine

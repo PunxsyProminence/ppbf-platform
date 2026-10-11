@@ -97,6 +97,8 @@ export default function InterventionReviewPage() {
     performance_result: 'unknown', performance_notes: '',
     hypothesis_result: 'unresolved', learning_signal: 'unresolved', learning_notes: '',
   });
+  const [removingLink, setRemovingLink] = useState<string | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-review`, {
@@ -124,11 +126,11 @@ export default function InterventionReviewPage() {
     return () => controller.abort();
   }, [reload]);
 
-  const post = async (body: Record<string, unknown>, failure: string) => {
+  const send = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, failure: string) => {
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-review`, {
-        method: 'POST',
+        method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -145,6 +147,28 @@ export default function InterventionReviewPage() {
       return false;
     } finally {
       setBusy(false);
+    }
+  };
+
+  const post = (body: Record<string, unknown>, failure: string) => send('POST', body, failure);
+
+  // Unlinking strikes the association only. The link stays on the record,
+  // stamped with the reason; the attempt, assessment or film note it pointed
+  // at is not touched by this or by anything the server does with it.
+  const handleRemove = async (linkId: string) => {
+    const reason = removeReason.trim();
+    if (!reason) {
+      setErrorMessage('Say why this link no longer counts before removing it.');
+      return;
+    }
+    const ok = await send('PATCH', {
+      action: 'remove_evidence',
+      link_id: linkId,
+      removed_reason: reason,
+    }, 'Unable to remove the link.');
+    if (ok) {
+      setRemovingLink(null);
+      setRemoveReason('');
     }
   };
 
@@ -281,6 +305,29 @@ export default function InterventionReviewPage() {
                                   )}
                                   {link.note ? ` — ${link.note}` : ''}
                                   {link.status === 'removed' ? ` (removed: ${link.removed_reason})` : ''}
+                                  {link.status === 'active' && removingLink !== link.link_id && (
+                                    <>
+                                      {' '}
+                                      <button type="button" className="btn btn--ghost" disabled={busy}
+                                        onClick={() => { setRemovingLink(link.link_id); setRemoveReason(''); }}>
+                                        Remove link
+                                      </button>
+                                    </>
+                                  )}
+                                  {link.status === 'active' && removingLink === link.link_id && (
+                                    <div className="mt-[var(--s2)] flex flex-wrap items-end gap-[var(--s2)]">
+                                      <div className="field">
+                                        <label className="t-label" htmlFor={`remove-reason-${link.link_id}`}>Why does this no longer count? (required)</label>
+                                        <input id={`remove-reason-${link.link_id}`} className="input" value={removeReason}
+                                          onChange={(e) => setRemoveReason(e.target.value)} />
+                                      </div>
+                                      <button type="button" className="btn" disabled={busy}
+                                        onClick={() => void handleRemove(link.link_id)}>
+                                        {busy ? 'Removing…' : 'Remove it'}
+                                      </button>
+                                      <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setRemovingLink(null)}>Cancel</button>
+                                    </div>
+                                  )}
                                 </li>
                               ))}
                             </ul>

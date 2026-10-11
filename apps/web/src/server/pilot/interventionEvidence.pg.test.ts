@@ -23,9 +23,12 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
+import type { PilotPrincipal } from './auth';
 import { closePool } from './db';
+import { requirePrincipal } from './http';
 import {
   EVIDENCE_SOURCES,
   getEvidenceLinkOwner,
@@ -33,6 +36,14 @@ import {
   listEvidence,
   removeEvidence,
 } from './interventionEvidence';
+
+// Lane N3-02's route-level block (bottom of this file) drives the real
+// routes. They take their principal from here; everything else in the module
+// -- and every other module, access.ts included -- stays real.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
 
 jest.setTimeout(180_000);
 
@@ -586,5 +597,376 @@ describe('intervention evidence runner readiness assertion', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+// Lane N3-02. The three corrections a coach can make to an intervention record
+// -- revise the protocol, unlink a piece of evidence, correct the execution --
+// driven through the REAL routes with the REAL access check, on a real
+// database. Only the signed-in principal is supplied. Every "what the coach
+// sees next" assertion is made on a fresh GET, never on a write's own reply.
+describe('through the routes: revise, unlink and correct, and what the next read shows', () => {
+  const mockRequirePrincipal = requirePrincipal as jest.Mock;
+
+  const DB_NAME = 'evidence_routes';
+  // pilot.athletes.deleted_at, which the real athlete-access check reads.
+  const DELETION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
+  // Same gym as COACH_ID, coach of record for nobody and holding no cover.
+  const UNASSIGNED_COACH_ID = 'acct-evidence-coach-unassigned';
+  // A coach in the other gym.
+  const FOREIGN_COACH_ID = 'acct-elsewhere-coach';
+
+  const PROTOCOLS = '/api/pilot/coach/intervention-protocols';
+  const EXECUTIONS = '/api/pilot/coach/intervention-executions';
+  const REVIEW = '/api/pilot/coach/intervention-review';
+
+  const CONTENT = {
+    title: 'Round three work rate',
+    target_problem: 'Output falls away in the third.',
+    hypothesis: 'It is conditioning.',
+    intervention_description: 'Constrained live rounds with an output floor.',
+    expected_outcome: 'Third-round output holds within ten percent of the first.',
+  };
+
+  interface ProtocolItem {
+    protocol_id: string;
+    lineage_id: string;
+    version: number;
+    status: string;
+    athlete_id: string | null;
+    hypothesis: string;
+    intended_exposure: Record<string, number>;
+  }
+  interface ExecutionItem {
+    execution_id: string;
+    lineage_id: string;
+    version: number;
+    status: string;
+    adherence: string;
+    actual_exposure: Record<string, number>;
+    correction_reason: string;
+  }
+  interface LinkItem {
+    link_id: string;
+    status: string;
+    removed_reason: string;
+    source_id: string;
+  }
+  interface ReviewItem {
+    review_id: string;
+    supersedes_review_id: string | null;
+    performance_notes: string;
+  }
+  interface ChainItem {
+    execution: ExecutionItem;
+    evidence: LinkItem[];
+    review: ReviewItem | null;
+  }
+
+  let db: Client;
+  let protocolsRoute: typeof import('@/app/api/pilot/coach/intervention-protocols/route');
+  let executionsRoute: typeof import('@/app/api/pilot/coach/intervention-executions/route');
+  let reviewRoute: typeof import('@/app/api/pilot/coach/intervention-review/route');
+
+  beforeAll(async () => {
+    db = await freshDatabase(DB_NAME);
+    await db.query(migrationSql);
+    await db.query(await fs.readFile(path.join(INFRA_DIR, DELETION_SQL), 'utf8'));
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $2, 'microsoft'), ($3, 'coach', $4, 'microsoft')`,
+      [UNASSIGNED_COACH_ID, ORG_ID, FOREIGN_COACH_ID, OTHER_ORG_ID],
+    );
+    // The independent evidence records: two attempts the athlete really made.
+    for (const attemptId of ['att-r1', 'att-r2']) {
+      await db.query(
+        `insert into pilot.training_attempts
+           (organization_id, attempt_id, athlete_id, recorded_by_account_id, context_type,
+            metric_kind, direction, achieved_value)
+         values ($1, $2, $3, $4, 'session', 'reps', 'at_least', 12)`,
+        [ORG_ID, attemptId, ATHLETE_ID, COACH_ID],
+      );
+    }
+    // What the refusal cases aim at: an athlete-specific protocol, and a link
+    // and a review on the seeded execution 'exec-1'.
+    await db.query(
+      `insert into pilot.intervention_protocols
+         (organization_id, protocol_id, lineage_id, version, athlete_id, title, target_problem,
+          hypothesis, intervention_description, expected_outcome, created_by_account_id)
+       values ($1, 'proto-guard', 'proto-guard', 1, $2, 'Guard recovery', 'guard drops when tired',
+               'it is a habit, not fatigue', 'cue on every exit', 'guard returns unprompted', $3)`,
+      [ORG_ID, ATHLETE_ID, COACH_ID],
+    );
+    await insertLink(db, 'link-guard', { source_id: 'att-r1' });
+    await insertReview(db, 'rev-guard');
+
+    process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(DB_NAME);
+    // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
+    process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+
+    protocolsRoute = await import('@/app/api/pilot/coach/intervention-protocols/route');
+    executionsRoute = await import('@/app/api/pilot/coach/intervention-executions/route');
+    reviewRoute = await import('@/app/api/pilot/coach/intervention-review/route');
+  });
+
+  afterAll(async () => {
+    await closePool();
+    await db.end();
+  });
+
+  function signInAs(accountId: string, organizationId: string): void {
+    const principal: PilotPrincipal = {
+      accountId,
+      role: 'coach',
+      organizationId,
+      athleteId: null,
+      sessionToken: `token-${accountId}`,
+      authProvider: 'microsoft',
+    };
+    mockRequirePrincipal.mockResolvedValue(principal);
+  }
+
+  const get = (pathname: string) => new NextRequest(`http://localhost${pathname}`);
+  const send = (method: 'POST' | 'PATCH', pathname: string, body: unknown) =>
+    new NextRequest(`http://localhost${pathname}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  async function item<T>(response: Response): Promise<T> {
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { item: T }).item;
+  }
+
+  /** The review screen's list, read fresh, narrowed to one execution. */
+  async function chainFor(executionId: string): Promise<ChainItem | undefined> {
+    const response = await reviewRoute.GET(get(REVIEW));
+    expect(response.status).toBe(200);
+    const { items } = (await response.json()) as { items: ChainItem[] };
+    return items.find((entry) => entry.execution.execution_id === executionId);
+  }
+
+  async function stored(table: string, key: string, id: string): Promise<Record<string, unknown>> {
+    const result = await db.query(
+      `select * from pilot.${table} where organization_id = $1 and ${key} = $2`,
+      [ORG_ID, id],
+    );
+    return result.rows[0] as Record<string, unknown>;
+  }
+
+  /** Every row a refused write could have touched, and every audit row. */
+  async function ledger(): Promise<string> {
+    const rows: Record<string, unknown[]> = {};
+    for (const table of [
+      'intervention_protocols', 'intervention_executions', 'intervention_evidence_links',
+      'intervention_outcome_reviews', 'training_attempts', 'audit_events',
+    ]) {
+      rows[table] = (await db.query(`select * from pilot.${table} order by 1, 2`)).rows;
+    }
+    return JSON.stringify(rows);
+  }
+
+  const link = (executionId: string, sourceId: string, evidenceRole: string) =>
+    reviewRoute.POST(send('POST', REVIEW, {
+      action: 'link_evidence',
+      execution_id: executionId,
+      evidence_role: evidenceRole,
+      source_kind: 'training_attempt',
+      source_id: sourceId,
+    }));
+
+  const reviewOutcome = (executionId: string, performanceNotes: string) =>
+    reviewRoute.POST(send('POST', REVIEW, {
+      action: 'review_outcome',
+      execution_id: executionId,
+      performance_result: 'improved',
+      performance_notes: performanceNotes,
+      hypothesis_result: 'supported',
+      learning_signal: 'prior_belief_strengthened',
+    }));
+
+  test('the assigned coach revises the protocol, unlinks evidence and corrects the record, and nothing is lost on the way', async () => {
+    signInAs(COACH_ID, ORG_ID);
+
+    // REVISE. A protocol is filed for this athlete, then re-stated.
+    const v1 = await item<ProtocolItem>(await protocolsRoute.POST(send('POST', PROTOCOLS, {
+      ...CONTENT, athlete_id: ATHLETE_ID, intended_exposure: { rounds: 6 },
+    })));
+    const v2 = await item<ProtocolItem>(await protocolsRoute.PATCH(send('PATCH', PROTOCOLS, {
+      action: 'revise',
+      protocol_id: v1.protocol_id,
+      ...CONTENT,
+      hypothesis: 'It is pacing, not conditioning.',
+      intended_exposure: { rounds: 4 },
+    })));
+    expect(v2).toMatchObject({
+      version: 2, lineage_id: v1.lineage_id, athlete_id: ATHLETE_ID, status: 'active',
+      hypothesis: 'It is pacing, not conditioning.', intended_exposure: { rounds: 4 },
+    });
+
+    // The next read lists the revision and not the version it replaced...
+    const protocolList = await protocolsRoute.GET(get(PROTOCOLS));
+    expect(protocolList.status).toBe(200);
+    const listedIds = ((await protocolList.json()) as { items: ProtocolItem[] }).items.map((p) => p.protocol_id);
+    expect(listedIds).toContain(v2.protocol_id);
+    expect(listedIds).not.toContain(v1.protocol_id);
+    // ...which stays on record exactly as it was stated.
+    expect(await stored('intervention_protocols', 'protocol_id', v1.protocol_id)).toMatchObject({
+      status: 'superseded', version: 1, hypothesis: 'It is conditioning.', intended_exposure: { rounds: 6 },
+    });
+
+    // The work: started against the revision, then closed out.
+    const original = await item<ExecutionItem>(await executionsRoute.POST(send('POST', EXECUTIONS, {
+      athlete_id: ATHLETE_ID, protocol_id: v2.protocol_id, actual_start: '2026-09-01T22:00:00Z',
+    })));
+    await item<ExecutionItem>(await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+      action: 'close',
+      execution_id: original.execution_id,
+      outcome: 'completed',
+      adherence: 'delivered_as_planned',
+      trained_context: 'controlled',
+      actual_exposure: { rounds: 6 },
+    })));
+
+    // Two attempts linked as evidence, and the coach's review of the outcome.
+    const first = await item<LinkItem>(await link(original.execution_id, 'att-r1', 'baseline'));
+    const second = await item<LinkItem>(await link(original.execution_id, 'att-r2', 'immediate_post'));
+    const reviewed = await item<ReviewItem>(await reviewOutcome(original.execution_id, 'held output through the third'));
+
+    // UNLINK. The association is struck; the attempt it pointed at is not.
+    const attemptBefore = await stored('training_attempts', 'attempt_id', 'att-r2');
+    const unlinked = await item<LinkItem>(await reviewRoute.PATCH(send('PATCH', REVIEW, {
+      action: 'remove_evidence', link_id: second.link_id, removed_reason: 'that attempt was a different drill',
+    })));
+    expect(unlinked).toMatchObject({ status: 'removed', removed_reason: 'that attempt was a different drill' });
+    expect(await stored('training_attempts', 'attempt_id', 'att-r2')).toEqual(attemptBefore);
+
+    const afterUnlink = await chainFor(original.execution_id);
+    expect(afterUnlink?.evidence.map((entry) => [entry.source_id, entry.status, entry.removed_reason])).toEqual([
+      ['att-r1', 'active', ''],
+      ['att-r2', 'removed', 'that attempt was a different drill'],
+    ]);
+
+    // A link already removed cannot be removed again, and stays as stamped.
+    const again = await reviewRoute.PATCH(send('PATCH', REVIEW, {
+      action: 'remove_evidence', link_id: second.link_id, removed_reason: 'a second reason',
+    }));
+    expect(again.status).toBe(404);
+    expect(await stored('intervention_evidence_links', 'link_id', second.link_id))
+      .toMatchObject({ status: 'removed', removed_reason: 'that attempt was a different drill' });
+
+    // CORRECT. Six rounds were logged; it was four.
+    const current = await item<ExecutionItem>(await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+      action: 'correct',
+      execution_id: original.execution_id,
+      correction_reason: 'logged six rounds; it was four',
+      adherence: 'under_delivered',
+      trained_context: 'controlled',
+      actual_exposure: { rounds: 4 },
+    })));
+    expect(current).toMatchObject({
+      version: 2, lineage_id: original.lineage_id, status: 'completed',
+      adherence: 'under_delivered', actual_exposure: { rounds: 4 },
+      correction_reason: 'logged six rounds; it was four',
+    });
+    expect(current.execution_id).not.toBe(original.execution_id);
+
+    // The review screen now shows the corrected record -- WITH the evidence
+    // and the review that were attached before the correction.
+    const afterCorrection = await chainFor(current.execution_id);
+    expect(afterCorrection?.execution).toMatchObject({ version: 2, adherence: 'under_delivered' });
+    expect(afterCorrection?.evidence.map((entry) => [entry.link_id, entry.status])).toEqual([
+      [first.link_id, 'active'],
+      [second.link_id, 'removed'],
+    ]);
+    expect(afterCorrection?.review).toMatchObject({
+      review_id: reviewed.review_id, performance_notes: 'held output through the third',
+    });
+    // The version it replaced is not listed, and is intact as history.
+    expect(await chainFor(original.execution_id)).toBeUndefined();
+    expect(await stored('intervention_executions', 'execution_id', original.execution_id)).toMatchObject({
+      status: 'superseded', version: 1, adherence: 'delivered_as_planned', actual_exposure: { rounds: 6 },
+    });
+
+    // The corrected record is a working record. A re-review supersedes the
+    // verdict that was carried over rather than standing beside it...
+    const reReviewed = await item<ReviewItem>(await reviewOutcome(current.execution_id, 'held output, on four rounds'));
+    expect(reReviewed.supersedes_review_id).toBe(reviewed.review_id);
+    const activeReviews = await db.query(
+      `select r.review_id from pilot.intervention_outcome_reviews r
+       join pilot.intervention_executions e
+         on e.organization_id = r.organization_id and e.execution_id = r.execution_id
+       where r.organization_id = $1 and e.lineage_id = $2 and r.status = 'active'`,
+      [ORG_ID, original.lineage_id],
+    );
+    expect(activeReviews.rows).toEqual([{ review_id: reReviewed.review_id }]);
+    // ...and evidence that came across can still be unlinked.
+    await item<LinkItem>(await reviewRoute.PATCH(send('PATCH', REVIEW, {
+      action: 'remove_evidence', link_id: first.link_id, removed_reason: 'baseline was taken on the wrong day',
+    })));
+    const final = await chainFor(current.execution_id);
+    expect(final?.evidence.map((entry) => entry.status)).toEqual(['removed', 'removed']);
+    expect(final?.review?.review_id).toBe(reReviewed.review_id);
+    // Both attempts are still there.
+    const attempts = await db.query(
+      `select attempt_id from pilot.training_attempts where organization_id = $1 order by attempt_id`,
+      [ORG_ID],
+    );
+    expect(attempts.rows.map((row) => row.attempt_id)).toEqual(['att-r1', 'att-r2']);
+  });
+
+  describe('a coach who is not this athlete\'s coach', () => {
+    /** Revise, correct and unlink, each aimed at this athlete's records. */
+    async function tryEachCorrection(): Promise<Response[]> {
+      return [
+        await protocolsRoute.PATCH(send('PATCH', PROTOCOLS, {
+          action: 'revise', protocol_id: 'proto-guard', ...CONTENT,
+        })),
+        await executionsRoute.PATCH(send('PATCH', EXECUTIONS, {
+          action: 'correct', execution_id: 'exec-1', correction_reason: 'not my athlete, but trying anyway',
+          adherence: 'not_delivered',
+        })),
+        await reviewRoute.PATCH(send('PATCH', REVIEW, {
+          action: 'remove_evidence', link_id: 'link-guard', removed_reason: 'not my athlete, but trying anyway',
+        })),
+      ];
+    }
+
+    async function expectNothingReturned(refusals: Response[]): Promise<void> {
+      for (const response of refusals) {
+        expect((await response.json()) as Record<string, unknown>).not.toHaveProperty('item');
+      }
+    }
+
+    test('in the same gym: refused on all three, and no row or audit entry is written', async () => {
+      const before = await ledger();
+      signInAs(UNASSIGNED_COACH_ID, ORG_ID);
+
+      const refusals = await tryEachCorrection();
+
+      expect(refusals.map((response) => response.status)).toEqual([403, 403, 403]);
+      await expectNothingReturned(refusals);
+      expect(await ledger()).toBe(before);
+    });
+
+    test('in another gym: the records do not exist, and nothing is written', async () => {
+      const before = await ledger();
+      signInAs(FOREIGN_COACH_ID, OTHER_ORG_ID);
+
+      const refusals = await tryEachCorrection();
+
+      expect(refusals.map((response) => response.status)).toEqual([404, 404, 404]);
+      await expectNothingReturned(refusals);
+      expect(await ledger()).toBe(before);
+    });
+
+    test('the assigned coach is not refused the same three', async () => {
+      signInAs(COACH_ID, ORG_ID);
+
+      const allowed = await tryEachCorrection();
+
+      expect(allowed.map((response) => response.status)).toEqual([200, 200, 200]);
+    });
   });
 });
