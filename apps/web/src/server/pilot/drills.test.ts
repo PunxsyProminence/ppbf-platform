@@ -21,9 +21,11 @@ jest.mock('./db', () => {
 import {
   DrillNameTakenError,
   DrillRestoreRefusedError,
+  assertDrillMeetsCueRule,
   createDrill,
   getDrill,
   listDrills,
+  promoteReferenceDrill,
   updateDrill,
 } from './drills';
 import { query, queryOne } from './db';
@@ -444,5 +446,122 @@ describe('updateDrill: the restore guard', () => {
       ).rejects.toMatchObject({ drillName: 'Slip and Lateral Pivot Step' });
       expect(mockQueryOne).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('promoteReferenceDrill: the optional transaction client', () => {
+  // Lane P7 (#1401): issuing a workout template adopts a drill and assigns it
+  // in one transaction, so the insert can ride a caller's client. Without one
+  // it must be exactly the pooled insert it was. That a rollback then leaves
+  // nothing is proven against real PostgreSQL in workoutTemplateIssue.pg.test.ts.
+  const PARAMS = {
+    organizationId: 'org-1',
+    referenceDrillId: 'drl_reference_1',
+    name: 'Cross Return to Guard',
+    category: 'technical',
+    focus: 'Return the rear hand to guard.',
+    cues: ['Hand home first'],
+    difficulty: 'advanced' as const,
+  };
+  // $2 is a fresh drill id on every call; every other value is the caller's.
+  const valuesWithoutId = (values: unknown[]) => [values[0], ...values.slice(2)];
+
+  test('with no client it is the pooled insert, and nothing else', async () => {
+    mockQuery.mockResolvedValueOnce([drillRow({ reference_drill_id: 'drl_reference_1' })]);
+
+    const drill = await promoteReferenceDrill(PARAMS);
+
+    expect(drill).toEqual(drillRow({ reference_drill_id: 'drl_reference_1' }));
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [text, values] = mockQuery.mock.calls[0];
+    expect(flat(text)).toMatch(
+      /^insert into pilot\.drills \(organization_id, drill_id, name, category, focus, cues, difficulty, reference_drill_id\) values \(\$1, \$2, \$3, \$4, \$5, \$6::text\[\], \$7, \$8\) returning /,
+    );
+    expect(valuesWithoutId(values)).toEqual([
+      'org-1', 'Cross Return to Guard', 'technical', 'Return the rear hand to guard.', ['Hand home first'], 'advanced', 'drl_reference_1',
+    ]);
+  });
+
+  test('with a client the SAME statement and values go to that client, and the pool is not used', async () => {
+    mockQuery.mockResolvedValueOnce([drillRow()]);
+    await promoteReferenceDrill(PARAMS);
+    const [pooledText, pooledValues] = mockQuery.mock.calls[0];
+    mockQuery.mockClear();
+
+    const client = { query: jest.fn(async () => ({ rows: [drillRow({ drill_id: 'on-the-transaction' })] })) };
+    const drill = await promoteReferenceDrill(PARAMS, client as never);
+
+    expect(drill.drill_id).toBe('on-the-transaction');
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [text, values] = client.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(text).toBe(pooledText);
+    expect(valuesWithoutId(values)).toEqual(valuesWithoutId(pooledValues));
+  });
+
+  test('a name collision on the client is still the named error, for the caller to roll back on', async () => {
+    const client = { query: jest.fn(async () => { throw uniqueViolation(); }) };
+
+    await expect(promoteReferenceDrill(PARAMS, client as never)).rejects.toBeInstanceOf(DrillNameTakenError);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('assertDrillMeetsCueRule: the optional transaction client', () => {
+  // Lane P7 (#1401). The one read this rule makes -- the reference's discipline,
+  // for a cue-less adopted drill -- can ride a caller's transaction, so a rule
+  // asked from inside one takes no second connection from the pool.
+  const ADOPTED = {
+    organizationId: 'org-1',
+    name: 'Sled Push',
+    category: 'strength',
+    cues: [],
+    referenceDrillId: 'drl_ref',
+  };
+
+  test('with no client the reference is read from the pool, called with exactly (text, values)', async () => {
+    mockQueryOne.mockResolvedValueOnce({ discipline: 'conditioning' });
+
+    await expect(assertDrillMeetsCueRule(ADOPTED)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockQueryOne.mock.calls[0]).toHaveLength(2);
+    expect(flat(mockQueryOne.mock.calls[0][0])).toBe(
+      'select discipline from pilot.drill_library where organization_id = $1 and drill_id = $2',
+    );
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'drl_ref']);
+  });
+
+  test('with a client the SAME statement and values go to the client, and the pool is not read', async () => {
+    mockQueryOne.mockResolvedValueOnce({ discipline: 'conditioning' });
+    await assertDrillMeetsCueRule(ADOPTED);
+    const [pooledText, pooledValues] = mockQueryOne.mock.calls[0];
+    mockQueryOne.mockClear();
+
+    const client = { query: jest.fn(async () => ({ rows: [{ discipline: 'conditioning' }] })) };
+    await expect(assertDrillMeetsCueRule(ADOPTED, client as never)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [text, values] = client.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(text).toBe(pooledText);
+    expect(values).toEqual(pooledValues);
+  });
+
+  test('with a client the verdict comes from what the client read: a technique reference is still refused', async () => {
+    const client = { query: jest.fn(async () => ({ rows: [{ discipline: 'boxing' }] })) };
+
+    await expect(assertDrillMeetsCueRule(ADOPTED, client as never)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED' });
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('a drill with a cue reads nothing on either path', async () => {
+    const client = { query: jest.fn() };
+
+    await assertDrillMeetsCueRule({ ...ADOPTED, cues: ['Drive through the hips'] });
+    await assertDrillMeetsCueRule({ ...ADOPTED, cues: ['Drive through the hips'] }, client as never);
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ jest.mock('./db', () => ({
 }));
 
 import {
+  assertNewAssignmentMeetsCueRule,
   assignDrill,
   cancelDrillAssignment,
   getAssignmentCompletions,
@@ -464,5 +465,75 @@ describe('recordCompletion on cancelled work', () => {
     const order = currentClient.query.mock.calls.map(([sql]) => String(sql));
     expect(order[0]).toContain('for update');
     expect(order[1]).toContain('insert into pilot.assignment_completions');
+  });
+});
+
+describe('assertNewAssignmentMeetsCueRule: the optional transaction client (lane P7, #1401)', () => {
+  // A writer running inside a transaction passes its client, so the rule sees
+  // a drill created earlier on that transaction and takes no second connection
+  // from the pool. The no-client path is the one assignDrill uses above, and
+  // those cases pin its statement and values unchanged.
+  const technique = { name: 'Jab', category: 'technical', cues: [], reference_drill_id: null };
+
+  test('with no client both reads are pooled, each called with exactly (text, values)', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce({ ...technique, category: 'strength', reference_drill_id: 'drl_ref' })
+      .mockResolvedValueOnce({ discipline: 'conditioning' });
+
+    await expect(assertNewAssignmentMeetsCueRule('org-1', 'drill-jab')).resolves.toBeUndefined();
+
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
+    expect(mockQueryOne.mock.calls[0]).toHaveLength(2);
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'drill-jab']);
+    expect(mockQueryOne.mock.calls[1]).toHaveLength(2);
+    expect(mockQueryOne.mock.calls[1][1]).toEqual(['org-1', 'drl_ref']);
+  });
+
+  test('with a client the SAME statement and values go to the client, and the pool is not read', async () => {
+    mockQueryOne.mockResolvedValueOnce({ ...technique, cues: ['Turn the fist'] });
+    await assertNewAssignmentMeetsCueRule('org-1', 'drill-jab');
+    const [pooledText, pooledValues] = mockQueryOne.mock.calls[0];
+    mockQueryOne.mockClear();
+
+    const client = fakeClient();
+    client.query.mockResolvedValueOnce({ rows: [{ ...technique, cues: ['Turn the fist'] }] });
+    await expect(assertNewAssignmentMeetsCueRule('org-1', 'drill-jab', client as never)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query.mock.calls[0][0]).toBe(pooledText);
+    expect(client.query.mock.calls[0][1]).toEqual(pooledValues);
+  });
+
+  test('with a client a cue-less technique drill is refused from what the CLIENT read', async () => {
+    const client = fakeClient();
+    client.query.mockResolvedValueOnce({ rows: [technique] });
+
+    await expect(assertNewAssignmentMeetsCueRule('org-1', 'drill-jab', client as never)).rejects.toMatchObject({
+      code: 'DRILL_CUE_REQUIRED',
+      status: 409,
+    });
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('with a client the reference read behind the rule is on the client too', async () => {
+    const client = fakeClient();
+    client.query
+      .mockResolvedValueOnce({ rows: [{ ...technique, category: 'strength', reference_drill_id: 'drl_ref' }] })
+      .mockResolvedValueOnce({ rows: [{ discipline: 'conditioning' }] });
+
+    await expect(assertNewAssignmentMeetsCueRule('org-1', 'drill-jab', client as never)).resolves.toBeUndefined();
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(2);
+    expect(client.query.mock.calls[1][0]).toContain('from pilot.drill_library');
+    expect(client.query.mock.calls[1][1]).toEqual(['org-1', 'drl_ref']);
+  });
+
+  test('with a client a drill the client cannot see is left to the insert, as on the pooled path', async () => {
+    const client = fakeClient();
+
+    await expect(assertNewAssignmentMeetsCueRule('org-1', 'drill-jab', client as never)).resolves.toBeUndefined();
+    expect(client.query).toHaveBeenCalledTimes(1);
   });
 });
