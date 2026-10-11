@@ -399,7 +399,7 @@ function resolveArrayBody(body: string, lookup: (name: string) => string[] | nul
 export function requireRoleLiterals(source: string, blanked: string, spans: Span[]): string[] {
   const constants = collectArrayConstants(source);
   const found = new Set<string>();
-  const callPattern = /requireRole\s*\(/g;
+  const callPattern = /\brequireRole\s*\(/g;
   for (const [start, end] of spans) {
     const slice = blanked.slice(start, end);
     let match: RegExpExecArray | null;
