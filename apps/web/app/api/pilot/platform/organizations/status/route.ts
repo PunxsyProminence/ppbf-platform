@@ -4,6 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { setOrganizationStatus } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { isPlatformLibraryOrganization } from '@/src/server/pilot/platformLibraryScope';
 
 export const runtime = 'nodejs';
 
@@ -26,6 +27,12 @@ export async function POST(request: NextRequest) {
 
     if (!['active', 'inactive', 'suspended', 'pending'].includes(status)) {
       throw new Error('Unsupported status');
+    }
+
+    // The platform evidence shelf is not a gym: it has no members to suspend,
+    // and its audit row would be filed where no account can read it.
+    if (isPlatformLibraryOrganization(organizationId)) {
+      throw new Error('Unsupported organization_id');
     }
 
     await setOrganizationStatus(organizationId, status);

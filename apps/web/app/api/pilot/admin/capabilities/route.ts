@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 // The registry is one gym's own list, read and saved from /admin, so this is
 // gym work: platform_owner is refused on both verbs (OD-2026-10-10-004 ruling
 // 3). It used to pass, and could name another gym with organization_id; no
-// screen ever sent one. Every caller now reads and writes the gym of its own
+// screen sends one. Every caller now reads and writes the gym of its own
 // session, and an organization_id in the request is ignored.
 const CAPABILITY_ROLES = ['organization_admin', 'admin'] as const;
 

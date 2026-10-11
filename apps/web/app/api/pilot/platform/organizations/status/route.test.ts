@@ -9,6 +9,7 @@ import { POST } from './route';
 import { setOrganizationStatus } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { PLATFORM_LIBRARY_ORGANIZATION_ID } from '@/src/server/pilot/platformLibraryScope';
 
 jest.mock('@/src/server/pilot/http', () => ({
   ...jest.requireActual('@/src/server/pilot/http'),
@@ -79,6 +80,17 @@ test.each(['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'board',
     const response = await post({ organization_id: 'gym-1', status: 'suspended' });
 
     expect(response.status).toBe(403);
+    expect(mockSetStatus).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  },
+);
+
+test.each(['suspended', 'inactive', 'pending', 'active'])(
+  'the platform evidence shelf is not a gym: setting it %s is refused, nothing written',
+  async (status) => {
+    const response = await post({ organization_id: ` ${PLATFORM_LIBRARY_ORGANIZATION_ID} `, status });
+
+    expect(response.status).toBe(400);
     expect(mockSetStatus).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
   },

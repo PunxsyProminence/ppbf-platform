@@ -1291,7 +1291,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole(platform_owner + GYM_ADMIN_ROLES), then resolveWriteOrganizationId: organization_admin/admin write the session gym's flags only (a body organization_id is ignored); platform_owner is kept for the new-gym wizard only (OD-2026-10-10-004 ruling 3, \"truly platform-level\") and must name the gym in body.organization_id, else 403; the reserved platform shelf is refused 400. Any gym it names is admitted, its own session gym included. A body that is not a JSON object is refused 400. The platform_owner write is audited (entity gym_capability_access) under the gym acted on, in the same transaction as the upsert. Not athlete data.",
+    "notes": "requireRole(platform_owner + GYM_ADMIN_ROLES), then resolveWriteOrganizationId: organization_admin/admin write the session gym's flags only (a body organization_id is ignored); platform_owner is kept for the new-gym wizard only (OD-2026-10-10-004 ruling 3, \"truly platform-level\") and must name the gym in body.organization_id, else 403; the reserved platform shelf is refused 400. Any gym it names is admitted, its own session gym included. A body that is not a JSON object, or carries no capabilityAccess object, is refused 400 for every role. The platform_owner write is audited (entity gym_capability_access) under the gym acted on, in the same transaction as the upsert. Not athlete data.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8470,7 +8470,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Sets an organization status (active/inactive/suspended/pending) from a body organization_id. Gate requireRole([platform_owner]) in status/route.ts. No athlete data; org-level record plus an audit event filed under the organization acted on, not the actor's own.",
+    "notes": "Sets an organization status (active/inactive/suspended/pending) from a body organization_id. Gate requireRole([platform_owner]) in status/route.ts. The reserved platform shelf id is refused 400. No athlete data; org-level record plus an audit event filed under the organization acted on, not the actor's own.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

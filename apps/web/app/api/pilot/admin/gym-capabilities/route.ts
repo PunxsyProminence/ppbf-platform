@@ -95,7 +95,14 @@ export async function POST(request: NextRequest) {
       throw new Error('Request body must be a JSON object');
     }
     const organizationId = resolveWriteOrganizationId(principal, body.organization_id);
-    const capabilityAccess = toCapabilityAccess(body.capabilityAccess);
+    // The flags must be sent as an object. A missing or misspelled field used
+    // to be read as "no flags" and stored an empty set over the gym's own; an
+    // explicit {} still clears them.
+    const sentAccess = body.capabilityAccess;
+    if (!sentAccess || typeof sentAccess !== 'object' || Array.isArray(sentAccess)) {
+      throw new Error('Request body must carry capabilityAccess as a JSON object');
+    }
+    const capabilityAccess = toCapabilityAccess(sentAccess);
 
     // One transaction, so the platform owner's write to a gym always has its
     // record and a failed record leaves the gym's flags unchanged.

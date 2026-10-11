@@ -70,7 +70,7 @@ describe.each(VIEWS)('GET %s', (_label, url) => {
     const response = await GET(new NextRequest(url));
 
     expect(response.status).toBe(200);
-    const read = [mockStatus, mockQueue, mockChecks].flatMap((fake) => fake.mock.calls);
+    const read = [...mockStatus.mock.calls, ...mockQueue.mock.calls, ...mockChecks.mock.calls];
     expect(read).toHaveLength(1);
     expect(read[0][0]).toBe('org-1');
   });

@@ -38,6 +38,8 @@ const FLAGS = { attendance: true, sparring: false };
 const clientQuery = jest.fn();
 const client = { query: clientQuery };
 let committed: Array<{ sql: string; params: unknown[] }> = [];
+// Set by a test to make the write itself fail inside the transaction.
+let writeFailure: Error | null = null;
 
 function as(role: string, organizationId = 'org-session') {
   mockPrincipal.mockResolvedValue({ accountId: `${role}-1`, organizationId, role } as never);
@@ -66,11 +68,13 @@ function expectNothingTouched() {
 beforeEach(() => {
   jest.resetAllMocks();
   committed = [];
+  writeFailure = null;
   mockQueryOne.mockResolvedValue({ capability_access: FLAGS } as never);
   mockAudit.mockResolvedValue(undefined);
   mockTransaction.mockImplementation(async (body) => {
     const pending: Array<{ sql: string; params: unknown[] }> = [];
     clientQuery.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (writeFailure) throw writeFailure;
       pending.push({ sql, params });
       return { rows: [] };
     });
@@ -128,6 +132,7 @@ describe('GET: the gym admin only', () => {
 describe('POST: the platform owner only for a gym it names', () => {
   test.each([
     ['no organization_id', { capabilityAccess: FLAGS }],
+    ['no organization_id and no flags', {}],
     ['an empty organization_id', { capabilityAccess: FLAGS, organization_id: '' }],
     ['a blank organization_id', { capabilityAccess: FLAGS, organization_id: '   ' }],
     ['a null organization_id', { capabilityAccess: FLAGS, organization_id: null }],
@@ -201,14 +206,12 @@ describe('POST: the platform owner only for a gym it names', () => {
 
   test('a gym that does not exist: the write fails, nothing is committed or audited', async () => {
     as('platform_owner');
-    mockTransaction.mockImplementation(async (body) => {
-      clientQuery.mockRejectedValue(new Error('violates foreign key constraint'));
-      return body(client as never);
-    });
+    writeFailure = new Error('violates foreign key constraint');
 
     const response = await post({ capabilityAccess: FLAGS, organization_id: 'no-such-gym' });
 
     expect(response.status).toBe(500);
+    expect(clientQuery).toHaveBeenCalledTimes(1);
     expect(committed).toEqual([]);
     expect(mockAudit).not.toHaveBeenCalled();
   });
@@ -230,6 +233,45 @@ describe('POST: the platform owner only for a gym it names', () => {
       expect(committed).toEqual([]);
     },
   );
+
+  // A save must carry the flags as an object. A missing or misspelled field
+  // used to store an empty set over the gym's flags.
+  test.each(['platform_owner', 'organization_admin', 'admin'])(
+    '%s: a save without a capabilityAccess object is refused, and no flags are overwritten',
+    async (role) => {
+      as(role, 'org-gym-1');
+
+      const bodies: Array<Record<string, unknown>> = [
+        { organization_id: 'org-gym-2' },
+        { organization_id: 'org-gym-2', capability_access: FLAGS },
+        { organization_id: 'org-gym-2', capabilityAccess: null },
+        { organization_id: 'org-gym-2', capabilityAccess: [] },
+        { organization_id: 'org-gym-2', capabilityAccess: [FLAGS] },
+        { organization_id: 'org-gym-2', capabilityAccess: 'attendance' },
+        { organization_id: 'org-gym-2', capabilityAccess: 7 },
+        { organization_id: 'org-gym-2', capabilityAccess: true },
+      ];
+      for (const body of bodies) {
+        const response = await post(body);
+        expect([JSON.stringify(body), response.status]).toEqual([JSON.stringify(body), 400]);
+      }
+      expectNothingTouched();
+      expect(committed).toEqual([]);
+    },
+  );
+
+  test.each([
+    ['platform_owner', 'org-gym-2'],
+    ['organization_admin', 'org-gym-1'],
+  ])('%s: an explicit empty object still clears the flags', async (role, expectedGym) => {
+    as(role, 'org-gym-1');
+
+    const response = await post({ organization_id: 'org-gym-2', capabilityAccess: {} });
+
+    expect(response.status).toBe(200);
+    expect(committed).toHaveLength(1);
+    expect(committed[0].params.slice(0, 2)).toEqual([expectedGym, '{}']);
+  });
 
   test('the platform evidence shelf is not a gym: refused, nothing written', async () => {
     as('platform_owner');
