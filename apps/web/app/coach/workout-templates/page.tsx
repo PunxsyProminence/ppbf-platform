@@ -142,7 +142,10 @@ function IssueToAthlete({ template }: { readonly template: Template }) {
   const chosen = (athletes ?? []).find((athlete) => athlete.athlete_id === athleteId) ?? null;
 
   const issue = async () => {
-    if (!chosen || busy) return;
+    // No second send while one runs: every control below is disabled on
+    // `busy`, and React re-renders between two taps, so the button is already
+    // dead when a second tap arrives.
+    if (!chosen) return;
     setBusy(true);
     try {
       let response: Response;
@@ -532,12 +535,11 @@ function CoachWorkoutTemplates() {
                   ))}
                 </ol>
 
-                {/* Keyed by template, so opening another one starts the
-                    control clean: no athlete, no confirm step, no result
-                    left over from the template that was open before. */}
-                {detail.items.length > 0 && (
-                  <IssueToAthlete key={detail.template.template_id} template={detail.template} />
-                )}
+                {/* Opening another template unmounts this whole block while
+                    the new one loads (openTemplate clears `detail`), so the
+                    control always starts clean: no athlete, no confirm step,
+                    no result left over from the template open before. */}
+                {detail.items.length > 0 && <IssueToAthlete template={detail.template} />}
               </>
             )}
           </section>
