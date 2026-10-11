@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
@@ -343,6 +343,22 @@ export default function AttemptLogPage() {
     return () => controller.abort();
   }, []);
 
+  // The athlete whose attempts are on screen. Rows belong to the athlete they
+  // were loaded for: picking another athlete clears them, and an answer for
+  // anyone else (a reload after a review the coach has since switched away
+  // from) is dropped, so one athlete's attempts -- and their review controls --
+  // never render under another athlete's name. That includes an athlete the
+  // server refuses: the picker lists the whole gym, attempts are per athlete.
+  const currentAthlete = useRef('');
+
+  const selectAthlete = (id: string) => {
+    currentAthlete.current = id;
+    setAttempts([]);
+    setErrorMessage(null);
+    setListLoading(id !== '');
+    setAthleteId(id);
+  };
+
   const reloadAttempts = useCallback(async (id: string, signal?: AbortSignal) => {
     const response = await fetch(`${apiBase()}/api/pilot/training-attempts?athlete_id=${encodeURIComponent(id)}`, {
       credentials: 'include',
@@ -350,12 +366,12 @@ export default function AttemptLogPage() {
     });
     if (!response.ok) throw new Error('Unable to load attempts.');
     const payload = (await response.json()) as { items?: AttemptRow[] };
+    if (currentAthlete.current !== id) return;
     setAttempts(payload.items ?? []);
   }, []);
 
-  // The loading flag is raised in the change handler that picks the
-  // athlete, not here (react-hooks/set-state-in-effect); the effect only
-  // loads and lowers it.
+  // The loading flag is raised in selectAthlete, not here
+  // (react-hooks/set-state-in-effect); the effect only loads and lowers it.
   useEffect(() => {
     if (!athleteId) return;
     const controller = new AbortController();
@@ -384,6 +400,18 @@ export default function AttemptLogPage() {
       setErrorMessage('Achieved must be a non-negative number.');
       return;
     }
+    // A blank target is an intentional target-less measurement. A non-blank
+    // target must parse to a number above 0 (the server's own rule) BEFORE it
+    // is sent: JSON turns NaN into null, which would record a mistyped target
+    // as a measurement with no verdict. Same rule as the correction form.
+    let target: number | null = null;
+    if (form.target_value.trim() !== '') {
+      target = Number(form.target_value);
+      if (!Number.isFinite(target) || target <= 0) {
+        setErrorMessage('Target must be a number above 0, or leave it blank for a measurement.');
+        return;
+      }
+    }
     setBusy(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/training-attempts`, {
@@ -394,7 +422,7 @@ export default function AttemptLogPage() {
           athlete_id: athleteId,
           metric_kind: form.metric_kind,
           context_type: form.context_type,
-          target_value: form.target_value.trim() === '' ? null : Number(form.target_value),
+          target_value: target,
           achieved_value: achieved,
           note: form.note,
         }),
@@ -442,8 +470,10 @@ export default function AttemptLogPage() {
             <div className="grid gap-[var(--s3)] md:grid-cols-2">
               <div className="field md:col-span-2">
                 <label className="t-label" htmlFor="attempt-athlete">Athlete</label>
-                <select id="attempt-athlete" className="select" value={athleteId}
-                  onChange={(e) => { setListLoading(e.target.value !== ''); setAthleteId(e.target.value); }}>
+                {/* Held while a record is in flight, so its answer always lands
+                    under the athlete it was recorded for. */}
+                <select id="attempt-athlete" className="select" value={athleteId} disabled={busy}
+                  onChange={(e) => selectAthlete(e.target.value)}>
                   <option value="">Select an athlete…</option>
                   {athletes.map((athlete) => (
                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
