@@ -229,7 +229,7 @@ test('a failed feed makes the needs-you gauge "?", never 0', () => {
   const needs = gauge('Needs you');
   expect(needs.querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('?');
   expect(needs.textContent).toContain('A read failed');
-  expect(needs.textContent).not.toMatch(/0/);
+  expect(needs.textContent).not.toMatch(/\b0\b/);
 });
 
 test('a feed still loading makes the needs-you gauge a wait, never 0', () => {

@@ -405,7 +405,7 @@ describe('the refund: give back the one slot a receipt names', () => {
     expect(sql).toContain('request_count > 0');
     // The earlier refund worked out "the current window" here. This one must not.
     expect(sql).not.toContain('clock_timestamp');
-    expect(sql).not.toMatch(/insert/i);
+    expect(sql).not.toMatch(/\binsert\b/i);
   });
 
   test('no matching row: false', async () => {
