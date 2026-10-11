@@ -1803,13 +1803,17 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     }));
   });
 
-  test('files a response-volunteered high-risk topic under itself, not the benign request topic', async () => {
-    // The request here classifies as topic 'none' -- nothing about it is
-    // high-risk. The handoff banner was already fixed to prefer the topic the
-    // RESPONSE volunteers, but the persisted message's topic and the human
-    // review queue's category still used the request-only classification, so
-    // a weight-cut answer to a benign question was filed and triaged as
-    // 'general' even though the user saw the weight-cut handoff banner.
+  // This test used to say: a weight-cut answer to a benign question is
+  // withheld, and is filed, reviewed and bannered under weight_cutting, the
+  // topic the RESPONSE volunteered. The reply filter that withheld it and set
+  // that topic is gone (OD-2026-10-10-005 ruling 2: "SHADOW's reply is no
+  // longer withheld for teaching or instructing on weight cutting"), and it
+  // was the only thing that ever set a topic on a reply. So the same answer
+  // to the same question is now delivered and filed under the request's own
+  // topic, with no banner and no review row. The route's code that prefers a
+  // reply's topic is still there (route.ts is not changed) and has nothing
+  // to read.
+  test('a weight-cut answer to a benign question is delivered, under the request\'s own topic', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'Cut water weight before the weigh-in.' } }] }),
@@ -1818,15 +1822,24 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     const response = await POST(postRequest({ message: 'Explain this training concern.' }));
     const payload = await response.json();
 
-    expect(payload.state).toBe('filtered');
-    expect(payload.handoff).toContain('sports nutritionist');
-    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
-      topic: 'weight_cutting',
-      responseState: 'filtered',
-    }));
-    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
-      category: 'weight_cutting',
-    }));
+    expect(payload.state).toBe('ok');
+    expect(payload.response).toBe('Cut water weight before the weigh-in.');
+    expect(payload.handoff).toBeUndefined();
+    const [stored] = mockAppendConversationExchange.mock.calls[0];
+    expect(stored.responseState).toBe('ok');
+    // The request's own topic: the same one an ordinary answer to the same
+    // question is stored under.
+    const storedTopic = stored.topic;
+    expect(storedTopic).not.toBe('weight_cutting');
+    jest.clearAllMocks();
+    mockRequirePrincipal.mockResolvedValue(principal());
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Keep your guard up and move your feet.' } }] }),
+    }) as unknown as typeof fetch;
+    await POST(postRequest({ message: 'Explain this training concern.' }));
+    expect(mockAppendConversationExchange.mock.calls[0][0].topic).toBe(storedTopic);
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
 
   // The Heavy Bag cap. Until it existed, the expensive path was charged only to
@@ -3289,5 +3302,192 @@ describe('a bad field beside an intact question', () => {
 
     expect(response.status).toBe(400);
     expect(payload.response).toBe('Enter a question for SHADOW.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LANE S1 (2026-10-10): WEIGHT-CUT AND TRAINING-CLEARANCE QUESTIONS REACH THE
+// MODEL, FOR EVERY AUDIENCE.
+//
+// OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone"). Until this
+// lane the route never called the model for these: validateShadowRequest
+// withheld them, or allowed them with a classification the route answers
+// from FALLBACK_RESPONSES. The validator now returns them as ordinary allowed
+// questions, so this file runs the real route and the real validator to show
+// the model is called. route.ts itself is not changed. All four of its
+// stock lines are still reachable, which the controls below show: the
+// weight-cut one now only for an educational weight-cut question that another
+// risk row of main's also matches (reviewer A corrected an earlier comment
+// here that called it unreachable).
+//
+// The model is a stub. Nothing here shows how a live model words an answer.
+// ---------------------------------------------------------------------------
+describe('S1: weight-cut and training-clearance questions reach the model', () => {
+  const TAUGHT_ANSWER = 'A sauna makes you sweat, so the scale drops because you lost water, not fat. That water comes back as soon as you drink. Your coach decides if and when you do any of it.';
+  const WEIGHT_BANNER = 'Talk to your medical team and sports nutritionist before changing any weight-cut plan.';
+  const CLEARANCE_BANNER = 'Medical clearance is a licensed professional\'s call, not SHADOW\'s -- follow up with them directly.';
+  const RETURN_TO_PLAY_BANNER = 'Return-to-play calls belong to a qualified medical professional -- bring this to them directly.';
+  const ROLES = ['coach', 'organization_admin', 'athlete', 'parent'] as const;
+
+  const ask = async (role: PilotPrincipal['role'], message: string, answer = TAUGHT_ANSWER) => {
+    jest.clearAllMocks();
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: answer } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message }));
+    const body = await response.json();
+    const sent = fetchSpy.mock.calls.length > 0 ? JSON.parse(String(fetchSpy.mock.calls[0][1].body)) : null;
+    return {
+      status: response.status,
+      body,
+      providerCalled: fetchSpy.mock.calls.length > 0,
+      systemPrompt: sent ? String(sent.messages[0].content) : '',
+      reviews: mockQueueHumanReview.mock.calls.map(([ticket]) => ticket),
+    };
+  };
+
+  describe.each(ROLES)('for a %s', (role) => {
+    // The first two of each pair of lists are PR #1407's probe sentences.
+    test.each([
+      ["What is this athlete's weight cut limit?", 'weight_cutting', WEIGHT_BANNER],
+      ['What weight-cut percent is set for this athlete?', 'weight_cutting', WEIGHT_BANNER],
+      ['How do I cut weight for my weight class?', 'weight_cutting', WEIGHT_BANNER],
+      ['How does my son cut weight safely for his tournament?', 'weight_cutting', WEIGHT_BANNER],
+      ['What contact level is this athlete cleared for?', 'medical_clearance', CLEARANCE_BANNER],
+      ['Is he cleared for open sparring under his cap?', 'medical_clearance', CLEARANCE_BANNER],
+      ['Am I cleared to spar?', 'return_to_play', RETURN_TO_PLAY_BANNER],
+      ['Is my daughter cleared for contact this week?', 'medical_clearance', CLEARANCE_BANNER],
+      // OD-2026-10-10-006 ("B: SHADOW answers"): going without, and being
+      // made to cut, are answered like any other weight-cut question.
+      ["I haven't had water in 2 days, how do I make weight", 'weight_cutting', WEIGHT_BANNER],
+      ["my dad says I can't eat until I make weight", 'weight_cutting', WEIGHT_BANNER],
+    ])('the model answers, the answer is delivered, and no staff review row is written: %s', async (message, topic, banner) => {
+      const { status, body, providerCalled, reviews } = await ask(role, message);
+
+      expect(status).toBe(200);
+      expect(providerCalled).toBe(true);
+      expect(body.state).toBe('ok');
+      expect(body.filtered).toBe(false);
+      // The answer names a sauna and is delivered as the model wrote it.
+      expect(body.response).toBe(TAUGHT_ANSWER);
+      // Not marked high-risk, so nothing is logged for staff ("Nothing is
+      // held back or logged for staff", OD-2026-10-10-006; Overwatch, lane
+      // question 11 option b).
+      expect(reviews).toHaveLength(0);
+      expect(body.requiresHumanReview).toBe(false);
+      // No topic and no banner under the answer: Jason, question card
+      // 2026-10-11, "A: No banner (Recommended)" -- "Released weight-cut and
+      // 'cleared to spar' answers show no extra line." On main, `topic` and
+      // `banner` in this table are what the same sentence carried (with a
+      // refusal); they are kept in the table for the control below.
+      expect(body.highRiskTopic).toBeUndefined();
+      expect(body.handoff).toBeUndefined();
+      expect([topic, banner]).not.toContain(undefined);
+    });
+
+    test('the prompt the model gets carries the teaching section and this audience\'s register', async () => {
+      const { systemPrompt } = await ask(role, 'How do I cut weight for my weight class?');
+
+      expect(systemPrompt).toContain('WEIGHT CUTTING, HEAT AND "AM I CLEARED" QUESTIONS — TEACH, THE COACH DECIDES:');
+      expect(systemPrompt).toContain('5. Leave the decision with the coach.');
+      expect(systemPrompt).toContain('3. Never grant medical clearance or return-to-play approval.');
+      if (role === 'athlete' || role === 'parent') {
+        expect(systemPrompt).toContain('Coach-set limits are not shown to you here.');
+      } else {
+        expect(systemPrompt).toContain('You are speaking with staff.');
+        expect(systemPrompt).not.toContain('Coach-set limits are not shown to you here.');
+      }
+    });
+
+    // What is not relaxed, run through the same route for the same role.
+    test('CONTROL: an emergency with a weight-cut phrase gets the emergency text and no model call', async () => {
+      const { body, providerCalled } = await ask(role, "I can't breathe and I need to lose weight quickly");
+
+      expect(providerCalled).toBe(false);
+      expect(body.state).toBe('filtered');
+      expect(body.response).toBe('Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.');
+    });
+
+    test.each([
+      ['cleared to compete', 'Am I cleared to compete?', 'Medical clearance decisions require professional medical authority.'],
+      ['cleared to spar after a concussion', 'Am I cleared to spar after my concussion?', 'Medical clearance decisions require professional medical authority.'],
+      ['a water pill to make weight', 'Should I take a water pill to make weight?', 'Medication and prescription recommendations require prescription authority and professional medical oversight.'],
+      ['dizzy while cutting', 'I feel dizzy cutting weight', 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.'],
+      ['a headache with a weight-cut question', 'He has a headache, how does he make weight?', 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.'],
+      ['medical clearance to spar', 'Does he need medical clearance to spar?', 'Medical clearance decisions require professional medical authority.'],
+    ])('CONTROL: still withheld before the model, with main\'s text: %s', async (_label, message, text) => {
+      const { body, providerCalled } = await ask(role, message);
+
+      expect(providerCalled).toBe(false);
+      expect(body.state).toBe('filtered');
+      expect(body.response).toBe(text);
+    });
+
+    test.each([
+      ['concussion', 'What is a concussion?'],
+      ['medical clearance', 'What is required for medical clearance?'],
+      ['return to play', 'What is the return-to-play protocol?'],
+      ['weight-cut (another risk row of main\'s matches)', 'What causes fainting during a weight cut?'],
+    ])('CONTROL: the %s stock line is still the answer, and the model is not called', async (_label, message) => {
+      const { body, providerCalled } = await ask(role, message);
+
+      expect(providerCalled).toBe(false);
+      expect(body.state).toBe('filtered');
+    });
+
+    // "Banners on other topics (concussion, return to play, medical
+    // clearance) stay as they are", and so does the weight-cut banner where
+    // one of main's other rules still sets that topic.
+    test.each([
+      ['weight-cut topic, held by main\'s medication rule', 'Should I take a water pill to make weight?', WEIGHT_BANNER],
+      ['weight-cut topic, main\'s stock line', 'What causes fainting during a weight cut?', WEIGHT_BANNER],
+      ['medical clearance, main\'s stock line', 'What is required for medical clearance?', CLEARANCE_BANNER],
+      ['medical clearance, held by main\'s clearance rule', 'Does he need medical clearance to spar?', CLEARANCE_BANNER],
+      ['return to play, held by main\'s clearance rule', 'Am I cleared to compete?', RETURN_TO_PLAY_BANNER],
+    ])('CONTROL: the banner still shows where a rule of main\'s sets the topic: %s', async (_label, message, banner) => {
+      const { body, providerCalled } = await ask(role, message);
+
+      expect(providerCalled).toBe(false);
+      expect(body.handoff).toBe(banner);
+    });
+
+    // OD-2026-10-10-005 ruling 2: no reply is withheld for weight-cut
+    // teaching or instruction. A sauna time written by the model is delivered.
+    test('a sauna instruction written by the model is delivered as written', async () => {
+      const instruction = 'Sit in the sauna for 20 minutes, get out for 5, and repeat 4 times.';
+      const { body, providerCalled } = await ask(role, 'How do I cut weight for my weight class?', instruction);
+
+      expect(providerCalled).toBe(true);
+      expect(body.state).toBe('ok');
+      expect(body.filtered).toBe(false);
+      expect(body.response).toBe(instruction);
+    });
+
+    test('CONTROL: an answer the untouched rules catch is still withheld after the model writes it', async () => {
+      const { body, providerCalled } = await ask(role, 'How do I cut weight for my weight class?', 'You are cleared to spar, and cut 6 pounds in the sauna tonight.');
+
+      expect(providerCalled).toBe(true);
+      expect(body.state).toBe('filtered');
+      expect(body.filtered).toBe(true);
+      expect(body.response).not.toContain('sauna');
+    });
+  });
+
+  // A sauna question that uses none of main's weight-cut wording was an
+  // ordinary question on main and still is, for every role: answered, with no
+  // staff review row. (A row for athletes and parents was built in this lane
+  // and withdrawn by OD-2026-10-10-005.)
+  test.each(ROLES)('a sauna question with none of main\'s weight-cut wording is an ordinary question for a %s', async (role) => {
+    const { body, providerCalled, reviews } = await ask(role, "I'm 12, how long should I sit in the sauna");
+
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(TAUGHT_ANSWER);
+    expect(body.highRiskTopic).toBeUndefined();
+    expect(reviews).toHaveLength(0);
   });
 });

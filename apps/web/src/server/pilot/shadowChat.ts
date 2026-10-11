@@ -132,6 +132,11 @@ export interface ShadowResponseValidation {
    * response that volunteered weight-cut guidance to a benign question got the
    * generic handoff instead of "talk to your medical team ... before changing
    * any weight-cut plan". The route prefers this when set.
+   *
+   * NOT SET BY ANYTHING SINCE LANE S1. The weight-cut reply rule was the only
+   * thing that set it, and OD-2026-10-10-005 ruling 2 removed that rule. The
+   * route falls back to the request's topic, as it always did when this was
+   * absent.
    */
   topic?: string;
 }
@@ -486,6 +491,186 @@ function emergencyReport(text: string, emergencyOnMain: boolean, classification:
   };
 }
 
+// TAUGHT QUESTIONS (lane S1, 2026-10-10 and -11).
+//
+// OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone"): the weight-cut
+// request gate and the "cleared" request gate are relaxed for every audience,
+// athletes and parents included. SHADOW teaches weight cutting safely from
+// real sources, age-tuned, and the coach decides (OD-2026-10-01-001: "we can
+// educate it in a safe way", "the app should rarely say dont").
+//
+// OD-2026-10-10-006 (Jason, "B: SHADOW answers") says exactly which messages
+// that is: "A request is withheld only where a rule the app already had,
+// other than the weight-cut and 'cleared' gates, withholds it by its own
+// unchanged patterns (emergency handling, the symptom topics, medication,
+// diagnosis, safeguarding)." So a message about going without food or water,
+// or about being made to cut, reaches the model like any other weight-cut
+// question.
+//
+// THE TWO GATES, as main had them:
+//   weight-cut   main's weight-cut phrases in its first return, and its
+//                weight_cutting and rapid_weight_loss topic rows (which sent
+//                a non-educational question to the high-risk fallback and an
+//                educational one to the route's fixed line);
+//   "cleared"    "clear(ed|ance)" within 40 characters of train, training,
+//                contact, spar or sparring in main's clearance return, and
+//                the return_to_play and medical_clearance topic rows where
+//                it was the word "cleared" or "clearance" that matched them.
+// A message those caught, and nothing else of main's catches, is returned by
+// validateShadowRequest as an ordinary allowed question: valid, no high-risk
+// mark, no topic, no classification. So the route calls the model (it
+// answers the classifications 'weight_cutting', 'return_to_play' and
+// 'medical_clearance' from a fixed line: FALLBACK_RESPONSES,
+// app/api/pilot/shadow/chat/route.ts), writes no request-risk row, names no
+// topic in its reply and shows no handoff banner under the answer.
+//   - no mark, no row: the option Jason picked reads "Nothing is held back or
+//     logged for staff" (OD-2026-10-10-006; Overwatch, lane question 11);
+//   - no topic, so no banner: Jason, question card 2026-10-11, "A: No banner
+//     (Recommended)" -- "Released weight-cut and 'cleared to spar' answers
+//     show no extra line. Matches your rulings: teach, coach decides.
+//     Banners on other topics (concussion, return to play, medical
+//     clearance) stay as they are."
+// Marks, topics and banners that main's other rules give for their own
+// matches are untouched.
+//
+// WHAT ELSE OF MAIN'S CATCHES A MESSAGE, each by main's own pattern and
+// nothing added. This returns null for it, and a null changes nothing in
+// validateShadowRequest, so main's answer stands:
+//   - the emergency return: runs before this, and is not read here;
+//   - prescription language: tested before this by the caller;
+//   - a personal pain or injury report: main's "I / my" test together with
+//     its health-concern words, both read by the caller and passed in;
+//   - a diagnosis question and a medication question: main's two patterns,
+//     copied below and pinned to their source by shadowChat.test.ts;
+//   - "medical clearance", "medical" or "doctor" straight before "clear",
+//     and "cleared" near play, compete, competition or return: the part of
+//     main's clearance return, and the alternative of its medical_clearance
+//     topic row, that are not relaxed;
+//   - any other risk topic row of main's that matches the message (the
+//     symptom topics: concussion, dizziness, chest pain, fainting, the
+//     urgent-symptom row and the rest). That is asked of main's own
+//     classifier, on the message with the two gates' own words blanked out,
+//     so that no row is written here a second time. Dehydration is one of
+//     those rows, with one exception Overwatch confirmed on 2026-10-10: a
+//     dehydration question that is also a weight-cut question is taught.
+//
+// What is NOT here, on purpose. After two reviews this lane added word lists
+// of its own (health words main's vocabularies lack, distress, going without
+// food or water, being made to cut, medical wording beyond main's) to keep
+// main's refusal for messages only the two relaxed gates had caught. They
+// were no rule of main's, and OD-2026-10-10-006 has those messages answered.
+// They are gone, and shadowChat.test.ts holds that they stay gone.
+const WEIGHT_CUT_TOPIC_ROWS: readonly RegExp[] = [
+  /(weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight)/i,
+  /rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/i,
+];
+const DIAGNOSIS_QUESTION = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i;
+const MEDICATION_QUESTION = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i;
+const MEDICAL_CLEARANCE_PHRASE = /\bmedical\s+clear(?:ed|ance)?\b/i;
+// The first alternative of main's medical_clearance topic row. The row's
+// other two alternatives are the bare words "cleared" and "clearance", which
+// are the gate being relaxed; this one is a rule of its own ("the doctor
+// cleared him to spar") and stays.
+const MEDICAL_OR_DOCTOR_CLEAR = /(medical|doctor)\s+clear/i;
+// Main's two proximity patterns, split by the word "cleared" sits near:
+// play, compete, competition and return here (the part that stays), and
+// train, training, contact, spar and sparring in CLEARED_NEAR_TRAINING below
+// (the part that is relaxed). The two word lists together are main's list;
+// shadowChat.test.ts holds them to it.
+const CLEARANCE_NEAR_COMPETITION: readonly RegExp[] = [
+  /\bclear(?:ed|ance)?\b.{0,40}\b(play|compete|competition|return)\b/i,
+  /\b(play|compete|competition|return)\b.{0,40}\bclear(?:ed|ance)?\b/i,
+];
+// What is released is "cleared" or "clearance" near the training words.
+// Main's pattern also takes the bare word "clear" ("a clear round of
+// sparring"), which is no clearance question and matches neither clearance
+// topic row; on its own that keeps main's answer.
+const CLEARED_NEAR_TRAINING: readonly RegExp[] = [
+  /\bclear(?:ed|ance)\b.{0,40}\b(?:train|training|contact|spar|sparring)\b/i,
+  /\b(?:train|training|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)\b/i,
+];
+// The topics a taught question may carry: none, the two gates' own rows, and
+// dehydration (only beside weight-cut wording; see otherRiskTopicMatches).
+const WEIGHT_CUT_QUESTION_TOPICS: readonly HighRiskTopic[] = ['none', 'weight_cutting', 'rapid_weight_loss', 'dehydration'];
+
+/** What a released question gets: main's own answer for an ordinary question. */
+function allowedAsOrdinaryQuestion(): ShadowValidationResult {
+  return { valid: true, highRisk: false, topic: 'none' };
+}
+
+/**
+ * Whether a risk topic row of main's, other than the two gates' own, matches
+ * the message. Asked of classifyHighRiskTopic itself, so the rows are main's
+ * and are not copied: the two gates' words are blanked first, and whatever
+ * topic the classifier then gives is a row that matched on its own.
+ *
+ * Blanked with underscores, one for each character. An underscore is a word
+ * character, so no word boundary and no character-counted window moves; and
+ * no row of main's has an underscore in it, so a blank cannot make a match.
+ * (The third reviewer, 2026-10-11: blanked with the letter x, "welterweight"
+ * became a word ending "rx", which main's prescription row reads, and every
+ * "-rweight" question kept main's refusal.)
+ *
+ *   "weight"     in every alternative of the weight_cutting row and in two of
+ *                the three of the rapid_weight_loss row; the third, "lose N
+ *                pounds this week", is blanked by name.
+ *   "dehydrat"   only for a weight-cut question: Overwatch confirmed that a
+ *                dehydration question that is also a weight-cut question is
+ *                taught. The word is blanked and the classifier asked again,
+ *                because the dehydration row sits above most of the others
+ *                and the classifier stops at the first row that matches: left
+ *                in, "he has a headache and is dehydrated, how does he make
+ *                weight?" would be answered for the dehydration row and the
+ *                headache never read (the third reviewer). The row's other
+ *                two alternatives ("extreme thirst", "unable to keep fluids
+ *                down") are symptoms and are not blanked.
+ *   "clear"      only for a training-clearance question. That leaves the
+ *                clearance rows' "return ... play" alternative standing; the
+ *                row's "(medical|doctor) clear" alternative is tested by the
+ *                caller before this is reached.
+ */
+function otherRiskTopicMatches(text: string, weightCutWording: boolean, trainingClearance: boolean): boolean {
+  let blanked = text
+    .replace(/weight/gi, '______')
+    .replace(/lose(?=\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week)/gi, '____');
+  if (weightCutWording) blanked = blanked.replace(/dehydrat/gi, '________');
+  if (trainingClearance) blanked = blanked.replace(/clear/gi, '_____');
+  return classifyHighRiskTopic(blanked).topic !== 'none';
+}
+
+function taughtQuestion(
+  text: string,
+  topic: HighRiskTopic,
+  hasRapidWeightCutLanguage: boolean,
+  reportsPersonalPainOrInjury: boolean,
+): boolean {
+  if (reportsPersonalPainOrInjury) return false;
+  if (DIAGNOSIS_QUESTION.test(text) || MEDICATION_QUESTION.test(text)) return false;
+  // The part of main's clearance return that is not relaxed.
+  if (MEDICAL_CLEARANCE_PHRASE.test(text) || MEDICAL_OR_DOCTOR_CLEAR.test(text) || CLEARANCE_NEAR_COMPETITION.some((pattern) => pattern.test(text))) return false;
+
+  // "cleared" or "clearance", not the bare word "clear": a message that is
+  // only "is the ring clear for sparring?" is neither kind of question, is
+  // not released below, and keeps main's answer.
+  const trainingClearance = CLEARED_NEAR_TRAINING.some((pattern) => pattern.test(text));
+
+  // The classifier lowercases before it reads a row, so the copies of its
+  // rows read the same. A weight row only needs testing here when the
+  // dehydration row, which is listed above both, took the topic.
+  const weightCutWording = hasRapidWeightCutLanguage
+    || topic === 'weight_cutting'
+    || topic === 'rapid_weight_loss'
+    || (topic === 'dehydration' && WEIGHT_CUT_TOPIC_ROWS.some((pattern) => pattern.test(text.toLowerCase())));
+  if (!weightCutWording && !trainingClearance) return false;
+  if (otherRiskTopicMatches(text, weightCutWording, trainingClearance)) return false;
+
+  // A weight-cut question under none, a weight row or dehydration; or a
+  // training-clearance question under a clearance row.
+  const clearanceTopic = topic === 'return_to_play' || topic === 'medical_clearance';
+  if (weightCutWording && WEIGHT_CUT_QUESTION_TOPICS.includes(topic)) return true;
+  return trainingClearance && (clearanceTopic || weightCutWording);
+}
+
 // Validate that the request aligns with SHADOW's doctrine
 export function validateShadowRequest(
   message: string,
@@ -525,14 +710,27 @@ export function validateShadowRequest(
   const emergency = emergencyReport(text, hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern), classification);
   if (emergency) return emergency;
 
-  // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
-  if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
+  // A weight-cut question, or a question about being cleared to spar, train
+  // or take contact, that no other rule of main's catches -- see
+  // taughtQuestion above.
+  const taught = taughtQuestion(text, classification.topic, hasRapidWeightCutLanguage, hasPersonalContext && hasPersonalHealthConcern);
+
+  // Prescription language is blocked even when phrased as a question. So is
+  // weight-cut language in a message that is not only a weight-cut question.
+  if (hasPrescriptionLanguage || (hasRapidWeightCutLanguage && !taught)) {
     return {
       valid: false,
       error: 'Medication and prescription recommendations require prescription authority and professional medical oversight.',
       highRisk: true,
       topic: classification.topic,
     };
+  }
+
+  // Taught, not withheld (OD-2026-10-10-004 ruling 1): answered as an
+  // ordinary allowed question, with no mark, no topic and so no banner --
+  // see taughtQuestion above.
+  if (taught) {
+    return allowedAsOrdinaryQuestion();
   }
 
   // Educational queries are allowed
@@ -1130,26 +1328,22 @@ export function validateShadowResponse(
     flag('authority_override');
   }
 
-  // Weight cutting was gated on the REQUEST only. A response that volunteered a
-  // weight-cut directive -- to a question that never mentioned weight -- passed
-  // with no filter, and because the handoff topic was taken from the request,
-  // no weight-cut handoff banner either. Rapid weight loss in a youth combat
-  // sport is exactly the guidance that must not reach an athlete unreviewed, so
-  // the response is now gated on the same topic as the request.
+  // NO REPLY IS WITHHELD FOR WEIGHT CUTTING (lane S1).
   //
-  // Scoped to directives and dehydration methods rather than the words "weight
-  // loss", so educational answers about risks and safe management -- which the
-  // request validator explicitly allows -- are not swept up.
-  const makesWeightCutDirective = (
-    /\b(?:cut|cutting|drop|shed|lose)\b.{0,30}\b(?:water\s+weight|\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?))\b/i.test(response)
-    || /\b(?:sauna|sweat\s*suit|water\s+load(?:ing)?|dehydrat(?:e|ing)|restrict(?:ing)?\s+(?:fluids?|water))\b/i.test(response)
-    || /\b(?:you\s+(?:should|can|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you|to\s+make\s+weight)\b.{0,60}\b(?:cut\s+weight|make\s+weight|drop\s+(?:a|to)\s+.{0,20}weight\s+class)\b/i.test(response)
-  );
-  if (makesWeightCutDirective) {
-    filtered = true;
-    flag('weight_cut_directive');
-  }
-
+  // Three patterns stood here behind the weight_cut_directive flag: cut, drop,
+  // shed or lose near "water weight" or a pound count; sauna, sweat suit,
+  // water loading, dehydrate or "restrict fluids"; and "you should ... cut
+  // weight". OD-2026-10-10-004 ruling 1 (Jason, "B: Relax for everyone")
+  // relaxed the four method words. OD-2026-10-10-005 ruling 2 removed the
+  // rest, with no replacement: "SHADOW's reply is no longer withheld for
+  // teaching or instructing on weight cutting, sauna use, or holding food or
+  // fluids before a weigh-in" -- Jason: "let the coach make those assements".
+  // A rule to withhold an unsourced instruction was put to him, built by this
+  // lane, and withdrawn by that same decision; it is not here.
+  //
+  // The reason code stays in SHADOW_FILTER_REASONS because codes are
+  // append-only and stored rows carry it. Nothing emits it. Every other rule
+  // in this function is as it was.
   const allowedEvidenceIds = new Set(
     (options.allowedEvidenceIds ?? options.verifiedSourceIds ?? [])
       .filter((evidenceId) => (
@@ -1394,7 +1588,6 @@ export function validateShadowResponse(
     // worker both read this field, so they move together.
     requiresHumanReview: filtered,
     citationIds: filtered ? [] : citationIds,
-    ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
   };
 }
 
@@ -1455,11 +1648,23 @@ Education creates safety. Answer these in this order:
 3. Last, in one sentence, say what you cannot do (diagnose, treat, clear) and who does.
 Never open with what you cannot do. Never answer with only "see a professional". Do not reach for "stop and see a doctor" for every ache: teach the difference between worked-muscle soreness and the warning signs, then say plainly that warning signs mean stop and get it looked at. Do not prescribe exercises, stretches, ice, heat or medication as treatment.
 
+WEIGHT CUTTING, HEAT AND "AM I CLEARED" QUESTIONS — TEACH, THE COACH DECIDES:
+Making weight is part of boxing, and this gym teaches it instead of hiding it. When someone asks about cutting weight, making weight, a sauna, a sweat suit, water loading or dehydration:
+1. Teach how it works: what the method does in the body, what actually comes off and how fast it comes back, and why fighters use it.
+2. Teach how it is done as safely as possible: the slow way before the fast way, what makes it riskier, and the warning signs that mean stop and tell the coach now.
+3. Tune it to age. When the context says the athlete is a minor, or you are speaking with an athlete or a parent, teach it for a young athlete: smaller amounts, wider margins, an adult watching. Use only what the context tells you about age; do not guess one.
+4. Ground it in the Library. Use what the verified evidence in your context says, and cite it. Where the Library holds nothing on a point, say so in plain words ("the Library has nothing on that yet") and do not fill the gap with a number, a schedule or a rule of your own.
+5. Leave the decision with the coach. You teach; the coach decides whether, how much and when. When coach-set limits are in your context, give them as written, each with its id. When they are not, say that the coach may have set limits for this athlete and that those come first.
+A question about being "cleared" to spar, train or take contact is a question about what the coach has set. Answer from the recorded contact cap when it is in your context, with its id; when it is not, say the coach sets that, and to ask them. You never clear anyone yourself, and medical clearance stays a medical professional's call.
+Add no warnings, disclaimers or refusals beyond these steps. Say "don't" rarely, and only where the teaching itself calls for it.
+
 PHRASING — A RESPONSE FILTER ENFORCES THIS:
 Every answer you write passes through a safety filter before display. Unless the exact claim carries a verified evidence citation supplied in your authorized context, the filter WITHHOLDS your entire answer if it:
 - phrases any claim as research/studies/data/evidence "shows", "suggests", "indicates", "demonstrates", "proves", or "supports"
 - uses the word "proven" in any form
 - states a percentage, or a count of cases, athletes, participants, or studies
+With or without a citation, the filter also WITHHOLDS your entire answer if it:
+- puts "cleared" after "you" or after "the athlete is" in the same sentence, even in "ask your coach what you are cleared for". Give a recorded contact cap as a cap ("the contact cap is <value> [E:id]"), or say "what your coach has set"
 Without a supplied evidence ID, explain WHY in plain coaching terms — mechanics, experience, first principles ("warming up raises muscle temperature so you can move faster with less strain") — never by appeal to research or numbers. A withheld answer reaches the athlete as "SHADOW filtered it before display", which teaches them nothing. Write so your answer can be delivered.
 
 MEDICAL SAFETY:
@@ -1554,7 +1759,8 @@ You are speaking with an athlete. Assume they may be a minor.
 - Hold them to it. Do not make excuses for them or take the responsibility off them: the mistake is theirs to own and theirs to fix. Being treated badly by someone else is not a mistake and not an excuse.
 - Short sentences. Plain words -- about an 8th-grade reading level.
 - Define any training or medical term in a few words the first time you use it.
-- Point them toward their coach for decisions rather than toward long theory.`;
+- Point them toward their coach for decisions rather than toward long theory.
+- Weight cutting, sauna, sweat suit, water loading: teach it for a young athlete. Coach-set limits are not shown to you here. Say their coach may have set limits for them, and to ask the coach what they are before doing any of it.`;
   }
 
   if (role === 'parent') {
@@ -1562,7 +1768,8 @@ You are speaking with an athlete. Assume they may be a minor.
 You are speaking with a parent or guardian. Assume no boxing or sports-science background.
 - Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
 - Respectful. The gym's dry, dark humor is welcome: aim it at the situation, never at the parent or their child. Put the plain meaning beside any gym slang.
-- Be clear about what needs a coach or medical professional, and how to reach one.`;
+- Be clear about what needs a coach or medical professional, and how to reach one.
+- Weight cutting, sauna, sweat suit, water loading: teach it for a young athlete, in plain words. Coach-set limits are not shown to you here. Say the coach may have set limits for their child (heat, weight cut, contact, supervision) and that the coach has them.`;
   }
 
   // Coaches, organization admins, staff, volunteers, board, platform owner:

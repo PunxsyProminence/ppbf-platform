@@ -173,19 +173,40 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
 
-  test('a volunteered weight-cut directive persists with the weight-cut handoff banner and queues review', async () => {
+  // This test used a weight-cut answer and expected the weight-cut banner.
+  // The reply filter that withheld such an answer, and set the topic the
+  // banner came from, was removed by OD-2026-10-10-005 ruling 2 (lane S1). A
+  // withheld answer of another kind keeps what the test is for: the worker
+  // stores a withheld answer with a handoff banner and queues a review, as
+  // the synchronous path does. No rule sets a topic on a reply any more, so
+  // the banner is the general one.
+  test('a withheld answer persists with a handoff banner and queues review', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply('You are cleared to return to play.');
+
+    const result = await processNextShadowJob();
+
+    expect(result.processed).toBe(true);
+    // The sync path stores a banner; background answers stored none.
+    expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({
+      responseState: 'filtered',
+      handoff: expect.stringContaining('needs a human coach, medical professional, or your organization admin'),
+    }));
+    expect(mockQueueHumanReview).toHaveBeenCalled();
+  });
+
+  test('a weight-cut answer is delivered by the worker, with no banner and no review row', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
     llmReply('Cut water weight by sitting in a sauna the night before weigh-in.');
 
     const result = await processNextShadowJob();
 
     expect(result.processed).toBe(true);
-    // The sync path stores this banner; background answers stored none.
     expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({
-      responseState: 'filtered',
-      handoff: expect.stringContaining('medical team and sports nutritionist'),
+      responseState: 'ok',
+      handoff: undefined,
     }));
-    expect(mockQueueHumanReview).toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
 
   // Parity with the synchronous path is kept; what both paths do changed.
@@ -210,7 +231,7 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
 
   test('a review-queue write failure is retried, not thrown into failJob', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
-    llmReply('Cut water weight by sitting in a sauna the night before weigh-in.');
+    llmReply('You are cleared to return to play.');
     mockQueueHumanReview
       .mockRejectedValueOnce(new Error('transient'))
       .mockResolvedValueOnce('review-1');
@@ -244,7 +265,9 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
 // use, under the same rules. Nothing here changes what the job does: it
 // completes first, and no failure below reaches failJob.
 describe('the worker\'s response-safety review row is bounded and refunded', () => {
-  const REPLACED = 'Cut water weight by sitting in a sauna the night before weigh-in.';
+  // A clearance claim, which the reply check still replaces. (It was a
+  // weight-cut answer until OD-2026-10-10-005 ruling 2 removed that filter.)
+  const REPLACED = 'You are cleared to return to play.';
   const CLEAN = `The rotation the gym already logged supports a tighter pivot drill. [E:${LIBRARY_ID}] RESEARCH NEEDED.`;
 
   beforeEach(() => {
