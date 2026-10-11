@@ -42,14 +42,18 @@ function requireText(raw: unknown, field: string): string {
 // of Issue and sends the same one again when that press got no answer. A key
 // that already names an issue of this template to this athlete is a repeat:
 // nothing is written and the first issue is answered, with 200 rather than
-// 201 so "this request created it" is never said twice. The limits are the
-// column's own check (not blank, at most 200 characters). A request that
-// sends no key is issued exactly as before.
+// 201 so "this request created it" is never said twice. The limits are at
+// least as strict as the column's own check (not blank, at most 200
+// characters), so nothing accepted here is refused by the database; a NUL,
+// which PostgreSQL cannot store in text, is refused here too. The key is used
+// as sent, never trimmed. A request that sends no key is issued exactly as
+// before.
 const REQUEST_KEY_MAX = 200;
+const NUL = String.fromCharCode(0);
 
 function readRequestKey(raw: unknown): string | null {
   if (raw === undefined || raw === null) return null;
-  if (typeof raw !== 'string' || raw.trim() === '' || raw.length > REQUEST_KEY_MAX) {
+  if (typeof raw !== 'string' || raw.trim() === '' || raw.length > REQUEST_KEY_MAX || raw.includes(NUL)) {
     throw new ValidationError(`request_key must be text of 1 to ${REQUEST_KEY_MAX} characters`);
   }
   return raw;

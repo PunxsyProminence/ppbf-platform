@@ -1039,6 +1039,50 @@ describe('a request key names one issue', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  const ADOPTS = { items: [item(1)], library: { 'ref-1': { state: 'available' as const } } };
+  const COLLISIONS: Array<[string, () => Error]> = [
+    ['the name', () => new DrillNameTakenError('Jab Ladder')],
+    ['the reference', () => new ReferenceDrillAlreadyPromotedError('ref-1')],
+  ];
+
+  test.each(COLLISIONS)(
+    "the same request met at the drill library (%s index), because the template adopts a drill: answered as the repeat, never as 'nothing was issued'",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockFindByKey.mockResolvedValueOnce(null).mockResolvedValueOnce(FIRST);
+      mockPromote.mockRejectedValue(collision());
+
+      const result = await issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' });
+
+      expect(result).toEqual(REPEAT);
+      expect(mockFindByKey).toHaveBeenCalledTimes(2);
+      expect(mockRecordIssue).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(COLLISIONS)(
+    "a drill library collision (%s index) that was somebody else's adoption is still the conflict to retry: the key names nothing",
+    async (_label, collision) => {
+      given(ADOPTS);
+      mockPromote.mockRejectedValue(collision());
+
+      await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({
+        status: 409,
+        code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED',
+      });
+      expect(mockFindByKey).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  test.each(COLLISIONS)('with no key a drill library collision (%s index) looks nothing up', async (_label, collision) => {
+    given(ADOPTS);
+    mockPromote.mockRejectedValue(collision());
+
+    await expect(issueWorkoutTemplate(PARAMS)).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' });
+    expect(mockFindByKey).not.toHaveBeenCalled();
+  });
+
   test('any other failure of the write is not looked up as a repeat', async () => {
     given({ items: ITEMS, library: LIBRARY });
     mockRecordIssue.mockRejectedValue(new Error('insert refused'));

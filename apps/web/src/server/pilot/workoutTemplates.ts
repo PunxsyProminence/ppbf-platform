@@ -512,15 +512,6 @@ async function planTemplateIssue(
 }
 
 /**
- * Issues one saved workout template to one athlete: every step an assignment,
- * every unadopted-but-ready reference drill adopted, in one transaction.
- *
- * Returns 'not_found' for a template id that names nothing in this gym,
- * 'refused' (nothing written) when any step cannot be assigned, and 'issued'
- * with what was created otherwise. Throws ConflictError for a template that is
- * withdrawn or has no steps, and for a write that lost a race.
- */
-/**
  * The answer to a request whose key already names an issue, or null when the
  * key names none. A key is one issue's: sent again with a different athlete or
  * template it is refused, never answered with the other issue and never
@@ -548,6 +539,17 @@ async function repeatOfIssuedRequest(
   };
 }
 
+/**
+ * Issues one saved workout template to one athlete: every step an assignment,
+ * every unadopted-but-ready reference drill adopted, in one transaction.
+ *
+ * Returns 'not_found' for a template id that names nothing in this gym,
+ * 'refused' (nothing written) when any step cannot be assigned, 'issued' with
+ * what was created, and 'already_issued' (nothing written) for a repeat of a
+ * request whose key already issued this workout. Throws ConflictError for a
+ * template that is withdrawn or has no steps, for a write that lost a race,
+ * and for a request key already used for a different workout.
+ */
 export async function issueWorkoutTemplate(params: {
   organizationId: string;
   templateId: string;
@@ -723,7 +725,17 @@ export async function issueWorkoutTemplate(params: {
     // The same request arrived twice at the same moment and the other one
     // committed first. This transaction has rolled back -- no assignment and
     // no adoption of its own is kept -- so it is answered as the repeat it is.
-    if (error instanceof WorkoutIssueRequestKeyTakenError && requestKey !== null) {
+    // The other one is met at whichever unique index this transaction reaches
+    // first: the request key's, or, when the template adopts a drill, the
+    // drill library's (adoption comes before the issue row). So all three are
+    // asked here, before the drill library's refusal below can say "nothing
+    // was issued" about a workout the other send did issue. A collision that
+    // was somebody else's adoption finds no issue under this key and falls
+    // through to that refusal, as before.
+    const lostARace = error instanceof WorkoutIssueRequestKeyTakenError
+      || error instanceof DrillNameTakenError
+      || error instanceof ReferenceDrillAlreadyPromotedError;
+    if (lostARace && requestKey !== null) {
       const repeat = await repeatOfIssuedRequest(params.organizationId, requestKey, params.athleteId, params.templateId);
       if (repeat) return repeat;
     }

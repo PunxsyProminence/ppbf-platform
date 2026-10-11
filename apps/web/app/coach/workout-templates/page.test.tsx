@@ -1202,9 +1202,11 @@ describe('issue to athlete', () => {
     });
   });
   // ONE PRESS, ONE ISSUE (lane P7c, PR F). Every issue goes out with a request
-  // key. A press that gets no definite answer keeps its key, so pressing again
-  // sends the SAME key and the server answers with the first issue; a definite
-  // answer ends the request, and the next press is a new issue with a new key.
+  // key. The key is kept until the server says what became of THAT request
+  // (issued, already issued, or the key refused as another workout's), so
+  // pressing again sends the SAME key and the server answers with the first
+  // issue. A refusal given before the server looked at the key keeps it too:
+  // it says nothing about an earlier press that may have landed.
   describe('the request key: pressing again after no answer cannot issue the workout twice', () => {
     const ALREADY_BODY = {
       ok: true,
@@ -1305,19 +1307,46 @@ describe('issue to athlete', () => {
       expect(second).toBe(first);
     });
 
-    const ENDED: Array<[string, () => Response]> = [
-      ['an issue (201)', () => statusResponse(201, ISSUED_BODY)],
-      ['an "already issued" (200)', () => statusResponse(200, ALREADY_BODY)],
+    // Answers that refuse THIS press without saying what became of an earlier
+    // one. The route gives 400, 401, 403 and its 404 before it looks at the
+    // key; the writer's refusals come after it found the key naming nothing.
+    const REFUSALS: Array<[string, () => Response]> = [
       ['a refusal that names drills (409)', () => statusResponse(409, REFUSED_BODY)],
-      ['another 409', () => statusResponse(409, { error: 'This workout template is no longer in use, so it cannot be issued.', code: 'WORKOUT_TEMPLATE_NOT_CURRENT' })],
+      ['a template no longer in use (409)', () => statusResponse(409, { error: 'This workout template is no longer in use, so it cannot be issued.', code: 'WORKOUT_TEMPLATE_NOT_CURRENT' })],
+      ['a drill library that changed (409)', () => statusResponse(409, { error: 'The drill library changed while this template was being issued. Nothing was issued; try again.', code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' })],
+      ['a 409 with no code', () => statusResponse(409, {})],
       ['a 400', () => statusResponse(400, { error: 'Missing athlete_id' })],
-      ['a 401', () => statusResponse(401, {})],
+      ['a 401 (signed out)', () => statusResponse(401, {})],
       ['a 403', () => statusResponse(403, {})],
-      ['a 404', () => statusResponse(404, {})],
+      ['a 404 (the athlete can no longer be reached)', () => statusResponse(404, {})],
     ];
 
-    it.each(ENDED)('%s is a definite answer: the next press is a new issue with a new key', async (_label, definiteAnswer) => {
-      const fetchMock = mockIssues([definiteAnswer, () => statusResponse(201, ISSUED_BODY)]);
+    it.each(REFUSALS)('after %s the key is kept: if the press before it had landed, the next press is answered with that issue', async (_label, refusal) => {
+      const fetchMock = mockIssues([NO_ANSWER, refusal, () => statusResponse(200, ALREADY_BODY)]);
+
+      await issueTo();
+      await screen.findByRole('alert');
+      await issueAgain();
+      // The refusal is said as it always was.
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/nothing was issued/i));
+      await issueAgain();
+
+      const status = await issuedStatus();
+      const [first, second, third] = keysSent(fetchMock);
+      expect(typeof first).toBe('string');
+      expect(second).toBe(first);
+      expect(third).toBe(first);
+      expect(status).toHaveTextContent('Your earlier try had gone through. It was issued once, not twice.');
+    });
+
+    const SETTLED: Array<[string, () => Response]> = [
+      ['an issue (201)', () => statusResponse(201, ISSUED_BODY)],
+      ['an "already issued" (200)', () => statusResponse(200, ALREADY_BODY)],
+      ['the key refused as another workout\'s (409)', () => statusResponse(409, { error: 'This request was already used to issue a different workout.', code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED' })],
+    ];
+
+    it.each(SETTLED)('%s says what became of this request: the next press is a new issue with a new key', async (_label, settledAnswer) => {
+      const fetchMock = mockIssues([settledAnswer, () => statusResponse(201, ISSUED_BODY)]);
 
       await issueTo();
       await waitFor(() => expect(screen.getByRole('status').textContent !== '' || screen.queryByRole('alert') !== null).toBe(true));
@@ -1328,6 +1357,28 @@ describe('issue to athlete', () => {
       expect(typeof first).toBe('string');
       expect(typeof second).toBe('string');
       expect(second).not.toBe(first);
+    });
+
+    it('issuing the same template twice on purpose is still two issues: two presses after "issued" are two keys, and neither is called a repeat', async () => {
+      const fetchMock = mockIssues([() => statusResponse(201, ISSUED_BODY), () => statusResponse(201, ISSUED_BODY)]);
+
+      await issueTo();
+      await issuedStatus();
+      await issueAgain();
+
+      const status = await issuedStatus();
+      const [first, second] = keysSent(fetchMock);
+      expect(second).not.toBe(first);
+      expect(status).toHaveTextContent('Issued to Dana Reyes: 2 Coach Cards.');
+      expect(status).not.toHaveTextContent(/earlier try|not twice/);
+    });
+
+    it('the key refused as another workout\'s is said in the server\'s words, as nothing issued', async () => {
+      mockIssues([() => statusResponse(409, { error: 'This request was already used to issue a different workout.', code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED' })]);
+
+      await issueTo();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('This request was already used to issue a different workout. Nothing was issued.');
     });
 
     it('each athlete has its own key, and an unanswered one is still that athlete\'s after choosing someone else and coming back', async () => {

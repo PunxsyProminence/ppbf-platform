@@ -325,6 +325,8 @@ describe('a request key', () => {
     ['a numeric key', 7],
     ['a key that is an object', { key: 'x' }],
     ['a key that is true', true],
+    // PostgreSQL cannot store a NUL in text: refused here, not a 500 from the database.
+    ['a key holding a NUL', `a${String.fromCharCode(0)}b`],
   ] as Array<[string, unknown]>)('%s is a 400 that says so, and nothing is read or written', async (_label, requestKey) => {
     const res = await POST(post({ ...BODY, request_key: requestKey }));
 

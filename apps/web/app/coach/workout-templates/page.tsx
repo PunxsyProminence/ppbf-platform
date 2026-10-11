@@ -49,7 +49,7 @@ interface TemplateDetail {
 // THE SCREEN NEVER SAYS "NOTHING WAS ISSUED" UNLESS THE SERVER SAID SO. The
 // route answers 201 only after its transaction has committed, and nothing
 // stops the same template being issued twice, so a coach told "nothing was
-// issued" issues again and the athlete gets every card twice. Three answers,
+// issued" issues again and the athlete gets every card twice. Four answers,
 // kept apart:
 //   - 201: issued, always -- even when the body cannot be read;
 //   - 200 saying `already_issued`: this press repeated one that had gone
@@ -67,11 +67,16 @@ interface TemplateDetail {
 // and an admin's issue is on nobody's Coach Cards screen.
 //
 // ONE PRESS, ONE ISSUE. Each issue is sent with a request key: a random id
-// kept for that template and athlete until the server gives a definite answer.
-// When a press gets no answer and the coach presses again, the same key goes
-// out, and the server answers with the first issue instead of issuing twice.
-// The key lives only as long as this open template does, so the "check before
-// trying again" sentences below stay as they are.
+// kept for that template and athlete until the server says what became of
+// THAT request (issued, already issued, or the key refused as used for another
+// workout). When a press gets no answer and the coach presses again, the same
+// key goes out, and the server answers with the first issue instead of issuing
+// twice. Every other answer keeps the key, a refusal included: a 401, 403, 404
+// or 400 is given before the server has looked at the key, so it says nothing
+// about an earlier press that may have landed. Keeping a key that names
+// nothing costs nothing; the next press simply issues under it. The key lives
+// only as long as this open template does, so the "check before trying again"
+// sentences below stay as they are.
 //
 // data-surface="kiosk" (Law 5): a coach does this on a tablet between rounds,
 // so the controls sit on the 55px tap floor and the 19.1px type floor. The
@@ -201,7 +206,7 @@ function IssueToAthlete({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<IssueOutcome | null>(null);
-  // The request key of each athlete's issue that has no definite answer yet.
+  // The request key of each athlete's issue, until the server has said what became of it.
   const requestKeys = useRef(new Map<string, string | null>());
 
   // Where focus goes after each step. Each step replaces what was on screen,
@@ -260,8 +265,8 @@ function IssueToAthlete({
     setOutcome(null);
     setBusy(true);
     onBusyChange(true);
-    // The key of this athlete's unanswered issue, or a new one. It is kept
-    // through every answer that does not say which way the issue went.
+    // The key of this athlete's issue, or a new one. It is kept through every
+    // answer that does not say what became of this request.
     const keys = requestKeys.current;
     if (!keys.has(chosen.athlete_id)) keys.set(chosen.athlete_id, newRequestKey());
     const requestKey = keys.get(chosen.athlete_id) ?? null;
@@ -285,12 +290,13 @@ function IssueToAthlete({
       const parsed: unknown = await response.json().catch(() => null);
       const payload = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 
-      // A definite answer either way ends this request: the next press for
-      // this athlete is a new issue with a new key.
-      const definite = response.status === 201
+      // Only an answer about THIS request ends it, so that the next press for
+      // this athlete is a new issue with a new key: it was issued, it had
+      // already been issued, or its key was refused as another workout's.
+      const settled = response.status === 201
         || (response.status === 200 && payload?.already_issued === true)
-        || [400, 401, 403, 404, 409].includes(response.status);
-      if (definite) keys.delete(chosen.athlete_id);
+        || (response.status === 409 && payload?.code === 'WORKOUT_ISSUE_REQUEST_KEY_REUSED');
+      if (settled) keys.delete(chosen.athlete_id);
 
       if (response.status === 200 && payload?.already_issued === true) {
         // An earlier press of this same issue went through; this one wrote

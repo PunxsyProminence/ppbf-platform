@@ -177,8 +177,8 @@ async function newGym(label: string): Promise<Gym> {
   return { organizationId, coachId };
 }
 
-/** A reference drill that passes adoption readiness, adopted by the gym. Returns the gym's drill id. */
-async function runningDrill(gym: Gym, referenceId: string, name: string): Promise<string> {
+/** A reference drill that passes adoption readiness, not yet adopted by the gym. */
+async function referenceDrill(gym: Gym, referenceId: string, name: string): Promise<void> {
   await client.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, version, name, discipline, category, difficulty,
@@ -209,6 +209,11 @@ async function runningDrill(gym: Gym, referenceId: string, name: string): Promis
      values ($1, $2 || '-cue-1', $2, $3 || ' cue', 'guard', 'external', 'note', 'batch-7')`,
     [gym.organizationId, referenceId, name],
   );
+}
+
+/** A reference drill that passes adoption readiness, adopted by the gym. Returns the gym's drill id. */
+async function runningDrill(gym: Gym, referenceId: string, name: string): Promise<string> {
+  await referenceDrill(gym, referenceId, name);
   const drill = await promoteReferenceDrill({
     organizationId: gym.organizationId,
     referenceDrillId: referenceId,
@@ -298,6 +303,22 @@ async function counts(gym: Gym): Promise<{ issues: number; steps: number; assign
     [gym.organizationId],
   );
   return rows[0];
+}
+
+/**
+ * Waits until a transaction in this suite's database is waiting for another
+ * to finish (a unique-index wait is a wait on the other transaction's id), and
+ * returns how many are. Zero after five seconds.
+ */
+async function waitingOnAnotherTransaction(): Promise<number> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const { rows } = await client.query(
+      `select count(*)::int as n from pg_locks where not granted and locktype = 'transactionid'`,
+    );
+    if (rows[0].n > 0) return rows[0].n;
+  }
+  return 0;
 }
 
 async function ownConnection(): Promise<Client> {
@@ -928,16 +949,12 @@ describe('a request key names one issue', () => {
       // committed), so it runs its whole transaction and then waits on the
       // unique index for the winner to finish.
       losing = issue(gym, ATHLETE_ID, 'key-race-1');
-      let waiting = 0;
-      for (let attempt = 0; attempt < 200 && waiting === 0; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        const { rows } = await client.query(`select count(*)::int as n from pg_locks where not granted`);
-        waiting = rows[0].n;
-      }
-      expect(waiting).toBeGreaterThan(0);
+      expect(await waitingOnAnotherTransaction()).toBeGreaterThan(0);
       await own.query('COMMIT');
     } catch (error) {
       await own.query('ROLLBACK').catch(() => {});
+      // Never left running into the next case.
+      await losing?.catch(() => {});
       throw error;
     } finally {
       await own.end();
@@ -952,6 +969,139 @@ describe('a request key names one issue', () => {
     // Only the winner's rows: the loser's four assignments went with its transaction.
     expect(await counts(gym)).toEqual({ issues: 1, steps: 1, assignments: 1 });
     expect(await auditCount(gym)).toBe(0);
+  });
+
+  test('two sends at the same moment of a template that ADOPTS a drill: the loser meets the winner at the drill library, not the key, and is still answered as the repeat', async () => {
+    const { gym } = await gymWithWorkout('key-race-adopt');
+    // A drill the gym has not adopted, and a template whose one step is that drill.
+    await referenceDrill(gym, 'ref-d', 'Drill D');
+    await client.query(
+      `insert into pilot.workout_templates
+         (organization_id, template_id, lineage_id, version, name, session_type, difficulty, age_band, active,
+          duration_minutes, intent)
+       values ($1,'wtp_adopts','wtp_adopts',1,'Adopts Fixture','technical','intermediate','any',true,30,'Test intent')`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.workout_template_items
+         (organization_id, item_id, template_id, ordinal, block, drill_id, scale_level, duration_minutes,
+          rep_count, contact_level, coach_note)
+       values ($1,'wti_adopts_1','wtp_adopts',1,'warmup','ref-d',null,5,null,'none',null)`,
+      [gym.organizationId],
+    );
+    const send = () =>
+      issueWorkoutTemplate({
+        organizationId: gym.organizationId,
+        templateId: 'wtp_adopts',
+        athleteId: ATHLETE_ID,
+        actorAccountId: gym.coachId,
+        actorRole: 'coach',
+        requestKey: 'key-race-adopt-1',
+      });
+
+    // The winner, held open: the adoption, one card and its issue under the key.
+    const own = await ownConnection();
+    let winner = '';
+    let losing: Promise<TemplateIssueResult> | null = null;
+    try {
+      await own.query('BEGIN');
+      const adopted = await promoteReferenceDrill(
+        { organizationId: gym.organizationId, referenceDrillId: 'ref-d', name: 'Drill D', category: 'footwork', focus: 'Drill D purpose.', cues: ['Drill D cue'] },
+        own as never,
+      );
+      const assignment = await issueCoachCard(
+        { organizationId: gym.organizationId, athleteId: ATHLETE_ID, assignedByAccountId: gym.coachId, drillId: adopted.drill_id },
+        own as never,
+      );
+      winner = await recordWorkoutIssue(own as never, {
+        organizationId: gym.organizationId,
+        athleteId: ATHLETE_ID,
+        template: { template_id: 'wtp_adopts', name: 'Adopts Fixture', version: 1 },
+        issuedByAccountId: gym.coachId,
+        requestKey: 'key-race-adopt-1',
+        steps: [step(assignment.assignment_id, 1, { template_item_id: 'wti_adopts_1' })],
+      });
+
+      // The same request again. It sees neither the key nor the adoption, so
+      // it plans its own adoption and waits at the drill library's unique
+      // index -- before it ever reaches the key's.
+      losing = send();
+      expect(await waitingOnAnotherTransaction()).toBeGreaterThan(0);
+      await own.query('COMMIT');
+    } catch (error) {
+      await own.query('ROLLBACK').catch(() => {});
+      await losing?.catch(() => {});
+      throw error;
+    } finally {
+      await own.end();
+    }
+
+    // Not "the drill library changed ... nothing was issued": it WAS issued, by the winner.
+    expect(await losing).toEqual({
+      outcome: 'already_issued',
+      issue_id: winner,
+      template: { template_id: 'wtp_adopts', name: 'Adopts Fixture', version: 1 },
+      step_count: 1,
+    });
+    expect(await counts(gym)).toEqual({ issues: 1, steps: 1, assignments: 1 });
+    // One adoption of the drill, the winner's.
+    const { rows } = await client.query(
+      `select count(*)::int as n from pilot.drills where organization_id = $1 and reference_drill_id = 'ref-d'`,
+      [gym.organizationId],
+    );
+    expect(rows[0].n).toBe(1);
+    // And a later press with the same key is still the repeat.
+    expect(await send()).toMatchObject({ outcome: 'already_issued', issue_id: winner });
+  });
+
+  test("a drill-library collision that is NOT this request's own repeat is still the conflict to retry, and nothing is issued", async () => {
+    const { gym } = await gymWithWorkout('key-collide');
+    await referenceDrill(gym, 'ref-e', 'Drill E');
+    await client.query(
+      `insert into pilot.workout_templates
+         (organization_id, template_id, lineage_id, version, name, session_type, difficulty, age_band, active,
+          duration_minutes, intent)
+       values ($1,'wtp_collides','wtp_collides',1,'Collides Fixture','technical','intermediate','any',true,30,'Test intent')`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.workout_template_items
+         (organization_id, item_id, template_id, ordinal, block, drill_id, scale_level, duration_minutes,
+          rep_count, contact_level, coach_note)
+       values ($1,'wti_collides_1','wtp_collides',1,'warmup','ref-e',null,5,null,'none',null)`,
+      [gym.organizationId],
+    );
+
+    // Somebody else adopts the drill, on an open transaction, and issues nothing.
+    const own = await ownConnection();
+    let losing: Promise<TemplateIssueResult> | null = null;
+    try {
+      await own.query('BEGIN');
+      await promoteReferenceDrill(
+        { organizationId: gym.organizationId, referenceDrillId: 'ref-e', name: 'Drill E', category: 'footwork', focus: 'Drill E purpose.', cues: ['Drill E cue'] },
+        own as never,
+      );
+      losing = issueWorkoutTemplate({
+        organizationId: gym.organizationId,
+        templateId: 'wtp_collides',
+        athleteId: ATHLETE_ID,
+        actorAccountId: gym.coachId,
+        actorRole: 'coach',
+        requestKey: 'key-collide-1',
+      });
+      // Marked handled now, so a rejection while this case waits is not an unhandled one.
+      losing.catch(() => {});
+      expect(await waitingOnAnotherTransaction()).toBeGreaterThan(0);
+      await own.query('COMMIT');
+    } catch (error) {
+      await own.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      await own.end();
+    }
+
+    await expect(losing).rejects.toMatchObject({ status: 409, code: 'WORKOUT_TEMPLATE_ISSUE_STATE_CHANGED' });
+    expect(await counts(gym)).toEqual({ issues: 0, steps: 0, assignments: 0 });
   });
 
   test('recordWorkoutIssue names the taken key as its own error and lets every other refusal through as it was', async () => {
