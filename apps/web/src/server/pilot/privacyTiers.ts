@@ -509,11 +509,13 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'athlete (lane P7c, OD-2026-10-10-004 ruling 5). The athlete is shown it by that ruling (the issued '
       + 'workout shows each step with the coach\'s note), and so are the staff who reach that athlete. On a '
       + 'seeded template the note is the template author\'s text, not a coach of this gym\'s. '
-      + 'The read has no gate of its own: it answers only about '
-      + 'assignment ids its caller already read behind assertActorCanAccessAthlete, and joins every step to its '
-      + 'assignment on the organization. The assignments route sends it to staff and to the athlete; a linked '
-      + 'guardian is not sent it until their screen is built. The same row carries the step\'s contact level, '
-      + 'the coach\'s entry, shown as written.',
+      + 'The read has no gate of its own: it answers only about assignment ids its caller has already read, '
+      + 'and joins every step to its assignment on the organization. It has two callers. The assignments '
+      + 'route passes ids it read behind assertActorCanAccessAthlete, and sends the note to staff and to the '
+      + 'athlete; a linked guardian is not sent it until their screen is built. The coach card list passes '
+      + 'the rows of listCoachCards (a coach\'s own cards for athletes that coach currently reaches; the '
+      + 'whole gym for an organization admin). The same row carries the step\'s contact level, the coach\'s '
+      + 'entry, shown as written.',
   },
   'athlete_pathway_minor_allowances.reason': {
     tier: 'organization',

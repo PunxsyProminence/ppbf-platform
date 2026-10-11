@@ -72,7 +72,7 @@ describe('issued workout schema ownership', () => {
     expect(body).toMatch(/if \(assignmentIds\.length === 0\) \{\s+return \[\];/);
   });
 
-  test('the shape read has one caller, and that caller asks only about assignments it has just read behind the athlete gate', () => {
+  test('the shape read has exactly two callers, and each asks only about the rows of its own bounded read', () => {
     // The read takes whatever ids it is given and scopes them by organization
     // only, so WHO may call it, and with what, is the boundary. A new importer
     // is added here deliberately, with the gated read its ids come from.

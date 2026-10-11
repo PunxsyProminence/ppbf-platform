@@ -2,13 +2,14 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import StepNotes, { type IssuedWorkoutStepLines } from '@/components/IssuedWorkoutStepNotes';
+import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
+import type { IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -68,26 +69,90 @@ interface CoachCard {
   completions: CardCompletion[];
 }
 
-// One step of an issued workout template, as GET /api/pilot/coach/cards sends
-// it beside the card it belongs to.
-interface WorkoutStep extends IssuedWorkoutStepLines {
-  ordinal: number;
-  block: string;
-  assignment_id: string;
+// An issued workout template, as GET /api/pilot/coach/cards sends it beside
+// `items` (lane P7c). The step is typed from its producer, not redeclared.
+interface CardWorkout {
+  issue_id: string;
+  template_name: string;
+  issued_at: string;
+  steps: IssuedWorkoutStep[];
 }
 
 interface IssuanceGroup {
   issuance_id: string | null;
   assigned_at: string;
   cards: CoachCard[];
-  // Set when the cards are the steps of one issued workout template, in the
-  // coach's order (lane P7c).
-  workout?: {
-    issue_id: string;
-    template_name: string;
-    issued_at: string;
-    steps: WorkoutStep[];
-  };
+  // Set by arrangeGroups when the cards are the steps of one issued workout
+  // template: they are then in the coach's order.
+  workout?: CardWorkout;
+}
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+const isTextOrNull = (value: unknown): value is string | null => value === null || isText(value);
+
+/**
+ * The `workouts` of a card-list answer. Absent (a server that predates the
+ * field) is no workouts. Present but not the shape this screen reads is NOT
+ * read as "no workouts": the steps would be drawn as loose cards and called
+ * the whole list, so the read fails and the list says it could not be read.
+ */
+function readCardWorkouts(raw: unknown): CardWorkout[] {
+  if (raw === undefined) return [];
+  const wellFormed = Array.isArray(raw) && raw.every((workout: unknown) => {
+    const w = workout as Partial<CardWorkout> | null;
+    return w !== null && typeof w === 'object' && isText(w.issue_id) && isText(w.template_name) && isText(w.issued_at)
+      && Array.isArray(w.steps) && w.steps.every((step: unknown) => {
+        const s = step as Partial<IssuedWorkoutStep> | null;
+        return s !== null && typeof s === 'object' && Number.isInteger(s.ordinal) && isText(s.block)
+          && isTextOrNull(s.scale_level) && isText(s.contact_level) && isTextOrNull(s.coach_note) && isText(s.assignment_id);
+      });
+  });
+  if (!wellFormed) throw new Error('The workouts of the card list could not be read.');
+  return raw as CardWorkout[];
+}
+
+/**
+ * The groups in the order they are drawn. The server's groups keep their order
+ * (newest first). The cards that are steps of one issued workout are gathered
+ * into ONE group, in the coach's order, standing where the first of them
+ * stood; a card that is a step of no workout stays in the group it came in. An
+ * assignment two workouts both name is a step of the first only, and a step
+ * whose card was not sent is left out, so nothing is drawn twice or invented.
+ */
+function arrangeGroups(groups: IssuanceGroup[], workouts: CardWorkout[]): IssuanceGroup[] {
+  const sent = new Set(groups.flatMap((group) => group.cards.map((card) => card.assignment_id)));
+  const workoutOf = new Map<string, CardWorkout>();
+  const ordinalOf = new Map<string, number>();
+  for (const workout of workouts) {
+    for (const step of workout.steps) {
+      if (!sent.has(step.assignment_id) || workoutOf.has(step.assignment_id)) continue;
+      workoutOf.set(step.assignment_id, workout);
+      ordinalOf.set(step.assignment_id, step.ordinal);
+    }
+  }
+  if (workoutOf.size === 0) return groups;
+
+  const cardsOf = new Map<CardWorkout, CoachCard[]>();
+  for (const card of groups.flatMap((group) => group.cards)) {
+    const workout = workoutOf.get(card.assignment_id);
+    if (workout) cardsOf.set(workout, [...(cardsOf.get(workout) ?? []), card]);
+  }
+
+  const drawn = new Set<CardWorkout>();
+  const arranged: IssuanceGroup[] = [];
+  for (const group of groups) {
+    for (const card of group.cards) {
+      const workout = workoutOf.get(card.assignment_id);
+      if (!workout || drawn.has(workout)) continue;
+      drawn.add(workout);
+      const cards = [...(cardsOf.get(workout) ?? [])]
+        .sort((a, b) => (ordinalOf.get(a.assignment_id) ?? 0) - (ordinalOf.get(b.assignment_id) ?? 0));
+      arranged.push({ issuance_id: null, assigned_at: group.assigned_at, cards, workout });
+    }
+    const loose = group.cards.filter((card) => !workoutOf.has(card.assignment_id));
+    if (loose.length > 0) arranged.push(loose.length === group.cards.length ? group : { ...group, cards: loose });
+  }
+  return arranged;
 }
 
 interface IssuanceReport {
@@ -142,9 +207,9 @@ export default function CoachCardsPage() {
   const loadCards = useCallback(async (signal?: AbortSignal) => {
     const res = await fetch(`${apiBase()}/api/pilot/coach/cards`, { credentials: 'include', signal });
     if (!res.ok) throw new Error(`Failed to load cards: ${res.status}`);
-    const data = (await res.json()) as { items?: IssuanceGroup[] };
+    const data = (await res.json()) as { items?: IssuanceGroup[]; workouts?: unknown };
     if (signal?.aborted) return;
-    setGroups(data.items || []);
+    setGroups(arrangeGroups(data.items || [], readCardWorkouts(data.workouts)));
     // A read that succeeded clears the flag, so a recovered page stops
     // claiming it could not be read.
     setCardsUnreadable(false);
@@ -674,7 +739,7 @@ export default function CoachCardsPage() {
                         </span>
                       )}
                     </div>
-                    {/* A workout is many drills: each step says its own below. */}
+                    {/* A workout is many drills: each step shows its own description below. */}
                     {!workout && (
                       <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                         {first.drill_display_description || first.drill_description}
@@ -719,6 +784,11 @@ export default function CoachCardsPage() {
                                   {card.completion_percentage}% · {card.status.replaceAll('_', ' ')}
                                 </p>
                               </div>
+                              {step && (
+                                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
+                                  {card.drill_display_description || card.drill_description}
+                                </p>
+                              )}
                               {step && <StepNotes step={step} />}
                               {/* Each step is its own drill, so each opens its own instructions. */}
                               {step && card.drill_id && (

@@ -392,11 +392,13 @@ test('GET passes the principal itself, so the module can bound the read by CURRE
 });
 
 // THE SHAPE OF AN ISSUED WORKOUT (lane P7c, OD-2026-10-10-004 ruling 5). The
-// steps of one issued workout template come back as ONE group, in the coach's
-// order, with what the template says beside each step. The shape read is faked
-// here (its SQL is proven against real Postgres in workoutIssues.pg.test.ts);
-// these cases are the route's: what it asks, and how it groups.
-describe('GET: an issued workout is one group, in the coach\'s order', () => {
+// answer gains `workouts` beside `items`: which cards are steps of an issued
+// workout template, with what the template says beside each. `items` is
+// exactly what it was, so a screen that does not know `workouts` draws what it
+// always drew. The shape read is faked here (its SQL is proven against real
+// Postgres in workoutIssues.pg.test.ts); these cases are the route's: what it
+// asks, and what it sends.
+describe('GET: the workouts the cards are steps of, beside the unchanged card groups', () => {
   const card = (id: string, assignedAt: string, extra: Record<string, unknown> = {}) => ({
     assignment_id: id,
     issuance_id: null,
@@ -414,6 +416,7 @@ describe('GET: an issued workout is one group, in the coach\'s order', () => {
     assignment_id: assignmentId,
     ...extra,
   });
+  // What the shape read returns: the staff shape, athlete and issuer included.
   const WORKOUT = {
     issue_id: 'issue-1',
     athlete_id: 'ath-1',
@@ -427,8 +430,6 @@ describe('GET: an issued workout is one group, in the coach\'s order', () => {
       step(3, 'asg-w3', { scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds.' }),
     ],
   };
-  // listCoachCards orders by assigned_at desc, then name: the workout's cards
-  // arrive in no particular step order, with other cards around them.
   const ROWS = [
     card('asg-newer', '2026-10-12T09:00:00Z'),
     card('asg-w3', '2026-10-11T15:00:00Z'),
@@ -438,6 +439,8 @@ describe('GET: an issued workout is one group, in the coach\'s order', () => {
     card('asg-g2', '2026-10-11T12:00:00Z', { issuance_id: 'issuance-9', athlete_name: 'Cora' }),
     card('asg-older', '2026-10-01T09:00:00Z'),
   ];
+  // The grouping the route has always sent for those rows.
+  const GROUPS_AS_BEFORE = [['asg-newer'], ['asg-w3'], ['asg-w1'], ['asg-g1', 'asg-g2'], ['asg-w2'], ['asg-older']];
 
   beforeEach(() => {
     mockRequirePrincipal.mockResolvedValue(principal({}));
@@ -447,34 +450,38 @@ describe('GET: an issued workout is one group, in the coach\'s order', () => {
 
   const ids = (group: { cards: Array<{ assignment_id: string }> }) => group.cards.map((entry) => entry.assignment_id);
 
-  test('the workout stands where the first of its cards did, its cards in step order, every other group as before', async () => {
-    const payload = await (await GET(getRequest())).json();
+  test('items are grouped exactly as before, with or without a workout among them', async () => {
+    const withWorkout = await (await GET(getRequest())).json();
+    mockWorkouts.mockResolvedValue([]);
+    const without = await (await GET(getRequest())).json();
 
-    expect(payload.items.map(ids)).toEqual([
-      ['asg-newer'],
-      ['asg-w1', 'asg-w2', 'asg-w3'],
-      ['asg-g1', 'asg-g2'],
-      ['asg-older'],
-    ]);
-    expect(payload.items[1].workout).toEqual({
-      issue_id: 'issue-1',
-      template_name: 'Technical Tuesday',
-      template_version: 2,
-      issued_at: '2026-10-11T15:00:00.000Z',
-      steps: WORKOUT.steps,
-    });
-    // Only the workout's group carries the key.
-    expect(payload.items.filter((group: { workout?: unknown }) => group.workout !== undefined)).toHaveLength(1);
-    expect(payload.items[2].issuance_id).toBe('issuance-9');
-    expect(payload.items[0]).not.toHaveProperty('workout');
+    expect(withWorkout.items.map(ids)).toEqual(GROUPS_AS_BEFORE);
+    expect(withWorkout.items).toEqual(without.items);
+    // No group is altered to carry the shape: it travels beside them.
+    expect(JSON.stringify(withWorkout.items)).not.toContain('workout');
+    // No workouts: an empty list, never a missing key.
+    expect(without.workouts).toEqual([]);
   });
 
-  test("each step's block, levels and note pass through as the template has them: an open scale level stays null and nothing is added", async () => {
+  test("the workout is sent with its template, when it was issued, and each step's block, levels and note as the template has them", async () => {
     const payload = await (await GET(getRequest())).json();
-    const { steps } = payload.items[1].workout;
 
-    expect(steps[1]).toEqual({ ordinal: 2, block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null, assignment_id: 'asg-w2' });
-    expect(steps[2]).toEqual({ ordinal: 3, block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds.', assignment_id: 'asg-w3' });
+    expect(payload.workouts).toEqual([
+      {
+        issue_id: 'issue-1',
+        template_name: 'Technical Tuesday',
+        template_version: 2,
+        issued_at: '2026-10-11T15:00:00.000Z',
+        steps: [
+          { ordinal: 1, block: 'warmup', scale_level: 'A', contact_level: 'none', coach_note: 'Easy pace.', assignment_id: 'asg-w1' },
+          // A level the coach left open stays null; nothing is added beside a contact level.
+          { ordinal: 2, block: 'technical', scale_level: null, contact_level: 'light_technical', coach_note: null, assignment_id: 'asg-w2' },
+          { ordinal: 3, block: 'technical', scale_level: 'C', contact_level: 'controlled_sparring', coach_note: 'Two rounds.', assignment_id: 'asg-w3' },
+        ],
+      },
+    ]);
+    // Key by key: the athlete and the issuing account are not repeated here.
+    expect(Object.keys(payload.workouts[0]).sort()).toEqual(['issue_id', 'issued_at', 'steps', 'template_name', 'template_version']);
   });
 
   test("the shape is asked only about the cards listCoachCards returned, in the session's organization, once", async () => {
@@ -486,37 +493,31 @@ describe('GET: an issued workout is one group, in the coach\'s order', () => {
     expect(mockListCards.mock.invocationCallOrder[0]).toBeLessThan(mockWorkouts.mock.invocationCallOrder[0]);
   });
 
-  test('cards that are steps of no workout are grouped exactly as before', async () => {
-    mockWorkouts.mockResolvedValue([]);
+  test('nothing in the request can name an assignment: a query string and a body are ignored', async () => {
+    const request = new NextRequest('http://localhost/api/pilot/coach/cards?assignment_id=asg-not-mine&athlete_id=ath-9', {
+      headers: { 'x-assignment-id': 'asg-not-mine' },
+    });
 
-    const payload = await (await GET(getRequest())).json();
+    await GET(request);
 
-    expect(payload.items.map(ids)).toEqual([
-      ['asg-newer'],
-      ['asg-w3'],
-      ['asg-w1'],
-      ['asg-g1', 'asg-g2'],
-      ['asg-w2'],
-      ['asg-older'],
-    ]);
-    expect(JSON.stringify(payload)).not.toContain('workout');
+    expect(mockWorkouts).toHaveBeenCalledWith('org-1', ROWS.map((row) => row.assignment_id));
+    expect(JSON.stringify(mockWorkouts.mock.calls)).not.toContain('asg-not-mine');
   });
 
-  test('two workouts are two groups, each with only its own cards', async () => {
+  test('two workouts are both sent, in the order the read gave them', async () => {
     const second = { ...WORKOUT, issue_id: 'issue-2', template_name: 'Friday Pads', steps: [step(1, 'asg-older'), step(2, 'asg-newer')] };
-    mockWorkouts.mockResolvedValue([WORKOUT, second]);
+    mockWorkouts.mockResolvedValue([second, WORKOUT]);
 
     const payload = await (await GET(getRequest())).json();
 
-    expect(payload.items.map((group: { workout?: { template_name: string }; cards: Array<{ assignment_id: string }> }) => [group.workout?.template_name, ids(group)])).toEqual([
-      // Where its first card (asg-newer) stood, in step order.
+    expect(payload.workouts.map((workout: { template_name: string; steps: Array<{ assignment_id: string }> }) => [workout.template_name, workout.steps.map((entry) => entry.assignment_id)])).toEqual([
       ['Friday Pads', ['asg-older', 'asg-newer']],
       ['Technical Tuesday', ['asg-w1', 'asg-w2', 'asg-w3']],
-      [undefined, ['asg-g1', 'asg-g2']],
     ]);
+    expect(payload.items.map(ids)).toEqual(GROUPS_AS_BEFORE);
   });
 
-  test('a shape read that fails fails the read: the workout is never answered as loose cards', async () => {
+  test('a shape read that fails fails the read: the cards are never answered with the shape silently missing', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockWorkouts.mockRejectedValue(new Error('relation does not exist'));
     try {
