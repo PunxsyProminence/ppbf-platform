@@ -99,7 +99,7 @@ describe('proposeDrillChange', () => {
   });
 
   test('refuses an empty rationale before ever inserting', async () => {
-    mockQueryOne.mockResolvedValueOnce(drillRow());
+    mockQueryOne.mockResolvedValueOnce({ lineage_id: 'drill-1', lineage_active: true });
 
     await expect(
       proposeDrillChange({
@@ -118,7 +118,7 @@ describe('proposeDrillChange', () => {
     // zero-or-one row), not query -- proposeDrillChange calls queryOne
     // twice: once for the base drill lookup, once for the insert.
     mockQueryOne
-      .mockResolvedValueOnce(drillRow({ lineage_id: 'lineage-original' }))
+      .mockResolvedValueOnce({ lineage_id: 'lineage-original', lineage_active: true })
       .mockResolvedValueOnce(proposalRow({ lineage_id: 'lineage-original' }));
 
     await proposeDrillChange({
@@ -133,6 +133,31 @@ describe('proposeDrillChange', () => {
     const [, params] = mockQueryOne.mock.calls[1];
     expect(params[2]).toBe('lineage-original');
     expect(params[3]).toBe('drill-1');
+  });
+
+  // OD-2026-10-08-008 D3. Retired = no version of the drill's lineage is in
+  // use. The base read answers that in the same statement, so the refusal
+  // costs no second query and happens before the insert.
+  test('refuses a retired drill in plain words, before ever inserting', async () => {
+    mockQueryOne.mockResolvedValueOnce({ lineage_id: 'drill-1', lineage_active: false });
+
+    await expect(
+      proposeDrillChange({
+        organizationId: 'org-1',
+        basedOnDrillId: 'drill-1',
+        proposedByAccountId: 'acct-coach-1',
+        proposedByRole: 'coach',
+        rationale: 'Athletes keep dropping the guard.',
+      }),
+    ).rejects.toMatchObject({
+      message: 'This drill is retired, so a change cannot be proposed for it. Restore the drill first.',
+      code: 'DRILL_RETIRED',
+      status: 409,
+    });
+
+    // The base read, and nothing after it.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'drill-1']);
   });
 });
 
@@ -422,6 +447,72 @@ describe('adoptDrillChangeProposal', () => {
     const proposal = proposalRow({ based_on_drill_id: 'drill-1' });
     const current = drillRow({ drill_id: 'drill-2', version: 2 });
     const client = fakeClient([proposal], [current]);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+  });
+
+  // OD-2026-10-08-008 D3, the back door itself. The insert below always writes
+  // active = true, so adopting onto a drill nobody runs would bring it back
+  // without Restore's checks. Refused after the two locking reads and one
+  // in-use read, before any write.
+  test('refuses to adopt onto a retired drill, and writes nothing', async () => {
+    const client = fakeClient([proposalRow()], [drillRow({ active: false })], []);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'This drill is retired, so this change cannot be adopted. Restore the drill first, or decline the proposal.',
+      code: 'DRILL_RETIRED',
+      status: 409,
+    });
+
+    expect(client.query).toHaveBeenCalledTimes(3);
+    const [inUseSql, inUseParams] = client.query.mock.calls[2];
+    expect(inUseSql).not.toMatch(/insert|update/i);
+    expect(inUseParams).toEqual(['org-1', 'drill-1']);
+  });
+
+  // "Written against an earlier version" invites a re-proposal against the
+  // newest one, which a retired drill would then refuse. So retired is the
+  // answer given, even when the proposal is stale as well.
+  test('says retired, not stale, when the drill is both', async () => {
+    const proposal = proposalRow({ based_on_drill_id: 'drill-1' });
+    const current = drillRow({ drill_id: 'drill-2', version: 2, active: false });
+    const client = fakeClient([proposal], [current], []);
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.toMatchObject({ code: 'DRILL_RETIRED' });
+  });
+
+  // The gate is "no version in use", not "the newest version is inactive".
+  // With an earlier version still running the drill is not retired, so this
+  // proposal gets the answer it got before: stale.
+  test('an inactive newest version is not retired while another version is in use', async () => {
+    const proposal = proposalRow({ based_on_drill_id: 'drill-1' });
+    const current = drillRow({ drill_id: 'drill-2', version: 2, active: false });
+    const client = fakeClient([proposal], [current], [{ in_use: 1 }]);
     mockWithTransaction.mockImplementationOnce((fn) => fn(client));
 
     await expect(

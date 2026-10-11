@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query } from '@/src/server/pilot/db';
 import { listDrillChangeProposals, proposeDrillChange } from '@/src/server/pilot/drillVersioning';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -407,6 +408,21 @@ describe('POST /api/pilot/drills/proposals', () => {
 
     expect(res.status).toBe(404);
     await expect(res.json()).resolves.toEqual({ error: 'DRILL_NOT_FOUND' });
+  });
+
+  // OD-2026-10-08-008 D3. The refusal is decided in proposeDrillChange; what is
+  // held here is that it reaches the coach as written -- a 409 with the reason,
+  // not the redacted 500 an unmapped domain error becomes -- and that a
+  // proposal which was never stored leaves no audit line saying it was.
+  test('a retired drill is refused with the reason, and nothing is audited', async () => {
+    const reason = 'This drill is retired, so a change cannot be proposed for it. Restore the drill first.';
+    mockPropose.mockRejectedValueOnce(new ConflictError(reason, 'DRILL_RETIRED'));
+
+    const res = await POST(postRequest(validBody));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: reason, code: 'DRILL_RETIRED' });
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('records the proposal against the caller and their organization', async () => {
