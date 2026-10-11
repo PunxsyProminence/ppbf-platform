@@ -11,6 +11,8 @@ jest.mock('./db', () => ({
 }));
 
 import {
+  COMPLIANCE_VIOLATION_OPEN_STATUSES,
+  countOpenViolationsByAthlete,
   createComplianceViolation,
   escalateViolation,
   getComplianceRulesByCategory,
@@ -409,6 +411,29 @@ describe('getComplianceRulesByCategory', () => {
     expect(sql).not.toContain('order by severity desc');
     expect(sql).toContain("when 'critical' then 1");
     expect(sql).toContain("when 'low' then 4");
+  });
+});
+
+// Lane N4-01: the count the cleared-tonight answer lists as a fact on file.
+describe('countOpenViolationsByAthlete', () => {
+  test('counts by athlete, in this organization, using the module’s one definition of open', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { athlete_id: 'ath-1', open_count: 2 },
+      { athlete_id: 'ath-2', open_count: 1 },
+    ]);
+
+    const counts = await countOpenViolationsByAthlete('org-1');
+
+    expect(counts.get('ath-1')).toBe(2);
+    expect(counts.get('ath-2')).toBe(1);
+    // An athlete with none has no entry; the caller reads that as zero.
+    expect(counts.has('ath-3')).toBe(false);
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('where organization_id = $1 and status = any($2::text[])');
+    expect(sql).toContain('group by athlete_id');
+    expect(params).toEqual(['org-1', [...COMPLIANCE_VIOLATION_OPEN_STATUSES]]);
+    // Resolved and dismissed are closed records, not open ones.
+    expect(params[1]).toEqual(['new', 'acknowledged', 'escalated']);
   });
 });
 

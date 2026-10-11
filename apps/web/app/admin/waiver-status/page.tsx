@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const TRACKED_WAIVER_TYPES = ['general', 'medical_release', 'photo_media', 'travel'] as const;
 type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
@@ -17,11 +19,141 @@ const WAIVER_TYPE_LABEL: Record<TrackedWaiverType, string> = {
 
 type WaiverStatus = 'signed' | 'declined' | 'withdrawn' | 'missing';
 
+/**
+ * The one cleared-tonight answer for an athlete and the records it rests on,
+ * as the route sends it (src/server/pilot/clearedTonight.ts; Jason,
+ * OD-2026-10-08-006 A-Q19: "Build one answer").
+ *
+ * The answer follows training holds and medical clearance, the two rules the
+ * app already has. Waivers, photo and video consent and open violations are
+ * listed under "Why" as what is on file and never change it. Nothing on this
+ * screen stops anyone training.
+ */
+type TonightAnswer = 'cleared' | 'cleared_to_train' | 'cleared_no_contact' | 'not_cleared' | 'unavailable';
+
+interface Tonight {
+  answer: TonightAnswer;
+  hold: { scope: string; athlete_explanation: string; lift_condition_text: string; expires_at: string | null } | null | 'unavailable';
+  medical: { status: string; current: boolean; expires_at: string | null } | 'unavailable';
+  waivers: Array<{ type: TrackedWaiverType; status: WaiverStatus; recorded_on: string | null }>;
+  media_consent: { basis: 'guardian'; status: WaiverStatus } | { basis: 'adult_own_consent' };
+  open_violations: number | 'unavailable';
+}
+
 interface AthleteWaiverRow {
   athlete_id: string;
   athlete_name: string;
   active_flag: boolean;
   waivers: Record<TrackedWaiverType, WaiverStatus>;
+  tonight?: Tonight;
+}
+
+// Room DNA (clinic): --locked is what this room says when a clinician or a
+// hold has stopped something, which is exactly what 'not cleared' reports.
+// A read that failed is not that, and sits on --restricted as it does on
+// /coach/sports-medicine. Law 3: glyph and label, never the colour alone.
+const TONIGHT_BADGE: Record<TonightAnswer, { rung: string; glyph: string; label: string }> = {
+  cleared: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared' },
+  // No hold, and no contact clearance in force because none is on file, one is
+  // pending or one has expired. Nobody decided "no contact" about this
+  // athlete, so the answer does not say it: same rung and glyph as cleared,
+  // with the contact clearance stated beside it as what is on file.
+  cleared_to_train: { rung: 'badge--cleared', glyph: '✓', label: 'Cleared to train' },
+  cleared_no_contact: { rung: 'badge--monitor', glyph: '◉', label: 'Cleared, no contact' },
+  not_cleared: { rung: 'badge--locked', glyph: '✕', label: 'Not cleared' },
+  unavailable: { rung: 'badge--restricted', glyph: '▲', label: 'Unavailable' },
+};
+
+const HOLD_SCOPE_WORDS: Record<string, string> = {
+  all_training: 'all training paused',
+  contact_only: 'no contact',
+  conditioning_only: 'conditioning only, on record',
+};
+
+const MEDICAL_WORDS: Record<string, string> = {
+  cleared: 'cleared',
+  restricted: 'restricted',
+  not_cleared: 'not cleared',
+  pending: 'pending',
+  cleared_expired: 'expired',
+  no_record: 'none on file',
+};
+
+const PAPER_NAMES: Record<TrackedWaiverType, string> = {
+  general: 'General waiver',
+  medical_release: 'Medical release',
+  photo_media: 'Photo and video consent',
+  travel: 'Travel waiver',
+};
+
+const PAPER_WORDS: Record<WaiverStatus, string> = {
+  signed: 'signed',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+  missing: 'none on file',
+};
+
+/** The medical record in its own word, with the day its clearance ends or ended. */
+function medicalWords(medical: { status: string; expires_at: string | null }): string {
+  const ends = formatGymDateNumeric(medical.expires_at);
+  const word = MEDICAL_WORDS[medical.status] ?? medical.status;
+  if (!ends) return word;
+  if (medical.status === 'cleared') return `${word} until ${ends}`;
+  return medical.status === 'cleared_expired' ? `${word} ${ends}` : word;
+}
+
+/**
+ * The line beside a "Cleared to train" answer: what is on file about contact,
+ * as a fact and not a prohibition. Only that answer carries it.
+ */
+function contactClearanceLine(tonight: Tonight): string | null {
+  if (tonight.answer !== 'cleared_to_train' || tonight.medical === 'unavailable') return null;
+  return `Contact clearance: ${medicalWords(tonight.medical)}.`;
+}
+
+/**
+ * What is on file, one plain statement per record. Statements, not warnings:
+ * a paper that is not on file is said the same way as one that is.
+ */
+function tonightReasons(tonight: Tonight): string[] {
+  const lines: string[] = [];
+
+  if (tonight.hold === 'unavailable') {
+    lines.push('Training hold: could not be read.');
+  } else if (!tonight.hold) {
+    lines.push('Training hold: none active.');
+  } else {
+    const until = formatGymDateNumeric(tonight.hold.expires_at);
+    const parts = [`Training hold: ${HOLD_SCOPE_WORDS[tonight.hold.scope] ?? tonight.hold.scope}${until ? `, until ${until}` : ''}.`];
+    if (tonight.hold.athlete_explanation.trim()) parts.push(tonight.hold.athlete_explanation.trim());
+    if (tonight.hold.lift_condition_text.trim()) parts.push(`What earns the lift: ${tonight.hold.lift_condition_text.trim()}`);
+    lines.push(parts.join(' '));
+  }
+
+  if (tonight.medical === 'unavailable') {
+    lines.push('Medical clearance: could not be read.');
+  } else {
+    lines.push(`Medical clearance: ${medicalWords(tonight.medical)}.`);
+  }
+
+  for (const waiver of tonight.waivers) {
+    const day = waiver.recorded_on ? ` ${formatCalendarDay(waiver.recorded_on)}` : '';
+    lines.push(`${PAPER_NAMES[waiver.type]}: ${PAPER_WORDS[waiver.status]}${day}.`);
+  }
+
+  lines.push(
+    tonight.media_consent.basis === 'guardian'
+      ? `${PAPER_NAMES.photo_media}: ${PAPER_WORDS[tonight.media_consent.status]}.`
+      : `${PAPER_NAMES.photo_media}: the athlete is 18 or over, so a guardian's consent no longer counts for a new publication and the athlete's own cannot be recorded yet.`,
+  );
+
+  lines.push(
+    tonight.open_violations === 'unavailable'
+      ? 'Open compliance violations: could not be read.'
+      : `Open compliance violations: ${tonight.open_violations === 0 ? 'none' : tonight.open_violations}.`,
+  );
+
+  return lines;
 }
 
 type Filter = 'incomplete' | 'complete' | 'all';
@@ -90,6 +222,11 @@ export default function WaiverComplianceAuditPage() {
               time. Photo &amp; media consent has its own dedicated audit with guardian-level detail; that link
               is below.
             </p>
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              Tonight is one answer per athlete. It follows training holds and medical clearance only, in
+              the words those records use; the papers listed under Why are what is on file and do not change
+              it.
+            </p>
             {/* A failed read is a network fact. --locked red is what this room
                 says when a clinician or a safeguarding decision has stopped
                 something, so it does not carry this. --restricted does, keeping
@@ -145,6 +282,7 @@ export default function WaiverComplianceAuditPage() {
                 <thead>
                   <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">
                     <th className="px-[var(--s4)] py-[var(--s3)]">Athlete</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Tonight</th>
                     {TRACKED_WAIVER_TYPES.map((type) => (
                       <th key={type} className="px-[var(--s4)] py-[var(--s3)]">{WAIVER_TYPE_LABEL[type]}</th>
                     ))}
@@ -154,6 +292,26 @@ export default function WaiverComplianceAuditPage() {
                   {visible.map((row) => (
                     <tr key={row.athlete_id} className="border-b border-[color:var(--hide-800)] last:border-b-0">
                       <td className="t-body px-[var(--s4)] py-[var(--s3)]">{row.athlete_name}</td>
+                      {/* A row with no answer sent is unavailable, never cleared. */}
+                      <td className="px-[var(--s4)] py-[var(--s3)] align-top">
+                        <span className={`badge ${TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].rung}`}>
+                          <i>{TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].glyph}</i>
+                          {TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].label}
+                        </span>
+                        {row.tonight && contactClearanceLine(row.tonight) ? (
+                          <p className="t-muted mt-[var(--s2)]">{contactClearanceLine(row.tonight)}</p>
+                        ) : null}
+                        {row.tonight ? (
+                          <details className="mt-[var(--s2)]">
+                            <summary className="t-muted min-h-[44px] cursor-pointer py-[var(--s2)]">Why</summary>
+                            <ul className="t-muted space-y-[var(--s2)]">
+                              {tonightReasons(row.tonight).map((line) => (
+                                <li key={line}>{line}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : null}
+                      </td>
                       {TRACKED_WAIVER_TYPES.map((type) => {
                         const status = row.waivers[type];
                         const ok = status === 'signed';

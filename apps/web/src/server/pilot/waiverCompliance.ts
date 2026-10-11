@@ -94,21 +94,45 @@ interface WaiverStatusRow {
   athlete_id: string;
   full_name: string;
   active_flag: boolean;
+  dob?: string | null;
   waiver_type: TrackedWaiverType | null;
   status: string | null;
+  recorded_on?: string | null;
+}
+
+/**
+ * The roster rollup with two facts the worklist does not show: the calendar
+ * day each current waiver row was recorded as signed, declined or withdrawn,
+ * and the athlete's date of birth. clearedTonight.ts lists the first and
+ * needs the second for the 18 rule.
+ *
+ * recordedOn is the UTC day of signed_at, the day /admin/consent prints for
+ * the same row (it stores the typed day at noon UTC). The media consent type
+ * has no entry: it is not read from a waiver row here at all.
+ */
+export interface AthleteWaiverRosterEntry extends AthleteWaiverStatus {
+  dob: string | null;
+  recordedOn: Partial<Record<TrackedWaiverType, string>>;
 }
 
 export async function getOrganizationWaiverStatus(organizationId: string): Promise<AthleteWaiverStatus[]> {
+  const roster = await readOrganizationWaiverRoster(organizationId);
+  return roster.map(({ athleteId, athleteName, activeFlag, waivers }) => ({ athleteId, athleteName, activeFlag, waivers }));
+}
+
+export async function readOrganizationWaiverRoster(organizationId: string): Promise<AthleteWaiverRosterEntry[]> {
   const rows = await query<WaiverStatusRow>(
     `select
        a.athlete_id,
        a.full_name,
        a.active_flag,
+       to_char(a.dob, 'YYYY-MM-DD') as dob,
        w.waiver_type,
-       w.status
+       w.status,
+       to_char(w.signed_at at time zone 'UTC', 'YYYY-MM-DD') as recorded_on
      from pilot.athletes a
      left join lateral (
-       select distinct on (waiver_type) waiver_type, status
+       select distinct on (waiver_type) waiver_type, status, signed_at
        from pilot.waivers
        where organization_id = a.organization_id
          and athlete_id = a.athlete_id
@@ -123,7 +147,7 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
     [organizationId, ROW_READ_WAIVER_TYPES],
   );
 
-  const byAthlete = new Map<string, AthleteWaiverStatus>();
+  const byAthlete = new Map<string, AthleteWaiverRosterEntry>();
   for (const row of rows) {
     let entry = byAthlete.get(row.athlete_id);
     if (!entry) {
@@ -132,6 +156,8 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
         athleteName: row.full_name,
         activeFlag: row.active_flag,
         waivers: Object.fromEntries(TRACKED_WAIVER_TYPES.map((type) => [type, 'missing'])) as Record<TrackedWaiverType, WaiverStatus>,
+        dob: row.dob ?? null,
+        recordedOn: {},
       };
       byAthlete.set(row.athlete_id, entry);
     }
@@ -155,6 +181,11 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
          waiver-status-check migration and requireWaiverStatus now refuse
          such values on write; this stays for rows written before them. */
       entry.waivers[row.waiver_type] = normalizeWaiverStatus(row.status);
+      // Only beside a status this module recognises: an unrecognised value
+      // reads 'missing' above, and "missing, recorded on a date" is not a fact.
+      if (row.recorded_on && entry.waivers[row.waiver_type] !== 'missing') {
+        entry.recordedOn[row.waiver_type] = row.recorded_on;
+      }
     }
   }
 
