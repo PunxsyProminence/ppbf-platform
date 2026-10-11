@@ -72,7 +72,7 @@ describe('issued workout schema ownership', () => {
     expect(body).toMatch(/if \(assignmentIds\.length === 0\) \{\s+return \[\];/);
   });
 
-  test('the shape read has one caller, and that caller asks only about assignments it has just read behind the athlete gate', () => {
+  test('the shape read has exactly two callers, and each asks only about the rows of its own bounded read', () => {
     // The read takes whatever ids it is given and scopes them by organization
     // only, so WHO may call it, and with what, is the boundary. A new importer
     // is added here deliberately, with the gated read its ids come from.
@@ -84,7 +84,8 @@ describe('issued workout schema ownership', () => {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
         else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-          // An import of it, in any form. (privacyTiers.ts names it in a string, as the field's enforcer.)
+          // A named import of it (the only form this codebase uses for server modules; a namespace
+          // import or a re-export would not be seen). privacyTiers.ts names it in a string, not an import.
           if (/import\s*\{[^}]*\blistIssuedWorkoutsForAssignments\b[^}]*\}\s*from/.test(code(fs.readFileSync(full, 'utf8')))) {
             importers.push(path.relative(webRoot, full).replace(/\\/g, '/'));
           }
@@ -92,7 +93,26 @@ describe('issued workout schema ownership', () => {
       }
     };
     for (const top of ['app', 'components', 'src']) walk(path.join(webRoot, top));
-    expect(importers.sort()).toEqual(['app/api/pilot/progression/assignments/route.ts']);
+    expect(importers.sort()).toEqual([
+      // The coach's card list: ids from listCoachCards, whose boundary is the
+      // coach's current reach (athleteIdsForCoach), re-checked on every read.
+      'app/api/pilot/coach/cards/route.ts',
+      // The assignments read: ids from getAthleteAssignments behind assertActorCanAccessAthlete.
+      'app/api/pilot/progression/assignments/route.ts',
+    ]);
+
+    const cards = code(read('apps/web/app/api/pilot/coach/cards/route.ts'));
+    const roleGate = cards.lastIndexOf("requireRole(principal, ['coach', 'admin', 'organization_admin']);");
+    const boundedRead = cards.indexOf('const rows = await listCoachCards(principal);');
+    const cardsShapeRead = cards.indexOf('listIssuedWorkoutsForAssignments(');
+    expect(roleGate).toBeGreaterThan(0);
+    expect(boundedRead).toBeGreaterThan(roleGate);
+    expect(cardsShapeRead).toBeGreaterThan(boundedRead);
+    // Its ids are the bounded read's own rows, and its organization the session's.
+    expect(cards).toMatch(
+      /listIssuedWorkoutsForAssignments\(\s*principal\.organizationId,\s*rows\.map\(\(row\) => row\.assignment_id\),\s*\)/,
+    );
+    expect(cards.match(/listIssuedWorkoutsForAssignments\(/g)).toHaveLength(1);
 
     const route = code(read('apps/web/app/api/pilot/progression/assignments/route.ts'));
     const gate = route.indexOf('await assertActorCanAccessAthlete(principal, athleteId);');
