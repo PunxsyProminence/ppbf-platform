@@ -115,6 +115,9 @@ const isBoardE2ePath = (file) => {
          the session gate and server auth module are not surfaces it touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* WorkAxis is the foot SignInPanel renders on /login, so this
+         suite's sign-in door walks it (lane N8-02). */
+      'apps/web/components/WorkAxis',
       /* THE SHARED CHASSIS. board-governance.spec.ts drives a board session
          through the same session bar and standalone band every other role
          uses, so a change to either is a change to what this suite walks
@@ -157,6 +160,9 @@ const isHomepageE2ePath = (file) => {
          unauthenticated visitor's journey touches. */
       'apps/web/app/login/',
       'apps/web/components/SignInPanel',
+      /* WorkAxis is the foot SignInPanel renders on /login, so this
+         suite's sign-in door walks it (lane N8-02). */
+      'apps/web/components/WorkAxis',
       /* THE ROUTES THIS SUITE ASSERTS ARE CLOSED. public-homepage.spec.ts
          ends on a protected-routes block that opens /operations as an
          unauthenticated visitor and requires the redirect to /login -- so
@@ -195,6 +201,15 @@ const isSignedInJourneyPath = (file) =>
        now measures its rows. Without this line a change to the catalog itself
        ran none of the suites that assert it. */
     'apps/web/components/CardCatalog',
+    /* SHARED CHROME OF GATED SURFACES (lane N8-02). ShadowChatButton renders
+       on the athlete workspace, parent hub, role standalone view and
+       role-summary panels; WorkAxis is the foot of the athlete and coach
+       workspaces and of /login, which every journey signs in through. So an
+       edit to either changes what all three signed-in journeys render. Both
+       classified `unknown_code` before this line. Prefix match, so the
+       colocated tests attend the suites too. */
+    'apps/web/components/ShadowChatButton',
+    'apps/web/components/WorkAxis',
     /* THE SHARED STYLESHEETS, and this one is a policy change worth stating.
        `design-system/**` already set homepage_e2e -- the homepage and
        sign-in suite. (It also set golden_era_e2e until 2026-10-02, when the
