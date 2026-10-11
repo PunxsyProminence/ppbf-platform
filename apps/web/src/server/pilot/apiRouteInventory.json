@@ -2528,6 +2528,32 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/tracks/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/tracks",
+    "gate": "requirePrincipal + requireRole(athlete) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Own assigned training tracks, read from the gym's map in pilot.admin_track_assignments (only the caller's own key is selected). Athlete id from session, then assertActorCanAccessAthlete (live row in the caller's gym). Athlete only; parents, coaches and admins not admitted (OD-2026-10-07-010 ruling 3).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/athletes/get/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/athletes/get",
