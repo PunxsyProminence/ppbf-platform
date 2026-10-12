@@ -510,6 +510,18 @@ describe('athlete workspace honesty', () => {
     expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
+  test('the Schedule tab reads the unified scheduler only once it is opened (WO-N5-01)', async () => {
+    await renderWorkspace();
+    const schedulerReads = () => fetchCalls.filter((call) => /\/api\/pilot\/scheduler(\?|$)/.test(call.url));
+    expect(schedulerReads()).toHaveLength(0);
+
+    openTab('Schedule');
+
+    await waitFor(() => expect(schedulerReads()).toHaveLength(1));
+    // Booking stays in the unified scheduler: the tab sends no POST.
+    expect(schedulerReads().every((call) => call.method === 'GET')).toBe(true);
+  });
+
   test('the Schedule tab no longer apologises for itself over the working link', async () => {
     await renderWorkspace();
     openTab('Schedule');
