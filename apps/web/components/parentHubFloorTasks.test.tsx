@@ -385,6 +385,37 @@ describe('ticking a task off', () => {
   });
 });
 
+describe('a tick that fails after the guardian has moved on', () => {
+  test('its notice is not shown under the sibling, and is still there back on the child it was about', async () => {
+    setClock(WEDNESDAY);
+    let refuse: (() => void) | null = null;
+    installFetch({
+      messagesPost: () => new Promise<Response>((resolve) => {
+        refuse = () => resolve(jsonResponse({ error: 'Not found: no such task for your children' }, false));
+      }),
+    });
+    await renderFloor();
+
+    const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(row).getByRole('checkbox', { name: 'Done' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    // The write fails now, with the sibling on screen.
+    await act(async () => {
+      (refuse as (() => void) | null)?.();
+    });
+    expect(within(card()).queryByRole('alert')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'First Child' }));
+    });
+    expect(within(card()).getByRole('alert')).toHaveTextContent('That tick did not save');
+  });
+});
+
 describe('a read that did not answer', () => {
   test('is Unavailable, never an empty week', async () => {
     setClock(WEDNESDAY);

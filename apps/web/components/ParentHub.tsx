@@ -312,7 +312,11 @@ export default function ParentHub() {
      ANSWER, not from the click: the box shows what the server holds, and a
      refused or dropped write leaves it where it was and says so in words. */
   const [taskBusy, setTaskBusy] = useState<Set<string>>(() => new Set());
-  const [taskNotice, setTaskNotice] = useState<string>('');
+  // A failed tick's notice carries the child the task is about, so the
+  // Parent Floor shows it only under that child -- including when the write
+  // fails after the guardian has switched to a sibling. The Messages tab
+  // lists every child's messages and shows it whichever child is selected.
+  const [taskNotice, setTaskNotice] = useState<{ athleteId: string; text: string } | null>(null);
   // Tasks ticked or unticked on this visit. A carry-forward task ticked off
   // stays on the Parent Floor, ticked, until the page is next loaded, so a
   // wrong tick can be undone where it was made instead of vanishing.
@@ -320,7 +324,8 @@ export default function ParentHub() {
 
   async function handleTaskToggle(noteId: string, completed: boolean) {
     if (taskBusy.has(noteId)) return;
-    setTaskNotice('');
+    setTaskNotice(null);
+    const aboutAthlete = messages.find((message) => message.note_id === noteId)?.athlete_id ?? '';
     setTaskBusy((held) => new Set(held).add(noteId));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/parent/messages`, {
@@ -340,9 +345,10 @@ export default function ParentHub() {
         held.map((message) => (message.note_id === noteId ? { ...message, task } : message)),
       );
     } catch (error) {
-      setTaskNotice(
-        `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
-      );
+      setTaskNotice({
+        athleteId: aboutAthlete,
+        text: `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
+      });
     } finally {
       setTaskBusy((held) => {
         const next = new Set(held);
@@ -980,11 +986,7 @@ export default function ParentHub() {
               <button
                 key={child.id}
                 type="button"
-                onClick={() => {
-                  // A notice about a tick belongs to the child it was made for.
-                  if (child.id !== activeChildId) setTaskNotice('');
-                  setActiveChildId(child.id);
-                }}
+                onClick={() => setActiveChildId(child.id)}
                 aria-pressed={activeChildId === child.id}
                 className={cx(
                   TAB_BASE,
@@ -1319,8 +1321,8 @@ export default function ParentHub() {
                         ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
                         : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
                     </p>
-                    {taskNotice && (
-                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice}</p>
+                    {taskNotice && taskNotice.athleteId === activeChildId && (
+                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
                     )}
                     {thisWeekTasks.length > 0 && (
                       <ul className="space-y-[var(--s3)]" aria-label="Due this week">
@@ -1512,7 +1514,7 @@ export default function ParentHub() {
                   claim a failure nobody has observed either. "Unavailable" is
                   the tile's own word for exactly this, and it covers both. */}
               {taskNotice && (
-                <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice}</p>
+                <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
               )}
 
               {!messagesLoaded ? (
