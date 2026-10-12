@@ -177,10 +177,12 @@ describe('org-quotes D19 migration against the real schema', () => {
   beforeAll(async () => {
     main = await freshDatabase(TEST_DB_NAME, [SEEDED_ORG, ORG_A, ORG_B]);
     await applyMigrationTransaction(main, migrationSql);
-    // Another gym that typed the same Steel Town words in by hand.
+    // Another gym carrying the same Steel Town words under the very same seed id
+    // (the id is md5 of the text, not of the gym), untouched since written: only
+    // the organization filter keeps D19 off it.
     await main.query(
       `insert into pilot.org_quotes (organization_id, quote_id, quote_text, speaker, quote_type, shown, active)
-       values ($1, md5('other-gym-steel')::uuid, $2, 'their wall', 'gym_saying', array['anywhere'], true)`,
+       values ($1, md5('org-quotes-seed:' || $2)::uuid, $2, 'their wall', 'gym_saying', array['anywhere'], true)`,
       [ORG_A, STEEL],
     );
     firstOutcome = await applyD19Transaction(main, d19Sql);
