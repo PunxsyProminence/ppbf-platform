@@ -112,9 +112,6 @@ function AuditTrace() {
           </div>
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
             <ShadowChatButton context="Audit Trace" />
-            <Link href="/source-control" className="btn btn--ghost">
-              Source Control
-            </Link>
             <Link href="/simulator" className="btn btn--ghost">
               Simulator
             </Link>

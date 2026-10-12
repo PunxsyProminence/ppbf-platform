@@ -83,12 +83,10 @@ const developmentLab = [
   { label: 'Knowledge Graph', href: '/knowledge-graph' },
   { label: 'Scenario Simulator', href: '/simulator' },
   { label: 'Audit Trace', href: '/audit' },
-  { label: 'Source Control', href: '/source-control' },
   { label: 'AI/ML Video Analysis', href: '/coach/video-analysis' },
   // No /board/compliance-monitoring desk (F-003): its route serves 'board'
   // alone, and nobody in this page's audience is the board.
   { label: 'Progression Intelligence', href: '/athlete/progression-intelligence' },
-  { label: 'Publication Workflow', href: '/source-control/publication-workflow' },
 ];
 
 const utilityLinks = [
@@ -129,13 +127,14 @@ const CAPABILITY_STATE_LABEL: Record<CapabilityState, string> = {
    who these desks are for, and if the page's gate is ever widened again it is
    what stops the lab rows widening with it. Do not read its always-true-ness
    today as evidence it is dead. */
-const capabilityRadar: Array<{ name: string; state: CapabilityState; href: string; record?: string; notes: string; lab?: true }> = [
+// href is absent on a roadmap row with no screen: the register keeps the
+// record visible (A-Q15) without a link to a page that does not exist.
+const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: string; record?: string; notes: string; lab?: true }> = [
   { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Check-ins, session logs, and goals are open to athletes today.' },
   { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/environment/intake-router', notes: 'The coach workspace and the floor controls are open. The review queue is planned and not built yet.' },
   { name: 'Research Intelligence', lab: true, state: 'EXISTS', href: '/research', notes: 'Research intake and the question-and-answer workflow are open.' },
   { name: 'Knowledge Graph', lab: true, state: 'EXISTS', href: '/knowledge-graph', notes: 'The knowledge and relationship view is open.' },
   { name: 'Scenario Simulation', lab: true, state: 'EXISTS', href: '/simulator', notes: 'The what-if simulator and its promotion links are open.' },
-  { name: 'Source Governance', lab: true, state: 'EXISTS', href: '/source-control', notes: 'The route from an audit entry through to source control is visible end to end.' },
   { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', record: 'CAP-012', notes: 'The revenue desk, the payment record, and the Stripe Connect sign-up round trip are all in place. Nothing can be charged yet: that waits on the owner registering the platform account and on compliance signing it off.' },
   { name: 'Scholarship Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'A scholarship is a discount written on a real membership record — 100% is a full scholarship — and never bypasses one. Working the fee out from those records arrives with the payment lanes.' },
   { name: 'Membership Tracking', state: 'EXISTS', href: '/admin/memberships', record: 'pilot.program_memberships', notes: 'Enrollment records with an active, lapsed, or ended life, and one active membership per program. Billing is not built — fees arrive with the payment lanes and will read these records.' },
@@ -153,7 +152,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href: strin
   { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'The volunteer roster, their status, and their availability are kept on file.' },
   { name: 'Wrestling League Management', state: 'PARTIAL', href: '/operations/wrestling-league', record: 'pilot.wrestling_league_* · 2026-08-15', notes: 'Season, event, and roster records are real, and deliberately bare by owner decision. Match cards, brackets, weigh-ins, scoring, and scheduling stay unbuilt until a real league defines them.' },
   { name: 'External Competition Platform', state: 'PARTIAL', href: '/operations/external-competition', record: 'pilot.external_competition* · 2026-08-15', notes: 'Competition and entry records are real, and deliberately bare by owner decision. Federation links, result sync, brackets, travel, and compliance checklists stay unbuilt until real competitions define them.' },
-  { name: 'Publication Workflow Automation', lab: true, state: 'PLACEHOLDER', href: '/source-control/publication-workflow', record: 'BACKLOG-publication-automation · 2026-08-15', notes: 'Parked by an owner-approved assessment. What already exists inside the building — video compliance, research evidence review, retraction — is human-gated on purpose, and sending anything outward has no destination and no agreed disclosure set yet. The front-end placeholder stays visible.' },
+  { name: 'Publication Workflow Automation', lab: true, state: 'PLACEHOLDER', record: 'BACKLOG-publication-automation · 2026-08-15', notes: 'Parked by an owner-approved assessment. What already exists inside the building — video compliance, research evidence review, retraction — is human-gated on purpose, and sending anything outward has no destination and no agreed disclosure set yet. There is no screen for it yet.' },
 ];
 
 /* Build state is deliberately kept OFF the status ladder.
@@ -423,9 +422,13 @@ export default function OperationsHubPage() {
                             <td className="max-w-[58ch]">{item.notes}</td>
                             <td className="ledger-id">{item.record ?? '—'}</td>
                             <td>
-                              <Link href={item.href} className="btn--lever hover:no-underline" aria-label={`Open ${item.name}`}>
-                                Open
-                              </Link>
+                              {item.href ? (
+                                <Link href={item.href} className="btn--lever hover:no-underline" aria-label={`Open ${item.name}`}>
+                                  Open
+                                </Link>
+                              ) : (
+                                <span className="t-muted">No screen yet</span>
+                              )}
                             </td>
                           </tr>
                         ))}

@@ -128,6 +128,20 @@ describe('visibleDoors', () => {
     for (const d of doors) expect(d.roles).toBe(OPEN);
   });
 
+  // /help asks for a sign-in (app/help/page.tsx, requirePageRole), so a
+  // signed-out visitor must not be offered the door; every signed-in role is.
+  it('offers Help to every signed-in role and not to a signed-out visitor', () => {
+    expect(visibleDoors(null).map((d) => d.href)).not.toContain('/help');
+    const roles = [
+      'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board',
+      'board-president', 'board-chair', 'board-vice-chair', 'board-treasurer', 'board-secretary',
+      'board-safety-director', 'board-community-director', 'board-at-large',
+    ] as const;
+    for (const role of roles) {
+      expect(visibleDoors(role).map((d) => d.href)).toContain('/help');
+    }
+  });
+
   it('never shows an athlete an admin-gated surface', () => {
     const hrefs = visibleDoors('athlete').map((d) => d.href);
     expect(hrefs).not.toContain('/admin');
@@ -141,9 +155,9 @@ describe('visibleDoors', () => {
     expect(hrefs).toContain('/schedule');
   });
 
-  it('never shows a parent the coach queue', () => {
+  it('never shows a parent the coach drill library', () => {
     const hrefs = visibleDoors('parent').map((d) => d.href);
-    expect(hrefs).not.toContain('/coach/review-queue');
+    expect(hrefs).not.toContain('/coach/drills');
     expect(hrefs).toContain('/guardian');
   });
 
@@ -237,8 +251,6 @@ describe('the lab doors are offered to the admin desks only', () => {
     '/retro-lab',
     '/simulator',
     '/knowledge-graph',
-    '/source-control',
-    '/source-control/publication-workflow',
   ];
 
   it.each(['admin', 'platform_owner'] as const)('%s keeps every lab door', (role) => {
@@ -469,12 +481,12 @@ describe('searchDoors', () => {
   });
 
   it('ranks an exact label prefix first', () => {
-    expect(searchDoors('coach', 'review')[0].href).toBe('/coach/review-queue');
+    expect(searchDoors('coach', 'drills')[0].href).toBe('/coach/drills');
   });
 
   it('matches on keywords, not just the label', () => {
-    // "layer 10" appears only in the queue's keywords.
-    expect(searchDoors('coach', 'layer 10')[0].href).toBe('/coach/review-queue');
+    // "countermovement" appears only in the assessments door's keywords.
+    expect(searchDoors('coach', 'countermovement')[0].href).toBe('/coach/assessments');
     // "concussion" appears only in sports medicine's keywords. Searched as a
     // coach: the door was OPEN when this test was written, but the clearance
     // board now carries a coach/admin guard and the map's visibility hint
@@ -483,11 +495,11 @@ describe('searchDoors', () => {
   });
 
   it('matches a subsequence, so an abbreviation finds the surface', () => {
-    expect(searchDoors('coach', 'revq').map((d) => d.href)).toContain('/coach/review-queue');
+    expect(searchDoors('coach', 'wtmpl').map((d) => d.href)).toContain('/coach/workout-templates');
   });
 
   it('is case insensitive', () => {
-    expect(searchDoors('coach', 'REVIEW')[0].href).toBe('/coach/review-queue');
+    expect(searchDoors('coach', 'DRILLS')[0].href).toBe('/coach/drills');
   });
 
   it('prefers the shorter label on a tie', () => {
@@ -508,7 +520,7 @@ describe('searchDoors', () => {
 
 describe('doorForPath', () => {
   it('finds an exact match', () => {
-    expect(doorForPath('/coach/review-queue')?.label).toBe('Review Queue');
+    expect(doorForPath('/coach/drills')?.label).toBe('Drills');
   });
 
   it('falls back to the longest matching prefix for a nested route', () => {

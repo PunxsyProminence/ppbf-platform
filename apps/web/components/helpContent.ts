@@ -229,13 +229,13 @@ export const guideSections: GuideSection[] = [
   {
     id: 'development-lab-guide',
     title: 'Development Lab Guide',
-    whatThisAreaIsFor: 'Research-to-publication lifecycle visibility for intake, review, graph, simulation, audit, and source control.',
+    whatThisAreaIsFor: 'Research lifecycle visibility for intake, review, graph, simulation, and audit.',
     whoShouldUseIt: 'Research/development users and governance reviewers.',
-    activeNow: 'Research intake, evidence review, knowledge graph, simulator, audit, and source-control surfaces.',
-    placeholderOrPlanned: 'Publication workflow automation remains placeholder with human gates.',
+    activeNow: 'Research intake, evidence review, knowledge graph, simulator, and audit surfaces.',
+    placeholderOrPlanned: 'Source control and a publication workflow are planned (roadmap); there is no screen for them yet.',
     doNotTestYet: 'No automatic publication execution and no backend promotion engine.',
     usefulFeedback: 'Identify unclear stage transitions and missing governance checkpoint messaging.',
-    whereToGoNext: 'Source Control surface and Planned Capabilities Guide.',
+    whereToGoNext: 'Audit Trace and the Planned Capabilities Guide.',
   },
   {
     id: 'shadow-guide',
@@ -306,8 +306,8 @@ export const plannedCapabilityGuides: PlannedCapabilityGuide[] = [
   {
     id: 'planned-publication',
     title: 'Automated Publication Workflow',
-    currentStatus: 'PLANNED | FRONT-END PLACEHOLDER',
-    whereItAppears: '/source-control/publication-workflow',
+    currentStatus: 'PLANNED | NOT BUILT',
+    whereItAppears: 'No screen yet.',
     whatIsPlanned: 'Draft-to-approved publication routing with destination controls.',
     whatIsNotAutomated: 'No autonomous publication execution and no backend release engine.',
     backendDependency: 'Requires backend workflow orchestration and publish infrastructure.',
