@@ -446,8 +446,12 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/video-publications/library', label: 'Video Library', room: 'floor',
     roles: ['coach', 'admin', 'athlete'], keywords: 'video library published clips film browse research library tags',
     hint: 'Every clip published to the gym\u2019s library, newest first. Read-only.' },
-  { href: '/coach/environment/intake-router', label: 'Intake Router', room: 'floor',
-    roles: ['coach'], keywords: 'intake routing new athlete triage' },
+  /* The coach's home, where sign-in lands a coach (getPilotRoleDestination).
+     "Intake Router" until 2026-10-12: the header named the coach's front door
+     after one of its tabs (#1482 item 6; wording PROPOSED). The old words stay
+     as keywords so the door is still found by them. */
+  { href: '/coach/environment/intake-router', label: 'Coach Workspace', room: 'floor',
+    roles: ['coach'], keywords: 'home dashboard intake router routing new athlete triage' },
   { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook gap retention stopped coming absent last seen queue triage book athlete record',
     hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },

@@ -32,6 +32,12 @@ interface RoleStandaloneViewProps {
      ship. A page that passes nothing renders exactly what it rendered
      before. */
   readonly breadcrumbs?: ReadonlyArray<RoleBreadcrumb>;
+  /* The route chip. Default true, so every page that passes nothing renders
+     what it rendered before. A page whose routeLabel is its own web address
+     and which is somebody's landing page passes false: the coach's home
+     printed "/coach/environment/intake-router" under "Coach Workspace"
+     (#1482 item 6). routeLabel still reaches SHADOW's page context. */
+  readonly showRouteLabel?: boolean;
 }
 
 /* This band sits directly under the sticky leather session bar, so it is paper,
@@ -168,6 +174,7 @@ export default function RoleStandaloneView({
   showShellHeader = true,
   room,
   breadcrumbs,
+  showRouteLabel = true,
 }: RoleStandaloneViewProps) {
   const familyGround = isFamilyGround(allowedRoles);
   const trail = breadcrumbs ?? [];
@@ -279,7 +286,7 @@ export default function RoleStandaloneView({
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                <span className={familyGround ? CHIP : CHIP_INK}>{routeLabel}</span>
+                {showRouteLabel && <span className={familyGround ? CHIP : CHIP_INK}>{routeLabel}</span>}
                 {canUseOperationsHub(viewerRole) ? (
                   <Link href="/operations" className={familyGround ? LINK : LINK_INK}>
                     Operations
