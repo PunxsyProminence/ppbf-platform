@@ -107,6 +107,10 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 20;
 // registers one line each. What goes into authorizedContext is unchanged;
 // bumped because a listed file moved. A v18 job still queued at deploy is
 // refused as STALE.
+// 20: the gym's name in SHADOW_SYSTEM_PROMPT comes from the one organization
+// profile (#1469, N9-01B; A-Q22 ruling 8); the text is unchanged for PPBF.
+// What goes into authorizedContext is unchanged; bumped because a listed
+// file moved. A v19 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss

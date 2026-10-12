@@ -84,17 +84,22 @@ test('the interest form points a visitor at the gym as it did when sending fails
 
 // N9-01B surfaces, pinned as main rendered them for PPBF.
 test('the wall and the names board name PPBF as they did', async () => {
+  const realFetch = global.fetch;
   global.fetch = jest.fn(() => new Promise(() => {})) as unknown as typeof fetch;
-  const { default: WallDisplay } = await import('@/components/WallDisplay');
-  const { default: WallOfNames } = await import('@/components/WallOfNames');
-  const wall = render(<WallDisplay />).container;
-  expect(wall.querySelector('.wall-eyebrow')?.textContent).toBe('Punxsy Prominence Boxing & Fitness');
-  expect(wall.querySelector('.wall-standing-crest')?.textContent?.trim()).toBe('PPBF');
-  const names = render(<WallOfNames />).container;
-  expect(names.querySelector('.wall-names-eyebrow')?.textContent).toBe('Punxsy Prominence Boxing & Fitness');
+  try {
+    const { default: WallDisplay } = await import('@/components/WallDisplay');
+    const { default: WallOfNames } = await import('@/components/WallOfNames');
+    const wall = render(<WallDisplay />).container;
+    expect(wall.querySelector('.wall-eyebrow')?.textContent).toBe('Punxsy Prominence Boxing & Fitness');
+    expect(wall.querySelector('.wall-standing-crest')?.textContent).toBe('PPBF');
+    const names = render(<WallOfNames />).container;
+    expect(names.querySelector('.wall-names-eyebrow')?.textContent).toBe('Punxsy Prominence Boxing & Fitness');
 
-  const wallPage = await import('@/app/wall/page');
-  const namesPage = await import('@/app/names/page');
-  expect(wallPage.metadata.description).toBe('Punxsy Prominence Boxing and Fitness — the board on the gym floor.');
-  expect(namesPage.metadata.description).toBe('Everyone who has come through Punxsy Prominence Boxing and Fitness.');
+    const wallPage = await import('@/app/wall/page');
+    const namesPage = await import('@/app/names/page');
+    expect(wallPage.metadata.description).toBe('Punxsy Prominence Boxing and Fitness — the board on the gym floor.');
+    expect(namesPage.metadata.description).toBe('Everyone who has come through Punxsy Prominence Boxing and Fitness.');
+  } finally {
+    global.fetch = realFetch;
+  }
 });

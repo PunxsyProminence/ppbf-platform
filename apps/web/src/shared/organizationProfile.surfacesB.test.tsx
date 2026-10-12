@@ -41,8 +41,12 @@ function expectNoPpbfTrace(text: string) {
   for (const trace of PPBF_TRACES) expect(text).not.toMatch(trace);
 }
 
+const realFetch = global.fetch;
 beforeEach(() => {
   global.fetch = jest.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+});
+afterAll(() => {
+  global.fetch = realFetch;
 });
 
 test('the wall names the second gym in its eyebrow and its standing crest', async () => {
