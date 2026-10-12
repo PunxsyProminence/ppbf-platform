@@ -178,10 +178,10 @@ describe('DrillLineageReview', () => {
 
     const item = proposalItem('Rationale p-stale.');
     expect(item).toHaveTextContent('Written against version 1. The drill is now at version 2.');
-    expect(within(item).queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
 
     fireEvent.change(within(item).getByLabelText('Review note'), { target: { value: 'Please re-propose against v2.' } });
-    fireEvent.click(within(item).getByRole('button', { name: 'Decline' }));
+    fireEvent.click(within(item).getByRole('button', { name: /^Decline the proposal/ }));
 
     expect(await screen.findByText('Declined on 2026-10-04.')).toBeInTheDocument();
     const post = fetchMock.mock.calls.find(([url]) => String(url) === '/api/pilot/drills/proposals/review');
@@ -202,8 +202,8 @@ describe('DrillLineageReview', () => {
 
     const item = proposalItem('Rationale p-current.');
     expect(item).toHaveTextContent('This drill is retired.');
-    expect(within(item).queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
-    expect(within(item).getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: /^Decline the proposal/ })).toBeInTheDocument();
     const versions = within(screen.getByRole('list', { name: 'Versions, oldest first' })).getAllByRole('listitem');
     expect(versions[1]).toHaveTextContent('Retired');
     expect(screen.queryByText('Current')).not.toBeInTheDocument();
@@ -224,11 +224,11 @@ describe('DrillLineageReview', () => {
     };
     const { fetchMock } = await renderPanel(server);
 
-    fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: 'Adopt' }));
+    fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: /^Adopt the proposal/ }));
 
     expect(await screen.findByText('Adopted on 2026-10-04. Became version 3.')).toBeInTheDocument();
     expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
-    expect(within(proposalItem('Rationale p-current.')).queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
+    expect(within(proposalItem('Rationale p-current.')).queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
   });
 
   test("a 409 shows the server's own wording and reads the panel again", async () => {
@@ -238,7 +238,7 @@ describe('DrillLineageReview', () => {
       review: () => json({ error: 'DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION' }, 409),
     });
 
-    fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: 'Adopt' }));
+    fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: /^Adopt the proposal/ }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
@@ -246,19 +246,40 @@ describe('DrillLineageReview', () => {
     expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
   });
 
+  test('a fault after the request left says the outcome is not known, and reads the panel again', async () => {
+    const { fetchMock } = await renderPanel({
+      versions: twoVersions(),
+      items: [onCurrent],
+      review: () => json({ error: 'Internal error' }, 500),
+    });
+
+    fireEvent.click(within(proposalItem('Rationale p-current.')).getByRole('button', { name: /^Adopt the proposal/ }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("It is not known whether this was saved. This drill's versions and proposals were read again");
+    expect(reads(fetchMock, '/api/pilot/drills/lineage')).toBe(2);
+  });
+
+  test('Adopt and Decline name the proposal they act on', async () => {
+    await renderPanel({ versions: twoVersions(), items: [onCurrent] });
+    const item = proposalItem('Rationale p-current.');
+    expect(within(item).getByRole('button', { name: 'Adopt the proposal from 2026-10-03 against version 2' })).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: 'Decline the proposal from 2026-10-03 against version 2' })).toBeInTheDocument();
+  });
+
   test('a coach reads the same history and proposals without Adopt or Decline', async () => {
     await renderPanel({ versions: twoVersions(), items: [onCurrent] }, false);
     expect(proposalItem('Rationale p-current.')).toHaveTextContent('Waiting for review');
-    expect(screen.queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Decline the proposal/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Review note')).not.toBeInTheDocument();
   });
 
   test('a reviewer is offered Adopt and Decline on a proposal written against the current version', async () => {
     await renderPanel({ versions: twoVersions(), items: [onCurrent] }, true);
     const item = proposalItem('Rationale p-current.');
-    expect(within(item).getByRole('button', { name: 'Adopt' })).toBeInTheDocument();
-    expect(within(item).getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: /^Adopt the proposal/ })).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: /^Decline the proposal/ })).toBeInTheDocument();
   });
 
   test('names the proposer and reviewer by role and date, never by account id', async () => {

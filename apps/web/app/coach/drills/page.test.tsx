@@ -2161,8 +2161,8 @@ describe('versions and proposals', () => {
     const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
     await within(panel).findByText('Why p-new.');
 
-    expect(within(panel).queryByRole('button', { name: 'Adopt' })).not.toBeInTheDocument();
-    expect(within(panel).queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: /^Adopt the proposal/ })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: /^Decline the proposal/ })).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain('acct-hidden');
   });
 
@@ -2175,8 +2175,8 @@ describe('versions and proposals', () => {
     const panel = await screen.findByRole('region', { name: 'Versions and proposals: Corner exit' });
     await within(panel).findByText('Why p-new.');
 
-    expect(within(panel).getAllByRole('button', { name: 'Adopt' })).toHaveLength(2);
-    expect(within(panel).getAllByRole('button', { name: 'Decline' })).toHaveLength(2);
+    expect(within(panel).getAllByRole('button', { name: /^Adopt the proposal/ })).toHaveLength(2);
+    expect(within(panel).getAllByRole('button', { name: /^Decline the proposal/ })).toHaveLength(2);
   });
 
   it('says an empty queue is empty, and a failed queue read is a failure', async () => {

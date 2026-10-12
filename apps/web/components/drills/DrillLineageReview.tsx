@@ -198,11 +198,13 @@ export default function DrillLineageReview({ drillId, canReview, onClose, onChan
             </div>
             <div className="flex flex-wrap gap-[var(--s3)]">
               {!blocker && (
-                <button type="button" className="btn" disabled={busy} onClick={() => void review(p, 'adopt')}>
+                <button type="button" className="btn" disabled={busy} onClick={() => void review(p, 'adopt')}
+                  aria-label={`Adopt the proposal from ${day(p.created_at)} against ${versionOf(p.based_on_drill_id)}`}>
                   {busyId === p.proposal_id ? 'Saving...' : 'Adopt'}
                 </button>
               )}
-              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void review(p, 'decline')}>
+              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void review(p, 'decline')}
+                aria-label={`Decline the proposal from ${day(p.created_at)} against ${versionOf(p.based_on_drill_id)}`}>
                 Decline
               </button>
             </div>
