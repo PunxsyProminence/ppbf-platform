@@ -33,17 +33,25 @@ jest.mock('@/src/server/pilot/localFindings', () => ({ listLocalFindings: () => 
 jest.mock('@/src/server/pilot/sourceCitationChecks', () => ({ getSourceCitationStatus: () => noGymRead() }));
 jest.mock('@/src/server/pilot/sourceRetractionChecks', () => ({ getSourceRetractionStatus: () => noGymRead() }));
 
+// The worker's setting comes from the same report GET /api/pilot/ops/readiness serves.
+const readiness = { workerOn: false };
+jest.mock('@/src/server/pilot/pilotOpsReadiness', () => ({
+  buildPilotOpsReadinessReport: () => ({ shadowWorker: { enabled: readiness.workerOn } }),
+}));
+
 const WORKFLOWS_DIR = path.join(__dirname, '../../../../../.github/workflows');
 const SCRIPTS_DIR = path.join(__dirname, '../../../scripts');
 
 function workflowFiles(): string[] {
-  return fs.readdirSync(WORKFLOWS_DIR).filter((file) => file.endsWith('.yml')).sort();
+  return fs.readdirSync(WORKFLOWS_DIR).filter((file) => /\.ya?ml$/.test(file)).sort();
 }
 
 /** The triggers a workflow file declares under its top-level `on:` block. */
 function fileTriggers(file: string): string[] {
   const lines = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8').split('\n');
   const start = lines.findIndex((line) => /^on:\s*$/.test(line));
+  // Every workflow here writes `on:` as a block; an inline form must be read before it is listed.
+  expect(start).toBeGreaterThan(-1);
   const found: string[] = [];
   for (const line of lines.slice(start + 1)) {
     if (/^\S/.test(line)) break;
@@ -64,6 +72,11 @@ async function renderAs(role: PilotRole) {
   render(await AdminSystemPage());
 }
 
+function fileName(file: string): string {
+  const line = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8').split('\n').find((row) => /^name:/.test(row)) ?? '';
+  return line.replace(/^name:\s*/, '').trim();
+}
+
 function tableRows(headingName: RegExp): HTMLElement[] {
   const section = screen.getByRole('heading', { name: headingName }).closest('section') as HTMLElement;
   return within(within(section).getByRole('table')).getAllByRole('row').slice(1);
@@ -71,9 +84,10 @@ function tableRows(headingName: RegExp): HTMLElement[] {
 
 beforeEach(() => {
   principal.role = 'platform_owner';
+  readiness.workerOn = false;
 });
 
-test('every audited route is listed, and none claims a runtime status', async () => {
+test('every inventory route is listed, and none claims a runtime status', async () => {
   await renderAs('platform_owner');
   const rows = tableRows(/^Routes/);
   expect(rows).toHaveLength(inventory.length);
@@ -82,6 +96,7 @@ test('every audited route is listed, and none claims a runtime status', async ()
     const cells = within(rows[index]).getAllByRole('cell').map((cell) => cell.textContent);
     expect(cells[0]).toBe(`${route.method} ${route.path}`);
     expect(cells[1]).toBe(route.gate);
+    expect(cells[2]).toBe(route.rolesAdmitted.length > 0 ? route.rolesAdmitted.join(', ') : 'None listed');
     expect(cells[3]).toBe(route.writes ? 'Yes' : 'No');
     expect(cells[4]).toBe(route.athleteData ? 'Yes' : 'No');
     expect(cells[5]).toBe(route.notes);
@@ -91,12 +106,12 @@ test('every audited route is listed, and none claims a runtime status', async ()
 
 test('the job list is exactly the workflow folder, with each file\'s own triggers', async () => {
   await renderAs('platform_owner');
-  const rows = tableRows(/^Jobs/);
+  const rows = tableRows(/^Jobs/).slice(0, -1);
   const files = workflowFiles();
   expect(rows).toHaveLength(files.length);
   rows.forEach((row, index) => {
     const cells = within(row).getAllByRole('cell');
-    expect(cells[0].textContent).toContain(files[index]);
+    expect(cells[0].textContent).toBe(`${fileName(files[index])}${files[index]}`);
     const shown = (cells[2].textContent ?? '').split(', ').sort();
     expect(shown).toEqual(fileTriggers(files[index]));
   });
@@ -105,24 +120,44 @@ test('the job list is exactly the workflow folder, with each file\'s own trigger
 test('every job says its status is unavailable and links to its runs on GitHub', async () => {
   await renderAs('platform_owner');
   const files = workflowFiles();
-  tableRows(/^Jobs/).forEach((row, index) => {
+  tableRows(/^Jobs/).slice(0, -1).forEach((row, index) => {
     const status = within(row).getAllByRole('cell')[3];
-    expect(status.textContent).toContain('Status unavailable.');
-    expect(within(status).getByRole('link', { name: 'Runs on GitHub' }).getAttribute('href')).toBe(
+    expect(status.textContent).toBe('Status unavailable. Run history on GitHub (new tab)');
+    expect(within(status).getByRole('link', { name: 'Run history on GitHub (new tab)' }).getAttribute('href')).toBe(
       `https://github.com/PunxsyProminence/ppbf-platform/actions/workflows/${files[index]}`,
     );
   });
+});
+
+test.each([false, true])('the in-app worker is listed with its setting (on: %s), and no run status', async (on) => {
+  readiness.workerOn = on;
+  await renderAs('platform_owner');
+  const rows = tableRows(/^Jobs/);
+  const cells = within(rows[rows.length - 1]).getAllByRole('cell').map((cell) => cell.textContent);
+  expect(cells[0]).toBe('In-app workerinstrumentation.ts');
+  expect(cells[3]).toBe(`Status unavailable. Setting: ${on ? 'on' : 'off'} in this deployment.`);
+  expect(screen.getByRole('heading', { name: `Jobs (${workflowFiles().length + 1})` })).toBeTruthy();
 });
 
 test('the scripts listed as hand-run exist, no workflow runs them, and the page says so', async () => {
   await renderAs('platform_owner');
   const items = within(screen.getByRole('list', { name: 'Scripts no workflow runs' })).getAllByRole('listitem');
   expect(items.length).toBeGreaterThan(0);
-  const allWorkflows = workflowFiles().map((file) => fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8'));
+  const runLines = workflowFiles()
+    .flatMap((file) => fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8').split('\n'))
+    .filter((line) => !line.trim().startsWith('#'));
+  const npmScripts = (JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, '../package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  }).scripts;
   for (const item of items) {
     const script = (item.textContent ?? '').split(':')[0];
     expect(fs.existsSync(path.join(SCRIPTS_DIR, script))).toBe(true);
-    expect(allWorkflows.some((text) => text.split('\n').some((line) => !line.trim().startsWith('#') && line.includes(`scripts/${script}`)))).toBe(false);
+    // Run directly, or through any package.json alias that calls it.
+    const aliases = Object.entries(npmScripts).filter(([, command]) => command.includes(script)).map(([alias]) => alias);
+    const ranBy = runLines.filter(
+      (line) => line.includes(`scripts/${script}`) || aliases.some((alias) => new RegExp(`run ${alias}(\\s|$)`).test(line)),
+    );
+    expect(ranBy).toEqual([]);
     expect(item.textContent).toContain('No workflow runs this.');
   }
 });

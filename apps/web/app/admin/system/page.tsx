@@ -11,6 +11,7 @@ import { requirePageRole } from '@/src/server/pilot/pageGuard';
 import { roleEquals } from '@/src/server/pilot/roleAlias';
 import { getSourceCitationStatus, type SourceCitationReviewSignal } from '@/src/server/pilot/sourceCitationChecks';
 import { getSourceRetractionStatus } from '@/src/server/pilot/sourceRetractionChecks';
+import { buildPilotOpsReadinessReport } from '@/src/server/pilot/pilotOpsReadiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,13 +25,15 @@ export const dynamic = 'force-dynamic';
 //     principal.organizationId only. No route or job inventory is shown to a gym.
 //
 // A VIEW, NOT A CONTROL PLANE. Nothing on this page runs a job, calls a route or changes anything:
-// it has no form and no button. Each route row is the audited inventory row
-// (apiRouteInventory.json, kept honest by apiRouteInventory.convention.test.ts). Each job row is a
-// workflow file in .github/workflows (this page's test fails when the list and the folder differ).
+// it has no form and no button. Each route row is the route inventory row (apiRouteInventory.json).
+// Its convention test re-checks the mechanical gate columns only; the writes, athlete-data and notes
+// columns are a reviewer's draft reading, and the page says so. Each workflow row is a file in
+// .github/workflows (this page's test fails when the list and the folder differ). The in-app worker
+// is listed with the one thing known about it here: whether this deployment switches it on.
 //
-// NO STATUS IS CLAIMED. The app records no runtime result for any route or job, so every row says
-// so (N7-03-Q2 A). A job's row links to its run history on GitHub, which is where a run's outcome
-// lives. A route that exists in source is not a route known to be working.
+// NO RUN STATUS IS CLAIMED. Nothing this page may read records whether a route or job worked, so
+// every row says so (N7-03-Q2 A). A workflow's row links to its run history on GitHub. A route that
+// exists in source is not a route known to be working.
 //
 // The inventory's auditor columns (confidence, missingGate, looksWrong) rate the audit, not the
 // route, and are not shown: printed here they would read as a confidence figure or a flag.
@@ -57,7 +60,7 @@ interface SystemJob {
   runsOn: readonly Trigger[];
 }
 
-// One row per workflow file, in folder order. `purpose` is the file's own header, shortened.
+// One row per workflow file, in folder order. `purpose` is one line read from the file.
 const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'apply-migrations.yml', name: 'apply-migrations', purpose: 'Applies database migrations.', runsOn: ['manual'] },
   { file: 'approve-library-baseline.yml', name: 'approve-library-baseline', purpose: "Clears the SHADOW evidence review gate for one organization's library.", runsOn: ['manual'] },
@@ -81,11 +84,11 @@ const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'repair-research-baseline.yml', name: 'repair-research-baseline', purpose: 'Repairs the platform SHADOW research baseline.', runsOn: ['manual'] },
   { file: 'rescope-library-baseline.yml', name: 'rescope-library-baseline', purpose: "Moves an imported research corpus off a gym's shelf onto the platform baseline.", runsOn: ['manual'] },
   { file: 'research-bridge-ci.yml', name: 'research-bridge-ci', purpose: 'Typecheck, tests and build for the research bridge.', runsOn: ['pull request', 'push', 'manual'] },
-  { file: 'retention-cleanup.yml', name: 'retention-cleanup', purpose: 'Enforces the data retention policy.', runsOn: ['schedule', 'manual'] },
+  { file: 'retention-cleanup.yml', name: 'retention-cleanup', purpose: "Nightly: deletes expired public enquiries and counts records due for deletion. People's records are deleted only by a manual run.", runsOn: ['schedule', 'manual'] },
   { file: 'run-checks.yml', name: 'run-checks', purpose: 'Read-only database checks.', runsOn: ['manual'] },
   { file: 'seed-reference-data.yml', name: 'seed-reference-data', purpose: 'Loads committed reference data.', runsOn: ['manual'] },
   { file: 'session-autoclose.yml', name: 'session-autoclose', purpose: 'Closes training sessions nobody checked out of.', runsOn: ['schedule', 'manual'] },
-  { file: 'session-token-cleanup.yml', name: 'session-token-cleanup', purpose: 'Cleans up expired and revoked sign-in session tokens.', runsOn: ['schedule', 'manual'] },
+  { file: 'session-token-cleanup.yml', name: 'session-token-cleanup', purpose: 'Counts expired and revoked sign-in tokens. Deletes them on a manual run, or nightly once its repository variable is switched on.', runsOn: ['schedule', 'manual'] },
 ];
 
 // Scripts that exist but that no workflow runs (.github/workflows/evidence-corpus.yml says so). Any
@@ -110,6 +113,10 @@ export default async function AdminSystemPage({ searchParams }: { searchParams?:
 }
 
 function PlatformSystemView() {
+  // Configuration only (the same report GET /api/pilot/ops/readiness gives the platform owner):
+  // whether the worker is switched on, never whether a run worked.
+  const workerOn = buildPilotOpsReadinessReport().shadowWorker.enabled;
+
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
@@ -117,8 +124,8 @@ function PlatformSystemView() {
           <p className="t-eyebrow">Platform Desk</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>System</h1>
           <p className="t-body mt-[var(--s3)] max-w-4xl">
-            The routes and jobs the platform is built from, as the repository lists them. The app records
-            no run results, so no row here says a route or job is working. A job&apos;s runs are on GitHub.
+            The routes and jobs the platform is built from, as the repository lists them. No row here says a
+            route or job is working. A workflow&apos;s runs are on GitHub.
           </p>
           <div className="mt-[var(--s4)]">
             <Link href="/admin/platform" className="btn btn--ghost">Platform Desk</Link>
@@ -126,13 +133,13 @@ function PlatformSystemView() {
         </header>
 
         <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-jobs">
-          <h2 id="system-jobs" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Jobs ({SYSTEM_JOBS.length})</h2>
-          <table className="ledger mt-[var(--s3)]">
+          <h2 id="system-jobs" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Jobs ({SYSTEM_JOBS.length + 1})</h2>
+          <table className="ledger mt-[var(--s3)]" aria-labelledby="system-jobs">
             <thead>
               <tr>
                 <th scope="col">Workflow</th>
                 <th scope="col">What it does</th>
-                <th scope="col">Runs on</th>
+                <th scope="col">Trigger</th>
                 <th scope="col">Status</th>
               </tr>
             </thead>
@@ -145,11 +152,19 @@ function PlatformSystemView() {
                   <td>
                     Status unavailable.{' '}
                     <a href={`${ACTIONS_URL}/${job.file}`} className="underline" rel="noreferrer" target="_blank">
-                      Runs on GitHub
+                      Run history on GitHub (new tab)
                     </a>
                   </td>
                 </tr>
               ))}
+              <tr>
+                <td>In-app worker<br />instrumentation.ts</td>
+                <td>Inside the app server: SHADOW background jobs, the video scan sweep and housekeeping.</td>
+                <td>server tick</td>
+                <td>
+                  Status unavailable. Setting: {workerOn ? 'on' : 'off'} in this deployment.
+                </td>
+              </tr>
             </tbody>
           </table>
           <h3 className="t-command mt-[var(--s5)]" style={{ fontSize: 'var(--t-md)' }}>Scripts no workflow runs</h3>
@@ -164,8 +179,11 @@ function PlatformSystemView() {
 
         <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-routes">
           <h2 id="system-routes" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Routes ({ROUTES.length})</h2>
-          <p className="t-body mt-[var(--s2)]">From the audited route inventory. In source; no runtime status is recorded for any route.</p>
-          <table className="ledger mt-[var(--s3)]">
+          <p className="t-body mt-[var(--s2)]">
+            From the route inventory. Gate and roles are checked against the code by a test; writes, athlete
+            data and notes are a reviewer&apos;s reading. No runtime status is recorded for any route.
+          </p>
+          <table className="ledger mt-[var(--s3)]" aria-labelledby="system-routes">
             <thead>
               <tr>
                 <th scope="col">Route</th>
@@ -173,7 +191,7 @@ function PlatformSystemView() {
                 <th scope="col">Roles admitted</th>
                 <th scope="col">Writes</th>
                 <th scope="col">Athlete data</th>
-                <th scope="col">What it does</th>
+                <th scope="col">Notes</th>
                 <th scope="col">Status</th>
               </tr>
             </thead>

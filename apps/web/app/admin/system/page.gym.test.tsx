@@ -28,6 +28,12 @@ function answer(key: keyof typeof answers, args: unknown[]) {
   return value === 'fail' ? Promise.reject(new Error('database unavailable')) : Promise.resolve(value);
 }
 
+// The gym view never asks for the worker's setting; a call here fails the test.
+jest.mock('@/src/server/pilot/pilotOpsReadiness', () => ({
+  buildPilotOpsReadinessReport: () => {
+    throw new Error('the gym view read platform configuration');
+  },
+}));
 jest.mock('@/src/server/pilot/localFindings', () => ({
   listLocalFindings: (...args: unknown[]) => answer('findings', args),
 }));
