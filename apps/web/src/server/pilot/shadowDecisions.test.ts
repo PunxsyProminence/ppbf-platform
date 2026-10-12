@@ -129,7 +129,7 @@ describe('listDecisions', () => {
     expect(results).toHaveLength(1);
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain('order by d.decided_at desc');
-    expect(String(sql)).toContain('s.organization_id = d.organization_id');
+    expect(String(sql)).toContain('s.organization_id = d.organization_id and s.athlete_id = d.athlete_id');
     expect(params).toEqual(['org-1', 'athlete-1']);
   });
 

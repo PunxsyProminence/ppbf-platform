@@ -134,7 +134,8 @@ export async function listDecisions(organizationId: string, athleteId: string): 
             s.status as snapshot_status, s.expires_at::text as snapshot_expires_at
      from pilot.shadow_decisions d
      left join pilot.shadow_medical_administrative_status s
-       on s.organization_id = d.organization_id and s.status_id = d.medical_status_snapshot_id
+       on s.organization_id = d.organization_id and s.athlete_id = d.athlete_id
+      and s.status_id = d.medical_status_snapshot_id
      where d.organization_id = $1 and d.athlete_id = $2
      order by d.decided_at desc`,
     [organizationId, athleteId],

@@ -2771,6 +2771,15 @@ describe('the medical status on file, stated beside the Record Decision form', (
     expect(document.body.textContent).not.toMatch(/refuses|gated by|medical gate blocks|checked on every decision/i);
   });
 
+  test('while the status is still being read, the line says so rather than "none"', async () => {
+    // A read that never answers in this test: the line must not guess.
+    installFetch({ medicalStatus: () => new Promise<Response>(() => {}) as unknown as Response });
+    await selectAthlete();
+
+    expect(await within(decisionsSection()).findByText('Medical status on file: reading…')).toBeTruthy();
+    expect(screen.queryByText('Medical status on file: none')).toBeNull();
+  });
+
   test('each past decision says what was on file when it was recorded', async () => {
     const decision = {
       decision_id: 'dec-1',

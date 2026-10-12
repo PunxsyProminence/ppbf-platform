@@ -407,6 +407,84 @@ describe('the medical status on file is recorded with the decision, never a reas
     });
   });
 
+  test('cleared with no end date is recorded as cleared', async () => {
+    await db.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'ATH-MS-CLEARED', 'ATH-MS-CLEARED', '2012-03-04', 'fly', 'active', 'contact', true, $2, now(), now())`,
+      [ORG_ID, COACH_ID],
+    );
+    await db.query(
+      `insert into pilot.shadow_medical_administrative_status (organization_id, athlete_id, status, set_by_account_id, set_by_role)
+       values ($1, 'ATH-MS-CLEARED', 'cleared', $2, 'coach')`,
+      [ORG_ID, COACH_ID],
+    );
+    const row = await decisions.recordDecision({
+      organizationId: ORG_ID,
+      athleteId: 'ATH-MS-CLEARED',
+      decisionText: 'Full session.',
+      expectedOutcome: 'Normal load.',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    });
+    const [listed] = await decisions.listDecisions(ORG_ID, 'ATH-MS-CLEARED');
+    expect(listed).toMatchObject({ decision_id: row.decision_id, medical_status_on_file: 'cleared', medical_status_expires_at: null });
+  });
+
+  test('a clearance in force when the decision was recorded still reads as cleared after it lapses', async () => {
+    await db.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'ATH-MS-LATER', 'ATH-MS-LATER', '2012-03-04', 'fly', 'active', 'contact', true, $2, now(), now())`,
+      [ORG_ID, COACH_ID],
+    );
+    const status = await db.queryOne<{ status_id: string }>(
+      `insert into pilot.shadow_medical_administrative_status
+         (organization_id, athlete_id, status, set_by_account_id, set_by_role, effective_at, expires_at)
+       values ($1, 'ATH-MS-LATER', 'cleared', $2, 'coach', now() - interval '20 days', now() + interval '1 day')
+       returning status_id`,
+      [ORG_ID, COACH_ID],
+    );
+    const row = await decisions.recordDecision({
+      organizationId: ORG_ID,
+      athleteId: 'ATH-MS-LATER',
+      decisionText: 'Two rounds technical.',
+      expectedOutcome: 'Holds form.',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    });
+    expect(row.medical_status_snapshot_id).toBe(status?.status_id);
+    // The clearance then runs out: as if the decision was made 3 days ago and
+    // the clearance ended 1 day ago.
+    await db.query(`update pilot.shadow_decisions set decided_at = now() - interval '3 days' where decision_id = $1`, [row.decision_id]);
+    await db.query(
+      `update pilot.shadow_medical_administrative_status set expires_at = now() - interval '1 day' where status_id = $1`,
+      [status?.status_id],
+    );
+
+    const [listed] = await decisions.listDecisions(ORG_ID, 'ATH-MS-LATER');
+    expect(listed).toMatchObject({ decision_id: row.decision_id, medical_status_on_file: 'cleared' });
+  });
+
+  test("another gym's status row for a same-id athlete is never this decision's", async () => {
+    // ATHLETE_ID also exists in OTHER_ORG_ID (fixtures above). Give that gym a
+    // 'not_cleared' row; this gym's decision must carry this gym's 'cleared'.
+    await db.query(
+      `insert into pilot.shadow_medical_administrative_status (organization_id, athlete_id, status, set_by_account_id, set_by_role, effective_at)
+       values ($1, $2, 'not_cleared', $3, 'coach', now() + interval '1 minute')`,
+      [OTHER_ORG_ID, ATHLETE_ID, OTHER_COACH_ID],
+    );
+    const row = await decisions.recordDecision({
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      decisionText: 'Pad work.',
+      expectedOutcome: 'Clean form.',
+      decidedByAccountId: COACH_ID,
+      decidedByRole: 'coach',
+    });
+    expect(await auditAfter('decision', row.decision_id)).toMatchObject({ medicalStatusOnFile: 'cleared' });
+    const listed = (await decisions.listDecisions(ORG_ID, ATHLETE_ID)).find((d) => d.decision_id === row.decision_id);
+    expect(listed?.medical_status_on_file).toBe('cleared');
+  });
+
   // Control: something on this path still refuses, so the cases above cannot
   // pass by nothing ever refusing.
   test('citing a lapsed recommendation is still refused, and nothing is written', async () => {
