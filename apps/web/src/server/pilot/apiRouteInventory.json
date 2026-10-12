@@ -8585,6 +8585,62 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/observations",
+    "gate": "requirePrincipal + requireRole(parent) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Guardian reads back the observations they themselves wrote about their linked child (note_type parent_observation, author = caller); gate observations/route.ts GET requireRole(parent) + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/observations/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/observations",
+    "gate": "requirePrincipal + requireRole(parent) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Guardian writes an observation (category, optional 1-10 rating, notes) about their linked child as a parent_observation coach observation, audited in one transaction; gate observations/route.ts POST requireRole(parent) + assertActorCanAccessAthlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/safety/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/safety",
