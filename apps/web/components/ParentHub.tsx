@@ -14,7 +14,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -87,6 +87,21 @@ function formatDueDate(value: string): string {
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
+}
+
+/* THE GYM'S WEEK, Monday to Sunday on the gym's calendar (America/New_York,
+   gymDayIso), as the two bare dates that bound it. A due date is a bare
+   calendar date too ('2026-10-20'), so membership is a string comparison
+   between like things. The arithmetic runs on UTC midnight of the gym's
+   today, which has no daylight-saving edge to fall off. */
+function gymWeekBounds(nowMs: number): { start: string; end: string } | null {
+  const today = gymDayIso(nowMs);
+  if (!today) return null;
+  const midnight = Date.parse(`${today}T00:00:00Z`);
+  const sinceMonday = (new Date(midnight).getUTCDay() + 6) % 7;
+  const day = 24 * 60 * 60 * 1000;
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  return { start: iso(midnight - sinceMonday * day), end: iso(midnight + (6 - sinceMonday) * day) };
 }
 
 interface AttendanceEntry {
@@ -242,6 +257,9 @@ export default function ParentHub() {
   // grounds that its empty state was "fine either way"; it is the same claim
   // as the tile's zero, in words.)
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  // The clock reading the Parent Floor's week is judged against, taken as the
+  // messages landed. Render must not read the clock itself (react-hooks/purity).
+  const [messagesReadAtMs, setMessagesReadAtMs] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -255,6 +273,7 @@ export default function ParentHub() {
         // The route sends task: null, never omits it; an item without the
         // key (an older answer, a stub) is read as "no task", not as a crash.
         setMessages((payload.items ?? []).map((item) => ({ ...item, task: item.task ?? null })));
+        setMessagesReadAtMs(Date.now());
         setMessagesLoaded(true);
       } catch {
         // Messages tab falls back to its empty state; the summary tile shows
@@ -664,6 +683,41 @@ export default function ParentHub() {
   const shownBodyMass = childBodyMass?.athleteId === activeChildId ? childBodyMass : null;
 
   const activeChild = children.find(c => c.id === activeChildId);
+
+  /* PARENT FLOOR TASKS (WO-PH-02). The selected child's parent-support tasks,
+     cut from the one messages read the Messages tab and the Home Tasks tile
+     also use, so a tick in either place moves all three. "This week" is every
+     task due in the gym's current week, done or not; "Still open from
+     earlier" is every unticked task due before it or with no due date, so an
+     unfinished task does not drop out because Sunday passed (Q1 = B). A task
+     ticked off in an earlier week, or due after this one, is on Messages. */
+  const weekBounds = messagesLoaded ? gymWeekBounds(messagesReadAtMs) : null;
+  const activeChildTasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
+  const byDueDate = (a: ParentMessage, b: ParentMessage) =>
+    (a.task?.due_date ?? '').localeCompare(b.task?.due_date ?? '');
+  const thisWeekTasks = weekBounds
+    ? activeChildTasks
+      .filter((message) => {
+        const due = message.task?.due_date;
+        return typeof due === 'string' && due >= weekBounds.start && due <= weekBounds.end;
+      })
+      .sort(byDueDate)
+    : [];
+  const earlierOpenTasks = weekBounds
+    ? activeChildTasks
+      .filter((message) => {
+        const due = message.task?.due_date ?? null;
+        return isOpenTask(message) && (due === null || due < weekBounds.start);
+      })
+      // Dated ones oldest first; undated after them.
+      .sort((a, b) => {
+        const dueA = a.task?.due_date ?? null;
+        const dueB = b.task?.due_date ?? null;
+        if (dueA === null || dueB === null) return dueA === dueB ? 0 : dueA === null ? 1 : -1;
+        return dueA.localeCompare(dueB);
+      })
+    : [];
+  const thisWeekDone = thisWeekTasks.filter((message) => !isOpenTask(message)).length;
   // Only the card that was read for the child now selected. See the note on
   // the childCard state for why the match happens here.
   const shownCard = childCard.athleteId === activeChildId ? childCard.card : null;
@@ -744,6 +798,38 @@ export default function ParentHub() {
     if (status === 'Present') return '✓';
     if (status === 'Excused') return '▲';
     return '✕';
+  }
+
+  /* One parent-support task on the Parent Floor: the coach's words, when it is
+     due, and the same Done box the Messages tab carries, through the same
+     handleTaskToggle -- the box shows what the server holds. */
+  function renderParentTask(message: ParentMessage) {
+    const task = message.task;
+    if (!task) return null;
+    const done = task.completed_at !== null;
+    return (
+      <li key={message.note_id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
+        <p className="t-body">{message.note_text}</p>
+        <p className="t-muted mt-[var(--s2)]">
+          {`From ${message.sender_role === 'coach' ? 'Coach' : 'Admin'} · ${task.due_date ? `Due ${formatDueDate(task.due_date)}` : 'No due date'}`}
+        </p>
+        <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+          <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
+            <input
+              type="checkbox"
+              className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+              checked={done}
+              disabled={taskBusy.has(message.note_id)}
+              onChange={(event) => void handleTaskToggle(message.note_id, event.target.checked)}
+            />
+            <span className="t-body">
+              {done ? `Done ${formatGymDateTimeShort(task.completed_at) ?? ''}`.trim() : 'Done'}
+            </span>
+          </label>
+          {!done && <span className="t-muted">Still to do</span>}
+        </div>
+      </li>
+    );
   }
 
   return (
@@ -1186,20 +1272,35 @@ export default function ParentHub() {
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
-                {/* Not-built-yet is a statement of fact, not a refusal or a
-                    safety state, so it wears the label voice — never
-                    --locked, the safety gate's mark (Law 2). */}
-                <p className="t-label max-w-[520px]">
-                  PLANNED | NOT YET IMPLEMENTED
-                </p>
-                <p className="t-body">
-                  Anything your child&apos;s coach has asked you to do by a date is on the Messages tab, with a box to
-                  tick when it is done; the Home Tasks count at the top of this page is how many are still open.
-                  A separate weekly checklist is not built yet. The checklist and progress bar previously shown
-                  here were hardcoded example data, not real tasks -- they have been removed rather than left
-                  showing fake completion status. Home assignments from your child&apos;s coach appear in the
-                  Assignments tab once that feed is connected.
-                </p>
+                {!messagesLoaded || !weekBounds ? (
+                  <p className="t-muted">
+                    Unavailable - your tasks have not loaded. This is not an empty list.
+                  </p>
+                ) : (
+                  <>
+                    <p className="t-body">
+                      {thisWeekTasks.length === 0
+                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
+                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
+                    </p>
+                    {taskNotice && (
+                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice}</p>
+                    )}
+                    {thisWeekTasks.length > 0 && (
+                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
+                        {thisWeekTasks.map((message) => renderParentTask(message))}
+                      </ul>
+                    )}
+                    {earlierOpenTasks.length > 0 && (
+                      <>
+                        <h4 className="t-label">Still open from earlier</h4>
+                        <ul className="space-y-[var(--s3)]" aria-label="Still open from earlier">
+                          {earlierOpenTasks.map((message) => renderParentTask(message))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
