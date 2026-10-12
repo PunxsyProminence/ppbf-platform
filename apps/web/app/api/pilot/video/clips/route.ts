@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
     if (athleteId) {
       await assertActorCanAccessAthlete(principal, athleteId);
     }
-    const scope = isOrganizationAdminRole(principal.role)
+    // A named athlete has passed the gate above, and a coach reaches every
+    // athlete of the gym (issue #1480): read that athlete's clips. With no
+    // athlete named, a coach's list is "my athletes" (athleteIdsForCoach).
+    const scope = isOrganizationAdminRole(principal.role) || athleteId
       ? null
       : await athleteIdsForCoach(principal.organizationId, principal.accountId);
 

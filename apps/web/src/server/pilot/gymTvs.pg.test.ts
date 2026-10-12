@@ -121,6 +121,8 @@ const PREREQUISITES = [
   'pilot_slice_postgres_session_run_state_migration.sql',
   // show_on_wall: the TV read and the in-use check read it (S2b).
   'pilot_slice_postgres_session_run_show_on_wall_migration.sql',
+  // A plain session (issue #1523): script_id nullable.
+  'pilot_slice_postgres_session_run_plain_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_gym_tvs_migration.sql';
 // After the TV table: the TV read joins a run's round timer (WO-N1-03).
@@ -1170,5 +1172,34 @@ describe('the round timer (WO-N1-03)', () => {
     for (const forbidden of ['account', 'configured', 'coach', 'organization', COACH_A, ORG_A]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+});
+
+// Issue #1523 (Jason 2026-10-12, "allow a plain session"): a session with no script can be put on
+// a paired TV, and the TV reads it -- the clock and its state, with no plan to step through.
+describe('a plain session on the TV', () => {
+  it('is sent to a paired TV and read back with the clock and no blocks', async () => {
+    const { minted, redeemed } = await pairedTv();
+    await client.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+          run_state, started_at, current_block_id, paused_seconds, show_on_wall)
+       values ($1, 'run-plain', null, null, $2, current_date, 'in_progress', now() - interval '5 minutes', null, 0, true)`,
+      [ORG_A, COACH_A],
+    );
+
+    expect((await sendRunToGymTv(ORG_A, COACH_A, minted.tv_id, 'run-plain')).current_run_id).toBe('run-plain');
+
+    const session = (await readGymTvSession(redeemed.device_key))!.session!;
+    expect(session).toMatchObject({
+      run_id: 'run-plain',
+      script_name: 'Plain session',
+      total_minutes: null,
+      is_paused: false,
+      current_block: null,
+      next_block: null,
+      blocks: [],
+    });
+    expect(session.elapsed_seconds).toBeGreaterThanOrEqual(5 * 60);
   });
 });

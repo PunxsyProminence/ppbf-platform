@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 
@@ -33,6 +34,8 @@ interface EscalationItem {
   severity: EscalationSeverity;
   status: 'open' | 'acknowledged' | 'resolved';
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
 }
 
 interface ViolationItem {
@@ -131,7 +134,10 @@ export default function SafetyReviewPage() {
               blackletter reserved for the clinic masthead at display size only.
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
-          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          {/* Never nearer the edge than 73px: the shade is 89px and its pool of
+              light 233px, centred, so 8% alone put the light past a phone's
+              screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1
@@ -215,7 +221,7 @@ export default function SafetyReviewPage() {
                     {review!.openHolds.map((hold) => (
                       <li key={hold.hold_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(hold.athlete_id, hold.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{hold.scope} &middot; {hold.reason_category}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{hold.scope} &middot; {hold.reason_category}</span>
                       </li>
                     ))}
                   </ul>
@@ -229,7 +235,7 @@ export default function SafetyReviewPage() {
                     {review!.failingGates.map((gate) => (
                       <li key={`${gate.athlete_id}-${gate.gate_name}`} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(gate.athlete_id, gate.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{gate.gate_name} &middot; {gate.outcome}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{gate.gate_name} &middot; {gate.outcome}</span>
                       </li>
                     ))}
                   </ul>
@@ -245,7 +251,8 @@ export default function SafetyReviewPage() {
                         <span className="t-body">{displayName(escalation.athlete_id, escalation.athlete_name)}</span>
                         <span className={`badge ${SEVERITY_BADGE[escalation.severity].rung}`}>
                           <i aria-hidden="true">{SEVERITY_BADGE[escalation.severity].glyph}</i>
-                          {escalation.severity}
+                          {/* A pain-report escalation reads "Pain report", not a severity word (#1528). */}
+                          {isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity}
                         </span>
                       </li>
                     ))}

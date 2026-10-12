@@ -526,6 +526,36 @@ export async function getActiveReview(organizationId: string, executionId: strin
   );
 }
 
+/** An earlier verdict on an execution, kept as history (issue #1481). */
+export interface RetiredReviewRow extends OutcomeReviewRow {
+  status: 'superseded';
+  /** True when the record was reopened under it; false when a later review replaced it. */
+  retired_on_reopen: boolean;
+  /** When it stopped being the standing verdict (its updated_at). */
+  retired_at: string;
+}
+
+/**
+ * The superseded verdicts on an execution, newest first. A verdict a later
+ * review replaced is named by that review's supersedes_review_id; one retired
+ * because the record was reopened (interventionExecutions.correctExecution) is
+ * named by none. Org-scoped; reads only.
+ */
+export async function listRetiredReviews(organizationId: string, executionId: string): Promise<RetiredReviewRow[]> {
+  return query<RetiredReviewRow>(
+    `select r.*,
+            not exists (
+              select 1 from pilot.intervention_outcome_reviews later
+              where later.organization_id = r.organization_id and later.supersedes_review_id = r.review_id
+            ) as retired_on_reopen,
+            to_json(r.updated_at) #>> '{}' as retired_at
+     from pilot.intervention_outcome_reviews r
+     where r.organization_id = $1 and r.execution_id = $2 and r.status = 'superseded'
+     order by r.updated_at desc, r.reviewed_at desc`,
+    [organizationId, executionId],
+  );
+}
+
 export interface DecisionChainRow {
   execution_id: string;
   decision_text: string | null;

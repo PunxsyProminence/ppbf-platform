@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 
 import WallDisplay from '@/components/WallDisplay';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 /**
  * /wall -- the gym's television.
@@ -22,7 +26,7 @@ import WallDisplay from '@/components/WallDisplay';
  */
 export const metadata: Metadata = {
   title: 'The Wall',
-  description: 'Punxsy Prominence Boxing and Fitness — the board on the gym floor.',
+  description: `${GYM.legalName} — the board on the gym floor.`,
   // A display, not a document. Nothing here should be indexed, and the names
   // a paired TV shows are gated for the room it is in, not for a search result.
   robots: { index: false, follow: false },

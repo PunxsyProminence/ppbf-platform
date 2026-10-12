@@ -14,11 +14,12 @@ import { summarizeBodyMass } from '@/src/server/pilot/athleteBodyMass';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /**
- * OD-2026-10-05-024, ruling 2 (Jason 2026-10-05, "Go with all reco,endations"):
- * coach read routes that allowed any coach in the gym allow only the athlete's
- * assigned coach(es) -- coach of record or a live coverage grant -- the same
- * rule assertActorCanAccessAthlete applies everywhere else. This supersedes
- * A-FIN-03R1 (check-in) and OD-2026-09-25-003 (session note) for reads.
+ * Issue #1480 (Jason, 2026-10-12: "lets make it coaches to whole gym"): a
+ * coach's reach is the whole gym. Every coach of the athlete's own gym reads
+ * these five routes, assigned or not; a coach asking for another gym's athlete
+ * is refused before any read -- the same rule assertActorCanAccessAthlete
+ * applies everywhere else. This replaces OD-2026-10-05-024 ruling 2 (assigned
+ * coach(es) only), which had itself superseded A-FIN-03R1 and OD-2026-09-25-003.
  *
  * One fake database, shared by all five routes, models the athletes and
  * coverage tables; the real access.ts runs against it. The per-route data
@@ -59,6 +60,8 @@ const mockQueryOne = queryOne as jest.Mock;
 
 const athletes = [
   { organization_id: 'org-1', athlete_id: 'ath-marisol', coach_id: 'coach-record', deleted_at: null as string | null },
+  // Another gym's live athlete: the one a coach of org-1 must not reach.
+  { organization_id: 'org-2', athlete_id: 'ath-elsewhere', coach_id: 'coach-elsewhere', deleted_at: null as string | null },
 ];
 const coverage = [
   { organization_id: 'org-1', athlete_id: 'ath-marisol', covering_coach_id: 'coach-covering', live: true },
@@ -104,25 +107,33 @@ const ROUTES = [
   { name: 'athlete-body-mass', handler: getBodyMass, reader: summarizeBodyMass },
 ] as const;
 
-async function readAs(route: (typeof ROUTES)[number], caller: Partial<PilotPrincipal>) {
+async function readAs(route: (typeof ROUTES)[number], caller: Partial<PilotPrincipal>, athleteId = 'ath-marisol') {
   mockRequirePrincipal.mockResolvedValue({
     accountId: 'coach-record', role: 'coach', organizationId: 'org-1', athleteId: null,
     sessionToken: 'token', authProvider: 'microsoft', ...caller,
   } as PilotPrincipal);
   const response = await route.handler(
-    new NextRequest(`http://localhost/api/pilot/coach/${route.name}?athlete_id=ath-marisol`),
+    new NextRequest(`http://localhost/api/pilot/coach/${route.name}?athlete_id=${athleteId}`),
   );
   return response.status;
 }
 
-describe.each(ROUTES)('$name: only the athlete\'s assigned coach(es) read it', (route) => {
-  test('a coach with no assignment and no coverage is refused, before any read', async () => {
-    expect(await readAs(route, { accountId: 'coach-unrelated' })).toBe(403);
-    expect(route.reader).not.toHaveBeenCalled();
+describe.each(ROUTES)('$name: every coach of the athlete\'s gym reads it', (route) => {
+  test('a same-gym coach with no assignment and no coverage reads it', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    expect(await readAs(route, { accountId: 'coach-unrelated' })).toBe(200);
   });
 
-  test('a coach whose coverage grant has lapsed is refused, before any read', async () => {
-    expect(await readAs(route, { accountId: 'coach-lapsed' })).toBe(403);
+  test('a same-gym coach whose coverage grant has lapsed reads it', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    expect(await readAs(route, { accountId: 'coach-lapsed' })).toBe(200);
+  });
+
+  test("a coach asking for another gym's athlete is refused, before any read", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further.
+    expect(await readAs(route, { accountId: 'coach-unrelated' }, 'ath-elsewhere')).toBe(403);
+    expect(await readAs(route, { accountId: 'coach-elsewhere' }, 'ath-elsewhere')).toBe(403);
     expect(route.reader).not.toHaveBeenCalled();
   });
 

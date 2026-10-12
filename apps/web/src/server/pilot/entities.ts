@@ -562,7 +562,7 @@ export async function getAthletesForCoach(organizationId: string, coachId: strin
 export async function getGoalsByAthlete(
   organizationId: string,
   athleteId: string,
-  page?: { limit: number; offset?: number },
+  page?: { limit: number; offset?: number; smartOnly?: boolean },
 ): Promise<PilotGoal[]> {
   if (!page) {
     return query<PilotGoal>(
@@ -570,8 +570,11 @@ export async function getGoalsByAthlete(
       [organizationId, athleteId]
     );
   }
+  // smartOnly: a family's list (lane N8-05) leaves own-words rows out in SQL,
+  // so the page limit counts only the rows it returns.
+  const kind = page.smartOnly ? " and goal_kind <> 'own_words'" : '';
   return query<PilotGoal>(
-    'select * from pilot.goals where organization_id = $1 and athlete_id = $2 order by created_at desc limit $3 offset $4',
+    `select * from pilot.goals where organization_id = $1 and athlete_id = $2${kind} order by created_at desc limit $3 offset $4`,
     [organizationId, athleteId, page.limit, page.offset ?? 0]
   );
 }

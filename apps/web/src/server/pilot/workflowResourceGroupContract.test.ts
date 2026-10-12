@@ -57,6 +57,7 @@ const COVERED = [
   'run-checks.yml',
   'seed-reference-data.yml',
   'session-autoclose.yml',
+  'session-token-cleanup.yml',
 ];
 
 /**

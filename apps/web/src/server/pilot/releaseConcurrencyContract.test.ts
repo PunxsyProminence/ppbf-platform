@@ -160,6 +160,8 @@ const OUTSIDE_THE_LOCK = [
   'seed-reference-data.yml',
   // A tenth writer (P3 PR 1b): the nightly session auto-close, with a group of its own.
   'session-autoclose.yml',
+  // An eleventh (#1482 item 3): the nightly session-token cleanup, with a group of its own.
+  'session-token-cleanup.yml',
   // Three more that take a target. Not classified here as writers or readers.
   'backup.yml',
   'check-database.yml',

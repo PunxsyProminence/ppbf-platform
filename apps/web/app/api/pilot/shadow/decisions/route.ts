@@ -4,12 +4,12 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { listDecisions, recordDecision, RecommendationNotActionableError } from '@/src/server/pilot/shadowDecisions';
-import { MedicalStatusBlockedError } from '@/src/server/pilot/shadowRecommendations';
 import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const REQUIRED_TABLES = ['shadow_decisions', 'shadow_audit_entries'];
+// listDecisions joins the medical status on file at each decision (issue #1474).
+const REQUIRED_TABLES = ['shadow_decisions', 'shadow_audit_entries', 'shadow_medical_administrative_status'];
 
 function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
@@ -72,7 +72,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, decision });
   } catch (error) {
-    if (error instanceof MedicalStatusBlockedError || error instanceof RecommendationNotActionableError) {
+    // Citing a lapsed recommendation is still refused. The athlete's medical
+    // status never is (issue #1474): it is recorded with the decision.
+    if (error instanceof RecommendationNotActionableError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 409 });
     }
     return jsonError(error);

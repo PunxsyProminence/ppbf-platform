@@ -8,6 +8,7 @@ import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingConten
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   getWorkoutTemplateWithItems,
+  listUntestedTemplateDrills,
   listWorkoutTemplates,
 } from '@/src/server/pilot/workoutTemplates';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -42,12 +43,14 @@ jest.mock('@/src/server/pilot/workoutTemplates', () => {
     ...actual,
     listWorkoutTemplates: jest.fn(),
     getWorkoutTemplateWithItems: jest.fn(),
+    listUntestedTemplateDrills: jest.fn(async () => []),
   };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listWorkoutTemplates as jest.Mock;
 const mockDetail = getWorkoutTemplateWithItems as jest.Mock;
+const mockUntested = listUntestedTemplateDrills as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -130,6 +133,7 @@ describe('the detail branch', () => {
     expect(await response.json()).toEqual({
       template: TEMPLATE,
       items: [{ item_id: 'item-1' }],
+      untested_drills: [],
     });
     expect(mockDetail).toHaveBeenCalledWith('org-1', 'tpl-1');
     expect(mockList).not.toHaveBeenCalled();
@@ -454,9 +458,15 @@ describe('what each reader receives', () => {
     return found;
   }
 
+  // Issue #1473: the drills no coach of this gym has floor-tested, for the
+  // coach's confirm step. Only the readers who issue workouts receive it
+  // (Overwatch, #1473 Q1: coach and organization admin).
+  const UNTESTED = [{ reference_drill_id: 'drl-1', name: 'Catch and Return', steps: [1] }];
+
   beforeEach(() => {
     mockList.mockResolvedValue([STORED_TEMPLATE]);
     mockDetail.mockResolvedValue(STORED_DETAIL);
+    mockUntested.mockResolvedValue(UNTESTED);
   });
 
   test('the two groups are exactly the roles the gate admits', () => {
@@ -500,6 +510,9 @@ describe('what each reader receives', () => {
       }
       expect(text).not.toContain(MARK);
       expect(body.items[0].head_drill_name).toBe('Catch and Return');
+      // No untested list for a reader who cannot issue, and none is even read.
+      expect(body).not.toHaveProperty('untested_drills');
+      expect(mockUntested).not.toHaveBeenCalled();
     });
   });
 
@@ -520,8 +533,10 @@ describe('what each reader receives', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body).toEqual(STORED_DETAIL);
-      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra']);
+      expect(body).toEqual({ ...STORED_DETAIL, untested_drills: UNTESTED });
+      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra', 'untested_drills']);
+      // Read for the session gym, from the items this read returned.
+      expect(mockUntested).toHaveBeenCalledWith('org-1', STORED_DETAIL.items);
     });
   });
 

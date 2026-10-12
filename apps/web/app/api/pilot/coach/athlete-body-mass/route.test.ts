@@ -11,13 +11,14 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 /**
  * Staff read of an athlete's body mass (elite-boxing item 5).
  *
- * THE RULE UNDER TEST (OD-2026-10-05-024 ruling 2, Jason 2026-10-05): any
- * athlete's weight, adult or youth, is readable only by the assigned coach, a
- * coach with a live coverage grant, or the organization admin. Any other coach
- * is refused (403) before any weight is read. This narrows the 2026-10-04 rule
- * ("B everyone, youth limited"), under which an adult's weight went to any
- * coach in the gym. The youth rule (bodyMassVisibleTo) still stands behind the
- * gate and answers `body_mass: null` to anyone it does not admit.
+ * THE RULE UNDER TEST (issue #1480, Jason 2026-10-12: "lets make it coaches to
+ * whole gym"): any athlete's weight, adult or youth, is readable by every coach
+ * of the athlete's own gym and by the organization admin; a coach asking for
+ * another gym's athlete is refused (403) before any weight is read. This
+ * replaces OD-2026-10-05-024 ruling 2 (assigned or covering coach only). The
+ * youth rule (bodyMassVisibleTo) still stands behind the gate and answers
+ * `body_mass: null` to anyone it does not admit; it admits every coach of the
+ * gym, since it asks the same assertActorCanAccessAthlete.
  *
  * WHAT IS REAL. requirePrincipal and the database are faked; the route,
  * access.ts (both gates), athleteBodyMass.ts and the MVP-12 formula are the
@@ -121,6 +122,8 @@ beforeEach(() => {
     // No date of birth on file: treated as a youth.
     { organization_id: 'org-1', athlete_id: 'ath-no-dob', coach_id: 'coach-record', dob: null, deleted_at: null },
     { organization_id: 'org-1', athlete_id: 'ath-deleted', coach_id: 'coach-record', dob: '1996-03-01', deleted_at: '2026-09-01T00:00:00Z' },
+    // Another gym's youth, live, with weigh-ins of their own: there is data to leak.
+    { organization_id: 'org-2', athlete_id: 'ath-elsewhere', coach_id: 'coach-elsewhere', dob: '2012-03-01', deleted_at: null },
   ];
   coverage = [
     { organization_id: 'org-1', athlete_id: 'ath-youth', covering_coach_id: 'coach-covering', live: true },
@@ -132,6 +135,7 @@ beforeEach(() => {
     ...weighInsFor('ath-adult', 80, 75.2),
     ...weighInsFor('ath-no-dob', 50, 47),
     ...weighInsFor('ath-deleted', 80, 70),
+    ...weighInsFor('ath-elsewhere', 60, 56.4).map((row) => ({ ...row, organization_id: 'org-2' })),
   ];
   statements = [];
 
@@ -285,10 +289,13 @@ async function readAs(caller: Partial<PilotPrincipal>, athleteId = 'ath-youth', 
 
 const weightReads = () => statements.filter((sql) => sql.includes('shadow_formula_observations'));
 
-describe('a youth\'s weight reaches only their own coach, a covering coach and the organization admin', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+describe('a youth\'s weight reaches every coach of their gym and the organization admin', () => {
   test.each([
     ['coach of record', { accountId: 'coach-record' }],
     ['coach with a live coverage grant', { accountId: 'coach-covering' }],
+    ['coach in the gym with no assignment and no coverage', { accountId: 'coach-unrelated' }],
+    ['coach whose coverage grant has lapsed', { accountId: 'coach-lapsed' }],
     ['organization admin', { accountId: 'acct-admin', role: 'organization_admin' as const }],
     ['legacy admin role', { accountId: 'acct-admin', role: 'admin' as const }],
   ])('%s reads it, with the flag', async (_label, caller) => {
@@ -306,35 +313,45 @@ describe('a youth\'s weight reaches only their own coach, a covering coach and t
   });
 
   test.each([
-    ['coach in the gym with no assignment and no coverage', 'coach-unrelated'],
-    ['coach whose coverage grant has lapsed', 'coach-lapsed'],
+    ['coach of this gym asking for another gym\'s youth', 'coach-unrelated'],
+    ['coach whose coverage grant has lapsed, asking for another gym\'s youth', 'coach-lapsed'],
   ])('%s is refused, and the weight is never read', async (_label, accountId) => {
-    const { status, payload } = await readAs({ accountId });
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. ath-elsewhere is a live youth of org-2 with weigh-ins.
+    const { status, payload } = await readAs({ accountId }, 'ath-elsewhere');
 
     expect(status).toBe(403);
     expect(JSON.stringify(payload)).not.toMatch(/56\.4|124\.3|flag/);
     expect(weightReads()).toEqual([]);
   });
 
-  test('a missing date of birth is treated as a youth', async () => {
+  test('a missing date of birth is treated as a youth, which every coach of the gym reads', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     const unrelated = await readAs({ accountId: 'coach-unrelated' }, 'ath-no-dob');
-    expect(unrelated.status).toBe(403);
+    expect(unrelated.status).toBe(200);
+    expect(unrelated.payload.body_mass).toMatchObject({ latest: { kilograms: 47 }, flagged: true });
 
     const ownCoach = await readAs({ accountId: 'coach-record' }, 'ath-no-dob');
     expect(ownCoach.payload.body_mass).toMatchObject({ latest: { kilograms: 47 }, flagged: true });
+
+    const otherGym = await readAs({ accountId: 'coach-record', organizationId: 'org-2' }, 'ath-no-dob');
+    expect(otherGym.status).toBe(403);
   });
 
-  test('a refused coach cannot tell whether a weight exists', async () => {
-    weighIns = weighIns.filter((row) => row.athlete_id !== 'ath-youth');
-    const none = await readAs({ accountId: 'coach-unrelated' });
-    weighIns = [...weighIns, ...weighInsFor('ath-youth', 60, 56.4)];
-    const hidden = await readAs({ accountId: 'coach-unrelated' });
+  test('a coach refused for another gym\'s athlete cannot tell whether a weight exists', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    weighIns = weighIns.filter((row) => row.athlete_id !== 'ath-elsewhere');
+    const none = await readAs({ accountId: 'coach-unrelated' }, 'ath-elsewhere');
+    weighIns = [...weighIns, ...weighInsFor('ath-elsewhere', 60, 56.4).map((row) => ({ ...row, organization_id: 'org-2' }))];
+    const hidden = await readAs({ accountId: 'coach-unrelated' }, 'ath-elsewhere');
 
+    expect(none.status).toBe(403);
     expect(none).toEqual(hidden);
   });
 });
 
-describe('an adult\'s weight: the assigned coach(es) and the organization admin only', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+describe('an adult\'s weight: every coach of the gym and the organization admin', () => {
   test('the coach of record reads it', async () => {
     const { status, payload } = await readAs({ accountId: 'coach-record' }, 'ath-adult');
 
@@ -342,10 +359,15 @@ describe('an adult\'s weight: the assigned coach(es) and the organization admin 
     expect(payload.body_mass).toMatchObject({ latest: { kilograms: 75.2 }, change: { percent: -6 }, flagged: true });
   });
 
-  test('a coach with no assignment is refused, and the weight is never read', async () => {
-    const { status } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+  test('a same-gym coach with no assignment reads it; from another gym\'s session they are refused and nothing is read', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    const { status, payload } = await readAs({ accountId: 'coach-unrelated' }, 'ath-adult');
+    expect(status).toBe(200);
+    expect(payload.body_mass).toMatchObject({ latest: { kilograms: 75.2 }, change: { percent: -6 }, flagged: true });
 
-    expect(status).toBe(403);
+    statements = [];
+    const otherGym = await readAs({ accountId: 'coach-unrelated', organizationId: 'org-2' }, 'ath-adult');
+    expect(otherGym.status).toBe(403);
     expect(weightReads()).toEqual([]);
   });
 });
@@ -419,10 +441,13 @@ async function correctAs(
   return { status: response.status, payload };
 }
 
-describe('correcting a weight: the athlete\'s own coach', () => {
+// Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+describe('correcting a weight: any coach of the athlete\'s gym', () => {
   test.each([
     ['coach of record', 'coach-record'],
     ['coach with a live coverage grant', 'coach-covering'],
+    ['coach in the gym with no assignment', 'coach-unrelated'],
+    ['coach whose coverage has lapsed', 'coach-lapsed'],
   ])('%s corrects it; the flag uses the corrected value and the original stays', async (_label, accountId) => {
     // 56.4 kg read as a 6% drop; the athlete really weighed 131 lb (59.42 kg).
     const before = await readAs({ accountId });
@@ -477,9 +502,11 @@ describe('correcting a weight: the athlete\'s own coach', () => {
 
 describe('correcting a weight: everyone else is refused and nothing is written', () => {
   test.each([
-    ['coach in the gym with no assignment', { accountId: 'coach-unrelated' }, 'ath-youth'],
-    ['coach with no assignment, adult athlete', { accountId: 'coach-unrelated' }, 'ath-adult'],
-    ['coach whose coverage has lapsed', { accountId: 'coach-lapsed' }, 'ath-youth'],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. These three were "no assignment"/"lapsed" same-gym refusals.
+    ['coach of this gym, another gym\'s youth', { accountId: 'coach-unrelated' }, 'ath-elsewhere'],
+    ['coach of record elsewhere, another gym\'s youth', { accountId: 'coach-record' }, 'ath-elsewhere'],
+    ['coach whose coverage has lapsed, another gym\'s youth', { accountId: 'coach-lapsed' }, 'ath-elsewhere'],
     ['organization admin', { accountId: 'acct-admin', role: 'organization_admin' as const }, 'ath-youth'],
     ['legacy admin role', { accountId: 'acct-admin', role: 'admin' as const }, 'ath-youth'],
     ['linked parent of the athlete', { accountId: 'acct-parent', role: 'parent' as const }, 'ath-youth'],

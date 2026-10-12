@@ -203,3 +203,71 @@ test('the count tiles count what was read', async () => {
   await screen.findByText('Reported pain in the same joint three sessions running.');
   expect(tileValues()).toEqual(['1', '0', '1']);
 });
+
+describe('a pain-report escalation reads "Pain report", not a severity word (#1528)', () => {
+  const FROM_NEAR_MISS = {
+    ...ESCALATION,
+    escalation_id: 'esc-pain',
+    reason: 'Pain 9/10 reported after sparring.',
+    metadata: { trigger: 'athlete_pain_report', near_miss_id: 'nm-1' },
+  };
+  const REPEATED = {
+    ...ESCALATION,
+    escalation_id: 'esc-pattern',
+    severity: 'high' as const,
+    reason: 'Pain reported three sessions running.',
+    metadata: { trigger_key: 'athlete_pain_report' },
+  };
+  const OTHER = {
+    ...ESCALATION,
+    escalation_id: 'esc-other',
+    source_type: 'incident' as const,
+    severity: 'moderate' as const,
+    reason: 'Bloody nose during drills.',
+    metadata: null,
+  };
+
+  const row = (reason: string) => screen.getByText(reason).closest('tr') as HTMLElement;
+  const badgeOf = (reason: string) => row(reason).querySelector('.badge') as HTMLElement;
+  const SEVERITY_WORD = /\b(low|moderate|high|critical)\b/i;
+
+  test('the badge says "Pain report" for trigger and trigger_key, keeps its colour, and a non-pain row keeps its word (#1528)', async () => {
+    mockAdminFetch({ escalations: [FROM_NEAR_MISS, REPEATED, OTHER] });
+
+    render(<EscalationsPage />);
+    await screen.findByText(FROM_NEAR_MISS.reason);
+
+    const critical = badgeOf(FROM_NEAR_MISS.reason);
+    expect(critical.textContent).toBe('✕Pain report');
+    expect(critical.className).toContain('badge--locked');
+    expect(row(FROM_NEAR_MISS.reason).textContent).not.toMatch(SEVERITY_WORD);
+
+    const high = badgeOf(REPEATED.reason);
+    expect(high.textContent).toBe('▲Pain report');
+    expect(high.className).toContain('badge--restricted');
+    expect(row(REPEATED.reason).textContent).not.toMatch(SEVERITY_WORD);
+
+    const other = badgeOf(OTHER.reason);
+    expect(other.textContent).toBe('◉moderate');
+    expect(other.className).toContain('badge--monitor');
+  });
+
+  test('the resolve dialog names a pain report the same way, and another escalation by its word (#1528)', async () => {
+    mockAdminFetch({ escalations: [FROM_NEAR_MISS, OTHER] });
+
+    render(<EscalationsPage />);
+    await screen.findByText(FROM_NEAR_MISS.reason);
+
+    fireEvent.click(within(row(FROM_NEAR_MISS.reason)).getByRole('button', { name: 'Resolve' }));
+    let dialog = await screen.findByRole('dialog');
+    const eyebrow = dialog.querySelector('.t-eyebrow') as HTMLElement;
+    expect(eyebrow.textContent).toMatch(/· Pain report$/);
+    expect(eyebrow.textContent).not.toMatch(SEVERITY_WORD);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(within(row(OTHER.reason)).getByRole('button', { name: 'Resolve' }));
+    dialog = await screen.findByRole('dialog');
+    expect((dialog.querySelector('.t-eyebrow') as HTMLElement).textContent).toMatch(/· moderate$/);
+  });
+});

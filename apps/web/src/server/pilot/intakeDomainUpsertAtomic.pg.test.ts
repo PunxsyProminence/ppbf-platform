@@ -67,6 +67,8 @@ const TEST_DB_NAME = 'ppbf_test_intake_upsert_atomic';
 const ORG = 'org-atomic';
 const ATHLETE = 'ath-atomic';
 const UNASSIGNED_ATHLETE = 'ath-atomic-unassigned';
+const OTHER_ORG = 'org-atomic-other';
+const OTHER_GYM_ATHLETE = 'ath-atomic-other-gym';
 const ADMIN = 'acct-atomic-admin';
 const COACH = 'acct-atomic-coach';
 const OTHER_COACH = 'acct-atomic-other-coach';
@@ -302,6 +304,25 @@ beforeAll(async () => {
        ($1, $3, 'Not This Coach', '2011-01-01', 'youth-65', 'active', 'Nobody', true, $5, now(), now())`,
     [ORG, ATHLETE, UNASSIGNED_ATHLETE, COACH, OTHER_COACH],
   );
+  // Another gym, with an athlete of its own: the one place a coach of ORG is
+  // still refused (issue #1480).
+  await db.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, 'Another Gym', 'active')`,
+    [OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ('acct-atomic-other-gym-coach', 'coach', $1, 'microsoft')`,
+    [OTHER_ORG],
+  );
+  await db.query(
+    `insert into pilot.athletes
+       (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+        emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Other Gym Athlete', '2011-02-02', 'youth-65', 'active', 'Nobody', true, 'acct-atomic-other-gym-coach', now(), now())`,
+    [OTHER_ORG, OTHER_GYM_ATHLETE],
+  );
   await db.query(
     `create function pilot.lane_d_injected_failure() returns trigger language plpgsql as $$
      begin
@@ -487,15 +508,39 @@ describe('Message Home, sent by the assigned coach', () => {
 
 /* ── What stays outside the transaction ─────────────────────────────────── */
 describe('a refused request', () => {
-  test('a coach not assigned to the athlete is refused 403, writes nothing, and the authority check is still recorded', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of the same gym not assigned to the athlete is admitted, and the note is written', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal(COACH, 'coach'));
+    const text = 'Same gym, not my athlete: stored.';
+    const before = await countRows(WRITTEN_TABLES);
+
+    const { status, body } = await post('coach_note', { note_type: 'parent_message', note_text: text }, UNASSIGNED_ATHLETE);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ ok: true, entity_type: 'coach_note', athlete_id: UNASSIGNED_ATHLETE });
+    const stored = await db.query(
+      `select 1 from pilot.coach_observations where organization_id = $1 and athlete_id = $2 and note_text = $3`,
+      [ORG, UNASSIGNED_ATHLETE, text],
+    );
+    expect(stored.rowCount).toBe(1);
+    const after = await countRows(WRITTEN_TABLES);
+    expect(after.coach_observations - before.coach_observations).toBe(1);
+    expect(after.audit_events - before.audit_events).toBe(1);
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- their own gym only.
+  test('an athlete of another gym is refused 403, writes nothing, and the authority check is still recorded', async () => {
     mockRequirePrincipal.mockResolvedValue(principal(COACH, 'coach'));
     const before = await countRows(WRITTEN_TABLES);
     const checksBefore = await authorityChecks();
 
-    const { status } = await post('coach_note', { note_type: 'parent_message', note_text: 'Should never be stored.' }, UNASSIGNED_ATHLETE);
+    const { status, body } = await post('coach_note', { note_type: 'parent_message', note_text: 'Should never be stored.' }, OTHER_GYM_ATHLETE);
 
     expect(status).toBe(403);
+    expect(body).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
     expect(await countRows(WRITTEN_TABLES)).toEqual(before);
+    const leaked = await db.query(`select 1 from pilot.coach_observations where athlete_id = $1`, [OTHER_GYM_ATHLETE]);
+    expect(leaked.rowCount).toBe(0);
     expect(await authorityChecks()).toBe(checksBefore + 1);
   });
 });

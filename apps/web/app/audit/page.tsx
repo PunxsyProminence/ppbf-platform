@@ -87,7 +87,7 @@ function AuditTrace() {
 
   const stats = [
     { label: 'Current Stage', value: 'Audit Trace' },
-    { label: 'Next Stage', value: 'Source Control' },
+    { label: 'Next Stage', value: 'None (last stage)' },
     { label: 'Source', value: 'pilot.audit_events' },
     { label: 'Events Shown', value: loadState === 'loaded' ? String(events.length) : '--' },
   ];
@@ -112,9 +112,6 @@ function AuditTrace() {
           </div>
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
             <ShadowChatButton context="Audit Trace" />
-            <Link href="/source-control" className="btn btn--ghost">
-              Source Control
-            </Link>
             <Link href="/simulator" className="btn btn--ghost">
               Simulator
             </Link>
@@ -208,12 +205,6 @@ function AuditTrace() {
           </section>
         )}
 
-        <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-          <p className="t-eyebrow">Flow Direction</p>
-          <p className="t-body mt-[var(--s3)]">
-            Audited items move into Source Control promotion states for controlled publication.
-          </p>
-        </div>
       </div>
     </main>
   );

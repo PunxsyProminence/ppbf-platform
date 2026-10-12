@@ -5,42 +5,22 @@ import PhotoSlot from "@/components/PhotoSlot";
 import PublicInterestForm from "@/components/PublicInterestForm";
 import { programInterestLabels } from "@/components/publicInterestOptions";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
+import { currentOrganizationProfile, physicalAddressLine } from "@/src/shared/organizationProfile";
 
-/* The registry facts, stated once. The visible page and the JSON-LD both read
-   from here so they cannot drift, and page.test.tsx checks each one against
-   the rendered text. Sources (PR description has the citations):
-   legal name and EIN -- PA Articles of Incorporation (file 0013779917,
-   3/22/2024), IRS CP 575 E and Letter 947 (04/11/2024); addresses -- Jason,
-   2026-10-03 ("220 N Jefferson is the physical address", "the PO box is the
-   office mailing address"). The private office address is deliberately
-   not published, here or in comments. Founder -- Jason, 2026-10-03 (he is
+/* The registry facts, stated once -- in src/shared/organizationProfile.ts
+   since #1469 (N9-01), which carries their sources. The visible page and the
+   JSON-LD both read from it so they cannot drift, and page.test.tsx checks
+   each one against the rendered text. Founder -- Jason, 2026-10-03 (he is
    the incorporator on the PA Articles). */
-const org = {
-  brand: "Punxsy Prominence Boxing & Fitness",
-  legalName: "Punxsy Prominence Boxing and Fitness",
-  ein: "99-2073622",
-  url: "https://www.punxsyprominence.org",
-  domain: "punxsyprominence.org",
-  email: "admin@punxsyprominence.org",
-  donationsEmail: "treasurer@punxsyprominence.org",
-  grantsEmail: "grants@punxsyprominence.org",
-  established: "2024",
-  physical: {
-    street: "220 N Jefferson St",
-    city: "Punxsutawney",
-    region: "PA",
-    postalCode: "15767",
-  },
-  mailing: "PO Box 54, Big Run, PA 15715",
-} as const;
+const org = currentOrganizationProfile();
 
-const physicalAddress = `${org.physical.street}, ${org.physical.city}, ${org.physical.region} ${org.physical.postalCode}`;
+const physicalAddress = physicalAddressLine(org);
 const domainStatement = `${org.domain} is the official website and application of ${org.legalName}.`;
 
 export const metadata: Metadata = {
-  title: "Punxsy Prominence Boxing & Fitness",
+  title: org.brand,
   description:
-    "Punxsy Prominence Boxing and Fitness is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in Punxsutawney and surrounding rural western Pennsylvania communities. Youth participate at no charge.",
+    `${org.legalName} is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in ${org.serviceArea}. Youth participate at no charge.`,
   alternates: { canonical: `${org.url}/` },
 };
 
@@ -49,7 +29,7 @@ const structuredData = {
   "@type": "NGO",
   name: org.brand,
   legalName: org.legalName,
-  alternateName: "PPBF",
+  alternateName: org.shortName,
   url: `${org.url}/`,
   description:
     "IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to help young people build discipline, confidence, accountability, and practical life skills.",
@@ -67,7 +47,7 @@ const structuredData = {
   },
   areaServed: {
     "@type": "Place",
-    name: "Punxsutawney and surrounding rural Pennsylvania communities",
+    name: org.serviceAreaShort,
   },
   founder: {
     "@type": "Person",
@@ -208,7 +188,7 @@ const faqItems = [
   {
     question: "Who is actually coaching my kid?",
     answer:
-      "Jason Neale is head coach. PPBF is a veteran-led, IRS-recognized 501(c)(3) nonprofit. Ask to meet whoever would be working with your kid before you commit to anything.",
+      `Jason Neale is head coach. ${org.shortName} is a veteran-led, IRS-recognized 501(c)(3) nonprofit. Ask to meet whoever would be working with your kid before you commit to anything.`,
   },
   {
     question: "I want to help. What is useful?",
@@ -237,7 +217,7 @@ export default function HomePage() {
         <section className="px-[var(--s5)] py-[var(--s6)] sm:py-[var(--s7)] lg:py-[var(--s8)] lg:px-[var(--s6)]">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center text-center">
             {/* Eyebrow hidden on small screens to save vertical space */}
-            <p className="t-eyebrow hidden sm:block">Punxsy Prominence Boxing &amp; Fitness</p>
+            <p className="t-eyebrow hidden sm:block">{org.brand}</p>
             {/* Hand-painted signage, not the lit registered stencil of
                 .t-command: this is the hand-lettered board over the door of a
                 community gym. */}
@@ -247,8 +227,8 @@ export default function HomePage() {
               Youth development is the objective.
             </h1>
             <p className="t-body mt-[var(--s4)] sm:mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'clamp(var(--t-sm), 4vw, var(--t-md))' }}>
-              Punxsy Prominence Boxing &amp; Fitness is a veteran-led, IRS-recognized 501(c)(3) nonprofit serving youth in
-              Punxsutawney and surrounding rural western Pennsylvania communities.
+              {org.brand} is a veteran-led, IRS-recognized 501(c)(3) nonprofit serving youth in{' '}
+              {org.serviceArea}.
             </p>
             {/* Programs first, sign-in second, and the order is the argument.
 
@@ -291,7 +271,7 @@ export default function HomePage() {
           <div className="mt-[var(--s5)] grid gap-[var(--s6)] md:grid-cols-2">
             <div>
               <p className="t-body max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-                Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
+                {org.commonName} uses structured boxing and athlete-development programming to help young people build
                 discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
                 leadership, decision-making, and practical life skills.
               </p>
@@ -338,7 +318,7 @@ export default function HomePage() {
             The Room
           </h2>
           <p className="t-body mt-[var(--s3)] max-w-[68ch]">
-            One building in Punxsutawney, supported by donations. Come see it before you commit to anything —
+            One building in {org.town}, supported by donations. Come see it before you commit to anything —
             that is the right way round.
           </p>
           <div className="mt-[var(--s5)] grid gap-[var(--s5)] sm:grid-cols-2 lg:grid-cols-3">
@@ -363,7 +343,7 @@ export default function HomePage() {
             Proven Track Record
           </h2>
           <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Punxsy Prominence was established in {org.established} and serves the Punxsutawney community with
+            {org.commonName} was established in {org.established} and serves the {org.town} community with
             structured athletic and mentorship programming. Youth train free.
           </p>
           {/* Every number here is one Jason gave on 2026-10-03. The 200+ is
@@ -523,7 +503,7 @@ export default function HomePage() {
             Technology Supporting Development
           </h2>
           <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Punxsy Prominence is developing the SHADOW application to support coaching, athlete development, program
+            {org.commonName} is developing the SHADOW application to support coaching, athlete development, program
             access, progress tracking, evidence-informed learning, and continuous organizational improvement. SHADOW
             is a decision-support and learning system in development; it does not replace coaches, medical
             professionals, or responsible human decision-making.
@@ -588,7 +568,7 @@ export default function HomePage() {
                   Primary Service Area
                 </dt>
                 <dd className="t-data mt-[var(--s2)]">
-                  Punxsutawney and surrounding rural Pennsylvania communities
+                  {org.serviceAreaShort}
                 </dd>
               </div>
               <div>
@@ -627,7 +607,7 @@ export default function HomePage() {
           className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
         >
           <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
-            Support PPBF
+            Support {org.shortName}
           </h2>
           <dl className="mt-[var(--s5)] grid gap-[var(--s5)] md:grid-cols-2">
             <div>
