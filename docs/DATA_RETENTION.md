@@ -33,10 +33,12 @@ This policy defines how long PPBF retains data about minors and their families, 
 
 **What enforces these today:** three windows only. The cleanup job (Method 1) hard-deletes
 athlete rows 2 years after `deleted_at` (the table below says 1 year for the athlete record)
-and guardian accounts 1 year after, but only when a person dispatches it with `apply=APPLY`;
+and guardian accounts 1 year after (2 years for a guardian with a safeguarding-flagged SHADOW
+chat: `SAFEGUARDING_CHAT_RETENTION`, *Safeguarding-flagged SHADOW chats* below), but only when a
+person dispatches it with `apply=APPLY`;
 and it deletes public interest-form inquiries 12 months after they were sent on its own,
 every night (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`, `ATHLETE_RETENTION`,
-`ACCOUNT_RETENTION`, `INQUIRY_RETENTION`; *Public interest-form inquiries*, below). No job
+`ACCOUNT_RETENTION`, `SAFEGUARDING_CHAT_RETENTION`, `INQUIRY_RETENTION`; *Public interest-form inquiries*, below). No job
 enforces the other windows below, and nothing sets `deleted_at` at age 18.
 
 ### Athletes
@@ -87,7 +89,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired, or revoked, 30 days ago (`SESSION_TOKEN_RETENTION_DAYS`). Deleted by `.github/workflows/session-token-cleanup.yml` (`npm run session:cleanup`), nightly at 07:50 UTC or by dispatch with `apply=APPLY`. **The scheduled run only reports the count** until the repository variable `PPBF_SESSION_CLEANUP_SCHEDULED_APPLY` is `true`. |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **Not yet enforced**: a guardian's flagged chats must outlive the 1-year account purge by a year, the review-queue and chat-session foreign keys are relaxed and `subject_deleted_at` exists to hold the date (shadow-deidentify-keys migration); nothing writes it yet, so today a guardian's flagged chats are still deleted at the 1-year purge; the purge-time hold and the 2-year sweep are not yet built; the athlete's coincide with the 2-year athlete purge. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **The 2-year hold is enforced; the de-identification is not.** A guardian with any `pilot.shadow_human_review_queue` row (whatever its status) is not purged at the 1-year account window: `scripts/pilot-cleanup-deleted-data.mjs` holds the account (the review entries, the guardian's own conversations, the guardian record) until `deleted_at` + 2 years, and every run reports the held count as `guardians_held_for_safeguarding_chats`. At 2 years the guardian is **purged, review entries and chats included, not de-identified**: the de-identifying sweep is not built, and `subject_deleted_at` (shadow-deidentify-keys migration) is still written by nothing. **Not held:** a flagged conversation that is about a child (`athlete_id` set) is deleted with that child at the child's own `deleted_at` + 2 years, which can come before the guardian's hold ends; the guardian's review entry stays. Whether a guardian's flag should hold a child's record is not decided. The athlete's own flagged chats coincide with the 2-year athlete purge. Purges run only on a manual `apply=APPLY` dispatch. |
 
 ### Public interest-form inquiries
 
