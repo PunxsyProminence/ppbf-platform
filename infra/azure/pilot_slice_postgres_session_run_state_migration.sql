@@ -105,9 +105,12 @@ alter table pilot.session_script_runs
 alter table pilot.session_script_runs
   drop constraint if exists pilot_ssrun_cursor_matches_state;
 alter table pilot.session_script_runs
+  -- A live PLAIN run (script_id NULL, issue #1523) has no block cursor. The same expression is in
+  -- pilot_slice_postgres_session_run_plain_migration.sql, so re-running this file after plain runs
+  -- exist (the `all` chain does) does not fail on them.
   add constraint pilot_ssrun_cursor_matches_state check (
     run_state is null
-    or (run_state = 'in_progress' and current_block_id is not null)
+    or (run_state = 'in_progress' and (current_block_id is not null or script_id is null))
     or (run_state in ('completed', 'abandoned') and current_block_id is null)
   );
 
