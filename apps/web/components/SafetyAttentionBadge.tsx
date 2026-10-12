@@ -285,6 +285,9 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
  */
 export const REFUSED_REVIEW_HREF = '/admin/video-review?filter=refused-team';
 
+/** Fired by the review page after a decision, so the count re-reads at once. */
+export const REFUSED_TEAM_CLIPS_CHANGED = 'ppbf:refused-team-clips-changed';
+
 function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   const [count, setCount] = useState(0);
   const [readState, setReadState] = useState<ReadState>('loading');
@@ -328,9 +331,14 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
     const timer = setInterval(() => {
       void load(controller.signal);
     }, REFRESH_INTERVAL_MS);
+    const onChanged = () => {
+      void load(controller.signal);
+    };
+    window.addEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     return () => {
       controller.abort();
       clearInterval(timer);
+      window.removeEventListener(REFUSED_TEAM_CLIPS_CHANGED, onChanged);
     };
   }, [serves, load]);
 

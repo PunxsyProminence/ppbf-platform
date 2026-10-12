@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import VideoReviewManagementPage from './page';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
@@ -453,14 +453,27 @@ describe('the refused team clips view behind the top-bar count', () => {
     expect(await screen.findByText('Team clip v1')).toBeTruthy();
     expect(screen.getByText('Team clip v2')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Refused team clips awaiting a decision (2)');
-    expect(screen.getByRole('link', { name: 'Show all quarantined videos' }).getAttribute('href')).toBe('/admin/video-review');
+    expect(screen.getByRole('link', { name: 'Back to the review list' }).getAttribute('href')).toBe('/admin/video-review');
     expect(listUrls(fetchMock)).toEqual([
-      expect.stringContaining('/api/pilot/video/list?scope=all&filter=refused_team&limit=100'),
+      expect.stringContaining('/api/pilot/video/list?scope=all&filter=refused_team&limit=101'),
     ]);
     expect(screen.queryByText(/The newest 100 are shown/)).toBeNull();
   });
 
-  it('says when the list is the newest hundred of more', async () => {
+  it('says when the list is the newest hundred of more, and shows a hundred', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    const page = Array.from({ length: 101 }, (_, index) => refusedClip(`v${index}`));
+    global.fetch = jest.fn(async () => jsonResponse({ items: page })) as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText(/The newest 100 are shown\./)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Refused team clips awaiting a decision (100)');
+    expect(screen.queryByText('Team clip v100')).toBeNull();
+  });
+
+  it('exactly a hundred is all of them, and does not say otherwise', async () => {
     mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
     searchParams = new URLSearchParams('filter=refused-team');
     const page = Array.from({ length: 100 }, (_, index) => refusedClip(`v${index}`));
@@ -468,7 +481,31 @@ describe('the refused team clips view behind the top-bar count', () => {
 
     render(<VideoReviewManagementPage />);
 
-    expect(await screen.findByText(/The newest 100 are shown\./)).toBeTruthy();
+    expect(await screen.findByText('Team clip v99')).toBeTruthy();
+    expect(screen.queryByText(/The newest 100 are shown/)).toBeNull();
+  });
+
+  it('a slow read for the view just left never lands under the new heading', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    let finishFiltered: ((value: Response) => void) | null = null;
+    global.fetch = jest.fn((url: string) => {
+      if (String(url).includes('filter=refused_team')) {
+        return new Promise<Response>((resolve) => { finishFiltered = resolve; });
+      }
+      return Promise.resolve(jsonResponse({ items: [] }));
+    }) as unknown as typeof fetch;
+
+    const view = render(<VideoReviewManagementPage />);
+    searchParams = new URLSearchParams();
+    view.rerender(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText('No quarantined videos requiring admin review at this time.')).toBeTruthy();
+    await act(async () => {
+      finishFiltered?.(jsonResponse({ items: [refusedClip('v-late')] }));
+    });
+    expect(screen.queryByText('Team clip v-late')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Quarantined Videos (0)');
   });
 
   it('says none are waiting when the filtered read is empty', async () => {
@@ -494,10 +531,15 @@ describe('the refused team clips view behind the top-bar count', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
+    const changed = jest.fn();
+    window.addEventListener('ppbf:refused-team-clips-changed', changed);
     render(<VideoReviewManagementPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Block Video (Keep Quarantined)' }));
 
     expect(await screen.findByText('No refused team clips are waiting for a decision.')).toBeTruthy();
+    // The top bar is told to re-read now, so it and this list agree.
+    expect(changed).toHaveBeenCalledTimes(1);
+    window.removeEventListener('ppbf:refused-team-clips-changed', changed);
     const urls = listUrls(fetchMock);
     expect(urls).toHaveLength(2);
     expect(urls.every((url) => url.includes('filter=refused_team'))).toBe(true);
@@ -512,6 +554,6 @@ describe('the refused team clips view behind the top-bar count', () => {
 
     expect(await screen.findByText('No quarantined videos requiring admin review at this time.')).toBeTruthy();
     expect(listUrls(fetchMock)).toEqual([expect.stringMatching(/\/api\/pilot\/video\/list\?scope=all$/)]);
-    expect(screen.queryByRole('link', { name: 'Show all quarantined videos' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Back to the review list' })).toBeNull();
   });
 });

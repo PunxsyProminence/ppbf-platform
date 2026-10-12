@@ -443,6 +443,25 @@ describe('refused team clips are counted on the organization admin bar', () => {
     expect(link.textContent).not.toContain('+');
   });
 
+  test('a decision on the review page re-reads the count at once', async () => {
+    let count = 2;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return { ok: true, status: 200, json: async () => ({ count }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
+
+    count = 1;
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
   test('one clip reads in the singular', async () => {
     installRouted(1);
     await renderFor('admin');
@@ -455,6 +474,9 @@ describe('refused team clips are counted on the organization admin bar', () => {
     await renderFor('admin');
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // Settle the read: the badge renders nothing while loading too, so absence
+    // before the answer lands would prove nothing.
+    await act(async () => {});
     expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
     expect(screen.queryByText(/Clips: unread/)).toBeNull();
   });

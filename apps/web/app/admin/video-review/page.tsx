@@ -1,10 +1,11 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { REFUSED_TEAM_CLIPS_CHANGED } from '@/components/SafetyAttentionBadge';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
@@ -58,19 +59,26 @@ function VideoReviewConsoleContent() {
   // player on screen right now" -- it cannot answer "did you ever look at this
   // one", which is the question the Approve gate has to ask.
   const [inspectedVideoIds, setInspectedVideoIds] = useState<Set<string>>(new Set());
-  // From the address, so following the badge -- or "Show all" -- while already
+  // From the address, so following the badge -- or "Back to the review list" -- while already
   // on this page switches the view and re-reads the list.
   const refusedOnly = useSearchParams().get('filter') === REFUSED_TEAM_FILTER;
+  // Shown when the server had more than REFUSED_TEAM_LIMIT to give.
+  const [moreRefused, setMoreRefused] = useState(false);
+  // Only the newest read may land: switching views while a read is slow must
+  // not leave the other view's rows under this view's heading.
+  const loadSeq = useRef(0);
 
   const loadQuarantinedVideos = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setError('');
+    setListState('loading');
     try {
       // scope=all, because safeguarding review is the one surface whose job is
       // every file in the organization. Everything else -- including Film
       // Study, which an admin may also open -- gets the Film-Study-only
       // default. See the note in that route.
       const listUrl = refusedOnly
-        ? `${apiBase()}/api/pilot/video/list?scope=all&filter=refused_team&limit=${REFUSED_TEAM_LIMIT}`
+        ? `${apiBase()}/api/pilot/video/list?scope=all&filter=refused_team&limit=${REFUSED_TEAM_LIMIT + 1}`
         : `${apiBase()}/api/pilot/video/list?scope=all`;
       const response = await fetch(listUrl, {
         method: 'GET',
@@ -81,6 +89,9 @@ function VideoReviewConsoleContent() {
         items?: QuarantinedVideoItem[];
         error?: string;
       };
+      if (seq !== loadSeq.current) {
+        return;
+      }
 
       if (!response.ok || !Array.isArray(payload.items)) {
         throw new Error(payload.error || 'Unable to load videos for review');
@@ -94,9 +105,13 @@ function VideoReviewConsoleContent() {
           || item.scan_state === 'blocked',
       );
 
-      setVideos(quarantined);
+      setMoreRefused(refusedOnly && quarantined.length > REFUSED_TEAM_LIMIT);
+      setVideos(refusedOnly ? quarantined.slice(0, REFUSED_TEAM_LIMIT) : quarantined);
       setListState('loaded');
     } catch (loadErr) {
+      if (seq !== loadSeq.current) {
+        return;
+      }
       setError(loadErr instanceof Error ? loadErr.message : 'Unable to load videos for review');
       setListState('unavailable');
     }
@@ -197,6 +212,9 @@ function VideoReviewConsoleContent() {
       if (activeReviewLink?.videoSessionId === videoSessionId) {
         setActiveReviewLink(null);
       }
+      // The top bar's count re-reads now rather than at its next tick, so it
+      // and this list agree (#1445).
+      window.dispatchEvent(new Event(REFUSED_TEAM_CLIPS_CHANGED));
 
       setListState('loading');
       await loadQuarantinedVideos();
@@ -249,9 +267,9 @@ function VideoReviewConsoleContent() {
             {refusedOnly && (
               <p className="t-body mt-[var(--s2)]">
                 Team clips the content screen refused that no administrator has approved or blocked yet.
-                {listState === 'loaded' && videos.length >= REFUSED_TEAM_LIMIT && ` The newest ${REFUSED_TEAM_LIMIT} are shown.`}
+                {listState === 'loaded' && moreRefused && ` The newest ${REFUSED_TEAM_LIMIT} are shown.`}
                 {' '}
-                <Link href="/admin/video-review">Show all quarantined videos</Link>
+                <Link href="/admin/video-review">Back to the review list</Link>
               </p>
             )}
 
