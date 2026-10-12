@@ -129,7 +129,7 @@ test('while the platform account is unregistered, the slot shows the owner the e
   expect(screen.getByText('account.application.deauthorized')).toBeTruthy();
   // And the boundary holds even here, without naming a checkout that does
   // not exist (paymentSetup.ts: no charging, no checkout).
-  expect(screen.getByText(/nothing charges through these accounts yet\. Configuration only\s+connects them\./)).toBeTruthy();
+  expect(screen.getByText(/nothing charges through these accounts yet\. Configuration only\s+opens onboarding\./)).toBeTruthy();
   expect(screen.queryByText(/feature-flagged/)).toBeNull();
 });
 

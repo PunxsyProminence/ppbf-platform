@@ -8,6 +8,8 @@ import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { getRoleRoute } from '@/components/roleRoutes';
 import { mapPilotRoleToClubRole } from '@/components/roleSession';
+import type { PilotRole } from '@/src/server/pilot/contracts';
+import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 
 type FeedbackKind = 'success' | 'error' | 'info';
 
@@ -302,7 +304,7 @@ export default function PlatformConsole() {
       return;
     }
     if (!email) {
-      showFeedback('error', 'Enter a Microsoft email address');
+      showFeedback('error', 'Enter an email address');
       return;
     }
 
@@ -313,7 +315,13 @@ export default function PlatformConsole() {
         login_email: email,
         role: inviteRole,
       });
-      showFeedback('success', `${email} can sign in as ${inviteRole.replace('_', ' ')} once they are in the PPBF Microsoft tenant. Nothing was emailed; tell them. If they're outside your Microsoft tenant, add them as an Entra guest too.`);
+      // How they sign in comes from the credential policy, as on the People
+      // page: coach, staff and volunteer use an emailed link; an admin or a
+      // board member needs a PPBF Microsoft identity.
+      const signIn = requiredCredentialFor({ role: inviteRole as PilotRole }) === 'magic_link'
+        ? `They sign in with an email link: on the login page they enter ${email}. No Microsoft account is needed.`
+        : 'They sign in with Microsoft once they are in the PPBF Microsoft tenant; if they are outside it, add them as an Entra guest.';
+      showFeedback('success', `${email} is now ${inviteRole.replace('_', ' ')} in this gym. Nothing was emailed; tell them. ${signIn}`);
       setInviteEmail('');
     } catch (error) {
       showFeedback('error', error instanceof Error ? error.message : 'Failed to invite');
@@ -639,11 +647,11 @@ export default function PlatformConsole() {
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add Staff Or A Gym Admin</h2>
           <p className="t-body mt-[var(--s3)]">
-            Gives a Microsoft email a role in the selected gym. Nothing is emailed.
+            Gives an email address a role in the selected gym. Nothing is emailed.
           </p>
           <div className="mt-[var(--s4)] space-y-[var(--s4)]">
             <label className="field">
-              <span className="t-label">Microsoft email</span>
+              <span className="t-label">Email</span>
               <input
                 type="email"
                 value={inviteEmail}

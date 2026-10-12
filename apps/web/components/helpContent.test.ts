@@ -48,10 +48,11 @@ test('public interest submissions are described as saved, not front-end only', (
 
 test('the parent guide names the live task feed and still lists every Parent Hub section stamped PLANNED', () => {
   // ParentHub.tsx stamps assignments, observations, family goals, progress
-  // milestones and resources PLANNED | NOT YET IMPLEMENTED (A-Q15: roadmap).
+  // milestones, resources and Reply to Coach PLANNED | NOT YET IMPLEMENTED
+  // (A-Q15: roadmap).
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
-  for (const section of ['home assignments', 'parent observations', 'family goals', 'progress milestones', 'resources']) {
+  for (const section of ['home assignments', 'parent observations', 'family goals', 'progress milestones', 'resources', 'reply to coach']) {
     expect(parent).toContain(section);
   }
 });

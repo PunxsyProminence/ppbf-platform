@@ -230,7 +230,7 @@ function PaymentsSettings() {
                   </ol>
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                     Even fully configured, nothing charges through these accounts yet. Configuration only
-                    connects them.
+                    opens onboarding.
                   </p>
                 </section>
               )}

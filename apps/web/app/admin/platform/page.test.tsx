@@ -338,15 +338,28 @@ describe('lane N4-02: the desk says what its buttons do', () => {
 
     expect(screen.queryByText(/Send Invite/)).toBeNull();
     expect(screen.queryByText(/Sends a Microsoft-authenticated invite/)).toBeNull();
-    expect(screen.getByText(/Gives a Microsoft email a role in the selected gym\. Nothing is emailed\./)).toBeTruthy();
+    expect(screen.getByText(/Gives an email address a role in the selected gym\. Nothing is emailed\./)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
 
-    expect(await screen.findByText(/coach@example\.org can sign in as .* once they are in the PPBF Microsoft tenant\. Nothing was emailed; tell them\./)).toBeTruthy();
+    // Default role is organization_admin: a Microsoft credential.
+    expect(await screen.findByText(/coach@example\.org is now organization admin in this gym\. Nothing was emailed; tell them\. They sign in with Microsoft once they are in the PPBF Microsoft tenant/)).toBeTruthy();
     expect(screen.queryByText(/invited as/)).toBeNull();
     // The workflow itself is unchanged: one POST to the same staff route.
     expect(posts.filter((post) => post.url.includes('/api/pilot/platform/staff'))).toHaveLength(1);
+  });
+
+  test('a coach is told they sign in with an email link, not that they need the Microsoft tenant', async () => {
+    mountDesk();
+    await chooseGym();
+
+    fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
+    fireEvent.change(screen.getByDisplayValue('Organization Admin'), { target: { value: 'coach' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
+
+    expect(await screen.findByText(/coach@example\.org is now coach in this gym\. Nothing was emailed; tell them\. They sign in with an email link: on the login page they enter coach@example\.org\. No Microsoft account is needed\./)).toBeTruthy();
+    expect(screen.queryByText(/PPBF Microsoft tenant/)).toBeNull();
   });
 
   test('the account switch names parent accounts, which the route does not refuse', async () => {
