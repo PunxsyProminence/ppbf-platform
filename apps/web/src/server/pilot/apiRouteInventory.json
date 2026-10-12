@@ -7305,7 +7305,8 @@
       "organization_admin",
       "admin",
       "coach",
-      "athlete"
+      "athlete",
+      "parent"
     ],
     "athleteData": true,
     "writes": false,
@@ -7313,7 +7314,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists one athlete goals. goals/list/route.ts:11-12 role gate, :27 assertActorCanAccessAthlete before read.",
+    "notes": "Lists one athlete goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). A parent is sent toFamilySmartGoals (goalProjection.ts): SMART rows only, named fields, no own_words or why_it_matters.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7323,7 +7324,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete,coach,organization_admin,parent"
       ]
     }
   },
@@ -7345,7 +7346,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts:26,31-32 gate; :39 assertActorCanAccessAthlete (parent = linked child only).",
+    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). A parent is sent toFamilyPersonalGoal (goalProjection.ts): no why_it_matters or set_by_role (lane N8-05).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7365,10 +7366,7 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
@@ -7386,7 +7384,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7396,10 +7394,7 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
@@ -7417,7 +7412,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7427,9 +7422,6 @@
     "path": "/api/pilot/goals",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (payload and stored owner)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
@@ -7448,7 +7440,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7458,9 +7450,6 @@
     "path": "/api/pilot/goals/update",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (stored and payload athlete)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
@@ -7479,7 +7468,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
