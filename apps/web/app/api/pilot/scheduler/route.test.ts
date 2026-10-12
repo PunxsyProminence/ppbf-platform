@@ -26,6 +26,7 @@ import {
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
   upsertSchedulerAttendance,
+  upsertFamilySchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -75,6 +76,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   resolveSchedulerCoachingRequest: jest.fn(),
   setSchedulerClassCover: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
+  upsertFamilySchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
   listRegisteredAthleteIdsForClass: jest.fn(),
   listSchedulerStore: jest.fn(),
@@ -96,13 +98,15 @@ const mockRegister = registerForClassTransactionally as jest.Mock;
 const mockAssertCanAct = assertActorCanAccessAthlete as jest.Mock;
 const mockGetClass = getSchedulerClassById as jest.Mock;
 const mockUpsertAttendance = upsertSchedulerAttendance as jest.Mock;
+const mockFamilyUpsert = upsertFamilySchedulerAttendance as jest.Mock;
 const mockBulkUpsertAttendance = bulkUpsertSchedulerAttendance as jest.Mock;
 const mockListRegistered = listRegisteredAthleteIdsForClass as jest.Mock;
 
 const classRecord = {
   class_id: 'class-1',
   title: 'Fundamentals',
-  start_at: 'now',
+  // Today, so a family check-in is on the class's day (#1524).
+  start_at: new Date().toISOString(),
   end_at: 'later',
   location: 'Main Floor',
   capacity: 20,
@@ -117,6 +121,7 @@ beforeEach(() => {
   mockAssertCanAct.mockResolvedValue(undefined);
   mockGetClass.mockResolvedValue(classRecord);
   mockUpsertAttendance.mockResolvedValue(undefined);
+  mockFamilyUpsert.mockResolvedValue(true);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
   mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
   // The athletes a coach reaches outside any class register (assignment or
@@ -360,7 +365,8 @@ describe('attendance_checkin method attribution', () => {
     );
 
     expect(response.status).toBe(200);
-    const [, record] = mockUpsertAttendance.mock.calls[0];
+    // A family write goes through the statement that cannot change a staff mark (#1524).
+    const [, record] = mockFamilyUpsert.mock.calls[0];
     expect(record.method).toBe('parent');
     expect(record.checked_in_by_role).toBe('parent');
   });
@@ -388,7 +394,7 @@ describe('attendance_checkin method attribution', () => {
 
     await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present' }));
 
-    const [, record] = mockUpsertAttendance.mock.calls[0];
+    const [, record] = mockFamilyUpsert.mock.calls[0];
     expect(record.method).toBe('self');
   });
 });
@@ -454,7 +460,7 @@ describe('attendance check-in warns on an active training hold and does not bloc
     const response = await POST(checkIn());
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'coach_override' });
+    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'coach_override', recorded: true });
   });
 
   test('a failed hold read never fails the check-in; it is "unreadable", not "no hold"', async () => {
@@ -482,10 +488,10 @@ describe('attendance check-in warns on an active training hold and does not bloc
     const parent = await POST(checkIn());
 
     expect(own.status).toBe(200);
-    expect(await own.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'self' });
+    expect(await own.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'self', recorded: true });
     expect(parent.status).toBe(200);
-    expect(await parent.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'parent' });
-    expect(mockUpsertAttendance).toHaveBeenCalledTimes(2);
+    expect(await parent.json()).toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-1', method: 'parent', recorded: true });
+    expect(mockFamilyUpsert).toHaveBeenCalledTimes(2);
     expect(mockQueryOne).not.toHaveBeenCalled();
     expect(mockQuery).not.toHaveBeenCalled();
   });
@@ -842,7 +848,7 @@ describe('the class register: whole class plus walk-ins', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-WALKIN', method: 'walk_in' });
+    await expect(response.json()).resolves.toEqual({ ok: true, class_id: 'class-1', athlete_id: 'ATH-WALKIN', method: 'walk_in', recorded: true });
     const [, record] = mockUpsertAttendance.mock.calls[0];
     expect(record).toMatchObject({ athlete_id: 'ATH-WALKIN', status: 'present', method: 'walk_in', checked_in_by_role: 'coach' });
     // The live-row read is scoped to this gym and to live athletes.
@@ -2026,5 +2032,92 @@ describe('POST /api/pilot/scheduler reads a zone-less time as the gym clock', ()
     const res = await POST(createClassRequest('2026-02-30T18:00', '2026-02-28T19:00'));
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(mockCreateClass).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * FAMILY CHECK-IN (Jason 2026-10-12, issue #1524: "Self check-in, same day
+ * only"). An athlete or parent may say Present on the class's gym day only;
+ * Absent and Excused are staff only; and a family write never changes a staff
+ * mark (proved on Postgres in schedulerFamilyCheckIn.pg.test.ts -- here, that
+ * the route sends family writes through that statement and staff writes do not).
+ */
+describe('family check-in: Present, on the day of the class, never over a staff mark (#1524)', () => {
+  const classOn = (startAt: string) => ({ ...classRecord, start_at: startAt });
+
+  test.each([
+    ['athlete', 'absent'],
+    ['athlete', 'excused'],
+    ['parent', 'absent'],
+    ['parent', 'excused'],
+  ])('a %s marking %s is refused with a sentence, and nothing is written', async (role, status) => {
+    mockRequirePrincipal.mockResolvedValueOnce(
+      role === 'athlete' ? principal('athlete', { athleteId: 'ATH-1' }) : principal('parent', { accountId: 'acct-parent-1' }),
+    );
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'A family check-in can only say you are here. Absent and Excused are for your coach.',
+    });
+    expect(mockFamilyUpsert).not.toHaveBeenCalled();
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test.each(['athlete', 'parent'])('a %s checking in to a class on another day is refused, and nothing is written', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(
+      role === 'athlete' ? principal('athlete', { athleteId: 'ATH-1' }) : principal('parent', { accountId: 'acct-parent-1' }),
+    );
+    // A week ago: the class in the audit (2026-10-05, checked in on 2026-10-12).
+    mockGetClass.mockResolvedValueOnce(classOn(new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()));
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'present' }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Check-in is open on the day of the class only.' });
+    expect(mockFamilyUpsert).not.toHaveBeenCalled();
+  });
+
+  test('the day is the gym\'s, not UTC\'s: an evening class is today after 8 pm Eastern', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-13T01:30:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    try {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+      // 7 pm Eastern on 2026-10-12 is 23:00 UTC; "now" is 9:30 pm Eastern the same
+      // gym day, already 2026-10-13 in UTC.
+      mockGetClass.mockResolvedValueOnce(classOn('2026-10-12T23:00:00Z'));
+
+      const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present' }));
+
+      expect(response.status).toBe(200);
+      expect(mockFamilyUpsert).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('over a staff mark the family check-in changes nothing and says so: recorded false', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockFamilyUpsert.mockResolvedValueOnce(false);
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present' }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, recorded: false });
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['coach', 'absent', 'acct-coach-1'],
+    ['organization_admin', 'excused', 'acct-admin-1'],
+  ])('%s marking %s on a past class still works, through the register write', async (role, status, accountId) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role, { accountId }));
+    mockGetClass.mockResolvedValueOnce(classOn('2026-10-05T22:00:00Z'));
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertAttendance).toHaveBeenCalledTimes(1);
+    expect(mockFamilyUpsert).not.toHaveBeenCalled();
   });
 });

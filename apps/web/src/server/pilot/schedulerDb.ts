@@ -498,6 +498,60 @@ export const ATTENDANCE_UPSERT_SQL = `insert into pilot.scheduler_attendance (
          checked_in_at = excluded.checked_in_at,
          updated_at = excluded.updated_at`;
 
+/*
+ * A FAMILY CHECK-IN NEVER CHANGES A STAFF MARK (Jason 2026-10-12, issue #1524:
+ * "A self check-in never replaces a coach or admin mark").
+ *
+ * ATTENDANCE_UPSERT_SQL above replaces whatever row is there. That is right
+ * for the register, and it is how an athlete's "Present" on 2026-10-12 landed
+ * on top of the coach's mark for a class on 2026-10-05 (audit F-046). An
+ * athlete's or parent's write goes through this statement instead: it may
+ * insert, and it may update a row that a family wrote ('self' or 'parent'),
+ * but the update's WHERE leaves a coach's, an admin's or a walk-in mark
+ * exactly as it was. The condition is inside the one statement, so a coach
+ * marking the register at the same moment cannot be overwritten in a race.
+ *
+ * Returns whether a row was written: false means a staff mark already stood
+ * and nothing changed.
+ */
+export const FAMILY_ATTENDANCE_UPSERT_SQL = `insert into pilot.scheduler_attendance (
+       organization_id, attendance_id, class_id, athlete_id,
+       status, method,
+       checked_in_by_role, checked_in_by_account_id,
+       note, checked_in_at, updated_at
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz)
+     on conflict (organization_id, class_id, athlete_id) do update
+     set status = excluded.status,
+         method = excluded.method,
+         checked_in_by_role = excluded.checked_in_by_role,
+         checked_in_by_account_id = excluded.checked_in_by_account_id,
+         note = excluded.note,
+         checked_in_at = excluded.checked_in_at,
+         updated_at = excluded.updated_at
+     where pilot.scheduler_attendance.method in ('self', 'parent')
+     returning attendance_id`;
+
+export async function upsertFamilySchedulerAttendance(
+  organizationId: string,
+  item: SchedulerAttendance,
+): Promise<boolean> {
+  const rows = await query<{ attendance_id: string }>(FAMILY_ATTENDANCE_UPSERT_SQL, [
+    organizationId,
+    item.attendance_id,
+    item.class_id,
+    item.athlete_id,
+    item.status,
+    item.method,
+    item.checked_in_by_role,
+    item.checked_in_by_account_id,
+    item.note,
+    item.checked_in_at,
+    item.updated_at,
+  ]);
+  return rows.length > 0;
+}
+
 export function attendanceUpsertParams(
   organizationId: string,
   items: SchedulerAttendance[],

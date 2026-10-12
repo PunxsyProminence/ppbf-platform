@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
@@ -229,6 +229,9 @@ export default function SchedulerPage() {
   const [assignCoachInputs, setAssignCoachInputs] = useState<Record<string, string>>({});
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
   const [attendanceNote, setAttendanceNote] = useState('');
+  // The moment the page opened: what "today" and "has this class ended" are
+  // measured from (#1524). Read once, so a render never asks the clock.
+  const [nowMs] = useState(() => Date.now());
 
   const athleteMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -334,6 +337,7 @@ export default function SchedulerPage() {
         status?: string;
         hold_warning?: unknown;
         method?: string;
+        recorded?: boolean;
       };
       if (!response.ok || !result.ok) {
         showError(result.error || 'Action failed', holdRefusalDetailFrom(result));
@@ -354,7 +358,11 @@ export default function SchedulerPage() {
         // ruling 4); the screen does not guess it from the picker.
         : payload.action === 'attendance_checkin' && result.method === 'walk_in'
           ? 'Marked present as a walk-in (not registered for this class).'
-          : successMessage;
+          // A family check-in never changes a staff mark (#1524); the route
+          // says when one already stood.
+          : payload.action === 'attendance_checkin' && result.recorded === false
+            ? 'Your coach has already taken the register for this class.'
+            : successMessage;
       if (payload.action === 'attendance_checkin') {
         const warned = checkInHoldWarningFrom(result.hold_warning);
         setCheckInHold(warned ? { athleteId: String(payload.athlete_id ?? ''), hold: warned } : null);
@@ -386,6 +394,37 @@ export default function SchedulerPage() {
 
   const targetAthleteForAthleteRole = athleteId;
   const targetAthleteForOthers = selectedAthleteId;
+  const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
+
+  /* FAMILY CHECK-IN (Jason 2026-10-12, issue #1524: "Self check-in, same day
+     only"). An athlete or parent sees one control, "I'm here", and only on the
+     selected class's gym day for an athlete registered to it. Absent and
+     Excused are the coach's. The server holds the same rule; this keeps the
+     screen from offering what it would refuse. */
+  const isFamily = !roleCanOverrideAttendance(role);
+  const selectedClass = classes.find((item) => item.class_id === selectedClassId) ?? null;
+  const today = gymDayIso(nowMs);
+  const familyCanCheckIn = Boolean(
+    selectedClass
+      && today
+      && gymDayIso(selectedClass.start_at) === today
+      && targetAthlete
+      && registeredForSelectedClass.has(targetAthlete),
+  );
+
+  /* Register is not offered for a class that has ended, or one the athlete
+     is already on (#1524; the route answered 409 with the button still
+     shown). */
+  const onClass = new Set(
+    registrations
+      .filter((row) => row.athlete_id === targetAthlete && (row.status === 'registered' || row.status === 'waitlisted'))
+      .map((row) => row.class_id),
+  );
+  const canRegisterFor = (item: SchedulerClass) => {
+    const endsMs = Date.parse(item.end_at);
+    const ended = Number.isFinite(endsMs) && endsMs < nowMs;
+    return !ended && !onClass.has(item.class_id);
+  };
   const shownCheckInHold = checkInHold
     && checkInHold.athleteId === (role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers)
     ? checkInHold.hold
@@ -507,25 +546,26 @@ export default function SchedulerPage() {
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedClassId(item.class_id);
-                              const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
-                              if (!targetAthlete) {
-                                showError('Select an athlete first before registering.');
-                                return;
-                              }
-                              void runAction(
-                                { action: 'register_class', class_id: item.class_id, athlete_id: targetAthlete },
-                                'Class registration submitted.',
-                              );
-                            }}
-                            disabled={actionInFlight}
-                            className="btn disabled:opacity-60 disabled:grayscale"
-                          >
-                            Register
-                          </button>
+                          {canRegisterFor(item) ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedClassId(item.class_id);
+                                if (!targetAthlete) {
+                                  showError('Select an athlete first before registering.');
+                                  return;
+                                }
+                                void runAction(
+                                  { action: 'register_class', class_id: item.class_id, athlete_id: targetAthlete },
+                                  'Class registration submitted.',
+                                );
+                              }}
+                              disabled={actionInFlight}
+                              className="btn disabled:opacity-60 disabled:grayscale"
+                            >
+                              Register
+                            </button>
+                          ) : null}
                           {roleCanManageClasses(role) ? (
                             <button
                               type="button"
@@ -740,15 +780,17 @@ export default function SchedulerPage() {
                     </select>
                   ) : null}
 
-                  <select
-                    value={attendanceStatus}
-                    onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
-                    className="input"
-                  >
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                    <option value="excused">Excused</option>
-                  </select>
+                  {!isFamily ? (
+                    <select
+                      value={attendanceStatus}
+                      onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
+                      className="input"
+                    >
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="excused">Excused</option>
+                    </select>
+                  ) : null}
 
                   {/* This was a bare textarea with a hand-rolled border and
                       no minimum height of any kind -- 80px of box on the one
@@ -756,38 +798,43 @@ export default function SchedulerPage() {
                       already uses .textarea correctly a few dozen lines above;
                       @layer base does not floor a textarea, so the tap height
                       is stated here. */}
-                  <textarea
-                    value={attendanceNote}
-                    onChange={(e) => setAttendanceNote(e.target.value)}
-                    placeholder="Attendance notes"
-                    className="textarea min-h-[var(--tap)] h-[89px]"
-                  />
+                  {!isFamily ? (
+                    <textarea
+                      value={attendanceNote}
+                      onChange={(e) => setAttendanceNote(e.target.value)}
+                      placeholder="Attendance notes"
+                      className="textarea min-h-[var(--tap)] h-[89px]"
+                    />
+                  ) : null}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
-                      if (!targetAthlete) {
-                        showError('Select an athlete first.');
-                        return;
-                      }
+                  {!isFamily || familyCanCheckIn ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!targetAthlete) {
+                          showError('Select an athlete first.');
+                          return;
+                        }
 
-                      void runAction(
-                        {
-                          action: 'attendance_checkin',
-                          class_id: selectedClassId,
-                          athlete_id: targetAthlete,
-                          status: attendanceStatus,
-                          note: attendanceNote,
-                        },
-                        role === 'athlete' ? 'Self check-in submitted.' : 'Attendance updated with override.',
-                      );
-                    }}
-                    disabled={actionInFlight}
-                    className="btn disabled:opacity-60 disabled:grayscale"
-                  >
-                    {role === 'athlete' ? 'Check In' : 'Update Attendance'}
-                  </button>
+                        void runAction(
+                          isFamily
+                            ? { action: 'attendance_checkin', class_id: selectedClassId, athlete_id: targetAthlete, status: 'present' }
+                            : {
+                              action: 'attendance_checkin',
+                              class_id: selectedClassId,
+                              athlete_id: targetAthlete,
+                              status: attendanceStatus,
+                              note: attendanceNote,
+                            },
+                          isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance updated with override.',
+                        );
+                      }}
+                      disabled={actionInFlight}
+                      className="btn disabled:opacity-60 disabled:grayscale"
+                    >
+                      {isFamily ? "I'm here" : 'Update Attendance'}
+                    </button>
+                  ) : null}
 
                   {/* Beside the action it belongs to (OD-2026-10-06-024 ruling 1). */}
                   {shownCheckInHold && shownCheckInHold !== 'unreadable' ? (
