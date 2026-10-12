@@ -378,3 +378,34 @@ test('an athlete the register says this coach does not cover is marked "Not your
   const jordan = floor().getByRole('button', { name: /^Jordan P\./ });
   expect(jordan.textContent).not.toContain('Not your athlete');
 });
+
+test('an athlete who checked in today reads as a fresh reading on the tile and the chip (F-040)', async () => {
+  // The board's items come from staff intake scores; this athlete has none,
+  // only their own check-in for today, which the board now names.
+  await renderWorkspace({
+    athletesList: roster,
+    readinessBoard: () => jsonResponse({ items: [], checked_in_today: ['ath_1'] }),
+  });
+  const readings = floor().getByText('Readings').closest('.coach-floor-focus__gauge') as HTMLElement;
+  expect(readings.textContent).toContain('1 of 1');
+  expect(floor().getByRole('button', { name: 'Jordan P.: readiness Checked in' })).toBeTruthy();
+});
+
+test('without a check-in today the athlete still has no reading', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    readinessBoard: () => jsonResponse({ items: [], checked_in_today: [] }),
+  });
+  const readings = floor().getByText('Readings').closest('.coach-floor-focus__gauge') as HTMLElement;
+  expect(readings.textContent).toContain('0 of 1');
+  expect(floor().getByRole('button', { name: 'Jordan P.: readiness No reading' })).toBeTruthy();
+});
+
+test('a check-in today keeps the Readiness Alerts tile from saying there are no fresh check-ins (F-040)', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    readinessBoard: () => jsonResponse({ items: [], checked_in_today: ['ath_1'] }),
+  });
+  expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  expect(screen.getByText(/0 RED, 0 YELLOW, 1 unknown/)).toBeTruthy();
+});

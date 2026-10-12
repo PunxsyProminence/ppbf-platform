@@ -114,21 +114,6 @@ async function run() {
     },
   });
 
-  console.log('4) Create goal');
-  await call('/api/pilot/goals', {
-    method: 'POST',
-    body: {
-      goal_id: goalId,
-      athlete_id: athleteId,
-      title: 'Improve jab consistency',
-      target_date: '2026-12-31',
-      metric: 'land 70% in drills',
-      status: 'active',
-      created_at: nowIso,
-      updated_at: nowIso,
-    },
-  });
-
   console.log('5) Create session');
   await call('/api/pilot/sessions', {
     method: 'POST',
@@ -170,6 +155,23 @@ async function run() {
     body: {
       account_id: athleteAccountId,
       pin: athletePin,
+    },
+  });
+
+  // Only the athlete writes their goals (lane N8-05), so the goal is
+  // created after the athlete signs in rather than by the admin.
+  console.log('8b) Athlete creates goal');
+  await call('/api/pilot/goals', {
+    method: 'POST',
+    body: {
+      goal_id: goalId,
+      athlete_id: athleteId,
+      title: 'Improve jab consistency',
+      target_date: '2026-12-31',
+      metric: 'land 70% in drills',
+      status: 'active',
+      created_at: nowIso,
+      updated_at: nowIso,
     },
   });
 

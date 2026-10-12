@@ -136,8 +136,8 @@ const LAPSED_COACH_ID = 'acct-blocks-lapsed';
 // assertCoachAssignedToAthlete.
 const VISITING_COACH_ID = 'acct-blocks-visiting';
 // ACTIVE coach membership here, coach of record for nobody, no coverage.
-// The account that shows what "athlete-scoped" costs: a real coach of this
-// gym who cannot reach this athlete.
+// Since issue #1480 (Jason, 2026-10-12: a coach's reach is the whole gym) a
+// real coach of this gym who still reaches every athlete in it.
 const UNASSIGNED_COACH_ID = 'acct-blocks-unassigned';
 // Home organization elsewhere, membership only there.
 const OTHER_COACH_ID = 'acct-blocks-other-coach';
@@ -182,6 +182,8 @@ const COACH = actorFor(COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
 const VISITING_COACH = actorFor(VISITING_COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// A coach of ANOTHER gym, signed in there (issue #1480's refused case).
+const OTHER_GYM_COACH = actorFor(OTHER_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const SECOND_ATHLETE = actorFor(SECOND_ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, SECOND_ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
@@ -773,14 +775,14 @@ describe('the module writing and reading blocks', () => {
     expect([...DEVELOPMENT_BLOCK_WRITE_ROLES]).toEqual(['coach', 'organization_admin', 'admin']);
   });
 
-  test('a coach whose home organization is elsewhere may still author here, if their membership is active', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach whose home organization is elsewhere may still author here, for any athlete here, if their membership is active', async () => {
     // The multi-org case pilot.accounts.organization_id answers wrongly.
     // auth.ts asks the membership table for the same reason.
     //
-    // This coach is coach of record for nobody here: they reach ATHLETE_ID
-    // through a live coverage grant, which is how a substitute legitimately
-    // works. Both halves have to hold -- the membership makes them a writer,
-    // the coverage makes this athlete reachable.
+    // This coach is coach of record for nobody here and holds coverage on
+    // ATHLETE_ID only. Since issue #1480 the active membership alone decides:
+    // it makes them a writer AND reaches every live athlete of this gym.
     const client = await migratedDatabase('adb_mod_visiting');
     try {
       const home = await client.query(
@@ -799,16 +801,33 @@ describe('the module writing and reading blocks', () => {
       });
       expect(created?.created_by_account_id).toBe(VISITING_COACH_ID);
 
-      // Coverage is per athlete, not a roster pass: the same coach cannot
-      // author for the athlete they were not granted.
-      await expect(createDevelopmentBlock({
+      // Coverage no longer narrows reach: the same coach authors for the
+      // athlete they were not granted, and the row is real.
+      const beyond = await createDevelopmentBlock({
         actor: VISITING_COACH,
         athleteId: SECOND_ATHLETE_ID,
         title: 'Beyond the grant',
         trainingEmphasis: EMPHASIS,
         startsOn: '2026-09-02',
         endsOn: '2026-10-14',
+      });
+      expect(beyond?.athlete_id).toBe(SECOND_ATHLETE_ID);
+      expect((await client.query(
+        'select athlete_id from pilot.athlete_development_blocks where created_by_account_id = $1 order by athlete_id',
+        [VISITING_COACH_ID],
+      )).rows).toEqual([{ athlete_id: ATHLETE_ID }, { athlete_id: SECOND_ATHLETE_ID }]);
+
+      // The same account signed in at its home gym is a coach of ANOTHER gym
+      // for this athlete: refused, nothing written.
+      await expect(createDevelopmentBlock({
+        actor: actorFor(VISITING_COACH_ID, 'coach', OTHER_ORG_ID),
+        athleteId: ATHLETE_ID,
+        title: 'From the other gym',
+        trainingEmphasis: EMPHASIS,
+        startsOn: '2026-09-02',
+        endsOn: '2026-10-14',
       })).resolves.toBeNull();
+      expect((await client.query('select count(*)::int as n from pilot.athlete_development_blocks')).rows[0].n).toBe(2);
     } finally {
       await client.end();
     }
@@ -844,52 +863,40 @@ describe('the module writing and reading blocks', () => {
     }
   });
 
-  test('a coach of this gym who is not this athlete\'s coach cannot author for them', async () => {
-    /* THE COST OF THE READ DECISION, stated as a test rather than left for a
-       route to discover.
-
-       Before reads became athlete-scoped, ANY active-membership coach of the
-       gym could author a block for ANY athlete in it. They no longer can:
-       createDevelopmentBlock resolves the athlete through the same
-       chokepoint the reads use, so a coach reaches their own athletes and
-       anyone they are actively covering, and nobody else.
-
-       This is not an extra rule bolted onto the write. It is what keeps the
-       write coherent: getDevelopmentBlock is athlete-scoped, and
-       createDevelopmentBlock returns its result, so an author who could not
-       read would have written a row and been handed null for it. */
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of this gym who is not this athlete\'s coach may author for them; a coach of another gym may not', async () => {
+    /* createDevelopmentBlock resolves the athlete through the same chokepoint
+       the reads use, so an author can always read what they wrote. Since
+       issue #1480 that chokepoint admits every coach of the athlete's own
+       gym, assigned or not, and refuses a coach of another gym. */
     const client = await migratedDatabase('adb_mod_unassigned');
     try {
+      // A coach of ANOTHER gym: refused before the insert, nothing written.
       await expect(createDevelopmentBlock({
-        actor: UNASSIGNED_COACH,
+        actor: OTHER_GYM_COACH,
         athleteId: ATHLETE_ID,
-        title: 'Not my athlete',
+        title: 'Not my gym',
         trainingEmphasis: EMPHASIS,
         startsOn: '2026-09-02',
         endsOn: '2026-10-14',
       })).resolves.toBeNull();
-
-      // Nothing was written: the refusal precedes the insert rather than
-      // rolling one back.
       expect((await client.query('select block_id from pilot.athlete_development_blocks')).rows)
         .toEqual([]);
 
-      // And the control: this coach IS a writer here. Give them an athlete
-      // and the same call succeeds, so the null above means "not yours"
-      // rather than "not a coach".
-      await client.query(
-        'update pilot.athletes set coach_id = $1 where organization_id = $2 and athlete_id = $3',
-        [UNASSIGNED_COACH_ID, ORG_ID, SECOND_ATHLETE_ID],
-      );
+      // A coach of THIS gym, coach of record for nobody: the block is written.
       const created = await createDevelopmentBlock({
         actor: UNASSIGNED_COACH,
-        athleteId: SECOND_ATHLETE_ID,
-        title: 'Now my athlete',
+        athleteId: ATHLETE_ID,
+        title: 'Not my athlete, my gym',
         trainingEmphasis: EMPHASIS,
         startsOn: '2026-09-02',
         endsOn: '2026-10-14',
       });
-      expect(created?.athlete_id).toBe(SECOND_ATHLETE_ID);
+      expect(created?.athlete_id).toBe(ATHLETE_ID);
+      expect(created?.created_by_account_id).toBe(UNASSIGNED_COACH_ID);
+      expect((await client.query(
+        'select athlete_id, created_by_account_id from pilot.athlete_development_blocks',
+      )).rows).toEqual([{ athlete_id: ATHLETE_ID, created_by_account_id: UNASSIGNED_COACH_ID }]);
     } finally {
       await client.end();
     }
@@ -1026,39 +1033,55 @@ describe('reads reach exactly the people who can already reach the athlete', () 
     }
   });
 
-  test('a coach reads their own athletes and whoever they are covering, and no one else', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach reads every athlete of their own gym -- assigned, covering or neither -- and no other gym', async () => {
     const client = await seeded('adb_read_coach');
     try {
+      const wholeGym = ['block-mine', 'block-theirs-same-gym'];
       // Coach of record for both athletes here.
-      expect((await listDevelopmentBlocks(COACH)).map((row) => row.block_id).sort())
-        .toEqual(['block-mine', 'block-theirs-same-gym']);
+      expect((await listDevelopmentBlocks(COACH)).map((row) => row.block_id).sort()).toEqual(wholeGym);
 
-      // The covering coach reaches the granted athlete and only them --
-      // the same gym, the same active membership, one athlete.
+      // The covering coach reaches the granted athlete AND the one they were
+      // not granted: the whole gym.
       expect((await getDevelopmentBlock(VISITING_COACH, 'block-mine'))?.block_id).toBe('block-mine');
-      expect(await getDevelopmentBlock(VISITING_COACH, 'block-theirs-same-gym')).toBeNull();
-      expect((await listDevelopmentBlocks(VISITING_COACH)).map((row) => row.block_id))
+      expect((await getDevelopmentBlock(VISITING_COACH, 'block-theirs-same-gym'))?.block_id)
+        .toBe('block-theirs-same-gym');
+      expect((await listDevelopmentBlocks(VISITING_COACH)).map((row) => row.block_id).sort()).toEqual(wholeGym);
+
+      // A coach of this gym, active membership, assigned to nobody and
+      // covering nobody: the whole gym too.
+      expect((await getDevelopmentBlock(UNASSIGNED_COACH, 'block-mine'))?.block_id).toBe('block-mine');
+      expect((await listDevelopmentBlocks(UNASSIGNED_COACH)).map((row) => row.block_id).sort()).toEqual(wholeGym);
+      expect((await listDevelopmentBlocksForAthlete(UNASSIGNED_COACH, ATHLETE_ID)).map((r) => r.block_id))
         .toEqual(['block-mine']);
 
-      // The near-miss: a coach of this gym, active membership, assigned to
-      // nobody and covering nobody.
-      expect(await getDevelopmentBlock(UNASSIGNED_COACH, 'block-mine')).toBeNull();
-      expect(await listDevelopmentBlocks(UNASSIGNED_COACH)).toEqual([]);
-      expect(await listDevelopmentBlocksForAthlete(UNASSIGNED_COACH, ATHLETE_ID)).toEqual([]);
-      // A writer here by role, and still not for this athlete: the status
-      // setter answers null rather than moving a block they cannot read.
-      expect(await setDevelopmentBlockStatus(UNASSIGNED_COACH, 'block-mine', 'cancelled')).toBeNull();
+      // The near-miss now: a coach of ANOTHER gym reaches none of this, and
+      // its status setter moves nothing.
+      expect(await getDevelopmentBlock(OTHER_GYM_COACH, 'block-mine')).toBeNull();
+      expect(await listDevelopmentBlocks(OTHER_GYM_COACH)).toEqual([]);
+      expect(await listDevelopmentBlocksForAthlete(OTHER_GYM_COACH, ATHLETE_ID)).toEqual([]);
+      expect(await setDevelopmentBlockStatus(OTHER_GYM_COACH, 'block-mine', 'cancelled')).toBeNull();
+      expect((await client.query(
+        "select status from pilot.athlete_development_blocks where block_id = 'block-mine'",
+      )).rows).toEqual([{ status: 'draft' }]);
 
-      // An expired grant stops working with no cleanup job: this is the
-      // whole reason coverage is checked against now() at read time.
+      // The same-gym unassigned coach is a writer here by role and now
+      // reaches this athlete: the status really moves.
+      expect((await setDevelopmentBlockStatus(UNASSIGNED_COACH, 'block-mine', 'cancelled'))?.status).toBe('cancelled');
+      expect((await client.query(
+        "select status from pilot.athlete_development_blocks where block_id = 'block-mine'",
+      )).rows).toEqual([{ status: 'cancelled' }]);
+
+      // An expired grant no longer narrows anything: the coach still reaches
+      // the whole gym through their membership.
       await client.query(
         `update pilot.coach_coverage set starts_at = now() - interval '2 days',
                 expires_at = now() - interval '1 day'
          where covering_coach_id = $1`,
         [VISITING_COACH_ID],
       );
-      expect(await getDevelopmentBlock(VISITING_COACH, 'block-mine')).toBeNull();
-      expect(await listDevelopmentBlocks(VISITING_COACH)).toEqual([]);
+      expect((await getDevelopmentBlock(VISITING_COACH, 'block-mine'))?.block_id).toBe('block-mine');
+      expect((await listDevelopmentBlocks(VISITING_COACH)).map((row) => row.block_id).sort()).toEqual(wholeGym);
     } finally {
       await client.end();
     }
@@ -1462,7 +1485,8 @@ describe('the module correcting a block (real database)', () => {
     }
   });
 
-  test('correcting a block is authoring it, so a reader cannot do it', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('correcting a block is authoring it, so a reader cannot do it -- any coach of the gym can, another gym\'s cannot', async () => {
     /* NEW WITH THE READ DECISION. When this function arrived, its only
        caller was a route that had already refused everyone but a coach and
        an admin, so an ungated module function was survivable. It is not
@@ -1482,14 +1506,19 @@ describe('the module correcting a block (real database)', () => {
           .rejects.toBeInstanceOf(ForbiddenError);
       }
 
-      // A coach of this gym who is not this athlete's coach is a writer by
-      // role and still not for this block: null, not Forbidden, and not a
-      // write.
-      expect(await updateDevelopmentBlock(UNASSIGNED_COACH, created.block_id, { title: 'Not mine' }))
+      // A coach of ANOTHER gym: null, not Forbidden, and not a write.
+      expect(await updateDevelopmentBlock(OTHER_GYM_COACH, created.block_id, { title: 'Not my gym' }))
         .toBeNull();
+      const untouched = await getDevelopmentBlock(COACH, created.block_id);
+      expect(untouched?.title).toBe('Fall strength block');
+      expect(untouched?.training_emphasis).toBe(EMPHASIS);
 
+      // A coach of this gym who is not this athlete's coach reaches the whole
+      // gym (issue #1480): the correction is written.
+      expect((await updateDevelopmentBlock(UNASSIGNED_COACH, created.block_id, { title: 'Gym coach fix' }))?.title)
+        .toBe('Gym coach fix');
       const after = await getDevelopmentBlock(COACH, created.block_id);
-      expect(after?.title).toBe('Fall strength block');
+      expect(after?.title).toBe('Gym coach fix');
       expect(after?.training_emphasis).toBe(EMPHASIS);
     } finally {
       await client.end();

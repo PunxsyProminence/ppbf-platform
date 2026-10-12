@@ -80,12 +80,13 @@ const OTHER_ADMIN_ID = 'acct-caps-other-admin';
 const COACH_ID = 'acct-caps-coach'; // coach of record for both athletes here
 const LAPSED_COACH_ID = 'acct-caps-lapsed'; // membership here deactivated
 const VISITING_COACH_ID = 'acct-caps-visiting'; // home elsewhere, member here, coverage on ATHLETE_ID only
-const UNASSIGNED_COACH_ID = 'acct-caps-unassigned'; // active coach here, reaches nobody
+const UNASSIGNED_COACH_ID = 'acct-caps-unassigned'; // active coach here, coach of record for nobody (reaches the whole gym, issue #1480)
 const ATHLETE_ACCOUNT_ID = 'acct-caps-athlete';
 const PARENT_ACCOUNT_ID = 'acct-caps-parent'; // linked guardian of ATHLETE_ID
 const VOLUNTEER_ACCOUNT_ID = 'acct-caps-volunteer';
 // Home role organization_admin (of the other gym); here, only a COACH
-// membership, coach of record for nobody. Reaches nobody here.
+// membership, coach of record for nobody. As a coach here it reaches this
+// whole gym (issue #1480), recorded as the coach it is here.
 const HOME_ADMIN_ID = 'acct-caps-home-admin';
 const ATHLETE_ID = 'ath-caps-1';
 const SECOND_ATHLETE_ID = 'ath-caps-2';
@@ -108,6 +109,8 @@ const COACH = actorFor(COACH_ID, 'coach');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
 const VISITING_COACH = actorFor(VISITING_COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// The visiting coach signed in at their OTHER gym: a coach of another gym.
+const VISITING_COACH_AT_HOME = actorFor(VISITING_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const VOLUNTEER = actorFor(VOLUNTEER_ACCOUNT_ID, 'volunteer');
@@ -464,20 +467,60 @@ describe('athleteContactCaps.ts against real rows', () => {
     }
   });
 
-  test('a coach covering an athlete may set and read that athlete\'s cap, and only that one', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach covering one athlete may set and read every athlete\'s cap in this gym, and none in another gym', async () => {
     const client = await migratedDatabase('caps_coverage');
     try {
       const row = await setContactCap({ actor: VISITING_COACH, athleteId: ATHLETE_ID, ...LIGHT });
       expect(row.set_by_role).toBe('coach');
       expect((await getCurrentContactCap(VISITING_COACH, ATHLETE_ID))?.cap_id).toBe(row.cap_id);
-      await expect(getCurrentContactCap(VISITING_COACH, SECOND_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      // No coverage on SECOND_ATHLETE_ID: reached anyway, and the write is real.
+      const second = await setContactCap({ actor: VISITING_COACH, athleteId: SECOND_ATHLETE_ID, ...LIGHT });
+      expect((await getCurrentContactCap(VISITING_COACH, SECOND_ATHLETE_ID))?.cap_id).toBe(second.cap_id);
+      const { rows } = await client.query(
+        'select athlete_id, set_by_account_id from pilot.athlete_contact_caps order by athlete_id',
+      );
+      expect(rows).toEqual([
+        { athlete_id: ATHLETE_ID, set_by_account_id: VISITING_COACH_ID },
+        { athlete_id: SECOND_ATHLETE_ID, set_by_account_id: VISITING_COACH_ID },
+      ]);
+      // Another gym's athlete is refused as for an org admin, and nothing is written.
+      await expect(getCurrentContactCap(VISITING_COACH, OTHER_ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        setContactCap({ actor: VISITING_COACH, athleteId: OTHER_ATHLETE_ID, ...LIGHT }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      const after = await client.query('select count(*)::int as n from pilot.athlete_contact_caps');
+      expect(after.rows[0].n).toBe(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('an unassigned coach of the same gym may read and set a cap', async () => {
+    const client = await migratedDatabase('caps_unassigned_allowed');
+    try {
+      await insertRaw(client);
+      expect(await getCurrentContactCap(UNASSIGNED_COACH, ATHLETE_ID)).not.toBeNull();
+      expect(await listContactCapHistory(UNASSIGNED_COACH, ATHLETE_ID)).toHaveLength(1);
+      const row = await setContactCap({ actor: UNASSIGNED_COACH, athleteId: ATHLETE_ID, ...LIGHT });
+      expect(row.set_by_role).toBe('coach');
+      expect((await getCurrentContactCap(UNASSIGNED_COACH, ATHLETE_ID))?.cap_id).toBe(row.cap_id);
+      const { rows } = await client.query(
+        'select count(*)::int as n from pilot.athlete_contact_caps where set_by_account_id = $1',
+        [UNASSIGNED_COACH_ID],
+      );
+      expect(rows[0].n).toBe(1);
     } finally {
       await client.end();
     }
   });
 
   test.each([
-    ['an unassigned coach of the same gym', UNASSIGNED_COACH],
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+    // same-gym unassigned coach is now admitted (test above); a coach of
+    // ANOTHER gym is still refused.
+    ['a coach of another gym', VISITING_COACH_AT_HOME],
     ['a coach whose membership here lapsed', LAPSED_COACH],
     ['an admin of another gym', OTHER_ADMIN],
     ['the athlete themselves', ATHLETE],
@@ -515,28 +558,28 @@ describe('athleteContactCaps.ts against real rows', () => {
     }
   });
 
-  test("an admin elsewhere who is only a coach here reaches only a coach's athletes here", async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('an admin elsewhere who is only a coach here reaches this gym as a coach, and is recorded as one', async () => {
     const client = await migratedDatabase('caps_home_role');
     try {
       await insertRaw(client);
       // The session says organization_admin; the membership here says coach,
-      // and this account coaches nobody here. Whole-gym admin reach would
-      // have let this through.
-      await expect(getCurrentContactCap(HOME_ADMIN_AS_COACH_HERE, ATHLETE_ID)).rejects.toBeInstanceOf(ForbiddenError);
-      await expect(
-        setContactCap({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...LIGHT }),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-
-      // Given coverage of that athlete, it may set -- and is recorded as the
-      // coach it is here, not as the admin its home role says.
-      await client.query(
-        `insert into pilot.coach_coverage
-           (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
-         values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '8 hours')`,
-        [ORG_ID, ATHLETE_ID, HOME_ADMIN_ID, ADMIN_ID],
-      );
+      // and this account coaches nobody here. A coach reaches the whole gym,
+      // no coverage grant needed.
+      expect(await getCurrentContactCap(HOME_ADMIN_AS_COACH_HERE, ATHLETE_ID)).not.toBeNull();
+      // It sets -- and is recorded as the coach it is here, not as the admin
+      // its home role says.
       const row = await setContactCap({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: ATHLETE_ID, ...LIGHT });
       expect(row.set_by_role).toBe('coach');
+      const { rows } = await client.query(
+        'select set_by_role from pilot.athlete_contact_caps where set_by_account_id = $1',
+        [HOME_ADMIN_ID],
+      );
+      expect(rows).toEqual([{ set_by_role: 'coach' }]);
+      // Its own gym's athlete is not reachable from this gym's session.
+      await expect(
+        setContactCap({ actor: HOME_ADMIN_AS_COACH_HERE, athleteId: OTHER_ATHLETE_ID, ...LIGHT }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
     } finally {
       await client.end();
     }
@@ -579,14 +622,20 @@ describe('athleteContactCaps.ts against real rows', () => {
     try {
       const all = [ATHLETE_ID, SECOND_ATHLETE_ID, THIRD_ATHLETE_ID, OTHER_ATHLETE_ID];
       const sorted = async (actor: ActorIdentity) => [...(await contactCapAccessibleAthleteIds(actor, all))].sort();
-      expect(await sorted(COACH)).toEqual([ATHLETE_ID, SECOND_ATHLETE_ID].sort());
-      expect(await sorted(VISITING_COACH)).toEqual([ATHLETE_ID]);
-      expect(await sorted(ADMIN)).toEqual([ATHLETE_ID, SECOND_ATHLETE_ID, THIRD_ATHLETE_ID].sort());
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym --
+      // every live athlete of this gym, the same set the gym's admin gets.
+      const wholeGym = [ATHLETE_ID, SECOND_ATHLETE_ID, THIRD_ATHLETE_ID].sort();
+      expect(await sorted(COACH)).toEqual(wholeGym);
+      expect(await sorted(VISITING_COACH)).toEqual(wholeGym);
+      expect(await sorted(UNASSIGNED_COACH)).toEqual(wholeGym);
+      expect(await sorted(ADMIN)).toEqual(wholeGym);
       // Lapsed membership: nobody, not even the athlete they are coach of record for.
       expect(await sorted(LAPSED_COACH)).toEqual([]);
-      // Admin elsewhere, coach here, coaching nobody: nobody (not the whole gym).
-      expect(await sorted(HOME_ADMIN_AS_COACH_HERE)).toEqual([]);
-      for (const actor of [UNASSIGNED_COACH, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD]) {
+      // Admin elsewhere, coach here, coaching nobody: the whole gym, as a coach.
+      expect(await sorted(HOME_ADMIN_AS_COACH_HERE)).toEqual(wholeGym);
+      // A coach of another gym: that gym's athlete only, none of this gym's.
+      expect(await sorted(VISITING_COACH_AT_HOME)).toEqual([OTHER_ATHLETE_ID]);
+      for (const actor of [ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD]) {
         expect({ who: actor.accountId, ids: await sorted(actor) }).toEqual({ who: actor.accountId, ids: [] });
       }
       // Another gym's admin reaches their own gym's athlete and none of this gym's.
@@ -596,7 +645,7 @@ describe('athleteContactCaps.ts against real rows', () => {
       // equals "the per-athlete read is not refused". A later drift between
       // the two fails here, whatever the fixed expectations above say.
       const actors = [ADMIN, OTHER_ADMIN, COACH, LAPSED_COACH, VISITING_COACH, UNASSIGNED_COACH,
-        HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
+        VISITING_COACH_AT_HOME, HOME_ADMIN_AS_COACH_HERE, ATHLETE, GUARDIAN, VOLUNTEER, PLATFORM_OWNER, BOARD];
       for (const actor of actors) {
         const admitted = await contactCapAccessibleAthleteIds(actor, all);
         for (const athleteId of all) {

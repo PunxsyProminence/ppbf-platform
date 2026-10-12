@@ -490,18 +490,25 @@ describe('ACCESS: the review queue reads the column', () => {
   // LIVE (COACH's) and ELSE (ELSE_COACH's). The case gate refuses both
   // coaches C.two and refuses everyone but UPLOADER and the admin C.pending,
   // so the queue handed out summaries of cases neither coach could open.
-  test("a coach sees the cases whose every athlete they coach, and no one else's", async () => {
-    // C.twoWithGone names GONE and LIVE, both COACH's: in. C.two names ELSE
-    // too: out, for both coaches.
-    expect(await queueFor(ORG, COACH, 'coach')).toEqual(
-      [C.gone, C.live, C.alreadySet, C.filedForGone, C.twoWithGone].sort(),
-    );
-    expect(await totalFor(COACH, 'coach')).toBe(5);
-    expect(await queueFor(ORG, ELSE_COACH, 'coach')).toEqual([C.else]);
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test("a coach sees every attributed case of the gym's live athletes, whoever coaches them, and no other gym's", async () => {
+    // Every case naming only live athletes of this gym is in, for both
+    // coaches -- C.two (LIVE and ELSE) and C.twoWithGone (GONE and LIVE)
+    // included. The unattributed C.pending is not (next test), and the other
+    // gym's C.otherGym never is.
+    const wholeGym = [C.gone, C.live, C.else, C.two, C.alreadySet, C.filedForGone, C.twoWithGone].sort();
+    expect(await queueFor(ORG, COACH, 'coach')).toEqual(wholeGym);
+    expect(await totalFor(COACH, 'coach')).toBe(7);
+    expect(await queueFor(ORG, ELSE_COACH, 'coach')).toEqual(wholeGym);
+    expect(await queueFor(ORG, COACH, 'coach')).not.toContain(C.otherGym);
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+  // unattributed case still reaches only the coach who filed it.
   test('an unattributed case reaches the coach who filed it, and no other coach', async () => {
-    expect(await queueFor(ORG, UPLOADER, 'coach')).toEqual([C.pending]);
+    expect(await queueFor(ORG, UPLOADER, 'coach')).toEqual(
+      [C.pending, C.gone, C.live, C.else, C.two, C.alreadySet, C.filedForGone, C.twoWithGone].sort(),
+    );
     expect(await queueFor(ORG, COACH, 'coach')).not.toContain(C.pending);
     expect(await queueFor(ORG, ELSE_COACH, 'coach')).not.toContain(C.pending);
   });
@@ -556,11 +563,15 @@ describe('ACCESS: the review queue reads the column', () => {
 
     test('they leave the count too, so paging agrees with the list', async () => {
       expect(await totalFor(ADMIN, 'organization_admin')).toBe(5);
-      expect(await totalFor(COACH, 'coach')).toBe(2);
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym --
+      // the four cases left that name only live athletes.
+      expect(await totalFor(COACH, 'coach')).toBe(4);
     });
 
     test("GONE's coach and GONE's guardian no longer see them either", async () => {
-      expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.live, C.alreadySet].sort());
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym; a
+      // deleted athlete's cases are refused exactly as for the admin.
+      expect(await queueFor(ORG, COACH, 'coach')).toEqual([C.live, C.else, C.two, C.alreadySet].sort());
       expect(await queueFor(ORG, GUARDIAN_GONE, 'parent')).toEqual([]);
     });
 

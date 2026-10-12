@@ -472,3 +472,40 @@ test('Start a session sends one start however fast it is tapped, and stays busy 
   expect(onGoToSessions).toHaveBeenCalledTimes(1);
   expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+test('an athlete\'s own check-in today is a reading: counted, said as "Checked in", never as a band (F-040)', () => {
+  render(
+    <CoachFloorFocus
+      {...props({
+        athletes: [
+          { id: 'ath_1', name: 'Ada Rivera', readiness: 'UNKNOWN', checkedInToday: true },
+          { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN' },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Checked in' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Marcus Bell: readiness No reading' })).toBeTruthy();
+  expect(gauge('Readings').textContent).toContain('1 of 2');
+  // A self-report is not one of the staff judgements counted as "not validated".
+  expect(gauge('Readings').textContent).not.toContain('not validated');
+});
+
+test('a band or an unvalidated staff reading still wins over a check-in, and only staff readings count as "not validated"', () => {
+  render(
+    <CoachFloorFocus
+      {...props({
+        athletes: [
+          { id: 'ath_1', name: 'Ada Rivera', readiness: 'GREEN', checkedInToday: true },
+          { id: 'ath_2', name: 'Marcus Bell', readiness: 'UNKNOWN', unvalidatedReading: true, checkedInToday: true },
+          { id: 'ath_3', name: 'Sam Ortiz', readiness: 'UNKNOWN', checkedInToday: true },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Ada Rivera: readiness Green' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Marcus Bell: readiness Not validated' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sam Ortiz: readiness Checked in' })).toBeTruthy();
+  expect(gauge('Readings').textContent).toContain('3 of 3');
+  expect(gauge('Readings').textContent).toContain('1 not validated');
+});

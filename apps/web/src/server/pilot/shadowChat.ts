@@ -9,6 +9,10 @@ import { ForbiddenError } from './errors';
 import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
+import { currentOrganizationProfile } from '@/src/shared/organizationProfile';
+
+// The gym's identity, from its one profile (#1469, N9-01B).
+const GYM = currentOrganizationProfile();
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -1591,8 +1595,8 @@ export function validateShadowResponse(
   };
 }
 
-// SHADOW System Prompt — Punxsy Prominence Boxing & Fitness identity
-export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for Punxsy Prominence Boxing & Fitness.
+// SHADOW System Prompt — the gym's identity, from its one profile (#1469)
+export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for ${GYM.brand}.
 
 PRIMARY ROLE:
 Your primary role is organizational learning, not automatic knowledge or canned recommendations.

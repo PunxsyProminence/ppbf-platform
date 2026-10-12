@@ -110,6 +110,9 @@ export interface FocusAthlete {
   /** A fresh check-in exists but its method is not validated, so it carries
    *  no band. Said as "Not validated", never as no reading and never as fine. */
   readonly unvalidatedReading?: boolean;
+  /** The athlete's own check-in for the gym's today exists. A self-report is a
+   *  reading for the count, said as "Checked in", and carries no band. */
+  readonly checkedInToday?: boolean;
   /** false when the roster names this athlete but this coach is not theirs. */
   readonly isMine?: boolean;
 }
@@ -149,9 +152,13 @@ const READINESS_MARK: Record<FocusAthlete['readiness'], FocusBadge> = {
   UNKNOWN: { tone: 'neutral', label: 'No reading' },
 };
 const UNVALIDATED_MARK: FocusBadge = { tone: 'neutral', label: 'Not validated' };
+const CHECKED_IN_MARK: FocusBadge = { tone: 'neutral', label: 'Checked in' };
 
 function readinessMark(athlete: FocusAthlete): FocusBadge {
-  return athlete.readiness === 'UNKNOWN' && athlete.unvalidatedReading ? UNVALIDATED_MARK : READINESS_MARK[athlete.readiness];
+  if (athlete.readiness !== 'UNKNOWN') return READINESS_MARK[athlete.readiness];
+  if (athlete.unvalidatedReading) return UNVALIDATED_MARK;
+  if (athlete.checkedInToday) return CHECKED_IN_MARK;
+  return READINESS_MARK.UNKNOWN;
 }
 
 function initials(name: string): string {
@@ -299,8 +306,13 @@ export default function CoachFloorFocus({
     setSelectedKey(queueLength === 0 ? null : queueKeys[(position + 1) % queueLength]);
   };
 
-  const validatedReadings = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
-  const withReading = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN' || athlete.unvalidatedReading).length;
+  const withReading = athletes.filter(
+    (athlete) => athlete.readiness !== 'UNKNOWN' || athlete.unvalidatedReading || athlete.checkedInToday,
+  ).length;
+  // Staff readings that carry no band; an athlete's own check-in is not one.
+  const notValidatedReadings = athletes.filter(
+    (athlete) => athlete.readiness === 'UNKNOWN' && athlete.unvalidatedReading,
+  ).length;
   const anyFeedFailed = feeds.some((feed) => feed.state === 'error');
   const anyFeedLoading = feeds.some((feed) => feed.state === 'loading');
   // A feed that returned fewer than matched makes the count a floor, not a total.
@@ -333,7 +345,7 @@ export default function CoachFloorFocus({
           : {
               label: 'Readings',
               value: `${withReading} of ${athletes.length}`,
-              sub: withReading === validatedReadings ? 'fresh check-ins' : `fresh check-ins, ${withReading - validatedReadings} not validated`,
+              sub: notValidatedReadings === 0 ? 'fresh check-ins' : `fresh check-ins, ${notValidatedReadings} not validated`,
               state: 'ok',
               fill: athletes.length === 0 ? undefined : withReading / athletes.length,
             },

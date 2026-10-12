@@ -299,8 +299,19 @@ describe('athlete_mental_skill_entries migration and athleteMentalSkills.ts agai
     }
   });
 
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of this gym who is not the athlete\'s coach reads the same entries their coach reads', async () => {
+    const asTheirCoach = await mental.readMentalSkills(coach, ATHLETE);
+    const asGymCoach = await mental.readMentalSkills(unassignedCoach, ATHLETE);
+    expect(asGymCoach.imagery_sessions.length + (asGymCoach.current_cue ? 1 : 0)).toBeGreaterThan(0);
+    expect(asGymCoach).toEqual(asTheirCoach);
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+  // same-gym unassigned coach left this list (test above); the other gym's
+  // coach below is still refused.
   test('everyone else is refused', async () => {
-    for (const reader of [secondAthlete, unlinkedParent, unassignedCoach, platformOwner, board]) {
+    for (const reader of [secondAthlete, unlinkedParent, platformOwner, board]) {
       await expect(mental.readMentalSkills(reader, ATHLETE)).rejects.toThrow(/Forbidden/);
     }
     // The other gym's staff, on an athlete id that exists only in this gym.

@@ -4,7 +4,10 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
+import ParentProgressSummary, { type SupportTasks } from './ParentProgressSummary';
 import ParentAssignmentList from './ParentAssignmentList';
+import ParentObservations from './ParentObservations';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
@@ -33,13 +36,6 @@ interface Child {
   accountId: string | null;
   initials: string;
   photoAvailable: boolean;
-}
-
-interface ParentObservation {
-  id: string;
-  category: string;
-  value: number;
-  notes: string;
 }
 
 interface FamilyGoal {
@@ -151,15 +147,6 @@ interface SchedulerFeedAttendance {
   checked_in_at: string;
 }
 
-interface ProgressMilestone {
-  id: string;
-  childId: string;
-  category: string;
-  title: string;
-  percent: number;
-  status: 'On Track' | 'Needs Work' | 'Achieved';
-}
-
 interface ParentResource {
   id: string;
   title: string;
@@ -222,8 +209,6 @@ export default function ParentHub() {
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
 
-  const [parentObservations] = useState<ParentObservation[]>([]);
-
   const [familyGoals] = useState<FamilyGoal[]>([]);
 
   // Capability #90, scoped to one-directional read: /api/pilot/parent/messages
@@ -241,6 +226,9 @@ export default function ParentHub() {
   // grounds that its empty state was "fine either way"; it is the same claim
   // as the tile's zero, in words.)
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  // Kept apart from "not loaded yet" for the one reader that says the two
+  // differently (the Progress tab's support-task line).
+  const [messagesFailed, setMessagesFailed] = useState(false);
   // The clock reading the Parent Floor's week is judged against. Taken as the
   // messages land, then again each minute and whenever the page comes back
   // into view, so a hub left open past Sunday midnight moves to the new week
@@ -269,7 +257,10 @@ export default function ParentHub() {
           method: 'GET',
           credentials: 'include',
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setMessagesFailed(true);
+          return;
+        }
         const payload = (await response.json()) as { items?: Array<Omit<ParentMessage, 'task'> & { task?: ParentMessageTask | null }> };
         // The route sends task: null, never omits it; an item without the
         // key (an older answer, a stub) is read as "no task", not as a crash.
@@ -279,6 +270,7 @@ export default function ParentHub() {
       } catch {
         // Messages tab falls back to its empty state; the summary tile shows
         // Unavailable because messagesLoaded stays false.
+        setMessagesFailed(true);
       }
     })();
   }, []);
@@ -431,8 +423,6 @@ export default function ParentHub() {
     })();
     return () => controller.abort();
   }, []);
-
-  const [progressMilestones] = useState<ProgressMilestone[]>([]);
 
   const [parentResources] = useState<ParentResource[]>([]);
 
@@ -865,19 +855,15 @@ export default function ParentHub() {
   const activeUpcomingPlaces = schedulerFeedState === 'loaded' && activeChildId
     ? activeUpcomingSessions.filter((session) => session.standing === 'Registered').length
     : null;
-  const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
-
-  function milestoneStatusTone(status: ProgressMilestone['status']): string {
-    if (status === 'Achieved') return 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_10%,var(--paper))]';
-    if (status === 'Needs Work') return 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_10%,var(--paper))]';
-    return 'border-[color:rgba(0,0,0,.18)] bg-[var(--paper)]';
-  }
-
-  function milestoneBadge(status: ProgressMilestone['status']): { className: string; glyph: string } {
-    if (status === 'Achieved') return { className: 'badge badge--cleared', glyph: '✓' };
-    if (status === 'Needs Work') return { className: 'badge badge--restricted', glyph: '▲' };
-    return { className: 'badge badge--monitor', glyph: '◉' };
-  }
+  /* The selected child's parent-support tasks, done of all set so far, for
+     the Progress tab's summary, from the messages read: reading while that
+     read is out, Unavailable when it failed. */
+  const activeSupportTasks: SupportTasks = messagesLoaded
+    ? (() => {
+      const tasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
+      return { state: 'loaded', done: tasks.filter((message) => !isOpenTask(message)).length, total: tasks.length };
+    })()
+    : messagesFailed ? { state: 'failed' } : { state: 'loading' };
 
   /* Attendance outcomes on canvas take the -deep rungs (the text weights the
      sheet ships for the warm ground) and always carry their glyph. */
@@ -1426,44 +1412,24 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
-                description="Record what you notice at home about your child's energy, motivation, stress, and development."
+                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym."
                 usage={[
-                  'Note energy and motivation levels',
-                  'Track sleep and recovery',
-                  'Observe behavior changes',
-                  'Report concerns to coaches'
+                  'Pick what it is about and say what you noticed',
+                  'Add a rating from 1 to 10 if it helps; it is optional',
+                  'Look back at what you have written',
+                  'Something the coach needs to know now: use Report a Barrier on the Parent Floor, or speak to the coach'
                 ]}
                 mistakes={[
-                  'Not reporting concerning changes',
-                  'Minimizing stress or pain mentions',
-                  'Not sharing positive observations'
+                  'Not mentioning a change because it seems small',
+                  'Leaving out the good weeks as well as the hard ones'
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed or entry form for parent observations
-                yet, so this section is always empty.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
-                {parentObservations.map(obs => (
-                  <div key={obs.id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <h4 className="t-body font-semibold">{obs.category}</h4>
-                    <div>
-                      <div className="flex justify-between mb-[var(--s2)]">
-                        <span className="t-label">Rating</span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{obs.value}/10</span>
-                      </div>
-                      <div className={TRACK_CLASS}>
-                        <div className={FILL_CLASS} style={{width: `${obs.value * 10}%`}}></div>
-                      </div>
-                    </div>
-                    {obs.notes && (
-                      <p className="t-muted italic mt-[var(--s3)]">{obs.notes}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {activeChildId ? (
+                <ParentObservations key={activeChildId} athleteId={activeChildId} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 
@@ -1725,43 +1691,25 @@ export default function ParentHub() {
                 />
               )}
 
-              <details className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
-                <summary className="t-body cursor-pointer font-semibold">Parent-Support Visibility Placeholder</summary>
-                <p className="t-label mt-[var(--s3)]">
-                  CLOSED-LOOP PROGRESSION INTELLIGENCE - PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED
-                </p>
-                <Link href="/parent/progression-visibility" className="btn btn--ghost mt-[var(--s3)]">
-                  Open Parent Progression Visibility
-                </Link>
-              </details>
+              {/* The goals the child set, their reported progress and the ones
+                  they marked done (lane N8-05). Read-only; the reason line
+                  each goal carries is the coach's and never reaches here. */}
+              {activeChildId && (
+                <AthleteGoalsReadOnly key={activeChildId} athleteId={activeChildId} audience="family" />
+              )}
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
-                list is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)]">
-                {activeProgressMilestones.map((milestone) => {
-                  const badge = milestoneBadge(milestone.status);
-                  return (
-                    <div key={milestone.id} className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${milestoneStatusTone(milestone.status)}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                        <p className="t-body font-semibold">{milestone.category}: {milestone.title}</p>
-                        <span className={badge.className}><i>{badge.glyph}</i>{milestone.status}</span>
-                      </div>
-                      <div className="mt-[var(--s3)]">
-                        <div className="flex justify-between mb-[var(--s2)]">
-                          <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{milestone.percent}%</span>
-                        </div>
-                        <div className={TRACK_CLASS}>
-                          <div className={FILL_CLASS} style={{ width: `${milestone.percent}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {activeChildId ? (
+                <ParentProgressSummary athleteId={activeChildId} supportTasks={activeSupportTasks} />
+              ) : childrenLoading ? (
+                <p className="working">Reading...</p>
+              ) : (
+                <>
+                  <p className="t-muted">Unavailable - no child selected.</p>
+                  <Link href="/parent/progression-visibility" className="btn btn--ghost">
+                    Open the full progression record
+                  </Link>
+                </>
+              )}
             </div>
           )}
 

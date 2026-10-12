@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getGoalsByAthlete } from '@/src/server/pilot/entities';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { readsFullGoals, toFamilySmartGoals } from '@/src/server/pilot/goalProjection';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -9,7 +10,9 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
+    // A guardian reads their own child's goals and reported progress (lane
+    // N8-05); assertActorCanAccessAthlete below is what makes it their child.
+    requireRole(principal, ['organization_admin', 'coach', 'athlete', 'parent']);
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     if (!athleteId) throw new Error('Missing athlete_id');
@@ -25,6 +28,14 @@ export async function GET(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
+    // select * carries own_words and why_it_matters. Anyone not named as a
+    // full reader (a guardian today) is sent the family projection instead:
+    // SMART goals only (filtered in SQL, so the limit counts them), from named
+    // fields.
+    if (!readsFullGoals(principal.role)) {
+      const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit, smartOnly: true });
+      return NextResponse.json({ items: toFamilySmartGoals(goals) });
+    }
     const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit });
     return NextResponse.json({ items: goals });
   } catch (error) {

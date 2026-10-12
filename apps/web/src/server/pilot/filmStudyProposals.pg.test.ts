@@ -421,20 +421,24 @@ describe('the Film Study video read path against the real schema', () => {
 // The Film Study page reads the whole queue: GET with no athlete_id. That read
 // used to return every proposal in the organization, so a coach saw AI
 // observations about athletes -- usually minors -- they are neither assigned to
-// nor covering. These cases run the real route and the real authorization
-// queries against this database; only the session lookup is mocked.
+// nor covering. Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole
+// gym -- so a coach's queue is now every athlete of their own gym, and still
+// never another gym's. These cases run the real route and the real
+// authorization queries against this database; only the session lookup is mocked.
 describe('GET film study proposals: the queue a reader gets', () => {
   const OTHER_COACH_ID = 'acct-film-coach-two';
   const OTHER_ATHLETE_ID = 'ATH-FILM-2';
   const COVERED_ATHLETE_ID = 'ATH-FILM-3';
   const ADMIN_ID = 'acct-film-admin';
+  const OTHER_GYM_COACH_ID = 'acct-film-coach-other-gym';
+  const OTHER_GYM_ATHLETE_ID = 'ATH-FILM-OTHER-GYM';
   let GET: typeof import('@/app/api/pilot/shadow/film-study/proposals/route').GET;
 
-  function principal(accountId: string, role: PilotPrincipal['role']): PilotPrincipal {
+  function principal(accountId: string, role: PilotPrincipal['role'], organizationId = ORG_ID): PilotPrincipal {
     return {
       accountId,
       role,
-      organizationId: ORG_ID,
+      organizationId,
       athleteId: null,
       sessionToken: 'token',
       authProvider: 'microsoft',
@@ -469,34 +473,67 @@ describe('GET film study proposals: the queue a reader gets', () => {
         [ORG_ID, athleteId, coachId],
       );
     }
+    // Another gym with its own coach and athlete: the one place a coach of
+    // ORG_ID is still refused (issue #1480).
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+      [OTHER_GYM_COACH_ID, OTHER_ORG_ID],
+    );
+    await db.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Other Gym Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
+       on conflict do nothing`,
+      [OTHER_ORG_ID, OTHER_GYM_ATHLETE_ID, OTHER_GYM_COACH_ID],
+    );
     GET = (await import('@/app/api/pilot/shadow/film-study/proposals/route')).GET;
   });
 
-  test("a coach's queue never holds another coach's athlete, and theirs never holds mine", async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test("a coach's queue holds every athlete of their gym and never another gym's", async () => {
     const mine = await newProposal();
     const theirs = await newProposal({ athleteId: OTHER_ATHLETE_ID });
+    const otherGym = await newProposal({ organizationId: OTHER_ORG_ID, athleteId: OTHER_GYM_ATHLETE_ID });
 
     const coachQueue = await queueFor(principal(COACH_ID, 'coach'));
     expect(coachQueue.status).toBe(200);
-    expect(idsOf(coachQueue.body)).toContain(mine.proposal_id);
-    expect(idsOf(coachQueue.body)).not.toContain(theirs.proposal_id);
+    expect(idsOf(coachQueue.body)).toEqual(expect.arrayContaining([mine.proposal_id, theirs.proposal_id]));
+    expect(idsOf(coachQueue.body)).not.toContain(otherGym.proposal_id);
     expect(
-      (coachQueue.body.proposals as Array<{ athlete_id: string }>).every((row) => row.athlete_id === ATHLETE_ID),
-    ).toBe(true);
+      (coachQueue.body.proposals as Array<{ athlete_id: string }>).some((row) => row.athlete_id === OTHER_GYM_ATHLETE_ID),
+    ).toBe(false);
 
     const otherQueue = await queueFor(principal(OTHER_COACH_ID, 'coach'), '?state=all');
-    expect(idsOf(otherQueue.body)).toContain(theirs.proposal_id);
-    expect(idsOf(otherQueue.body)).not.toContain(mine.proposal_id);
+    expect(idsOf(otherQueue.body)).toEqual(expect.arrayContaining([mine.proposal_id, theirs.proposal_id]));
+    expect(idsOf(otherQueue.body)).not.toContain(otherGym.proposal_id);
+
+    // The other gym's coach reads their own gym's proposal and none of ours.
+    const otherGymQueue = await queueFor(principal(OTHER_GYM_COACH_ID, 'coach', OTHER_ORG_ID), '?state=all');
+    expect(otherGymQueue.status).toBe(200);
+    expect(idsOf(otherGymQueue.body)).toContain(otherGym.proposal_id);
+    expect(idsOf(otherGymQueue.body)).not.toContain(mine.proposal_id);
+    expect(idsOf(otherGymQueue.body)).not.toContain(theirs.proposal_id);
   });
 
-  test("naming another coach's athlete is refused outright", async () => {
-    await newProposal({ athleteId: OTHER_ATHLETE_ID });
-    const response = await queueFor(principal(COACH_ID, 'coach'), `?athlete_id=${OTHER_ATHLETE_ID}`);
-    expect(response.status).toBe(403);
-    expect(response.body.proposals).toBeUndefined();
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- their own gym only.
+  test("naming another coach's athlete in the same gym returns that queue; naming another gym's athlete is refused outright", async () => {
+    const theirs = await newProposal({ athleteId: OTHER_ATHLETE_ID });
+    const sameGym = await queueFor(principal(COACH_ID, 'coach'), `?athlete_id=${OTHER_ATHLETE_ID}`);
+    expect(sameGym.status).toBe(200);
+    expect(idsOf(sameGym.body)).toContain(theirs.proposal_id);
+    expect(
+      (sameGym.body.proposals as Array<{ athlete_id: string }>).every((row) => row.athlete_id === OTHER_ATHLETE_ID),
+    ).toBe(true);
+
+    await newProposal({ organizationId: OTHER_ORG_ID, athleteId: OTHER_GYM_ATHLETE_ID });
+    const otherGym = await queueFor(principal(COACH_ID, 'coach'), `?athlete_id=${OTHER_GYM_ATHLETE_ID}`);
+    expect(otherGym.status).toBe(403);
+    expect(otherGym.body).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
+    expect(otherGym.body.proposals).toBeUndefined();
   });
 
-  test('a live coverage grant admits the covered athlete, and nothing else', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coverage grant no longer narrows a coach: covered and uncovered athletes of the gym both appear', async () => {
     const covered = await newProposal({ athleteId: COVERED_ATHLETE_ID });
     const uncovered = await newProposal({ athleteId: OTHER_ATHLETE_ID });
     await db.query(
@@ -508,7 +545,7 @@ describe('GET film study proposals: the queue a reader gets', () => {
 
     const coachQueue = await queueFor(principal(COACH_ID, 'coach'));
     expect(idsOf(coachQueue.body)).toContain(covered.proposal_id);
-    expect(idsOf(coachQueue.body)).not.toContain(uncovered.proposal_id);
+    expect(idsOf(coachQueue.body)).toContain(uncovered.proposal_id);
   });
 
   test("an organization admin's queue is the whole gym", async () => {

@@ -11,7 +11,9 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
+    // Only the athlete writes their goals (lane N8-05, owner ruling
+    // 2026-10-12); coaches and guardians read them. No staff screen wrote here.
+    requireRole(principal, ['athlete']);
 
     const payload = validateGoalPayload(await request.json());
     await assertActorCanAccessAthlete(principal, payload.athlete_id);

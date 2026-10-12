@@ -59,7 +59,13 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   expect(parent).not.toMatch(/weekly support checklist/);
   // Home assignments are built (WO-PH-03).
   expect(parent).toMatch(/Home assignments show on the Assignments tab/);
-  for (const section of ['parent observations', 'family goals', 'progress milestones', 'resources', 'reply to coach']) {
+  // Progress milestones are built (WO-PH-09).
+  expect(parent).toMatch(/The Progress tab shows earned milestones/);
+  expect(parent).not.toMatch(/progress milestones/);
+  // Parent observations are built (WO-PH-04).
+  expect(parent).toMatch(/Parent observations are written down and read back on the Observations tab/);
+  expect(parent).not.toMatch(/feed yet: [^.]*parent observations/);
+  for (const section of ['family goals', 'resources', 'reply to coach']) {
     expect(parent).toContain(section);
   }
 });
