@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+
+import { apiBase } from '@/lib/apiBase';
 
 /**
  * THE FLOOR, AS A COMMAND BOARD.
@@ -14,12 +16,15 @@ import React, { useMemo, useState } from 'react';
  * the Canva Command Center panel board ("B": gauges along the top, three
  * columns below), after he had first asked to get away from columns.
  *
- * IT READS NOTHING AND WRITES NOTHING OF ITS OWN. Every value arrives as a prop
- * from CoachWorkspace, which already loads it through its own calls and role
- * gates. The only write reachable from here is the escalation acknowledge the
- * workspace already performs, passed in as a callback. "Next" moves the view to
- * the next item and changes no record: nothing is marked seen, nothing is
- * stored. coachFloorFocus.test.tsx pins both.
+ * IT READS AND WRITES ONLY ONE THING OF ITS OWN: Start a session (#1523). On a
+ * tap with no live session it reads the gym's plan list and, when there are
+ * none, starts a plain session through the runs route -- the same route and role
+ * gate the session page uses. Every other value arrives as a prop from
+ * CoachWorkspace, which loads it through its own calls and role gates; the only
+ * other write reachable here is the escalation acknowledge the workspace already
+ * performs, passed in as a callback. "Next" moves the view to the next item and
+ * changes no record: nothing is marked seen, nothing is stored.
+ * coachFloorFocus.test.tsx pins all of it.
  *
  * NOTHING HERE REPEATS A SENTENCE OR A HEADING THE PANELS BELOW ALREADY SAY:
  * the session line lives in the panel and the Session gauge says none /
@@ -131,7 +136,11 @@ export interface CoachFloorFocusProps {
   readonly onSessionMode: (mode: 'Group' | 'One-on-One') => void;
   /** Where the rest of the dashboard starts, for the "everything else" link. */
   readonly everythingElseHref: string;
+  /** Where Start a session goes once it has acted. Defaults to the session page; tests pass a spy. */
+  readonly onGoToSessions?: () => void;
 }
+
+const SESSIONS_HREF = '/coach/session-scripts';
 
 /* The band, in the workspace's own words (the roster says "Readiness:
    GREEN"). Not "Ready": a readiness band is not clearance, and a word that
@@ -211,7 +220,61 @@ export default function CoachFloorFocus({
   sessionMode,
   onSessionMode,
   everythingElseHref,
+  // A full page load, not the router: this component renders outside the app router in many
+  // workspace tests, and the session page reads its live run on load either way.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  onGoToSessions = () => window.location.assign(SESSIONS_HREF),
 }: CoachFloorFocusProps) {
+  /* START A SESSION, ONE TAP (Jason 2026-10-12, "allow a plain session"; issue #1523, Q2 A).
+     With no live session, the tap asks which plans the gym has: none, and it starts a plain
+     session (no plan: the clock, pause, TV and finish) and goes to it; some, and it goes to the
+     session page to pick one or start plain there. A failed read or start says so and leaves the
+     page link beside it, so the coach is never stuck. */
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
+  // One start per press. `starting` disables the button only after a render; two taps landing
+  // before it would both start, so the in-flight mark is a ref (review 1 of #1523 PR 2).
+  const inFlight = useRef(false);
+  async function startSession() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setStarting(true);
+    setStartError('');
+    // Busy until the page changes: a navigation in flight is not a reason to offer the tap again.
+    let leaving = false;
+    try {
+      const list = await fetch(`${apiBase()}/api/pilot/session-scripts`, { credentials: 'include' });
+      if (!list.ok) throw new Error('list');
+      const payload = (await list.json()) as { scripts?: unknown[] };
+      if ((payload.scripts ?? []).length > 0) {
+        leaving = true;
+        onGoToSessions();
+        return;
+      }
+      const started = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const result = (await started.json().catch(() => ({}))) as { error?: string };
+      // Already live (a double tap, another tab): the session page restores it.
+      if (started.ok || result.error === 'SESSION_RUN_ALREADY_LIVE') {
+        leaving = true;
+        onGoToSessions();
+        return;
+      }
+      throw new Error('start');
+    } catch {
+      setStartError('No session was started. Open the session page to start one.');
+    } finally {
+      if (!leaving) {
+        inFlight.current = false;
+        setStarting(false);
+      }
+    }
+  }
+
   /* THE VIEW FOLLOWS AN ITEM, NOT A POSITION. The queue changes underneath
      the coach -- an acknowledged escalation leaves it, a refreshed feed goes
      back to loading and jumps to the front -- and a position would then point
@@ -460,9 +523,27 @@ export default function CoachFloorFocus({
 
         <section aria-labelledby="coach-floor-actions" className="coach-floor-focus__panel">
           <h3 id="coach-floor-actions" className="coach-floor-focus__panel-title">Run the room</h3>
-          <Link href="/coach/session-scripts" className="btn coach-floor-focus__btn">
-            {sessionState !== 'loaded' ? 'Open Session Scripts' : sessionLive ? 'Return to live delivery' : 'Start a session'}
-          </Link>
+          {sessionState === 'loaded' && !sessionLive ? (
+            <>
+              <button
+                type="button"
+                className="btn coach-floor-focus__btn"
+                onClick={() => void startSession()}
+                disabled={starting}
+              >
+                {starting ? 'Starting...' : 'Start a session'}
+              </button>
+              {startError ? (
+                <p role="alert" className="coach-floor-focus__alert">
+                  {startError} <Link href={SESSIONS_HREF}>Open the session page</Link>
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <Link href={SESSIONS_HREF} className="btn coach-floor-focus__btn">
+              {sessionState !== 'loaded' ? 'Open Session Scripts' : 'Return to live delivery'}
+            </Link>
+          )}
           <div role="group" aria-label="Session mode" className="coach-floor-focus__row">
             {(['Group', 'One-on-One'] as const).map((mode) => (
               <button

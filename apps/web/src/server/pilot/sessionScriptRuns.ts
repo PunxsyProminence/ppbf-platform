@@ -31,8 +31,9 @@ const TERMINAL_STATES: readonly SessionScriptRunState[] = ['completed', 'abandon
 export interface SessionScriptRunRow {
   organization_id: string;
   run_id: string;
-  script_id: string;
-  script_version: number;
+  // NULL together on a plain session (issue #1523; pilot_ssrun_script_pair).
+  script_id: string | null;
+  script_version: number | null;
   activity_id: string | null;
   delivered_by_account_id: string;
   delivered_on: string;
@@ -166,7 +167,9 @@ async function assertBlockBelongsToScript(
 }
 
 export interface StartSessionScriptRunInput {
-  scriptId: string;
+  // Absent or null starts a PLAIN session (Jason 2026-10-12, issue #1523: "allow a plain
+  // session"): no script, no blocks, no cursor -- the clock, pause, TV and finish only.
+  scriptId?: string | null;
   activityId?: string | null;
   athletesPresent?: number | null;
   deliveredOn?: string;
@@ -190,6 +193,10 @@ export async function startSessionScriptRun(
   accountId: string,
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
+  if (!input.scriptId) {
+    return startPlainRun(organizationId, accountId, input);
+  }
+  const scriptId = input.scriptId;
   return withTransaction(async (client) => {
     const script = await client.query<{ script_id: string; version: number; is_head: boolean }>(
       `select s.script_id, s.version,
@@ -202,7 +209,7 @@ export async function startSessionScriptRun(
               ) as is_head
          from pilot.session_scripts s
         where s.organization_id = $1 and s.script_id = $2`,
-      [organizationId, input.scriptId],
+      [organizationId, scriptId],
     );
     if (script.rowCount === 0) {
       throw new SessionScriptRunError('SESSION_SCRIPT_NOT_FOUND', 404);
@@ -221,7 +228,7 @@ export async function startSessionScriptRun(
         where organization_id = $1 and script_id = $2
         order by block_order asc
         limit 1`,
-      [organizationId, input.scriptId],
+      [organizationId, scriptId],
     );
     // A script with no blocks cannot be run. This is the state the seed blocker leaves scripts in,
     // so it fails with a nameable reason rather than a null cursor a coach has to interpret.
@@ -247,7 +254,7 @@ export async function startSessionScriptRun(
         [
           organizationId,
           runId,
-          input.scriptId,
+          scriptId,
           script.rows[0].version,
           input.activityId ?? null,
           accountId,
@@ -269,6 +276,46 @@ export async function startSessionScriptRun(
   });
 }
 
+// A plain session (issue #1523): the same live run as a scripted one -- one per coach, paused,
+// shown on the TV and finished through the same functions -- with no script, no version and no
+// block cursor (pilot_ssrun_plain_no_cursor). Nothing about the athletes changes: who may read
+// whom is the roster's and the routes' business, not the run's.
+async function startPlainRun(
+  organizationId: string,
+  accountId: string,
+  input: StartSessionScriptRunInput,
+): Promise<LiveSessionScriptRun> {
+  const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
+  try {
+    const rows = await query<SessionScriptRunRow>(
+      `insert into pilot.session_script_runs (
+         organization_id, run_id, script_id, script_version, activity_id,
+         delivered_by_account_id, delivered_on, athletes_present,
+         run_state, started_at, current_block_id, paused_seconds
+       ) values (
+         $1, $2, null, null, $3,
+         $4, coalesce($5::date, current_date), $6,
+         'in_progress', now(), null, 0
+       )
+       returning ${RUN_COLUMNS}`,
+      [
+        organizationId,
+        runId,
+        input.activityId ?? null,
+        accountId,
+        input.deliveredOn ?? null,
+        input.athletesPresent ?? null,
+      ],
+    );
+    return toLiveRun(rows[0]);
+  } catch (error) {
+    if ((error as { constraint?: string }).constraint === 'pilot_ssrun_one_live_per_coach') {
+      throw new SessionScriptRunError('SESSION_RUN_ALREADY_LIVE', 409);
+    }
+    throw error;
+  }
+}
+
 // Moving the cursor. Deliberately takes a target block rather than "next": a coach who skips a
 // block or goes back to re-teach one is doing something normal, and an increment-only API would
 // force the client to model an order it does not own.
@@ -279,6 +326,10 @@ export async function moveSessionScriptRunCursor(
   toBlockId: string,
 ): Promise<LiveSessionScriptRun> {
   const run = await requireOwnLiveRun(organizationId, accountId, runId);
+  // A plain session has no blocks to move between.
+  if (!run.script_id) {
+    throw new SessionScriptRunError('SESSION_RUN_HAS_NO_SCRIPT', 409);
+  }
   await assertBlockBelongsToScript(organizationId, run.script_id, toBlockId);
 
   const rows = await query<SessionScriptRunRow>(
