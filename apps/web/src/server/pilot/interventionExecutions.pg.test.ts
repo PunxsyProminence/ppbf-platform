@@ -925,7 +925,15 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       expect((await listRetiredReviews(ORG_ID, reopened!.execution_id)).map((row) => row.review_id)).toEqual(['rev-standing']);
 
       // A record nobody reviewed, and one whose only review was itself
-      // superseded, reopen as they always did.
+      // superseded, reopen as they always did. An already-superseded verdict
+      // keeps its own retirement time: the reopen does not re-stamp it.
+      const withdrawnStamp = async () => (await client.query(
+        `select status, updated_at from pilot.intervention_outcome_reviews where organization_id = $1 and review_id = 'rev-withdrawn'`,
+        [ORG_ID],
+      )).rows;
+      const withdrawnBefore = await withdrawnStamp();
+      expect(withdrawnBefore).toHaveLength(1);
+      await client.query('select pg_sleep(0.01)');
       for (const executionId of ['exec-unreviewed', 'exec-withdrawn']) {
         await expect(correctExecution({
           organizationId: ORG_ID,
@@ -935,6 +943,7 @@ describe('the real intervention-execution lifecycle against real rows', () => {
           correctedByAccountId: COACH_ID,
         })).resolves.toMatchObject({ version: 2, status: 'in_progress' });
       }
+      expect(await withdrawnStamp()).toEqual(withdrawnBefore);
 
       // A correction that does not reopen leaves a review alone. A record that
       // is in progress and somehow already carries a review (nothing writes

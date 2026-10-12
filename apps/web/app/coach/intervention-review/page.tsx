@@ -385,7 +385,9 @@ export default function InterventionReviewPage() {
                               {' · '}Learning: <span className="font-semibold">{words(review.learning_signal)}</span>
                               {review.learning_notes ? ` — ${review.learning_notes}` : ''}
                             </>
-                          ) : 'Not yet reviewed by a human.'}
+                          ) : reviewHistory && reviewHistory.length > 0
+                            ? 'No standing verdict since the record was reopened.'
+                            : 'Not yet reviewed by a human.'}
                         </dd>
                       </div>
                       {reviewHistory && reviewHistory.length > 0 && (

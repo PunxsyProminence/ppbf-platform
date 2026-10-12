@@ -407,7 +407,8 @@ test('a reopened record shows no standing verdict and its earlier verdicts as hi
     render(<InterventionReviewPage />);
   });
 
-  expect(await screen.findByText('Not yet reviewed by a human.')).toBeTruthy();
+  expect(await screen.findByText('No standing verdict since the record was reopened.')).toBeTruthy();
+  expect(screen.queryByText('Not yet reviewed by a human.')).toBeNull();
   expect(screen.getByText('Earlier verdicts')).toBeTruthy();
   const items = screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
   const retired = items.filter((text) => text.includes('held through four rounds')).pop();
@@ -423,5 +424,15 @@ test('a record with no history shows no "Earlier verdicts" section', async () =>
     render(<InterventionReviewPage />);
   });
   await screen.findByText('Decision');
+  expect(screen.queryByText('Earlier verdicts')).toBeNull();
+});
+
+test('an empty history list shows no "Earlier verdicts" section and reads as not yet reviewed', async () => {
+  const unreviewed = { ...CHAIN_ITEM, review: null, review_history: [] };
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ items: [unreviewed] }) }) as Response) as unknown as typeof fetch;
+  await act(async () => {
+    render(<InterventionReviewPage />);
+  });
+  expect(await screen.findByText('Not yet reviewed by a human.')).toBeTruthy();
   expect(screen.queryByText('Earlier verdicts')).toBeNull();
 });
