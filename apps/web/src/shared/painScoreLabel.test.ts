@@ -6,6 +6,7 @@ import {
   PAIN_REPORT_TRIGGER,
   isPainReportEscalation,
   isPainReportNearMiss,
+  painReportLabel,
   painScoreFromMetadata,
   painScoreLabel,
 } from './painScoreLabel';
@@ -17,14 +18,19 @@ describe('painScoreLabel (#1528: the number only)', () => {
   });
 
   test('no score says so, and never borrows a severity word', () => {
-    expect(painScoreLabel(null)).toBe('Score not recorded');
-    expect(painScoreLabel(undefined)).toBe('Score not recorded');
-    expect(painScoreLabel(Number.NaN)).toBe('Score not recorded');
+    expect(painScoreLabel(null)).toBe('No score');
+    expect(painScoreLabel(undefined)).toBe('No score');
+    expect(painScoreLabel(Number.NaN)).toBe('No score');
+    expect(painReportLabel(6)).toBe('Pain report 6/10');
+    expect(painReportLabel(null)).toBe('Pain report, no score');
   });
 
-  test('the score is read from metadata.severity_1_10 only when it is a number', () => {
+  test('the score is read from metadata.severity_1_10 when it is a number or a numeric string', () => {
     expect(painScoreFromMetadata({ severity_1_10: 7 })).toBe(7);
-    expect(painScoreFromMetadata({ severity_1_10: '7' })).toBeNull();
+    // A stored score is never called missing, even when it was written as text.
+    expect(painScoreFromMetadata({ severity_1_10: '7' })).toBe(7);
+    expect(painScoreFromMetadata({ severity_1_10: 'seven' })).toBeNull();
+    expect(painScoreFromMetadata({ severity_1_10: Number.POSITIVE_INFINITY })).toBeNull();
     expect(painScoreFromMetadata({})).toBeNull();
     expect(painScoreFromMetadata(null)).toBeNull();
   });

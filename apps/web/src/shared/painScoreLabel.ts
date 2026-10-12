@@ -17,15 +17,25 @@
  */
 export const PAIN_REPORT_TRIGGER = 'athlete_pain_report';
 
-/** "N/10", or a plain statement that no score was recorded. */
+/** "N/10", or "No score" when none can be read. */
 export function painScoreLabel(score: number | null | undefined): string {
-  return typeof score === 'number' && Number.isFinite(score) ? `${score}/10` : 'Score not recorded';
+  return typeof score === 'number' && Number.isFinite(score) ? `${score}/10` : 'No score';
 }
 
-/** The score a pain near miss carries in metadata.severity_1_10, if any. */
+/** A line naming a pain report: "Pain report N/10", or "Pain report, no score". */
+export function painReportLabel(score: number | null | undefined): string {
+  return typeof score === 'number' && Number.isFinite(score) ? `Pain report ${score}/10` : 'Pain report, no score';
+}
+
+/**
+ * The score a pain near miss carries in metadata.severity_1_10, if any. The
+ * writer stores a number; a numeric string is read too, so a score that is
+ * there is never called missing.
+ */
 export function painScoreFromMetadata(metadata: unknown): number | null {
   const score = (metadata as { severity_1_10?: unknown } | null | undefined)?.severity_1_10;
-  return typeof score === 'number' && Number.isFinite(score) ? score : null;
+  if (typeof score === 'number') return Number.isFinite(score) ? score : null;
+  return typeof score === 'string' && /^\d+(\.\d+)?$/.test(score.trim()) ? Number(score) : null;
 }
 
 /** True for a near miss filed from a pain report. */

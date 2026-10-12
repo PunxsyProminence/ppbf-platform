@@ -578,7 +578,7 @@ test("a pain report is offered by its score only, with no severity word (#1528)"
 
   const picker = screen.getByLabelText("Athlete's pain report");
   const labels = within(picker).getAllByRole('option').map((o) => o.textContent);
-  expect(labels).toEqual(['None', '6/10 9/2/2026', 'Score not recorded 9/4/2026']);
+  expect(labels).toEqual(['None', '6/10 9/2/2026', 'No score 9/4/2026']);
   for (const label of labels) expect(label).not.toMatch(/\b(low|moderate|high|critical)\b/i);
   expect((within(picker).getByRole('option', { name: '6/10 9/2/2026' }) as HTMLOptionElement).value).toBe('pain-1');
 

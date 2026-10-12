@@ -683,7 +683,7 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
   });
 
 
-  test('a pain report candidate carries its own score, read from metadata.severity_1_10 as a number only (#1528)', async () => {
+  test('a pain report candidate carries its own score, read from metadata.severity_1_10 as a number (#1528)', async () => {
     const athleteId = 'ath-pain-score';
     await addAthlete(ORG_A, athleteId);
     const add = async (metadata: string) => (await db.query<{ near_miss_id: string }>(
@@ -693,9 +693,12 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     )).rows[0].near_miss_id;
     const scored = await add('{"trigger":"athlete_pain_report","severity_1_10":6}');
     const text = await add('{"trigger":"athlete_pain_report","severity_1_10":"6"}');
+    const word = await add('{"trigger":"athlete_pain_report","severity_1_10":"six"}');
     const byId = new Map((await injuries.listLinkCandidates(ORG_A, athleteId)).painReports.map((n) => [n.near_miss_id, n]));
     expect(byId.get(scored)?.pain_score).toBe(6);
-    expect(byId.get(text)?.pain_score).toBeNull();
+    // A score written as text is still a score; a word is not.
+    expect(byId.get(text)?.pain_score).toBe(6);
+    expect(byId.get(word)?.pain_score).toBeNull();
     // The stored severity is still read, unchanged.
     expect(byId.get(scored)?.severity).toBe('high');
   });

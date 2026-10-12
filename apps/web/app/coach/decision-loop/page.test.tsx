@@ -2846,13 +2846,13 @@ describe('a pain report near miss reads as its number only (#1528)', () => {
 
   const row = (description: string) => screen.getByText(description).closest('article') as HTMLElement;
 
-  test('a pain report shows "Pain 6/10" and no severity word; another near miss keeps its word (#1528)', async () => {
+  test('a pain report shows "Pain report 6/10" and no severity word; another near miss keeps its word (#1528)', async () => {
     installFetch({ nearMisses: () => jsonResponse({ nearMisses: [PAIN, OTHER] }) });
     await selectAthlete();
     await screen.findByText(PAIN.description);
 
     const pain = row(PAIN.description);
-    expect(within(pain).getByText(`Pain 6/10 · ${PAIN.created_at}`)).toBeTruthy();
+    expect(within(pain).getByText(`Pain report 6/10 · ${PAIN.created_at}`)).toBeTruthy();
     expect(pain.textContent).not.toMatch(/\b(severity|low|moderate|high|critical)\b/i);
 
     const other = row(OTHER.description);
@@ -2866,7 +2866,7 @@ describe('a pain report near miss reads as its number only (#1528)', () => {
     await screen.findByText(PAIN.description);
 
     const pain = row(PAIN.description);
-    expect(within(pain).getByText(`Pain Score not recorded · ${PAIN.created_at}`)).toBeTruthy();
+    expect(within(pain).getByText(`Pain report, no score · ${PAIN.created_at}`)).toBeTruthy();
     expect(pain.textContent).not.toMatch(/\b(severity|high)\b/i);
   });
 });

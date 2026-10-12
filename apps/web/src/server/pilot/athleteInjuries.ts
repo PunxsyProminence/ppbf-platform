@@ -510,7 +510,8 @@ export async function listLinkCandidates(organizationId: string, athleteId: stri
     ),
     query<InjuryLinkCandidates['painReports'][number]>(
       `select n.near_miss_id::text, n.severity,
-              case when jsonb_typeof(n.metadata->'severity_1_10') = 'number'
+              case when jsonb_typeof(n.metadata->'severity_1_10') in ('number', 'string')
+                    and n.metadata->>'severity_1_10' ~ '^\s*[0-9]+(\.[0-9]+)?\s*$'
                    then (n.metadata->>'severity_1_10')::float8 end as pain_score,
               n.created_at::text
          from pilot.shadow_near_misses n

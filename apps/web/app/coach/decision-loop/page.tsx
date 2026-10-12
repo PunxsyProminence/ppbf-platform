@@ -6,7 +6,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import { formatGymDate } from '@/src/lib/gymTime';
-import { isPainReportNearMiss, painScoreFromMetadata, painScoreLabel } from '@/src/shared/painScoreLabel';
+import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 /* What the gates act on, as the route reports it beside the stored row: the
@@ -1453,7 +1453,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                         {/* A pain report reads as its number only (#1528). */}
                         {isPainReportNearMiss(nearMiss.metadata)
-                          ? `Pain ${painScoreLabel(painScoreFromMetadata(nearMiss.metadata))}`
+                          ? painReportLabel(painScoreFromMetadata(nearMiss.metadata))
                           : `Severity: ${nearMiss.severity}`} · {nearMiss.created_at}
                       </p>
                     </article>
