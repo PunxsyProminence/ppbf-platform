@@ -2,6 +2,7 @@
 
 import React, { type ReactNode } from 'react';
 import { formatGymDate } from '@/src/lib/gymTime';
+import { currentOrganizationProfile, physicalAddressLine } from '@/src/shared/organizationProfile';
 
 /**
  * ONE SHEET OF US LETTER.
@@ -59,8 +60,9 @@ export interface PrintSheetProps {
   readonly className?: string;
 }
 
-export const GYM_NAME = 'Punxsy Prominence Boxing & Fitness';
-export const GYM_ADDRESS = '220 N Jefferson St, Punxsutawney, PA 15767';
+// The gym's name and address, from its one profile (#1469, N9-01).
+export const GYM_NAME = currentOrganizationProfile().brand;
+export const GYM_ADDRESS = physicalAddressLine(currentOrganizationProfile());
 
 export default function PrintSheet({ eyebrow, title, footNote, children, className = '' }: PrintSheetProps) {
   return (
