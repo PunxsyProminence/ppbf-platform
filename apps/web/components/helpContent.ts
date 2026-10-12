@@ -232,7 +232,7 @@ export const guideSections: GuideSection[] = [
     whatThisAreaIsFor: 'Research lifecycle visibility for intake, review, graph, simulation, and audit.',
     whoShouldUseIt: 'Research/development users and governance reviewers.',
     activeNow: 'Research intake, evidence review, knowledge graph, simulator, and audit surfaces.',
-    placeholderOrPlanned: 'Source control and a publication workflow are planned (roadmap); there is no screen for them yet.',
+    placeholderOrPlanned: 'Publication workflow automation is parked (roadmap); there is no screen for it yet.',
     doNotTestYet: 'No automatic publication execution and no backend promotion engine.',
     usefulFeedback: 'Identify unclear stage transitions and missing governance checkpoint messaging.',
     whereToGoNext: 'Audit Trace and the Planned Capabilities Guide.',

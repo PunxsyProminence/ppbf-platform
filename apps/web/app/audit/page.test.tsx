@@ -108,3 +108,13 @@ test('a rejected request is reported as a failed read, not as no activity', asyn
   expect(screen.queryByText(/No audit events have been recorded/i)).toBeNull();
   expect(screen.getByText(/nothing being read/i)).toBeTruthy();
 });
+
+// Lane N4-04 deleted the mock /source-control pages: Audit Trace is the last
+// stage, so the page must not name a next stage or link to one that is gone.
+test('names no Source Control stage and links nowhere under /source-control', async () => {
+  await renderPage(jest.fn(async () => jsonResponse({ ok: true, events: [] })));
+
+  expect(screen.queryByText(/Source Control/)).toBeNull();
+  expect(screen.getByText('None (last stage)')).toBeTruthy();
+  expect(document.querySelector('a[href^="/source-control"]')).toBeNull();
+});
