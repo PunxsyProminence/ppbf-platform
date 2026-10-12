@@ -73,7 +73,20 @@ const REFRESH_INTERVAL_MS = 120_000;
 
 type ReadState = 'loading' | 'loaded' | 'unavailable';
 
+/**
+ * The top bar's safety counts: open escalations, and (organization admin only)
+ * refused team clips. Each renders on its own and is silent at zero.
+ */
 export default function SafetyAttentionBadge({ role }: { readonly role: string | null }) {
+  return (
+    <>
+      <EscalationBadge role={role} />
+      <RefusedTeamClipsBadge role={role} />
+    </>
+  );
+}
+
+function EscalationBadge({ role }: { readonly role: string | null }) {
   const [criticalCount, setCriticalCount] = useState(0);
   const [highCount, setHighCount] = useState(0);
   const [readState, setReadState] = useState<ReadState>('loading');
@@ -240,6 +253,130 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
             lane specified it if that transform ever moves. */}
         <span className="sm:hidden">{`SAFETY ${total} · ${worst}`}</span>
         <span className="hidden sm:inline">Safety {label}</span>
+      </span>
+    </ChromeLink>
+  );
+}
+
+/**
+ * REFUSED TEAM CLIPS (#1445; OD-2026-10-08-006 A-Q22, "Top-bar count").
+ *
+ * When the content screen refuses a clip, the sweep files a critical
+ * escalation against the clip's athlete -- and so the badge above counts it.
+ * A team clip has no athlete (OD-2026-10-08-014 keeps those scanned), and
+ * safety_escalations.athlete_id is not null, so a refused team clip files
+ * nothing and was on no bar at all. This counts them.
+ *
+ * WHAT COUNTS: a clip with no athlete, scan_state 'blocked' and still
+ * quarantined -- currently refused, however long ago (N4-03-Q1 default A). An
+ * admin's "approve" makes it ready, and it leaves the count.
+ *
+ * WHO: the organization admin only (client role 'admin'). Only that role can
+ * approve or block a refused clip (/admin/video-review), and only that role's
+ * video list is the whole gym's.
+ *
+ * A NUMBER AND NOTHING ELSE. The list read carries titles and file names; none
+ * of it is rendered, kept, or put in a label.
+ *
+ * THE READ IS CAPPED. /api/pilot/video/list returns at most REFUSED_READ_LIMIT
+ * clips, newest first. A full page means older refused clips may exist past
+ * it, so the count is shown as a floor, "N+", rather than as a total.
+ */
+const REFUSED_READ_LIMIT = 100;
+
+interface VideoListRow {
+  athlete_id: string | null;
+  scan_state: string;
+  status: string;
+}
+
+export function isRefusedTeamClip(row: VideoListRow): boolean {
+  return row.athlete_id === null && row.scan_state === 'blocked' && row.status === 'quarantined';
+}
+
+function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
+  const [count, setCount] = useState(0);
+  const [atLeast, setAtLeast] = useState(false);
+  const [readState, setReadState] = useState<ReadState>('loading');
+  // The client carries an organization admin as 'admin' (roleSession.ts
+  // mapPilotRoleToClubRole); the server name is accepted too, as above.
+  const serves = role === 'admin' || role === 'organization_admin';
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/video/list?limit=${REFUSED_READ_LIMIT}`, {
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error('video list');
+      }
+      const payload = (await response.json()) as { items?: VideoListRow[] };
+      const rows = payload.items ?? [];
+      setCount(rows.filter(isRefusedTeamClip).length);
+      setAtLeast(rows.length >= REFUSED_READ_LIMIT);
+      setReadState('loaded');
+    } catch (error) {
+      if ((error as { name?: string }).name === 'AbortError') {
+        return;
+      }
+      setCount(0);
+      setAtLeast(false);
+      setReadState('unavailable');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!serves) {
+      return;
+    }
+    const controller = new AbortController();
+    // Same first-read-on-mount as the escalation badge above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load(controller.signal);
+    const timer = setInterval(() => {
+      void load(controller.signal);
+    }, REFRESH_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [serves, load]);
+
+  if (!serves || readState === 'loading') {
+    return null;
+  }
+
+  if (readState === 'unavailable') {
+    return (
+      <ChromeLink
+        href="/admin/video-review"
+        className={CONTROL_QUIET}
+        aria-label="Open video review. The count of refused team clips could not be read."
+        title="Refused team clips could not be read. This is not a statement that there are none."
+      >
+        Clips: unread
+      </ChromeLink>
+    );
+  }
+
+  if (count === 0) {
+    return null;
+  }
+
+  const shown = `${count}${atLeast ? '+' : ''}`;
+  const noun = count === 1 && !atLeast ? 'refused team clip' : 'refused team clips';
+  return (
+    <ChromeLink
+      href="/admin/video-review"
+      className="inline-flex min-h-[var(--tap)] items-center no-underline"
+      aria-label={`${atLeast ? 'At least ' : ''}${count} ${noun}. Open video review.`}
+    >
+      <span className="badge badge--restricted">
+        <i>▲</i>
+        <span className="sm:hidden">{`CLIPS ${shown}`}</span>
+        <span className="hidden sm:inline">{`${shown} ${noun}`}</span>
       </span>
     </ChromeLink>
   );
