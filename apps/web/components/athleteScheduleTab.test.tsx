@@ -144,6 +144,21 @@ describe('AthleteScheduleView', () => {
     expect(screen.queryByText('Yesterday')).not.toBeInTheDocument();
   });
 
+  test('the date, time and place lines use the kiosk body voice, never a size under the floor (AGENT_KERNEL rule 2)', async () => {
+    fetchMock.mockReturnValue(respond({
+      ok: true,
+      classes: [klass('b', 6, { title: 'Sparring Basics', location: 'Ring' }), klass('c', 8, { title: 'Bag Work', location: 'Floor' })],
+      registrations: [{ registration_id: 'r1', class_id: 'b', status: 'registered' }],
+    }));
+    render(<AthleteScheduleView />);
+    await waitFor(() => section('Your sessions'));
+    for (const place of ['Ring', 'Floor']) {
+      const line = screen.getByText((text) => text.endsWith(` · ${place}`));
+      expect(line).toHaveClass('t-body');
+      expect(line.className).not.toMatch(/--t-(xs|sm)\b/);
+    }
+  });
+
   test('a confirmed booking reads "Booked" under Your sessions and is not repeated under Upcoming classes', async () => {
     fetchMock.mockReturnValue(respond({
       ok: true,

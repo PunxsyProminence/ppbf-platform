@@ -553,7 +553,7 @@ export function AthleteScheduleView() {
               <li key={registration.registration_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
                 <div className="min-w-0">
                   <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
-                  <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                  <p className="t-body text-[color:var(--bone-300)]">
                     {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
                   </p>
                 </div>
@@ -576,7 +576,7 @@ export function AthleteScheduleView() {
                 <li key={item.class_id} className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
                   <div className="min-w-0">
                     <p className="font-semibold text-[color:var(--bone-100)]">{item.title}</p>
-                    <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <p className="t-body text-[color:var(--bone-300)]">
                       {classWhen(item)}{item.location ? ` · ${item.location}` : ''}
                     </p>
                   </div>
