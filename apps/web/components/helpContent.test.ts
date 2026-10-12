@@ -26,10 +26,12 @@ test('video, compliance and progression pages that read real records are not sta
   }
 });
 
-test('the publication workflow keeps its placeholder stamp, matching the page itself', () => {
-  // app/source-control/publication-workflow/page.tsx stamps itself
-  // 'PLANNED | FRONT-END PLACEHOLDER'; the guide must agree with the page.
-  expect(planned('planned-publication').currentStatus).toBe('PLANNED | FRONT-END PLACEHOLDER');
+test('the publication workflow is roadmap with no screen: its mock page was deleted (lane N4-04)', () => {
+  expect(planned('planned-publication').currentStatus).toBe('PLANNED | NOT BUILT');
+  expect(planned('planned-publication').whereItAppears).toBe('No screen yet.');
+  for (const section of [...guideSections, ...plannedCapabilityGuides]) {
+    expect(JSON.stringify(section)).not.toMatch(/\/source-control/);
+  }
 });
 
 test('the Revenue & Funding center tabs are roadmap, not listed as active', () => {
