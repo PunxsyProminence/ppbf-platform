@@ -400,3 +400,12 @@ test('without a check-in today the athlete still has no reading', async () => {
   expect(readings.textContent).toContain('0 of 1');
   expect(floor().getByRole('button', { name: 'Jordan P.: readiness No reading' })).toBeTruthy();
 });
+
+test('a check-in today keeps the Readiness Alerts tile from saying there are no fresh check-ins (F-040)', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    readinessBoard: () => jsonResponse({ items: [], checked_in_today: ['ath_1'] }),
+  });
+  expect(screen.queryByText(/No fresh readiness check-ins/)).toBeNull();
+  expect(screen.getByText(/0 RED, 0 YELLOW, 1 unknown/)).toBeTruthy();
+});
