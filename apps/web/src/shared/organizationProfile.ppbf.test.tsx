@@ -72,6 +72,9 @@ test('the entrance photo caption and alt text read as they did', () => {
 test('the interest form points a visitor at the gym as it did when sending fails', async () => {
   global.fetch = jest.fn(async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
   const { container } = render(<PublicInterestForm />);
+  fireEvent.change(container.querySelector('input[type="text"], input:not([type])') as HTMLInputElement, { target: { value: 'Sam Rivera' } });
+  const email = container.querySelector('input[type="email"]') as HTMLInputElement | null;
+  if (email) fireEvent.change(email, { target: { value: 'sam@example.com' } });
   await act(async () => {
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
   });

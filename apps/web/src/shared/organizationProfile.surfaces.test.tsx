@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 
 import type { OrganizationProfile } from './organizationProfile';
 
-const SECOND_GYM: OrganizationProfile = {
+const mockSecondGym: OrganizationProfile = {
   brand: 'Ridgeway Lantern Boxing & Fitness',
   legalName: 'Ridgeway Lantern Boxing and Fitness',
   shortName: 'RLBF',
@@ -34,7 +34,7 @@ const SECOND_GYM: OrganizationProfile = {
 
 jest.mock('./organizationProfile', () => {
   const actual = jest.requireActual('./organizationProfile');
-  return { ...actual, currentOrganizationProfile: () => SECOND_GYM };
+  return { ...actual, currentOrganizationProfile: () => mockSecondGym };
 });
 
 jest.mock('next/link', () => ({ __esModule: true, default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }));
