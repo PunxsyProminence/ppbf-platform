@@ -564,3 +564,25 @@ test('a coach who coaches or covers nobody is told so, and the roster ids were s
   const check = (global.fetch as jest.Mock).mock.calls.find(([, init]) => init?.method === 'POST');
   expect(JSON.parse(String(check?.[1].body))).toEqual({ action: 'accessible_athletes', athlete_ids: ['ath-1', 'ath-x'] });
 });
+
+test("a pain report is offered by its score only, with no severity word (#1528)", async () => {
+  candidatesReply = {
+    ...CANDIDATES,
+    painReports: [
+      // 01:30 UTC on 9/3 is the evening of 9/2 at the gym.
+      { near_miss_id: 'pain-1', severity: 'high', pain_score: 6, created_at: '2026-09-03 01:30:00+00' },
+      { near_miss_id: 'pain-2', severity: 'moderate', pain_score: null, created_at: '2026-09-04 14:00:00+00' },
+    ],
+  };
+  await openAthlete();
+
+  const picker = screen.getByLabelText("Athlete's pain report");
+  const labels = within(picker).getAllByRole('option').map((o) => o.textContent);
+  expect(labels).toEqual(['None', '6/10 9/2/2026', 'No score 9/4/2026']);
+  for (const label of labels) expect(label).not.toMatch(/\b(low|moderate|high|critical)\b/i);
+  expect((within(picker).getByRole('option', { name: '6/10 9/2/2026' }) as HTMLOptionElement).value).toBe('pain-1');
+
+  // Control: a record that is not a pain report still reads by its word.
+  expect(within(screen.getByLabelText('Training hold')).getByRole('option', { name: /Contact only/ }).textContent)
+    .toBe('Contact only 9/1/2026 (active)');
+});

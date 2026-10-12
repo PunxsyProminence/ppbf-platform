@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 
@@ -33,6 +34,8 @@ interface EscalationItem {
   severity: EscalationSeverity;
   status: 'open' | 'acknowledged' | 'resolved';
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
 }
 
 interface ViolationItem {
@@ -248,7 +251,8 @@ export default function SafetyReviewPage() {
                         <span className="t-body">{displayName(escalation.athlete_id, escalation.athlete_name)}</span>
                         <span className={`badge ${SEVERITY_BADGE[escalation.severity].rung}`}>
                           <i aria-hidden="true">{SEVERITY_BADGE[escalation.severity].glyph}</i>
-                          {escalation.severity}
+                          {/* A pain-report escalation reads "Pain report", not a severity word (#1528). */}
+                          {isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity}
                         </span>
                       </li>
                     ))}
