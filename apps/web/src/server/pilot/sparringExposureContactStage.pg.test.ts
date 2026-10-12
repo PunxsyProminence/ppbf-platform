@@ -424,9 +424,21 @@ describe('stage storage, the gym-day count and the cap reading', () => {
       expect(reading.state).toBe('set');
       expect(reading.cap?.highest_allowed_stage).toBe('light_technical');
 
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. A
+      // coach of this gym who is not the athlete's coach reads the same cap.
+      const gymCoachReading = await readCapForEntry(UNASSIGNED_COACH, ATHLETE_ID);
+      expect(gymCoachReading.state).toBe('set');
+      expect(gymCoachReading.cap?.highest_allowed_stage).toBe('light_technical');
+
+      // A refusal now needs an athlete outside the coach's reach: a deleted
+      // one (refused exactly as for an org admin).
+      await client.query(
+        'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
+        [ORG_ID, OTHER_ATHLETE_ID],
+      );
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       try {
-        expect(await readCapForEntry(UNASSIGNED_COACH, ATHLETE_ID)).toEqual({ state: 'unknown', cap: null });
+        expect(await readCapForEntry(UNASSIGNED_COACH, OTHER_ATHLETE_ID)).toEqual({ state: 'unknown', cap: null });
         // Unknown for the right reason: the cap module refused this coach.
         expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ forbidden: true }));
       } finally {

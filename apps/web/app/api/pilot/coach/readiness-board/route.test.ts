@@ -6,6 +6,7 @@ import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRos
 import { getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getReadinessBoard } from '@/src/server/pilot/readinessBoard';
+import { listAthleteIdsCheckedInToday } from '@/src/server/pilot/athleteCheckIns';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -34,7 +35,12 @@ jest.mock('@/src/server/pilot/readinessBoard', () => {
   return { ...actual, getReadinessBoard: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/athleteCheckIns', () => ({
+  listAthleteIdsCheckedInToday: jest.fn(async () => []),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCheckedIn = listAthleteIdsCheckedInToday as jest.Mock;
 const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
 const mockByOrg = organizationActionableRoster as jest.Mock;
@@ -42,6 +48,7 @@ const mockBoard = getReadinessBoard as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
+  mockCheckedIn.mockImplementation(async () => []);
 });
 
 function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
@@ -105,4 +112,23 @@ test('a parent or athlete gets no readiness board at all', async () => {
     expect((await GET(getRequest())).status).toBeGreaterThanOrEqual(400);
   }
   expect(mockBoard).not.toHaveBeenCalled();
+});
+
+test("today's own check-ins are named for the same audience, ids only (F-040)", async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockCoachIds.mockResolvedValue(['ath-1', 'ath-2']);
+  mockBoard.mockResolvedValue([]);
+  mockCheckedIn.mockResolvedValue(['ath-2']);
+
+  const payload = await (await GET(getRequest())).json();
+
+  expect(mockCheckedIn).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-2']);
+  expect(payload.items).toEqual([]);
+  expect(payload.checked_in_today).toEqual(['ath-2']);
+});
+
+test('a role refused the board never reads check-ins either', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent' }));
+  expect((await GET(getRequest())).status).toBeGreaterThanOrEqual(400);
+  expect(mockCheckedIn).not.toHaveBeenCalled();
 });

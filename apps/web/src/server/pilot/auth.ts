@@ -23,7 +23,7 @@ import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
-import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
+import { computeSessionExpiry, parseRetentionDays, SESSION_TOKEN_RETENTION_DAYS } from './sessionPolicy';
 import { isLoopbackPostgresConnectionString, query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
@@ -809,18 +809,41 @@ export async function revokeOwnSessionsInOrganization(accountId: string, organiz
 // caller -- script or application code -- gets the same rejection of
 // malformed input (e.g. "7abc", decimals, zero, negative, NaN, or an
 // excessive value).
-export async function cleanupExpiredSessions(retentionDays: number = 7): Promise<{ deletedCount: number }> {
+/** A token past the window by expiry or by revocation. $1 is the window in days. */
+const EXPIRED_SESSION_PREDICATE = `(expires_at < now() - ($1 || ' days')::interval)
+        or (revoked_at is not null and revoked_at < now() - ($1 || ' days')::interval)`;
+
+export async function cleanupExpiredSessions(
+  retentionDays: number = SESSION_TOKEN_RETENTION_DAYS,
+): Promise<{ deletedCount: number }> {
   const validDays = parseRetentionDays(retentionDays);
 
   const rows = await query<{ token_hash: string }>(
     `delete from pilot.session_tokens
-     where (expires_at < now() - ($1 || ' days')::interval)
-        or (revoked_at is not null and revoked_at < now() - ($1 || ' days')::interval)
+     where ${EXPIRED_SESSION_PREDICATE}
      returning token_hash`,
     [validDays],
   );
 
   return { deletedCount: rows.length };
+}
+
+/**
+ * What cleanupExpiredSessions would delete, deleting nothing: the dry run of
+ * the nightly cleanup. The same predicate, so the count is the delete's.
+ */
+export async function countExpiredSessions(
+  retentionDays: number = SESSION_TOKEN_RETENTION_DAYS,
+): Promise<{ dueCount: number }> {
+  const validDays = parseRetentionDays(retentionDays);
+
+  const row = await queryOne<{ n: number }>(
+    `select count(*)::int as n from pilot.session_tokens
+     where ${EXPIRED_SESSION_PREDICATE}`,
+    [validDays],
+  );
+
+  return { dueCount: row?.n ?? 0 };
 }
 
 /**

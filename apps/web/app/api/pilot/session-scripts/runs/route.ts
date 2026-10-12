@@ -50,8 +50,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-const START_FIELDS = ['script_id'] as const;
-const START_OPTIONAL_FIELDS = ['activity_id', 'athletes_present', 'delivered_on'] as const;
+// Every start field is optional: a start without script_id is a plain session (Jason 2026-10-12,
+// issue #1523).
+const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on'] as const;
 
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
@@ -83,14 +84,18 @@ export async function POST(request: NextRequest) {
 
     const extras = Object.keys(record).filter(
       (key) =>
-        !(START_FIELDS as readonly string[]).includes(key)
-        && !(START_OPTIONAL_FIELDS as readonly string[]).includes(key),
+        !(START_OPTIONAL_FIELDS as readonly string[]).includes(key),
     );
     if (extras.length > 0) {
       return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
     }
 
-    if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
+    // Absent or null: a plain session. Present: a script to run, which must name one.
+    if (
+      record.script_id !== undefined
+      && record.script_id !== null
+      && (typeof record.script_id !== 'string' || record.script_id.trim() === '')
+    ) {
       return badRequest('script_id');
     }
 
@@ -133,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     const run = await startSessionScriptRun(principal.organizationId, principal.accountId, {
-      scriptId: record.script_id.trim(),
+      scriptId: typeof record.script_id === 'string' ? record.script_id.trim() : null,
       activityId: (record.activity_id as string | undefined) ?? null,
       athletesPresent,
       deliveredOn: (record.delivered_on as string | undefined) ?? undefined,

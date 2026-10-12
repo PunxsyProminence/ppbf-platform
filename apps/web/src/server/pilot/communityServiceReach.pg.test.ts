@@ -268,19 +268,26 @@ describe('GET community service: who sees whose hours', () => {
     );
   });
 
-  test('the coach of record sees only their own athletes, mapped through the row OR the login', async () => {
-    // ATH_C is reached through the row's athlete_id (login has none).
-    expect(await peopleSeenBy(actor(COACH_RECORD, 'coach'))).toEqual([LOGIN_A, LOGIN_C].sort());
-    // ATH_D is reached through the login's athlete_id (row has none).
-    expect(await peopleSeenBy(actor(COACH_OTHER, 'coach'))).toEqual([LOGIN_B, LOGIN_D].sort());
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Every
+  // coach of the gym sees every athlete's hours, mapped through the row OR the
+  // login; the adult volunteer (no athlete record) is still on no coach list,
+  // and a coach of another gym sees nobody here.
+  const EVERY_ATHLETE = [LOGIN_A, LOGIN_B, LOGIN_C, LOGIN_D].sort();
+
+  test('the coach of record sees every athlete of the gym, mapped through the row OR the login', async () => {
+    // ATH_C is reached through the row's athlete_id (login has none); ATH_D
+    // through the login's athlete_id (row has none).
+    expect(await peopleSeenBy(actor(COACH_RECORD, 'coach'))).toEqual(EVERY_ATHLETE);
+    expect(await peopleSeenBy(actor(COACH_OTHER, 'coach'))).toEqual(EVERY_ATHLETE);
   });
 
-  test('a covering coach sees the athlete they are covering right now, and not one whose grant expired', async () => {
-    expect(await peopleSeenBy(actor(COACH_COVER, 'coach'))).toEqual([LOGIN_B]);
+  test('a covering coach sees every athlete of the gym, whatever their grants', async () => {
+    expect(await peopleSeenBy(actor(COACH_COVER, 'coach'))).toEqual(EVERY_ATHLETE);
   });
 
-  test('a coach with no assignment and no coverage sees nobody', async () => {
-    expect(await peopleSeenBy(actor(COACH_NOBODY, 'coach'))).toEqual([]);
+  test('a coach with no assignment and no coverage sees every athlete of the gym; a coach of another gym sees nobody', async () => {
+    expect(await peopleSeenBy(actor(COACH_NOBODY, 'coach'))).toEqual(EVERY_ATHLETE);
+    expect(await peopleSeenBy(actor(COACH_NOBODY, 'coach', OTHER_ORG))).toEqual([]);
   });
 
   test('the platform owner sees nobody (organization-private athlete records)', async () => {
@@ -302,8 +309,12 @@ describe('GET community service: who sees whose hours', () => {
   });
 
   test('a person filter does not widen reach: asking for an unreached person returns nothing', async () => {
-    const totals = await getCommunityServiceTotals(actor(COACH_RECORD, 'coach'), { personAccountId: LOGIN_B });
+    // Issue #1480: within the gym every athlete is reached, so the unreached
+    // person is now asked for by a coach of ANOTHER gym.
+    const totals = await getCommunityServiceTotals(actor(COACH_RECORD, 'coach', OTHER_ORG), { personAccountId: LOGIN_B });
     expect(totals).toEqual([]);
+    const sameGym = await getCommunityServiceTotals(actor(COACH_RECORD, 'coach'), { personAccountId: LOGIN_B });
+    expect(sameGym.map((p) => p.person_account_id)).toEqual([LOGIN_B]);
     const own = await getCommunityServiceTotals(actor(COACH_RECORD, 'coach'), { personAccountId: LOGIN_A });
     expect(own.map((p) => p.person_account_id)).toEqual([LOGIN_A]);
     expect(own[0].verified_minutes).toBe(120);

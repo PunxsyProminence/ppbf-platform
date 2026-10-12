@@ -65,9 +65,12 @@ function withDatabase(fixture: Fixture): void {
       );
     }
     if (text.includes('from pilot.athletes')) {
-      const [athleteId] = params as string[];
+      // inOrganization lists live athletes of org-real; another gym's caller
+      // (the org bound as $2) finds none of them.
+      const [athleteId, orgId] = params as string[];
+      const inThisGym = orgId === undefined || orgId === 'org-real';
       return Promise.resolve(
-        (fixture.inOrganization ?? []).includes(athleteId) ? { athlete_id: athleteId } : null,
+        inThisGym && (fixture.inOrganization ?? []).includes(athleteId) ? { athlete_id: athleteId } : null,
       );
     }
     if (text.includes('from pilot.coach_coverage')) {
@@ -212,20 +215,25 @@ describe('POST /api/pilot/intake/document-review', () => {
     expect(mockReview).toHaveBeenCalledTimes(1);
   });
 
-  test('on a promoted case review follows the athlete the documents name', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  // Still follows the athlete the documents name: a coach of the gym reaches a
+  // live athlete of the gym (assigned or not); not one of another gym, or deleted.
+  test('on a promoted case review follows the athlete the documents name: any coach of that athlete\'s gym, nobody outside it', async () => {
     const promoted: Fixture = {
       intakeCase: { primary_athlete_id: null, submitted_by_account_id: 'acct-uploader' },
       documentOwners: ['ath-1'],
     };
     mockReview.mockResolvedValue(reviewedRow('clean'));
 
-    mockRequirePrincipal.mockResolvedValue(principal('coach', 'acct-coach-of-record'));
-    withDatabase({ ...promoted, coachAssigned: ['ath-1'] });
-    expect((await POST(reviewRequest({ intake_document_id: 'doc-1', decision: 'clean' }))).status).toBe(200);
-
-    mockReview.mockClear();
+    // A coach of the gym who is NOT ath-1's coach of record.
     mockRequirePrincipal.mockResolvedValue(principal('coach', 'acct-other-coach'));
-    withDatabase({ ...promoted, coachAssigned: ['ath-other'] });
+    withDatabase({ ...promoted, coachAssigned: [], inOrganization: ['ath-1'] });
+    expect((await POST(reviewRequest({ intake_document_id: 'doc-1', decision: 'clean' }))).status).toBe(200);
+    expect(mockReview).toHaveBeenCalledTimes(1);
+
+    // ath-1 is not a live athlete of this gym (another gym's, or deleted).
+    mockReview.mockClear();
+    withDatabase({ ...promoted, coachAssigned: ['ath-1'], inOrganization: ['ath-other'] });
     expect((await POST(reviewRequest({ intake_document_id: 'doc-1', decision: 'clean' }))).status).toBe(403);
     expect(mockReview).not.toHaveBeenCalled();
   });

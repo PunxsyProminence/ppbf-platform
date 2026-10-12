@@ -470,16 +470,25 @@ describe('SHADOW event feed: an athlete-tied event reaches only roles cleared fo
   // the feed now applies it to mirrors (shadowAuditMirrorScope.pg.test.ts).
   // The athletes and parent below still prove those mirrors are tied to the
   // right athlete.
-  test("a coach reads their own athlete's rows and the operational feed, not another coach's athlete", async () => {
-    expect(await visibleTo(COACH_A, 'coach')).toEqual(sorted([OPS, PAIN_A]));
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. Every
+  // coach of the gym -- assigned, covering, or neither -- reads every
+  // athlete-tied row of the gym, including rows naming two athletes. Still not
+  // the audit mirrors off audit/get's coach allow-list (LOGIN_*, LOGOUT_B,
+  // FILM_B), and still not a row whose athletes cannot all be resolved -- one
+  // named by name alone (NAME_ONLY) or inside objects (OBJECTS_AB): those fail
+  // closed to the admin, whose scope is unrestricted.
+  const EVERY_COACH_READS = sorted([OPS, PAIN_A, CLAIM_B, NESTED_B, CAMEL_B, PAIR_AB]);
+
+  test("a coach reads every athlete's rows of the gym and the operational feed", async () => {
+    expect(await visibleTo(COACH_A, 'coach')).toEqual(EVERY_COACH_READS);
   });
 
-  test("the other coach reads B's rows, including the nested, Library and camel-cased ones, but not a row that also names A", async () => {
-    expect(await visibleTo(COACH_B, 'coach')).toEqual(sorted([OPS, CLAIM_B, NESTED_B, CAMEL_B]));
+  test('the other coach reads exactly the same rows, rows naming both athletes included', async () => {
+    expect(await visibleTo(COACH_B, 'coach')).toEqual(EVERY_COACH_READS);
   });
 
-  test('a coach covering athlete A reads what the assigned coach reads', async () => {
-    expect(await visibleTo(COACH_COVER, 'coach')).toEqual(sorted([OPS, PAIN_A]));
+  test('a coach holding a coverage grant reads the same rows as every other coach of the gym', async () => {
+    expect(await visibleTo(COACH_COVER, 'coach')).toEqual(EVERY_COACH_READS);
   });
 
   test('the platform owner reads no athlete-tied row', async () => {

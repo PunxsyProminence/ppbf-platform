@@ -79,3 +79,33 @@ test('a failed read admits items may exist', async () => {
   expect(screen.getByText(/Items may exist that are not shown here/)).toBeTruthy();
   expect(screen.queryByText('Nothing needs your eyes')).toBeNull();
 });
+
+test('a pain-report escalation badge reads "Pain report" in its severity colour; another escalation keeps its word (#1528)', async () => {
+  const escalation = { source_type: 'near_miss', created_at: '2026-08-10T12:00:00.000Z' };
+  global.fetch = mockFetch({
+    digest: {
+      ...DIGEST,
+      open_safety_escalations: [
+        { ...escalation, athlete_id: 'ath-1', athlete_name: 'Jordan P.', escalation_id: 'esc-1', severity: 'critical', reason: 'Pain 9/10 reported after sparring.', pain_report: true },
+        { ...escalation, athlete_id: 'ath-2', athlete_name: 'Sam R.', escalation_id: 'esc-2', severity: 'moderate', reason: 'Slipped on the apron.', pain_report: false },
+      ],
+      open_compliance_violations: [],
+    },
+  });
+
+  await act(async () => {
+    render(<CoachIntelligencePage />);
+  });
+
+  const item = (reason: string) => screen.getByText(new RegExp(reason)).closest('li') as HTMLElement;
+  const badgeOf = (reason: string) => item(reason).querySelector('.badge') as HTMLElement;
+
+  const pain = badgeOf('Pain 9/10 reported');
+  expect(pain.textContent).toBe('Pain report');
+  expect(pain.className).toContain('badge--locked');
+  expect(item('Pain 9/10 reported').textContent).not.toMatch(/\b(low|moderate|medium|high|critical)\b/i);
+
+  const other = badgeOf('Slipped on the apron');
+  expect(other.textContent).toBe('moderate');
+  expect(other.className).toContain('badge--monitor');
+});

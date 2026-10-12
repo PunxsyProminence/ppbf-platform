@@ -92,17 +92,16 @@ export async function setAthleteCompetence(
     throw new ValidationError('Unsupported domain.');
   }
 
-  // Assigned or covering coach, or an admin of the athlete's own gym; a deleted
-  // athlete fails here. Throws plain Forbidden errors, which jsonError maps to 403.
+  // A coach or an admin of the athlete's own gym (a coach's reach is the whole
+  // gym, 2026-10-12, issue #1480); a deleted athlete fails here. Throws plain
+  // Forbidden errors, which jsonError maps to 403.
   await assertActorCanAccessAthlete(actor, input.athleteId);
 
   const organizationId = actor.organizationId;
 
-  // The same refusal the guard gives this role, so losing a race to a delete
-  // or a reassignment does not disclose which one happened.
-  const refusal = actor.role === 'coach'
-    ? 'Forbidden: coach not assigned to athlete'
-    : 'Forbidden: athlete does not belong to organization';
+  // The same refusal the guard gives, so losing a race to a delete does not
+  // read differently from a missing athlete.
+  const refusal = 'Forbidden: athlete does not belong to organization';
 
   return withTransaction(async (client) => {
     // One lock does three jobs. It serializes level writes for this athlete,
@@ -110,29 +109,14 @@ export async function setAthleteCompetence(
     // one-current-row index; and it blocks a concurrent delete or coach
     // reassignment (both UPDATEs of this row) until this commits. Re-checking
     // under the lock closes the gap between the guard above and the write.
-    const athlete = await client.query<{ coach_id: string; deleted_at: string | null }>(
-      `select coach_id, deleted_at from pilot.athletes
+    const athlete = await client.query<{ deleted_at: string | null }>(
+      `select deleted_at from pilot.athletes
        where organization_id = $1 and athlete_id = $2
        for no key update`,
       [organizationId, input.athleteId],
     );
     if (athlete.rows.length === 0 || athlete.rows[0].deleted_at !== null) {
       throw new Error(refusal);
-    }
-    if (actor.role === 'coach' && athlete.rows[0].coach_id !== actor.accountId) {
-      // A covering coach: the grant must still be live, and `for share` holds
-      // it against a revocation until this commits.
-      const coverage = await client.query(
-        `select 1 from pilot.coach_coverage
-         where organization_id = $1 and athlete_id = $2 and covering_coach_id = $3
-           and starts_at <= now() and expires_at > now()
-         limit 1
-         for share`,
-        [organizationId, input.athleteId, actor.accountId],
-      );
-      if (coverage.rows.length === 0) {
-        throw new Error(refusal);
-      }
     }
 
     const level = await client.query<{ level_key: string }>(

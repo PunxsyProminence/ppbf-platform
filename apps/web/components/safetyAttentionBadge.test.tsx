@@ -25,7 +25,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
-import SafetyAttentionBadge from './SafetyAttentionBadge';
+import SafetyAttentionBadge, { isRefusedTeamClip } from './SafetyAttentionBadge';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -391,5 +391,143 @@ describe('the badge reads the existing record, not a second one', () => {
     expect(url).not.toContain('athlete_id');
     expect(url).not.toContain('organization_id');
     expect(url).not.toContain('coach');
+  });
+});
+
+/*
+ * Refused team clips (#1445; OD-2026-10-08-006 A-Q22). A team clip has no
+ * athlete, so a refusal files no escalation; this second count is what puts it
+ * on the bar -- for the organization admin, the one role that can act on it.
+ */
+describe('refused team clips are counted on the organization admin bar', () => {
+  interface ClipFixture {
+    video_session_id: string;
+    title?: string;
+    file_name?: string;
+    athlete_id: string | null;
+    scan_state: string;
+    status: string;
+  }
+
+  function clip(overrides: Partial<ClipFixture> = {}): ClipFixture {
+    return {
+      video_session_id: 'v1',
+      title: 'Tuesday sparring, Jordan and Sam',
+      file_name: 'IMG_4471.MOV',
+      athlete_id: null,
+      scan_state: 'blocked',
+      status: 'quarantined',
+      ...overrides,
+    };
+  }
+
+  function installRouted(clips: ClipFixture[] | 'fail'): jest.Mock {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/video/list')) {
+        if (clips === 'fail') return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({ items: clips }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  async function renderFor(role: string | null) {
+    await act(async () => {
+      render(<SafetyAttentionBadge role={role} />);
+    });
+  }
+
+  test('only clips with no athlete, refused by the screen and still held, are counted', async () => {
+    installRouted([
+      clip({ video_session_id: 'v1' }),
+      clip({ video_session_id: 'v2' }),
+      clip({ video_session_id: 'v3', athlete_id: 'ath-1' }),
+      clip({ video_session_id: 'v4', status: 'ready' }),
+      clip({ video_session_id: 'v5', scan_state: 'needs_human_review' }),
+      clip({ video_session_id: 'v6', scan_state: 'clean', status: 'ready' }),
+    ]);
+    await renderFor('admin');
+
+    const link = await screen.findByRole('link', { name: '2 refused team clips. Open video review.' });
+    expect(link.getAttribute('href')).toBe('/admin/video-review');
+    expect(link.textContent).toContain('2 refused team clips');
+  });
+
+  test('the bar carries the number and nothing about the clip', async () => {
+    installRouted([clip()]);
+    await renderFor('admin');
+
+    await screen.findByRole('link', { name: '1 refused team clip. Open video review.' });
+    const bar = document.body.textContent ?? '';
+    expect(bar).not.toContain('Tuesday sparring');
+    expect(bar).not.toContain('IMG_4471');
+    expect(bar).not.toContain('v1');
+  });
+
+  test('none refused renders nothing', async () => {
+    installRouted([clip({ scan_state: 'clean', status: 'ready' })]);
+    await renderFor('admin');
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
+    expect(screen.queryByText(/Clips: unread/)).toBeNull();
+  });
+
+  test('a full page of clips makes the count a floor, never a total', async () => {
+    const page = Array.from({ length: 100 }, (_, index) => clip({
+      video_session_id: `v${index}`,
+      ...(index < 3 ? {} : { scan_state: 'clean', status: 'ready' }),
+    }));
+    installRouted(page);
+    await renderFor('admin');
+
+    const link = await screen.findByRole('link', { name: 'At least 3 refused team clips. Open video review.' });
+    expect(link.textContent).toContain('3+ refused team clips');
+  });
+
+  test('an organization admin with an open escalation and a refused clip sees both counts', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/list')) {
+        return { ok: true, status: 200, json: async () => ({ items: [clip()] }) } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, escalations: [escalation({ severity: 'critical' })] }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+
+    expect(await screen.findByRole('link', { name: /Safety escalations needing acknowledgement: 1 critical/ })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
+  test('a failed read says so rather than claiming none', async () => {
+    installRouted('fail');
+    await renderFor('admin');
+
+    expect(await screen.findByText('Clips: unread')).toBeTruthy();
+  });
+
+  test.each(['coach', 'platform_owner', 'athlete', 'parent', 'board', 'staff'])(
+    'the %s session never reads the video list for this count',
+    async (role) => {
+      const fetchMock = installRouted([clip()]);
+      await renderFor(role);
+
+      expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/video/list'))).toEqual([]);
+      expect(screen.queryByRole('link', { name: /refused team clip/ })).toBeNull();
+    },
+  );
+});
+
+describe('isRefusedTeamClip', () => {
+  test.each([
+    [{ athlete_id: null, scan_state: 'blocked', status: 'quarantined' }, true],
+    [{ athlete_id: 'ath-1', scan_state: 'blocked', status: 'quarantined' }, false],
+    [{ athlete_id: null, scan_state: 'passed', status: 'ready' }, false],
+    [{ athlete_id: null, scan_state: 'needs_human_review', status: 'quarantined' }, false],
+    [{ athlete_id: null, scan_state: 'infected', status: 'infected' }, false],
+  ])('%o -> %s', (row, expected) => {
+    expect(isRefusedTeamClip(row)).toBe(expected);
   });
 });

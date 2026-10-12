@@ -128,10 +128,12 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       return jsonResponse({ recommendations: [] });
     }
     if (key.includes('/api/pilot/shadow/decisions')) {
-      return jsonResponse({ decisions: [] });
+      const handler = overrides.decisions as ((init?: RequestInit) => Response) | undefined;
+      return handler ? handler(init) : jsonResponse({ decisions: [] });
     }
     if (key.includes('/api/pilot/shadow/near-misses')) {
-      return jsonResponse({ nearMisses: [] });
+      const handler = overrides.nearMisses as ((init?: RequestInit) => Response) | undefined;
+      return handler ? handler(init) : jsonResponse({ nearMisses: [] });
     }
     if (key.includes('/api/pilot/intake/domain-upsert')) {
       const handler = overrides.domainUpsert as ((init?: RequestInit) => Response) | undefined;
@@ -851,12 +853,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await screen.findByText('No medical administrative status recorded yet.');
 
     held.release(
-      jsonResponse({ error: "Blocked: this athlete's medical administrative status is 'restricted', not 'cleared'." }, false),
+      jsonResponse({ error: "Cannot act on a recommendation with status 'expired'." }, false),
     );
     await settle();
 
-    expect(screen.queryByText(/Blocked/)).toBeNull();
-    expect(screen.queryByText(/restricted/)).toBeNull();
+    expect(screen.queryByText(/Cannot act/)).toBeNull();
+    expect(screen.queryByText(/status 'expired'/)).toBeNull();
     expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
     expect(screen.getByText(PREVIOUS_FAILED)).toBeTruthy();
   });
@@ -865,7 +867,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     // The other direction: the guard must not swallow a refusal the coach
     // needs to read.
     installSwitchFetch({
-      post: () => jsonResponse({ error: "Blocked: this athlete's medical administrative status is 'restricted', not 'cleared'." }, false),
+      post: () => jsonResponse({ error: "Cannot act on a recommendation with status 'expired'." }, false),
     });
     await openAthleteA();
 
@@ -874,7 +876,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(within(decisionSection).getByLabelText('Expected outcome'), { target: { value: 'No symptoms.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
 
-    expect(await screen.findByText(/Blocked/)).toBeTruthy();
+    expect(await screen.findByText(/Cannot act on a recommendation/)).toBeTruthy();
   });
 
   test('an incident filed for the previous athlete that lands late is not confirmed under the new one', async () => {
@@ -1681,7 +1683,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   // they check before contact work while the gate refused. Words and rung:
   // OD-2026-10-01-007 section 4.
   describe('a lapsed clearance beside a current one', () => {
-    const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+    // Issue #1474: the sentence no longer says recommendations are blocked.
+    const LAPSED_SENTENCE = 'This clearance passed its end date.';
     const LAPSED_ROW = { ...B_STATUS, expires_at: '2026-09-01 10:00:00+00' };
 
     async function openB(body: Record<string, unknown>) {
@@ -1735,7 +1738,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   // at by waiting. The athlete on screen is now read again when a clearance
   // in force reaches its end date, and the panel shows what the route answers.
   describe('a clearance that runs out while the screen is open', () => {
-    const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+    // Issue #1474: the sentence no longer says recommendations are blocked.
+    const LAPSED_SENTENCE = 'This clearance passed its end date.';
     const NOW = Date.parse('2026-09-01T15:59:30.000Z');
     // Thirty seconds after NOW, as the route sends it.
     const SOON_ROW = { ...B_STATUS, expires_at: '2026-09-01 16:00:00+00' };
@@ -2712,5 +2716,157 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+});
+
+// Issue #1474 (Jason, OD-2026-10-10-004 to -007: the coach makes the
+// assessment; the app records). The status on file is stated beside the
+// Record Decision form as a fact: no warning colour, no acknowledgement, and
+// nothing on the page says a decision will be refused or is gated.
+describe('the medical status on file, stated beside the Record Decision form', () => {
+  const STATUS_ROW = {
+    status_id: 'st-1',
+    athlete_id: 'ath-1',
+    status: 'cleared',
+    restriction_flags: {},
+    source_reference: null,
+    set_by_account_id: 'acct-1',
+    set_by_role: 'organization_admin',
+    effective_at: '2026-09-01T12:00:00.000Z',
+    expires_at: null,
+    created_at: '2026-09-01T12:00:00.000Z',
+  };
+  const statusIs = (row: Record<string, unknown> | null, effectiveStatus: string) => () =>
+    jsonResponse({ status: row, effectiveStatus });
+
+  const decisionsSection = () => screen.getByRole('heading', { name: 'Decisions' }).closest('section') as HTMLElement;
+
+  test.each([
+    ['none', statusIs(null, 'no_record'), 'Medical status on file: none'],
+    ['pending', statusIs({ ...STATUS_ROW, status: 'pending' }, 'pending'), 'Medical status on file: pending'],
+    ['restricted', statusIs({ ...STATUS_ROW, status: 'restricted' }, 'restricted'), 'Medical status on file: restricted'],
+    ['not cleared', statusIs({ ...STATUS_ROW, status: 'not_cleared' }, 'not_cleared'), 'Medical status on file: not cleared'],
+    ['cleared, no end date', statusIs(STATUS_ROW, 'cleared'), 'Medical status on file: cleared'],
+    [
+      'cleared with an end date',
+      statusIs({ ...STATUS_ROW, expires_at: '2026-10-30 16:00:00+00' }, 'cleared'),
+      'Medical status on file: cleared, expires October 30, 2026',
+    ],
+    [
+      'a lapsed clearance',
+      statusIs({ ...STATUS_ROW, expires_at: '2026-10-01 16:00:00+00' }, 'cleared_expired'),
+      'Medical status on file: cleared, expired October 1, 2026',
+    ],
+    ['a read that failed', () => jsonResponse({ error: 'upstream timeout' }, false), 'Medical status on file: could not be read'],
+  ])('%s', async (_label, medicalStatus, line) => {
+    installFetch({ medicalStatus });
+    await selectAthlete();
+
+    const statusLine = await within(decisionsSection()).findByText(line);
+    expect(statusLine.tagName).toBe('P');
+    expect(statusLine).toHaveClass('t-muted');
+    expect(statusLine.closest('[role="alert"]')).toBeNull();
+    // A fact, not a gate: no acknowledgement to tick and no refusal promised.
+    expect(within(decisionsSection()).queryByRole('checkbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Record Decision' })).toBeEnabled();
+    expect(document.body.textContent).not.toMatch(/refuses|gated by|medical gate blocks|checked on every decision/i);
+  });
+
+  test('while the status is still being read, the line says so rather than "none"', async () => {
+    // A read that never answers in this test: the line must not guess.
+    installFetch({ medicalStatus: () => new Promise<Response>(() => {}) as unknown as Response });
+    await selectAthlete();
+
+    expect(await within(decisionsSection()).findByText('Medical status on file: reading…')).toBeTruthy();
+    expect(screen.queryByText('Medical status on file: none')).toBeNull();
+  });
+
+  test('each past decision says what was on file when it was recorded', async () => {
+    const decision = {
+      decision_id: 'dec-1',
+      athlete_id: 'ath-1',
+      recommendation_id: null,
+      decision_text: 'Easy skipping only today; recheck next session.',
+      expected_outcome: 'Calf settles.',
+      decided_by_account_id: 'acct-1',
+      decided_by_role: 'coach',
+      status: 'active',
+      decided_at: '2026-10-11T18:00:00.000Z',
+    };
+    installFetch({
+      decisions: () => jsonResponse({
+        decisions: [
+          { ...decision, medical_status_on_file: 'no_record', medical_status_expires_at: null },
+          { ...decision, decision_id: 'dec-2', decision_text: 'Second.', medical_status_on_file: 'cleared_expired', medical_status_expires_at: '2026-10-01 16:00:00+00' },
+          // A decision read from a route that does not send the field says nothing about it.
+          { ...decision, decision_id: 'dec-3', decision_text: 'Third.' },
+        ],
+      }),
+    });
+    await selectAthlete();
+
+    const section = decisionsSection();
+    expect(await within(section).findByText('Medical status on file then: none')).toBeTruthy();
+    expect(within(section).getByText('Medical status on file then: cleared, expired October 1, 2026')).toBeTruthy();
+    expect(within(section).getAllByText(/Medical status on file then:/)).toHaveLength(2);
+  });
+
+  test('the page no longer says decisions or recommendations are gated by the medical status', async () => {
+    installFetch({ medicalStatus: statusIs({ ...STATUS_ROW, expires_at: '2026-10-01 16:00:00+00' }, 'cleared_expired') });
+    await selectAthlete();
+
+    await within(decisionsSection()).findByText(/Medical status on file:/);
+    expect(screen.getByText('This clearance passed its end date.')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/gated by the athlete|Read-only gate|medical gate blocks/i);
+  });
+});
+
+describe('a pain report near miss reads as its number only (#1528)', () => {
+  const NEAR_MISS = {
+    athlete_id: 'ath-1',
+    decision_id: null,
+    detected_by: 'system',
+    created_at: '2026-10-11T18:00:00.000Z',
+  };
+  const PAIN = {
+    ...NEAR_MISS,
+    near_miss_id: 'nm-pain',
+    description: 'Athlete reported pain in the left shoulder.',
+    severity: 'high',
+    metadata: { trigger: 'athlete_pain_report', severity_1_10: 6 },
+  };
+  const OTHER = {
+    ...NEAR_MISS,
+    near_miss_id: 'nm-other',
+    description: 'Slipped on the apron.',
+    severity: 'moderate',
+    detected_by: 'human',
+    metadata: null,
+  };
+
+  const row = (description: string) => screen.getByText(description).closest('article') as HTMLElement;
+
+  test('a pain report shows "Pain report 6/10" and no severity word; another near miss keeps its word (#1528)', async () => {
+    installFetch({ nearMisses: () => jsonResponse({ nearMisses: [PAIN, OTHER] }) });
+    await selectAthlete();
+    await screen.findByText(PAIN.description);
+
+    const pain = row(PAIN.description);
+    expect(within(pain).getByText(`Pain report 6/10 · ${PAIN.created_at}`)).toBeTruthy();
+    expect(pain.textContent).not.toMatch(/\b(severity|low|moderate|high|critical)\b/i);
+
+    const other = row(OTHER.description);
+    expect(within(other).getByText(`Severity: moderate · ${OTHER.created_at}`)).toBeTruthy();
+    expect(other.textContent).not.toMatch(/\/10/);
+  });
+
+  test('a pain report with no score on record says so, still with no severity word (#1528)', async () => {
+    installFetch({ nearMisses: () => jsonResponse({ nearMisses: [{ ...PAIN, metadata: { trigger: 'athlete_pain_report' } }] }) });
+    await selectAthlete();
+    await screen.findByText(PAIN.description);
+
+    const pain = row(PAIN.description);
+    expect(within(pain).getByText(`Pain report, no score · ${PAIN.created_at}`)).toBeTruthy();
+    expect(pain.textContent).not.toMatch(/\b(severity|high)\b/i);
   });
 });

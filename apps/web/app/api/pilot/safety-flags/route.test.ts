@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
-import { accessibleAthleteIds, assertCoachAssignedToAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertCoachReachesAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -22,6 +22,10 @@ import {
   flag on a child they have no standing on. These tests pin all three shut,
   and pin that organization_admin/admin are NOT narrowed by the fix.
 
+  Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. "Standing"
+  is now every live athlete of the coach's own gym (assertCoachReachesAthlete,
+  and accessibleAthleteIds for the board); another gym's athlete is refused.
+
   VALIDATION STATUS CODES. The four tests at the bottom predate the scope work
   and exist because the service-layer tests could not have caught the defect
   they cover. safetyFlags.pg.test.ts asserted `.rejects.toThrow('CODE')` -- a
@@ -41,7 +45,7 @@ import {
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   accessibleAthleteIds: jest.fn(),
-  assertCoachAssignedToAthlete: jest.fn(),
+  assertCoachReachesAthlete: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -64,7 +68,7 @@ jest.mock('@/src/server/pilot/safetyFlags', () => ({
 const actualSafetyFlags = jest.requireActual('@/src/server/pilot/safetyFlags');
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
-const mockCoachAssigned = assertCoachAssignedToAthlete as jest.Mock;
+const mockCoachReaches = assertCoachReachesAthlete as jest.Mock;
 const mockAccessibleAthleteIds = accessibleAthleteIds as jest.Mock;
 const mockGetFlagById = getSafetyFlagById as jest.Mock;
 const mockListOpenFlags = listOpenSafetyFlags as jest.Mock;
@@ -143,7 +147,8 @@ beforeEach(() => {
 });
 
 describe('GET /api/pilot/safety-flags athlete scope', () => {
-  test('a coach naming their own athlete passes the assignment gate and reads that queue', async () => {
+  test('a coach naming an athlete of their gym passes the whole-gym gate and reads that queue', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     const mine = flagRow();
     mockListOpenFlags.mockResolvedValueOnce([mine]);
     mockAccessibleAthleteIds.mockResolvedValueOnce(new Set(['ATH-MINE']));
@@ -151,27 +156,31 @@ describe('GET /api/pilot/safety-flags athlete scope', () => {
     const res = await get('?athlete_id=ATH-MINE');
 
     expect(res.status).toBe(200);
-    expect(mockCoachAssigned).toHaveBeenCalledWith('coach-1', 'ATH-MINE', 'org-1');
+    expect(mockCoachReaches).toHaveBeenCalledWith('org-1', 'ATH-MINE');
     expect(mockListOpenFlags).toHaveBeenCalledWith('org-1', expect.objectContaining({ athleteId: 'ATH-MINE' }));
     expect((await res.json()).flags).toEqual([mine]);
   });
 
-  test('a coach naming an athlete they do not stand on is refused, and the queue is never read', async () => {
-    mockCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+  test("a coach naming another gym's athlete is refused, and the queue is never read", async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    mockCoachReaches.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
 
-    const res = await get('?athlete_id=ATH-OTHER');
+    const res = await get('?athlete_id=ATH-OTHER-GYM');
 
     expect(res.status).toBe(403);
     expect(mockListOpenFlags).not.toHaveBeenCalled();
   });
 
-  test('the coach board is filtered per row: another coach\'s athletes never appear', async () => {
-    // THE finding. This read previously returned every open flag in the gym.
+  test('the coach board is filtered per row: every athlete the whole-gym gate admits appears, and no other', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym, so
+    // another coach's athlete in this gym now appears. A row the gate does
+    // not admit (here, an athlete since soft-deleted) still never does.
     const mine = flagRow({ flag_id: 'flag-mine', athlete_id: 'ATH-MINE' });
     const covered = flagRow({ flag_id: 'flag-covered', athlete_id: 'ATH-COVERED' });
-    const notMine = flagRow({
-      flag_id: 'flag-not-mine',
-      athlete_id: 'ATH-OTHER',
+    const anotherCoaches = flagRow({ flag_id: 'flag-another-coaches', athlete_id: 'ATH-OTHER' });
+    const notAdmitted = flagRow({
+      flag_id: 'flag-not-admitted',
+      athlete_id: 'ATH-DELETED',
       flag_code: 'medical_clearance_missing',
     });
     const aboutMe = flagRow({
@@ -188,30 +197,31 @@ describe('GET /api/pilot/safety-flags athlete scope', () => {
       flag_class: 'system_guidance',
       flag_code: 'certification_lapsed',
     });
-    mockListOpenFlags.mockResolvedValueOnce([mine, covered, notMine, aboutMe, aboutAnotherAdult]);
-    // The coach of record for one, an active coverage grant on the other --
-    // accessibleAthleteIds is the batched form of the same gate and admits both.
-    mockAccessibleAthleteIds.mockResolvedValueOnce(new Set(['ATH-MINE', 'ATH-COVERED']));
+    mockListOpenFlags.mockResolvedValueOnce([mine, covered, anotherCoaches, notAdmitted, aboutMe, aboutAnotherAdult]);
+    // accessibleAthleteIds is the batched form of the same whole-gym gate: it
+    // admits every live athlete of the gym, assigned to this coach or not.
+    mockAccessibleAthleteIds.mockResolvedValueOnce(new Set(['ATH-MINE', 'ATH-COVERED', 'ATH-OTHER']));
 
     const res = await get();
     const payload = await res.json();
 
     expect(res.status).toBe(200);
     expect(payload.flags.map((flag: { flag_id: string }) => flag.flag_id))
-      .toEqual(['flag-mine', 'flag-covered', 'flag-about-me']);
+      .toEqual(['flag-mine', 'flag-covered', 'flag-another-coaches', 'flag-about-me']);
     // Not just absent from the ids -- absent from the body. The flag code and
     // the athlete id are each a disclosure about a child on their own.
     const serialized = JSON.stringify(payload);
-    expect(serialized).not.toContain('ATH-OTHER');
+    expect(serialized).not.toContain('ATH-DELETED');
     expect(serialized).not.toContain('medical_clearance_missing');
     expect(mockAccessibleAthleteIds).toHaveBeenCalledWith(
       expect.objectContaining({ accountId: 'coach-1', role: 'coach', organizationId: 'org-1' }),
-      ['ATH-MINE', 'ATH-COVERED', 'ATH-OTHER'],
+      ['ATH-MINE', 'ATH-COVERED', 'ATH-OTHER', 'ATH-DELETED'],
     );
   });
 
-  test('a coach whose athletes have no open flags gets an empty queue, not a refusal', async () => {
-    mockListOpenFlags.mockResolvedValueOnce([flagRow({ athlete_id: 'ATH-OTHER' })]);
+  test('a coach whose admitted athletes have no open flags gets an empty queue, not a refusal', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    mockListOpenFlags.mockResolvedValueOnce([flagRow({ athlete_id: 'ATH-DELETED' })]);
     mockAccessibleAthleteIds.mockResolvedValueOnce(new Set());
 
     const res = await get();
@@ -237,7 +247,7 @@ describe('GET /api/pilot/safety-flags athlete scope', () => {
       expect((await res.json()).flags).toEqual(wholeGym);
       // No per-athlete narrowing for an admin, on either path.
       expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
-      expect(mockCoachAssigned).not.toHaveBeenCalled();
+      expect(mockCoachReaches).not.toHaveBeenCalled();
     }
   });
 
@@ -248,7 +258,7 @@ describe('GET /api/pilot/safety-flags athlete scope', () => {
     const res = await get('?athlete_id=ATH-OTHER');
 
     expect(res.status).toBe(200);
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockListOpenFlags).toHaveBeenCalledWith('org-1', expect.objectContaining({ athleteId: 'ATH-OTHER' }));
   });
 
@@ -270,13 +280,14 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
     trigger_detail: 'Head contact in sparring.',
   };
 
-  test('a coach raises against their own athlete through the assignment gate', async () => {
+  test('a coach raises against an athlete of their gym through the whole-gym gate', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockRaise.mockResolvedValueOnce(flagRow());
 
     const res = await post(body);
 
     expect(res.status).toBe(201);
-    expect(mockCoachAssigned).toHaveBeenCalledWith('coach-1', 'ATH-MINE', 'org-1');
+    expect(mockCoachReaches).toHaveBeenCalledWith('org-1', 'ATH-MINE');
     expect(mockRaise).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'org-1',
       athleteId: 'ATH-MINE',
@@ -289,11 +300,12 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
     }));
   });
 
-  test('a coach cannot raise a flag against a child they do not stand on', async () => {
+  test("a coach cannot raise a flag against another gym's child", async () => {
     // THE finding: a flag lands in a child's permanent safety record.
-    mockCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    mockCoachReaches.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
 
-    const res = await post({ ...body, athlete_id: 'ATH-OTHER' });
+    const res = await post({ ...body, athlete_id: 'ATH-OTHER-GYM' });
 
     expect(res.status).toBe(403);
     expect(mockRaise).not.toHaveBeenCalled();
@@ -311,7 +323,7 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('Missing athlete_id');
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockRaise).not.toHaveBeenCalled();
   });
 
@@ -345,7 +357,7 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('Missing flag_class');
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
   });
 
   test('an admin raises against any athlete in the organization, ungated', async () => {
@@ -355,7 +367,7 @@ describe('POST /api/pilot/safety-flags athlete scope', () => {
     const res = await post({ ...body, athlete_id: 'ATH-OTHER' });
 
     expect(res.status).toBe(201);
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockRaise).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ATH-OTHER' }));
   });
 
@@ -385,7 +397,8 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
     coach_note: 'Cleared by the physician this morning; rest period served.',
   };
 
-  test('a coach resolves a flag on their own athlete', async () => {
+  test('a coach resolves a flag on any athlete of their gym', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockGetFlagById.mockResolvedValueOnce(flagRow());
     mockResolve.mockResolvedValueOnce(flagRow({ status: 'bypassed', resolution: 'false_positive' }));
 
@@ -393,7 +406,7 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
 
     expect(res.status).toBe(200);
     expect(mockGetFlagById).toHaveBeenCalledWith('org-1', 'flag-1');
-    expect(mockCoachAssigned).toHaveBeenCalledWith('coach-1', 'ATH-MINE', 'org-1');
+    expect(mockCoachReaches).toHaveBeenCalledWith('org-1', 'ATH-MINE');
     expect(mockResolve).toHaveBeenCalledWith(expect.objectContaining({
       flagId: 'flag-1',
       status: 'bypassed',
@@ -402,11 +415,12 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'update' }));
   });
 
-  test("a coach bypassing a flag on another coach's athlete is refused, indistinguishably from a bogus id", async () => {
+  test("a coach bypassing a flag on an athlete outside their gym is refused, indistinguishably from a bogus id", async () => {
     // THE finding at its worst: status='bypassed' stands a blocking flag down
     // and lets a child train through it.
-    mockGetFlagById.mockResolvedValueOnce(flagRow({ athlete_id: 'ATH-OTHER' }));
-    mockCoachAssigned.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+    mockGetFlagById.mockResolvedValueOnce(flagRow({ athlete_id: 'ATH-OTHER-GYM' }));
+    mockCoachReaches.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
     const notMine = await patch(body);
     const notMinePayload = await notMine.json();
 
@@ -430,14 +444,14 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
     expect(mockResolve).not.toHaveBeenCalled();
   });
 
-  test('an unexpected failure inside the assignment gate surfaces as a real error, not a hidden 404', async () => {
+  test('an unexpected failure inside the whole-gym gate surfaces as a real error, not a hidden 404', async () => {
     // Copilot review, PR #469: a blanket catch around assertCoachAssignedToAthlete
     // turned every failure -- including a database outage -- into "that safety
     // flag does not exist". Only the gate's own documented refusal message may
     // become the hidden 404; anything else must propagate, so an infrastructure
     // fault is never mistaken for a data problem.
     mockGetFlagById.mockResolvedValueOnce(flagRow({ athlete_id: 'ATH-OTHER' }));
-    mockCoachAssigned.mockRejectedValueOnce(new Error('db unavailable'));
+    mockCoachReaches.mockRejectedValueOnce(new Error('db unavailable'));
 
     const res = await patch(body);
 
@@ -453,7 +467,7 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
 
     expect(res.status).toBe(200);
     expect(mockGetFlagById).not.toHaveBeenCalled();
-    expect(mockCoachAssigned).not.toHaveBeenCalled();
+    expect(mockCoachReaches).not.toHaveBeenCalled();
     expect(mockResolve).toHaveBeenCalledWith(expect.objectContaining({
       status: 'upheld',
       resolvedByRole: 'organization_admin',
@@ -473,8 +487,7 @@ describe('PATCH /api/pilot/safety-flags athlete scope', () => {
 describe('POST /api/pilot/safety-flags validation status codes', () => {
   test('a flag with neither subject returns 400 with the reason, not 500', async () => {
     // Raised as an admin: a coach no longer reaches this branch, because a
-    // coach must name an athlete they are assigned to (see the scope tests
-    // above). The regression this pins is jsonError's, not the role's.
+    // coach must name an athlete of their gym (see the scope tests above). The regression this pins is jsonError's, not the role's.
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'admin-1' }) as never);
 
     const res = await post({ flag_class: 'system_guidance', flag_code: 'load_spike' });

@@ -305,6 +305,25 @@ export async function getTodayCheckIn(
   return checkInOnDay(organizationId, athleteId, requireGymDay(now));
 }
 
+/** Which of these athletes checked in on the gym's today. Ids only: the
+ * coach floor counts who has a reading, and never needs the answers to do it
+ * (one athlete's answers are read through getTodayCheckIn, per athlete).
+ * Resolves the day once, the same way getTodayCheckIn does. */
+export async function listAthleteIdsCheckedInToday(
+  organizationId: string,
+  athleteIds: readonly string[],
+  now?: GymTimeInput,
+): Promise<string[]> {
+  if (athleteIds.length === 0) return [];
+  const rows = await query<{ athlete_id: string }>(
+    `select athlete_id
+     from pilot.athlete_check_ins
+     where organization_id = $1 and athlete_id = any($2::text[]) and checked_in_on = $3::date`,
+    [organizationId, [...athleteIds], requireGymDay(now)],
+  );
+  return rows.map((row) => row.athlete_id);
+}
+
 /** The athlete's own recent history, newest first. One athlete at a time,
  * their own record -- there is no cross-athlete read here. */
 export async function listRecentCheckIns(organizationId: string, athleteId: string, limit = 14): Promise<AthleteCheckInRow[]> {

@@ -112,22 +112,20 @@ describe('listShadowEvents athlete scoping', () => {
     expect(params[9]).toBe(true); // athlete-free operational rows still visible
   });
 
-  test('a coach is scoped to their own roster, not to every athlete in the organization', async () => {
-    // The defect this replaces: a coach fell through resolveAthleteScope to
-    // restrictToAthleteIds = null -- no athlete restriction at all -- so
-    // /api/pilot/shadow/events answered a caller-supplied entity_id for ANY
-    // athlete in the org, and roleCanViewSensitivePayload returns true for a
-    // coach, so pain reports came back with body site, pain type and severity.
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+  // coach's scope is every live athlete of THEIR organization -- an explicit
+  // list, never null (null is the admin's scope and would also admit intake
+  // cases that name nobody, which stay the filer's).
+  test('a coach is scoped to every live athlete of their own gym, as an explicit list', async () => {
     answerCoachRoster(['ath-mine-1', 'ath-mine-2']);
     mockQuery.mockResolvedValueOnce([]);
 
     await listShadowEvents(context({ actorRole: 'coach', actorAccountId: 'coach-1' }));
 
-    // The roster lookup is athleteIdsForCoach: coach_id of record UNION
-    // active, unexpired coverage -- the same contract every other coach-facing
-    // aggregate derives its scope from.
-    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 'coach-1']);
-    expect(sqlOf(0)).toContain('coach_coverage');
+    // The gym's live athletes, read for the session's organization only.
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1']);
+    expect(sqlOf(0)).toContain('deleted_at is null');
+    expect(sqlOf(0)).not.toContain('coach_id');
 
     const params = mockQuery.mock.calls[1][1];
     expect(params[8]).toEqual(['ath-mine-1', 'ath-mine-2']);
