@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import ParentProgressSummary from './ParentProgressSummary';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
@@ -136,15 +137,6 @@ interface SchedulerFeedAttendance {
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
   checked_in_at: string;
-}
-
-interface ProgressMilestone {
-  id: string;
-  childId: string;
-  category: string;
-  title: string;
-  percent: number;
-  status: 'On Track' | 'Needs Work' | 'Achieved';
 }
 
 interface ParentResource {
@@ -400,8 +392,6 @@ export default function ParentHub() {
     })();
     return () => controller.abort();
   }, []);
-
-  const [progressMilestones] = useState<ProgressMilestone[]>([]);
 
   const [parentResources] = useState<ParentResource[]>([]);
 
@@ -718,19 +708,15 @@ export default function ParentHub() {
       // panel, so the standing is shown rather than flattened away.
       standing: registration.status === 'waitlisted' ? 'Waitlisted' : 'Registered',
     }));
-  const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
-
-  function milestoneStatusTone(status: ProgressMilestone['status']): string {
-    if (status === 'Achieved') return 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_10%,var(--paper))]';
-    if (status === 'Needs Work') return 'border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_10%,var(--paper))]';
-    return 'border-[color:rgba(0,0,0,.18)] bg-[var(--paper)]';
-  }
-
-  function milestoneBadge(status: ProgressMilestone['status']): { className: string; glyph: string } {
-    if (status === 'Achieved') return { className: 'badge badge--cleared', glyph: '✓' };
-    if (status === 'Needs Work') return { className: 'badge badge--restricted', glyph: '▲' };
-    return { className: 'badge badge--monitor', glyph: '◉' };
-  }
+  /* The selected child's parent-support tasks, done of all, for the Progress
+     tab's summary: from the messages read, so it is Unavailable until that
+     read answered and a child is selected. */
+  const activeSupportTasks = messagesLoaded && activeChildId
+    ? (() => {
+      const tasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
+      return { done: tasks.filter((message) => !isOpenTask(message)).length, total: tasks.length };
+    })()
+    : null;
 
   /* Attendance outcomes on canvas take the -deep rungs (the text weights the
      sheet ships for the warm ground) and always carry their glyph. */
@@ -1550,43 +1536,11 @@ export default function ParentHub() {
                 />
               )}
 
-              <details className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
-                <summary className="t-body cursor-pointer font-semibold">Parent-Support Visibility Placeholder</summary>
-                <p className="t-label mt-[var(--s3)]">
-                  CLOSED-LOOP PROGRESSION INTELLIGENCE - PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED
-                </p>
-                <Link href="/parent/progression-visibility" className="btn btn--ghost mt-[var(--s3)]">
-                  Open Parent Progression Visibility
-                </Link>
-              </details>
-
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
-                list is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)]">
-                {activeProgressMilestones.map((milestone) => {
-                  const badge = milestoneBadge(milestone.status);
-                  return (
-                    <div key={milestone.id} className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${milestoneStatusTone(milestone.status)}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-                        <p className="t-body font-semibold">{milestone.category}: {milestone.title}</p>
-                        <span className={badge.className}><i>{badge.glyph}</i>{milestone.status}</span>
-                      </div>
-                      <div className="mt-[var(--s3)]">
-                        <div className="flex justify-between mb-[var(--s2)]">
-                          <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{milestone.percent}%</span>
-                        </div>
-                        <div className={TRACK_CLASS}>
-                          <div className={FILL_CLASS} style={{ width: `${milestone.percent}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {activeChildId ? (
+                <ParentProgressSummary athleteId={activeChildId} supportTasks={activeSupportTasks} />
+              ) : (
+                <p className="t-muted">Unavailable - no child selected.</p>
+              )}
             </div>
           )}
 

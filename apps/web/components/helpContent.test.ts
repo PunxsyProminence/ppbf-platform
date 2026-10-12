@@ -52,7 +52,10 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   // (A-Q15: roadmap).
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
-  for (const section of ['home assignments', 'parent observations', 'family goals', 'progress milestones', 'resources', 'reply to coach']) {
+  // Progress milestones are built (WO-PH-09).
+  expect(parent).toMatch(/The Progress tab shows earned milestones/);
+  expect(parent).not.toMatch(/progress milestones/);
+  for (const section of ['home assignments', 'parent observations', 'family goals', 'resources', 'reply to coach']) {
     expect(parent).toContain(section);
   }
 });
