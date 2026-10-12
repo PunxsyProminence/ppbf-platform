@@ -269,3 +269,53 @@ test('a flagged guardian deleted 13 months ago is held; 25 months ago, or unflag
   expect(later.guardians_held_for_safeguarding_chats).toBe(0);
   expect(await present(held.account, held.conversation)).toEqual({ account: 0, reviews: 0, conversation: 0 });
 });
+
+/*
+ * PINNED, NOT FIXED: a flagged conversation ABOUT a child goes with the child.
+ * The guardian is held, and so is their review entry, but a conversation
+ * whose athlete_id is a child is deleted when that child is purged at the
+ * child's own deleted_at + 2 years (the session's athlete key, or
+ * shadow_rows_follow_athlete), and a child withdrawn before the guardian was
+ * deleted reaches that first. Whether a guardian's flag should hold the
+ * child's record is not decided (docs/DATA_RETENTION.md). This test says what
+ * happens today so the gap is not mistaken for covered; if it is ever closed,
+ * this is the test to change.
+ */
+test('a held guardian\'s flagged chat about a child withdrawn earlier goes with the child; the review entry stays', async () => {
+  seq += 1;
+  const child = `ath-hold-child-${seq}`;
+  const coach = `acct-hold-coach-${seq}`;
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`,
+    [coach, ORG_ID],
+  );
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+     values ($1, $2, 'Hold Child', '2013-05-06', 'fly', 'active', 'contact', false, $3, now(), now(), now() - interval '25 months')`,
+    [ORG_ID, child, coach],
+  );
+  const { account } = await guardian('child-chat-13mo', '13 months', false);
+  const conversation = (await client.query(
+    `insert into pilot.shadow_chat_sessions (conversation_id, organization_id, account_id, athlete_id, title)
+     values (gen_random_uuid(), $1, $2, $3, 'About my child') returning conversation_id`,
+    [ORG_ID, account, child],
+  )).rows[0].conversation_id as string;
+  await client.query(
+    `insert into pilot.shadow_human_review_queue
+       (review_id, organization_id, conversation_id, account_id, category, severity, summary, status)
+     values (gen_random_uuid(), $1, $2, $3, 'safeguarding', 'high', 'A child may be at risk', 'open')`,
+    [ORG_ID, conversation, account],
+  );
+
+  const applied = await purge(true);
+  expect(applied.guardians_held_for_safeguarding_chats).toBeGreaterThanOrEqual(1);
+  // Held: the guardian and the review entry.
+  expect(await present(account, conversation)).toEqual({ account: 1, reviews: 1, conversation: 0 });
+  // The conversation went with the child, and the entry no longer points at it.
+  const entry = await client.query(
+    'select conversation_id from pilot.shadow_human_review_queue where account_id = $1',
+    [account],
+  );
+  expect(entry.rows).toEqual([{ conversation_id: null }]);
+});
+
