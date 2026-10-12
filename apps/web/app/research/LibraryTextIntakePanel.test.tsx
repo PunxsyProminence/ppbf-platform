@@ -466,3 +466,18 @@ describe('LibraryTextIntakePanel: the limit after a save in the same session', (
     expect(screen.queryByText(/of 48,000 characters/)).toBeNull();
   });
 });
+
+it('a fresh sources list replaces what the panel counted itself, so nothing is counted twice', async () => {
+  const parts = splitIntakeText(TEXT);
+  const before = [{ ...SOURCES[1], excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 2, held_characters: 100 } }];
+  installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+  const { rerender } = render(<LibraryTextIntakePanel sources={before} />);
+  fillForm();
+  await click('Save to Library as pending');
+  expect(screen.getByTestId('excerpt-limit').textContent).toContain(`Saved so far: ${2 + parts.length} passages`);
+
+  const fresh = [{ ...SOURCES[1], excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 2 + parts.length, held_characters: 100 } }];
+  rerender(<LibraryTextIntakePanel sources={fresh} />);
+
+  expect(screen.getByTestId('excerpt-limit').textContent).toContain(`Saved so far: ${2 + parts.length} passages`);
+});

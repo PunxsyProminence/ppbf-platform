@@ -769,18 +769,19 @@ export async function listShadowLibrarySources(input: {
   // DOCUMENT's source), so the intake screen can state the real excerpt limit
   // and check a text against it before sending (A-Q12, issue #1468).
   const rows = await query<ShadowLibrarySourceRow & { held_chunk_count: number; held_character_count: number }>(
-    `select s.*, held.chunk_count as held_chunk_count, held.character_count as held_character_count
+    `select s.*, coalesce(held.chunk_count, 0) as held_chunk_count, coalesce(held.character_count, 0) as held_character_count
      from pilot.shadow_library_sources s
-     left join lateral (
-       select count(*)::int as chunk_count,
+     -- One grouped count for the organization, not one per listed row (R2 #2).
+     left join (
+       select d.source_id,
+              count(*)::int as chunk_count,
               coalesce(sum(char_length(c.text_content)), 0)::int as character_count
          from pilot.shadow_library_chunks c
          join pilot.shadow_library_documents d
            on d.document_id = c.document_id and d.organization_id = c.organization_id
-        where d.source_id = s.source_id and d.organization_id = s.organization_id
-          -- Owned and open sources are not held to the limit: not counted.
-          and s.rights_status not in ('ppbf_owned', 'open_licence')
-     ) held on true
+        where d.organization_id = $1
+        group by d.source_id
+     ) held on held.source_id = s.source_id
      where organization_id = $1
        and ($2::text is null or source_type = $2)
        and ($3::text is null or status = $3)

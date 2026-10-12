@@ -265,11 +265,15 @@ export default function LibraryTextIntakePanel({
         return;
       }
     }
+    const startedAsResume = resume !== null;
     setBusy(true);
     try {
       const result = await submitLibraryTextIntake(apiBase(), intakeInput(), { resume });
       if (result.ok) {
-        if (listedBudget) {
+        // A finished resume sent only the parts that were left, and the list
+        // refreshed after the interruption already counts the earlier ones
+        // (R2 #1); the next fresh list counts the rest.
+        if (listedBudget && !startedAsResume) {
           const parts = splitIntakeText(draft.text);
           const sourceId = draft.sourceId;
           setSavedSince((current) => {
