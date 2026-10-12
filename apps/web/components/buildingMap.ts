@@ -280,9 +280,9 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
-  { href: '/admin/system', label: 'System', room: 'office', roles: ['platform_owner'],
-    keywords: 'system routes jobs workflows inventory status',
-    hint: 'The routes and jobs the platform is built from. Read-only; no run status is recorded.' },
+  { href: '/admin/system', label: 'System', room: 'office', roles: ['admin', 'platform_owner'],
+    keywords: 'system routes jobs workflows inventory status local findings citation retraction checks research',
+    hint: 'Read-only. The platform owner sees routes and jobs; a gym admin sees local findings and source checks.' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
     keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
   { href: '/staff-credentials', label: 'Certified & Cleared', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],

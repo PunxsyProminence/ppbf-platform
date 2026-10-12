@@ -1,13 +1,27 @@
 import Link from 'next/link';
 
 import routeInventory from '@/src/server/pilot/apiRouteInventory.json';
+import {
+  listLocalFindings,
+  type LocalFindingDomain,
+  type LocalFindingStatus,
+  type LocalFindingTier,
+} from '@/src/server/pilot/localFindings';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
+import { getSourceCitationStatus, type SourceCitationReviewSignal } from '@/src/server/pilot/sourceCitationChecks';
+import { getSourceRetractionStatus } from '@/src/server/pilot/sourceRetractionChecks';
 
 export const dynamic = 'force-dynamic';
 
-// /admin/system (WO-N7-03, issue #1448; OD-2026-10-08-013 Q-E): what the platform is made of, read
-// from what the repository says, for the platform owner (N7-03-Q1 A; OD-2026-10-08-003 R2 keeps the
-// platform owner out of gym records, so nothing here reads a gym's data).
+// /admin/system (WO-N7-03, issue #1448; OD-2026-10-08-013 Q-E). Two audiences, each with only its
+// own data (N7-03-Q1 A):
+//   - the platform owner sees what the platform is made of, read from what the repository says.
+//     OD-2026-10-08-003 R2 keeps the platform owner out of gym records, so that view reads none;
+//   - a gym's organization admin sees that gym's local findings, citation checks and retraction
+//     checks, read through the same server functions the existing GET routes call
+//     (admin/local-findings, admin/citation-checks, admin/retraction-checks), for
+//     principal.organizationId only. No route or job inventory is shown to a gym.
 //
 // A VIEW, NOT A CONTROL PLANE. Nothing on this page runs a job, calls a route or changes anything:
 // it has no form and no button. Each route row is the audited inventory row
@@ -87,9 +101,15 @@ function yesNo(value: boolean): string {
   return value ? 'Yes' : 'No';
 }
 
-export default async function AdminSystemPage() {
-  await requirePageRole(['platform_owner']);
+type SearchParams = Record<string, string | string[] | undefined>;
 
+export default async function AdminSystemPage({ searchParams }: { searchParams?: Promise<SearchParams> } = {}) {
+  const principal = await requirePageRole(['platform_owner', 'organization_admin']);
+  if (roleEquals(principal.role, 'platform_owner')) return <PlatformSystemView />;
+  return <GymSystemView organizationId={principal.organizationId} params={(await searchParams) ?? {}} />;
+}
+
+function PlatformSystemView() {
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
@@ -171,6 +191,209 @@ export default async function AdminSystemPage() {
               ))}
             </tbody>
           </table>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The gym's view. Read-only: each filter is a plain GET form that only changes the address. Every
+// value is printed as stored, with its own words (underscores read as spaces); nothing is turned
+// into a percentage, a confidence figure or a citation. A read that failed says so, and is never
+// shown as "none".
+// ---------------------------------------------------------------------------------------------
+
+const FINDING_DOMAINS: readonly LocalFindingDomain[] = ['technical', 'physical', 'psychological', 'operational', 'safety'];
+const FINDING_TIERS: readonly LocalFindingTier[] = [
+  'observation', 'repeated_observation', 'local_pattern', 'local_tested', 'local_established', 'retired',
+];
+const FINDING_STATUSES: readonly LocalFindingStatus[] = ['active', 'superseded', 'retired'];
+const CITATION_SIGNALS: readonly SourceCitationReviewSignal[] = ['needs_adjudication', 'recheck_pending', 'not_machine_checkable', 'ok'];
+
+type Read<T> = { ok: true; rows: T[] } | { ok: false };
+
+async function read<T>(load: () => Promise<T[]>): Promise<Read<T>> {
+  try {
+    return { ok: true, rows: await load() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** A query value, only when it is one of the allowed words; anything else is no filter. */
+function pick<T extends string>(params: SearchParams, key: string, allowed: readonly T[]): T | undefined {
+  const raw = params[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return allowed.find((item) => item === value);
+}
+
+function words(value: string | null | undefined): string {
+  return value ? value.replaceAll('_', ' ') : 'None recorded';
+}
+
+function day(value: string | null | undefined): string {
+  return value ? String(value).slice(0, 10) : 'None recorded';
+}
+
+function FilterSelect({ name, label, options, value }: { name: string; label: string; options: readonly string[]; value?: string }) {
+  return (
+    <span className="field">
+      <label className="t-label" htmlFor={`filter-${name}`}>{label}</label>
+      <select id={`filter-${name}`} name={name} className="select" defaultValue={value ?? ''}>
+        <option value="">Any</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{words(option)}</option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+function ReadState({ result, children }: { result: Read<unknown>; children: React.ReactNode }) {
+  if (!result.ok) return <p className="t-body mt-[var(--s3)]">This could not be read just now.</p>;
+  if (result.rows.length === 0) return <p className="t-body mt-[var(--s3)]">None recorded.</p>;
+  return <>{children}</>;
+}
+
+async function GymSystemView({ organizationId, params }: { organizationId: string; params: SearchParams }) {
+  const domain = pick(params, 'domain', FINDING_DOMAINS);
+  const localTier = pick(params, 'local_tier', FINDING_TIERS);
+  const status = pick(params, 'status', FINDING_STATUSES);
+  const reviewSignal = pick(params, 'review_signal', CITATION_SIGNALS);
+
+  const [findings, citations, retractions] = await Promise.all([
+    read(() => listLocalFindings(organizationId, { domain, localTier, status })),
+    read(() => getSourceCitationStatus(organizationId, { reviewSignal })),
+    read(() => getSourceRetractionStatus(organizationId)),
+  ]);
+
+  return (
+    <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <p className="t-eyebrow">Admin Workspace</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>System</h1>
+          <p className="t-body mt-[var(--s3)] max-w-4xl">
+            This gym&apos;s local findings and the checks on its research sources, as recorded. Read-only.
+          </p>
+          <div className="mt-[var(--s4)]">
+            <Link href="/admin" className="btn btn--ghost">Capability Room</Link>
+          </div>
+        </header>
+
+        <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-findings">
+          <h2 id="system-findings" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Local findings</h2>
+          <form method="get" action="/admin/system" className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+            <FilterSelect name="domain" label="Domain" options={FINDING_DOMAINS} value={domain} />
+            <FilterSelect name="local_tier" label="Tier" options={FINDING_TIERS} value={localTier} />
+            <FilterSelect name="status" label="Status" options={FINDING_STATUSES} value={status} />
+            {reviewSignal && <input type="hidden" name="review_signal" value={reviewSignal} />}
+            <button type="submit" className="btn btn--ghost">Show</button>
+          </form>
+          <ReadState result={findings}>
+            <table className="ledger mt-[var(--s3)]">
+              <thead>
+                <tr>
+                  <th scope="col">Finding</th>
+                  <th scope="col">Domain</th>
+                  <th scope="col">Tier</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Athletes observed</th>
+                  <th scope="col">Prediction</th>
+                  <th scope="col">Published research</th>
+                </tr>
+              </thead>
+              <tbody>
+                {findings.ok && findings.rows.map((finding) => (
+                  <tr key={finding.finding_id}>
+                    <td><b>{finding.title}</b><br />{finding.statement}</td>
+                    <td>{words(finding.domain)}</td>
+                    <td>{words(finding.local_tier)}</td>
+                    <td>{words(finding.status)}</td>
+                    <td>{finding.athletes_observed}, over {finding.observation_span_days} days, by {finding.independent_observers} observers</td>
+                    <td>{words(finding.prediction_outcome)}</td>
+                    <td>{words(finding.agrees_with_literature)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ReadState>
+        </section>
+
+        <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-citations">
+          <h2 id="system-citations" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Citation checks</h2>
+          <p className="t-body mt-[var(--s2)]">Written by verify-research-citations.mjs when someone runs it. No workflow runs it.</p>
+          <form method="get" action="/admin/system" className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+            <FilterSelect name="review_signal" label="Review signal" options={CITATION_SIGNALS} value={reviewSignal} />
+            {domain && <input type="hidden" name="domain" value={domain} />}
+            {localTier && <input type="hidden" name="local_tier" value={localTier} />}
+            {status && <input type="hidden" name="status" value={status} />}
+            <button type="submit" className="btn btn--ghost">Show</button>
+          </form>
+          <ReadState result={citations}>
+            <table className="ledger mt-[var(--s3)]">
+              <thead>
+                <tr>
+                  <th scope="col">Source</th>
+                  <th scope="col">Identifier</th>
+                  <th scope="col">Outcome</th>
+                  <th scope="col">Title found</th>
+                  <th scope="col">Match method</th>
+                  <th scope="col">Match score</th>
+                  <th scope="col">Checked</th>
+                  <th scope="col">Review signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {citations.ok && citations.rows.map((row) => (
+                  <tr key={row.source_id}>
+                    <td>{row.claimed_title}</td>
+                    <td>{words(row.identifier_kind)}: {row.identifier_value || 'None recorded'}</td>
+                    <td>{words(row.outcome)}</td>
+                    <td>{row.retrieved_title ?? 'None recorded'}</td>
+                    <td>{words(row.match_method)}</td>
+                    <td>{row.match_score === null ? 'None recorded' : String(row.match_score)}</td>
+                    <td>{day(row.checked_at)}</td>
+                    <td>{words(row.review_signal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ReadState>
+        </section>
+
+        <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-retractions">
+          <h2 id="system-retractions" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Retraction checks</h2>
+          <p className="t-body mt-[var(--s2)]">Written by check-source-retractions.mjs when someone runs it. No workflow runs it.</p>
+          <ReadState result={retractions}>
+            <table className="ledger mt-[var(--s3)]">
+              <thead>
+                <tr>
+                  <th scope="col">Source</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Notice</th>
+                  <th scope="col">Decision</th>
+                  <th scope="col">Passages that rely on it</th>
+                  <th scope="col">Checked</th>
+                  <th scope="col">Action signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {retractions.ok && retractions.rows.map((row) => (
+                  <tr key={row.source_id}>
+                    <td>{row.title}</td>
+                    <td>{words(row.status)}</td>
+                    <td>{row.notice_type ? `${words(row.notice_type)}, ${day(row.notice_date)}` : 'None recorded'}</td>
+                    <td>{words(row.disposition)}</td>
+                    <td>{row.dependent_chunks}</td>
+                    <td>{day(row.checked_at)}</td>
+                    <td>{words(row.action_signal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ReadState>
         </section>
       </div>
     </main>

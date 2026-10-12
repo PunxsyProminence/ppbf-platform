@@ -6,7 +6,7 @@
 // every audited route is listed and none claims a runtime status; the job list is exactly the
 // workflow folder, each job's triggers are the file's own, and each says its status is unavailable
 // with a link to its runs; the scripts no workflow runs say so; nothing on the page can run or
-// change anything. Who may open it is pinned in page.guard.test.ts.
+// change anything. Who may open it is pinned in page.guard.test.tsx.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,10 +20,18 @@ import AdminSystemPage from './page';
 
 const principal: { role: PilotRole | null } = { role: 'platform_owner' };
 
-// jsdom has no Request, so the real guard runs in page.guard.test.ts (node). Here it is faked.
+// jsdom has no Request, so the real guard runs in page.guard.test.tsx (node). Here it is faked.
 jest.mock('@/src/server/pilot/pageGuard', () => ({
   requirePageRole: async () => ({ accountId: 'acct_1', organizationId: 'org_1', role: principal.role }),
 }));
+
+// The platform view reads no gym data; any call here fails the test.
+const noGymRead = () => {
+  throw new Error('the platform view read gym data');
+};
+jest.mock('@/src/server/pilot/localFindings', () => ({ listLocalFindings: () => noGymRead() }));
+jest.mock('@/src/server/pilot/sourceCitationChecks', () => ({ getSourceCitationStatus: () => noGymRead() }));
+jest.mock('@/src/server/pilot/sourceRetractionChecks', () => ({ getSourceRetractionStatus: () => noGymRead() }));
 
 const WORKFLOWS_DIR = path.join(__dirname, '../../../../../.github/workflows');
 const SCRIPTS_DIR = path.join(__dirname, '../../../scripts');

@@ -1572,6 +1572,14 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   CUSTOMIZE
                 </Link>
               )}
+              {canManagePeople && (
+                <Link
+                  href="/admin/system"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
+                >
+                  SYSTEM
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
