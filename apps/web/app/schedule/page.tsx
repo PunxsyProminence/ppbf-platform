@@ -274,7 +274,14 @@ export default function SchedulerPage() {
       setSchedulerFailed(false);
 
       if (scheduler.classes.length > 0) {
-        const firstClassId = scheduler.classes[0].class_id;
+        // A family opens on today's class when there is one, so "I'm here"
+        // is in front of them without hunting through the picker (#1524).
+        const isFamilyReader = !roleCanOverrideAttendance(auth.role);
+        const todayIso = gymDayIso(Date.now());
+        const todays = isFamilyReader
+          ? scheduler.classes.find((item) => gymDayIso(item.start_at) === todayIso)
+          : undefined;
+        const firstClassId = (todays ?? scheduler.classes[0]).class_id;
         setSelectedClassId((current) => current || firstClassId);
       }
 

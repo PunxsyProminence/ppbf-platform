@@ -119,7 +119,8 @@ const classRecord = {
 
 beforeEach(() => {
   mockAssertCanAct.mockResolvedValue(undefined);
-  mockGetClass.mockResolvedValue(classRecord);
+  // Re-dated each test, so a run that crosses midnight still has a class today.
+  mockGetClass.mockResolvedValue({ ...classRecord, start_at: new Date().toISOString() });
   mockUpsertAttendance.mockResolvedValue(undefined);
   mockFamilyUpsert.mockResolvedValue(true);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
@@ -2094,6 +2095,15 @@ describe('family check-in: Present, on the day of the class, never over a staff 
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  test('a note sent with a family check-in is not stored', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+
+    await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present', note: 'I am the coach now' }));
+
+    const [, record] = mockFamilyUpsert.mock.calls[0];
+    expect(record.note).toBe('');
   });
 
   test('over a staff mark the family check-in changes nothing and says so: recorded false', async () => {

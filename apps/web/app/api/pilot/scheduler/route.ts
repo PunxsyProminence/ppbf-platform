@@ -1046,7 +1046,9 @@ export async function POST(request: NextRequest) {
       }
 
       const beyondReach = await athletesBeyondReach(actor, [athleteId]);
-      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      // A family check-in says "I'm here" and nothing else (#1524); the note
+      // is the coach's field (privacyTiers.ts), so one sent anyway is dropped.
+      const note = !isFamily && typeof body.note === 'string' ? body.note.trim() : '';
       assertNoNoteBeyondReach(beyondReach, athleteId, note);
 
       const now = new Date().toISOString();

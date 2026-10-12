@@ -144,6 +144,17 @@ describe('family check-in on /schedule (#1524)', () => {
     },
   );
 
+  test("a family's picker opens on today's class, not the first one listed", async () => {
+    installFetchMock({
+      role: 'athlete',
+      classes: [classRow('class-next', 'Next week', 7 * 24 * HOUR), classRow('class-today', 'Tonight', 0)],
+      registrations: [registration('class-today', 'athlete-1')],
+    });
+    await renderPage();
+
+    expect(await screen.findByRole('button', { name: "I'm here" })).toBeInTheDocument();
+  });
+
   test('a class on another day offers nothing to press', async () => {
     installFetchMock({
       role: 'athlete',
