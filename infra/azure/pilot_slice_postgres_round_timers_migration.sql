@@ -1,6 +1,6 @@
 -- Round timers (pilot.round_timers): the boxing round clock for a live session
--- run, shown on the gym TV and driven from any staff screen allowed to run that
--- session (WO-N1-03, issue #1460; build plan OD-2026-10-08-012).
+-- run, shown on the gym TV and driven from the screens of the coach delivering
+-- that session (WO-N1-03, issue #1460; build plan OD-2026-10-08-012).
 --
 -- WHY THIS EXISTS. pilot.session_script_runs already owns the SESSION clock
 -- (started_at, paused_at, paused_seconds; session_run_state migration). A round
@@ -26,8 +26,8 @@
 -- ended has an end and no pause. A crashed writer cannot leave a row that
 -- reads as two of these.
 --
--- IT LEAVES WITH ITS RUN. The run foreign key cascades; nothing else deletes a
--- timer. Taking a run off a TV clears the TV's pointer only (gymTvs.ts) and
+-- IT LEAVES WITH ITS RUN (or its organization). Both foreign keys cascade;
+-- nothing else deletes a timer. Taking a run off a TV clears the TV's pointer only (gymTvs.ts) and
 -- leaves the run and its timer as they were.
 --
 -- DEPENDS ON pilot.session_script_runs (session-scripts, session-run-state) and
@@ -72,4 +72,4 @@ create table if not exists pilot.round_timers (
 );
 
 comment on table pilot.round_timers is
-  'One round clock per live session run (WO-N1-03): configuration plus start, pause and end instants. Current round, phase and seconds left are derived on the server at read time. Leaves only with its run.';
+  'One round clock per live session run (WO-N1-03): configuration plus start, pause and end instants. Current round, phase and seconds left are derived on the server at read time. Leaves only with its run or its organization.';
