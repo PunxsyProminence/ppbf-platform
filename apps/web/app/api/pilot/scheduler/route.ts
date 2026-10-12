@@ -1011,18 +1011,10 @@ export async function POST(request: NextRequest) {
       // coach running the class and the organization admin -- keep the
       // register exactly as before.
       const isFamily = !(actor.role === 'coach' || canManageAll(actor));
-      if (isFamily && status !== 'present') {
-        throw new ValidationError('A family check-in can only say you are here. Absent and Excused are for your coach.');
-      }
 
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
-      }
-      // The class's day and today, both as the gym's day (gymTime.ts), never
-      // UTC's: an evening class is still today after 8 pm Eastern.
-      if (isFamily && gymDayIso(classItem.start_at) !== gymDayIso(new Date())) {
-        throw new ValidationError('Check-in is open on the day of the class only.');
       }
 
       const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
@@ -1041,6 +1033,16 @@ export async function POST(request: NextRequest) {
         await assertCanActOnAthlete(actor, athleteId);
         if (!registeredIds.has(athleteId)) {
           throw new Error('Missing registration: athlete is not registered for this class');
+        }
+        // After who-may-act and the registration, so a refused caller learns
+        // nothing new from these two (#1524).
+        if (status !== 'present') {
+          throw new ValidationError('A family check-in can only say you are here. Absent and Excused are for your coach.');
+        }
+        // The class's day and today, both as the gym's day (gymTime.ts), never
+        // UTC's: an evening class is still today after 8 pm Eastern.
+        if (gymDayIso(classItem.start_at) !== gymDayIso(new Date())) {
+          throw new ValidationError('Check-in is open on the day of the class only.');
         }
         method = resolveAttendanceMethod(actor, isSelf);
       }
