@@ -1,5 +1,5 @@
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
-import { NOT_FLOOR_TESTED_READINESS_MESSAGE, requiresFloorValidation } from '../../lib/drillFloorValidation';
+import { requiresFloorValidation } from '../../lib/drillFloorValidation';
 import { writePilotAuditEvent } from './audit';
 import { issueCoachCard } from './coachCards';
 import type { PilotRole } from './contracts';
@@ -204,8 +204,9 @@ export async function getWorkoutTemplateWithItems(
 }
 
 // ---------------------------------------------------------------------------
-// ISSUING A TEMPLATE TO ONE ATHLETE -- OD-2026-10-07-012 ruling 2 and
-// OD-2026-10-08-002 item 2.
+// ISSUING A TEMPLATE TO ONE ATHLETE -- OD-2026-10-07-012 ruling 2; the
+// floor test as Jason ruled it on 2026-10-11 ("B", issue #1473), which
+// replaces OD-2026-10-08-002 item 2 at template issue.
 //
 // Every step becomes one gap-free assignment (a Coach Card: issueCoachCard,
 // the same writer the cards route uses), all in ONE transaction, so a template
@@ -215,16 +216,20 @@ export async function getWorkoutTemplateWithItems(
 // operational drill (pilot.drills) may be assigned (OD-2026-09-18-001). So:
 //   - the gym already runs the drill          -> its operational drill is
 //     assigned, even when its reference has since been withdrawn or superseded
-//     (an adopted drill is the gym's). ONE exception: a draft the gym adopted
-//     that no coach of the gym has marked floor-tested is refused and named,
-//     as an unadopted one is. That is stricter than the single-assignment
-//     route, which assigns such a drill today; the difference is deliberate
-//     here (OD-2026-10-08-002 item 2 is about template issue) and that route
-//     is not changed.
+//     (an adopted drill is the gym's).
 //   - the gym has not adopted it, it is ready -> it is adopted in the same
 //     transaction (promoteReferenceDrill, audited as a promotion is), then
 //     assigned. "Ready" is adoptionReadiness, the check the promote route
-//     enforces, so a floor-tested draft is ready and an untested one is not.
+//     enforces, with ONE difference: the floor test is taken as met here.
+//
+// THE FLOOR TEST DOES NOT STOP AN ISSUE (Jason, 2026-10-11: "B" -- "Let a
+// workout be issued with untested drills, shown to the coach as untested";
+// issue #1473). A draft no coach of this gym has floor-tested stays a draft
+// and stays marked untested (OD-2026-10-06-026 ruling 3); it is assigned, and
+// adopted or updated in place when the step needs it, and the result and the
+// audit name it (listUntestedTemplateDrills, the same list the template's
+// detail read gives the coach before issuing). Adoption by hand, the promote
+// route, still requires the floor test: that rule is not this one.
 //   - it is a newer version of a drill the gym runs, and it is ready -> the
 //     gym's drill is updated to it in place in the same transaction
 //     (updateDrillToReferenceVersion, as the promote route does; Jason,
@@ -259,9 +264,24 @@ export interface TemplateIssueRefusedDrill {
   /** The reference drill id; null for a typed step, which names no drill. */
   drill_id: string | null;
   name: string;
-  /** True for a draft no coach of this gym has floor-tested (OD-2026-10-08-002 item 2). */
-  untested_draft: boolean;
   reason: string;
+}
+
+/**
+ * A drill in a template that no coach of this gym has floor-tested. It does not
+ * stop the issue (Jason, 2026-10-11: "B", issue #1473); it is named to the
+ * coach before and after issuing.
+ */
+export interface TemplateUntestedDrill {
+  /**
+   * The reference drill whose floor test counts: the version the gym runs
+   * when a step names an older one it has updated past, otherwise the step's
+   * own. The id a coach marks floor-tested.
+   */
+  reference_drill_id: string;
+  name: string;
+  /** The template steps (ordinals) that name it. */
+  steps: number[];
 }
 
 export interface TemplateIssuedStep {
@@ -299,6 +319,8 @@ export type TemplateIssueResult =
       steps: TemplateIssuedStep[];
       adopted: TemplateAdoptedDrill[];
       updated: TemplateUpdatedDrill[];
+      /** Drills in this workout no coach of this gym has floor-tested. Assigned all the same. */
+      untested: TemplateUntestedDrill[];
     }
   // A repeat of a request that already issued this workout: nothing was
   // written this time. The template is as it was issued.
@@ -317,12 +339,6 @@ const RETIRED_ADOPTION_REASON =
 // so that case is not sent to a step that cannot work.
 const RETIRED_WITHDRAWN_REASON =
   'This gym adopted this drill and then retired it, and its reference has since been withdrawn, so it cannot be assigned.';
-// OD-2026-10-08-002 item 2, read literally (Overwatch ruling on lane P7): a
-// draft is refused at template issue until a coach of this gym has marked it
-// floor-tested, whether or not the gym adopted it before that mark was
-// required.
-const ADOPTED_UNTESTED_DRAFT_REASON =
-  'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.';
 const SHARED_NAME_REASON =
   'Another drill in this template has the same name, and a gym can hold only one drill under a name.';
 const RETIRED_OTHER_VERSION_REASON =
@@ -330,17 +346,76 @@ const RETIRED_OTHER_VERSION_REASON =
 const UNREADABLE_DRILL_REASON = 'This drill could not be read from the library.';
 
 function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
-  const names = (list: TemplateIssueRefusedDrill[]) => list.map((drill) => drill.name).join(', ');
-  const drafts = drills.filter((drill) => drill.untested_draft);
-  const others = drills.filter((drill) => !drill.untested_draft);
-  const parts = ['Nothing was issued.'];
-  if (drafts.length > 0) {
-    parts.push(`Not floor-tested by a coach of this gym yet: ${names(drafts)}.`);
+  return `Nothing was issued. Cannot be assigned as they stand: ${drills.map((drill) => drill.name).join(', ')}.`;
+}
+
+/**
+ * The drills in a template that no coach of this gym has floor-tested, in step
+ * order. Reads only; every query is scoped to the organization. The issue
+ * plan and the template's detail read both use it, so the list the coach sees
+ * before issuing and the one the result names come from one rule.
+ *
+ * Which drill's floor test counts is the rule the issue used when the floor
+ * test still refused: when the gym runs this drill and the step names a
+ * version it has since updated past, the version the gym runs; otherwise the
+ * step's own reference. Only a draft (requiresFloorValidation) can be
+ * untested; another gym's mark does not count.
+ */
+export async function listUntestedTemplateDrills(
+  organizationId: string,
+  items: readonly Pick<WorkoutTemplateItemWithDrillHead, 'drill_id' | 'ordinal'>[],
+): Promise<TemplateUntestedDrill[]> {
+  const stepsByReference = new Map<string, number[]>();
+  for (const item of items) {
+    if (item.drill_id !== null) {
+      stepsByReference.set(item.drill_id, [...(stepsByReference.get(item.drill_id) ?? []), item.ordinal]);
+    }
   }
-  if (others.length > 0) {
-    parts.push(`Cannot be assigned as they stand: ${names(others)}.`);
+  const referenceIds = [...stepsByReference.keys()];
+  if (referenceIds.length === 0) {
+    return [];
   }
-  return parts.join(' ');
+
+  const lifecycles = await listReferenceLifecycles(organizationId, referenceIds);
+  const drafts = new Map<string, TemplateUntestedDrill>();
+  for (const referenceId of referenceIds) {
+    const reference = await getDrillWithDetail(organizationId, referenceId);
+    if (!reference) {
+      // Unreadable: the issue refuses it by name; there is no draft to judge.
+      continue;
+    }
+    let countedId = referenceId;
+    let counted: DrillWithDetail = reference;
+    const lifecycle = lifecycles[referenceId];
+    if (lifecycle?.state === 'operational' && lifecycle.operational_drill_id && reference.superseded_at !== null) {
+      const runs = (await queryOne<{ reference_drill_id: string | null }>(
+        `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,
+        [organizationId, lifecycle.operational_drill_id],
+      ))?.reference_drill_id ?? null;
+      if (runs !== null && runs !== referenceId) {
+        countedId = runs;
+        counted = (await getDrillWithDetail(organizationId, runs)) ?? reference;
+      }
+    }
+    if (!requiresFloorValidation(counted.field_provenance)) {
+      continue;
+    }
+    const steps = stepsByReference.get(referenceId) ?? [];
+    const existing = drafts.get(countedId);
+    drafts.set(countedId, {
+      reference_drill_id: countedId,
+      name: counted.name,
+      steps: existing ? [...existing.steps, ...steps].sort((a, b) => a - b) : [...steps],
+    });
+  }
+  if (drafts.size === 0) {
+    return [];
+  }
+
+  const marks = await listFloorValidations(organizationId, [...drafts.keys()]);
+  return [...drafts.values()]
+    .filter((drill) => !marks[drill.reference_drill_id])
+    .sort((a, b) => Math.min(...a.steps) - Math.min(...b.steps));
 }
 
 interface TemplateIssuePlan {
@@ -349,6 +424,8 @@ interface TemplateIssuePlan {
   operational: Map<string, string>;
   /** Reference drills to adopt, or to update the gym's drill to, in the transaction, in drill-id order. */
   adoptions: AdoptableReference[];
+  /** Drills no coach of this gym has floor-tested; named, never refused. */
+  untested: TemplateUntestedDrill[];
 }
 
 /**
@@ -378,7 +455,12 @@ async function planTemplateIssue(
   organizationId: string,
   items: WorkoutTemplateItemWithDrillHead[],
 ): Promise<TemplateIssuePlan> {
-  const plan: TemplateIssuePlan = { refused: [], operational: new Map(), adoptions: [] };
+  const plan: TemplateIssuePlan = {
+    refused: [],
+    operational: new Map(),
+    adoptions: [],
+    untested: await listUntestedTemplateDrills(organizationId, items),
+  };
 
   for (const item of items) {
     if (item.drill_id === null) {
@@ -386,7 +468,6 @@ async function planTemplateIssue(
         steps: [item.ordinal],
         drill_id: null,
         name: (item.free_text_drill ?? '').trim() || `Step ${item.ordinal}`,
-        untested_draft: false,
         reason: TYPED_STEP_REASON,
       });
     }
@@ -405,13 +486,11 @@ async function planTemplateIssue(
   }
 
   const lifecycles = await listReferenceLifecycles(organizationId, referenceIds);
-  const floorTested = await listFloorValidations(organizationId, referenceIds);
-  const refuseDrill = (referenceId: string, name: string, reason: string, untestedDraft = false) => {
+  const refuseDrill = (referenceId: string, name: string, reason: string) => {
     plan.refused.push({
       steps: stepsByReference.get(referenceId) ?? [],
       drill_id: referenceId,
       name,
-      untested_draft: untestedDraft,
       reason,
     });
   };
@@ -420,8 +499,7 @@ async function planTemplateIssue(
   for (const referenceId of referenceIds) {
     const reference = await getDrillWithDetail(organizationId, referenceId);
     const lifecycle = lifecycles[referenceId];
-    const refuse = (reason: string, untestedDraft = false) =>
-      refuseDrill(referenceId, reference?.name ?? referenceId, reason, untestedDraft);
+    const refuse = (reason: string) => refuseDrill(referenceId, reference?.name ?? referenceId, reason);
 
     if (!reference || !lifecycle) {
       refuse(UNREADABLE_DRILL_REASON);
@@ -430,42 +508,20 @@ async function planTemplateIssue(
 
     // The gym runs this drill: no adoption, and the reference being withdrawn
     // or superseded since no longer decides anything (an adopted drill
-    // outlives its reference). Two rules still apply to a NEW issue of it, and
-    // both are asked here so the drill is named with the others rather than
-    // surfacing alone from inside the transaction (where issueCoachCard asks
-    // the cue rule again on the transaction's own connection):
-    //   - a draft stays refused until a coach of this gym has floor-tested it;
-    //   - the cue rule on a new assignment.
+    // outlives its reference). One rule still applies to a NEW issue of it,
+    // the cue rule on a new assignment, and it is asked here so the drill is
+    // named with the others rather than surfacing alone from inside the
+    // transaction (where issueCoachCard asks it again on the transaction's
+    // own connection). An untested draft is not refused (Jason, 2026-10-11:
+    // "B"); listUntestedTemplateDrills names it.
     if (lifecycle.state === 'operational' && lifecycle.operational_drill_id) {
-      // The floor test is the drill the gym runs: after an update in place a
-      // step naming an older version is the gym's newer one (D1).
-      const runs = reference.superseded_at === null
-        ? null
-        : (await queryOne<{ reference_drill_id: string | null }>(
-            `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,
-            [organizationId, lifecycle.operational_drill_id],
-          ))?.reference_drill_id ?? null;
-      const runsOther = runs !== null && runs !== referenceId;
-      const runsReference = runsOther ? await getDrillWithDetail(organizationId, runs) : reference;
-      const runsTested = runsOther
-        ? Boolean((await listFloorValidations(organizationId, [runs]))[runs])
-        : Boolean(floorTested[referenceId]);
-      const reasons: string[] = [];
-      if (requiresFloorValidation(runsReference?.field_provenance ?? reference.field_provenance) && !runsTested) {
-        reasons.push(ADOPTED_UNTESTED_DRAFT_REASON);
-      }
       try {
         await assertNewAssignmentMeetsCueRule(organizationId, lifecycle.operational_drill_id);
       } catch (error) {
         if (!(error instanceof ConflictError)) {
           throw error;
         }
-        reasons.push(error.message);
-      }
-      if (reasons.length > 0) {
-        // Flagged as the untested-draft case only when the floor test is the
-        // one thing in the way, as for an unadopted draft below.
-        refuse(reasons.join(' '), reasons.length === 1 && reasons[0] === ADOPTED_UNTESTED_DRAFT_REASON);
+        refuse(error.message);
         continue;
       }
       plan.operational.set(referenceId, lifecycle.operational_drill_id);
@@ -479,19 +535,15 @@ async function planTemplateIssue(
       continue;
     }
 
-    // Not adopted. The same readiness check, on the same inputs, the promote
-    // route enforces -- so issuing a template can adopt nothing a coach could
-    // not adopt by hand. An untested draft is the case the owner ruled on by
-    // name; it is flagged so the caller can say so first -- but only when the
-    // floor test is the ONE thing missing, so a coach is never told a floor
-    // test will clear a drill that something else still holds back.
-    const tested = Boolean(floorTested[referenceId]);
-    const readiness = adoptionReadiness({ ...reference, floor_tested_by_this_gym: tested });
+    // Not adopted. The readiness check the promote route enforces, on the
+    // same inputs, with the floor test taken as met (Jason, 2026-10-11: "B"):
+    // every OTHER rule -- withdrawn, superseded, no stop rule, no cue,
+    // incomplete scaling -- still refuses, and a draft untested AND short of
+    // something else is refused for the something else alone. Adoption by
+    // hand keeps the floor test.
+    const readiness = adoptionReadiness({ ...reference, floor_tested_by_this_gym: true });
     if (!readiness.ready) {
-      refuse(
-        readiness.missing.join(' '),
-        readiness.missing.length === 1 && readiness.missing[0] === NOT_FLOOR_TESTED_READINESS_MESSAGE,
-      );
+      refuse(readiness.missing.join(' '));
       continue;
     }
 
@@ -801,6 +853,7 @@ export async function issueWorkoutTemplate(params: {
             })),
             adopted_drill_ids: adopted.map((drill) => drill.drill_id),
             updated_drill_ids: updated.map((drill) => drill.drill_id),
+            untested_reference_drill_ids: plan.untested.map((drill) => drill.reference_drill_id),
           },
         },
         client,
@@ -813,6 +866,7 @@ export async function issueWorkoutTemplate(params: {
         steps,
         adopted,
         updated,
+        untested: plan.untested,
       };
     });
   } catch (error) {
