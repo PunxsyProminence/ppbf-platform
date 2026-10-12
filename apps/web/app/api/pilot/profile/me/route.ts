@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
             photoAvailable: profile.photoBlobPath !== null
               && profile.photoReviewState !== 'blocked'
               && profile.photoReviewState !== 'removed',
+            viewerRole: principal.role,
           },
           now,
         )

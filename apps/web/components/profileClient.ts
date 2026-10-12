@@ -27,6 +27,7 @@ export interface FightCardPayload {
   program: ProgramChoice;
   programLabel: string;
   coachName: string | null;
+  /** Null for an athlete or parent viewer. Use coachPortraitUrl, not this. */
   coachAccountId: string | null;
   coachPhotoAvailable: boolean;
   coachInitials: string | null;
@@ -68,6 +69,15 @@ export const PROGRAM_OPTIONS: ReadonlyArray<{ value: ProgramChoice; label: strin
  */
 export function portraitUrl(base: string, accountId: string): string {
   return `${base}/api/pilot/profile/photo/${encodeURIComponent(accountId)}`;
+}
+
+/**
+ * The coach in a card's corner, addressed by the card rather than the coach.
+ * A family's card carries no coach account id (OD-2026-10-06-025 ruling 2), so
+ * the server finds the coach from the card's own subject and gates both.
+ */
+export function coachPortraitUrl(base: string, cardAccountId: string): string {
+  return `${base}/api/pilot/profile/card/coach-photo?account_id=${encodeURIComponent(cardAccountId)}`;
 }
 
 /**

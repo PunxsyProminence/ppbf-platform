@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import React from 'react';
 import ProfilePortrait from './ProfilePortrait';
-import type { FightCardPayload } from './profileClient';
+import { apiBase } from '@/lib/apiBase';
+import { coachPortraitUrl, type FightCardPayload } from './profileClient';
 
 /**
  * THE FIGHT CARD — a member's bio, printed the way a bout is announced.
@@ -82,7 +83,8 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
               {card.coachName ? (
                 <span className="inline-flex items-center gap-[var(--s3)]">
                   <ProfilePortrait
-                    accountId={card.coachAccountId}
+                    accountId={null}
+                    src={coachPortraitUrl(apiBase(), card.accountId)}
                     initials={card.coachInitials ?? '—'}
                     name={card.coachName}
                     photoAvailable={card.coachPhotoAvailable}

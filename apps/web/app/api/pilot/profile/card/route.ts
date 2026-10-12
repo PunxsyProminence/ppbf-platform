@@ -8,9 +8,9 @@ import {
   resolveRelationship,
   toProfileSubject,
 } from '@/src/server/pilot/profileDb';
+import { resolveCardSubjectAccountId } from '@/src/server/pilot/profileCardSubject';
 import { buildFightCard } from '@/src/server/pilot/profileIdentity';
 import { decidePortrait, decideRingName } from '@/src/server/pilot/profileVisibility';
-import { queryOne } from '@/src/server/pilot/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,9 +18,11 @@ export const dynamic = 'force-dynamic';
 /**
  * One member's fight card, as this viewer is allowed to see it.
  *
- * Accepts either account_id or athlete_id, because the two callers hold
- * different handles: an athlete's own surface knows its account, a coach's
- * roster knows athlete ids. Both land on the same gates.
+ * Accepts either account_id or athlete_id (resolveCardSubjectAccountId), and
+ * both land on the same gates.
+ *
+ * An athlete or parent viewer gets coachAccountId: null (buildFightCard,
+ * OD-2026-10-06-025 ruling 2); the coach's face comes from card/coach-photo.
  *
  * The card is assembled AFTER the visibility decision, not filtered afterwards.
  * `photoAvailable: false` and `ringName: null` are the same values a member with
@@ -30,22 +32,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    const url = new URL(request.url);
-    const accountIdParam = url.searchParams.get('account_id')?.trim() ?? '';
-    const athleteIdParam = url.searchParams.get('athlete_id')?.trim() ?? '';
-
-    let accountId = accountIdParam;
-    if (!accountId && athleteIdParam) {
-      const row = await queryOne<{ account_id: string }>(
-        `select account_id from pilot.accounts
-         where organization_id = $1 and athlete_id = $2`,
-        [principal.organizationId, athleteIdParam],
-      );
-      if (!row) return hiddenNotFound();
-      accountId = row.account_id;
-    }
-    if (!accountId) accountId = principal.accountId;
-    if (accountId.length > 128) return hiddenNotFound();
+    const accountId = await resolveCardSubjectAccountId(principal, new URL(request.url));
+    if (!accountId) return hiddenNotFound();
 
     const identity = await getSubjectIdentity(principal.organizationId, accountId);
     if (!identity) return hiddenNotFound();
@@ -69,6 +57,7 @@ export async function GET(request: NextRequest) {
     // again from the VIEWER's standpoint -- a guardian looking at their child's
     // card sees the coach's face because the coach is their child's coach, and
     // a stranger would not, even though the card itself is the same card.
+    // card/coach-photo runs this same decision before it serves the bytes.
     let coachName: string | null = null;
     let coachPhotoAvailable = false;
     if (identity.coachAccountId) {
@@ -97,6 +86,7 @@ export async function GET(request: NextRequest) {
         coachPhotoAvailable,
         memberSince: identity.memberSince,
         photoAvailable: portrait.show === 'photo',
+        viewerRole: principal.role,
       },
       now,
     );
