@@ -559,8 +559,8 @@ describe('a pain report is counted on its own line, never under a severity word 
     });
 
     expect(screen.getByText('Safety 1 critical, 1 high, 2 pain reports')).toBeTruthy();
-    // A critical escalation that is not a pain report holds the top rung, so it names it.
-    expect(screen.getByText('SAFETY 4 · CRITICAL')).toBeTruthy();
+    // The phone form counts the pain reports apart too, never inside CRITICAL.
+    expect(screen.getByText('SAFETY 2 · CRITICAL · 2 · PAIN REPORTS')).toBeTruthy();
   });
 
   test('a critical pain report beside an ordinary high names the pain report on the top rung', async () => {
@@ -571,9 +571,30 @@ describe('a pain report is counted on its own line, never under a severity word 
       ],
     });
 
-    const compact = screen.getByText('SAFETY 2 · PAIN REPORT');
+    // The pain report earned the top rung, so it is named first; the ordinary
+    // high keeps its own number and word.
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT · 1 · HIGH');
     expect(compact.closest('.badge')?.className).toContain('badge--locked');
-    expect(screen.getByText('Safety 1 high, 1 pain report')).toBeTruthy();
+    expect(screen.getByText('Safety 1 pain report, 1 high')).toBeTruthy();
+  });
+
+  test('pain reports beside an ordinary high are never counted under HIGH on the phone', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e0', severity: 'high' }),
+        ...[1, 2, 3, 4, 5].map((n) => escalation({ escalation_id: `p${n}`, severity: 'high', metadata: PAIN })),
+      ],
+    });
+
+    expect(screen.getByText('SAFETY 1 · HIGH · 5 · PAIN REPORTS')).toBeTruthy();
+    expect(screen.getByText('Safety 1 high, 5 pain reports')).toBeTruthy();
+  });
+
+  test('a high pain report alone wears the rung below the top, named as a pain report', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'high', metadata: PAIN })] });
+
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    expect(compact.closest('.badge')?.className).toContain('badge--restricted');
   });
 
   test('a moderate pain escalation still does not raise the badge', async () => {

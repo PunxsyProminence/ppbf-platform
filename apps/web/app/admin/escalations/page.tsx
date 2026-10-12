@@ -157,13 +157,16 @@ export default function EscalationsPage() {
 
   const counts = useMemo(() => {
     const source = items ?? [];
-    // Pain-report escalations are counted on their own tile, not inside
-    // Critical or High (#1528 Q3); Total still counts every row.
-    const others = source.filter((item) => !isPainReportEscalation(item.metadata));
+    // Pain-report escalations at the rungs Critical and High count are on
+    // their own tile instead (#1528 Q3), the same set the header badge counts
+    // apart; a moderate or low one stays in Total only, like any other.
+    // Total still counts every row.
+    const severe = source.filter((item) => item.severity === 'critical' || item.severity === 'high');
+    const others = severe.filter((item) => !isPainReportEscalation(item.metadata));
     return {
       critical: others.filter((item) => item.severity === 'critical').length,
       high: others.filter((item) => item.severity === 'high').length,
-      pain: source.length - others.length,
+      pain: severe.length - others.length,
       total: source.length,
     };
   }, [items]);

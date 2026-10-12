@@ -282,4 +282,15 @@ describe('a pain-report escalation reads "Pain report", not a severity word (#15
     // Critical 1 (not 2), High 0 (not 1), Pain reports 2, Total every row.
     expect(tileValues()).toEqual(['1', '0', '2', '4']);
   });
+
+  test('a moderate pain-pattern escalation is in Total only, as any moderate is (#1528 Q3)', async () => {
+    const MODERATE_PATTERN = { ...REPEATED, escalation_id: 'esc-mod', severity: 'moderate' as const, reason: 'Pain twice this month.' };
+    mockAdminFetch({ escalations: [FROM_NEAR_MISS, MODERATE_PATTERN] });
+
+    render(<EscalationsPage />);
+    await screen.findByText(FROM_NEAR_MISS.reason);
+
+    // The same set the header badge counts apart: high and critical only.
+    expect(tileValues()).toEqual(['0', '0', '1', '2']);
+  });
 });

@@ -27,8 +27,8 @@ import { CONTROL_QUIET } from './sessionBarControls';
  * source of truth, no new table, no new endpoint.
  *
  * A COUNT AND NOTHING ELSE. This bar renders on every surface, including
- * whatever screen happens to be facing the room. So the badge carries a
- * number and a severity word -- never an athlete's name, never the reason,
+ * whatever screen happens to be facing the room. So the badge carries
+ * numbers and a severity word (or "pain report", #1528 Q3) -- never an athlete's name, never the reason,
  * never the source. Those live on the record, behind the same gate they
  * always did, one click away. A safeguarding disclosure must not be readable
  * over a coach's shoulder because the chassis decided to be helpful.
@@ -91,8 +91,9 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
 function EscalationBadge({ role }: { readonly role: string | null }) {
   const [criticalCount, setCriticalCount] = useState(0);
   const [highCount, setHighCount] = useState(0);
-  // Pain-report escalations, counted on their own line (#1528 Q3): no
-  // severity word is attached to a pain report, here or on its record.
+  // Pain-report escalations, counted on their own line at both densities
+  // (#1528 Q3): no severity word is attached to a pain report, here or on
+  // its record.
   const [painCount, setPainCount] = useState(0);
   // Whether a pain-report escalation holds the critical rung.
   const [painCritical, setPainCritical] = useState(false);
@@ -204,16 +205,29 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      says HIGH, and the two would then be describing one set of escalations at
      two different severities -- the thing the paragraph above exists to
      prevent between this summary and /admin/escalations. */
-  // When only pain reports hold the worst rung, the word names them instead
-  // of a severity (#1528 Q3); the same predicate still chose the rung.
-  const worst = critical
-    ? (criticalCount > 0 ? 'CRITICAL' : 'PAIN REPORT')
-    : (highCount > 0 ? 'HIGH' : 'PAIN REPORT');
-  const label = [
+  /* Pain reports (#1528 Q3) are a separate count at both densities, never
+     inside a number captioned CRITICAL or HIGH. When pain reports alone hold
+     the rung (a critical pain report beside ordinary highs, or pain reports
+     only) they are named FIRST, so the rung sits beside what earned it --
+     the same predicate as the rung, as above. The compact form for a set with
+     no pain report is exactly what it was. */
+  const ordinaryCount = criticalCount + highCount;
+  const painLeads = critical ? criticalCount === 0 : highCount === 0;
+  // The ordinary escalations' own worst word. It equals the rung's word unless
+  // a pain report alone holds the rung, and then the pain report leads.
+  const worst = criticalCount > 0 ? 'CRITICAL' : 'HIGH';
+  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}`;
+  const ordinaryParts = [
     criticalCount > 0 ? `${criticalCount} critical` : null,
     highCount > 0 ? `${highCount} high` : null,
-    painCount > 0 ? `${painCount} pain report${painCount === 1 ? '' : 's'}` : null,
-  ].filter(Boolean).join(', ');
+  ].filter((part): part is string => part !== null);
+  const label = (painCount === 0 ? ordinaryParts : painLeads ? [painPart, ...ordinaryParts] : [...ordinaryParts, painPart])
+    .join(', ');
+  const ordinaryCompact = ordinaryCount > 0 ? `${ordinaryCount} · ${worst}` : null;
+  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}` : null;
+  const compact = `SAFETY ${[painLeads ? painCompact : ordinaryCompact, painLeads ? ordinaryCompact : painCompact]
+    .filter((part): part is string => part !== null)
+    .join(' · ')}`;
 
   /* NO FIXED WIDTH CAN BE CLAIMED FOR THIS BADGE, at either density or any
      breakpoint. Both summaries below are composed from counts fetched at
@@ -246,6 +260,8 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             the two rungs. It cannot understate either half of what is waiting:
             the number is criticalCount + highCount, and the word is the worst
             severity actually present, off the same predicate as the rung.
+            Pain reports (#1528 Q3) are their own number and words beside it,
+            "SAFETY 1 · HIGH · 2 · PAIN REPORTS", never inside that total.
 
             WHAT IS NOT DONE HERE, because the order that opened this slice
             names each one: the badge is not hidden on the phone, not reduced
@@ -273,7 +289,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             ppbf.css -> current/ppbf-theme.css -> ppbf-golden-era.css:60), so
             the two agree today, and the summary still reads as the design
             lane specified it if that transform ever moves. */}
-        <span className="sm:hidden">{`SAFETY ${total} · ${worst}`}</span>
+        <span className="sm:hidden">{compact}</span>
         <span className="hidden sm:inline">Safety {label}</span>
       </span>
     </ChromeLink>
