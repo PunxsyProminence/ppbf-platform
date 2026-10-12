@@ -5,6 +5,8 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import DrillDetail from '@/components/drills/DrillDetail';
+import DrillLineageReview from '@/components/drills/DrillLineageReview';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
@@ -18,6 +20,7 @@ import type {
   ReferenceLifecycleState,
 } from '@/src/server/pilot/drillLibraryV3';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
+import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
 
 // The gym's drill library: the reference drills it can adopt, and the
 // operational drills -- promoted from the reference library or written here --
@@ -334,6 +337,15 @@ function CoachDrillLibrary() {
   const [actionOutcome, setActionOutcome] = useState<ActionOutcome>('refused');
   const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
 
+  // Versions and proposals (#1471): the drill whose history is open, and the
+  // proposals waiting for review. Adopt and Decline are offered to the roles
+  // the review route admits; everyone here reads the same history and queue.
+  const pilotSession = usePilotSession();
+  const canReview = isOrganizationAdminSessionRole(pilotSession.role);
+  const [lineageDrillId, setLineageDrillId] = useState('');
+  const [waiting, setWaiting] = useState<DrillChangeProposalListResponse['items']>([]);
+  const [waitingError, setWaitingError] = useState('');
+
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Record<FilterKey, string>>(NO_FILTERS);
 
@@ -409,12 +421,32 @@ function CoachDrillLibrary() {
     }
   }, []);
 
+  // Proposed first, then under review: the order the queue is worked in.
+  const loadWaiting = useCallback(async () => {
+    try {
+      const lists = await Promise.all(['proposed', 'under_review'].map(async (state) => {
+        const response = await fetch(`${apiBase()}/api/pilot/drills/proposals?review_state=${state}`, { method: 'GET', credentials: 'include' });
+        if (!response.ok) throw new Error('queue');
+        const payload = (await response.json()) as Partial<DrillChangeProposalListResponse>;
+        if (!Array.isArray(payload.items) || payload.items.some((item) => typeof item?.proposal_id !== 'string')) {
+          throw new Error('queue');
+        }
+        return payload.items;
+      }));
+      setWaiting(lists.flat());
+      setWaitingError('');
+    } catch {
+      setWaiting([]);
+      setWaitingError('The proposals waiting for review could not be loaded. This is a failure to load, not an empty queue.');
+    }
+  }, []);
+
   useEffect(() => {
     // Deferred behind an await so no state is set while the effect body runs.
     void (async () => {
-      await Promise.all([load(), loadReferenceLibrary()]);
+      await Promise.all([load(), loadReferenceLibrary(), loadWaiting()]);
     })();
-  }, [load, loadReferenceLibrary]);
+  }, [load, loadReferenceLibrary, loadWaiting]);
 
   // While a Promote, Retire or Restore is running -- its request, and every
   // re-read after it -- the coach stays on the drill it is for and starts
@@ -1087,6 +1119,48 @@ function CoachDrillLibrary() {
             </div>
           )}
 
+          <h3 className="t-command mt-[var(--s4)] text-[length:var(--t-md)]">Proposals waiting</h3>
+          {waitingError && <p className="t-body mt-[var(--s2)] text-[color:var(--restricted-ink)]">{waitingError}</p>}
+          {!waitingError && waiting.length === 0 && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">No proposed changes are waiting for review.</p>
+          )}
+          {waiting.length > 0 && (
+            <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+              {waiting.map((proposal) => {
+                const drillName = drills.find((drill) => drill.drill_id === proposal.current_drill_id)?.name
+                  ?? (proposal.lineage_retired ? 'A retired drill' : 'A drill not in this list');
+                return (
+                  <li key={proposal.proposal_id} className="flex flex-wrap items-center gap-[var(--s3)]">
+                    <p className="t-body">
+                      {drillName}: {proposal.rationale}
+                      <span className="t-label ml-[var(--s2)] text-[color:var(--bone-300)]">
+                        {proposal.review_state === 'under_review' ? 'Under review' : 'Proposed'} {proposal.created_at.slice(0, 10)}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      onClick={() => setLineageDrillId(proposal.based_on_drill_id)}
+                      aria-label={`Review proposal: ${drillName}`}
+                    >
+                      Review
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {lineageDrillId && (
+            <DrillLineageReview
+              key={lineageDrillId}
+              drillId={lineageDrillId}
+              canReview={canReview}
+              onClose={() => setLineageDrillId('')}
+              onChanged={() => void Promise.all([load(), loadWaiting()])}
+            />
+          )}
+
           {!loading && !loadError && drills.length === 0 && (
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Nothing yet. Promote a drill from the reference library, or add one above; assignments can only
@@ -1129,6 +1203,14 @@ function CoachDrillLibrary() {
                     ))}
                   </ul>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setLineageDrillId(drill.drill_id)}
+                  className="btn btn--ghost mt-[var(--s3)]"
+                  aria-label={`Versions and proposals: ${drill.name}`}
+                >
+                  Versions and proposals
+                </button>
               </article>
             ))}
           </div>

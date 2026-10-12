@@ -103,6 +103,7 @@ import {
   adoptDrillChangeProposal,
   declineDrillChangeProposal,
   getDrillLineage,
+  getDrillLineageForDrill,
   listDrillChangeProposals,
   proposeDrillChange,
 } from './drillVersioning';
@@ -604,6 +605,51 @@ describe('drillVersioning.ts against real Postgres', () => {
         [1, 'drill-jab'],
         [2, newDrillVersion.drill_id],
       ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('getDrillLineageForDrill reads the whole lineage from any version, in the caller gym only', async () => {
+    const client = await freshDatabase('ppbf_test_drillver_lineage_for_drill');
+    activeClient = client;
+    try {
+      await applyVersioningStack(client);
+      for (const org of [ORG_A, ORG_B]) {
+        await client.query(
+          `insert into pilot.drills (organization_id, drill_id, name, category, focus, cues)
+           values ($1, 'drill-jab', 'Straight Jab Retraction Snap', 'Striking', 'Quick fist return.', $2)`,
+          [org, ['Elbow tucked']],
+        );
+      }
+      const proposal = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'Athletes keep dropping the guard on the retraction.',
+        proposedChange: { cues: ['Elbow tucked', 'Snap on contact'] },
+      });
+      const { newDrillVersion } = await adoptDrillChangeProposal({
+        organizationId: ORG_A,
+        proposalId: proposal.proposal_id,
+        reviewedByAccountId: ADMIN_A,
+        reviewedByRole: 'organization_admin',
+        reviewNote: null,
+      });
+
+      const both = [[1, 'drill-jab', ORG_A], [2, newDrillVersion.drill_id, ORG_A]];
+      const shape = (rows: { version: number; drill_id: string; organization_id: string }[]) =>
+        rows.map((row) => [row.version, row.drill_id, row.organization_id]);
+      expect(shape(await getDrillLineageForDrill(ORG_A, 'drill-jab'))).toEqual(both);
+      expect(shape(await getDrillLineageForDrill(ORG_A, newDrillVersion.drill_id))).toEqual(both);
+
+      // Another gym holding the same drill id reads its own one version, and
+      // this gym's v2 id names nothing there.
+      expect(shape(await getDrillLineageForDrill(ORG_B, 'drill-jab'))).toEqual([[1, 'drill-jab', ORG_B]]);
+      expect(await getDrillLineageForDrill(ORG_B, newDrillVersion.drill_id)).toEqual([]);
+      expect(await getDrillLineageForDrill(ORG_A, 'no-such-drill')).toEqual([]);
     } finally {
       activeClient = null;
       await client.end();

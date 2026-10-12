@@ -351,6 +351,25 @@ export async function getDrillLineage(organizationId: string, lineageId: string)
   );
 }
 
+/**
+ * Every version of the lineage one drill belongs to, oldest first -- for a
+ * screen that holds a drill id and not its lineage id. Both reads are scoped to
+ * this gym, so a drill id from another gym, or no drill at all, reads as an
+ * empty list, the same answer getDrillLineage gives an unknown lineage.
+ */
+export async function getDrillLineageForDrill(organizationId: string, drillId: string): Promise<PilotDrillVersionRow[]> {
+  return query<PilotDrillVersionRow>(
+    `select ${DRILL_VERSION_FIELDS}
+     from pilot.drills
+     where organization_id = $1
+       and lineage_id = (
+         select lineage_id from pilot.drills where organization_id = $1 and drill_id = $2
+       )
+     order by version asc`,
+    [organizationId, drillId],
+  );
+}
+
 // UPDATE IN PLACE TO A NEWER REFERENCE VERSION (OD-2026-10-08-008 D1, "B Update
 // in place (Recommended)"). Same refusal and same meaning of "retired" as the
 // change-proposal gate above (D3): no version of the lineage is active.
