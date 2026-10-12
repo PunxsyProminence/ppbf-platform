@@ -47,7 +47,7 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
   {
     placement: 'everywhere',
     where: 'Everywhere',
-    who: 'Every board at once — athletes, coaches, and parents alike.',
+    who: 'Every board at once — athletes, coaches, parents, and the paired gym TV.',
   },
   {
     placement: 'athlete_workspace',
@@ -57,12 +57,12 @@ const BOARDS: ReadonlyArray<{ placement: AnnouncementPlacement; where: string; w
   {
     placement: 'coach_workspace',
     where: 'The coaches’ board',
-    who: 'Coaches only. Nothing written here reaches a member.',
+    who: 'Shown on the coaches’ workspace.',
   },
   {
     placement: 'parent_hub',
     where: 'The parents’ board',
-    who: 'On the parent hub, for guardians. Athletes and coaches never see it.',
+    who: 'Shown on the parent hub, for guardians.',
   },
 ];
 
@@ -217,8 +217,9 @@ export default function AdminCustomizePage() {
           Photographs on the wall
         </h2>
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
-          Each frame appears on member dashboards. Today it holds a drawn placeholder; a photograph you
-          upload takes the frame, and taking it down puts the placeholder back. Pictures of the room,
+          Five of these frames appear on athlete and parent dashboards, where a photograph you upload
+          replaces the drawn placeholder and taking it down puts the placeholder back. The front page
+          shows only the drawings (entrance, floor, ring); an upload does not reach it yet. Pictures of the room,
           not of people — you are the release decision, so look at the photograph before you hang it.
         </p>
 

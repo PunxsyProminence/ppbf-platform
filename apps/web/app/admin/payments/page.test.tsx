@@ -118,15 +118,19 @@ test('while the platform account is unregistered, the slot shows the owner the e
     render(<PaymentsSettingsPage />);
   });
 
-  expect(screen.getByText(/How to register the platform account/)).toBeTruthy();
+  expect(screen.getByText('Platform account registration (done once by PPBF)')).toBeTruthy();
+  expect(screen.queryByText(/one-time, owner/)).toBeNull();
+  expect(screen.getByText(/the Connect buttons above now work/)).toBeTruthy();
   // The three secret names are stated verbatim -- the owner should never
   // have to guess what Azure wants.
   expect(screen.getByText('PAYMENT_CONNECT_CLIENT_ID')).toBeTruthy();
   expect(screen.getByText('PAYMENT_PLATFORM_SECRET_KEY')).toBeTruthy();
   expect(screen.getByText('PAYMENT_PLATFORM_WEBHOOK_SECRET')).toBeTruthy();
   expect(screen.getByText('account.application.deauthorized')).toBeTruthy();
-  // And the boundary holds even here: configuration opens onboarding, not charging.
-  expect(screen.getByText(/Configuration only opens onboarding/)).toBeTruthy();
+  // And the boundary holds even here, without naming a checkout that does
+  // not exist (paymentSetup.ts: no charging, no checkout).
+  expect(screen.getByText(/nothing charges through these accounts yet\. Configuration only\s+opens onboarding\./)).toBeTruthy();
+  expect(screen.queryByText(/feature-flagged/)).toBeNull();
 });
 
 test('a failed read never says a lane is "not connected" or offers a first connect', async () => {
@@ -143,4 +147,15 @@ test('a failed read never says a lane is "not connected" or offers a first conne
   expect(screen.getByText('Payment settings could not be read')).toBeTruthy();
   expect(screen.queryByText('not connected')).toBeNull();
   expect(screen.queryByRole('link', { name: 'Connect Stripe account' })).toBeNull();
+});
+
+test('disconnecting is described as what the webhook does: the account is marked disconnected', async () => {
+  global.fetch = mockFetch({});
+
+  await act(async () => {
+    render(<PaymentsSettingsPage />);
+  });
+
+  expect(screen.getByText(/the platform is notified and\s+marks the account disconnected\./)).toBeTruthy();
+  expect(screen.queryByText(/stops using the account immediately/)).toBeNull();
 });

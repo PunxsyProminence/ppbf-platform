@@ -23,8 +23,8 @@ import type { ClubRole } from './roleRoutes';
  * ---------------------------------------------------------------------------
  *
  * `roles: OPEN` marks a surface with no role gate at all today — sign-in,
- * help, the public pages, and a handful of internal surfaces that are still
- * ungated. They are listed as open because that is what the code does; several
+ * help (which needs a sign-in but admits every role), the public pages, and a
+ * handful of internal surfaces that are still ungated. They are listed as open because that is what the code does; several
  * of them arguably should be gated, which is a separate piece of work.
  *
  * ---------------------------------------------------------------------------

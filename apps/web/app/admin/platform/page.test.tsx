@@ -330,3 +330,84 @@ describe('room DNA -- Front Office', () => {
     expect(close.closest('.mat-paper')).toBeTruthy();
   });
 });
+
+describe('lane N4-02: the desk says what its buttons do', () => {
+  test('adding staff is named as a role mapping, and nothing claims an email was sent', async () => {
+    const { posts } = mountDesk();
+    await chooseGym();
+
+    expect(screen.queryByText(/Send Invite/)).toBeNull();
+    expect(screen.queryByText(/Sends a Microsoft-authenticated invite/)).toBeNull();
+    expect(screen.getByText(/Gives an email address a role in the selected gym\. Nothing is emailed\./)).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
+
+    // Default role is organization_admin: a Microsoft credential.
+    expect(await screen.findByText(/coach@example\.org is now organization admin in this gym\. Nothing was emailed; tell them\. They sign in with Microsoft once they are in the PPBF Microsoft tenant/)).toBeTruthy();
+    expect(screen.queryByText(/invited as/)).toBeNull();
+    // The workflow itself is unchanged: one POST to the same staff route.
+    expect(posts.filter((post) => post.url.includes('/api/pilot/platform/staff'))).toHaveLength(1);
+  });
+
+  test('a coach is told they sign in with an email link, not that they need the Microsoft tenant', async () => {
+    mountDesk();
+    await chooseGym();
+
+    fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
+    fireEvent.change(screen.getByDisplayValue('Organization Admin'), { target: { value: 'coach' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
+
+    expect(await screen.findByText(/coach@example\.org is now coach in this gym\. Nothing was emailed; tell them\. They sign in with an email link: on the login page they enter coach@example\.org\. No Microsoft account is needed\./)).toBeTruthy();
+    expect(screen.queryByText(/PPBF Microsoft tenant/)).toBeNull();
+  });
+
+  test('the account switch names parent accounts, which the route does not refuse', async () => {
+    mountDesk();
+    await chooseGym();
+    expect(screen.getByText(/coach, staff, volunteer, board, parent, or admin account/)).toBeTruthy();
+  });
+});
+
+describe('lane N4-02: the refusal sends each visitor to their own home (#1430 leftover)', () => {
+  function refusalHrefs(session: Partial<PilotSessionState>) {
+    mockUsePilotSession.mockReturnValue({ ...OWNER, ...session });
+    global.fetch = jest.fn(async () => jsonResponse({})) as unknown as typeof fetch;
+    const { container } = render(<PlatformConsole />);
+    expect(screen.getByText('Platform Owner Access Required')).toBeTruthy();
+    return [...container.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
+  }
+
+  test('an organization admin is offered the admin dashboard', () => {
+    expect(refusalHrefs({ role: 'organization_admin', authProvider: 'microsoft' })).toEqual([
+      ['Sign In With Microsoft', '/login'],
+      ['Go To Admin Dashboard', '/admin'],
+    ]);
+  });
+
+  test('a coach is offered their own workspace, not /admin, which refuses them', () => {
+    expect(refusalHrefs({ role: 'coach', authProvider: 'ppbf_local' })).toEqual([
+      ['Sign In With Microsoft', '/login'],
+      ['Go To My Workspace', '/coach/environment/intake-router'],
+    ]);
+  });
+
+  test('a parent is offered the parent hub', () => {
+    expect(refusalHrefs({ role: 'parent', authProvider: 'ppbf_local' })).toEqual([
+      ['Sign In With Microsoft', '/login'],
+      ['Go To My Workspace', '/parent/dashboard'],
+    ]);
+  });
+
+  test('a platform owner not signed in with Microsoft gets only Sign In', () => {
+    expect(refusalHrefs({ role: 'platform_owner', authProvider: 'ppbf_local' })).toEqual([
+      ['Sign In With Microsoft', '/login'],
+    ]);
+  });
+
+  test('a signed-out visitor gets only Sign In', () => {
+    expect(refusalHrefs({ role: null, authProvider: null, accountId: null })).toEqual([
+      ['Sign In With Microsoft', '/login'],
+    ]);
+  });
+});

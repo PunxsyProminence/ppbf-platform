@@ -106,7 +106,6 @@ export const SERVER_GUARDED_ROUTES = [
   '/guardian/dashboard',
   '/coach/review-queue',
   '/coach/operations',
-  '/board/dashboard',
   '/director/dashboard',
 ] as const;
 

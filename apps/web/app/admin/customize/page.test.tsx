@@ -121,3 +121,30 @@ test('a gym admin still reads the photos and gets the desk', async () => {
   expect(gymPhotoCalls()).toHaveLength(1);
   expect(screen.queryByText(/ADMINS ONLY/)).toBeNull();
 });
+
+// Lane N4-02: each board says where it is SHOWN, not who is kept from it. The
+// announcements read (api/pilot/announcements/get) carries no role check, so
+// "Coaches only" and "never see it" claimed a guarantee the server does not
+// make. The gym TV reads 'everywhere' notices (wallDisplayDb.ts loadWallBoard).
+test('the boards say where a notice is shown and claim no audience the server does not enforce', async () => {
+  render(<CustomizePage />);
+  await screen.findByRole('heading', { name: /look and voice/i });
+
+  expect(screen.getByText('Every board at once — athletes, coaches, parents, and the paired gym TV.')).toBeTruthy();
+  expect(screen.getByText('Shown on the coaches’ workspace.')).toBeTruthy();
+  expect(screen.getByText('Shown on the parent hub, for guardians.')).toBeTruthy();
+  expect(screen.queryByText(/Coaches only/)).toBeNull();
+  expect(screen.queryByText(/never see it/)).toBeNull();
+  expect(screen.queryByText(/Nothing written here reaches a member/)).toBeNull();
+});
+
+test('the photographs copy names where the frames really appear', async () => {
+  render(<CustomizePage />);
+  await screen.findByRole('heading', { name: /look and voice/i });
+
+  // app/page.tsx renders entrance/floor/ring through PhotoSlot with no
+  // uploadedSrc, so the front page shows drawings only.
+  expect(screen.getByText(/Five of these frames appear on athlete and parent dashboards, where a photograph you upload\s+replaces the drawn placeholder/)).toBeTruthy();
+  expect(screen.getByText(/The front page\s+shows only the drawings \(entrance, floor, ring\); an upload does not reach it yet\./)).toBeTruthy();
+  expect(screen.queryByText(/Each frame appears on member dashboards/)).toBeNull();
+});

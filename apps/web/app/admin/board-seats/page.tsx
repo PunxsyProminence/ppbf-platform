@@ -360,9 +360,11 @@ function BoardSeatsConsole() {
                 )}
               </p>
             </div>
-            <Link href="/admin" className="btn btn--ghost">
-              Admin Home
-            </Link>
+            {isOrganizationAdminSessionRole(session.role) && (
+              <Link href="/admin" className="btn btn--ghost">
+                Admin Home
+              </Link>
+            )}
           </div>
         </header>
 
@@ -535,8 +537,8 @@ function BoardSeatsConsole() {
                 </>
               )}
               <p className="t-muted mt-[var(--s2)]">
-                Only an active board member of this gym can be seated. Someone new to the board gets their account on
-                the People page first.
+                Only an active board member of this gym can be seated. Someone new to the board needs a board account
+                first; the PPBF platform desk creates it.
               </p>
               {alreadyOnSeat && (
                 <p className="mat-leather--raised mt-[var(--s2)] rounded-[var(--r-md)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] font-semibold text-[color:var(--bone-200)]">

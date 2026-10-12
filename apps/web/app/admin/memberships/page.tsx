@@ -291,7 +291,7 @@ export default function MembershipsPage() {
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Who is enrolled in what, with scholarships recorded as discounts — a full scholarship
               is 100%, never an athlete waved invisibly past the system. No billing happens here;
-              fees arrive with the payment lanes and will read these records.
+              fees are planned with the payment lanes, and nothing reads these records for billing yet.
             </p>
           </header>
 

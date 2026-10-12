@@ -99,6 +99,9 @@ test('enrollments render with the scholarship shown as a discount, and the no-bi
   expect(await screen.findByText('Jordan Little')).toBeTruthy();
   expect(screen.getByText('100% scholarship')).toBeTruthy();
   expect(screen.getByText(/No billing happens here/)).toBeTruthy();
+  // Lane N4-02: fees are a plan, not a fact (paymentSetup.ts: no charging, no checkout).
+  expect(screen.getByText(/fees are planned with the payment lanes, and nothing reads these records for billing yet\./)).toBeTruthy();
+  expect(screen.queryByText(/fees arrive with the payment lanes/)).toBeNull();
 });
 
 test('enrolling posts the athlete link and the chosen discount', async () => {

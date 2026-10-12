@@ -190,7 +190,7 @@ function PaymentsSettings() {
 
               {setup && !setup.ready && (
                 <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
-                  <h2 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>How to register the platform account (one-time, owner)</h2>
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Platform account registration (done once by PPBF)</h2>
                   <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                     This is the slot Stripe drops into. Everything below happens on Stripe&rsquo;s and
                     Azure&rsquo;s side — no code changes, and no key is ever pasted into this app.
@@ -223,21 +223,21 @@ function PaymentsSettings() {
                       onboarding test passes.
                     </li>
                     <li>
-                      Reload this page: the lane buttons above go live. Connect the <strong>Giving</strong>{' '}
+                      Reload this page: the Connect buttons above now work. Connect the <strong>Giving</strong>{' '}
                       lane first and start its 501(c)(3) verification — it is the slow step and unlocks
                       the nonprofit rate.
                     </li>
                   </ol>
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
-                    Even fully configured, nothing charges: checkout stays feature-flagged behind the
-                    compliance sign-off. Configuration only opens onboarding.
+                    Even fully configured, nothing charges through these accounts yet. Configuration only
+                    opens onboarding.
                   </p>
                 </section>
               )}
 
               <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                 To disconnect, use the gym&rsquo;s own Stripe dashboard; the platform is notified and
-                stops using the account immediately. Reconnecting or swapping is this page&rsquo;s button.
+                marks the account disconnected. Reconnecting or swapping is this page&rsquo;s button.
               </p>
             </>
           )}
