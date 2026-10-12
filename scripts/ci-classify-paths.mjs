@@ -78,12 +78,28 @@ const isMigrationPath = (file) =>
   startsWithAny(file, [
     'infra/azure/',
     'apps/web/src/server/pilot/',
+    /* The route handlers. Many .pg.test.ts suites drive them against a real
+       database (interventionEvidence.pg.test.ts "through the routes", the
+       retention and deletion suites, ...), so a change to a route file alone
+       changes what they prove -- and until #1482 item 7 it ran none of them:
+       src/server/pilot/ was matched and app/api/ was not, so a PR touching
+       only a route went to CI with the PostgreSQL suite skipped. */
+    'apps/web/app/api/',
     'apps/web/scripts/pilot-',
     /* The account cleanup's read and retire statements live here, not in the
        pilot-cleanup-accounts.mjs runner the prefix above matches, and
        accountCleanupSql.pg.test.ts is what runs them. */
     'apps/web/scripts/lib/account-cleanup-plan.',
+    /* The suite runner, and the embedded server and janitor every suite
+       starts. An edit to any of them changes how all of them run, and none
+       matched before. */
+    'apps/web/scripts/run-migration-suites.',
+    'apps/web/scripts/test-embedded-pg-',
   ]) ||
+  /* A migration suite itself, wherever it lives. Two sit under
+     apps/web/scripts/ outside the prefixes above, so an edit to one could not
+     run itself. */
+  file.endsWith('.pg.test.ts') ||
   [
     'apps/web/package.json',
     'package.json',

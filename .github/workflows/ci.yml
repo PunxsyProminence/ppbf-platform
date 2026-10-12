@@ -95,6 +95,19 @@ jobs:
           assert.equal(classifyPaths(['README.md']).docsOnly, true);
           assert.equal(classifyPaths(['MASTER_INDEX.md']).docsOnly, true);
 
+          // THE POSTGRESQL SUITE FOR ROUTES AND SERVER CODE (#1482 item 7). The
+          // pg suites drive the route handlers and the server modules, so a
+          // change to either alone must run them.
+          assert.equal(classifyPaths(['apps/web/app/api/pilot/profile/card/route.ts']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/app/api/admin/volunteers/route.ts']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/src/server/pilot/profileDb.ts']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/run-migration-suites.mjs']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/test-embedded-pg-server.mjs']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/import-shadow-research.pg.test.ts']).migrations, true);
+          // ...and a page or a component alone does not.
+          assert.equal(classifyPaths(['apps/web/app/admin/people/page.tsx']).migrations, false);
+          assert.equal(classifyPaths(['apps/web/components/FightCard.tsx']).migrations, false);
+
           assert.equal(
             classifyPaths(['apps/web/src/server/pilot/entities.ts']).migrations,
             true
@@ -271,6 +284,7 @@ jobs:
             ['apps/web/components/roleSession.ts'],
             ['apps/web/app/board/page.tsx'],
             ['apps/web/src/server/pilot/entities.ts'],
+            ['apps/web/app/api/pilot/some-new-surface/route.ts'],
             ['docs/README.md'],
             [],
           ]) {
@@ -294,7 +308,9 @@ jobs:
           for (const missed of [
             ['apps/web/components/SomeNewSurface.tsx'],
             ['.github/workflows/backup.yml'],
-            ['apps/web/app/api/pilot/some-new-surface/route.ts'],
+            // Was a route file under app/api/pilot/; every route now runs the
+            // PostgreSQL suite (#1482 item 7), so a synthetic page stands in.
+            ['apps/web/app/some-new-surface/page.tsx'],
             ['docs/capabilities/modules/example.md', 'apps/web/src/docs/capabilityEvidence.test.ts'],
           ]) {
             const missedResult = classifyPaths(missed);
