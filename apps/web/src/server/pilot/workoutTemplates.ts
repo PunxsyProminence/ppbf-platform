@@ -385,13 +385,16 @@ export async function listUntestedTemplateDrills(
 
   // The gym drills this template will update in place: gym drill id -> the
   // newer reference a step names. Asked only when some step names a drill the
-  // gym runs, since only those steps can be moved onto the newer version.
+  // gym runs, since only those steps can be moved onto the newer version, and
+  // only for a 'newer_version_available' reference: the one state the issue
+  // updates from (active, not superseded, the gym's lineage still running).
+  // Superseded, withdrawn and retired-lineage versions are refused by the
+  // issue, so they never decide which version a step assigns.
   const updatedTo = new Map<string, string>();
   const runsSome = referenceIds.some((id) => lifecycles[id]?.state === 'operational');
   if (runsSome) {
     for (const referenceId of referenceIds) {
-      const state = lifecycles[referenceId]?.state;
-      if (state === 'operational' || state === 'retired') continue;
+      if (lifecycles[referenceId]?.state !== 'newer_version_available') continue;
       const other = await getOtherVersionAdoption(organizationId, referenceId);
       if (other) updatedTo.set(other.operational_drill_id, referenceId);
     }
@@ -411,8 +414,13 @@ export async function listUntestedTemplateDrills(
       ? updatedTo.get(lifecycle.operational_drill_id)
       : undefined;
     if (newer !== undefined && newer !== referenceId) {
+      const newerDrill = await getDrillWithDetail(organizationId, newer);
+      if (!newerDrill) {
+        // Unreadable: the issue refuses it by name.
+        continue;
+      }
       countedId = newer;
-      counted = (await getDrillWithDetail(organizationId, newer)) ?? reference;
+      counted = newerDrill;
     } else if (lifecycle?.state === 'operational' && lifecycle.operational_drill_id && reference.superseded_at !== null) {
       const runs = (await queryOne<{ reference_drill_id: string | null }>(
         `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,

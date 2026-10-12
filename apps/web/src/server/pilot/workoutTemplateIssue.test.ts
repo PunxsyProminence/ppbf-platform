@@ -67,7 +67,7 @@ import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferen
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
 import { findWorkoutIssueByRequestKey, recordWorkoutIssue, WorkoutIssueRequestKeyTakenError } from './workoutIssues';
-import { issueWorkoutTemplate } from './workoutTemplates';
+import { issueWorkoutTemplate, listUntestedTemplateDrills } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -1378,6 +1378,36 @@ describe('a step naming a newer version of a drill the gym runs updates it while
       outcome: 'issued',
       untested: [{ reference_drill_id: 'ref-1', name: 'New Version', steps: [1, 2] }],
     });
+  });
+
+  // Review finding 2 (PR #1502): only a version the issue would update to may
+  // decide which drill a step assigns. A superseded OLDER version named beside
+  // the running one is refused by the issue and must not stand in for it.
+  test('a superseded older version beside the running one does not stand in for it in the untested list', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-1' }), item(2, { drill_id: 'ref-0' })],
+      library: {
+        'ref-1': {
+          state: 'operational',
+          operational: 'op-1',
+          row: reference('ref-1', { name: 'Running Draft', field_provenance: DRAFT }),
+        },
+        'ref-0': {
+          state: 'superseded',
+          row: reference('ref-0', { name: 'Older Version', superseded_at: '2026-09-01T00:00:00.000Z' }),
+        },
+      },
+    });
+    mockOtherVersion.mockImplementation(async (_org: string, id: string) => (id === 'ref-0' ? { operational_drill_id: 'op-1', adopted_reference_drill_id: 'ref-1' } : null));
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    // The issue refuses the superseded step; the list judged step 1 by ref-1.
+    expect(result).toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-0' }] });
+    await expect(listUntestedTemplateDrills(ORG, [
+      { drill_id: 'ref-1', ordinal: 1 },
+      { drill_id: 'ref-0', ordinal: 2 },
+    ])).resolves.toEqual([{ reference_drill_id: 'ref-1', name: 'Running Draft', steps: [1] }]);
   });
 
   test("after an update, a step naming the older version takes the floor test of the version the gym runs", async () => {
