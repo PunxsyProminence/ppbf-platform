@@ -737,3 +737,18 @@ describe('readiness is not presence', () => {
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
   });
 });
+
+describe('the round timer (WO-N1-03)', () => {
+  it("the live screen carries the run's round timer, read from its own route with a GET only", async () => {
+    const { fetchMock } = await renderLive(liveRun());
+    const section = await screen.findByRole('region', { name: 'Round timer' });
+    expect(within(section).getByText('No rounds set for this session.')).toBeInTheDocument();
+    const timerCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/runs/ssrun_1/timer'));
+    expect(timerCalls.length).toBeGreaterThan(0);
+    for (const call of timerCalls) {
+      expect((call[1] as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
+    }
+    // A timer read is never a session action.
+    expect(patchCalls(fetchMock)).toEqual([]);
+  });
+});
