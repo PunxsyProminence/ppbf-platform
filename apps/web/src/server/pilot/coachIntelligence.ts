@@ -14,6 +14,7 @@ import {
   READINESS_VALUE_MIN,
   readinessValidatedScopeSql,
 } from './readinessProvenance';
+import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
 
 // Coach Intelligence v1 (register module 111) -- the definition the owner
 // approved 2026-08-16, verbatim: five deterministic, read-only observations
@@ -109,6 +110,8 @@ export interface CoachIntelligenceDigest {
     severity: SafetyEscalationSeverity;
     reason: string;
     created_at: string;
+    /** Filed from a pain report: the digest prints no severity word for it (#1528). */
+    pain_report: boolean;
   }>;
   open_compliance_violations: Array<{
     athlete_id: string;
@@ -381,6 +384,8 @@ export async function getCoachIntelligence(
       severity: row.severity,
       reason: row.reason,
       created_at: row.created_at,
+      // One boolean, not the metadata blob (see above).
+      pain_report: isPainReportEscalation(row.metadata),
     }));
 
   return {

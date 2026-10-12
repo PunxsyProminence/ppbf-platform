@@ -229,6 +229,12 @@ export default function CoachPassbookGapsPage() {
                     >
                       Assign a drill
                     </Link>
+                    <Link
+                      href={`/coach/passbook?athlete_id=${encodeURIComponent(item.athlete_id)}`}
+                      className="btn btn--ghost mt-[var(--s4)] ml-[var(--s3)] min-h-[var(--tap)] text-[length:var(--t-md)]"
+                    >
+                      Open passbook
+                    </Link>
                   </li>
                 );
               })}

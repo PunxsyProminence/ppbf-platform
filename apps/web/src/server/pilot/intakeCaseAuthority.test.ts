@@ -185,32 +185,39 @@ describe('assertActorCanAccessIntakeCase -- a case with a resolved subject', () 
     documentOwners: ['ath-1'],
   };
 
-  test('the coach of record for the subject is admitted', async () => {
-    withDatabase({ ...promotedCase, coachAssigned: ['ath-1'] });
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+  // coach arm asks only whether the subject is a live athlete of this gym
+  // (inOrganization); coachAssigned / coachCovered no longer decide.
+  test('a coach of the subject\'s gym is admitted, assigned to the subject or not', async () => {
+    withDatabase({ ...promotedCase, inOrganization: ['ath-1'], coachAssigned: [] });
 
     await expect(
       assertActorCanAccessIntakeCase(actor('coach'), 'org-1', 'case-1'),
     ).resolves.toMatchObject({ found: true, subjectAthleteIds: ['ath-1'] });
   });
 
-  test('a coach with no relationship to the subject is refused', async () => {
-    withDatabase({ ...promotedCase, coachAssigned: ['ath-other'] });
+  test('a coach whose subject is not an athlete of their gym is refused', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. Being the coach of record elsewhere admits nothing.
+    withDatabase({ ...promotedCase, inOrganization: ['ath-other'], coachAssigned: ['ath-1'] });
 
     await expect(
       assertActorCanAccessIntakeCase(actor('coach'), 'org-1', 'case-1'),
-    ).rejects.toThrow('Forbidden: coach not assigned to athlete');
+    ).rejects.toThrow('Forbidden: athlete does not belong to organization');
   });
 
   test('every subject must pass -- reaching one athlete is not authority over the case', async () => {
     withDatabase({
       intakeCase: { primary_athlete_id: null, submitted_by_account_id: 'acct-uploader' },
       documentOwners: ['ath-1', 'ath-2'],
-      coachAssigned: ['ath-1'],
+      // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym, so
+      // the subject outside it is another gym's athlete.
+      inOrganization: ['ath-1'],
     });
 
     await expect(
       assertActorCanAccessIntakeCase(actor('coach'), 'org-1', 'case-1'),
-    ).rejects.toThrow('Forbidden: coach not assigned to athlete');
+    ).rejects.toThrow('Forbidden: athlete does not belong to organization');
   });
 
   test('a guardian linked to the subject is admitted; an unlinked one is refused', async () => {

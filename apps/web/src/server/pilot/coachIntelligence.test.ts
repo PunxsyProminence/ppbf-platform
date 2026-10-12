@@ -287,8 +287,33 @@ test('item 6 surfaces an open escalation with the roster name, narrowed to the d
       severity: 'critical',
       reason: 'Reported sharp elbow pain during bag work.',
       created_at: '2026-08-16T12:00:00.000Z',
+      // metadata.trigger 'pain' is not the pain-report trigger.
+      pain_report: false,
     },
   ]);
+});
+
+test.each([
+  [{ trigger: 'athlete_pain_report', near_miss_id: 'nm-1' }, true],
+  [{ trigger_key: 'athlete_pain_report', occurrence_count: 3, window_days: 30 }, true],
+  [{ trigger: 'contact_clearance' }, false],
+  [{}, false],
+])('item 6 marks an escalation filed from a pain report with one boolean, not the metadata (#1528): %j', async (metadata, painReport) => {
+  mockQuery.mockResolvedValue([]);
+  mockRollup.mockResolvedValue([]);
+  mockListEscalations.mockResolvedValue([
+    {
+      escalation_id: 'esc-1', source_type: 'near_miss', source_id: 'nm-1', athlete_id: 'ath-1', severity: 'high',
+      reason: 'Athlete ath-1 reported pain at the elbow at severity 6/10.', escalated_to_role: 'organization_admin',
+      triggered_by: 'system', triggered_by_account_id: null, triggered_by_role: null, status: 'open',
+      acknowledged_by_account_id: null, acknowledged_at: null, resolved_by_account_id: null, resolved_at: null,
+      resolution_note: '', metadata, created_at: '2026-08-16T12:00:00.000Z', updated_at: '2026-08-16T12:00:00.000Z',
+    },
+  ]);
+  const [item] = (await getCoachIntelligence('org-1', ['ath-1'])).open_safety_escalations;
+  expect(item.pain_report).toBe(painReport);
+  expect(item).not.toHaveProperty('metadata');
+  expect(item.severity).toBe('high');
 });
 
 test('an athlete whose ONLY signal is an open escalation still produces a non-empty digest', async () => {

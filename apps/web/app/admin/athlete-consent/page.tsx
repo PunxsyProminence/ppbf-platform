@@ -303,7 +303,10 @@ export default function AthleteConsentAuditPage() {
               blackletter reserved for the clinic masthead at display size only.
               The eyebrow states --brass-200 because --brass-400 is 3.34:1 on
               .mat-wood's lit edge; full note on /coach/sports-medicine. */}
-          <i aria-hidden="true" className="lamp lamp--green right-[8%]" />
+          {/* Never nearer the edge than 73px: the shade is 89px and its pool of
+              light 233px, centred, so 8% alone put the light past a phone's
+              screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
+          <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
             <h1

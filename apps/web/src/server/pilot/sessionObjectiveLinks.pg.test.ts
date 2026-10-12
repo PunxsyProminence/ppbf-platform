@@ -1034,3 +1034,33 @@ describe('session objective link runner readiness assertion', () => {
     }
   });
 });
+
+// Issue #1523 (Jason 2026-10-12, "allow a plain session"; Overwatch: left joins, "Plain session").
+describe('a plain session and its objective links', () => {
+  test('a plain session linked to an objective is listed for it as "Plain session"', async () => {
+    const client = await seededDatabase('obj_plain');
+    try {
+      await client.query(
+        `insert into pilot.session_script_runs
+           (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+            run_state, started_at, ended_at, current_block_id, paused_seconds, what_worked)
+         values ($1, 'run-plain', null, null, $2, '2026-08-20', 'completed',
+                 '2026-08-20T18:00:00Z', '2026-08-20T19:00:00Z', null, 0, 'Held the centre.')`,
+        [ORG_ID, COACH_ID],
+      );
+      await linkBlock(client, 'run-plain', 'blk-a');
+      await linkSessionToObjective({
+        organizationId: ORG_ID, runId: 'run-plain', objectiveId: 'obj-a', blockId: 'blk-a', linkedByAccountId: COACH_ID,
+      });
+
+      const sessions = await listSessionsForObjective(ORG_ID, 'obj-a');
+      expect(sessions.find((row) => row.run_id === 'run-plain')).toMatchObject({
+        script_name: 'Plain session',
+        delivered_on: '2026-08-20',
+        what_worked: 'Held the centre.',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+});

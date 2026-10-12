@@ -77,7 +77,7 @@ const OTHER_ORG_ID = 'org-path-elsewhere';
 const ADMIN_ID = 'acct-path-admin';
 const OTHER_ADMIN_ID = 'acct-path-other-admin';
 const COACH_ID = 'acct-path-coach'; // coach of record for both athletes
-const UNASSIGNED_COACH_ID = 'acct-path-unassigned'; // active coach here, reaches nobody
+const UNASSIGNED_COACH_ID = 'acct-path-unassigned'; // active coach here, coach of record for nobody (reaches the whole gym, issue #1480)
 const LAPSED_COACH_ID = 'acct-path-lapsed'; // coach of record for LAPSED_ATHLETE_ID; membership inactive
 const ATHLETE_ACCOUNT_ID = 'acct-path-athlete';
 const PARENT_ACCOUNT_ID = 'acct-path-parent';
@@ -93,6 +93,8 @@ const ADMIN = actorFor(ADMIN_ID, 'organization_admin');
 const OTHER_ADMIN = actorFor(OTHER_ADMIN_ID, 'organization_admin', OTHER_ORG_ID);
 const COACH = actorFor(COACH_ID, 'coach');
 const UNASSIGNED_COACH = actorFor(UNASSIGNED_COACH_ID, 'coach');
+// The same account in a coach session at ANOTHER gym (issue #1480's refused case).
+const UNASSIGNED_COACH_ELSEWHERE = actorFor(UNASSIGNED_COACH_ID, 'coach', OTHER_ORG_ID);
 const ATHLETE = actorFor(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ADULT_ID);
 const GUARDIAN = actorFor(PARENT_ACCOUNT_ID, 'parent');
 const LAPSED_COACH = actorFor(LAPSED_COACH_ID, 'coach');
@@ -331,8 +333,11 @@ describe('adultPathway.ts against real rows', () => {
               (select count(*) from pilot.athlete_pathway_minor_allowances where withdrawn_at is null)::int as a`;
     const before = await client.query(counts);
 
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. The
+    // same-gym unassigned coach left this list (see the next test); a coach
+    // session at ANOTHER gym stays on it.
     const refusals: Array<[ActorIdentity, string]> = [
-      [ATHLETE, ADULT_ID], [GUARDIAN, ADULT_ID], [UNASSIGNED_COACH, ADULT_ID], [OTHER_ADMIN, ADULT_ID],
+      [ATHLETE, ADULT_ID], [GUARDIAN, ADULT_ID], [UNASSIGNED_COACH_ELSEWHERE, ADULT_ID], [OTHER_ADMIN, ADULT_ID],
       // Coach of record, but the membership here is inactive: only the membership gate refuses.
       [LAPSED_COACH, LAPSED_ATHLETE_ID],
     ];
@@ -349,8 +354,31 @@ describe('adultPathway.ts against real rows', () => {
     }
 
     expect((await client.query(counts)).rows[0]).toEqual(before.rows[0]);
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym --
+    // LAPSED_ATHLETE_ID is a live athlete of this gym too.
     expect(await pathwayAccessibleAthleteIds(COACH, [ADULT_ID, MINOR_ID, LAPSED_ATHLETE_ID]))
-      .toEqual(new Set([ADULT_ID, MINOR_ID]));
+      .toEqual(new Set([ADULT_ID, MINOR_ID, LAPSED_ATHLETE_ID]));
+  });
+
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('a coach of this gym who is not the athlete\'s coach may read and write their pathway', async () => {
+    const client = await freshDatabase('path_gym_coach');
+    await placeAthleteOnStage({ actor: COACH, athleteId: ADULT_ID, stageKey: 'foundation' });
+
+    expect((await getAthletePathway(UNASSIGNED_COACH, ADULT_ID)).current?.stage_key).toBe('foundation');
+    expect(await pathwayAccessibleAthleteIds(UNASSIGNED_COACH, [ADULT_ID, MINOR_ID, LAPSED_ATHLETE_ID]))
+      .toEqual(new Set([ADULT_ID, MINOR_ID, LAPSED_ATHLETE_ID]));
+
+    await confirmPathwayCheckpoint({ actor: UNASSIGNED_COACH, athleteId: ADULT_ID, stageKey: 'foundation', goalKey: 'footwork' });
+    await grantMinorAllowance({ actor: UNASSIGNED_COACH, athleteId: MINOR_ID, reason: 'Gym coach.' });
+    const checkpoints = await client.query(
+      'select athlete_id, goal_key, confirmed_by_account_id from pilot.athlete_pathway_checkpoints where withdrawn_at is null',
+    );
+    expect(checkpoints.rows).toEqual([{ athlete_id: ADULT_ID, goal_key: 'footwork', confirmed_by_account_id: UNASSIGNED_COACH_ID }]);
+    const allowances = await client.query(
+      'select athlete_id, granted_by_account_id from pilot.athlete_pathway_minor_allowances where withdrawn_at is null',
+    );
+    expect(allowances.rows).toEqual([{ athlete_id: MINOR_ID, granted_by_account_id: UNASSIGNED_COACH_ID }]);
   });
 
   test('a second allowance withdrawal leaves the first ended placement untouched', async () => {

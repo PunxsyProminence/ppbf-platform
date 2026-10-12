@@ -69,7 +69,8 @@ export interface SessionBlockLinkRow {
  */
 export interface LinkedSessionRow {
   run_id: string;
-  script_id: string;
+  // NULL for a plain session (issue #1523); script_name then reads "Plain session".
+  script_id: string | null;
   script_name: string;
   delivered_on: string;
   delivered_by_account_id: string;
@@ -99,7 +100,8 @@ export interface LinkedBlockRow {
 /** A settled run, for the picker that offers sessions to link. */
 export interface SelectableRunRow {
   run_id: string;
-  script_id: string;
+  // NULL for a plain session (issue #1523); script_name then reads "Plain session".
+  script_id: string | null;
   script_name: string;
   delivered_on: string;
   run_state: string | null;
@@ -219,7 +221,7 @@ export async function listSessionsForBlock(
   return query<LinkedSessionRow>(
     `select r.run_id,
             r.script_id,
-            s.name as script_name,
+            coalesce(s.name, 'Plain session') as script_name,
             r.delivered_on::text as delivered_on,
             r.delivered_by_account_id,
             r.run_state,
@@ -233,7 +235,8 @@ export async function listSessionsForBlock(
      from pilot.session_run_development_block_links l
      join pilot.session_script_runs r
        on r.organization_id = l.organization_id and r.run_id = l.run_id
-     join pilot.session_scripts s
+     -- left: a plain session (issue #1523) has no script and reads as "Plain session"
+     left join pilot.session_scripts s
        on s.organization_id = r.organization_id and s.script_id = r.script_id
      where l.organization_id = $1 and l.block_id = $2
      order by r.delivered_on desc, r.created_at desc, r.run_id`,
@@ -329,11 +332,12 @@ export async function listSelectableRuns(
   return query<SelectableRunRow>(
     `select r.run_id,
             r.script_id,
-            s.name as script_name,
+            coalesce(s.name, 'Plain session') as script_name,
             r.delivered_on::text as delivered_on,
             r.run_state
      from pilot.session_script_runs r
-     join pilot.session_scripts s
+     -- left: a plain session (issue #1523) has no script and reads as "Plain session"
+     left join pilot.session_scripts s
        on s.organization_id = r.organization_id and s.script_id = r.script_id
      where r.organization_id = $1
        and (r.run_state is null or r.run_state in ('completed', 'abandoned'))
