@@ -444,14 +444,28 @@ const WALL_SOUND_LABEL: Record<'off' | 'arming' | 'on' | 'unavailable', string> 
   unavailable: 'No audio',
 };
 
+/**
+ * The gym-floor floor for a control worked with a remote from across the room (AGENT_KERNEL.md
+ * rule 2: --tap and --t-md). Inline, because the design system's unlayered .btn rule fixes a
+ * button at 44px and 15px type and outranks a Tailwind utility; an inline style outranks both.
+ */
+const WALL_CONTROL_SIZE = { minHeight: 'var(--tap)', fontSize: 'var(--t-md)' } as const;
+
 function WallSound() {
   const { enabled, status, setEnabled, play } = useGymSound();
+  // What this press means, decided as it begins. The hook's own pointerdown listener starts audio
+  // on a waiting TV during the same gesture, and can turn the status to "on" before the click
+  // lands; reading the status at click time would then switch sound OFF (Codex review). A press
+  // with no pointerdown (a remote's OK key) decides at the click.
+  const intent = useRef<boolean | null>(null);
 
   async function toggle() {
     // Inside the press, which is what lets the browser start audio. Only a
     // screen whose sound is on turns it off; "Sound waiting" (a reloaded TV)
     // and "No audio" are a press to start it.
-    const live = await setEnabled(status !== 'on');
+    const turnOn = intent.current ?? status !== 'on';
+    intent.current = null;
+    const live = await setEnabled(turnOn);
     if (live) play('bell');
   }
 
@@ -463,14 +477,16 @@ function WallSound() {
     >
       <button
         type="button"
-        className="btn btn--ghost min-h-[55px] px-[var(--s5)]"
+        className="btn btn--ghost px-[var(--s5)]"
+        style={WALL_CONTROL_SIZE}
         aria-pressed={enabled}
+        onPointerDown={() => { intent.current = status !== 'on'; }}
         onClick={() => { void toggle(); }}
       >
         {WALL_SOUND_LABEL[status]}
       </button>
       {status === 'on' && (
-        <button type="button" className="btn min-h-[55px] px-[var(--s5)]" onClick={() => { play('bell'); }}>
+        <button type="button" className="btn px-[var(--s5)]" style={WALL_CONTROL_SIZE} onClick={() => { play('bell'); }}>
           Test bell
         </button>
       )}

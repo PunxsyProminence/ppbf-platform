@@ -187,4 +187,33 @@ describe('the TV sound control', () => {
     expect(sound.setEnabled).not.toHaveBeenCalled();
     expect(screen.getAllByRole('group', { name: 'TV sound' })).toHaveLength(1);
   });
+
+  test('a press on "Sound waiting" turns sound on even when the hook starts audio before the click lands', async () => {
+    setSound('arming');
+    global.fetch = pairedFetch() as unknown as typeof fetch;
+    const { rerender } = render(<WallDisplay />);
+    await settle();
+    const button = screen.getByRole('button', { name: 'Sound waiting' });
+    fireEvent.pointerDown(button);
+    // The hook's own pointerdown listener armed audio mid-gesture: the next render reads "on".
+    setSound('on');
+    rerender(<WallDisplay />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Sound on' }));
+    });
+    expect(sound.setEnabled.mock.calls).toEqual([[true]]);
+    expect(sound.play.mock.calls).toEqual([['bell']]);
+  });
+
+  test('both sound controls carry the gym-floor size floor (--tap, --t-md)', async () => {
+    setSound('on');
+    global.fetch = pairedFetch() as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    for (const name of ['Sound on', 'Test bell']) {
+      const button = screen.getByRole('button', { name });
+      expect(button.style.minHeight).toBe('var(--tap)');
+      expect(button.style.fontSize).toBe('var(--t-md)');
+    }
+  });
 });
