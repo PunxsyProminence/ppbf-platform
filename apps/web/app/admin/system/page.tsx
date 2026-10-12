@@ -7,6 +7,7 @@ import {
   type LocalFindingStatus,
   type LocalFindingTier,
 } from '@/src/server/pilot/localFindings';
+import { gymDayIso } from '@/src/lib/gymTime';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 import { roleEquals } from '@/src/server/pilot/roleAlias';
 import { getSourceCitationStatus, type SourceCitationReviewSignal } from '@/src/server/pilot/sourceCitationChecks';
@@ -25,7 +26,7 @@ export const dynamic = 'force-dynamic';
 //     principal.organizationId only. No route or job inventory is shown to a gym.
 //
 // A VIEW, NOT A CONTROL PLANE. Nothing on this page runs a job, calls a route or changes anything:
-// it has no form and no button. Each route row is the route inventory row (apiRouteInventory.json).
+// the platform view has no form and no button, and the gym view's only forms are GET filters. Each route row is the route inventory row (apiRouteInventory.json).
 // Its convention test re-checks the mechanical gate columns only; the writes, athlete-data and notes
 // columns are a reviewer's draft reading, and the page says so. Each workflow row is a file in
 // .github/workflows (this page's test fails when the list and the folder differ). The in-app worker
@@ -234,7 +235,10 @@ type Read<T> = { ok: true; rows: T[] } | { ok: false };
 async function read<T>(load: () => Promise<T[]>): Promise<Read<T>> {
   try {
     return { ok: true, rows: await load() };
-  } catch {
+  } catch (error) {
+    // Logged on the server so an outage or an unapplied migration is visible; the page says only
+    // that the section could not be read.
+    console.error('admin/system: a read failed', error);
     return { ok: false };
   }
 }
@@ -250,8 +254,22 @@ function words(value: string | null | undefined): string {
   return value ? value.replaceAll('_', ' ') : 'None recorded';
 }
 
-function day(value: string | null | undefined): string {
-  return value ? String(value).slice(0, 10) : 'None recorded';
+/** An instant (timestamptz arrives as a Date) as the gym's own calendar day. */
+function gymDay(value: string | Date | null | undefined): string {
+  return gymDayIso(value) ?? 'None recorded';
+}
+
+/** A `date` column, which db.ts already hands over as its YYYY-MM-DD string. */
+function calendarDay(value: string | null | undefined): string {
+  return value ? String(value) : 'None recorded';
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${Number(count) === 1 ? one : many}`;
+}
+
+function text(value: string | null | undefined): string {
+  return value && value.trim() ? value : 'None recorded';
 }
 
 function FilterSelect({ name, label, options, value }: { name: string; label: string; options: readonly string[]; value?: string }) {
@@ -307,10 +325,10 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
             <FilterSelect name="local_tier" label="Tier" options={FINDING_TIERS} value={localTier} />
             <FilterSelect name="status" label="Status" options={FINDING_STATUSES} value={status} />
             {reviewSignal && <input type="hidden" name="review_signal" value={reviewSignal} />}
-            <button type="submit" className="btn btn--ghost">Show</button>
+            <button type="submit" className="btn btn--ghost">Show findings</button>
           </form>
           <ReadState result={findings}>
-            <table className="ledger mt-[var(--s3)]">
+            <table className="ledger mt-[var(--s3)]" aria-labelledby="system-findings">
               <thead>
                 <tr>
                   <th scope="col">Finding</th>
@@ -319,19 +337,30 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
                   <th scope="col">Status</th>
                   <th scope="col">Athletes observed</th>
                   <th scope="col">Prediction</th>
+                  <th scope="col">Limits and other explanations</th>
                   <th scope="col">Published research</th>
                 </tr>
               </thead>
               <tbody>
                 {findings.ok && findings.rows.map((finding) => (
                   <tr key={finding.finding_id}>
-                    <td><b>{finding.title}</b><br />{finding.statement}</td>
+                    <td><b>{finding.title}</b><br />{finding.statement}<br />Applies to: {text(finding.applies_to)}</td>
                     <td>{words(finding.domain)}</td>
                     <td>{words(finding.local_tier)}</td>
                     <td>{words(finding.status)}</td>
-                    <td>{finding.athletes_observed}, over {finding.observation_span_days} days, by {finding.independent_observers} observers</td>
-                    <td>{words(finding.prediction_outcome)}</td>
-                    <td>{words(finding.agrees_with_literature)}</td>
+                    <td>
+                      {finding.athletes_observed}, over {plural(finding.observation_span_days, 'day', 'days')}, by{' '}
+                      {plural(finding.independent_observers, 'observer', 'observers')}
+                    </td>
+                    <td>{text(finding.prediction_statement)}<br />Outcome: {words(finding.prediction_outcome)}</td>
+                    <td>
+                      Known limits: {text(finding.known_limitations)}<br />
+                      Other explanations: {text(finding.competing_explanations)}
+                    </td>
+                    <td>
+                      {words(finding.agrees_with_literature)}
+                      {finding.contradiction_note ? <><br />{finding.contradiction_note}</> : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -347,10 +376,10 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
             {domain && <input type="hidden" name="domain" value={domain} />}
             {localTier && <input type="hidden" name="local_tier" value={localTier} />}
             {status && <input type="hidden" name="status" value={status} />}
-            <button type="submit" className="btn btn--ghost">Show</button>
+            <button type="submit" className="btn btn--ghost">Show citation checks</button>
           </form>
           <ReadState result={citations}>
-            <table className="ledger mt-[var(--s3)]">
+            <table className="ledger mt-[var(--s3)]" aria-labelledby="system-citations">
               <thead>
                 <tr>
                   <th scope="col">Source</th>
@@ -361,6 +390,7 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
                   <th scope="col">Match score</th>
                   <th scope="col">Checked</th>
                   <th scope="col">Review signal</th>
+                  <th scope="col">Reviewer verification</th>
                 </tr>
               </thead>
               <tbody>
@@ -372,8 +402,9 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
                     <td>{row.retrieved_title ?? 'None recorded'}</td>
                     <td>{words(row.match_method)}</td>
                     <td>{row.match_score === null ? 'None recorded' : String(row.match_score)}</td>
-                    <td>{day(row.checked_at)}</td>
+                    <td>{gymDay(row.checked_at)}</td>
                     <td>{words(row.review_signal)}</td>
+                    <td>{words(row.verification_state)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -385,14 +416,14 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
           <h2 id="system-retractions" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Retraction checks</h2>
           <p className="t-body mt-[var(--s2)]">Written by check-source-retractions.mjs when someone runs it. No workflow runs it.</p>
           <ReadState result={retractions}>
-            <table className="ledger mt-[var(--s3)]">
+            <table className="ledger mt-[var(--s3)]" aria-labelledby="system-retractions">
               <thead>
                 <tr>
                   <th scope="col">Source</th>
                   <th scope="col">Result</th>
                   <th scope="col">Notice</th>
                   <th scope="col">Decision</th>
-                  <th scope="col">Passages that rely on it</th>
+                  <th scope="col">Library passages from this source</th>
                   <th scope="col">Checked</th>
                   <th scope="col">Action signal</th>
                 </tr>
@@ -402,10 +433,10 @@ async function GymSystemView({ organizationId, params }: { organizationId: strin
                   <tr key={row.source_id}>
                     <td>{row.title}</td>
                     <td>{words(row.status)}</td>
-                    <td>{row.notice_type ? `${words(row.notice_type)}, ${day(row.notice_date)}` : 'None recorded'}</td>
+                    <td>{row.notice_type ? `${words(row.notice_type)}, ${calendarDay(row.notice_date)}` : 'None recorded'}</td>
                     <td>{words(row.disposition)}</td>
                     <td>{row.dependent_chunks}</td>
-                    <td>{day(row.checked_at)}</td>
+                    <td>{gymDay(row.checked_at)}</td>
                     <td>{words(row.action_signal)}</td>
                   </tr>
                 ))}

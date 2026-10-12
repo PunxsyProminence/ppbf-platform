@@ -48,12 +48,17 @@ const FINDING = {
   finding_id: 'lf_1',
   title: 'Late guard drop',
   statement: 'Hands drop in the third round.',
+  applies_to: 'Youth boxers in sparring',
+  prediction_statement: 'A guard drill will hold the hands up in round three.',
+  known_limitations: 'Six athletes, one coach rotation.',
+  competing_explanations: '',
+  contradiction_note: null,
   domain: 'technical',
   local_tier: 'local_pattern',
   status: 'active',
   athletes_observed: 6,
   observation_span_days: 40,
-  independent_observers: 2,
+  independent_observers: 1,
   supporting_activity_ids: ['act_secret_1'],
   supporting_assessment_ids: ['asmt_secret_1'],
   prediction_outcome: null,
@@ -70,9 +75,11 @@ const CITATION = {
   outcome: 'resolved_title_match',
   retrieved_title: 'Punch kinematics in amateur boxing',
   match_method: 'title_overlap',
-  match_score: 0.83,
-  checked_at: '2026-10-01T10:00:00Z',
+  match_score: '0.830',
+  // timestamptz arrives as a Date. 02:30 UTC on the 2nd is still the 1st at the gym.
+  checked_at: new Date('2026-10-02T02:30:00Z'),
   review_signal: 'ok',
+  verification_state: 'unverified',
 };
 
 const RETRACTION = {
@@ -82,8 +89,8 @@ const RETRACTION = {
   notice_type: 'retraction',
   notice_date: '2026-09-02',
   disposition: null,
-  dependent_chunks: 3,
-  checked_at: '2026-10-02T10:00:00Z',
+  dependent_chunks: '3',
+  checked_at: new Date('2026-10-02T10:00:00Z'),
   action_signal: 'urgent_unhandled',
 };
 
@@ -127,26 +134,31 @@ test('an empty read says None recorded', async () => {
 });
 
 test('a failed read says it could not be read, never none, and the other sections still show', async () => {
+  const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   answers.findings = 'fail';
   answers.citations = [CITATION];
   await renderGym();
   expect(within(section('Local findings')).getByText('This could not be read just now.')).toBeTruthy();
   expect(within(section('Local findings')).queryByText('None recorded.')).toBeNull();
   expect(within(section('Citation checks')).getAllByRole('row')).toHaveLength(2);
+  // Logged on the server, so the outage is visible to whoever reads the logs.
+  expect(logged).toHaveBeenCalledWith('admin/system: a read failed', expect.any(Error));
+  logged.mockRestore();
 });
 
-test('a finding shows its tier, counts and evidence words, and no account or record id', async () => {
+test('a finding shows its tier, counts, prediction, stated limits and evidence words, and no account or record id', async () => {
   answers.findings = [FINDING];
   await renderGym();
   const row = within(within(section('Local findings')).getByRole('table')).getAllByRole('row')[1];
   const cells = within(row).getAllByRole('cell').map((cell) => cell.textContent);
   expect(cells).toEqual([
-    'Late guard dropHands drop in the third round.',
+    'Late guard dropHands drop in the third round.Applies to: Youth boxers in sparring',
     'technical',
     'local pattern',
     'active',
-    '6, over 40 days, by 2 observers',
-    'None recorded',
+    '6, over 40 days, by 1 observer',
+    'A guard drill will hold the hands up in round three.Outcome: None recorded',
+    'Known limits: Six athletes, one coach rotation.Other explanations: None recorded',
     'agrees',
   ]);
   const text = document.body.textContent ?? '';
@@ -155,7 +167,7 @@ test('a finding shows its tier, counts and evidence words, and no account or rec
   }
 });
 
-test('a citation check prints its score as stored, never as a percentage, and a missing one as missing', async () => {
+test('a citation check prints its score as stored, never as a percentage, its gym-day date, and a missing score as missing', async () => {
   answers.citations = [CITATION, { ...CITATION, source_id: 'src_3', match_score: null, match_method: null, retrieved_title: null }];
   await renderGym();
   const rows = within(within(section('Citation checks')).getByRole('table')).getAllByRole('row').slice(1);
@@ -166,9 +178,10 @@ test('a citation check prints its score as stored, never as a percentage, and a 
     'resolved title match',
     'Punch kinematics in amateur boxing',
     'title overlap',
-    '0.83',
+    '0.830',
     '2026-10-01',
     'ok',
+    'unverified',
   ]);
   const second = within(rows[1]).getAllByRole('cell').map((cell) => cell.textContent);
   expect(second[3]).toBe('None recorded');
@@ -202,4 +215,16 @@ test('the gym view writes nothing and shows no route or job inventory', async ()
   }
   expect(screen.queryByRole('heading', { name: /^Routes/ })).toBeNull();
   expect(screen.queryByRole('heading', { name: /^Jobs/ })).toBeNull();
+});
+
+test('each filter form keeps the other form\'s active filters, and its button says what it shows', async () => {
+  await renderGym({ domain: 'safety', local_tier: 'local_pattern', status: 'active', review_signal: 'ok' });
+  const findingsForm = section('Local findings').querySelector('form') as HTMLFormElement;
+  const citationsForm = section('Citation checks').querySelector('form') as HTMLFormElement;
+  const hidden = (form: HTMLFormElement) =>
+    Array.from(form.querySelectorAll('input[type="hidden"]')).map((input) => [input.getAttribute('name'), input.getAttribute('value')]);
+  expect(hidden(findingsForm)).toEqual([['review_signal', 'ok']]);
+  expect(hidden(citationsForm)).toEqual([['domain', 'safety'], ['local_tier', 'local_pattern'], ['status', 'active']]);
+  expect(within(findingsForm).getByRole('button', { name: 'Show findings' })).toBeTruthy();
+  expect(within(citationsForm).getByRole('button', { name: 'Show citation checks' })).toBeTruthy();
 });
