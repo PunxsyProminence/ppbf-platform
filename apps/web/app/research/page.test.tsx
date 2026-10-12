@@ -802,3 +802,34 @@ test('while one requirement is resolving, no other row opens a note field', asyn
   expect(await screen.findByText('Closing note: Answered.')).toBeTruthy();
   expect((screen.getByRole('button', { name: 'Mark Resolved' }) as HTMLButtonElement).disabled).toBe(false);
 });
+
+// Issue #1466: a question a coach filed from an unanswered SHADOW reply shows
+// up in this feed, open, and is named in words rather than by its event name.
+test('a requirement filed from SHADOW reads "Asked in SHADOW" with its open status; others keep their event name', async () => {
+  global.fetch = mockFetch({
+    curator: false,
+    requirements: [
+      {
+        ...REQUIREMENT,
+        research_requirement_id: 9,
+        source_event_name: 'shadow_unanswered_question',
+        source_entity_type: 'shadow_question',
+        source_entity_id: 'how long should a 13-year-old rest between sparring rounds?',
+        research_requirement: 'How long should a 13-year-old rest between sparring rounds?',
+      },
+      REQUIREMENT,
+    ],
+  });
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  const filed = (await screen.findByText('How long should a 13-year-old rest between sparring rounds?')).closest('article');
+  expect(filed?.textContent).toContain('Asked in SHADOW');
+  expect(filed?.textContent).toContain('Open');
+  expect(filed?.textContent).not.toContain('shadow_unanswered_question');
+  const other = screen.getByText('Is RPE reliable at age 12?').closest('article');
+  expect(other?.textContent).toContain('question');
+  expect(other?.textContent).not.toContain('Asked in SHADOW');
+});
