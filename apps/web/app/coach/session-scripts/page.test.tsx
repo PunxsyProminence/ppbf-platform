@@ -580,8 +580,25 @@ it('a double tap on Start a plain session starts one session', async () => {
     fireEvent.click(start);
     fireEvent.click(start);
   });
-  finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+  await act(async () => {
+    finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+  });
 
   expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
   expect(posts).toEqual([{}]);
+});
+
+it('a failed plain start says so beside its button', async () => {
+  routedFetch({
+    scripts: (url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [] })),
+    runsPost: () => jsonResponse({ error: 'boom' }, false),
+  });
+  render(<CoachSessionScriptsPage />);
+
+  const start = await screen.findByRole('button', { name: 'Start a plain session' });
+  await waitFor(() => expect(start).not.toBeDisabled());
+  fireEvent.click(start);
+
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Plain session' })).toBeNull();
 });

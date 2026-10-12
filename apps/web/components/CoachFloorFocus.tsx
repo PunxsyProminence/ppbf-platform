@@ -16,12 +16,15 @@ import { apiBase } from '@/lib/apiBase';
  * the Canva Command Center panel board ("B": gauges along the top, three
  * columns below), after he had first asked to get away from columns.
  *
- * IT READS NOTHING AND WRITES NOTHING OF ITS OWN. Every value arrives as a prop
- * from CoachWorkspace, which already loads it through its own calls and role
- * gates. The only write reachable from here is the escalation acknowledge the
- * workspace already performs, passed in as a callback. "Next" moves the view to
- * the next item and changes no record: nothing is marked seen, nothing is
- * stored. coachFloorFocus.test.tsx pins both.
+ * IT READS AND WRITES ONLY ONE THING OF ITS OWN: Start a session (#1523). On a
+ * tap with no live session it reads the gym's plan list and, when there are
+ * none, starts a plain session through the runs route -- the same route and role
+ * gate the session page uses. Every other value arrives as a prop from
+ * CoachWorkspace, which loads it through its own calls and role gates; the only
+ * other write reachable here is the escalation acknowledge the workspace already
+ * performs, passed in as a callback. "Next" moves the view to the next item and
+ * changes no record: nothing is marked seen, nothing is stored.
+ * coachFloorFocus.test.tsx pins all of it.
  *
  * NOTHING HERE REPEATS A SENTENCE OR A HEADING THE PANELS BELOW ALREADY SAY:
  * the session line lives in the panel and the Session gauge says none /
@@ -519,7 +522,7 @@ export default function CoachFloorFocus({
                 {starting ? 'Starting...' : 'Start a session'}
               </button>
               {startError ? (
-                <p role="alert" className="coach-floor-focus__quiet">
+                <p role="alert" className="coach-floor-focus__alert">
                   {startError} <Link href={SESSIONS_HREF}>Open the session page</Link>
                 </p>
               ) : null}

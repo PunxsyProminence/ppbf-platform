@@ -84,6 +84,9 @@ function CoachSessionScripts() {
   const [liveNotice, setLiveNotice] = useState('');
   const [startBusyScriptId, setStartBusyScriptId] = useState<string | null>(null);
   const [startError, setStartError] = useState('');
+  // Which start the error belongs to: a script's id, or PLAIN_START. The error is shown beside the
+  // button that was pressed, so a failed plain start is never silent (review 2 of #1523 PR 2).
+  const [startErrorFor, setStartErrorFor] = useState<string | null>(null);
 
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
@@ -146,6 +149,7 @@ function CoachSessionScripts() {
     if (startBusyScriptId || startInFlight.current) return;
     startInFlight.current = true;
     setStartBusyScriptId(scriptId ?? PLAIN_START);
+    setStartErrorFor(scriptId ?? PLAIN_START);
     setStartError('');
     setLiveNotice('');
     try {
@@ -347,6 +351,11 @@ function CoachSessionScripts() {
           >
             {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
           </button>
+          {startError && startErrorFor === PLAIN_START && (
+            <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
+              {startError}
+            </p>
+          )}
         </section>
 
         <section data-surface="kiosk" className="mt-[var(--s6)]">
@@ -447,7 +456,7 @@ function CoachSessionScripts() {
                     </button>
                   </div>
                 )}
-                {startError && (
+                {startError && startErrorFor === detail.script_id && (
                   <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--locked-ink)]">
                     {startError}
                   </p>

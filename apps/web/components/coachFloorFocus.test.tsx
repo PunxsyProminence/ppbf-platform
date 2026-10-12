@@ -6,9 +6,10 @@
  * The floor view at the top of the coach dashboard: one thing at a time.
  *
  * What is pinned here is what the view must never do, more than how it looks:
- * it never fetches anything, "Next" changes no record, the only write it can
- * reach is the real escalation acknowledge it is handed, and a feed that failed
- * or is still loading is never read out as "nothing needs you".
+ * it fetches nothing until Start a session is tapped (#1523: then the plan list,
+ * and a plain start when there are none), "Next" changes no record, the only
+ * other write it can reach is the real escalation acknowledge it is handed, and
+ * a feed that failed or is still loading is never read out as "nothing needs you".
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
