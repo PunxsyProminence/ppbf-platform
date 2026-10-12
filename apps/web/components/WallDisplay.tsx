@@ -372,14 +372,20 @@ export default function WallDisplay() {
       return;
     }
     const previous = lastReading.current?.runId === roundTimer.runId ? lastReading.current.reading : null;
-    lastReading.current = { runId: roundTimer.runId, reading: roundReading };
     if (isNewSet(previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) setEpoch.current += 1;
     const setKey = `${roundTimer.runId}#${setEpoch.current}`;
+    let dropped = false;
     for (const sound of roundSounds(setKey, previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) {
       if (sound.keys.every((key) => rung.current.has(key))) continue;
-      if (!playGymSound(sound.voice)) continue;
+      if (!playGymSound(sound.voice)) {
+        dropped = true;
+        continue;
+      }
       for (const key of sound.keys) rung.current.add(key);
     }
+    // A dropped sound keeps the reading before it as the comparison, so the next tick sees the same
+    // transition again; the freshness window bounds how long it is retried.
+    if (!dropped || !previous) lastReading.current = { runId: roundTimer.runId, reading: roundReading };
   });
 
   return (
