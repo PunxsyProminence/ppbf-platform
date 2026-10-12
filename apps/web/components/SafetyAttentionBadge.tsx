@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import ChromeLink from './ChromeLink';
@@ -291,11 +291,15 @@ export const REFUSED_TEAM_CLIPS_CHANGED = 'ppbf:refused-team-clips-changed';
 function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
   const [count, setCount] = useState(0);
   const [readState, setReadState] = useState<ReadState>('loading');
+  // Only the newest read lands: a timer read started just before a decision
+  // must not answer after the decision's own re-read.
+  const loadSeq = useRef(0);
   // The client carries an organization admin as 'admin' (roleSession.ts
   // mapPilotRoleToClubRole); the server name is accepted too, as above.
   const serves = role === 'admin' || role === 'organization_admin';
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++loadSeq.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/video/refused-team-clips`, {
         method: 'GET',
@@ -306,13 +310,16 @@ function RefusedTeamClipsBadge({ role }: { readonly role: string | null }) {
         throw new Error('refused team clips');
       }
       const payload = (await response.json()) as { count?: unknown };
+      if (seq !== loadSeq.current) {
+        return;
+      }
       if (typeof payload.count !== 'number') {
         throw new Error('refused team clips');
       }
       setCount(payload.count);
       setReadState('loaded');
     } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') {
+      if ((error as { name?: string }).name === 'AbortError' || seq !== loadSeq.current) {
         return;
       }
       setCount(0);

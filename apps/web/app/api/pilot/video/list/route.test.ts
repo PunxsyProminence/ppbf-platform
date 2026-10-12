@@ -289,6 +289,16 @@ describe('GET /api/pilot/video/list', () => {
       expect(mockQuery.mock.calls[0]![1]).toEqual(['org-1', 100]);
     });
 
+    test('it may ask for one past a page of 100, so the review can tell "more" from "exactly 100"', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQuery.mockResolvedValueOnce([]);
+
+      const res = await GET(request('http://localhost/api/pilot/video/list?scope=all&filter=refused_team&limit=101'));
+
+      expect(res.status).toBe(200);
+      expect(mockQuery.mock.calls[0]![1]).toEqual(['org-1', 101]);
+    });
+
     test('a coach cannot reach it: it needs scope=all', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
 

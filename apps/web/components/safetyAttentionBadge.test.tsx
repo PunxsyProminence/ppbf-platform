@@ -462,6 +462,31 @@ describe('refused team clips are counted on the organization admin bar', () => {
     expect(await screen.findByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
   });
 
+  test('an older count read that answers last does not overwrite the newer one', async () => {
+    const pending: ((value: Response) => void)[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/refused-team-clips')) {
+        return new Promise<Response>((resolve) => { pending.push(resolve); });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, escalations: [] }) } as unknown as Response);
+    }) as unknown as typeof fetch;
+    await renderFor('admin');
+    await act(async () => {
+      window.dispatchEvent(new Event('ppbf:refused-team-clips-changed'));
+    });
+    expect(pending).toHaveLength(2);
+
+    const answer = (count: number) => ({ ok: true, status: 200, json: async () => ({ count }) } as unknown as Response);
+    await act(async () => {
+      pending[1]!(answer(1));
+    });
+    await act(async () => {
+      pending[0]!(answer(2));
+    });
+
+    expect(screen.getByRole('link', { name: '1 refused team clip. Open video review.' })).toBeTruthy();
+  });
+
   test('one clip reads in the singular', async () => {
     installRouted(1);
     await renderFor('admin');

@@ -91,6 +91,8 @@ interface VideoSessionRow {
  */
 const FILM_STUDY_ONLY = 'and capture_take_id is null';
 
+const REFUSED_TEAM_LIST_MAX = 101;
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -133,7 +135,11 @@ export async function GET(request: NextRequest) {
       if (scope !== 'all') {
         return NextResponse.json({ error: 'Invalid filter parameter: refused_team needs scope=all' }, { status: 400 });
       }
-      return NextResponse.json({ items: await listRefusedTeamClips(principal.organizationId, limit) });
+      // One past the review page's 100, so it can tell "more than 100" from
+      // "exactly 100" (admin/video-review REFUSED_TEAM_LIMIT). Local to this
+      // branch: the general list keeps its ceiling.
+      const refusedLimit = parseSafeLimit(searchParams.get('limit'), 50, REFUSED_TEAM_LIST_MAX);
+      return NextResponse.json({ items: await listRefusedTeamClips(principal.organizationId, refusedLimit ?? limit) });
     }
 
     let rows: VideoSessionRow[];
