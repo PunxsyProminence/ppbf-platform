@@ -47,6 +47,8 @@ function task(noteId: string, athleteId: string, noteText: string, dueDate: stri
 
 const ITEMS = [
   // First child.
+  task('n_monday', 'ath_1', 'Label the mouthguard', '2026-10-12'),
+  task('n_prev_sunday', 'ath_1', 'Wash the hand wraps', '2026-10-11'),
   task('n_week_open', 'ath_1', 'Bring gloves Thursday', '2026-10-15'),
   task('n_week_done', 'ath_1', 'Sign the medical form', '2026-10-13', '2026-10-12T22:00:00.000Z'),
   task('n_sunday', 'ath_1', 'Pack the kit bag', '2026-10-18'),
@@ -62,10 +64,11 @@ const ITEMS = [
 
 type Handler = (init?: RequestInit) => Promise<Response>;
 
-function installFetch(options: { messages?: Handler; messagesPost?: Handler } = {}): jest.Mock {
+function installFetch(options: { messages?: Handler; messagesPost?: Handler; roster?: Handler } = {}): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/pilot/athletes/list')) {
+      if (options.roster) return options.roster(init);
       return jsonResponse({
         items: [
           { athlete_id: 'ath_1', full_name: 'First Child' },
@@ -99,11 +102,13 @@ function setClock(ms: number) {
   jest.spyOn(Date, 'now').mockReturnValue(ms);
 }
 
-async function renderFloor() {
+async function renderFloor(options: { waitForChildren?: boolean } = {}) {
   await act(async () => {
     render(<ParentHub />);
   });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'First Child' })).toBeInTheDocument());
+  if (options.waitForChildren !== false) {
+    await waitFor(() => expect(screen.getByRole('button', { name: 'First Child' })).toBeInTheDocument());
+  }
   await openTab('Parent Floor');
 }
 
@@ -136,13 +141,16 @@ describe('the week, and what carries forward', () => {
     installFetch();
     await renderFloor();
 
+    // Monday the 12th is the week's first day; Sunday the 11th is last week's.
     expect(textsIn(list('Due this week'))).toEqual([
+      'Label the mouthguard',
       'Sign the medical form',
       'Bring gloves Thursday',
       'Pack the kit bag',
     ]);
-    expect(textsIn(list('Still open from earlier'))).toEqual([
+    expect(textsIn(list('Still open: earlier or no due date'))).toEqual([
       'Return the loaner headgear',
+      'Wash the hand wraps',
       'Find the birth certificate',
     ]);
     const text = card().textContent ?? '';
@@ -158,16 +166,16 @@ describe('the week, and what carries forward', () => {
     installFetch();
     await renderFloor();
 
-    expect(card().textContent).toContain('1 of 3 done this week (October 12, 2026 to October 18, 2026).');
+    expect(card().textContent).toContain('1 of 4 done this week (October 12, 2026 to October 18, 2026).');
     expect(card().textContent ?? '').not.toMatch(/\d+\s*%/);
   });
 
-  test('Sunday 23:59 at the gym is still this week; Monday 00:00 starts the next, and the unticked task carries forward', async () => {
+  test('Sunday 23:59 at the gym is still this week', async () => {
     setClock(SUNDAY_LAST_MINUTE);
     installFetch();
     await renderFloor();
     expect(textsIn(list('Due this week'))).toContain('Pack the kit bag');
-    expect(textsIn(list('Still open from earlier'))).not.toContain('Pack the kit bag');
+    expect(textsIn(list('Still open: earlier or no due date'))).not.toContain('Pack the kit bag');
   });
 
   test('Monday 00:00 at the gym starts the next week, and last week’s unticked tasks carry forward', async () => {
@@ -175,14 +183,41 @@ describe('the week, and what carries forward', () => {
     installFetch();
     await renderFloor();
     expect(textsIn(list('Due this week'))).toEqual(['Book the physical']);
-    expect(textsIn(list('Still open from earlier'))).toEqual([
+    expect(textsIn(list('Still open: earlier or no due date'))).toEqual([
       'Return the loaner headgear',
+      'Wash the hand wraps',
+      'Label the mouthguard',
       'Bring gloves Thursday',
       'Pack the kit bag',
       'Find the birth certificate',
     ]);
     // Done last week: neither group.
     expect(card().textContent).not.toContain('Sign the medical form');
+  });
+
+  test('a page left open past Sunday midnight moves to the new week when it is looked at again', async () => {
+    setClock(SUNDAY_LAST_MINUTE);
+    installFetch();
+    await renderFloor();
+    expect(card().textContent).toContain('(October 12, 2026 to October 18, 2026)');
+
+    setClock(MONDAY_FIRST_MINUTE);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(card().textContent).toContain('(October 19, 2026 to October 25, 2026)');
+    expect(textsIn(list('Due this week'))).toEqual(['Book the physical']);
+  });
+
+  test('a due date that is not a bare calendar date is shown as typed, among the open ones, never in the week', async () => {
+    setClock(WEDNESDAY);
+    installFetch({
+      messages: async () => jsonResponse({ ok: true, items: [task('n_odd', 'ath_1', 'Odd date', '10/14/2026')] }),
+    });
+    await renderFloor();
+    expect(list('Due this week')).toBeNull();
+    expect(textsIn(list('Still open: earlier or no due date'))).toEqual(['Odd date']);
+    expect(card().textContent).toContain('Due 10/14/2026');
   });
 
   test('a week with nothing due says so, and still shows what is open from earlier', async () => {
@@ -192,7 +227,7 @@ describe('the week, and what carries forward', () => {
     });
     await renderFloor();
     expect(card().textContent).toContain('Nothing from the gym is due this week (October 12, 2026 to October 18, 2026).');
-    expect(textsIn(list('Still open from earlier'))).toEqual(['Return the loaner headgear']);
+    expect(textsIn(list('Still open: earlier or no due date'))).toEqual(['Return the loaner headgear']);
   });
 });
 
@@ -207,7 +242,7 @@ describe('the child on screen', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
     });
     expect(textsIn(list('Due this week'))).toEqual(['Sibling: water bottle every session']);
-    expect(list('Still open from earlier')).toBeNull();
+    expect(list('Still open: earlier or no due date')).toBeNull();
     expect(card().textContent).toContain('0 of 1 done this week');
     expect(card().textContent).not.toContain('Bring gloves Thursday');
   });
@@ -219,6 +254,8 @@ describe('the child on screen', () => {
     const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
     expect(row).toHaveTextContent('From Coach · Due October 15, 2026');
     expect(row).toHaveTextContent('Still to do');
+    // The box is "Done", described by the task it belongs to.
+    expect(within(row).getByRole('checkbox', { name: 'Done' })).toHaveAccessibleDescription('Bring gloves Thursday');
     expect(card().textContent ?? '').not.toMatch(/acct_|account/i);
   });
 });
@@ -230,9 +267,9 @@ describe('ticking a task off', () => {
     await renderFloor();
 
     const tileBefore = screen.getAllByText('Home Tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent;
-    // Open tasks across both children: week_open, sunday, earlier_open,
-    // undated, next_week, sibling.
-    expect(tileBefore).toBe('Home Tasks6');
+    // Open tasks across both children: monday, prev_sunday, week_open,
+    // sunday, earlier_open, undated, next_week, sibling.
+    expect(tileBefore).toBe('Home Tasks8');
 
     const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
     await act(async () => {
@@ -245,24 +282,84 @@ describe('ticking a task off', () => {
     expect(posts).toEqual([{ note_id: 'n_week_open', completed: true }]);
 
     await waitFor(() => expect(within(row).getByRole('checkbox', { name: /^Done/ })).toBeChecked());
-    expect(card().textContent).toContain('2 of 3 done this week');
-    expect(screen.getAllByText('Home Tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Home Tasks5');
+    expect(card().textContent).toContain('2 of 4 done this week');
+    expect(screen.getAllByText('Home Tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Home Tasks7');
 
     await openTab('Messages');
     const messageCard = screen.getByText('Bring gloves Thursday').closest('div.mat-paper') as HTMLElement;
     expect(within(messageCard).getByRole('checkbox', { name: /^Done/ })).toBeChecked();
   });
 
-  test('a ticked carry-forward task leaves the earlier group', async () => {
+  test('a carry-forward task ticked on this visit stays, ticked, so a wrong tick can be undone where it was made', async () => {
+    setClock(WEDNESDAY);
+    const fetchMock = installFetch();
+    await renderFloor();
+
+    const row = () => within(list('Still open: earlier or no due date') as HTMLElement).getByText('Return the loaner headgear').closest('li') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(row()).getByRole('checkbox', { name: 'Done' }));
+    });
+    await waitFor(() => expect(within(row()).getByRole('checkbox', { name: /^Done/ })).toBeChecked());
+
+    await act(async () => {
+      fireEvent.click(within(row()).getByRole('checkbox', { name: /^Done/ }));
+    });
+    await waitFor(() => expect(within(row()).getByRole('checkbox', { name: 'Done' })).not.toBeChecked());
+    const posts = fetchMock.mock.calls
+      .filter((c) => String(c[0]).includes('/api/pilot/parent/messages') && (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+    expect(posts).toEqual([
+      { note_id: 'n_earlier_open', completed: true },
+      { note_id: 'n_earlier_open', completed: false },
+    ]);
+  });
+
+  test('a task ticked off before this visit is not carried forward', async () => {
     setClock(WEDNESDAY);
     installFetch();
     await renderFloor();
+    expect(card().textContent).not.toContain('Pay the tournament entry');
+  });
 
-    const row = within(list('Still open from earlier') as HTMLElement).getByText('Return the loaner headgear').closest('li') as HTMLElement;
+  test('unticking a done task this week posts completed: false and the count follows', async () => {
+    setClock(WEDNESDAY);
+    const fetchMock = installFetch();
+    await renderFloor();
+
+    const row = within(list('Due this week') as HTMLElement).getByText('Sign the medical form').closest('li') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(row).getByRole('checkbox', { name: /^Done/ }));
+    });
+    const posts = fetchMock.mock.calls
+      .filter((c) => String(c[0]).includes('/api/pilot/parent/messages') && (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+    expect(posts).toEqual([{ note_id: 'n_week_done', completed: false }]);
+    await waitFor(() => expect(card().textContent).toContain('0 of 4 done this week'));
+  });
+
+  test('the box is held while its write is out, so a second click sends nothing', async () => {
+    setClock(WEDNESDAY);
+    let release: (() => void) | null = null;
+    const fetchMock = installFetch({
+      messagesPost: () => new Promise<Response>((resolve) => {
+        release = () => resolve(jsonResponse({ ok: true, task: { due_date: '2026-10-15', completed_at: '2026-10-14T16:05:00.000Z' } }));
+      }),
+    });
+    await renderFloor();
+
+    const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
     await act(async () => {
       fireEvent.click(within(row).getByRole('checkbox', { name: 'Done' }));
     });
-    await waitFor(() => expect(textsIn(list('Still open from earlier'))).toEqual(['Find the birth certificate']));
+    expect(within(row).getByRole('checkbox', { name: 'Done' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(within(row).getByRole('checkbox', { name: 'Done' }));
+    });
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/pilot/parent/messages') && (c[1] as RequestInit | undefined)?.method === 'POST')).toHaveLength(1);
+    await act(async () => {
+      (release as (() => void) | null)?.();
+    });
+    await waitFor(() => expect(within(row).getByRole('checkbox', { name: /^Done/ })).toBeChecked());
   });
 
   test('a refused tick leaves the box as it was and says so in words', async () => {
@@ -277,7 +374,14 @@ describe('ticking a task off', () => {
 
     expect(await within(card()).findByRole('alert')).toHaveTextContent('That tick did not save -- Not found: no such task for your children.');
     expect(within(row).getByRole('checkbox', { name: 'Done' })).not.toBeChecked();
-    expect(card().textContent).toContain('1 of 3 done this week');
+    expect(card().textContent).toContain('1 of 4 done this week');
+
+    // The notice was about the first child's task; it does not follow the
+    // guardian to the sibling.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    expect(within(card()).queryByRole('alert')).toBeNull();
   });
 });
 
@@ -286,9 +390,17 @@ describe('a read that did not answer', () => {
     setClock(WEDNESDAY);
     installFetch({ messages: async () => jsonResponse({ error: 'down' }, false) });
     await renderFloor();
-    expect(card().textContent).toContain('Unavailable - your tasks have not loaded. This is not an empty list.');
+    expect(card().textContent).toContain('Unavailable - your tasks could not be shown. This is not an empty list.');
     expect(card().textContent).not.toContain('Nothing from the gym is due');
     expect(card().textContent).not.toMatch(/done this week/);
+  });
+
+  test('a roster that did not load leaves no child selected, and that is not an empty week either', async () => {
+    setClock(WEDNESDAY);
+    installFetch({ roster: async () => jsonResponse({ error: 'down' }, false) });
+    await renderFloor({ waitForChildren: false });
+    expect(card().textContent).toContain('Unavailable - your tasks could not be shown.');
+    expect(card().textContent).not.toContain('Nothing from the gym is due');
   });
 
   test('the roadmap placeholder is gone', async () => {
