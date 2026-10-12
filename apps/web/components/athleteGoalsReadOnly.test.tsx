@@ -35,11 +35,16 @@ function ownRows(athleteId: string, withWhy: boolean) {
 
 function smartRows(athleteId: string) {
   return [
-    { goal_id: `${athleteId}-s1`, title: `${athleteId}: jump rope 3 rounds`, target_date: '2026-11-01', metric: 'rounds', progress_percent: 40, status: 'Active' },
-    { goal_id: `${athleteId}-s2`, title: `${athleteId}: hold a plank 2 minutes`, target_date: '2026-11-15', metric: 'seconds', progress_percent: null, status: 'Active' },
+    { goal_id: `${athleteId}-s1`, title: `${athleteId}: jump rope 3 rounds`, target_date: '2026-11-01', metric: 'rounds', progress_percent: 40, status: 'active' },
+    { goal_id: `${athleteId}-s2`, title: `${athleteId}: hold a plank 2 minutes`, target_date: '2026-11-15', metric: 'seconds', progress_percent: null, status: 'active' },
     // The coach's select * answer also carries the own-words row; it is not listed twice.
     { goal_id: `${athleteId}-own-1`, title: `${athleteId}: run a mile without stopping`, goal_kind: 'own_words', target_date: '2026-11-01', metric: '', progress_percent: null, status: 'completed' },
   ];
+}
+
+// A line whose glyph sits in its own aria-hidden span: match the whole paragraph.
+function line(text: string) {
+  return (_content: string, element: Element | null) => element?.tagName === 'P' && element.textContent === text;
 }
 
 type Handler = (url: string, init?: RequestInit) => Promise<Response>;
@@ -76,9 +81,12 @@ beforeEach(() => {
 test('the family sees the goals, "I did it", the target dates and the reported progress, read-only', async () => {
   render(<AthleteGoalsReadOnly athleteId="ath_1" audience="family" />);
   expect(await screen.findByText('ath_1: run a mile without stopping')).toBeTruthy();
-  expect(screen.getByText('✓ Did it · October 10, 2026')).toBeTruthy();
-  expect(screen.getByText('○ Still working on it · Aiming for Dec 1, 2026')).toBeTruthy();
+  expect(screen.getByText(line('✓ Did it · Oct 10, 2026'))).toBeTruthy();
+  expect(screen.getByText(line('○ Still working on it · Aiming for Dec 1, 2026'))).toBeTruthy();
   expect(screen.getByText('ath_1: jump rope 3 rounds')).toBeTruthy();
+  // Said as the athlete's own screen says it: capitalised, with a glyph.
+  expect(screen.getAllByText(line('◉ Active · Measured by rounds · by Nov 1, 2026'))).toHaveLength(1);
+  expect(screen.queryByText(/· active/)).toBeNull();
   expect(screen.getByText('Reported progress: 40%')).toBeTruthy();
   expect(screen.getByText('No progress reported yet')).toBeTruthy();
   expect(screen.getAllByText('ath_1: run a mile without stopping')).toHaveLength(1);
@@ -149,4 +157,23 @@ test('switching child: the previous child\'s goals never show, and a late answer
   });
   await waitFor(() => expect(screen.queryByText(/^ath_1:/)).toBeNull());
   expect(screen.getByText('ath_2: jump rope 3 rounds')).toBeTruthy();
+});
+
+test('switching child after the first child\'s goals have shown: none of them stay on screen', async () => {
+  const { rerender } = render(<AthleteGoalsReadOnly athleteId="ath_1" audience="coach" />);
+  expect(await screen.findByText('ath_1: jump rope 3 rounds')).toBeTruthy();
+
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const inner = answers();
+  handler = async (url) => { await gate; return inner(url); };
+  rerender(<AthleteGoalsReadOnly athleteId="ath_2" audience="coach" />);
+  // While ath_2's reads are open, ath_1's goals are gone, not carried over.
+  expect(screen.queryByText(/^ath_1:/)).toBeNull();
+  expect(screen.getAllByText('Reading...')).toHaveLength(2);
+
+  await act(async () => { release(); });
+  expect(await screen.findByText('ath_2: jump rope 3 rounds')).toBeTruthy();
+  expect(screen.getByText('ath_2: run a mile without stopping')).toBeTruthy();
+  expect(screen.queryByText(/^ath_1:/)).toBeNull();
 });

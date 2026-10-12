@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getGoalsByAthlete } from '@/src/server/pilot/entities';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { toFamilySmartGoals } from '@/src/server/pilot/goalProjection';
+import { readsFullGoals, toFamilySmartGoals } from '@/src/server/pilot/goalProjection';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -28,12 +28,15 @@ export async function GET(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
-    const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit });
-    // select * carries own_words and why_it_matters. A guardian is sent the
-    // family projection instead: SMART goals only, from named fields.
-    if (principal.role === 'parent') {
+    // select * carries own_words and why_it_matters. Anyone not named as a
+    // full reader (a guardian today) is sent the family projection instead:
+    // SMART goals only (filtered in SQL, so the limit counts them), from named
+    // fields.
+    if (!readsFullGoals(principal.role)) {
+      const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit, smartOnly: true });
       return NextResponse.json({ items: toFamilySmartGoals(goals) });
     }
+    const goals = await getGoalsByAthlete(principal.organizationId, athleteId, { limit });
     return NextResponse.json({ items: goals });
   } catch (error) {
     return jsonError(error);

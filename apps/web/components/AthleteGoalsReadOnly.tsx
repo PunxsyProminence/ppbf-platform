@@ -3,7 +3,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { formatGymDate } from '@/src/lib/gymTime';
+import { formatGymDateShort } from '@/src/lib/gymTime';
 
 /* AN ATHLETE'S GOALS, READ-ONLY (lane N8-05, F-047).
  *
@@ -84,6 +84,16 @@ function parseSmart(payload: unknown): SmartGoal[] | null {
     }));
 }
 
+/* The athlete's own screen (AthleteWorkspace) shows a SMART goal's status
+   capitalised, with a glyph beside the word; this says it the same way, so the
+   two screens never disagree about one goal. */
+function statusWords(raw: string): { glyph: string; label: string } {
+  const label = raw ? raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() : 'Not Started';
+  if (label === 'Active') return { glyph: '◉', label };
+  if (label === 'Completed') return { glyph: '✓', label };
+  return { glyph: '▲', label };
+}
+
 export default function AthleteGoalsReadOnly({
   athleteId,
   audience,
@@ -138,9 +148,9 @@ export default function AthleteGoalsReadOnly({
             {own.state === 'failed' && <p className="t-muted">Unavailable - these goals could not be read.</p>}
             {own.state === 'loaded' && own.items.length === 0 && <p className="t-muted">None set yet.</p>}
             {own.state === 'loaded' && own.items.length > 0 && (
-              <ul className="space-y-[var(--s2)]">
+              <ul role="list" className="space-y-[var(--s2)]">
                 {own.items.map((goal) => {
-                  const reachedOn = goal.reached_at ? formatGymDate(goal.reached_at) : null;
+                  const reachedOn = goal.reached_at ? formatGymDateShort(goal.reached_at) : null;
                   return (
                     <li key={goal.goal_id} className="space-y-[var(--s1)]">
                       <p className="t-body">{goal.title}</p>
@@ -148,7 +158,8 @@ export default function AthleteGoalsReadOnly({
                         <p className="t-muted">Why it matters to them: {goal.why_it_matters}</p>
                       ) : null}
                       <p className="t-muted">
-                        {goal.reached_at ? `✓ Did it${reachedOn ? ` · ${reachedOn}` : ''}` : '○ Still working on it'}
+                        <span aria-hidden="true">{goal.reached_at ? '✓ ' : '○ '}</span>
+                        {goal.reached_at ? `Did it${reachedOn ? ` · ${reachedOn}` : ''}` : 'Still working on it'}
                         {goal.target_date ? ` · Aiming for ${formatCalendarDay(goal.target_date)}` : ''}
                       </p>
                     </li>
@@ -158,20 +169,23 @@ export default function AthleteGoalsReadOnly({
             )}
           </div>
           <div className="space-y-[var(--s2)]">
-            <h4 className="t-eyebrow">Goals with a target</h4>
+            <h4 className="t-eyebrow">Goals with a measure</h4>
             {smart.state === 'loading' && <p className="working">Reading...</p>}
             {smart.state === 'failed' && <p className="t-muted">Unavailable - these goals could not be read.</p>}
             {smart.state === 'loaded' && smart.items.length === 0 && <p className="t-muted">None set yet.</p>}
             {smart.state === 'loaded' && smart.items.length > 0 && (
-              <ul className="space-y-[var(--s2)]">
-                {smart.items.map((goal) => (
+              <ul role="list" className="space-y-[var(--s2)]">
+                {smart.items.map((goal) => {
+                  const status = statusWords(goal.status);
+                  return (
                   <li key={goal.goal_id} className="space-y-[var(--s1)]">
                     <p className="t-body">{goal.title}</p>
                     <p className="t-muted">
+                      <span aria-hidden="true">{status.glyph} </span>
                       {[
+                        status.label,
                         goal.metric ? `Measured by ${goal.metric}` : null,
                         goal.target_date ? `by ${formatCalendarDay(goal.target_date)}` : null,
-                        goal.status || null,
                       ].filter(Boolean).join(' · ')}
                     </p>
                     <p className="t-muted">
@@ -180,7 +194,8 @@ export default function AthleteGoalsReadOnly({
                         : `Reported progress: ${goal.progress_percent}%`}
                     </p>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>

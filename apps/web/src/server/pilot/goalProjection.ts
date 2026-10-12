@@ -49,7 +49,17 @@ export function toFamilyPersonalGoal(goal: PersonalGoal): FamilyPersonalGoal {
  *  through /goals/personal, so it is not repeated in a family's SMART list --
  *  and its own_words and why_it_matters columns never ride along with it. */
 export function isOwnWordsRow(goal: PilotGoal): boolean {
-  return (goal as unknown as Record<string, unknown>).goal_kind === 'own_words';
+  return goal.goal_kind === 'own_words';
+}
+
+/* WHO IS SENT THE WHOLE ROW. Named, so a role added to a route's gate later
+   gets the family projection until somebody decides otherwise -- the reason
+   line does not go to a role by default. The athlete wrote it; staff (coach,
+   organization admin) read it under the owner ruling. */
+const FULL_GOAL_READERS = new Set(['athlete', 'coach', 'organization_admin', 'admin']);
+
+export function readsFullGoals(role: string): boolean {
+  return FULL_GOAL_READERS.has(role);
 }
 
 export function toFamilySmartGoals(goals: PilotGoal[]): FamilySmartGoal[] {

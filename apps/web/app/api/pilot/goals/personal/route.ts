@@ -8,7 +8,7 @@ import {
   markPersonalGoalReached,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { toFamilyPersonalGoal } from '@/src/server/pilot/goalProjection';
+import { readsFullGoals, toFamilyPersonalGoal } from '@/src/server/pilot/goalProjection';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -51,8 +51,9 @@ export async function GET(request: NextRequest) {
 
     const items = await listPersonalGoals(principal.organizationId, athleteId);
     // The "why it matters" line is the coach's to read, never the family's:
-    // a guardian is sent the family projection, built from named fields.
-    if (principal.role === 'parent') {
+    // anyone not named as a full reader (a guardian today) is sent the family
+    // projection, built from named fields.
+    if (!readsFullGoals(principal.role)) {
       return NextResponse.json({ ok: true, items: items.map(toFamilyPersonalGoal) });
     }
     return NextResponse.json({ ok: true, items });
