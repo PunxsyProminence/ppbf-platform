@@ -1674,15 +1674,12 @@ describe('reinstating an earlier version of a drill (#1470), real database', () 
     });
   });
 
-  test("an earlier version whose reference was withdrawn is refused with Restore's refusal, and nothing is written", async () => {
+  test("an earlier version whose reference was withdrawn is refused with Restore's rule and code, and nothing is written", async () => {
     await withSeededGym('ppbf_test_drillver_reinstate_withdrawn', async (client) => {
       await client.query(`update pilot.drill_library set active = false where organization_id = $1 and drill_id = 'ref-v2'`, [ORG_A]);
       const before = await lineageRows(client);
 
-      await expect(reinstate('drill-v2')).rejects.toMatchObject({
-        name: 'DrillRestoreRefusedError',
-        reason: 'reference_withdrawn',
-      });
+      await expect(reinstate('drill-v2')).rejects.toMatchObject({ status: 409, code: 'reference_withdrawn' });
       expect(await lineageRows(client)).toEqual(before);
       expect(await auditRows(client)).toEqual([]);
     });

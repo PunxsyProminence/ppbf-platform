@@ -5,7 +5,6 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import {
   DrillNameTakenError,
-  DrillRestoreRefusedError,
   ReferenceDrillAlreadyPromotedError,
   assertDrillMeetsCueRule,
   isDrillNameCollision,
@@ -25,10 +24,10 @@ import { requireEvidenceReviewer } from './shadowLibrary';
 // THE MODEL: a drill's content is never edited in place once versioned. A
 // refinement inserts a new pilot.drills row sharing lineage_id, with
 // version = previous + 1 and supersedes_drill_id pointing at the row it
-// replaces, and stamps the old row superseded. adoptDrillChangeProposal is
-// the only function that does this, and it does it transactionally -- see
-// its own comment for why the previous version is re-read and locked
-// rather than trusted from the proposal.
+// replaces, and stamps the old row superseded. adoptDrillChangeProposal,
+// updateDrillToReferenceVersion (D1) and reinstateDrillVersion (#1470) are the
+// functions that do this, each transactionally -- see adoption's own comment
+// for why the previous version is re-read and locked rather than trusted.
 
 export type DrillChangeReviewState = 'proposed' | 'under_review' | 'adopted' | 'declined' | 'superseded';
 
@@ -75,9 +74,10 @@ export interface PilotDrillVersionRow {
    * is why adoption copies this value forward rather than looking it up again,
    * and why pilot_drills_one_reference_per_org is scoped to lineage ROOTS: the
    * successor legitimately carries the same value as the predecessor it
-   * supersedes. The one deliberate move is updateDrillToReferenceVersion (D1):
-   * its new version points at the newer reference, and older versions keep
-   * pointing at the one they were built from.
+   * supersedes. The deliberate moves are updateDrillToReferenceVersion (D1),
+   * whose new version points at the newer reference, and reinstateDrillVersion,
+   * whose new version carries the reinstated version's own reference (possibly
+   * an older one). Older versions keep pointing at the one they were built from.
    */
   reference_drill_id: string | null;
   created_at: string;
@@ -536,6 +536,8 @@ export async function updateDrillToReferenceVersion(
 const REINSTATE_ON_RETIRED_MESSAGE =
   'This drill is retired, so an earlier version cannot be reinstated. Restore the drill first.';
 const REINSTATE_HEAD_MESSAGE = 'This is already the newest version.';
+const REINSTATE_REFERENCE_WITHDRAWN_MESSAGE =
+  'The reference this version was built from has been withdrawn, so this version cannot be reinstated.';
 const REINSTATE_RACE_MESSAGE = 'This drill changed while it was being reinstated. Reload the page and try again.';
 
 /**
@@ -617,13 +619,15 @@ export async function reinstateDrillVersion(
       throw new ConflictError(REINSTATE_HEAD_MESSAGE, 'DRILL_ALREADY_NEWEST_VERSION');
     }
     if (referenceWithdrawn) {
-      throw new DrillRestoreRefusedError('reference_withdrawn');
+      // Restore's rule and code, worded for this action.
+      throw new ConflictError(REINSTATE_REFERENCE_WITHDRAWN_MESSAGE, 'reference_withdrawn');
     }
 
     // THE CUE RULE ON A NEW VERSION (OD-2026-10-06-026), as adoption applies it:
-    // judged only when the cues or the category differ from the head's.
+    // judged when the cues, the category or the reference differ from the head's
+    // (an adopted drill's rule follows its reference's discipline).
     const sameCues = JSON.stringify(source.cues) === JSON.stringify(previous.cues);
-    if (!sameCues || source.category !== previous.category) {
+    if (!sameCues || source.category !== previous.category || source.reference_drill_id !== previous.reference_drill_id) {
       await assertDrillMeetsCueRule({
         organizationId: input.organizationId,
         name: source.name,

@@ -726,12 +726,13 @@ describe('reinstateDrillVersion (#1470)', () => {
     expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
 
-  test("a withdrawn reference is refused with Restore's own refusal, and nothing is written", async () => {
+  test("a withdrawn reference is refused with Restore's rule and code, worded for a reinstate, and nothing is written", async () => {
     const client = fakeClient([{}], [source(v1, { reference_withdrawn: true })], [v2]);
 
     await expect(reinstate('drill-1', client)).rejects.toMatchObject({
-      name: 'DrillRestoreRefusedError',
-      reason: 'reference_withdrawn',
+      status: 409,
+      code: 'reference_withdrawn',
+      message: 'The reference this version was built from has been withdrawn, so this version cannot be reinstated.',
     });
     expect(client.query).toHaveBeenCalledTimes(3);
   });
@@ -742,6 +743,16 @@ describe('reinstateDrillVersion (#1470)', () => {
 
     await expect(reinstate('drill-1', client)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', status: 409 });
     expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  test('the cue rule is applied when only the reference differs from the head', async () => {
+    const cuelessHead = { ...v2, cues: [], reference_drill_id: null };
+    const cuelessSource = { ...v1, cues: [], reference_drill_id: 'ref-technique' };
+    // The reference is a technique drill, so a cue-less copy is refused.
+    const client = fakeClient([{}], [source(cuelessSource)], [cuelessHead], [{ discipline: 'technique' }]);
+
+    await expect(reinstate('drill-1', client)).rejects.toMatchObject({ code: 'DRILL_CUE_REQUIRED', status: 409 });
+    expect(client.query).toHaveBeenCalledTimes(4);
   });
 
   test('the cue rule is not applied when neither cues nor category differ from the head', async () => {

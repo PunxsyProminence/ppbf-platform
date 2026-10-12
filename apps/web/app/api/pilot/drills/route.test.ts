@@ -759,15 +759,15 @@ describe('PATCH /api/pilot/drills reinstate (#1470)', () => {
     expect(await res.json()).toEqual({ error: error.message, code: error.code });
   });
 
-  test("a withdrawn reference is Restore's own refusal", async () => {
+  test("a withdrawn reference is Restore's rule and code, worded for a reinstate", async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
-    mockReinstate.mockRejectedValueOnce(new DrillRestoreRefusedError('reference_withdrawn'));
+    mockReinstate.mockRejectedValueOnce(new ConflictError('The reference this version was built from has been withdrawn, so this version cannot be reinstated.', 'reference_withdrawn'));
 
     const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-v2', reinstate: true }));
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
-      error: "This drill's reference has been withdrawn, so it cannot be restored.",
+      error: 'The reference this version was built from has been withdrawn, so this version cannot be reinstated.',
       code: 'reference_withdrawn',
     });
   });
