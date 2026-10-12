@@ -32,7 +32,7 @@ function row(n: number, tags: string[] = ['footwork']) {
     title: `Clip ${n}`,
     description: `About clip ${n}`,
     tags,
-    view_count: 0,
+    view_count: 37,
     published_at: '2026-10-01T15:00:00.000Z',
   };
 }
@@ -65,7 +65,7 @@ test('a card shows title, description, tags and date, and nothing else from the 
   expect(text).toContain('About clip 1');
   expect(text).toContain('footwork, jab');
   expect(text).toContain('Published October 1, 2026');
-  for (const hidden of ['pub-1', 'vid-1', 'lib-1', 'view']) expect(text).not.toContain(hidden);
+  for (const hidden of ['pub-1', 'vid-1', 'lib-1', 'view', '37']) expect(text).not.toContain(hidden);
   expect(document.querySelector('video, a[href*="vid-"], a[href*="media"]')).toBeNull();
 });
 
@@ -171,4 +171,56 @@ test('a slow page the reader has moved past is never shown', async () => {
   await act(async () => { release(); });
   expect(screen.getByRole('heading', { name: 'Clip 9' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: 'Clip 1' })).toBeNull();
+});
+
+test('exactly one full page and no extra row offers no Next', async () => {
+  respond = async () => ({ status: 200, body: { items: Array.from({ length: 20 }, (_, i) => row(i + 1)) } });
+  await mount();
+  expect(screen.getAllByRole('listitem')).toHaveLength(20);
+  expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
+});
+
+test('choosing a tag from a later page starts the filtered list at the beginning', async () => {
+  respond = async () => ({ status: 200, body: { items: Array.from({ length: 21 }, (_, i) => row(i + 1, ['jab'])) } });
+  await mount();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Next' })); });
+  expect(urls()[urls().length - 1].searchParams.get('offset')).toBe('20');
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Tag'), { target: { value: 'jab' } });
+  });
+  const last = urls()[urls().length - 1];
+  expect(last.searchParams.get('tags')).toBe('jab');
+  expect(last.searchParams.get('offset')).toBe('0');
+});
+
+test('a late refusal or failure for a page the reader has moved past changes nothing', async () => {
+  for (const status of [403, 500]) {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    respond = async (url) => {
+      if (!new URL(url, 'http://x').searchParams.get('tags')) {
+        await held;
+        return { status, body: {} };
+      }
+      return { status: 200, body: { items: [row(9, ['jab'])] } };
+    };
+    const view = render(<VideoLibraryPage />);
+    await act(async () => {});
+    const select = screen.getByLabelText('Tag') as HTMLSelectElement;
+    const option = document.createElement('option');
+    option.value = 'jab';
+    select.appendChild(option);
+    await act(async () => { fireEvent.change(select, { target: { value: 'jab' } }); });
+    await act(async () => { release(); });
+    expect(screen.getByRole('heading', { name: 'Clip 9' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    view.unmount();
+  }
+});
+
+test('a lapsed sign-in (401) reads as not loaded, not as a refusal', async () => {
+  respond = async () => ({ status: 401, body: { error: 'Unauthorized' } });
+  await mount();
+  expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+  expect(document.body.textContent).not.toContain('not available to your account');
 });

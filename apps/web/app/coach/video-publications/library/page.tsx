@@ -67,7 +67,7 @@ export default function VideoLibraryPage() {
         credentials: 'include',
       });
       if (latest.current !== key) return;
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 403) {
         setItems([]);
         setHasMore(false);
         setState('refused');
