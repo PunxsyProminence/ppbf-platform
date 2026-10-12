@@ -65,6 +65,10 @@ import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mj
 
 const ATHLETE_RETENTION = "interval '2 years'";
 const ACCOUNT_RETENTION = "interval '1 year'";
+/* Safeguarding-flagged SHADOW chats: 2 years after the person's deletion
+   (Jason 2026-10-07, Q7). Holds a guardian past ACCOUNT_RETENTION; see the
+   selection in main(). */
+const SAFEGUARDING_CHAT_RETENTION = "interval '2 years'";
 /* PUBLIC INTEREST-FORM INQUIRIES. /privacy promises everyone who sends the
    interest form: "We keep it for 12 months, then delete it, unless you join."
    Jason, 2026-10-06: "Delete all after 12 mo" -- every inquiry older than 12
@@ -998,11 +1002,41 @@ async function main() {
     // and the audit row.
     await client.query('begin');
 
+    /* A GUARDIAN WITH A FLAGGED SHADOW CHAT IS HELD TO TWO YEARS. Jason
+       2026-10-07 (Q7): "2 years after deletion (Recommended)" -- a
+       safeguarding-flagged chat may be the record that a child was at risk,
+       so it outlives the person's deletion by two years. A guardian's
+       pilot.shadow_human_review_queue rows go when their account row goes
+       (the account key's cascade, or after shadow-deidentify-keys the
+       shadow_rows_follow_account trigger, which spares only a row with
+       subject_deleted_at set, and nothing sets it). So the account itself
+       waits: any review-queue row naming the guardian, whatever its status,
+       holds the whole account -- the conversations it points at, the
+       sessions and the guardian record -- until deleted_at + 2 years, when it
+       is purged like any other. Purged, not de-identified: the de-identifying
+       sweep the ruling also asks for is not built (docs/DATA_RETENTION.md).
+       Guarded like the other optional tables, so a database without SHADOW
+       purges as before. */
+    const reviewQueue = (await client.query(
+      `select to_regclass('pilot.shadow_human_review_queue') is not null as present`,
+    )).rows[0].present;
+    const flaggedGuardianSql = reviewQueue
+      ? `exists (select 1 from pilot.shadow_human_review_queue q where q.account_id = a.account_id)`
+      : 'false';
     const expiredAccounts = await client.query(
-      `select account_id from pilot.accounts
-        where deleted_at is not null and deleted_at < (now() - ${ACCOUNT_RETENTION})
-          and role = 'parent'`,
+      `select a.account_id from pilot.accounts a
+        where a.deleted_at is not null and a.deleted_at < (now() - ${ACCOUNT_RETENTION})
+          and a.role = 'parent'
+          and (a.deleted_at < (now() - ${SAFEGUARDING_CHAT_RETENTION}) or not ${flaggedGuardianSql})`,
     );
+    // Reported in every mode so a held guardian is never invisible: due by the
+    // one-year window, not removed, and why.
+    const heldGuardians = (await client.query(
+      `select count(*)::int as n from pilot.accounts a
+        where a.deleted_at is not null and a.deleted_at < (now() - ${ACCOUNT_RETENTION})
+          and a.role = 'parent'
+          and a.deleted_at >= (now() - ${SAFEGUARDING_CHAT_RETENTION}) and ${flaggedGuardianSql}`,
+    )).rows[0].n;
     const expiredAthletes = await client.query(
       `select organization_id, athlete_id from pilot.athletes
         where deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})`,
@@ -1134,6 +1168,7 @@ async function main() {
         // which is which.
         nightly_deletes_inquiries: Math.min(inquiries, maxRows),
         apply_needed_for: { athletes, accounts, videos },
+        guardians_held_for_safeguarding_chats: heldGuardians,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
         would_delete_videos: outcome.videosDeleted,
@@ -1169,6 +1204,7 @@ async function main() {
         accounts: 0,
         inquiries: 0,
         total: 0,
+        guardians_held_for_safeguarding_chats: heldGuardians,
         ...(applyInquiries ? { people_due: { athletes, accounts, videos } } : {}),
       }));
       return;
@@ -1194,6 +1230,7 @@ async function main() {
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
           ...shadowCountsFor(outcome.shadow, '', '_deleted'),
+          guardians_held_for_safeguarding_chats: heldGuardians,
           total_rows_deleted:
             outcome.athletesDeleted + outcome.accountsDeleted + outcome.videosDeleted + inquiriesDeleted,
           blocked: blockedCount,
@@ -1219,6 +1256,7 @@ async function main() {
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,
       ...shadowCountsFor(outcome.shadow, '', '_deleted'),
+      guardians_held_for_safeguarding_chats: heldGuardians,
       total: outcome.athletesDeleted + outcome.accountsDeleted + inquiriesDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,
