@@ -141,7 +141,7 @@ export default function SafetyFlagsBoardPage() {
               Open Safety Flags
             </h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Every open flag you can act on, worst first. Resolving one requires a note —
+              Every open flag you can see, worst first. Resolving one requires a note —
               that note records whether the flag was real. External-rule flags can be
               acknowledged, never bypassed.
             </p>

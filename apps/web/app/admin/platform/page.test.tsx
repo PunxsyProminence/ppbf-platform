@@ -343,7 +343,7 @@ describe('lane N4-02: the desk says what its buttons do', () => {
     fireEvent.change(screen.getByPlaceholderText('name@example.org'), { target: { value: 'coach@example.org' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add To Gym' }));
 
-    expect(await screen.findByText(/coach@example\.org can now sign in as .*Nothing was emailed; tell them\./)).toBeTruthy();
+    expect(await screen.findByText(/coach@example\.org can sign in as .* once they are in the PPBF Microsoft tenant\. Nothing was emailed; tell them\./)).toBeTruthy();
     expect(screen.queryByText(/invited as/)).toBeNull();
     // The workflow itself is unchanged: one POST to the same staff route.
     expect(posts.filter((post) => post.url.includes('/api/pilot/platform/staff'))).toHaveLength(1);

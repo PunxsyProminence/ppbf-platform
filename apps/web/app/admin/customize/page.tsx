@@ -217,9 +217,9 @@ export default function AdminCustomizePage() {
           Photographs on the wall
         </h2>
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
-          Five of these frames appear on athlete and parent dashboards; the entrance frame is not shown
-          anywhere yet. Each holds a drawn placeholder; a photograph you upload takes the frame, and
-          taking it down puts the placeholder back. Pictures of the room,
+          Five of these frames appear on athlete and parent dashboards, where a photograph you upload
+          replaces the drawn placeholder and taking it down puts the placeholder back. The front page
+          shows only the drawings (entrance, floor, ring); an upload does not reach it yet. Pictures of the room,
           not of people — you are the release decision, so look at the photograph before you hang it.
         </p>
 

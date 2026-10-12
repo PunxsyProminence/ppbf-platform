@@ -184,12 +184,12 @@ test('a failed read is not stamped as a medical emergency', async () => {
 
 
 describe('lane N4-02: the copy matches what the queue does', () => {
-  test('the header says the queue is what you can act on, and the note is a record, not training', async () => {
+  test('the header says the queue is what you can see, and the note is a record, not training', async () => {
     global.fetch = mockFetch({ flags: [] });
     await act(async () => {
       render(<SafetyFlagsBoardPage />);
     });
-    expect(screen.getByText(/Every open flag you can act on, worst first\./)).toBeTruthy();
+    expect(screen.getByText(/Every open flag you can see, worst first\./)).toBeTruthy();
     expect(screen.getByText(/that note records whether the flag was real/)).toBeTruthy();
     expect(screen.queryByText(/in the organization/)).toBeNull();
     expect(screen.queryByText(/how the system learns/)).toBeNull();

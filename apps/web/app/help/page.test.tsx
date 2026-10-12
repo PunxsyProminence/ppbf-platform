@@ -14,7 +14,7 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 import HelpCenterPage from './page';
 
 jest.mock('@/src/server/pilot/pageGuard', () => ({
-  requirePageRole: jest.fn(async () => undefined),
+  requirePageRole: jest.fn(),
 }));
 
 jest.mock('@/components/OperationsLink', () => ({
@@ -45,7 +45,7 @@ const EVERY_ROLE: PilotRole[] = [
 
 beforeEach(() => {
   mockRequirePageRole.mockReset();
-  mockRequirePageRole.mockResolvedValue(undefined);
+  mockRequirePageRole.mockResolvedValue({ role: 'coach' });
 });
 
 test('asks the server guard for a signed-in member, admitting every role', async () => {
@@ -62,4 +62,21 @@ test('a visitor who is not signed in is redirected and gets none of the help con
   mockRequirePageRole.mockRejectedValue(new Error('NEXT_REDIRECT:/login'));
 
   await expect(HelpCenterPage()).rejects.toThrow('NEXT_REDIRECT:/login');
+});
+
+test.each([
+  ['organization_admin', true],
+  ['admin', true],
+  ['platform_owner', true],
+  ['coach', false],
+  ['athlete', false],
+  ['parent', false],
+  ['board', false],
+  ['staff', false],
+  ['volunteer', false],
+] as const)('a %s is offered the Admin Hub link: %s', async (role, offered) => {
+  mockRequirePageRole.mockResolvedValue({ role });
+  const { container } = render(await HelpCenterPage());
+  const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  expect(hrefs.includes('/admin')).toBe(offered);
 });

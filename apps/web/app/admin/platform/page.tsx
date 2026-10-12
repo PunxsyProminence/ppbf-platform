@@ -313,7 +313,7 @@ export default function PlatformConsole() {
         login_email: email,
         role: inviteRole,
       });
-      showFeedback('success', `${email} can now sign in as ${inviteRole.replace('_', ' ')}. Nothing was emailed; tell them. If they're outside your Microsoft tenant, add them as an Entra guest too.`);
+      showFeedback('success', `${email} can sign in as ${inviteRole.replace('_', ' ')} once they are in the PPBF Microsoft tenant. Nothing was emailed; tell them. If they're outside your Microsoft tenant, add them as an Entra guest too.`);
       setInviteEmail('');
     } catch (error) {
       showFeedback('error', error instanceof Error ? error.message : 'Failed to invite');

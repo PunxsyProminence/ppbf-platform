@@ -142,6 +142,9 @@ test('the photographs copy names where the frames really appear', async () => {
   render(<CustomizePage />);
   await screen.findByRole('heading', { name: /look and voice/i });
 
-  expect(screen.getByText(/Five of these frames appear on athlete and parent dashboards; the entrance frame is not shown\s+anywhere yet\./)).toBeTruthy();
+  // app/page.tsx renders entrance/floor/ring through PhotoSlot with no
+  // uploadedSrc, so the front page shows drawings only.
+  expect(screen.getByText(/Five of these frames appear on athlete and parent dashboards, where a photograph you upload\s+replaces the drawn placeholder/)).toBeTruthy();
+  expect(screen.getByText(/The front page\s+shows only the drawings \(entrance, floor, ring\); an upload does not reach it yet\./)).toBeTruthy();
   expect(screen.queryByText(/Each frame appears on member dashboards/)).toBeNull();
 });

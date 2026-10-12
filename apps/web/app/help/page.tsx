@@ -5,6 +5,7 @@ import { guideSections, masterTutorialCards, plannedCapabilityGuides } from '@/c
 import OperationsLink from '@/components/OperationsLink';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
 
 // Internal tester material: signed-in members only, and kept out of search
 // results. Every role may read it; signing in is the only gate (audit
@@ -28,7 +29,11 @@ const HELP_READERS: Record<PilotRole, true> = {
 };
 
 export default async function HelpCenterPage() {
-  await requirePageRole(Object.keys(HELP_READERS) as PilotRole[]);
+  const principal = await requirePageRole(Object.keys(HELP_READERS) as PilotRole[]);
+  // /admin admits the gym admin and the platform owner only (admin/page.tsx);
+  // nobody else is offered a door that would turn them away.
+  const mayOpenAdminHub = roleEquals(principal.role, 'organization_admin')
+    || roleEquals(principal.role, 'platform_owner');
 
   return (
     <main className="on-canvas min-h-screen">
@@ -43,9 +48,11 @@ export default async function HelpCenterPage() {
             <OperationsLink className="btn btn--ghost">
               Mission Control
             </OperationsLink>
-            <Link href="/admin" className="btn btn--ghost">
-              Admin Hub
-            </Link>
+            {mayOpenAdminHub && (
+              <Link href="/admin" className="btn btn--ghost">
+                Admin Hub
+              </Link>
+            )}
             <Link href="/" className="btn btn--ghost">
               Public Portal
             </Link>
