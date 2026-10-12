@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import CoachHomeRedirectPage from './page';
+import CoachDashboardRedirectPage from './dashboard/page';
 import CoachIntakeRouterPage from './environment/intake-router/page';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
@@ -16,4 +17,10 @@ test('/coach redirects to the coach home', () => {
   expect(redirect).toHaveBeenCalledWith('/coach/environment/intake-router');
   expect(getPilotRoleDestination('coach')).toBe('/coach/environment/intake-router');
   expect(typeof CoachIntakeRouterPage).toBe('function');
+});
+
+test('/coach/dashboard redirects to the coach home too', () => {
+  (redirect as unknown as jest.Mock).mockClear();
+  CoachDashboardRedirectPage();
+  expect(redirect).toHaveBeenCalledWith('/coach/environment/intake-router');
 });

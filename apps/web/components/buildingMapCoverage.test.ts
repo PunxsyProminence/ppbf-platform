@@ -48,6 +48,7 @@ const EXCLUDED: Record<string, string> = {
   '/privacy': 'public privacy notice, reached from the front page form and footer -- not a room of the building',
   '/public': 'permanent redirect to / (one front page, Jason 2026-10-03) -- the Public Page door points at / itself',
   '/coach': 'redirect to the coach home (getPilotRoleDestination) -- the door is the home itself, "Coach Workspace"',
+  '/coach/dashboard': 'redirect to the coach home, as /coach -- every other role home is a /<role>/dashboard',
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
 
   // Reads no data. Door goes in when it is wired to something real.
