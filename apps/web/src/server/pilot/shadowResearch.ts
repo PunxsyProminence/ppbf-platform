@@ -438,6 +438,8 @@ export async function syncCapabilityGapRequirement(input: {
              - 'resolved_by_account_id'
              - 'resolved_by_role'
              - 'resolved_matched_sources'
+             - 'closing_note'
+             - 'closing_submission_id'
              - $12::text
          ) || excluded.metadata || jsonb_build_object('reopened_after_resolution_at', t.resolved_at)
          else t.metadata || excluded.metadata
@@ -521,8 +523,32 @@ export async function resolveShadowResearchRequirement(input: {
    * authorize.
    */
   expectedSubjectAthleteId: string | null;
+  /**
+   * What closes it (OD-2026-10-08-005 A-Q13: "closing a research requirement
+   * needs a closing note or an approved submission"). At least one is
+   * required. A submission counts only while it is 'responsive' on THIS
+   * requirement, and that is checked inside the UPDATE, so a submission
+   * re-reviewed between the route's check and this write closes nothing.
+   */
+  closing: { note: string | null; submissionId: string | null };
 }): Promise<boolean> {
+  const closingNote = input.closing.note?.trim() || null;
+  const closingSubmissionId = input.closing.submissionId?.trim() || null;
+  if (!closingNote && !closingSubmissionId) {
+    throw new Error('A research requirement closes with a closing note or an approved submission.');
+  }
   const hasAthleteScope = (input.athleteIds?.length ?? 0) > 0;
+  // Only named when a submission is given, so a schema without the
+  // submissions table still closes with a note.
+  const submissionPredicate = closingSubmissionId
+    ? `and exists (
+         select 1 from pilot.shadow_research_submissions s
+         where s.organization_id = $1
+           and s.research_requirement_id = $2
+           and s.submission_id = $7
+           and s.applicability_state = 'responsive'
+       )`
+    : '';
   const rows = await query<{
     research_requirement_id: number;
   }>(
@@ -542,6 +568,7 @@ export async function resolveShadowResearchRequirement(input: {
              nullif(btrim(metadata->>'subject_id'), ''),
              nullif(btrim(metadata->>'athlete_id'), '')
            ) is not distinct from $6::text
+       ${submissionPredicate}
      returning research_requirement_id`,
     [
       input.organizationId,
@@ -555,14 +582,39 @@ export async function resolveShadowResearchRequirement(input: {
       // server's to state, not the caller's.
       JSON.stringify({
         ...(input.metadata ?? {}),
+        // Both keys, every time, null when unused: a value planted in the
+        // row's metadata before (create takes free metadata) never survives
+        // as a false closing record.
+        closing_note: closingNote,
+        closing_submission_id: closingSubmissionId,
         resolved_by_account_id: input.resolvedByAccountId,
         resolved_by_role: input.resolvedByRole,
       }),
       hasAthleteScope,
       input.athleteIds ?? [],
       input.expectedSubjectAthleteId,
+      ...(closingSubmissionId ? [closingSubmissionId] : []),
     ],
   );
 
   return rows.length > 0;
+}
+
+/**
+ * Does this submission close this requirement: same organization, same
+ * requirement, reviewed 'responsive' (N6-02-Q1 A)? Read by the route to
+ * answer a caller plainly; the resolve UPDATE asks the same thing again.
+ */
+export async function submissionClosesRequirement(
+  organizationId: string,
+  researchRequirementId: number,
+  submissionId: string,
+): Promise<boolean> {
+  const row = await queryOne<{ ok: boolean }>(
+    `select true as ok from pilot.shadow_research_submissions
+     where organization_id = $1 and research_requirement_id = $2 and submission_id = $3
+       and applicability_state = 'responsive'`,
+    [organizationId, researchRequirementId, submissionId],
+  );
+  return Boolean(row?.ok);
 }

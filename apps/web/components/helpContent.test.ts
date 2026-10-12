@@ -54,6 +54,9 @@ test('the parent guide names the live task feed and still lists every Parent Hub
   // (A-Q15: roadmap).
   const parent = guide('parent-guide').placeholderOrPlanned;
   expect(parent).toMatch(/Coach tasks with a due date show on the Messages tab/);
+  // The weekly list on the Parent Floor is built (WO-PH-02); it is not planned.
+  expect(parent).toMatch(/on the Parent Floor/);
+  expect(parent).not.toMatch(/weekly support checklist/);
   // Home assignments are built (WO-PH-03).
   expect(parent).toMatch(/Home assignments show on the Assignments tab/);
   // Progress milestones are built (WO-PH-09).
