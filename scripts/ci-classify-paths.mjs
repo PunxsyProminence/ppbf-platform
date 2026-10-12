@@ -359,8 +359,10 @@ const isActivationE2ePath = (file) =>
    wider than a gym tablet's screen, and /admin/people cutting off its table
    title). The suite runs when one of those pages changes, when its own spec
    or fixtures change, when the shared sign-in stub or the Playwright config
-   changes, and when the shell that wraps /admin/compliance-center changes.
-   Not wider: the rest of the admin area is not on its path. */
+   changes, when the shell that wraps /admin/compliance-center changes, and
+   when the stylesheets change -- the overflow it was written for was a CSS
+   decoration (.lamp, in design-system/legacy), not markup. Not wider: the rest
+   of the admin area is not on its path. */
 const ADMIN_NARROW_PAGES = [
   'athlete-consent', 'compliance-center', 'escalations', 'feedback', 'people',
   'safety-flags', 'safety-review', 'video-compliance', 'waiver-status',
@@ -371,7 +373,8 @@ const isAdminNarrowE2ePath = (file) =>
     'apps/web/e2e/admin-narrow-widths',
     'apps/web/e2e/support/',
     'apps/web/components/RoleStandaloneView',
-  ]) || file === 'apps/web/playwright.config.ts';
+    'design-system/',
+  ]) || file === 'apps/web/playwright.config.ts' || file === 'apps/web/app/globals.css';
 
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);

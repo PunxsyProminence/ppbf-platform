@@ -218,7 +218,7 @@ export default function SafetyReviewPage() {
                     {review!.openHolds.map((hold) => (
                       <li key={hold.hold_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(hold.athlete_id, hold.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{hold.scope} &middot; {hold.reason_category}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{hold.scope} &middot; {hold.reason_category}</span>
                       </li>
                     ))}
                   </ul>
@@ -232,7 +232,7 @@ export default function SafetyReviewPage() {
                     {review!.failingGates.map((gate) => (
                       <li key={`${gate.athlete_id}-${gate.gate_name}`} className="flex flex-wrap items-center justify-between gap-[var(--s3)] py-[var(--s2)]">
                         <span className="t-body">{displayName(gate.athlete_id, gate.athlete_name)}</span>
-                        <span className="t-data text-[color:var(--bone-400)]">{gate.gate_name} &middot; {gate.outcome}</span>
+                        <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{gate.gate_name} &middot; {gate.outcome}</span>
                       </li>
                     ))}
                   </ul>

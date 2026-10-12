@@ -209,6 +209,9 @@ jobs:
           assert.equal(classifyPaths(['apps/web/app/admin/people/page.tsx']).adminNarrowE2e, true);
           assert.equal(classifyPaths(['apps/web/app/admin/waiver-status/page.tsx']).adminNarrowE2e, true);
           assert.equal(classifyPaths(['apps/web/app/admin/door-register/page.tsx']).adminNarrowE2e, false);
+          // The overflow was a stylesheet decoration, so the sheets run it too.
+          assert.equal(classifyPaths(['design-system/legacy/ppbf-leather-brass.css']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/globals.css']).adminNarrowE2e, true);
 
           // The homepage suite was the one journey whose own spec did not fire
           // its flag, so an edit to public-homepage.spec.ts could not run

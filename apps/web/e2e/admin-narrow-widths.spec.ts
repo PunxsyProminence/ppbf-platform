@@ -24,11 +24,11 @@ for (const entry of ADMIN_NARROW_PAGES) {
       await openSignedIn(page, entry.path);
       await expect(page.getByText(entry.expectText)).toBeVisible();
 
-      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        innerWidth: window.innerWidth,
-      }));
-      expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
+      // Against the width asked for, not innerWidth: under a mobile emulation
+      // innerWidth grows to fit the content, and a page wider than the screen
+      // would pass.
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(width);
     });
   }
 }

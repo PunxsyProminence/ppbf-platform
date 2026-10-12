@@ -201,7 +201,7 @@ export default function SafetyFlagsBoardPage() {
                   return (
                     <li key={flag.flag_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                        <span className="t-body font-semibold text-[color:var(--bone-100)]">{flag.flag_code}</span>
+                        <span className="t-body font-semibold text-[color:var(--bone-100)] [overflow-wrap:anywhere]">{flag.flag_code}</span>
                         <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{badge.label}</span>
                         <span className="t-label">{flag.flag_class === 'external_rule' ? 'external rule' : 'system guidance'}</span>
                         {flag.athlete_id ? (
