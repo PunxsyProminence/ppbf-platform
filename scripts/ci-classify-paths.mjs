@@ -90,7 +90,16 @@ const isMigrationPath = (file) =>
        pilot-cleanup-accounts.mjs runner the prefix above matches, and
        accountCleanupSql.pg.test.ts is what runs them. */
     'apps/web/scripts/lib/account-cleanup-plan.',
+    /* The suite runner, and the embedded server and janitor every suite
+       starts. An edit to any of them changes how all of them run, and none
+       matched before. */
+    'apps/web/scripts/run-migration-suites.',
+    'apps/web/scripts/test-embedded-pg-',
   ]) ||
+  /* A migration suite itself, wherever it lives. Two sit under
+     apps/web/scripts/ outside the prefixes above, so an edit to one could not
+     run itself. */
+  file.endsWith('.pg.test.ts') ||
   [
     'apps/web/package.json',
     'package.json',

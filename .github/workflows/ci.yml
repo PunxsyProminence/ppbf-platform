@@ -101,6 +101,9 @@ jobs:
           assert.equal(classifyPaths(['apps/web/app/api/pilot/profile/card/route.ts']).migrations, true);
           assert.equal(classifyPaths(['apps/web/app/api/admin/volunteers/route.ts']).migrations, true);
           assert.equal(classifyPaths(['apps/web/src/server/pilot/profileDb.ts']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/run-migration-suites.mjs']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/test-embedded-pg-server.mjs']).migrations, true);
+          assert.equal(classifyPaths(['apps/web/scripts/import-shadow-research.pg.test.ts']).migrations, true);
           // ...and a page or a component alone does not.
           assert.equal(classifyPaths(['apps/web/app/admin/people/page.tsx']).migrations, false);
           assert.equal(classifyPaths(['apps/web/components/FightCard.tsx']).migrations, false);
