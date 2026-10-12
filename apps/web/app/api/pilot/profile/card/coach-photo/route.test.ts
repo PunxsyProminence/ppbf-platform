@@ -137,6 +137,9 @@ describe('GET /api/pilot/profile/card/coach-photo', () => {
 
   test('a parent who cannot reach the child is refused before the coach is looked up', async () => {
     mockPrincipal.mockResolvedValue(principal('parent', 'acct-other-parent'));
+    // Every relationship answers "guardian", so the reach check alone is
+    // what refuses here.
+    mockRelationship.mockResolvedValue('guardian_of_subject' as never);
     mockReach.mockRejectedValueOnce(new Error('Forbidden'));
     await expectHidden(await GET(request('?athlete_id=ath-1')));
     expect(mockIdentity).not.toHaveBeenCalledWith(ORG, COACH);
