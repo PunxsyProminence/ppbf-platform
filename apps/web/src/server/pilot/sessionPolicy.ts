@@ -9,6 +9,12 @@ export function computeSessionExpiry(from: Date = new Date()): Date {
   return new Date(from.getTime() + SESSION_ABSOLUTE_LIFETIME_MS);
 }
 
+// How long an expired or revoked session token is kept before the nightly
+// cleanup deletes it: docs/DATA_RETENTION.md, "Session tokens | 30 days after
+// expiration/revocation | Forensic window: debug session issues". Run by
+// scripts/pilot-cleanup-sessions.ts from .github/workflows/session-token-cleanup.yml.
+export const SESSION_TOKEN_RETENTION_DAYS = 30;
+
 // Generous but finite safety cap for session-cleanup retention, so an
 // operator (or a malformed argument) can't request an effectively-infinite
 // retention window that defeats cleanup entirely.

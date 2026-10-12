@@ -10933,7 +10933,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "decisions/route.ts:48 requireRole; :60 assertActorCanAccessAthlete before recordDecision; recordDecision scopes the cited recommendation to the same athlete (shadowDecisions.ts ~:38-41) and blocks on medical status. Writes a decision row.",
+    "notes": "decisions/route.ts:48 requireRole; :60 assertActorCanAccessAthlete before recordDecision; recordDecision scopes the cited recommendation to the same athlete (shadowDecisions.ts ~:38-41). The athlete's medical status never refuses it; the status on file is stored with the decision (medical_status_snapshot_id, audit after_state; issue #1474). Writes a decision row.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12200,7 +12200,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "recommendations/route.ts:62-63 role gate, :77 assertActorCanAccessAthlete; createProvisionalRecommendation inserts a row (refused unless athlete has a current cleared medical status, per decide/route.ts comment).",
+    "notes": "recommendations/route.ts:62-63 role gate, :77 assertActorCanAccessAthlete; createProvisionalRecommendation inserts a row; never refused for the athlete's medical status, which is recorded in the audit entry (issue #1474).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
