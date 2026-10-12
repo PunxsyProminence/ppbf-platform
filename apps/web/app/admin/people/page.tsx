@@ -1202,7 +1202,13 @@ function PeopleConsoleContent() {
                    the same element would never win. */
                 <div className="overflow-x-auto">
                 <table className="ledger">
-                  <caption className="text-left">Everyone in this gym</caption>
+                  {/* The caption is as wide as the table, and the table scrolls
+                     inside this box at phone widths, so the title was cut off
+                     at the screen edge (#1482 item 5). The text stays put while
+                     the table scrolls under it, and wraps to the visible width. */}
+                  <caption className="text-left">
+                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">Everyone in this gym</span>
+                  </caption>
                   <thead>
                     <tr>
                       <th scope="col">Person</th>

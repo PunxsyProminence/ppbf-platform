@@ -9,7 +9,7 @@
    from it, the Upcoming compare, and the state marks on chips and tabs. */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
 
@@ -410,15 +410,5 @@ describe('the selected child and tab are marked, not only coloured', () => {
   });
 });
 
-describe('the roadmap card on the Parent Floor tells the truth about tasks', () => {
-  test('says where tasks live now and what is still not built', async () => {
-    installFetch();
-    await renderHub();
-    await openTab('Parent Floor');
-
-    const card = screen.getByText("This Week's Parent Support Tasks").closest('div') as HTMLElement;
-    expect(within(card).getByText(/is on the Messages tab, with a box to tick when it is done/)).toBeInTheDocument();
-    expect(within(card).getByText(/A separate weekly checklist is not built yet/)).toBeInTheDocument();
-    expect(within(card).queryByText(/There is no parent-task assignment feed/)).toBeNull();
-  });
-});
+// The Parent Floor's weekly list, which replaced the roadmap card that used to
+// be pinned here, is pinned in parentHubFloorTasks.test.tsx.
