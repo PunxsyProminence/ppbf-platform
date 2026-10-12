@@ -71,7 +71,6 @@ export default function VideoLibraryPage() {
         method: 'GET',
         credentials: 'include',
       });
-      if (latest.current !== request) return;
       if (!response.ok) throw new Error('library');
       const payload = (await response.json()) as { items?: LibraryItem[] };
       if (latest.current !== request) return;
