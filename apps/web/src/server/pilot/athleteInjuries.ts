@@ -472,7 +472,8 @@ export interface InjuryLinkCandidates {
     status: string;
   }>;
   clearances: Array<{ status_id: string; status: string; effective_at: string }>;
-  painReports: Array<{ near_miss_id: string; severity: string; created_at: string }>;
+  // pain_score is metadata.severity_1_10, the number the dropdown shows (#1528).
+  painReports: Array<{ near_miss_id: string; severity: string; pain_score: number | null; created_at: string }>;
 }
 
 const CANDIDATE_LIMIT = 20;
@@ -508,7 +509,10 @@ export async function listLinkCandidates(organizationId: string, athleteId: stri
       params,
     ),
     query<InjuryLinkCandidates['painReports'][number]>(
-      `select n.near_miss_id::text, n.severity, n.created_at::text
+      `select n.near_miss_id::text, n.severity,
+              case when jsonb_typeof(n.metadata->'severity_1_10') = 'number'
+                   then (n.metadata->>'severity_1_10')::float8 end as pain_score,
+              n.created_at::text
          from pilot.shadow_near_misses n
         where n.organization_id = $1 and n.athlete_id = $2 and n.metadata->>'trigger' = 'athlete_pain_report'
           and ${athleteNotDeletedSql('n')}

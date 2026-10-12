@@ -132,7 +132,8 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       return handler ? handler(init) : jsonResponse({ decisions: [] });
     }
     if (key.includes('/api/pilot/shadow/near-misses')) {
-      return jsonResponse({ nearMisses: [] });
+      const handler = overrides.nearMisses as ((init?: RequestInit) => Response) | undefined;
+      return handler ? handler(init) : jsonResponse({ nearMisses: [] });
     }
     if (key.includes('/api/pilot/intake/domain-upsert')) {
       const handler = overrides.domainUpsert as ((init?: RequestInit) => Response) | undefined;
@@ -2817,5 +2818,55 @@ describe('the medical status on file, stated beside the Record Decision form', (
     await within(decisionsSection()).findByText(/Medical status on file:/);
     expect(screen.getByText('This clearance passed its end date.')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/gated by the athlete|Read-only gate|medical gate blocks/i);
+  });
+});
+
+describe('a pain report near miss reads as its number only (#1528)', () => {
+  const NEAR_MISS = {
+    athlete_id: 'ath-1',
+    decision_id: null,
+    detected_by: 'system',
+    created_at: '2026-10-11T18:00:00.000Z',
+  };
+  const PAIN = {
+    ...NEAR_MISS,
+    near_miss_id: 'nm-pain',
+    description: 'Athlete reported pain in the left shoulder.',
+    severity: 'high',
+    metadata: { trigger: 'athlete_pain_report', severity_1_10: 6 },
+  };
+  const OTHER = {
+    ...NEAR_MISS,
+    near_miss_id: 'nm-other',
+    description: 'Slipped on the apron.',
+    severity: 'moderate',
+    detected_by: 'human',
+    metadata: null,
+  };
+
+  const row = (description: string) => screen.getByText(description).closest('article') as HTMLElement;
+
+  test('a pain report shows "Pain 6/10" and no severity word; another near miss keeps its word (#1528)', async () => {
+    installFetch({ nearMisses: () => jsonResponse({ nearMisses: [PAIN, OTHER] }) });
+    await selectAthlete();
+    await screen.findByText(PAIN.description);
+
+    const pain = row(PAIN.description);
+    expect(within(pain).getByText(`Pain 6/10 · ${PAIN.created_at}`)).toBeTruthy();
+    expect(pain.textContent).not.toMatch(/\b(severity|low|moderate|high|critical)\b/i);
+
+    const other = row(OTHER.description);
+    expect(within(other).getByText(`Severity: moderate · ${OTHER.created_at}`)).toBeTruthy();
+    expect(other.textContent).not.toMatch(/\/10/);
+  });
+
+  test('a pain report with no score on record says so, still with no severity word (#1528)', async () => {
+    installFetch({ nearMisses: () => jsonResponse({ nearMisses: [{ ...PAIN, metadata: { trigger: 'athlete_pain_report' } }] }) });
+    await selectAthlete();
+    await screen.findByText(PAIN.description);
+
+    const pain = row(PAIN.description);
+    expect(within(pain).getByText(`Pain Score not recorded · ${PAIN.created_at}`)).toBeTruthy();
+    expect(pain.textContent).not.toMatch(/\b(severity|high)\b/i);
   });
 });

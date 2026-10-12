@@ -660,7 +660,9 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
       'triggering_event',
     ]);
     expect(Object.keys(candidates.clearances[0]).sort()).toEqual(['effective_at', 'status', 'status_id']);
-    expect(Object.keys(candidates.painReports[0]).sort()).toEqual(['created_at', 'near_miss_id', 'severity']);
+    expect(Object.keys(candidates.painReports[0]).sort()).toEqual(['created_at', 'near_miss_id', 'pain_score', 'severity']);
+    // No metadata.severity_1_10 on this row, so no number (#1528).
+    expect(candidates.painReports[0].pain_score).toBeNull();
 
     // At most twenty of a kind, the newest.
     const many: string[] = [];
@@ -680,6 +682,23 @@ describe('athlete_injuries migration and athleteInjuries.ts against the real sch
     });
   });
 
+
+  test('a pain report candidate carries its own score, read from metadata.severity_1_10 as a number only (#1528)', async () => {
+    const athleteId = 'ath-pain-score';
+    await addAthlete(ORG_A, athleteId);
+    const add = async (metadata: string) => (await db.query<{ near_miss_id: string }>(
+      `insert into pilot.shadow_near_misses (organization_id, athlete_id, description, severity, detected_by, metadata)
+       values ($1, $2, 'Wrist hurts', 'high', 'system', $3::jsonb) returning near_miss_id::text`,
+      [ORG_A, athleteId, metadata],
+    )).rows[0].near_miss_id;
+    const scored = await add('{"trigger":"athlete_pain_report","severity_1_10":6}');
+    const text = await add('{"trigger":"athlete_pain_report","severity_1_10":"6"}');
+    const byId = new Map((await injuries.listLinkCandidates(ORG_A, athleteId)).painReports.map((n) => [n.near_miss_id, n]));
+    expect(byId.get(scored)?.pain_score).toBe(6);
+    expect(byId.get(text)?.pain_score).toBeNull();
+    // The stored severity is still read, unchanged.
+    expect(byId.get(scored)?.severity).toBe('high');
+  });
   test('the family projection carries no staff field, reads the plan date, and leaves out voided, other-gym and deleted rows', async () => {
     const athleteId = 'ath-family';
     await addAthlete(ORG_A, athleteId);

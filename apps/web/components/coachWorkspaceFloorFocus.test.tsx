@@ -378,3 +378,21 @@ test('an athlete the register says this coach does not cover is marked "Not your
   const jordan = floor().getByRole('button', { name: /^Jordan P\./ });
   expect(jordan.textContent).not.toContain('Not your athlete');
 });
+
+test('the floor shows a pain report as its number only (#1528)', async () => {
+  await renderWorkspace({
+    athletesList: roster,
+    painReports: () => jsonResponse({
+      ok: true,
+      windowDays: 14,
+      truncated: false,
+      painReports: [{
+        nearMissId: 'nm_1', athleteId: 'ath_1', athleteName: 'Jordan P.', severity: 'high', painScore: 6,
+        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete',
+      }],
+    }),
+  });
+  const badge = floor().getByText('6/10');
+  expect(badge.closest('.coach-floor-focus__badge')).not.toBeNull();
+  expect(floor().queryByText(/\bhigh\b/i)).toBeNull();
+});

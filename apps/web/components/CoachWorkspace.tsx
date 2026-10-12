@@ -56,6 +56,7 @@ import {
 // a child said about themselves, so it recognises them too -- from the same
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
@@ -439,6 +440,15 @@ interface CoachEscalation {
   reason: string;
   status: 'open' | 'acknowledged' | 'resolved';
   created_at: string;
+  // Read only to tell an escalation filed from a pain report (#1528).
+  metadata?: Record<string, unknown> | null;
+}
+
+/* #1528 (owner ruling 2026-10-12): an escalation filed from a pain report
+   reads "Pain report", not a severity word. Its stored rung still sets the
+   tone and the order. */
+function escalationBadgeLabel(escalation: CoachEscalation): string {
+  return isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity;
 }
 
 // athlete_voice is deliberately absent: the server never sends it to a coach.
@@ -2536,7 +2546,7 @@ export default function CoachWorkspace() {
         urgent: true,
         title: athleteName ?? `Athlete ID ${escalation.athlete_id}`,
         meta: `${ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type} · ${painReportTime(escalation.created_at)}`,
-        badge: { tone: painSeverityTone(escalation.severity), label: escalation.severity },
+        badge: { tone: painSeverityTone(escalation.severity), label: escalationBadgeLabel(escalation) },
         details: [],
         body: escalation.reason,
         note: 'Acknowledging says you have seen it. Closing it out is an admin decision and happens on the admin escalations console.',
@@ -2557,7 +2567,8 @@ export default function CoachWorkspace() {
         meta: `Athlete ID ${report.athleteId} · recorded ${painReportTime(report.recordedAt)}`,
         badge: {
           tone: painSeverityTone(report.severity),
-          label: `${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`,
+          // The number only (#1528); the stored severity still sets the tone.
+          label: painScoreLabel(report.painScore),
         },
         details: [
           { label: 'Body location', value: report.location ?? painDetailAbsent(report.reporter), muted: !report.location },
@@ -2761,7 +2772,7 @@ export default function CoachWorkspace() {
                     </div>
                     <StatusBadge
                       tone={painSeverityTone(report.severity)}
-                      label={`${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`}
+                      label={painScoreLabel(report.painScore)}
                     />
                   </div>
 
@@ -2882,7 +2893,7 @@ export default function CoachWorkspace() {
                           {painReportTime(escalation.created_at)}
                         </p>
                       </div>
-                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalationBadgeLabel(escalation)} />
                     </div>
 
                     <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>

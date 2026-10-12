@@ -9,6 +9,7 @@ import { ForbiddenError } from './errors';
 import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
+import { isPainReportNearMiss, painScoreFromMetadata, painScoreLabel } from '@/src/shared/painScoreLabel';
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -1042,13 +1043,23 @@ async function readNearMissContext(
         evidenceIds: [],
       };
     }
+    // A pain report is named by its number, never a severity word (#1528), so
+    // a reply cannot repeat one. Its stored rung still decides the order and
+    // the safety sentence below; 'high' or above is a score of 4/10 or more.
+    const isSevere = (severity: string) => severity === 'high' || severity === 'critical';
     const lines = nearMisses.map((nearMiss) => {
       const date = String(nearMiss.created_at).slice(0, 10);
       const description = nearMiss.description.replace(/\s+/g, ' ').slice(0, 240);
-      return `- [E:${nearMiss.near_miss_id}] ${date} ${nearMiss.severity.toUpperCase()}: ${description}`;
+      const label = isPainReportNearMiss(nearMiss.metadata)
+        ? `Pain report ${painScoreLabel(painScoreFromMetadata(nearMiss.metadata))}`
+        : nearMiss.severity.toUpperCase();
+      return `- [E:${nearMiss.near_miss_id}] ${date} ${label}: ${description}`;
     });
     const hasSevere = nearMisses.some(
-      (nearMiss) => nearMiss.severity === 'high' || nearMiss.severity === 'critical',
+      (nearMiss) => !isPainReportNearMiss(nearMiss.metadata) && isSevere(nearMiss.severity),
+    );
+    const hasSeverePain = nearMisses.some(
+      (nearMiss) => isPainReportNearMiss(nearMiss.metadata) && isSevere(nearMiss.severity),
     );
     return {
       context: [
@@ -1058,6 +1069,9 @@ async function readNearMissContext(
         'Safety directive: factor these recorded events into any intensity, contact, or progression guidance, and cite the event id when referencing one.'
           + (hasSevere
             ? ' A HIGH or CRITICAL event is on record: recommend the coach reviews it before any increase in load or contact.'
+            : '')
+          + (hasSeverePain
+            ? ' A pain report at 4/10 or above is on record: recommend the coach reviews it before any increase in load or contact.'
             : ''),
       ].join('\n'),
       authorized: true,
