@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
 import { pickSaying } from './gymSayings';
+import useGymSound from './useGymSound';
 
 /**
  * THE WALL — the board on the gym's television.
@@ -305,6 +306,7 @@ export default function WallDisplay() {
 
       <FootRule board={showLive ? board : null} health={health} connected={connected} zone={zone} />
       {paired === false && <PairBox onPaired={() => refreshRef.current()} />}
+      {paired === true && <WallSound />}
     </div>
   );
 }
@@ -414,6 +416,61 @@ function PairBox({ onPaired }: { onPaired: () => void }) {
         </p>
       )}
     </form>
+  );
+}
+
+/* ---------------------------------------------------------------- sound --- */
+
+/**
+ * THE TV'S SOUND (WO-N1-02; OD-2026-10-06-014 Q7: bells "play from the TV").
+ *
+ * On a PAIRED screen only -- an unpaired wall keeps the pair box as its one
+ * control. It is the app's one sound engine (useGymSound over
+ * design-system/ppbf-sound.js): off until somebody presses it, and that press
+ * is the browser's audio activation, so "Sound on" rings the bell once to prove
+ * the TV can be heard. "Test bell" rings it again on demand. Nothing here
+ * touches the poll, the pairing or the board, and the engine is one module-wide
+ * instance, so a re-pair, a poll or a remount never opens a second one.
+ *
+ * Volume is the TV's own: the engine's level is fixed when it starts, and the
+ * hook offers no way to change it after.
+ */
+const WALL_SOUND_LABEL: Record<'off' | 'arming' | 'on' | 'unavailable', string> = {
+  off: 'Sound off',
+  arming: 'Sound waiting',
+  on: 'Sound on',
+  unavailable: 'No audio',
+};
+
+function WallSound() {
+  const { enabled, status, setEnabled, play } = useGymSound();
+
+  async function toggle() {
+    // Inside the press, which is what lets the browser start audio.
+    const live = await setEnabled(!enabled);
+    if (live) play('bell');
+  }
+
+  return (
+    <div
+      className="wall-sound flex shrink-0 items-center justify-end gap-[var(--s4)] px-[var(--s7)] pb-[var(--s4)]"
+      aria-label="TV sound"
+      role="group"
+    >
+      <button
+        type="button"
+        className="btn btn--ghost min-h-[55px] px-[var(--s5)]"
+        aria-pressed={enabled}
+        onClick={() => { void toggle(); }}
+      >
+        {WALL_SOUND_LABEL[status]}
+      </button>
+      {status === 'on' && (
+        <button type="button" className="btn min-h-[55px] px-[var(--s5)]" onClick={() => { play('bell'); }}>
+          Test bell
+        </button>
+      )}
+    </div>
   );
 }
 
