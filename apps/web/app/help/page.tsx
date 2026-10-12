@@ -3,13 +3,33 @@ import Link from 'next/link';
 import TutorialCard from '@/components/TutorialCard';
 import { guideSections, masterTutorialCards, plannedCapabilityGuides } from '@/components/helpContent';
 import OperationsLink from '@/components/OperationsLink';
+import type { PilotRole } from '@/src/server/pilot/contracts';
+import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
-// Internal tester material: reachable, but kept out of search results.
+// Internal tester material: signed-in members only, and kept out of search
+// results. Every role may read it; signing in is the only gate (audit
+// PUBLIC-06, lane N4-02). A Record so a new role cannot be left out silently.
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function HelpCenterPage() {
+export const dynamic = 'force-dynamic';
+
+const HELP_READERS: Record<PilotRole, true> = {
+  platform_owner: true,
+  organization_admin: true,
+  admin: true,
+  coach: true,
+  athlete: true,
+  parent: true,
+  board: true,
+  volunteer: true,
+  staff: true,
+};
+
+export default async function HelpCenterPage() {
+  await requirePageRole(Object.keys(HELP_READERS) as PilotRole[]);
+
   return (
     <main className="on-canvas min-h-screen">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
