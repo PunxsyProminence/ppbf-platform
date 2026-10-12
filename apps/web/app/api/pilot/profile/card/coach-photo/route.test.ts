@@ -24,6 +24,11 @@ jest.mock('@/src/server/pilot/profileDb', () => {
   };
 });
 jest.mock('@/src/server/pilot/db', () => ({ queryOne: jest.fn() }));
+// The family name reader; what matters here is that the route compares the
+// name the card showed with the one this viewer would be shown now.
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getCoachDisplayName: jest.fn(async () => 'Coach Ray'),
+}));
 jest.mock('@/src/server/pilot/blob', () => ({ downloadPilotProfilePhoto: jest.fn() }));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -78,12 +83,24 @@ const RELATIONSHIPS: Record<string, Record<string, string>> = {
 };
 
 function principal(role: string, accountId: string, athleteId: string | null = null) {
+  currentShownName = shownName(role);
   return { accountId, role, organizationId: ORG, athleteId } as never;
 }
 
-function request(query = ''): NextRequest {
-  return new NextRequest(`https://ppbf.example/api/pilot/profile/card/coach-photo${query}`);
+/** The name each viewer's card shows for the coach: families get the family reader's. */
+function shownName(role: string): string {
+  return role === 'athlete' || role === 'parent' ? 'Coach Ray' : 'Ray Nolan';
 }
+
+function request(query = '', coachName: string | null = null): NextRequest {
+  const name = coachName ?? currentShownName;
+  const join = query ? '&' : '?';
+  return new NextRequest(
+    `https://ppbf.example/api/pilot/profile/card/coach-photo${query}${join}coach_name=${encodeURIComponent(name)}`,
+  );
+}
+
+let currentShownName = 'Coach Ray';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -196,5 +213,17 @@ describe('GET /api/pilot/profile/card/coach-photo', () => {
     await GET(request('?athlete_id=ath-1'));
     for (const call of mockIdentity.mock.calls) expect(call[0]).toBe(ORG);
     for (const call of mockProfile.mock.calls) expect(call[0]).toBe(ORG);
+  });
+
+  test('a card showing a different coach than the coach of record now gets the plate, not a stranger\'s face', async () => {
+    // Reassigned between the card loading and its image loading: the card
+    // still says the old coach's name.
+    mockPrincipal.mockResolvedValue(principal('parent', PARENT));
+    await expectHidden(await GET(request('?athlete_id=ath-1', 'Coach Okafor')));
+  });
+
+  test('a request that does not say which coach it shows gets the plate', async () => {
+    mockPrincipal.mockResolvedValue(principal('athlete', ATHLETE, 'ath-1'));
+    await expectHidden(await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card/coach-photo')));
   });
 });

@@ -40,14 +40,14 @@ describe('FightCard coach portrait', () => {
   test('a family card with no coach id still shows the coach, fetched by the card', () => {
     const { container } = render(<FightCard card={card()} />);
     expect(imageSources(container)).toEqual([
-      '/api/pilot/profile/card/coach-photo?account_id=acct-athlete',
+      '/api/pilot/profile/card/coach-photo?account_id=acct-athlete&coach_name=Ray%20Nolan',
     ]);
   });
 
   test('a staff card that does carry the id never puts it in an address', () => {
     const { container } = render(<FightCard card={card({ coachAccountId: 'acct-coach-7f3a' })} />);
     const sources = imageSources(container);
-    expect(sources).toEqual(['/api/pilot/profile/card/coach-photo?account_id=acct-athlete']);
+    expect(sources).toEqual(['/api/pilot/profile/card/coach-photo?account_id=acct-athlete&coach_name=Ray%20Nolan']);
     for (const src of sources) expect(src).not.toContain('acct-coach-7f3a');
   });
 

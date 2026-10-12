@@ -76,8 +76,11 @@ export function portraitUrl(base: string, accountId: string): string {
  * A family's card carries no coach account id (OD-2026-10-06-025 ruling 2), so
  * the server finds the coach from the card's own subject and gates both.
  */
-export function coachPortraitUrl(base: string, cardAccountId: string): string {
-  return `${base}/api/pilot/profile/card/coach-photo?account_id=${encodeURIComponent(cardAccountId)}`;
+export function coachPortraitUrl(base: string, cardAccountId: string, coachName: string): string {
+  // coach_name binds the face to the name the card shows: the server serves
+  // the portrait only while that is still the coach of record's name.
+  return `${base}/api/pilot/profile/card/coach-photo?account_id=${encodeURIComponent(cardAccountId)}`
+    + `&coach_name=${encodeURIComponent(coachName)}`;
 }
 
 /**

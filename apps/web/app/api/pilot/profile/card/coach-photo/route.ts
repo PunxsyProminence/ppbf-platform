@@ -3,6 +3,7 @@ import { type NextRequest } from 'next/server';
 import { downloadPilotProfilePhoto } from '@/src/server/pilot/blob';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  coachNameForViewer,
   portraitBytesResponse,
   resolveCardSubjectAccountId,
 } from '@/src/server/pilot/profileCardSubject';
@@ -40,6 +41,10 @@ export const dynamic = 'force-dynamic';
  *
  * Nothing here names the coach in the response: no id in a header, no
  * redirect to the id route. The bytes and the shared portrait headers only.
+ *
+ * The request also carries coach_name, the name the card displayed, and the
+ * portrait is served only while that is still the coach of record's name for
+ * this viewer (below).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -72,6 +77,16 @@ export async function GET(request: NextRequest) {
     } catch {
       return hiddenNotFound();
     }
+
+    // BOUND TO THE COACH THE CARD SHOWS. The card names its coach; this
+    // address names only the card, so if the athlete is reassigned between
+    // the card loading and this (lazy) image loading, the face served would be
+    // the new coach's under the old coach's name. The card sends the name it
+    // shows; the name the same viewer would be shown for the coach of record
+    // now must match it, or the plate is shown. The name is what the viewer
+    // already holds, so the check names no one new (Codex review, #1490).
+    const shownName = new URL(request.url).searchParams.get('coach_name') ?? '';
+    if (shownName !== await coachNameForViewer(principal, coachIdentity)) return hiddenNotFound();
 
     const coachProfile = await getAccountProfile(principal.organizationId, coachIdentity.accountId);
     const coachRelationship = await resolveRelationship(principal, coachIdentity, principal.organizationId);

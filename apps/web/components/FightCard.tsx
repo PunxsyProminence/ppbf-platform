@@ -88,7 +88,7 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
                        coach must not hold the next child's on the plate. */
                     key={card.accountId}
                     accountId={null}
-                    src={coachPortraitUrl(apiBase(), card.accountId)}
+                    src={coachPortraitUrl(apiBase(), card.accountId, card.coachName)}
                     initials={card.coachInitials ?? '—'}
                     name={card.coachName}
                     photoAvailable={card.coachPhotoAvailable}
