@@ -9,6 +9,7 @@ import {
   resolveRelationship,
   toProfileSubject,
 } from '@/src/server/pilot/profileDb';
+import { portraitBytesResponse } from '@/src/server/pilot/profileCardSubject';
 import { decidePortrait } from '@/src/server/pilot/profileVisibility';
 
 export const runtime = 'nodejs';
@@ -98,22 +99,7 @@ export async function GET(
 
     const bytes = await downloadPilotProfilePhoto(profile.photoBlobPath);
 
-    return new Response(new Uint8Array(bytes), {
-      status: 200,
-      headers: {
-        'Content-Type': profile.photoContentType ?? 'application/octet-stream',
-        'Content-Length': String(bytes.byteLength),
-        // no-store, not max-age. A photograph whose release is revoked has to
-        // stop being served, and a shared cache holding a child's face for an
-        // hour after a guardian asked for it to come down defeats the takedown.
-        'Cache-Control': 'private, no-store, max-age=0',
-        // Belt and braces against a rendering context that could reinterpret
-        // the bytes, and against the response being framed elsewhere.
-        'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "default-src 'none'; sandbox",
-        'Content-Disposition': 'inline',
-      },
-    });
+    return portraitBytesResponse(bytes, profile.photoContentType);
   } catch (error) {
     return jsonError(error);
   }
