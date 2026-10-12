@@ -155,8 +155,14 @@ const RESEARCH_FILING_EVENT = 'shadow_unanswered_question';
 const RESEARCH_FILING_ENTITY = 'shadow_question';
 const RESEARCH_FILING_ROLES = new Set(['coach', 'admin', 'organization_admin']);
 
-function researchKeyForQuestion(question: string): string {
-  return question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
+/* The key names the athlete when the conversation is about one (Codex P1 on
+   #1509): the row is filed with that athlete as its subject, so the athlete
+   and their parents read it (OD-2026-10-06-010) and coaches reach it by the
+   athlete, and the same question about another child is its own row. */
+function researchKeyForQuestion(question: string, athleteId?: string | null): string {
+  const normalized = question.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
+  if (!normalized) return '';
+  return athleteId ? `athlete:${athleteId}:${normalized}` : normalized;
 }
 
 interface ResearchFiling {
@@ -697,7 +703,8 @@ function ShadowChatPageContent() {
   }, [mayFileResearch, unansweredReplies]);
 
   async function fileAsResearch(question: string) {
-    const key = researchKeyForQuestion(question);
+    const athleteId = conversationAthleteId ?? null;
+    const key = researchKeyForQuestion(question, athleteId);
     if (!key || researchFilingBusy === key) return;
     setResearchFilingBusy(key);
     setResearchFilingError((current) => ({ ...current, [key]: '' }));
@@ -711,6 +718,7 @@ function ShadowChatPageContent() {
           source_event_name: RESEARCH_FILING_EVENT,
           source_entity_type: RESEARCH_FILING_ENTITY,
           source_entity_id: key,
+          ...(athleteId ? { subject_id: athleteId } : {}),
           research_requirement: question.trim().slice(0, 2000),
           knowledge_gap: 'No verified Library evidence matched this question in SHADOW.',
           source_status: 'weak',
@@ -1809,7 +1817,7 @@ function ShadowChatPageContent() {
                   {msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE' && mayFileResearch
                     ? (() => {
                         const question = questionBefore(messageIndex);
-                        const key = researchKeyForQuestion(question);
+                        const key = researchKeyForQuestion(question, conversationAthleteId);
                         if (!key || researchFilingsRead === 'idle') return null;
                         const filed = researchFilings[key];
                         const error = researchFilingError[key];

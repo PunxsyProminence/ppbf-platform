@@ -15,7 +15,7 @@ import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import ShadowChatPage from './page';
-import { listOwnedShadowSessions } from '@/client/shadowSessions';
+import { listOwnedShadowSessions, loadOwnedShadowSessionMessages } from '@/client/shadowSessions';
 
 const router = { replace: jest.fn(), push: jest.fn() };
 const searchParams = { get: () => null };
@@ -40,10 +40,11 @@ jest.mock('@/components/roleSession', () => ({
 
 jest.mock('@/client/shadowSessions', () => {
   const actual = jest.requireActual('@/client/shadowSessions');
-  return { ...actual, listOwnedShadowSessions: jest.fn() };
+  return { ...actual, listOwnedShadowSessions: jest.fn(), loadOwnedShadowSessionMessages: jest.fn() };
 });
 
 const mockListSessions = listOwnedShadowSessions as jest.MockedFunction<typeof listOwnedShadowSessions>;
+const mockLoadMessages = loadOwnedShadowSessionMessages as jest.MockedFunction<typeof loadOwnedShadowSessionMessages>;
 const originalFetch = global.fetch;
 
 const QUESTION = 'How long should a  13-year-old rest between sparring rounds?';
@@ -277,4 +278,66 @@ test('each filing button names its question', async () => {
 
   const button = await screen.findByRole('button', { name: /^File as research/ });
   expect(button.getAttribute('aria-label')).toBe(`File as research: ${QUESTION.trim()}`);
+});
+
+// Codex P1 on #1509 (OD-2026-10-06-010): a question asked in a conversation
+// about one athlete is filed with that athlete as its subject, so the athlete
+// and their parents read it and coaches reach it by the athlete; and its key
+// names the athlete, so the same words about another child are their own row.
+describe('a conversation about one athlete', () => {
+  async function askInAthleteConversation() {
+    mockListSessions.mockResolvedValue([{
+      conversationId: 'conv-ath-9',
+      title: 'Rest for Jordan',
+      athleteId: 'ath-9',
+      sessionType: 'quick_round',
+      createdAt: '2026-10-12T10:00:00.000Z',
+      updatedAt: '2026-10-12T10:00:00.000Z',
+    }] as never);
+    mockLoadMessages.mockResolvedValue([] as never);
+    await act(async () => {
+      render(<ShadowChatPage />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /Rest for Jordan/ }));
+    });
+    fireEvent.change(await screen.findByLabelText('Your question'), { target: { value: QUESTION } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ask SHADOW' }));
+    });
+    await screen.findByText(/No verified Library evidence matched this question/);
+  }
+
+  test('files the question with the athlete as its subject and an athlete-named key', async () => {
+    const { posts } = mockServer({ requirements: [], afterCreate: [filedRow({ source_entity_id: `athlete:ath-9:${KEY}` })] });
+    await askInAthleteConversation();
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /^File as research/ }));
+    });
+
+    expect(posts).toEqual([expect.objectContaining({
+      subject_id: 'ath-9',
+      source_entity_id: `athlete:ath-9:${KEY}`,
+    })]);
+    expect(await screen.findByText(/Filed as research: open\./)).toBeTruthy();
+  });
+
+  test('the same words filed for the gym, or for another athlete, are not this athlete\'s filing', async () => {
+    mockServer({ requirements: [filedRow(), filedRow({ research_requirement_id: 77, source_entity_id: `athlete:ath-2:${KEY}` })] });
+    await askInAthleteConversation();
+
+    expect(await screen.findByText('Not filed as research yet.')).toBeTruthy();
+  });
+});
+
+test('outside an athlete conversation the question is filed with no subject', async () => {
+  const { posts } = mockServer({ requirements: [], afterCreate: [filedRow()] });
+  await askUnansweredQuestion();
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /^File as research/ }));
+  });
+
+  expect(posts[0]).not.toHaveProperty('subject_id');
+  expect(posts[0]).toMatchObject({ source_entity_id: KEY });
 });
