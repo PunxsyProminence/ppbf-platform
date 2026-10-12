@@ -11,7 +11,7 @@
 // shown only from a good read of that same season -- never after a failed
 // read, and never from a late reply for a season no longer open.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import WrestlingLeagueManagementPage from './page';
 
@@ -48,6 +48,8 @@ function mockFetch(options: {
   capture?: { posts: Array<{ url: string; body: unknown }> };
   rosterPostStatus?: number;
   rosterPostError?: string;
+  roster?: Array<Record<string, unknown>>;
+  athletes?: Array<Record<string, unknown>>;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -69,10 +71,10 @@ function mockFetch(options: {
       return { ok: true, json: async () => ({ items: [EVENT] }) } as Response;
     }
     if (url.includes('/wrestling-league/roster')) {
-      return { ok: true, json: async () => ({ items: [ROSTER_ENTRY] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.roster ?? [ROSTER_ENTRY] }) } as Response;
     }
     if (url.includes('/athletes/list')) {
-      return { ok: true, json: async () => ({ items: [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
+      return { ok: true, json: async () => ({ items: options.athletes ?? [{ athlete_id: 'ath-2', full_name: 'Casey Stone' }] }) } as Response;
     }
     return { ok: true, json: async () => ({ items: [] }) } as Response;
   }) as unknown as typeof fetch;
@@ -429,4 +431,53 @@ test.each([
   expect(screen.queryByText(/Opening Duals/)).toBeNull();
   expect(screen.queryByText(/Jordan Little/)).toBeNull();
   expect(screen.queryByText('Unable to load the season detail.')).toBeNull();
+});
+
+// WO-N8-03, N8-03-Q1 A: inactive roster members leave the active list and keep their history under
+// Inactive; the picker offers no athlete already on this season's roster.
+const INACTIVE = { entry_id: 'entry-2', athlete_id: 'ath-3', athlete_name: 'Riley Shaw', status: 'inactive' };
+
+async function openTheSeason() {
+  await act(async () => {
+    render(<WrestlingLeagueManagementPage />);
+  });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Open detail' }));
+  });
+}
+
+test('an inactive member is listed under Inactive, not in the active roster', async () => {
+  global.fetch = mockFetch({ roster: [ROSTER_ENTRY, INACTIVE] });
+  await openTheSeason();
+
+  const active = await screen.findByRole('list', { name: 'Active roster' });
+  expect(within(active).getByText(/Jordan Little/)).toBeTruthy();
+  expect(within(active).queryByText(/Riley Shaw/)).toBeNull();
+  const inactive = screen.getByRole('list', { name: 'Inactive roster' });
+  expect(within(inactive).getByText('Riley Shaw · inactive')).toBeTruthy();
+  expect(within(inactive).queryByRole('button')).toBeNull();
+});
+
+test('with every member inactive, the active list says it is empty and the history stays', async () => {
+  global.fetch = mockFetch({ roster: [INACTIVE] });
+  await openTheSeason();
+
+  expect(await screen.findByText('No athletes on this season roster.')).toBeTruthy();
+  expect(screen.getByRole('list', { name: 'Inactive roster' })).toBeTruthy();
+});
+
+test('the picker leaves out athletes already on the roster, active or inactive', async () => {
+  global.fetch = mockFetch({
+    roster: [ROSTER_ENTRY, INACTIVE],
+    athletes: [
+      { athlete_id: 'ath-1', full_name: 'Jordan Little' },
+      { athlete_id: 'ath-2', full_name: 'Casey Stone' },
+      { athlete_id: 'ath-3', full_name: 'Riley Shaw' },
+    ],
+  });
+  await openTheSeason();
+
+  const picker = await screen.findByLabelText('Add athlete');
+  const options = within(picker).getAllByRole('option').map((option) => option.textContent);
+  expect(options).toEqual(['Select an athlete…', 'Casey Stone']);
 });

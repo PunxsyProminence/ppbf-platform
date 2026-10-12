@@ -332,6 +332,12 @@ export default function WrestlingLeagueManagementPage() {
   // season that is open. Otherwise each list slot says it could not load --
   // the shared alert may since have been replaced or cleared by another action.
   const detailKnown = detail.seasonId === selectedSeasonId && !detail.failed;
+  const activeRoster = detail.roster.filter((entry) => entry.status === 'active');
+  const inactiveRoster = detail.roster.filter((entry) => entry.status !== 'active');
+  // The picker leaves out anyone already on this season's roster, active or inactive: the server
+  // refuses both today (a roster entry is unique per season), so offering them would only fail.
+  const rostered = new Set(detailKnown ? detail.roster.map((entry) => entry.athlete_id) : []);
+  const pickableAthletes = athletes.filter((athlete) => !rostered.has(athlete.athlete_id));
   const detailUnknownLine = (
     <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Unable to load the season detail.</p>
   );
@@ -487,24 +493,36 @@ export default function WrestlingLeagueManagementPage() {
 
                           <section>
                             <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Roster</h3>
-                            {!detailKnown ? detailUnknownLine : detail.roster.length === 0 ? (
+                            {/* Active members and the inactive ones apart (N8-03-Q1 A): an inactive
+                                member is history, not a current competitor, and stays listed as such. */}
+                            {!detailKnown ? detailUnknownLine : activeRoster.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes on this season roster.</p>
                             ) : (
-                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-                                {detail.roster.map((entry) => (
+                              <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Active roster">
+                                {activeRoster.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     <span className="inline-flex flex-wrap items-center gap-[var(--s2)]">
                                       {entry.athlete_name} · {entry.status}
-                                      {entry.status === 'active' && (
-                                        <button type="button" className="btn btn--ghost" disabled={busy}
-                                          onClick={() => void handleRosterInactive(entry)}>
-                                          Mark inactive
-                                        </button>
-                                      )}
+                                      <button type="button" className="btn btn--ghost" disabled={busy}
+                                        onClick={() => void handleRosterInactive(entry)}>
+                                        Mark inactive
+                                      </button>
                                     </span>
                                   </li>
                                 ))}
                               </ul>
+                            )}
+                            {detailKnown && inactiveRoster.length > 0 && (
+                              <div className="mt-[var(--s3)]">
+                                <h4 className="t-label">Inactive</h4>
+                                <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Inactive roster">
+                                  {inactiveRoster.map((entry) => (
+                                    <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                                      {entry.athlete_name} · inactive
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                             <div className="mt-[var(--s3)] grid gap-[var(--s2)]">
                               <div className="field">
@@ -512,7 +530,7 @@ export default function WrestlingLeagueManagementPage() {
                                 <select id="roster-athlete" className="select" value={rosterAthleteId}
                                   onChange={(e) => setRosterAthleteId(e.target.value)}>
                                   <option value="">Select an athlete…</option>
-                                  {athletes.map((athlete) => (
+                                  {pickableAthletes.map((athlete) => (
                                     <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
                                   ))}
                                 </select>
