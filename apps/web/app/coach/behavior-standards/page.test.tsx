@@ -15,6 +15,13 @@ jest.mock('@/components/RoleSessionGate', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// The client role. Null (no session) unless a test sets it; 'admin' is how
+// the client carries an organization admin.
+let mockRole: string | null = null;
+jest.mock('@/components/roleSession', () => ({
+  getRoleSessionSnapshot: () => (mockRole ? { role: mockRole, expiresAt: Date.now() + 60_000 } : null),
+}));
+
 const STANDARDS = [
   { standard_id: 's1', standard_name: 'Reset after frustration', description: 'walk it off, come back',
     recognition_kind: 'took_the_correction', active: true },
@@ -41,6 +48,7 @@ function mockFetch(capture?: { posts: unknown[] }) {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  mockRole = null;
 });
 
 test('the page says out loud where a concern goes, and that no behaviour log exists', async () => {
@@ -142,4 +150,143 @@ test('an athlete list that fails does not mark standards that loaded as unreadab
 
   expect((await screen.findAllByText('Reset after frustration')).length).toBeGreaterThan(0);
   expect(screen.queryByTestId('standards-unreadable')).toBeNull();
+});
+
+// Issue #1445 (OD-2026-10-07-010): the organization admin posts the gym's
+// standards through the existing post_standard write. A coach sees no form.
+
+test('an organization admin posts a standard once, however fast the button is pressed, and the list is re-read', async () => {
+  mockRole = 'admin';
+  const posts: unknown[] = [];
+  let reads = 0;
+  let finishPost: (() => void) | null = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === 'POST') {
+      posts.push(JSON.parse(String(init.body)));
+      await new Promise<void>((resolve) => { finishPost = resolve; });
+      return { ok: true, json: async () => ({ item: { standard_id: 's3' } }) } as Response;
+    }
+    if (url.includes('/behavior-standards')) {
+      reads += 1;
+      return { ok: true, json: async () => ({ items: STANDARDS }) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: '  Shake hands after sparring ' } });
+  fireEvent.change(screen.getByLabelText('Recognition that evidences it'), { target: { value: 'good_partner' } });
+  fireEvent.change(screen.getByLabelText('Description (optional)'), { target: { value: 'every round' } });
+
+  const button = screen.getByRole('button', { name: 'Post standard' });
+  await act(async () => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  expect(posts).toEqual([{
+    action: 'post_standard',
+    standard_name: 'Shake hands after sparring',
+    recognition_kind: 'good_partner',
+    description: 'every round',
+  }]);
+  const readsBefore = reads;
+  await act(async () => {
+    finishPost?.();
+  });
+
+  expect(await screen.findByText('Standard posted.')).toBeTruthy();
+  expect(reads).toBe(readsBefore + 1);
+  expect((screen.getByLabelText('Standard name') as HTMLInputElement).value).toBe('');
+});
+
+test('a coach sees no posting form and no retire control', async () => {
+  mockRole = 'coach';
+  global.fetch = mockFetch();
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+
+  expect((await screen.findAllByText('Reset after frustration')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('Post a standard')).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Retire/ })).toBeNull();
+  // The coach's own two paths are unchanged.
+  expect(screen.getByRole('button', { name: 'Record recognition' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Send to safeguarding' })).toBeTruthy();
+});
+
+test('with no standards posted yet, the organization admin still gets the form', async () => {
+  mockRole = 'admin';
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ items: [] }) }) as Response) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+
+  expect(await screen.findByText(/No standards posted yet/i)).toBeTruthy();
+  expect(screen.getByText('Post a standard')).toBeTruthy();
+});
+
+test('a post without a name or a recognition sends nothing and says what is missing', async () => {
+  mockRole = 'admin';
+  const capture = { posts: [] as unknown[] };
+  global.fetch = mockFetch(capture);
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: 'Shake hands' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Post standard' }));
+  });
+
+  expect(capture.posts).toHaveLength(0);
+  expect(screen.getByText(/needs a name and the recognition that evidences it/i)).toBeTruthy();
+});
+
+test('a post the server refuses shows the server reason and keeps what was typed', async () => {
+  mockRole = 'admin';
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      return { ok: false, status: 403, json: async () => ({ error: 'Forbidden: role not allowed' }) } as Response;
+    }
+    if (String(input).includes('/behavior-standards')) {
+      return { ok: true, json: async () => ({ items: STANDARDS }) } as Response;
+    }
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  fireEvent.change(await screen.findByLabelText('Standard name'), { target: { value: 'Shake hands' } });
+  fireEvent.change(screen.getByLabelText('Recognition that evidences it'), { target: { value: 'good_partner' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Post standard' }));
+  });
+
+  expect(screen.getByText('Forbidden: role not allowed')).toBeTruthy();
+  expect(screen.queryByText('Standard posted.')).toBeNull();
+  expect((screen.getByLabelText('Standard name') as HTMLInputElement).value).toBe('Shake hands');
+});
+
+test('the organization admin retires a standard through retire_standard', async () => {
+  mockRole = 'admin';
+  const capture = { posts: [] as unknown[] };
+  global.fetch = mockFetch(capture);
+
+  await act(async () => {
+    render(<BehaviorStandardsPage />);
+  });
+  fireEvent.change(await screen.findByLabelText('Standard', { selector: '#rec-standard' }), { target: { value: 's1' } });
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Retire Reset after frustration' }));
+  });
+
+  expect((screen.getByLabelText('Standard', { selector: '#rec-standard' }) as HTMLSelectElement).value).toBe('');
+  expect(capture.posts).toEqual([{ action: 'retire_standard', standard_id: 's1' }]);
+  expect(await screen.findByText(/Standard retired/)).toBeTruthy();
 });
