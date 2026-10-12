@@ -526,6 +526,17 @@ export async function getResearchLibrary(
          where shelved.organization_id = pilot.research_library.organization_id
            and shelved.publication_id = pilot.research_library.publication_id
            and shelved_athlete.deleted_at is not null)
+      -- The source video must still be served. Archiving a video
+      -- (videoArchive.ts setVideoArchiveState) only moves video_sessions.status
+      -- and writes nothing on the shelf, so without this an archived clip's
+      -- title, description and tags stayed on the gym-wide shelf. Only a
+      -- 'ready' video is distributable; restoring it to 'ready' brings the
+      -- entry back, because nothing on the shelf row was changed.
+      and not exists (
+        select 1 from pilot.video_sessions source_video
+         where source_video.organization_id = pilot.research_library.organization_id
+           and source_video.video_session_id = pilot.research_library.video_session_id
+           and source_video.status <> 'ready')
   `;
   const params: unknown[] = [organizationId];
 
