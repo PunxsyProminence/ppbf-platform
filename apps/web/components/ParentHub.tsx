@@ -22,8 +22,6 @@ interface Child {
   id: string;
   name: string;
   track: string;
-  attendancePercent: number | null;
-  currentProgress: string | null;
 
   /* Identity. A guardian is inside their own child's circle, so a released
      portrait reaches them -- and only their own children's, because the server
@@ -512,8 +510,6 @@ export default function ParentHub() {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
             track: 'Unavailable',
-            attendancePercent: null,
-            currentProgress: null,
             accountId: null,
             initials: '\u2014',
             photoAvailable: false,
@@ -663,11 +659,62 @@ export default function ParentHub() {
   }, [activeChildId]);
   const shownBodyMass = childBodyMass?.athleteId === activeChildId ? childBodyMass : null;
 
+  /* PROGRESS is what the child has earned, not a score (WO-PH-01 Q1 = A): the
+     milestone awards and the completed-session count that
+     /api/pilot/achievements/milestones already serves a guardian, after the
+     route checks the guardian link to this child. AthleteAchievements on the
+     Progress tab reads the same route, so the two cannot disagree. Keyed by
+     athlete like childBodyMass, and the superseded read is aborted, so a
+     slow answer for one child never shows under the other's name. 'failed'
+     is kept apart from a real zero: a child with nothing earned yet reads 0,
+     a read that did not answer reads Unavailable. */
+  const [childProgress, setChildProgress] = useState<
+    | { athleteId: string; state: 'loaded'; milestonesEarned: number; sessionsCompleted: number }
+    | { athleteId: string; state: 'failed' }
+    | null
+  >(null);
+  useEffect(() => {
+    if (!activeChildId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/achievements/milestones?athlete_id=${encodeURIComponent(activeChildId)}`,
+          { method: 'GET', credentials: 'include', signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        const payload = response.ok
+          ? (await response.json().catch(() => null)) as { items?: unknown; completed_sessions?: unknown } | null
+          : null;
+        if (controller.signal.aborted) return;
+        if (!payload || !Array.isArray(payload.items) || typeof payload.completed_sessions !== 'number') {
+          setChildProgress({ athleteId: activeChildId, state: 'failed' });
+          return;
+        }
+        setChildProgress({
+          athleteId: activeChildId,
+          state: 'loaded',
+          // One award per milestone per athlete is the table's primary key,
+          // so the rows are the milestones earned.
+          milestonesEarned: payload.items.length,
+          sessionsCompleted: payload.completed_sessions,
+        });
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
+        setChildProgress({ athleteId: activeChildId, state: 'failed' });
+      }
+    })();
+    return () => controller.abort();
+  }, [activeChildId]);
+  const shownProgress = childProgress?.athleteId === activeChildId ? childProgress : null;
+  const progressText = shownProgress?.state === 'loaded'
+    ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} completed`
+    : 'Unavailable';
+
   const activeChild = children.find(c => c.id === activeChildId);
   // Only the card that was read for the child now selected. See the note on
   // the childCard state for why the match happens here.
   const shownCard = childCard.athleteId === activeChildId ? childCard.card : null;
-  const hasLiveChildMetrics = activeChild?.attendancePercent !== null && Boolean(activeChild?.currentProgress);
   /* Per-child views of the one family-scoped read above. The server already
      refused every athlete this guardian does not hold; this narrows to the
      child on screen. */
@@ -718,6 +765,23 @@ export default function ParentHub() {
       // panel, so the standing is shown rather than flattened away.
       standing: registration.status === 'waitlisted' ? 'Waitlisted' : 'Registered',
     }));
+  /* The summary's attendance and upcoming figures are counts of the rows the
+     Attendance tab lists for the same child, from the same read, so the tile
+     and the tab cannot disagree. Neither exists until that read answered. */
+  const activeAttendanceTally = schedulerFeedState === 'loaded'
+    ? {
+      present: activeAttendanceEntries.filter((entry) => entry.status === 'Present').length,
+      excused: activeAttendanceEntries.filter((entry) => entry.status === 'Excused').length,
+      absent: activeAttendanceEntries.filter((entry) => entry.status === 'Absent').length,
+    }
+    : null;
+  // Newest first, so the head of the list is the last session marked.
+  const lastAttendanceMark = activeAttendanceEntries[0] ?? null;
+  // A waitlist is not a place: the tile counts the sessions the child holds a
+  // place in. The Attendance tab still lists waitlisted ones, marked as such.
+  const activeUpcomingPlaces = schedulerFeedState === 'loaded'
+    ? activeUpcomingSessions.filter((session) => session.standing === 'Registered').length
+    : null;
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
 
   function milestoneStatusTone(status: ProgressMilestone['status']): string {
@@ -796,27 +860,18 @@ export default function ParentHub() {
           <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
         </div>
 
-        {/* ROLE SUMMARY PANEL. Home Tasks counts the messages that carry an
-            unticked due date, across every child, and only once the messages
-            read answered (the same rule as the Messages tile: an unanswered
-            read is Unavailable, never 0). Upcoming sessions still have no
-            feed the tile can count from, so that tile passes null -- a
-            derived 0 would tell a parent "nothing is scheduled", which nobody
-            verified. */}
+        {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
+            selected child's; Home Tasks and Messages count across every
+            child. Each tile is Unavailable until the read it counts from has
+            answered, never 0: a derived 0 would tell a parent "nothing is
+            scheduled" or "nothing is due", which nobody verified. */}
         <ParentSummaryPanel
-          childProgress={activeChild?.currentProgress || 'Unavailable - awaiting backend progression feed'}
+          childProgress={progressText}
           tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
-          upcomingEvents={null}
-          attendancePercent={activeChild?.attendancePercent ?? null}
+          upcomingEvents={activeUpcomingPlaces}
+          attendance={activeAttendanceTally}
           unreadMessages={messagesLoaded ? messages.length : null}
         />
-
-        {!hasLiveChildMetrics && activeChild ? (
-          <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
-            <p className="t-label">Data Availability</p>
-            <p className="t-body mt-[var(--s2)]">Attendance and progression metrics are hidden until backend-authoritative feeds are available.</p>
-          </div>
-        ) : null}
 
         {/* CHILD SELECTOR */}
         {childrenLoading && (
@@ -1071,14 +1126,21 @@ export default function ParentHub() {
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Progress</p>
-                        <p className="t-body font-semibold">{activeChild.currentProgress || 'Unavailable - awaiting backend progression feed'}</p>
+                        <p className="t-body font-semibold">{progressText}</p>
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Attendance</p>
-                        {activeChild.attendancePercent !== null ? (
-                          <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{activeChild.attendancePercent}%</p>
+                        {activeAttendanceTally ? (
+                          <>
+                            <p className="t-body font-semibold">
+                              {`Present ${activeAttendanceTally.present} · Excused ${activeAttendanceTally.excused} · Absent ${activeAttendanceTally.absent}`}
+                            </p>
+                            {lastAttendanceMark ? (
+                              <p className="t-muted">{`Last marked ${lastAttendanceMark.date}`}</p>
+                            ) : null}
+                          </>
                         ) : (
-                          <p className="t-body font-semibold">Unavailable - not yet tracked</p>
+                          <p className="t-body font-semibold">Unavailable</p>
                         )}
                       </div>
                       {/* Membership/scholarship/community-service status has no

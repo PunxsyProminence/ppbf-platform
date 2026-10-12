@@ -113,7 +113,11 @@ interface ParentSummaryPanelProps {
   // not exist or did not load.
   tasksDue: number | null;
   upcomingEvents: number | null;
-  attendancePercent: number | null;
+  /* The selected child's recorded attendance marks, counted, never divided:
+     the marks record what happened, and nothing records what was expected,
+     so no rate a family could read is defined (see the scheduler note in
+     ParentHub.tsx). */
+  attendance: { present: number; excused: number; absent: number } | null;
   unreadMessages: number | null;
 }
 
@@ -158,18 +162,6 @@ const KPI_VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-lg)] font-bold 
    measurement cells compose it with their material. Banded safety cells
    (Law 2) keep the hand-composed pair above. */
 const STAT_TILE = 'stat';
-
-function getAttendanceColor(attendancePercent: number): string {
-  if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]';
-  if (attendancePercent >= 75) return 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]';
-  return 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]';
-}
-
-function getAttendanceGlyph(attendancePercent: number): string {
-  if (attendancePercent >= 90) return '✓';
-  if (attendancePercent >= 75) return '▲';
-  return '✕';
-}
 
 // ATHLETE SUMMARY PANEL
 export function AthleteSummaryPanel({
@@ -345,15 +337,13 @@ export function ParentSummaryPanel({
   childProgress,
   tasksDue,
   upcomingEvents,
-  attendancePercent,
+  attendance,
   unreadMessages
 }: Readonly<ParentSummaryPanelProps>) {
   // null means no data has been tracked or the read failed -- every such
   // cell must render as a neutral "no data" state, not as a number. Feeding
   // null through as 0 would tell a parent "nothing due / nothing upcoming /
-  // no messages" when the truth is "nobody knows"; on attendance it would
-  // additionally color-code the absence of data as the same red band a
-  // genuinely low percentage gets.
+  // no messages" when the truth is "nobody knows".
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Progress */}
@@ -389,17 +379,16 @@ export function ParentSummaryPanel({
       )}
 
       {/* Attendance */}
-      {attendancePercent === null ? (
+      {attendance === null ? (
         <div className={KPI_TILE}>
           <p className="t-label">Attendance</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
-        <div className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${getAttendanceColor(attendancePercent)}`}>
+        <div className={KPI_TILE}>
           <p className="t-label">Attendance</p>
-          <p className={KPI_VALUE}>
-            <span aria-hidden="true">{getAttendanceGlyph(attendancePercent)} </span>
-            <span>{`${attendancePercent}%`}</span>
+          <p className="t-body mt-[var(--s3)]">
+            {`Present ${attendance.present} · Excused ${attendance.excused} · Absent ${attendance.absent}`}
           </p>
         </div>
       )}
