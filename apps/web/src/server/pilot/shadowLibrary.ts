@@ -778,6 +778,8 @@ export async function listShadowLibrarySources(input: {
          join pilot.shadow_library_documents d
            on d.document_id = c.document_id and d.organization_id = c.organization_id
         where d.source_id = s.source_id and d.organization_id = s.organization_id
+          -- Owned and open sources are not held to the limit: not counted.
+          and s.rights_status not in ('ppbf_owned', 'open_licence')
      ) held on true
      where organization_id = $1
        and ($2::text is null or source_type = $2)

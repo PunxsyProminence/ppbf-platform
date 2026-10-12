@@ -965,6 +965,7 @@ export default function ResearchIntakePage() {
             sources={curatorSources}
             shelf={onPlatformShelf ? 'platform' : 'gym'}
             truncated={curatorSourcesTruncated}
+            onSaved={() => void refreshCuratorSources()}
           />
         ) : null}
       </div>

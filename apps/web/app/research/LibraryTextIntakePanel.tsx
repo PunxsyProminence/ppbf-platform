@@ -126,10 +126,14 @@ export default function LibraryTextIntakePanel({
   sources,
   shelf = 'gym',
   truncated = false,
+  onSaved,
 }: {
   readonly sources: readonly LibraryTextIntakeSource[];
   readonly shelf?: IntakeShelf;
   readonly truncated?: boolean;
+  /** Called after text was saved (whole or in part), so the page can read
+   *  the sources list again and the excerpt counts stay current. */
+  readonly onSaved?: () => void;
 }) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -152,7 +156,25 @@ export default function LibraryTextIntakePanel({
   }, [draft.text]);
   const locked = busy || resume !== null;
 
-  const budget = sources.find((source) => source.source_id === draft.sourceId)?.excerpt_budget ?? null;
+  /* What this panel saved since the sources list was last read (R1 #1). The
+     list's held_* are counted at read time; without this, a second excerpt in
+     the same session is checked against counts that leave out the first. Keyed
+     to the sources list it was counted against, so a fresh list (onSaved asks
+     the page for one) replaces it rather than being added to. */
+  const [savedSince, setSavedSince] = useState<{
+    list: readonly LibraryTextIntakeSource[];
+    bySource: Record<string, { passages: number; characters: number }>;
+  }>({ list: sources, bySource: {} });
+  const sinceList = savedSince.list === sources ? savedSince.bySource : {};
+  const listedBudget = sources.find((source) => source.source_id === draft.sourceId)?.excerpt_budget ?? null;
+  const sinceSource = sinceList[draft.sourceId];
+  const budget = useMemo(() => (listedBudget
+    ? {
+        ...listedBudget,
+        held_passages: listedBudget.held_passages + (sinceSource?.passages ?? 0),
+        held_characters: listedBudget.held_characters + (sinceSource?.characters ?? 0),
+      }
+    : null), [listedBudget, sinceSource]);
   // What this text would bring the source to, in the server's own units. Not
   // asked while finishing a partly saved document: its saved parts are
   // already in held_*, so counting them again would refuse a valid finish.
@@ -247,6 +269,25 @@ export default function LibraryTextIntakePanel({
     try {
       const result = await submitLibraryTextIntake(apiBase(), intakeInput(), { resume });
       if (result.ok) {
+        if (listedBudget) {
+          const parts = splitIntakeText(draft.text);
+          const sourceId = draft.sourceId;
+          setSavedSince((current) => {
+            const base = current.list === sources ? current.bySource : {};
+            const prior = base[sourceId] ?? { passages: 0, characters: 0 };
+            return {
+              list: sources,
+              bySource: {
+                ...base,
+                [sourceId]: {
+                  passages: prior.passages + parts.length,
+                  characters: prior.characters + parts.reduce((sum, part) => sum + serverCharacterCount(part.text), 0),
+                },
+              },
+            };
+          });
+        }
+        onSaved?.();
         setOutcome({ kind: 'saved', chunkCount: result.chunkCount, documentName: draft.documentName.trim() });
         setResume(null);
         // The source stays selected: several excerpts from one source is the
@@ -255,6 +296,8 @@ export default function LibraryTextIntakePanel({
       } else if (result.resume) {
         setResume(result.resume);
         setOutcome({ kind: 'incomplete', message: result.message });
+        // Some parts were saved; the page's fresh list counts them.
+        onSaved?.();
       } else {
         setOutcome({ kind: 'refused', message: result.message });
       }
@@ -356,7 +399,9 @@ export default function LibraryTextIntakePanel({
           ) : null}
 
           <p className="t-muted">
-            {formatIntakeCount(textLength)} of {formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)} characters
+            {budget
+              ? `${formatIntakeCount(textLength)} characters`
+              : `${formatIntakeCount(textLength)} of ${formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)} characters`}
             {partCount > 0 ? ` · saved as ${partCount} ${partCount === 1 ? 'part' : 'parts'}, in order` : ''}
           </p>
           {budget ? (

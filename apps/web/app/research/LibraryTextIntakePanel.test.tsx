@@ -428,3 +428,41 @@ describe('LibraryTextIntakePanel: the excerpt limit of a non-owned source', () =
     expect(calls).toHaveLength(1 + parts.length);
   });
 });
+
+describe('LibraryTextIntakePanel: the limit after a save in the same session', () => {
+  const parts = splitIntakeText(TEXT);
+  const characters = parts.reduce((sum, part) => sum + Array.from(part.text.trim()).length, 0);
+  const sources = [{
+    ...SOURCES[1],
+    excerpt_budget: { max_passages: 20, max_characters: 30_000, held_passages: 20 - 2 * parts.length + 1, held_characters: 0 },
+  }];
+
+  it('counts what it just saved, so a second text over the limit only with the first is refused before sending, and asks the page for a fresh list', async () => {
+    const onSaved = jest.fn();
+    const calls = installFetch((_call, index) => (index === 0 ? created : { status: 201 }));
+    render(<LibraryTextIntakePanel sources={sources} onSaved={onSaved} />);
+    fillForm();
+    await click('Save to Library as pending');
+    expect(calls).toHaveLength(1 + parts.length);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('excerpt-limit').textContent).toContain(
+      `Saved so far: ${20 - parts.length + 1} passages, ${new Intl.NumberFormat('en-US').format(characters)} characters.`,
+    );
+
+    fireEvent.change(screen.getByLabelText('Excerpt label'), { target: { value: 'Results' } });
+    fireEvent.change(screen.getByLabelText('Where in the source'), { target: { value: 'pp. 7-9' } });
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: TEXT } });
+    await click('Save to Library as pending');
+
+    expect(calls).toHaveLength(1 + parts.length);
+    expect(screen.getByText(/over its limit of 20 passages/)).toBeTruthy();
+  });
+
+  it('a limited source shows its own limit, not the 48,000-character counter', () => {
+    installFetch(() => created);
+    render(<LibraryTextIntakePanel sources={sources} />);
+    fireEvent.change(screen.getByLabelText('Registered source'), { target: { value: 'source_b' } });
+
+    expect(screen.queryByText(/of 48,000 characters/)).toBeNull();
+  });
+});
