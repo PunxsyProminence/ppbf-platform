@@ -11,6 +11,7 @@ import {
 } from '@/src/server/pilot/drillLibraryV3';
 import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
 
 export const runtime = 'nodejs';
 
@@ -55,9 +56,9 @@ export async function GET(request: NextRequest) {
     // W-D2, owner rule of 2026-09-17. The role gate above is UNCHANGED and
     // still admits all eight reader roles -- an athlete is as entitled to reach
     // this route as they ever were. What changed is what the route hands back
-    // to one of those roles.
+    // to the readers who do not author drills.
     //
-    // Two narrowings, both on the athlete branch only:
+    // Two narrowings, both on the non-author branch only:
     //   WHICH DRILLS -- only reference drills this gym has adopted and still
     //                   runs. Before this, an athlete session could enumerate
     //                   the entire active reference corpus by URL, which made
@@ -68,26 +69,30 @@ export async function GET(request: NextRequest) {
     //                   ids, its content class and who wrote it; none of that
     //                   belongs on a minor's screen.
     //
-    // Everyone else -- coach, organization_admin, admin, platform_owner, parent,
-    // volunteer, staff -- reads the same drill shapes as before. The three
-    // authoring roles also receive a `lifecycle` key beside them (W-D4C, below).
-    // Board is still refused by the gate.
-    const isAthlete = principal.role === 'athlete';
-    // Where a reference stands in this gym -- including what it retired -- is
-    // governance for the people who promote, retire and restore: the same three
-    // roles /api/pilot/drills shows retired drills to. Every other reader
-    // (parent, volunteer, staff, platform owner) gets the library exactly as
-    // before, without it. Compared by name rather than held in a role array:
-    // this route's only role list is the shared reader policy.
-    const isAuthor = principal.role === 'coach' || principal.role === 'organization_admin' || principal.role === 'admin';
+    // THE BRANCH WAS ATHLETE-ONLY until issue #1475 Part D. A parent, a
+    // volunteer, a staff member and the platform owner then received the coach
+    // shapes, and with them created_by_account_id -- a staff account id --
+    // beside created_by_role, source_ref, grounding_claim_ids and
+    // field_provenance. They read the athlete projection now
+    // (OD-2026-10-06-025 ruling 2: families see a coach's display name, never
+    // the internal account id).
+    //
+    // The authors -- coach and organization admin, with the legacy 'admin' row
+    // name -- read the same drill shapes as before, and also receive a
+    // `lifecycle` key beside them (W-D4C, below): where a reference stands in
+    // this gym, including what it retired, is governance for the people who
+    // promote, retire and restore. Board is still refused by the gate.
+    // Compared by name rather than held in a role array: this route's only
+    // role list is the shared reader policy.
+    const isAuthor = roleEquals(principal.role, 'coach') || roleEquals(principal.role, 'organization_admin');
 
     if (drillId) {
       // Four different reasons to say no -- not promoted, promotion retired,
       // reference retracted, another gym's drill -- deliberately answer
       // identically, so the response cannot be used to probe what exists.
-      const detail = isAthlete
-        ? await getAthleteDrillDetail(principal.organizationId, drillId)
-        : await getDrillWithDetail(principal.organizationId, drillId);
+      const detail = isAuthor
+        ? await getDrillWithDetail(principal.organizationId, drillId)
+        : await getAthleteDrillDetail(principal.organizationId, drillId);
       if (!detail) {
         return NextResponse.json({ error: 'DRILL_NOT_FOUND' }, { status: 404 });
       }
@@ -110,11 +115,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (isAthlete) {
+    if (!isAuthor) {
       // The filters below are planning axes -- discipline, category, difficulty
       // and the three skill parameters -- expressed in taxonomy the athlete
       // projection does not carry. Filtering by values the caller can never see
-      // would be a parameter that cannot be used correctly, so the athlete list
+      // would be a parameter that cannot be used correctly, so this list
       // ignores them and returns the gym's adopted set, which is small by
       // construction.
       const drills = await listAthleteDrillLibrary(principal.organizationId);
@@ -129,9 +134,6 @@ export async function GET(request: NextRequest) {
       relatedSkillId: searchParams.get('related_skill_id') ?? undefined,
       familyId: searchParams.get('family_id') ?? undefined,
     });
-    if (!isAuthor) {
-      return NextResponse.json({ drills });
-    }
     // Keyed by reference drill id, beside the list rather than inside each row,
     // so the row shape every existing consumer reads is unchanged.
     const [lifecycle, floorTested] = await Promise.all([

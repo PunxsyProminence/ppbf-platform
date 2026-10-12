@@ -9,10 +9,13 @@ import {
   listAuthoredAnnouncementIds,
   listLiveAnnouncements,
   projectAnnouncementForBoard,
+  type AnnouncementPlacement,
   type BoardVisibleAnnouncement,
   type PilotAnnouncement,
 } from '@/src/server/pilot/announcements';
 import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
+import type { PilotRole } from '@/src/server/pilot/contracts';
+import { roleEquals } from '@/src/server/pilot/roleAlias';
 
 export const runtime = 'nodejs';
 
@@ -25,6 +28,41 @@ function projectForPrincipal(
   announcements: PilotAnnouncement[],
 ): PilotAnnouncement[] | BoardVisibleAnnouncement[] {
   return role === 'board' ? announcements.map(projectAnnouncementForBoard) : announcements;
+}
+
+/* WHICH PLACEMENTS EACH ROLE MAY ASK THE LIVE READ FOR (issue #1475 Part B).
+   The placement comes from the request body, and until this table existed any
+   signed-in role could name any of them: an athlete could ask for the coaches'
+   board or the parents'. The rows follow what the Customize screen says each
+   board is for and which screens draw it. gym_notices is the public wall and
+   'everywhere' is every signed-in surface, so every role may ask for those
+   two. Coach, organization admin, platform owner and board draw all four
+   boards on /chalkboard and keep all five.
+
+   Written out per role rather than derived from ANNOUNCEMENT_PLACEMENTS, and
+   with no fallback row: a placement added later, or a role, reaches nobody
+   here until someone names it. */
+const EVERY_PLACEMENT: readonly AnnouncementPlacement[] = [
+  'gym_notices',
+  'athlete_workspace',
+  'coach_workspace',
+  'parent_hub',
+  'everywhere',
+];
+
+const LIVE_PLACEMENTS_BY_ROLE: ReadonlyArray<{ role: PilotRole; placements: readonly AnnouncementPlacement[] }> = [
+  { role: 'coach', placements: EVERY_PLACEMENT },
+  { role: 'organization_admin', placements: EVERY_PLACEMENT },
+  { role: 'platform_owner', placements: EVERY_PLACEMENT },
+  { role: 'board', placements: EVERY_PLACEMENT },
+  { role: 'athlete', placements: ['athlete_workspace', 'gym_notices', 'everywhere'] },
+  { role: 'parent', placements: ['parent_hub', 'gym_notices', 'everywhere'] },
+  { role: 'staff', placements: ['gym_notices', 'everywhere'] },
+  { role: 'volunteer', placements: ['gym_notices', 'everywhere'] },
+];
+
+function mayReadLivePlacement(role: PilotRole, placement: AnnouncementPlacement): boolean {
+  return LIVE_PLACEMENTS_BY_ROLE.some((row) => roleEquals(role, row.role) && row.placements.includes(placement));
 }
 
 export async function POST(request: NextRequest) {
@@ -72,7 +110,14 @@ export async function POST(request: NextRequest) {
     const placement = body.placement ?? 'gym_notices';
     const kind = body.kind ?? 'notice';
 
-    if (!isAnnouncementPlacement(placement) || !isAnnouncementKind(kind)) {
+    // A placement that is not this role's own is answered exactly as a word
+    // that is no placement at all, before anything is read, so the answer
+    // does not say the board exists.
+    if (
+      !isAnnouncementPlacement(placement)
+      || !isAnnouncementKind(kind)
+      || !mayReadLivePlacement(principal.role, placement)
+    ) {
       throw new Error('Unsupported placement or kind');
     }
 
@@ -85,10 +130,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       organization_id: principal.organizationId,
-      // The live read too. It carries no role check at all -- every
-      // authenticated principal reaches it, board included -- so projecting
-      // only the authoring view above would leave the same fields reachable
-      // through the path with the weaker gate.
+      // The live read too. Every authenticated principal reaches it, board
+      // included, each for its own placements -- so projecting only the
+      // authoring view above would leave the same fields reachable through
+      // the path with the weaker gate.
       announcements: projectForPrincipal(principal.role, announcements),
     });
   } catch (error) {

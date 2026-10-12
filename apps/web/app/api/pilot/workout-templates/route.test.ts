@@ -328,3 +328,210 @@ test('a missing table currently surfaces as a 500, with no fallback', async () =
 
   expect((await GET(getRequest())).status).toBe(500);
 });
+
+/**
+ * WHAT EACH READER RECEIVES (issue #1475, lane P2b).
+ *
+ * The gate admits eight roles and the route used to hand all eight the stored
+ * rows: an athlete signed in to the live app received created_by_account_id (a
+ * staff account id), created_by_role and coach_notes on every template. A
+ * coach and an organization admin still get the stored rows; every other
+ * admitted role gets the allow-list in workoutTemplateProjection.ts.
+ *
+ * The projection is NOT mocked: these cases read the response body the route
+ * sends. The reduced shape is asserted as an exact key list, so a field added
+ * to the allow-list by mistake fails here, and the marker values are searched
+ * for in the response text, so a staff value arriving under any key fails too.
+ */
+describe('what each reader receives', () => {
+  const MARK = 'STAFF-ONLY-MARK';
+
+  const STORED_TEMPLATE = {
+    organization_id: 'org-1',
+    template_id: 'tpl-1',
+    lineage_id: 'lin-1',
+    version: 2,
+    supersedes_template_id: 'tpl-0',
+    superseded_at: null,
+    name: 'Monday technical',
+    session_type: 'technical',
+    difficulty: 'intermediate',
+    age_band: '13-15',
+    duration_minutes: 60,
+    intent: `${MARK} intent`,
+    coach_notes: `${MARK} coach notes`,
+    requires_coach_authorization: false,
+    active: true,
+    created_by_account_id: `${MARK}-author@example.test`,
+    created_by_role: `${MARK}-role`,
+    created_at: '2026-10-01T00:00:00.000Z',
+    updated_at: '2026-10-02T00:00:00.000Z',
+  };
+
+  const STORED_ITEM = {
+    organization_id: 'org-1',
+    item_id: 'itm-1',
+    template_id: 'tpl-1',
+    ordinal: 1,
+    block: 'warmup',
+    drill_id: 'drl-1',
+    free_text_drill: `${MARK} free text drill`,
+    scale_level: 'B',
+    duration_minutes: 10,
+    rep_count: null,
+    contact_level: 'none',
+    coach_note: `${MARK} item note`,
+    created_at: '2026-10-01T00:00:00.000Z',
+    head_drill_id: 'drl-1',
+    head_drill_name: 'Catch and Return',
+    uses_older_drill_version: false,
+  };
+
+  // A key beside `template` and `items`, as a later read may add one for the
+  // coach's screen: a full-row reader gets it, nobody else does.
+  const STORED_DETAIL = { template: STORED_TEMPLATE, items: [STORED_ITEM], coach_only_extra: `${MARK} extra` };
+
+  // The last two are the coach's other free text (Jason, 2026-10-12: "strip
+  // them").
+  const STAFF_FIELDS = [
+    'created_by_account_id',
+    'created_by_role',
+    'coach_notes',
+    'coach_note',
+    'intent',
+    'free_text_drill',
+  ];
+
+  const READER_TEMPLATE_KEYS = [
+    'organization_id',
+    'template_id',
+    'lineage_id',
+    'version',
+    'supersedes_template_id',
+    'superseded_at',
+    'name',
+    'session_type',
+    'difficulty',
+    'age_band',
+    'duration_minutes',
+    'requires_coach_authorization',
+    'active',
+    'created_at',
+    'updated_at',
+  ];
+
+  const READER_ITEM_KEYS = [
+    'organization_id',
+    'item_id',
+    'template_id',
+    'ordinal',
+    'block',
+    'drill_id',
+    'scale_level',
+    'duration_minutes',
+    'rep_count',
+    'contact_level',
+    'created_at',
+    'head_drill_id',
+    'head_drill_name',
+    'uses_older_drill_version',
+  ];
+
+  // Listed in full, not derived from the projection's own predicate.
+  const FULL_ROW_ROLES: PilotRole[] = ['coach', 'organization_admin', 'admin'];
+  const REDUCED_ROW_ROLES: PilotRole[] = ['athlete', 'parent', 'volunteer', 'staff', 'platform_owner'];
+
+  /** Every object key in a JSON value, at any depth. */
+  function keysAtAnyDepth(value: unknown, found = new Set<string>()): Set<string> {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => keysAtAnyDepth(entry, found));
+    } else if (value !== null && typeof value === 'object') {
+      for (const [key, entry] of Object.entries(value)) {
+        found.add(key);
+        keysAtAnyDepth(entry, found);
+      }
+    }
+    return found;
+  }
+
+  beforeEach(() => {
+    mockList.mockResolvedValue([STORED_TEMPLATE]);
+    mockDetail.mockResolvedValue(STORED_DETAIL);
+  });
+
+  test('the two groups are exactly the roles the gate admits', () => {
+    expect([...FULL_ROW_ROLES, ...REDUCED_ROW_ROLES].sort()).toEqual([...COACHING_CONTENT_READER_ROLES].sort());
+  });
+
+  describe.each(REDUCED_ROW_ROLES)('%s', (role) => {
+    test('lists templates without the author, the author role, the coach notes or the intent', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await GET(getRequest());
+
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      const body = JSON.parse(text) as { templates: Array<Record<string, unknown>> };
+      expect(Object.keys(body)).toEqual(['templates']);
+      expect(body.templates).toHaveLength(1);
+      expect(Object.keys(body.templates[0])).toEqual(READER_TEMPLATE_KEYS);
+      for (const field of STAFF_FIELDS) {
+        expect(keysAtAnyDepth(body).has(field)).toBe(false);
+      }
+      expect(text).not.toContain(MARK);
+      // What is left is the stored value, not a placeholder.
+      expect(body.templates[0].name).toBe('Monday technical');
+    });
+
+    test('reads one template without them, and its items without the coach note or the free-text drill', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await GET(getRequest('template_id=tpl-1'));
+
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      const body = JSON.parse(text) as { template: Record<string, unknown>; items: Array<Record<string, unknown>> };
+      expect(Object.keys(body)).toEqual(['template', 'items']);
+      expect(Object.keys(body.template)).toEqual(READER_TEMPLATE_KEYS);
+      expect(body.items).toHaveLength(1);
+      expect(Object.keys(body.items[0])).toEqual(READER_ITEM_KEYS);
+      for (const field of STAFF_FIELDS) {
+        expect(keysAtAnyDepth(body).has(field)).toBe(false);
+      }
+      expect(text).not.toContain(MARK);
+      expect(body.items[0].head_drill_name).toBe('Catch and Return');
+    });
+  });
+
+  describe.each(FULL_ROW_ROLES)('%s', (role) => {
+    test('lists the stored rows exactly as before', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await GET(getRequest());
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ templates: [STORED_TEMPLATE] });
+    });
+
+    test('reads the stored detail exactly as before, with every key the read returned', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await GET(getRequest('template_id=tpl-1'));
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(STORED_DETAIL);
+      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra']);
+    });
+  });
+
+  test('a template that does not exist is the same 404 for a reduced reader', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+    mockDetail.mockResolvedValue(null);
+
+    const response = await GET(getRequest('template_id=nope'));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'WORKOUT_TEMPLATE_NOT_FOUND' });
+  });
+});

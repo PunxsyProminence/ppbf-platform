@@ -5,6 +5,7 @@ import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assessmentColumnsForReader,
+  coachObservationColumnsForReader,
   coachObservationNoteTypesForReader,
   emergencyContactColumnsForReader,
   attendanceColumnsForReader,
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest) {
     // meant for them. The per-role sets, and the reasoning behind each, live
     // next to that one in intake.ts.
     const readableNoteTypes = coachObservationNoteTypesForReader(principal.role);
+    // WHICH notes is the filter above; what of each note is this. The author's
+    // account id and role stay with staff (coachObservationColumnsForReader).
+    const coachObservationColumns = coachObservationColumnsForReader(principal.role);
     const guardianColumns = guardianColumnsForReader(principal.role);
     const emergencyContactColumns = emergencyContactColumnsForReader(principal.role);
     const waiverColumns = waiverColumnsForReader(principal.role);
@@ -105,7 +109,7 @@ export async function POST(request: NextRequest) {
         [principal.organizationId, athleteId],
       ),
       query(
-        `select * from pilot.coach_observations
+        `select ${coachObservationColumns.join(', ')} from pilot.coach_observations
          where organization_id = $1
            and athlete_id = $2
            and ($3::text[] is null or note_type = any($3::text[]))
