@@ -4,6 +4,7 @@ import { GET } from './route';
 import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { REFUSED_TEAM_CLIP_SQL } from '@/src/server/pilot/refusedTeamClips';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -272,6 +273,42 @@ describe('GET /api/pilot/video/list', () => {
 
     expect(res.status).toBe(400);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  describe('filter=refused_team (#1445)', () => {
+    test('the review behind the badge reads the same set the badge counts', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQuery.mockResolvedValueOnce([{ video_session_id: 'v-refused' }]);
+
+      const res = await GET(request('http://localhost/api/pilot/video/list?scope=all&filter=refused_team&limit=100'));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).items).toEqual([{ video_session_id: 'v-refused' }]);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(String(mockQuery.mock.calls[0]![0])).toContain(REFUSED_TEAM_CLIP_SQL);
+      expect(mockQuery.mock.calls[0]![1]).toEqual(['org-1', 100]);
+    });
+
+    test('a coach cannot reach it: it needs scope=all', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+      const res = await GET(request('http://localhost/api/pilot/video/list?scope=all&filter=refused_team'));
+
+      expect(res.status).toBe(403);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    test('without scope=all, or with an unknown filter, it is refused rather than ignored', async () => {
+      for (const url of [
+        'http://localhost/api/pilot/video/list?filter=refused_team',
+        'http://localhost/api/pilot/video/list?scope=all&filter=everything',
+      ]) {
+        mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+        const res = await GET(request(url));
+        expect(res.status).toBe(400);
+      }
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
   });
 
   test('organization_admin gets org-wide access', async () => {

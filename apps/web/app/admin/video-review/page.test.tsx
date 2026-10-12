@@ -25,6 +25,12 @@ jest.mock('next/link', () => ({
   ),
 }));
 
+// The address's query, per test. Empty is the ordinary review.
+let searchParams = new URLSearchParams();
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => searchParams,
+}));
+
 const mockGetRoleSessionSnapshot = getRoleSessionSnapshot as jest.Mock;
 const originalFetch = global.fetch;
 
@@ -34,6 +40,7 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 
 afterEach(() => {
   global.fetch = originalFetch;
+  searchParams = new URLSearchParams();
   jest.clearAllMocks();
 });
 
@@ -406,5 +413,105 @@ describe('a quarantine list that could not be read', () => {
     expect(await screen.findByText(UNAVAILABLE_SENTENCE)).toBeTruthy();
     expect(screen.queryByText('Drill 3')).toBeNull();
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Quarantined Videos');
+  });
+});
+
+/*
+ * ?filter=refused-team is where the top bar's refused-team-clips count leads
+ * (#1445). It lists the server's set -- the same predicate the count reads --
+ * not a client filter over a capped page of everything.
+ */
+describe('the refused team clips view behind the top-bar count', () => {
+  function refusedClip(id: string) {
+    return {
+      video_session_id: id,
+      title: `Team clip ${id}`,
+      notes: '',
+      file_name: `${id}.mp4`,
+      file_size_bytes: 1024,
+      mime_type: 'video/mp4',
+      status: 'quarantined',
+      scan_state: 'blocked',
+      athlete_id: null,
+      uploaded_by_account_id: 'coach-1',
+      created_at: '2026-08-02T12:00:00Z',
+    };
+  }
+
+  function listUrls(fetchMock: jest.Mock): string[] {
+    return fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/video/list'));
+  }
+
+  it('reads the filtered set from the server and says what it is showing', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    const fetchMock = jest.fn(async () => jsonResponse({ items: [refusedClip('v1'), refusedClip('v2')] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText('Team clip v1')).toBeTruthy();
+    expect(screen.getByText('Team clip v2')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Refused team clips awaiting a decision (2)');
+    expect(screen.getByRole('link', { name: 'Show all quarantined videos' }).getAttribute('href')).toBe('/admin/video-review');
+    expect(listUrls(fetchMock)).toEqual([
+      expect.stringContaining('/api/pilot/video/list?scope=all&filter=refused_team&limit=100'),
+    ]);
+    expect(screen.queryByText(/The newest 100 are shown/)).toBeNull();
+  });
+
+  it('says when the list is the newest hundred of more', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    const page = Array.from({ length: 100 }, (_, index) => refusedClip(`v${index}`));
+    global.fetch = jest.fn(async () => jsonResponse({ items: page })) as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText(/The newest 100 are shown\./)).toBeTruthy();
+  });
+
+  it('says none are waiting when the filtered read is empty', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    global.fetch = jest.fn(async () => jsonResponse({ items: [] })) as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText('No refused team clips are waiting for a decision.')).toBeTruthy();
+  });
+
+  it('re-reads the same filtered set after a decision', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    searchParams = new URLSearchParams('filter=refused-team');
+    let items = [refusedClip('v1')];
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/video/scan-review') && init?.method === 'POST') {
+        items = [];
+        return jsonResponse({ ok: true, video_session_id: 'v1', decision: 'block', status: 'quarantined', scan_state: 'blocked' });
+      }
+      return jsonResponse({ items });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Block Video (Keep Quarantined)' }));
+
+    expect(await screen.findByText('No refused team clips are waiting for a decision.')).toBeTruthy();
+    const urls = listUrls(fetchMock);
+    expect(urls).toHaveLength(2);
+    expect(urls.every((url) => url.includes('filter=refused_team'))).toBe(true);
+  });
+
+  it('without the filter, the ordinary review reads everything, as before', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    const fetchMock = jest.fn(async () => jsonResponse({ items: [] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText('No quarantined videos requiring admin review at this time.')).toBeTruthy();
+    expect(listUrls(fetchMock)).toEqual([expect.stringMatching(/\/api\/pilot\/video\/list\?scope=all$/)]);
+    expect(screen.queryByRole('link', { name: 'Show all quarantined videos' })).toBeNull();
   });
 });
