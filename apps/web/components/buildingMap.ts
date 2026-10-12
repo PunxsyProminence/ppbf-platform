@@ -445,8 +445,12 @@ export const BUILDING: readonly Door[] = [
     hint: 'See where two coaches labelled the same clip differently. It measures the labelling, not a coach or an athlete.' },
   { href: '/coach/video-publications', label: 'Video Publications', room: 'floor',
     roles: ['coach'], keywords: 'publish film share video' },
-  { href: '/coach/environment/intake-router', label: 'Intake Router', room: 'floor',
-    roles: ['coach'], keywords: 'intake routing new athlete triage' },
+  /* The coach's home, where sign-in lands a coach (getPilotRoleDestination).
+     "Intake Router" until 2026-10-12: the header named the coach's front door
+     after one of its tabs (#1482 item 6; wording PROPOSED). The old words stay
+     as keywords so the door is still found by them. */
+  { href: '/coach/environment/intake-router', label: 'Coach Workspace', room: 'floor',
+    roles: ['coach'], keywords: 'home dashboard intake router routing new athlete triage' },
   /* "Passbook Check" until 2026-08-19, and the word was doing two jobs. USA
      Boxing's passbook is the external competitor book this scaffold is a
      placeholder for; the athlete's passbook is this platform's own record
