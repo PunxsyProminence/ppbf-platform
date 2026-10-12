@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import ParentProgressSummary, { type SupportTasks } from './ParentProgressSummary';
 import ParentAssignmentList from './ParentAssignmentList';
 import ParentObservations from './ParentObservations';
@@ -1688,6 +1689,13 @@ export default function ParentHub() {
                   audience="family"
                   allowProgramChange={false}
                 />
+              )}
+
+              {/* The goals the child set, their reported progress and the ones
+                  they marked done (lane N8-05). Read-only; the reason line
+                  each goal carries is the coach's and never reaches here. */}
+              {activeChildId && (
+                <AthleteGoalsReadOnly key={activeChildId} athleteId={activeChildId} audience="family" />
               )}
 
               {activeChildId ? (

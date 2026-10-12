@@ -7305,7 +7305,8 @@
       "organization_admin",
       "admin",
       "coach",
-      "athlete"
+      "athlete",
+      "parent"
     ],
     "athleteData": true,
     "writes": false,
@@ -7313,7 +7314,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists one athlete goals. goals/list/route.ts:11-12 role gate, :27 assertActorCanAccessAthlete before read.",
+    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7323,7 +7324,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete,coach,organization_admin,parent"
       ]
     }
   },
@@ -7345,7 +7346,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts:26,31-32 gate; :39 assertActorCanAccessAthlete (parent = linked child only).",
+    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7365,18 +7366,15 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates a personal goal in athlete own words plus audit row. goals/personal/route.ts:27,51-52 gate; :61 assertActorCanAccessAthlete. Parent excluded from writes.",
+    "notes": "Creates a personal goal in the athlete's own words plus an audit row. goals/personal/route.ts GOAL_WRITER_ROLES = athlete only (lane N8-05); assertActorCanAccessAthlete ties the write to the athlete's own record.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7386,7 +7384,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7396,18 +7394,15 @@
     "path": "/api/pilot/goals/personal",
     "gate": "requirePrincipal + requireRole(GOAL_WRITER_ROLES) + assertActorCanAccessAthlete",
     "rolesAdmitted": [
-      "athlete",
-      "coach",
-      "organization_admin",
-      "admin"
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Marks a personal goal reached; authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete goal is not stamped. goals/personal/route.ts:105-106,115-129.",
+    "notes": "Marks a personal goal reached; athlete only (GOAL_WRITER_ROLES, lane N8-05). The authorized athleteId is keyed into the write (markPersonalGoalReached) so another athlete's goal is not stamped.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7417,7 +7412,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7427,18 +7422,15 @@
     "path": "/api/pilot/goals",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (payload and stored owner)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Creates or updates a SMART goal. goals/route.ts:12-13 gate; :16 access on payload athlete; :25-27 access on existing owner with compare-and-set; audit write :38.",
+    "notes": "Creates or updates a SMART goal; athlete only (lane N8-05). goals/route.ts role gate; access on the payload athlete and on an existing goal's stored owner with compare-and-set; audit write.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7448,7 +7440,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
@@ -7458,18 +7450,15 @@
     "path": "/api/pilot/goals/update",
     "gate": "requirePrincipal + requireRole + assertActorCanAccessAthlete (stored and payload athlete)",
     "rolesAdmitted": [
-      "organization_admin",
-      "admin",
-      "coach",
       "athlete"
     ],
     "athleteData": true,
     "writes": true,
-    "coachReachRule": "applied",
+    "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Updates an existing goal. goals/update/route.ts:12-13 gate; :22-23 access on both stored owner and payload athlete; compare-and-set :26; audit :28.",
+    "notes": "Updates an existing goal; athlete only (lane N8-05). goals/update/route.ts role gate; access on both the stored owner and the payload athlete; compare-and-set; audit write.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7479,7 +7468,7 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "athlete,coach,organization_admin"
+        "athlete"
       ]
     }
   },
