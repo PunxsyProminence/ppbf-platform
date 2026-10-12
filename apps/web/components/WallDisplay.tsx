@@ -3,9 +3,12 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot/wallDisplay';
 
 import { pickSaying } from './gymSayings';
+import { playGymSound } from './useGymSound';
+import { advanceRoundTimer, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 
 /**
  * THE WALL — the board on the gym's television.
@@ -36,6 +39,15 @@ import { pickSaying } from './gymSayings';
 
 /** Steady state: the board is a live read, and thirty seconds is live enough. */
 export const WALL_POLL_MS = 30_000;
+/**
+ * While a round timer is set and not ended, the paired TV asks every five seconds instead
+ * (WO-N1-04): a coach's Start, Pause or End reaches the wall within one short poll, and the start
+ * bell can still ring. Twelve reads a minute, inside the TV read budget of sixty
+ * (gymTvs.ts GYM_TV_READ_MAX_PER_KEY).
+ */
+export const WALL_ROUND_POLL_MS = 5_000;
+/** A round start the TV learns about this many seconds late still rings; older is past. */
+export const WALL_ROUND_FRESH_SECONDS = 7;
 
 /**
  * After a failure, ask again SOONER, not later. A wall coming back within five
@@ -43,8 +55,8 @@ export const WALL_POLL_MS = 30_000;
  * out for a moment" and "the screen is broken". The ramp exists only so a
  * genuinely dead backend is not hammered forever.
  */
-export function nextPollDelayMs(consecutiveFailures: number): number {
-  if (consecutiveFailures <= 0) return WALL_POLL_MS;
+export function nextPollDelayMs(consecutiveFailures: number, roundsLive = false): number {
+  if (consecutiveFailures <= 0) return roundsLive ? WALL_ROUND_POLL_MS : WALL_POLL_MS;
   return Math.min(5_000 * 2 ** (consecutiveFailures - 1), WALL_POLL_MS);
 }
 
@@ -92,6 +104,7 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
  * refused by the server; wallDisplay.test.tsx pins that.
  */
 interface PairedResponse {
+  session?: { run_id?: string; timer?: RoundTimerView | null } | null;
   board?: WallBoard | null;
   board_status?: 'ok' | 'unavailable';
 }
@@ -139,7 +152,13 @@ export class UnpairedReadError extends Error {
 }
 
 /** One poll: the paired read first, the public read if this screen is not paired. */
-export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean }> {
+/** The live run's round timer as the paired read gave it. Never on the public read. */
+export interface WallRoundTimer {
+  runId: string;
+  view: RoundTimerView;
+}
+
+export async function readBoard(base: string): Promise<{ board: WallBoard; paired: boolean; timer: WallRoundTimer | null }> {
   const paired = await fetch(`${base}/api/pilot/tv/session`, {
     cache: 'no-store',
     // The device cookie is the credential. It is httpOnly and scoped to
@@ -152,7 +171,9 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
     // board: null is the server's best-effort miss (gymTvs.ts): the session
     // read worked, the board read did not. The last board stays up, dated.
     if (!payload.board) throw new Error('unavailable');
-    return { board: payload.board, paired: true };
+    const session = payload.session;
+    const timer = session?.timer && session.run_id ? { runId: session.run_id, view: session.timer } : null;
+    return { board: payload.board, paired: true, timer };
   }
 
   /* credentials: 'omit' is stated rather than left to the default, and
@@ -176,7 +197,7 @@ export async function readBoard(base: string): Promise<{ board: WallBoard; paire
     throw new UnpairedReadError();
   }
   if (!payload.ok || !payload.board || payload.board.scope !== 'public') throw new UnpairedReadError();
-  return { board: publicToBoard(payload.board), paired: false };
+  return { board: publicToBoard(payload.board), paired: false, timer: null };
 }
 
 export default function WallDisplay() {
@@ -191,6 +212,11 @@ export default function WallDisplay() {
   // Lets the pair box ask for a fresh read the moment a code is accepted,
   // instead of waiting out the thirty-second timer with "Nobody" on screen.
   const refreshRef = useRef<() => void>(() => {});
+  // The round timer from the last good paired read, and when (by this TV's clock) it was read.
+  const [roundTimer, setRoundTimer] = useState<(WallRoundTimer & { readAt: number }) | null>(null);
+  // What the round sounds compare against, and every sound key already rung on this screen.
+  const lastReading = useRef<{ runId: string; reading: WallRoundReading } | null>(null);
+  const rung = useRef<Set<string>>(new Set());
 
   /* The clock is read from the browser, not from the payload and not from the
      server. The television is in the room; its clock is the gym's clock, and it
@@ -223,17 +249,21 @@ export default function WallDisplay() {
     // later one is tracked -- so the orphan keeps firing and the wall quietly
     // doubles its request rate every time the TV wakes up.
     let inFlight = false;
+    // A round timer is set and not ended: poll fast (WALL_ROUND_POLL_MS).
+    let roundsLive = false;
 
     async function poll(): Promise<void> {
       if (inFlight) return;
       inFlight = true;
       try {
-        const { board: next, paired: isPaired } = await readBoard(apiBase());
+        const { board: next, paired: isPaired, timer: nextTimer } = await readBoard(apiBase());
         if (!mounted.current) return;
 
         failures = 0;
+        roundsLive = nextTimer !== null && nextTimer.view.state !== 'ended';
         setBoard(next);
         setPaired(isPaired);
+        setRoundTimer(nextTimer ? { ...nextTimer, readAt: Date.now() } : null);
         setLastGoodAt(Date.now());
         setConnected(true);
       } catch (error) {
@@ -245,6 +275,8 @@ export default function WallDisplay() {
         // except for the people on it, once the server has said this screen
         // is not paired (withoutPeople).
         if (error instanceof UnpairedReadError) {
+          roundsLive = false;
+          setRoundTimer(null);
           setPaired(false);
           setBoard((previous) => (previous ? withoutPeople(previous) : previous));
         }
@@ -254,7 +286,7 @@ export default function WallDisplay() {
         // wall that is wrong for the rest of the evening.
         inFlight = false;
         if (mounted.current) {
-          timer = setTimeout(() => void poll(), nextPollDelayMs(failures));
+          timer = setTimeout(() => void poll(), nextPollDelayMs(failures, roundsLive));
         }
       }
     }
@@ -292,10 +324,33 @@ export default function WallDisplay() {
   const health: WallHealth = now === null ? 'never' : boardHealth(lastGoodAt, now);
   const zone = board?.time_zone;
   const showLive = board !== null && health !== 'abandoned';
+  const roundReading =
+    roundTimer && now !== null && showLive
+      ? advanceRoundTimer(roundTimer.view, Math.floor((now - roundTimer.readAt) / 1000))
+      : null;
+
+  // The round bell and knock (WO-N1-04), through the app's one sound engine: silent unless the
+  // TV's sound is on. Each sound has keys per run, round and event, and a key rings at most once
+  // here, so a poll, a re-anchor or a network blip never repeats one. The first reading after a
+  // load rings nothing.
+  useEffect(() => {
+    if (!roundTimer || !roundReading) {
+      lastReading.current = null;
+      return;
+    }
+    const previous = lastReading.current?.runId === roundTimer.runId ? lastReading.current.reading : null;
+    lastReading.current = { runId: roundTimer.runId, reading: roundReading };
+    for (const sound of roundSounds(roundTimer.runId, previous, roundReading, roundTimer.view, WALL_ROUND_FRESH_SECONDS)) {
+      if (sound.keys.every((key) => rung.current.has(key))) continue;
+      for (const key of sound.keys) rung.current.add(key);
+      playGymSound(sound.voice);
+    }
+  });
 
   return (
     <div className="wall-board flex h-screen w-screen flex-col overflow-hidden">
       <Masthead now={now} zone={zone} />
+      {roundTimer && roundReading && <RoundPanel reading={roundReading} roundSeconds={roundTimer.view.round_seconds} />}
 
       {showLive ? (
         <LiveBoard board={board} zone={zone} />
@@ -306,6 +361,19 @@ export default function WallDisplay() {
       <FootRule board={showLive ? board : null} health={health} connected={connected} zone={zone} />
       {paired === false && <PairBox onPaired={() => refreshRef.current()} />}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------- round panel --- */
+
+/** The round clock, big enough for the back of the room. Words, not colours, carry the state. */
+function RoundPanel({ reading, roundSeconds }: { reading: WallRoundReading; roundSeconds: number }) {
+  const { label, time } = roundPanelText(reading, roundSeconds);
+  return (
+    <section aria-label="Round clock" className="wall-round flex shrink-0 items-baseline justify-center gap-[var(--s7)] px-[var(--s7)] py-[var(--s4)]">
+      <p className="wall-round__label text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
+      {time && <p className="wall-round__time font-mono tabular-nums text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
+    </section>
   );
 }
 

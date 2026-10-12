@@ -46,8 +46,8 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
    server render pass too. */
 import '@/../../design-system/ppbf-sound.js';
 
-/** The five voices the design system synthesizes. */
-export type GymVoice = 'bell' | 'stamp' | 'latch' | 'accept' | 'refuse';
+/** The six voices the design system synthesizes. */
+export type GymVoice = 'bell' | 'stamp' | 'latch' | 'accept' | 'refuse' | 'knock';
 
 /** The engine's surface, as this app uses it. */
 interface SoundEngine {

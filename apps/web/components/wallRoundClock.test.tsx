@@ -1,0 +1,202 @@
+/**
+ * @jest-environment jsdom
+ */
+
+// The paired gym TV's round clock, bell and knock (WO-N1-04), through the real WallDisplay and its
+// real poll loop on fake timers. The server is faked: it holds one timer whose reading follows the
+// fake clock, exactly as roundTimers.ts derives it from stored instants. The sound engine is faked
+// so each test can count what the wall asked it to play.
+
+import '@testing-library/jest-dom';
+import { act, render, screen } from '@testing-library/react';
+
+import WallDisplay, { WALL_POLL_MS, WALL_ROUND_POLL_MS } from './WallDisplay';
+import { advanceRoundTimer } from './wallRoundTimer';
+import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
+import type { WallBoard } from '@/src/server/pilot/wallDisplay';
+
+const played: string[] = [];
+
+jest.mock('./useGymSound', () => ({
+  __esModule: true,
+  default: () => ({ enabled: true, ready: true, status: 'on', play: jest.fn(), setEnabled: jest.fn() }),
+  playGymSound: (voice: string) => {
+    played.push(voice);
+    return true;
+  },
+}));
+
+const T0 = Date.parse('2026-10-12T18:00:00.000Z');
+
+function board(): WallBoard {
+  return {
+    generated_at: '2026-10-12T18:00:00.000Z',
+    gym_day: '2026-10-12',
+    time_zone: 'America/New_York',
+    name_mode: 'initials',
+    sessions: [],
+    on_floor: [],
+    on_floor_total: 0,
+    marquee: [],
+    notice: null,
+  } as WallBoard;
+}
+
+/** The fake server's timer: started (or not) at a fake-clock instant, read at the current one. */
+let serverTimer: { startedAt: number | null; state: RoundTimerView['state']; config?: Partial<RoundTimerView> } | null;
+
+function serverView(): RoundTimerView | null {
+  if (!serverTimer) return null;
+  const base: RoundTimerView = {
+    state: 'ready',
+    phase: 'ready',
+    round: 0,
+    rounds_total: 3,
+    round_seconds: 30,
+    rest_seconds: 15,
+    seconds_left: 0,
+    is_paused: false,
+    ...serverTimer.config,
+  };
+  if (serverTimer.state !== 'running' || serverTimer.startedAt === null) return { ...base, state: serverTimer.state, phase: serverTimer.state === 'ended' ? 'ended' : 'ready' };
+  const first: RoundTimerView = { ...base, state: 'running', phase: 'work', round: 1, seconds_left: base.round_seconds };
+  const now = advanceRoundTimer(first, Math.floor((Date.now() - serverTimer.startedAt) / 1000));
+  return { ...first, phase: now.phase, round: now.round, seconds_left: now.seconds_left };
+}
+
+let pairedTv = true;
+let fetchMock: jest.Mock;
+
+function sessionReads(): number {
+  return fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/pilot/tv/session')).length;
+}
+
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function seconds(count: number) {
+  for (let i = 0; i < count; i += 1) {
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    await settle();
+  }
+}
+
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.setSystemTime(T0);
+  played.length = 0;
+  pairedTv = true;
+  serverTimer = null;
+  fetchMock = jest.fn(async (url: string) => {
+    if (url.includes('/api/pilot/tv/session')) {
+      if (!pairedTv) return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as Response;
+      const timer = serverView();
+      const session = { run_id: 'ssrun_1', timer };
+      return { ok: true, status: 200, json: async () => ({ tv: { tv_name: 'Gym main' }, session, board: board(), board_status: 'ok' }) } as Response;
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, board: { ...board(), scope: 'public' } }) } as Response;
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.useRealTimers();
+});
+
+describe('the round clock on a paired TV', () => {
+  test('shows the round and time left, counts down between polls, and says Rest in words', async () => {
+    serverTimer = { startedAt: T0 - 5_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    const clock = screen.getByRole('region', { name: 'Round clock' });
+    expect(clock).toHaveTextContent('Round 1 of 3');
+    expect(clock).toHaveTextContent('0:25');
+    await seconds(3);
+    expect(clock).toHaveTextContent('0:22');
+    await seconds(22);
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Rest · round 2 of 3 next');
+  });
+
+  test('a full set rings each bell and knock once, however many polls land in between', async () => {
+    // Started 2 seconds ago: the first reading rings nothing.
+    serverTimer = { startedAt: T0 - 2_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    expect(played).toEqual([]);
+    // 3 rounds of 30 with 15 rest = 120 seconds; run well past the end.
+    await seconds(130);
+    expect(played).toEqual([
+      'knock', 'bell', // round 1: knock at 10 left, end bell
+      'bell', 'knock', 'bell', // round 2: start, knock, end
+      'bell', 'knock', 'bell', // round 3: start, knock, end
+    ]);
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Rounds done');
+  });
+
+  test("the coach's Start reaches the wall within one short poll and rings the start bell", async () => {
+    serverTimer = { startedAt: null, state: 'ready' };
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Round 1 of 3 · Ready');
+    await seconds(2);
+    serverTimer = { startedAt: Date.now(), state: 'running' };
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(played).toEqual(['bell']);
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Round 1 of 3');
+  });
+
+  test('a reload mid-round rings nothing late', async () => {
+    serverTimer = { startedAt: T0 - 31_000, state: 'running' };
+    const first = render(<WallDisplay />);
+    await settle();
+    first.unmount();
+    render(<WallDisplay />);
+    await settle();
+    await seconds(2);
+    expect(played).toEqual([]);
+  });
+
+  test('polls every five seconds while rounds are set, and back to thirty once they end', async () => {
+    serverTimer = { startedAt: T0, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    const start = sessionReads();
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(sessionReads()).toBe(start + 1);
+    serverTimer = { startedAt: null, state: 'ended' };
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Rounds stopped');
+    const afterEnd = sessionReads();
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(sessionReads()).toBe(afterEnd);
+    await seconds(WALL_POLL_MS / 1000 - WALL_ROUND_POLL_MS / 1000);
+    expect(sessionReads()).toBe(afterEnd + 1);
+  });
+
+  test('no timer: no round clock and the usual thirty-second poll', async () => {
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    const start = sessionReads();
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(sessionReads()).toBe(start);
+  });
+
+  test('an unpaired screen shows no round clock and rings nothing', async () => {
+    pairedTv = false;
+    serverTimer = { startedAt: T0 - 19_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    await seconds(15);
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    expect(played).toEqual([]);
+  });
+});

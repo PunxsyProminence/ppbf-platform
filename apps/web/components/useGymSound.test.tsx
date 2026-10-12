@@ -41,7 +41,7 @@ it('is off before anybody asks, and constructs no audio to find that out', () =>
 
 it('plays nothing, and returns false, while sound is off', () => {
   render(<Probe />);
-  for (const voice of ['bell', 'stamp', 'latch', 'accept', 'refuse'] as const) {
+  for (const voice of ['bell', 'stamp', 'latch', 'accept', 'refuse', 'knock'] as const) {
     expect(playGymSound(voice)).toBe(false);
   }
 });
