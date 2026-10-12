@@ -36,7 +36,9 @@ interface Passbook {
     attendance: Array<{ attendance_id: string; attendance_date: string; status: string; stamp_code: string | null; notes?: string }>;
     sessions: Array<{ session_id: string; date: string; rpe: number | null; notes?: string; completed_flag: boolean }>;
     readiness: Array<{ readiness_id: string; score: number; category: string; measured_at: string }>;
-    goals: Array<{ goal_id: string; title: string; target_date: string; metric: string; status: string }>;
+    // An own-words goal (achievements.ts createPersonalGoal) has an empty metric
+    // and may have no target date.
+    goals: Array<{ goal_id: string; title: string; target_date: string | null; metric: string; status: string }>;
     corner: {
       guardians: Array<{ parent_id: string; full_name: string; relationship_to_athlete: string }>;
       observations: Array<{ note_id: string; note_type: string; note_text: string; created_at: string }>;
@@ -245,7 +247,9 @@ export default function CoachPassbookPage() {
               <ul className="space-y-[var(--s1)]">
                 {pages.goals.map((g) => (
                   <li key={g.goal_id}>
-                    <span className="font-semibold">{g.title}</span> · {g.metric} · by {day(g.target_date)} · {humanize(g.status)}
+                    <span className="font-semibold">{g.title}</span>
+                    {g.metric ? ` · ${g.metric}` : ''}
+                    {g.target_date ? ` · by ${day(g.target_date)}` : ' · no target date'} · {humanize(g.status)}
                   </li>
                 ))}
               </ul>

@@ -51,7 +51,11 @@ function book(athleteId: string, name: string) {
         { session_id: 's2', date: '2026-09-28', rpe: 6, completed_flag: false },
       ],
       readiness: [{ readiness_id: 'rd1', score: 72, category: 'green', measured_at: '2026-10-01' }],
-      goals: [{ goal_id: 'go1', title: 'Make weight', target_date: '2026-11-15', metric: 'kg', status: 'active' }],
+      goals: [
+        { goal_id: 'go1', title: 'Make weight', target_date: '2026-11-15', metric: 'kg', status: 'active' },
+        // An own-words goal as createPersonalGoal stores it: no metric, no date.
+        { goal_id: 'go2', title: 'Keep my hands up', target_date: null, metric: '', status: 'active' },
+      ],
       corner: {
         coach: { account_id: 'coach.login@example.org' },
         guardians: [{ parent_id: 'p1', full_name: 'Pat Parent', relationship_to_athlete: 'mother' }],
@@ -276,4 +280,12 @@ test('the door to the page is shown to the same roles as the page', async () => 
   const { BUILDING } = await import('@/components/buildingMap');
   const door = BUILDING.find((d) => d.href === '/coach/passbook');
   expect([...(door?.roles ?? [])].sort()).toEqual(['admin', 'coach']);
+});
+
+test('an own-words goal with no metric and no date reads as such, with no blank fields', async () => {
+  await open();
+  const goals = screen.getByRole('heading', { name: 'Goals' }).closest('section')!;
+  const lines = Array.from(goals.querySelectorAll('li')).map((li) => li.textContent ?? '');
+  expect(lines[1]).toBe('Keep my hands up · no target date · active');
+  expect(goals.textContent).not.toMatch(/·\s*·|by\s*·/);
 });
