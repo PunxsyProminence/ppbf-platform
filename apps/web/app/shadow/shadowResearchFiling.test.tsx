@@ -159,7 +159,7 @@ test('a coach is told it is not filed yet, files it once, and then sees the stor
 
   expect(await screen.findByText('Not filed as research yet.')).toBeTruthy();
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'File as research' }));
+    fireEvent.click(screen.getByRole('button', { name: /^File as research/ }));
   });
 
   expect(posts).toEqual([expect.objectContaining({
@@ -171,7 +171,7 @@ test('a coach is told it is not filed yet, files it once, and then sees the stor
   })]);
   expect(await screen.findByText(/Filed as research: open\./)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Open research' }).getAttribute('href')).toBe('/research');
-  expect(screen.queryByRole('button', { name: 'File as research' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^File as research/ })).toBeNull();
 });
 
 test('a question already filed shows its stored status and offers no second filing', async () => {
@@ -179,7 +179,7 @@ test('a question already filed shows its stored status and offers no second fili
   await askUnansweredQuestion();
 
   expect(await screen.findByText(/Filed as research: resolved\./)).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'File as research' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^File as research/ })).toBeNull();
   expect(screen.queryByText('Not filed as research yet.')).toBeNull();
   expect(posts).toHaveLength(0);
 });
@@ -199,7 +199,7 @@ test('a refused filing never reads as filed', async () => {
   await askUnansweredQuestion();
 
   await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'File as research' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^File as research/ }));
   });
 
   expect(screen.getByText('Forbidden: only coaches and organization admins file research requirements')).toBeTruthy();
@@ -269,4 +269,12 @@ test('a later unanswered reply reads the list again, so a filing made meanwhile 
   expect(lines).toHaveLength(2);
   expect(lines[0]).toContain('Not filed as research yet.');
   expect(lines[1]).toContain('Filed as research: open.');
+});
+
+test('each filing button names its question', async () => {
+  mockServer({ requirements: [] });
+  await askUnansweredQuestion();
+
+  const button = await screen.findByRole('button', { name: /^File as research/ });
+  expect(button.getAttribute('aria-label')).toBe(`File as research: ${QUESTION.trim()}`);
 });

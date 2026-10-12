@@ -658,6 +658,10 @@ function ShadowChatPageContent() {
   const [researchFilingsRead, setResearchFilingsRead] = useState<'idle' | 'loaded' | 'failed'>('idle');
   const [researchFilingBusy, setResearchFilingBusy] = useState<string | null>(null);
   const [researchFilingError, setResearchFilingError] = useState<Record<string, string>>({});
+  /* Filings this page made. A list read that started before a filing can
+     land after it; these are laid over every read so a filed question never
+     flips back to "Not filed" (R2 #1). */
+  const filedThisSession = useRef<Record<string, ResearchFiling>>({});
   const unansweredReplies = messages.filter((msg) => msg.type === 'shadow' && msg.evidenceNotice === 'NO_VERIFIED_EVIDENCE').length;
 
   async function readResearchFilings(): Promise<Record<string, ResearchFiling>> {
@@ -681,7 +685,7 @@ function ShadowChatPageContent() {
     void readResearchFilings()
       .then((filed) => {
         if (cancelled) return;
-        setResearchFilings(filed);
+        setResearchFilings({ ...filedThisSession.current, ...filed });
         setResearchFilingsRead('loaded');
       })
       .catch(() => {
@@ -694,7 +698,7 @@ function ShadowChatPageContent() {
 
   async function fileAsResearch(question: string) {
     const key = researchKeyForQuestion(question);
-    if (!key || researchFilingBusy) return;
+    if (!key || researchFilingBusy === key) return;
     setResearchFilingBusy(key);
     setResearchFilingError((current) => ({ ...current, [key]: '' }));
     try {
@@ -723,10 +727,12 @@ function ShadowChatPageContent() {
       // The stored row decides the status: a question filed before may
       // already be resolved, and the upsert returns that row unchanged.
       const filed = await readResearchFilings().catch(() => null);
+      const entry = filed?.[key] ?? { id: filedId, status: null };
+      filedThisSession.current = { ...filedThisSession.current, [key]: entry };
       setResearchFilings((current) => ({
         ...current,
         ...(filed ?? {}),
-        [key]: filed?.[key] ?? { id: filedId, status: null },
+        ...filedThisSession.current,
       }));
     } catch (error) {
       setResearchFilingError((current) => ({
@@ -1810,13 +1816,13 @@ function ShadowChatPageContent() {
                         return (
                           <div className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]" data-testid="research-filing">
                             {filed ? (
-                              <p className="t-body">
+                              <p className="t-body" key="filed">
                                 {filed.status ? `Filed as research: ${filed.status}.` : 'Filed as research.'}{' '}
-                                <Link href="/research" className="underline">Open research</Link>
+                                <Link href="/research" className="t-label">Open research</Link>
                               </p>
                             ) : (
                               <>
-                                <p className="t-body">
+                                <p className="t-body" key={researchFilingsRead}>
                                   {researchFilingsRead === 'failed'
                                     ? 'Could not check whether this was filed as research.'
                                     : 'Not filed as research yet.'}
@@ -1824,7 +1830,8 @@ function ShadowChatPageContent() {
                                 <button
                                   type="button"
                                   className="btn btn--ghost"
-                                  disabled={researchFilingBusy !== null}
+                                  disabled={researchFilingBusy === key}
+                                  aria-label={`File as research: ${question.trim().slice(0, 120)}`}
                                   onClick={() => void fileAsResearch(question)}
                                 >
                                   File as research
