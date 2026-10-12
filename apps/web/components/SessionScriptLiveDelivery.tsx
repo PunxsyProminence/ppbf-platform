@@ -711,15 +711,18 @@ export default function SessionScriptLiveDelivery({
               optional.
             </p>
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
-              <label className="field">
-                <span className="t-label">Blocks completed</span>
-                <input
-                  value={blocksCompleted}
-                  onChange={(event) => setBlocksCompleted(event.target.value)}
-                  inputMode="numeric"
-                  className="input"
-                />
-              </label>
+              {/* A plain session has no blocks to count. */}
+              {!isPlain && (
+                <label className="field">
+                  <span className="t-label">Blocks completed</span>
+                  <input
+                    value={blocksCompleted}
+                    onChange={(event) => setBlocksCompleted(event.target.value)}
+                    inputMode="numeric"
+                    className="input"
+                  />
+                </label>
+              )}
               <label className="field">
                 <span className="t-label">Athletes present</span>
                 <input

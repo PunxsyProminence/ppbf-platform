@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 
@@ -222,15 +222,22 @@ export default function CoachFloorFocus({
      page link beside it, so the coach is never stuck. */
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
+  // One start per press. `starting` disables the button only after a render; two taps landing
+  // before it would both start, so the in-flight mark is a ref (review 1 of #1523 PR 2).
+  const inFlight = useRef(false);
   async function startSession() {
-    if (starting) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setStarting(true);
     setStartError('');
+    // Busy until the page changes: a navigation in flight is not a reason to offer the tap again.
+    let leaving = false;
     try {
       const list = await fetch(`${apiBase()}/api/pilot/session-scripts`, { credentials: 'include' });
       if (!list.ok) throw new Error('list');
       const payload = (await list.json()) as { scripts?: unknown[] };
       if ((payload.scripts ?? []).length > 0) {
+        leaving = true;
         onGoToSessions();
         return;
       }
@@ -243,6 +250,7 @@ export default function CoachFloorFocus({
       const result = (await started.json().catch(() => ({}))) as { error?: string };
       // Already live (a double tap, another tab): the session page restores it.
       if (started.ok || result.error === 'SESSION_RUN_ALREADY_LIVE') {
+        leaving = true;
         onGoToSessions();
         return;
       }
@@ -250,7 +258,10 @@ export default function CoachFloorFocus({
     } catch {
       setStartError('No session was started. Open the session page to start one.');
     } finally {
-      setStarting(false);
+      if (!leaving) {
+        inFlight.current = false;
+        setStarting(false);
+      }
     }
   }
 

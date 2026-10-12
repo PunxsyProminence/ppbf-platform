@@ -442,3 +442,32 @@ test('no heading on the board carries a feed panel\'s name, and the session sent
   }
   expect(screen.queryByText(/Session in progress|No session in progress/)).toBeNull();
 });
+
+test('Start a session sends one start however fast it is tapped, and stays busy while it goes', async () => {
+  let finishStart: ((value: Response) => void) | null = null;
+  fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/session-scripts/runs') && init?.method === 'POST') {
+      return new Promise<Response>((resolve) => { finishStart = resolve; });
+    }
+    return { ok: true, status: 200, json: async () => ({ scripts: [] }) } as Response;
+  });
+  const onGoToSessions = jest.fn();
+  render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+
+  const button = screen.getByRole('button', { name: 'Start a session' });
+  await act(async () => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
+
+  await act(async () => {
+    finishStart?.({ ok: true, status: 201, json: async () => ({ run: {} }) } as Response);
+  });
+
+  const posts = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+  expect(posts).toHaveLength(1);
+  expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
+});

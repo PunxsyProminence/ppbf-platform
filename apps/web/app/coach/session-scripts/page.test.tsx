@@ -558,3 +558,27 @@ describe('a plain session', () => {
     expect(screen.getByRole('button', { name: 'Start a plain session' })).toBeInTheDocument();
   });
 });
+
+it('a double tap on Start a plain session starts one session', async () => {
+  const posts: Array<Record<string, unknown>> = [];
+  let finish: ((value: Response) => void) | null = null;
+  routedFetch({});
+  const base = global.fetch;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/session-scripts/runs') && init?.method === 'POST') {
+      posts.push(JSON.parse(String(init.body)));
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+  render(<CoachSessionScriptsPage />);
+
+  const start = await screen.findByRole('button', { name: 'Start a plain session' });
+  await waitFor(() => expect(start).not.toBeDisabled());
+  fireEvent.click(start);
+  fireEvent.click(start);
+  finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+
+  expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+  expect(posts).toEqual([{}]);
+});

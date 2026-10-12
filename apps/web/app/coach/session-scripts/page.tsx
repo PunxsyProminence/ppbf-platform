@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
@@ -139,8 +139,12 @@ function CoachSessionScripts() {
 
   // scriptId null starts a PLAIN session (Jason 2026-10-12, issue #1523): no plan, the clock,
   // pause, TV and finish only. Its busy marker is PLAIN_START so no script's button reads busy.
+  // One start per press: the busy state disables the buttons only after a render, so two taps
+  // landing before it would both start; the in-flight mark is a ref.
+  const startInFlight = useRef(false);
   const startDelivery = useCallback(async (scriptId: string | null) => {
-    if (startBusyScriptId) return;
+    if (startBusyScriptId || startInFlight.current) return;
+    startInFlight.current = true;
     setStartBusyScriptId(scriptId ?? PLAIN_START);
     setStartError('');
     setLiveNotice('');
@@ -205,6 +209,7 @@ function CoachSessionScripts() {
       }
       setStartError(`The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);
     } finally {
+      startInFlight.current = false;
       setStartBusyScriptId(null);
     }
   }, [fetchLiveRun, startBusyScriptId]);

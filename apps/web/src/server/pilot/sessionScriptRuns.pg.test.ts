@@ -981,6 +981,12 @@ describe('a plain session', () => {
     });
     expect(live.elapsed_seconds).toBeGreaterThanOrEqual(0);
     expect((await getLiveRunForCoach(ORG_A, COACH_A))?.run_id).toBe(live.run_id);
+    // For today, as a scripted session is (delivered_on defaults to the database date; issue #1523 Q3 A).
+    const today = await client.query(
+      'select delivered_on = current_date as today from pilot.session_script_runs where run_id = $1',
+      [live.run_id],
+    );
+    expect(today.rows[0].today).toBe(true);
   });
 
   it('is still one live session per coach, plain or scripted, and says so', async () => {

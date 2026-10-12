@@ -774,3 +774,10 @@ describe('a plain session', () => {
     ]);
   });
 });
+
+test('a plain session is not asked how many blocks it completed', async () => {
+  await renderLive(liveRun({ script_id: null, script_version: null, current_block_id: null }));
+  fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+  expect(screen.queryByLabelText('Blocks completed')).toBeNull();
+  expect(screen.getByLabelText('Athletes present')).toBeTruthy();
+});

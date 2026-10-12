@@ -50,8 +50,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// script_id is optional: a start without one is a plain session (Jason 2026-10-12, issue #1523).
-const START_FIELDS = [] as const;
+// Every start field is optional: a start without script_id is a plain session (Jason 2026-10-12,
+// issue #1523).
 const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on'] as const;
 
 function badRequest(code: string) {
@@ -84,8 +84,7 @@ export async function POST(request: NextRequest) {
 
     const extras = Object.keys(record).filter(
       (key) =>
-        !(START_FIELDS as readonly string[]).includes(key)
-        && !(START_OPTIONAL_FIELDS as readonly string[]).includes(key),
+        !(START_OPTIONAL_FIELDS as readonly string[]).includes(key),
     );
     if (extras.length > 0) {
       return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
