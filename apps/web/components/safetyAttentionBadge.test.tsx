@@ -41,6 +41,7 @@ interface EscalationFixture {
   athlete_id?: string;
   reason?: string;
   source_type?: string;
+  metadata?: Record<string, unknown>;
 }
 
 function escalation(overrides: Partial<EscalationFixture> = {}): EscalationFixture {
@@ -529,5 +530,75 @@ describe('isRefusedTeamClip', () => {
     [{ athlete_id: null, scan_state: 'infected', status: 'infected' }, false],
   ])('%o -> %s', (row, expected) => {
     expect(isRefusedTeamClip(row)).toBe(expected);
+  });
+});
+
+describe('a pain report is counted on its own line, never under a severity word (#1528 Q3)', () => {
+  const PAIN = { trigger: 'athlete_pain_report', near_miss_id: 'nm_1' };
+
+  test('a single critical pain report reads as a pain report, on the top rung', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'critical', metadata: PAIN })] });
+
+    expect(screen.getByText('Safety 1 pain report')).toBeTruthy();
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    // The stored rung still sets the tone: the badge is not quieter for it.
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    expect(link.getAttribute('aria-label')).toContain('1 pain report');
+    expect(link.getAttribute('aria-label')).not.toMatch(/critical|high/i);
+  });
+
+  test('pain reports are counted apart from the critical and high escalations beside them', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'critical' }),
+        escalation({ escalation_id: 'e2', severity: 'high' }),
+        escalation({ escalation_id: 'e3', severity: 'critical', metadata: PAIN }),
+        escalation({ escalation_id: 'e4', severity: 'high', metadata: { trigger_key: 'athlete_pain_report' } }),
+      ],
+    });
+
+    expect(screen.getByText('Safety 1 critical, 1 high, 2 pain reports')).toBeTruthy();
+    // The phone form counts the pain reports apart too, never inside CRITICAL.
+    expect(screen.getByText('SAFETY 2 · CRITICAL · 2 · PAIN REPORTS')).toBeTruthy();
+  });
+
+  test('a critical pain report beside an ordinary high names the pain report on the top rung', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e1', severity: 'high' }),
+        escalation({ escalation_id: 'e2', severity: 'critical', metadata: PAIN }),
+      ],
+    });
+
+    // The pain report earned the top rung, so it is named first; the ordinary
+    // high keeps its own number and word.
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT · 1 · HIGH');
+    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    expect(screen.getByText('Safety 1 pain report, 1 high')).toBeTruthy();
+  });
+
+  test('pain reports beside an ordinary high are never counted under HIGH on the phone', async () => {
+    await renderBadge('coach', {
+      escalations: [
+        escalation({ escalation_id: 'e0', severity: 'high' }),
+        ...[1, 2, 3, 4, 5].map((n) => escalation({ escalation_id: `p${n}`, severity: 'high', metadata: PAIN })),
+      ],
+    });
+
+    expect(screen.getByText('SAFETY 1 · HIGH · 5 · PAIN REPORTS')).toBeTruthy();
+    expect(screen.getByText('Safety 1 high, 5 pain reports')).toBeTruthy();
+  });
+
+  test('a high pain report alone wears the rung below the top, named as a pain report', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'high', metadata: PAIN })] });
+
+    const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
+    expect(compact.closest('.badge')?.className).toContain('badge--restricted');
+  });
+
+  test('a moderate pain escalation still does not raise the badge', async () => {
+    await renderBadge('coach', { escalations: [escalation({ severity: 'moderate', metadata: PAIN })] });
+    expect(screen.queryByRole('link', { name: /Safety escalations needing acknowledgement/i })).toBeNull();
   });
 });
