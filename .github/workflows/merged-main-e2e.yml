@@ -309,6 +309,8 @@ jobs:
             'test:e2e:athlete',
             'test:e2e:guardian',
             'test:e2e:activation',
+            // #1482 item 5: nine admin pages at 375 / 460 / 768px.
+            'test:e2e:admin-narrow',
           ];
 
           const { scripts } = JSON.parse(

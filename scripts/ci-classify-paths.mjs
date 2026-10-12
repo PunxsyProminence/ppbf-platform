@@ -367,6 +367,49 @@ const isActivationE2ePath = (file) =>
     'apps/web/e2e/support/',
   ]) || file === 'apps/web/playwright.config.ts';
 
+/* THE ADMIN NARROW-WIDTH CHECK (e2e/admin-narrow-widths.spec.ts).
+   ------------------------------------------------------------------------
+
+   Nine admin pages, loaded with realistic rows at 375, 460 and 768px, must
+   not scroll sideways (#1482 item 5: the live audit measured eight of them
+   wider than a gym tablet's screen, and /admin/people cutting off its table
+   title). The suite runs when one of those pages changes, when its own spec
+   or fixtures change, when the shared sign-in stub or the Playwright config
+   changes, when the shell that wraps /admin/compliance-center changes, and
+   when the stylesheets change -- the overflow it was written for was a CSS
+   decoration (.lamp, in design-system/legacy), not markup. Not wider: the rest
+   of the admin area is not on its path. */
+const ADMIN_NARROW_PAGES = [
+  'athlete-consent', 'compliance-center', 'escalations', 'feedback', 'people',
+  'safety-flags', 'safety-review', 'video-compliance', 'waiver-status',
+];
+const isAdminNarrowE2ePath = (file) =>
+  /* The signed-in plumbing every gated page stands on (the session gate, the
+     Card Catalog, the shared stylesheets, the e2e sign-in helper) is chrome
+     these admin pages render too, so it attends this suite as well. */
+  isSignedInJourneyPath(file) ||
+  startsWithAny(file, [
+    ...ADMIN_NARROW_PAGES.map((page) => `apps/web/app/admin/${page}/`),
+    'apps/web/e2e/admin-narrow-widths',
+    /* THE SHARED CHROME. app/layout.tsx mounts GlobalRoleHeader (the session
+       bar) above every admin page this suite measures, and the components it
+       renders take width at 320px as much as the page body does. A change to
+       any of them can bring the horizontal scroll back, so each runs this
+       suite. Prefix match, so the colocated tests attend too. */
+    'apps/web/components/GlobalRoleHeader',
+    'apps/web/components/PlateVariantGround',
+    'apps/web/components/ThemeProvider',
+    'apps/web/components/ChromeLink',
+    'apps/web/components/FeedbackBox',
+    'apps/web/components/Corridor',
+    'apps/web/components/CommandsOverlay',
+    'apps/web/components/SafetyAttentionBadge',
+    'apps/web/components/SoundToggle',
+    'apps/web/components/sessionBarControls',
+  ]) ||
+  file === 'apps/web/app/layout.tsx' ||
+  file === 'apps/web/app/globals.css';
+
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
   const docsOnly = files.length > 0 && files.every(isDocumentationPath);
@@ -377,6 +420,7 @@ export function classifyPaths(paths) {
   const athleteE2e = files.some(isAthleteE2ePath);
   const guardianE2e = files.some(isGuardianE2ePath);
   const activationE2e = files.some(isActivationE2ePath);
+  const adminNarrowE2e = files.some(isAdminNarrowE2ePath);
   const unknownCode =
     !docsOnly &&
     files.length > 0 &&
@@ -386,7 +430,8 @@ export function classifyPaths(paths) {
     !coachE2e &&
     !athleteE2e &&
     !guardianE2e &&
-    !activationE2e;
+    !activationE2e &&
+    !adminNarrowE2e;
 
   /* WHICH files were unrecognised, not merely whether any were. The boolean
      alone cannot be reported usefully: "this diff touched code no predicate
@@ -414,6 +459,7 @@ export function classifyPaths(paths) {
     athleteE2e,
     guardianE2e,
     activationE2e,
+    adminNarrowE2e,
     unknownCode,
     unclassifiedPaths,
   };
@@ -429,6 +475,7 @@ function outputLines(result) {
     `athlete_e2e=${result.athleteE2e}`,
     `guardian_e2e=${result.guardianE2e}`,
     `activation_e2e=${result.activationE2e}`,
+    `admin_narrow_e2e=${result.adminNarrowE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
 }
