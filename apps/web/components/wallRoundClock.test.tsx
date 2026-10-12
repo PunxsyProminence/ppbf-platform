@@ -65,6 +65,7 @@ function serverView(): RoundTimerView | null {
 }
 
 let pairedTv = true;
+let publicFails = false;
 let fetchMock: jest.Mock;
 
 function sessionReads(): number {
@@ -93,6 +94,7 @@ beforeEach(() => {
   jest.setSystemTime(T0);
   played.length = 0;
   pairedTv = true;
+  publicFails = false;
   serverTimer = null;
   fetchMock = jest.fn(async (url: string) => {
     if (url.includes('/api/pilot/tv/session')) {
@@ -101,6 +103,7 @@ beforeEach(() => {
       const session = { run_id: 'ssrun_1', timer };
       return { ok: true, status: 200, json: async () => ({ tv: { tv_name: 'Gym main' }, session, board: board(), board_status: 'ok' }) } as Response;
     }
+    if (publicFails) return { ok: false, status: 503, json: async () => ({}) } as Response;
     return { ok: true, status: 200, json: async () => ({ ok: true, board: { ...board(), scope: 'public' } }) } as Response;
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -198,5 +201,30 @@ describe('the round clock on a paired TV', () => {
     await seconds(15);
     expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
     expect(played).toEqual([]);
+  });
+
+  test('a poll that pulls the count back across a bell never rings that bell twice', async () => {
+    // Round 1 ends 3 seconds after load.
+    serverTimer = { startedAt: T0 - 27_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    await seconds(4);
+    expect(played).toEqual(['bell']);
+    // The server's clock reads 3 seconds behind the TV's from here: the next poll puts round 1 back
+    // in work with a second or two left, and it ends again on the TV.
+    serverTimer = { startedAt: T0 - 24_000, state: 'running' };
+    await seconds(8);
+    expect(played).toEqual(['bell']);
+  });
+
+  test('a TV that loses its pairing drops the round clock, even when the public read fails too', async () => {
+    serverTimer = { startedAt: T0, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Round clock' })).toBeInTheDocument();
+    pairedTv = false;
+    publicFails = true;
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
   });
 });
