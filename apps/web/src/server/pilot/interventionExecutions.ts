@@ -417,6 +417,17 @@ export async function correctExecution(input: ExecutionFactsInput & {
          where organization_id = $1 and execution_id = $2 and status = 'active'`,
         [input.organizationId, newId],
       );
+      // Unfinished work has no end time. The successor copied the closed
+      // record's actual_end, and closeExecution keeps an existing one, so left
+      // here it would stand as the end of the work when it is closed again
+      // (Codex P2 on #1507). Cleared unless this correction names one itself.
+      if (input.actualEnd === undefined || input.actualEnd === null) {
+        await client.query(
+          `update pilot.intervention_executions set actual_end = null
+           where organization_id = $1 and execution_id = $2`,
+          [input.organizationId, newId],
+        );
+      }
     }
 
     await client.query(

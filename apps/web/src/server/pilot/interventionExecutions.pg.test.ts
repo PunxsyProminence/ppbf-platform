@@ -826,6 +826,10 @@ describe('the real intervention-execution lifecycle against real rows', () => {
       // Closed and reviewed, with a piece of evidence on it.
       await insertExecution(client, 'exec-reviewed', { status: 'completed' });
       await client.query(
+        `update pilot.intervention_executions set actual_start = '2026-09-01T09:00:00Z', actual_end = '2026-09-01T10:00:00Z'
+         where execution_id = 'exec-reviewed'`,
+      );
+      await client.query(
         `insert into pilot.intervention_evidence_links
            (organization_id, link_id, execution_id, evidence_role, source_kind, source_id, linked_by_account_id)
          values ($1, 'link-reviewed', 'exec-reviewed', 'baseline', 'training_attempt', 'att-1', $2)`,
@@ -881,6 +885,9 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         correctedByAccountId: COACH_ID,
       });
       expect(reopened).toMatchObject({ version: 3, status: 'in_progress' });
+      // Unfinished work has no end time (Codex P2 on #1507): the closed
+      // record's end does not ride along into the reopened one.
+      expect(reopened!.actual_end).toBeNull();
       const afterReopen = await everything();
       // The verdict is retired, not deleted: still there, on the current
       // record, with its reviewer, its notes and a retirement time.
@@ -909,6 +916,9 @@ describe('the real intervention-execution lifecycle against real rows', () => {
         outcome: 'completed',
       });
       expect(closedAgain).toMatchObject({ status: 'completed' });
+      // Closed again, it carries the new close time, not the old one.
+      expect(closedAgain!.actual_end).not.toBeNull();
+      expect(new Date(closedAgain!.actual_end!).getTime()).toBeGreaterThan(new Date('2026-09-01T10:00:00Z').getTime());
       const fresh = await reviewOutcome({
         organizationId: ORG_ID,
         executionId: reopened!.execution_id,
