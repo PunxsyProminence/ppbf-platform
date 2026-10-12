@@ -3,7 +3,7 @@
 
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 
-import { advanceRoundTimer, KNOCK_SECONDS, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
+import { advanceRoundTimer, isNewSet, KNOCK_SECONDS, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 
 function view(overrides: Partial<RoundTimerView> = {}): RoundTimerView {
   return {
@@ -37,7 +37,8 @@ describe('advanceRoundTimer', () => {
   });
 
   test('done at the end of the last round, with no rest after it', () => {
-    expect(advanceRoundTimer(view(), 660)).toMatchObject({ phase: 'done', round: 3, seconds_left: 0 });
+    expect(advanceRoundTimer(view(), 660)).toMatchObject({ phase: 'done', round: 3, seconds_left: 0, seconds_since_done: 0 });
+    expect(advanceRoundTimer(view(), 700)).toMatchObject({ phase: 'done', seconds_since_done: 40 });
     expect(advanceRoundTimer(view({ round: 3, seconds_left: 5 }), 99)).toMatchObject({ phase: 'done', round: 3 });
   });
 
@@ -92,10 +93,41 @@ describe('roundSounds', () => {
   });
 
   test('the last bell rings at the end of the last round, but not on waking long after it', () => {
-    expect(roundSounds('r', reading({ round: 3, seconds_left: 1 }), reading({ round: 3, phase: 'done', seconds_left: 0 }), CONFIG, 7)).toEqual([
+    expect(roundSounds('r', reading({ round: 3, seconds_left: 1 }), reading({ round: 3, phase: 'done', seconds_left: 0, seconds_since_done: 0 }), CONFIG, 7)).toEqual([
       { voice: 'bell', keys: ['r:3:end'] },
     ]);
-    expect(roundSounds('r', reading({ round: 3, seconds_left: 90 }), reading({ round: 3, phase: 'done', seconds_left: 0 }), CONFIG, 7)).toEqual([]);
+    // A tab that slept through the end: counted on here, ten minutes past it.
+    expect(roundSounds('r', reading({ round: 3, seconds_left: 5 }), reading({ round: 3, phase: 'done', seconds_left: 0, seconds_since_done: 600 }), CONFIG, 7)).toEqual([]);
+    // "done" as the server reports it has no known age, so it is past.
+    expect(roundSounds('r', reading({ round: 3, seconds_left: 1 }), reading({ round: 3, phase: 'done', seconds_left: 0 }), CONFIG, 7)).toEqual([]);
+  });
+
+  test('a paused round resumed across its end still rings its end bell', () => {
+    expect(roundSounds('r', reading({ state: 'paused', seconds_left: 2 }), reading({ phase: 'rest', seconds_left: 57 }), CONFIG, 7)).toEqual([
+      { voice: 'bell', keys: ['r:1:end'] },
+    ]);
+  });
+
+  test('with a short rest, a poll pulling the count back from the next round into the rest rings nothing', () => {
+    const config = { round_seconds: 30, rest_seconds: 5 };
+    expect(roundSounds('r', reading({ round: 2, seconds_left: 30 }), reading({ phase: 'rest', round: 1, seconds_left: 1 }), config, 7)).toEqual([]);
+  });
+
+  test('a new set on the same run starts from the top: its first bell rings', () => {
+    // Ended, reconfigured and started between two polls: round 1 again, just begun.
+    const prev = reading({ round: 3, phase: 'done', seconds_left: 0 });
+    const next = reading({ round: 1, seconds_left: 178 });
+    expect(isNewSet(prev, next, CONFIG, 7)).toBe(true);
+    expect(roundSounds('r#2', prev, next, CONFIG, 7)).toEqual([{ voice: 'bell', keys: ['r#2:1:start'] }]);
+    expect(isNewSet(prev, reading({ state: 'ready', phase: 'ready', round: 0, seconds_left: 0 }), CONFIG, 7)).toBe(true);
+    expect(isNewSet(prev, reading({ state: 'ended', phase: 'ended', round: 0, seconds_left: 0 }), CONFIG, 7)).toBe(true);
+    // A small backwards correction is not a new set.
+    expect(isNewSet(reading({ round: 2, seconds_left: 179 }), reading({ phase: 'rest', round: 1, seconds_left: 1 }), CONFIG, 7)).toBe(false);
+    expect(isNewSet(reading({ round: 2, seconds_left: 179 }), reading({ round: 1, seconds_left: 1 }), { round_seconds: 180, rest_seconds: 0 }, 7)).toBe(false);
+  });
+
+  test('no knock for a jump straight past it (a tab that slept, or a late poll)', () => {
+    expect(roundSounds('r', reading({ seconds_left: 40 }), reading({ seconds_left: 1 }), CONFIG, 7)).toEqual([]);
   });
 
   test(`the knock once, as a round passes ${KNOCK_SECONDS} seconds left`, () => {

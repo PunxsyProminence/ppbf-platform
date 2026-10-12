@@ -16,11 +16,14 @@ import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard } from '@/src/server/pilot/wallDisplay';
 
 const played: string[] = [];
+let engineBusy = false;
 
 jest.mock('./useGymSound', () => ({
   __esModule: true,
   default: () => ({ enabled: true, ready: true, status: 'on', play: jest.fn(), setEnabled: jest.fn() }),
   playGymSound: (voice: string) => {
+    // Like the engine: a sound asked for while another is still ringing is dropped, not stacked.
+    if (engineBusy) return false;
     played.push(voice);
     return true;
   },
@@ -66,6 +69,7 @@ function serverView(): RoundTimerView | null {
 
 let pairedTv = true;
 let publicFails = false;
+let boardMiss = false;
 let fetchMock: jest.Mock;
 
 function sessionReads(): number {
@@ -93,15 +97,17 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(T0);
   played.length = 0;
+  engineBusy = false;
   pairedTv = true;
   publicFails = false;
+  boardMiss = false;
   serverTimer = null;
   fetchMock = jest.fn(async (url: string) => {
     if (url.includes('/api/pilot/tv/session')) {
       if (!pairedTv) return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as Response;
       const timer = serverView();
       const session = { run_id: 'ssrun_1', timer };
-      return { ok: true, status: 200, json: async () => ({ tv: { tv_name: 'Gym main' }, session, board: board(), board_status: 'ok' }) } as Response;
+      return { ok: true, status: 200, json: async () => ({ tv: { tv_name: 'Gym main' }, session, board: boardMiss ? null : board(), board_status: boardMiss ? 'unavailable' : 'ok' }) } as Response;
     }
     if (publicFails) return { ok: false, status: 503, json: async () => ({}) } as Response;
     return { ok: true, status: 200, json: async () => ({ ok: true, board: { ...board(), scope: 'public' } }) } as Response;
@@ -157,7 +163,8 @@ describe('the round clock on a paired TV', () => {
   });
 
   test('a reload mid-round rings nothing late', async () => {
-    serverTimer = { startedAt: T0 - 31_000, state: 'running' };
+    // 10 seconds into round 1 (of 30): the start bell is long past.
+    serverTimer = { startedAt: T0 - 10_000, state: 'running' };
     const first = render(<WallDisplay />);
     await settle();
     first.unmount();
@@ -226,5 +233,53 @@ describe('the round clock on a paired TV', () => {
     publicFails = true;
     await seconds(WALL_ROUND_POLL_MS / 1000);
     expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+  });
+
+  test('a second set on the same run rings its own bells', async () => {
+    serverTimer = { startedAt: T0 - 2_000, state: 'running', config: { rounds_total: 1 } };
+    render(<WallDisplay />);
+    await settle();
+    await seconds(30);
+    expect(played).toEqual(['knock', 'bell']);
+    // The coach ends, sets one more round and starts, all between two polls.
+    serverTimer = { startedAt: Date.now(), state: 'running', config: { rounds_total: 1 } };
+    await seconds(WALL_ROUND_POLL_MS / 1000 + 25);
+    // The new set: its start bell, its knock and its end bell, none of them blocked by the first set's.
+    expect(played).toEqual(['knock', 'bell', 'bell', 'knock', 'bell']);
+  });
+
+  test("a board miss still brings the coach's Pause to the wall", async () => {
+    serverTimer = { startedAt: T0, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    boardMiss = true;
+    serverTimer = { startedAt: null, state: 'ready' };
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Round 1 of 3 · Ready');
+  });
+
+  test('a set whose rounds are all done keeps the short poll, so the next Start is seen in time', async () => {
+    serverTimer = { startedAt: T0 - 200_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Round clock' })).toHaveTextContent('Rounds done');
+    const start = sessionReads();
+    await seconds(WALL_ROUND_POLL_MS / 1000);
+    expect(sessionReads()).toBe(start + 1);
+  });
+
+  test('a bell the engine dropped because it was still ringing is tried again while still fresh', async () => {
+    // Round 1 ends 2 seconds after load.
+    serverTimer = { startedAt: T0 - 28_000, state: 'running' };
+    render(<WallDisplay />);
+    await settle();
+    engineBusy = true;
+    await seconds(2);
+    expect(played).toEqual([]);
+    engineBusy = false;
+    await seconds(1);
+    expect(played).toEqual(['bell']);
+    await seconds(3);
+    expect(played).toEqual(['bell']);
   });
 });

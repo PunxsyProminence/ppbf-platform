@@ -11,6 +11,8 @@ export interface WallRoundReading {
   round: number;
   rounds_total: number;
   seconds_left: number;
+  /** For a reading counted on into "done" here: how many seconds ago the last round ended. */
+  seconds_since_done?: number;
 }
 
 /** The reading `elapsed` whole seconds after `view` was read. Only a running timer moves. */
@@ -27,7 +29,7 @@ export function advanceRoundTimer(view: RoundTimerView, elapsed: number): WallRo
     remaining -= left;
     if (phase === 'work') {
       if (round >= view.rounds_total) {
-        return { ...base, phase: 'done', round, seconds_left: 0 };
+        return { ...base, phase: 'done', round, seconds_left: 0, seconds_since_done: remaining };
       }
       if (view.rest_seconds > 0) {
         phase = 'rest';
@@ -63,36 +65,57 @@ export interface RoundConfig {
 function periodAge(reading: WallRoundReading, config: RoundConfig): number {
   if (reading.phase === 'work') return config.round_seconds - reading.seconds_left;
   if (reading.phase === 'rest') return config.rest_seconds - reading.seconds_left;
-  return 0;
+  // "done" read from the server has no known age: treat it as old.
+  return reading.seconds_since_done ?? Number.POSITIVE_INFINITY;
 }
+
+/** Where a reading is in the set: later rounds and later phases sort higher. */
+function position(reading: WallRoundReading): number {
+  const phase = reading.phase === 'work' ? 0 : reading.phase === 'rest' ? 1 : reading.phase === 'done' ? 2 : -1;
+  return reading.round * 3 + phase;
+}
+
+/**
+ * A new set of rounds on the same run: the coach ended or reset the timer, or ended, reconfigured
+ * and started again between two polls (a fresh round that is EARLIER than the last reading). A
+ * poll's small backwards correction never looks like this: it lands near the end of a period, not
+ * at the start of one.
+ */
+export function isNewSet(prev: WallRoundReading | null, next: WallRoundReading, config: RoundConfig, fresh: number): boolean {
+  if (next.state === 'ready' || next.state === 'ended') return true;
+  if (!prev) return false;
+  return next.phase === 'work' && position(next) < position(prev) && periodAge(next, config) <= fresh;
+}
+
+const BEFORE_START: WallRoundReading = { state: 'ready', phase: 'ready', round: 0, rounds_total: 0, seconds_left: 0 };
 
 /**
  * What to sound going from one reading to the next:
  *   - the bell when a round ends and when the next one starts (one strike when they are the same
  *     moment, with no rest);
  *   - the knock when a round passes KNOCK_SECONDS left.
- * `fresh` is how many seconds old a transition may be and still sound. A start the TV learns about
- * on a later poll sounds if it is that recent; anything older (a reload, a TV that slept) is past
- * and stays silent. The first reading after a load has no `prev` and sounds nothing.
+ * Only forward motion sounds: a poll that pulls the count back across a boundary rings nothing.
+ * `fresh` is how many seconds old a transition may be and still sound; anything older (a reload,
+ * a TV that slept) is past and stays silent. The first reading after a load has no `prev` and
+ * sounds nothing. The caller gives a new set its own keys (isNewSet).
  */
 export function roundSounds(
-  runId: string,
-  prev: WallRoundReading | null,
+  setKey: string,
+  prevReading: WallRoundReading | null,
   next: WallRoundReading,
   config: RoundConfig,
   fresh: number,
 ): WallRoundSound[] {
-  if (!prev || next.state !== 'running') return [];
-  // A finished timer has no period to age, so "done" is fresh only if the last reading was about
-  // to end -- a TV that slept through the last bell does not ring it on waking.
-  const isFresh = next.phase === 'done' ? prev.seconds_left <= fresh : periodAge(next, config) <= fresh;
-  const movedOn = next.round > prev.round || next.phase !== prev.phase;
+  if (!prevReading || next.state !== 'running') return [];
+  const prev = isNewSet(prevReading, next, config, fresh) ? BEFORE_START : prevReading;
+  const isFresh = periodAge(next, config) <= fresh;
+  const movedOn = position(next) > position(prev);
   const bellKeys: string[] = [];
-  if (movedOn && isFresh && prev.phase === 'work' && prev.state === 'running') {
-    bellKeys.push(`${runId}:${prev.round}:end`);
+  if (movedOn && isFresh && prev.phase === 'work') {
+    bellKeys.push(`${setKey}:${prev.round}:end`);
   }
   if (movedOn && isFresh && next.phase === 'work') {
-    bellKeys.push(`${runId}:${next.round}:start`);
+    bellKeys.push(`${setKey}:${next.round}:start`);
   }
   const sounds: WallRoundSound[] = bellKeys.length > 0 ? [{ voice: 'bell', keys: bellKeys }] : [];
   if (
@@ -101,9 +124,9 @@ export function roundSounds(
     && prev.round === next.round
     && prev.seconds_left > KNOCK_SECONDS
     && next.seconds_left <= KNOCK_SECONDS
-    && next.seconds_left > 0
+    && next.seconds_left >= KNOCK_SECONDS - 3
   ) {
-    sounds.push({ voice: 'knock', keys: [`${runId}:${next.round}:knock`] });
+    sounds.push({ voice: 'knock', keys: [`${setKey}:${next.round}:knock`] });
   }
   return sounds;
 }
