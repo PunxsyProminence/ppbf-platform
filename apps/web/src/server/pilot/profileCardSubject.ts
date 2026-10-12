@@ -1,5 +1,8 @@
+import { getCoachDisplayName } from './achievements';
 import type { PilotPrincipal } from './auth';
 import { queryOne } from './db';
+import type { SubjectIdentity } from './profileDb';
+import { isFamilyViewer } from './profileIdentity';
 
 /**
  * WHOSE CARD A REQUEST NAMES.
@@ -38,6 +41,25 @@ export async function resolveCardSubjectAccountId(
   if (!accountId) accountId = principal.accountId;
   if (accountId.length > 128) return null;
   return accountId;
+}
+
+/**
+ * The coach's name as this viewer is given it on a card.
+ *
+ * Staff get the card's own staff name (profileDb.staffDisplayName), as before.
+ * An athlete or parent gets getCoachDisplayName, the reader every other family
+ * screen uses (OD-2026-10-06-025 ruling 2): staffDisplayName returns the
+ * account id when a login email yields no name, and otherwise a capitalised
+ * email stem, which for a coach provisioned with an email-shaped id is most of
+ * the id. getCoachDisplayName drops digits, never returns an id, and falls to
+ * "Your coach".
+ */
+export async function coachNameForViewer(
+  principal: PilotPrincipal,
+  coach: SubjectIdentity,
+): Promise<string> {
+  if (!isFamilyViewer(principal.role)) return coach.fullName;
+  return getCoachDisplayName(principal.organizationId, coach.accountId);
 }
 
 /**

@@ -11,6 +11,9 @@ jest.mock('@/src/server/pilot/profileDb', () => ({
   getSubjectIdentity: jest.fn(),
   getAccountProfile: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getCoachDisplayName: jest.fn(async () => 'Coach Ray'),
+}));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -52,7 +55,8 @@ describe('GET /api/pilot/profile/me', () => {
     const raw = await response.text();
     const body = JSON.parse(raw) as { card: Record<string, unknown> };
 
-    expect(body.card.coachName).toBe('Ray Nolan');
+    // The family reader, not the staff name (which can be the id itself).
+    expect(body.card.coachName).toBe('Coach Ray');
     expect(body.card.coachPhotoAvailable).toBe(true);
     expect(body.card.coachAccountId).toBeNull();
     expect(raw).not.toContain(COACH);

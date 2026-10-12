@@ -83,6 +83,10 @@ export default function FightCard({ card, own = false, className = '' }: FightCa
               {card.coachName ? (
                 <span className="inline-flex items-center gap-[var(--s3)]">
                   <ProfilePortrait
+                    /* Keyed on the address: the parent hub reuses this card
+                       across a child switch, and a failed load on one child's
+                       coach must not hold the next child's on the plate. */
+                    key={card.accountId}
                     accountId={null}
                     src={coachPortraitUrl(apiBase(), card.accountId)}
                     initials={card.coachInitials ?? '—'}

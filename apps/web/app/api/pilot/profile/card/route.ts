@@ -8,7 +8,7 @@ import {
   resolveRelationship,
   toProfileSubject,
 } from '@/src/server/pilot/profileDb';
-import { resolveCardSubjectAccountId } from '@/src/server/pilot/profileCardSubject';
+import { coachNameForViewer, resolveCardSubjectAccountId } from '@/src/server/pilot/profileCardSubject';
 import { buildFightCard } from '@/src/server/pilot/profileIdentity';
 import { decidePortrait, decideRingName } from '@/src/server/pilot/profileVisibility';
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     if (identity.coachAccountId) {
       const coachIdentity = await getSubjectIdentity(principal.organizationId, identity.coachAccountId);
       if (coachIdentity) {
-        coachName = coachIdentity.fullName;
+        coachName = await coachNameForViewer(principal, coachIdentity);
         const coachProfile = await getAccountProfile(principal.organizationId, identity.coachAccountId);
         const coachRelationship = await resolveRelationship(principal, coachIdentity, principal.organizationId);
         coachPhotoAvailable = decidePortrait(

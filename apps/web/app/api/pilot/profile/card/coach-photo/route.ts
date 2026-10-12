@@ -63,8 +63,10 @@ export async function GET(request: NextRequest) {
     const coachIdentity = await getSubjectIdentity(principal.organizationId, identity.coachAccountId);
     if (!coachIdentity) return hiddenNotFound();
     // The same reach check profile/photo/[accountId] runs on whoever it is
-    // asked for. A coach of record is not an athlete, so today this passes;
-    // it is here so this route never admits less narrowly than that one.
+    // asked for, so this route never admits less narrowly than that one. For
+    // a coach account with no athlete record it passes; nothing stops
+    // athletes.coach_id naming an account that has one, and then it is the
+    // athlete boundary that decides, as it would by id.
     try {
       await assertViewerMayReachSubject(principal, coachIdentity);
     } catch {

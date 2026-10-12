@@ -301,7 +301,7 @@ export interface FightCard {
   readonly program: ProgramChoice;
   readonly programLabel: string;
   readonly coachName: string | null;
-  /** Null for an athlete or parent viewer, always. See viewerIsFamily. */
+  /** Null for an athlete or parent viewer, always. See isFamilyViewer. */
   readonly coachAccountId: string | null;
   readonly coachPhotoAvailable: boolean;
   readonly coachInitials: string | null;
@@ -330,27 +330,24 @@ export interface FightCardInput {
  * names; restated here rather than imported because this file stays pure and
  * that one reads the database.
  *
+ * Two halves. buildFightCard drops the id for these viewers. The NAME a
+ * family is given is the routes' job (coachNameForViewer in
+ * profileCardSubject.ts): it comes from getCoachDisplayName, the reader every
+ * other family screen uses, because the staff name this file is otherwise
+ * handed (profileDb.staffDisplayName) can be the account id, or the id with
+ * its first letter capitalised.
+ *
  * The card's coach portrait does not need the id: it is fetched by the card's
  * own subject from /api/pilot/profile/card/coach-photo, which finds the coach
  * on the server. Staff keep the id they had.
  */
-function viewerIsFamily(role: PilotRole): boolean {
+export function isFamilyViewer(role: PilotRole): boolean {
   return role === 'athlete' || role === 'parent';
 }
 
-/**
- * The name profileDb.staffDisplayName falls back to when a coach's login email
- * yields no name is the account id itself. Shown to a family that would be the
- * id under another label, so a family gets the floor phrase
- * getCoachDisplayName (achievements.ts) already uses for the same case.
- */
-const FAMILY_COACH_NAME_FLOOR = 'Your coach';
-
 export function buildFightCard(input: FightCardInput, now: Date): FightCard {
-  const family = viewerIsFamily(input.viewerRole);
-  const coachName = family && input.coachName !== null && input.coachName === input.coachAccountId
-    ? FAMILY_COACH_NAME_FLOOR
-    : input.coachName;
+  const family = isFamilyViewer(input.viewerRole);
+  const coachName = input.coachName;
   return {
     accountId: input.accountId,
     displayName: input.fullName,

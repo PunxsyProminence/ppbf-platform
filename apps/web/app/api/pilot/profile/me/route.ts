@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { coachNameForViewer } from '@/src/server/pilot/profileCardSubject';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   clearNickname,
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
             ringName: profile.nicknameClearedAt ? null : profile.nickname,
             corner: profile.corner,
             program: profile.program,
-            coachName: coachIdentity?.fullName ?? null,
+            coachName: coachIdentity ? await coachNameForViewer(principal, coachIdentity) : null,
             coachAccountId: identity.coachAccountId,
             // The coach's own portrait is only ever released by the coach's own
             // review, so this is a state read and not a policy decision.

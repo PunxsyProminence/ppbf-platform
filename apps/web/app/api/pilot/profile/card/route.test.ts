@@ -24,6 +24,11 @@ jest.mock('@/src/server/pilot/profileDb', () => {
   };
 });
 jest.mock('@/src/server/pilot/db', () => ({ queryOne: jest.fn() }));
+// The family name reader. Its own derivation (digits dropped, "Coach" prefix,
+// never an id) is tested in achievements; here what matters is WHO gets it.
+jest.mock('@/src/server/pilot/achievements', () => ({
+  getCoachDisplayName: jest.fn(async () => 'Coach Ray'),
+}));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -91,8 +96,9 @@ describe('GET /api/pilot/profile/card: the coach line, by viewer role', () => {
     const raw = await response.text();
     const body = JSON.parse(raw) as { card: Record<string, unknown> };
 
-    // Everyone who may open the card sees who is in the corner.
-    expect(body.card.coachName).toBe('Ray Nolan');
+    // Everyone who may open the card sees who is in the corner; a family
+    // through the family reader, staff through the card's staff name.
+    expect(body.card.coachName).toBe(viewer.keepsId ? 'Ray Nolan' : 'Coach Ray');
     expect(body.card.coachPhotoAvailable).toBe(true);
     if (viewer.keepsId) {
       expect(body.card.coachAccountId).toBe(COACH);
@@ -101,5 +107,27 @@ describe('GET /api/pilot/profile/card: the coach line, by viewer role', () => {
       // Not under this key, not under any other.
       expect(raw).not.toContain(COACH);
     }
+  });
+});
+
+describe('GET /api/pilot/profile/card: a coach whose staff name IS the account id', () => {
+  // profileDb.staffDisplayName returns the account id when the login email
+  // yields no name, and a capitalised stem otherwise ("Rnolan7").
+  test.each(['athlete', 'parent'] as const)('%s viewer never sees it, under any key', async (role) => {
+    const viewer = VIEWERS[role];
+    mockPrincipal.mockResolvedValue(
+      { accountId: viewer.accountId, role, organizationId: ORG, athleteId: viewer.athleteId } as never,
+    );
+    mockRelationship.mockImplementation(async (_v, subject) =>
+      (subject.accountId === COACH ? viewer.coach : viewer.card) as never);
+    mockIdentity.mockImplementation(async (_org, accountId) => (accountId === COACH
+      ? { ...(IDENTITIES[COACH] as object), fullName: COACH }
+      : IDENTITIES[accountId] ?? null) as never);
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/profile/card?athlete_id=ath-1'));
+    const raw = await response.text();
+    expect(response.status).toBe(200);
+    expect(JSON.parse(raw).card.coachName).toBe('Coach Ray');
+    expect(raw).not.toContain(COACH);
   });
 });

@@ -145,6 +145,14 @@ describe('GET /api/pilot/profile/card/coach-photo', () => {
     expect(mockIdentity).not.toHaveBeenCalledWith(ORG, COACH);
   });
 
+  test('the reach check on the COACH is run too: refused there, nothing is served', async () => {
+    mockPrincipal.mockResolvedValue(principal('parent', PARENT));
+    mockReach.mockImplementation(async (_viewer, subject) => {
+      if (subject.accountId === COACH) throw new Error('Forbidden');
+    });
+    await expectHidden(await GET(request('?athlete_id=ath-1')));
+  });
+
   test('a viewer with no relationship to the card is refused before the coach is looked up', async () => {
     mockPrincipal.mockResolvedValue(principal('parent', 'acct-other-parent'));
     await expectHidden(await GET(request('?athlete_id=ath-1')));

@@ -247,18 +247,12 @@ describe('the card', () => {
       if (!keeps) expect(JSON.stringify(card)).not.toContain('acct-coach-7f3a');
     });
 
-    it('does not hand a family the id under the name label when the name fell back to it', () => {
-      // profileDb.staffDisplayName returns the account id for a login email
-      // that yields no name.
-      const fallback = { ...withCoach, coachName: 'acct-coach-7f3a' };
-      for (const role of ['athlete', 'parent'] as const) {
-        const card = buildFightCard({ ...fallback, viewerRole: role }, now);
-        expect(card.coachName).toBe('Your coach');
-        expect(card.coachInitials).toBe('YC');
-        expect(JSON.stringify(card)).not.toContain('acct-coach-7f3a');
+    it('passes the name it is given through unchanged: which name a family gets is the route\'s choice', () => {
+      // coachNameForViewer (profileCardSubject.ts) picks the family reader;
+      // this layer must not rewrite it either way.
+      for (const role of Object.keys(keepsId) as PilotRole[]) {
+        expect(buildFightCard({ ...withCoach, coachName: 'Coach Ray', viewerRole: role }, now).coachName).toBe('Coach Ray');
       }
-      // Staff see what they saw before.
-      expect(buildFightCard({ ...fallback, viewerRole: 'coach' }, now).coachName).toBe('acct-coach-7f3a');
     });
 
     it('leaves a card with no coach as it was', () => {
