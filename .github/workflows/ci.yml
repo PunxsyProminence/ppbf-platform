@@ -164,7 +164,9 @@ jobs:
             // unauthenticated from end to end, so the client role cache is
             // never consulted during it.
             activationE2e: false,
-            adminNarrowE2e: false,
+            // The admin pages the narrow-width suite measures sign in through
+            // the same session gate, so the signed-in plumbing attends it.
+            adminNarrowE2e: true,
             unknownCode: false,
             unclassifiedPaths: [],
           });
@@ -212,6 +214,13 @@ jobs:
           // The overflow was a stylesheet decoration, so the sheets run it too.
           assert.equal(classifyPaths(['design-system/legacy/ppbf-leather-brass.css']).adminNarrowE2e, true);
           assert.equal(classifyPaths(['apps/web/app/globals.css']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/layout.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/GlobalRoleHeader.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/FeedbackBox.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/sessionBarControls.ts']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/CardCatalog.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/components/RoleSessionGate.tsx']).adminNarrowE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/coach/cue-library/page.tsx']).adminNarrowE2e, false);
 
           // The homepage suite was the one journey whose own spec did not fire
           // its flag, so an edit to public-homepage.spec.ts could not run

@@ -368,13 +368,31 @@ const ADMIN_NARROW_PAGES = [
   'safety-flags', 'safety-review', 'video-compliance', 'waiver-status',
 ];
 const isAdminNarrowE2ePath = (file) =>
+  /* The signed-in plumbing every gated page stands on (the session gate, the
+     Card Catalog, the shared stylesheets, the e2e sign-in helper) is chrome
+     these admin pages render too, so it attends this suite as well. */
+  isSignedInJourneyPath(file) ||
   startsWithAny(file, [
     ...ADMIN_NARROW_PAGES.map((page) => `apps/web/app/admin/${page}/`),
     'apps/web/e2e/admin-narrow-widths',
-    'apps/web/e2e/support/',
-    'apps/web/components/RoleStandaloneView',
-    'design-system/',
-  ]) || file === 'apps/web/playwright.config.ts' || file === 'apps/web/app/globals.css';
+    /* THE SHARED CHROME. app/layout.tsx mounts GlobalRoleHeader (the session
+       bar) above every admin page this suite measures, and the components it
+       renders take width at 320px as much as the page body does. A change to
+       any of them can bring the horizontal scroll back, so each runs this
+       suite. Prefix match, so the colocated tests attend too. */
+    'apps/web/components/GlobalRoleHeader',
+    'apps/web/components/PlateVariantGround',
+    'apps/web/components/ThemeProvider',
+    'apps/web/components/ChromeLink',
+    'apps/web/components/FeedbackBox',
+    'apps/web/components/Corridor',
+    'apps/web/components/CommandsOverlay',
+    'apps/web/components/SafetyAttentionBadge',
+    'apps/web/components/SoundToggle',
+    'apps/web/components/sessionBarControls',
+  ]) ||
+  file === 'apps/web/app/layout.tsx' ||
+  file === 'apps/web/app/globals.css';
 
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
