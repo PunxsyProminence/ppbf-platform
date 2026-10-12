@@ -469,6 +469,11 @@ export default function InterventionExecutionsPage() {
                                 onChange={(e) => setCloseForm((f) => ({ ...f, outcome: e.target.value }))}>
                                 <option value="completed">Completed</option>
                                 <option value="stopped">Stopped early</option>
+                                {/* Correcting a closed record back to unfinished (#1481, Jason
+                                    "6B"): its verdict is retired to history on the review page. */}
+                                {correcting === row.execution_id && row.status !== 'in_progress' ? (
+                                  <option value="in_progress">Still in progress (reopen)</option>
+                                ) : null}
                               </select>
                             </div>
                           )}

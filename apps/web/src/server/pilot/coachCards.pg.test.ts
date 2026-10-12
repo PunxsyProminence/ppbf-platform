@@ -464,7 +464,8 @@ describe('coach-cards migration', () => {
 });
 
 describe('group issuance against real memberships and real authorization', () => {
-  test('issues to authorized ACTIVE members under one issuance_id, skips off-roster members, excludes lapsed/ended', async () => {
+  // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
+  test('issues to every ACTIVE member of the gym under one issuance_id, another coach\'s athlete included, excludes lapsed/ended', async () => {
     const client = await freshDatabase('cards_group');
     activeClient = client;
     try {
@@ -486,8 +487,9 @@ describe('group issuance against real memberships and real authorization', () =>
 
       expect(result).not.toBeNull();
       expect(result!.program_name).toBe(PROGRAM_NAME);
-      expect(result!.issued.map((entry) => entry.athlete_id)).toEqual([ATHLETES[0].id, ATHLETES[2].id]);
-      expect(result!.skipped).toEqual([{ athlete_id: ATHLETES[1].id, athlete_name: 'Bela Cards' }]);
+      // Bela is another coach's athlete of this gym: reached, so issued.
+      expect(result!.issued.map((entry) => entry.athlete_id)).toEqual([ATHLETES[0].id, ATHLETES[1].id, ATHLETES[2].id]);
+      expect(result!.skipped).toEqual([]);
 
       const rows = await client.query<{
         athlete_id: string;
@@ -500,9 +502,9 @@ describe('group issuance against real memberships and real authorization', () =>
          from pilot.drill_assignments where organization_id = $1 order by athlete_id`,
         [ORG_ID],
       );
-      // Exactly the two authorized active members -- Dana (lapsed) and Ede
-      // (ended) never appear, in the report or on the table.
-      expect(rows.rows.map((row) => row.athlete_id)).toEqual([ATHLETES[0].id, ATHLETES[2].id]);
+      // Exactly the three active members -- Dana (lapsed) and Ede (ended)
+      // never appear, in the report or on the table.
+      expect(rows.rows.map((row) => row.athlete_id)).toEqual([ATHLETES[0].id, ATHLETES[1].id, ATHLETES[2].id]);
       expect(new Set(rows.rows.map((row) => row.issuance_id)).size).toBe(1);
       expect(rows.rows[0].issuance_id).toBe(result!.issuance_id);
       for (const row of rows.rows) {
@@ -966,7 +968,7 @@ describe('assignment reads that predate Coach Cards do not require its migration
 // verification state. A divergence like that is the bug -- whichever side
 // is looser is the one that decides what actually leaks -- so this pins
 // them together in both directions rather than testing the list alone.
-describe('the listing and the verification endpoint agree about current access', () => {
+describe('the listing never shows more than the verification gate admits', () => {
   async function canVerify(actor: ActorIdentity, athleteId: string): Promise<boolean> {
     try {
       await assertActorCanAccessAthlete(actor, athleteId);
@@ -976,7 +978,7 @@ describe('the listing and the verification endpoint agree about current access',
     }
   }
 
-  test('authorized: both allow -- and after reassignment: both refuse, for the same athlete', async () => {
+  test('authorized: both allow -- and after reassignment the list narrows while the gym-wide gate still admits', async () => {
     const client = await freshDatabase('cards_agreement');
     activeClient = client;
     try {
@@ -1006,9 +1008,15 @@ describe('the listing and the verification endpoint agree about current access',
         [OTHER_COACH_ID, ORG_ID, ATHLETES[0].id],
       );
 
-      // (3) + (5) Both sides refuse now, and they refuse together.
+      // (3) Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym,
+      // so the access gate still admits the coach after reassignment. The card
+      // LIST is the coach's "my athletes" list (athleteIdsForCoach), which PR A
+      // keeps by the lane's Q1 default, so it drops the card. The two now
+      // differ on purpose and in the safe direction -- the list is the
+      // narrower side and shows nothing the gate would refuse; making the list
+      // gym-wide is PR B's question (#1480).
       expect(await listCoachCards(coachActor)).toEqual([]);
-      expect(await canVerify(coachActor, ATHLETES[0].id)).toBe(false);
+      expect(await canVerify(coachActor, ATHLETES[0].id)).toBe(true);
 
       // The coach who now HOLDS the athlete is allowed by the access gate --
       // so "nobody can reach this record" is not why the list came back

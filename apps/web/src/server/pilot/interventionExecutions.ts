@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
-import { ConflictError } from './errors';
 import { getProtocol } from './interventionProtocols';
 
 // Intervention executions (register module 026 slice 2) -- what ACTUALLY
@@ -401,23 +400,32 @@ export async function correctExecution(input: ExecutionFactsInput & {
       [input.organizationId, input.executionId, newId],
     );
 
-    // A VERDICT STANDS ON FINISHED WORK. reviewOutcome refuses to review an
-    // execution that is still in progress; a correction that reopens a closed
-    // one would put the verdict just carried across onto exactly that. So the
-    // one transition closed -> in progress is refused while a review stands,
-    // and the throw rolls the whole correction back. Asked here, after the
-    // move and inside the transaction, so it sees the reviews this correction
-    // now owns. Every other correction is untouched, as is reopening a record
-    // with no standing review.
+    // A VERDICT STANDS ON FINISHED WORK, so reopening retires it (Jason,
+    // 2026-10-12: "6B"; issue #1481, replacing the refusal PR #1472 added). A
+    // correction from closed back to in progress stamps the verdict just
+    // carried across `superseded` -- the same stamp reviewOutcome gives a
+    // verdict a re-review replaces: kept, dated by updated_at, still
+    // attributed to its reviewer, never deleted. It is told apart from a
+    // replaced verdict because no later review names it in supersedes_review_id
+    // (listRetiredReviews). Evidence links stay on the record (moved above).
+    // When the work is closed again the coach reviews it afresh and that
+    // review is the one active verdict. Asked here, after the move and inside
+    // the transaction, so it retires exactly the reviews this correction owns.
     if (finalStatus === 'in_progress' && current.status !== 'in_progress') {
-      const standing = await client.query(
-        `select 1 from pilot.intervention_outcome_reviews
+      await client.query(
+        `update pilot.intervention_outcome_reviews set status = 'superseded', updated_at = now()
          where organization_id = $1 and execution_id = $2 and status = 'active'`,
         [input.organizationId, newId],
       );
-      if (standing.rows.length > 0) {
-        throw new ConflictError(
-          'This execution has an outcome review, which stands on finished work. It cannot be corrected back to in progress.',
+      // Unfinished work has no end time. The successor copied the closed
+      // record's actual_end, and closeExecution keeps an existing one, so left
+      // here it would stand as the end of the work when it is closed again
+      // (Codex P2 on #1507). Cleared unless this correction names one itself.
+      if (input.actualEnd === undefined || input.actualEnd === null) {
+        await client.query(
+          `update pilot.intervention_executions set actual_end = null
+           where organization_id = $1 and execution_id = $2`,
+          [input.organizationId, newId],
         );
       }
     }

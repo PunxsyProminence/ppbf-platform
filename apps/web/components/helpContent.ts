@@ -188,7 +188,7 @@ export const guideSections: GuideSection[] = [
     whatThisAreaIsFor: 'Family support visibility for tasks, observations, and progress context.',
     whoShouldUseIt: 'Parents/guardians and family support operators.',
     activeNow: 'Parent hub workflow and the progression visibility page.',
-    placeholderOrPlanned: 'Coach tasks with a due date show on the Messages tab, and the current week\'s (with anything still open from earlier) on the Parent Floor. Home assignments show on the Assignments tab. Planned, with no feed yet: parent observations, family goals, progress milestones, resources and reply to coach. Progression visibility is real but not automated.',
+    placeholderOrPlanned: 'Coach tasks with a due date show on the Messages tab, and the current week\'s (with anything still open from earlier) on the Parent Floor. Home assignments show on the Assignments tab. Planned, with no feed yet: parent observations, family goals, resources and reply to coach. The Progress tab shows earned milestones and a count of the recorded progression; progression visibility is real but not automated.',
     doNotTestYet: 'The Parent Hub sections stamped PLANNED have no feed behind them; no automated family recommendations.',
     usefulFeedback: 'Share whether progression visibility and family updates are easy to follow.',
     whereToGoNext: 'Athlete/Coach guides for connected context and feedback routing.',

@@ -21,8 +21,8 @@ jest.mock('@/src/server/pilot/http', () => {
 // The db layer is the mock boundary, NOT the access module: these tests run
 // the real requireRole and assertActorCanAccessAthlete, so what they pin is
 // the route's actual authorization, not a stub of it. queryOne answers the
-// coach-of-record / coverage / org-membership lookups; query answers the
-// sessions read.
+// org-membership lookup (a coach's reach is the whole gym since issue #1480,
+// so coaches and admins share it); query answers the sessions read.
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
@@ -77,9 +77,10 @@ describe('GET /api/pilot/sessions/list', () => {
     },
   );
 
-  test('a coach of record gets the sessions, scoped to their own organization in SQL', async () => {
+  test('a coach of the athlete\'s gym gets the sessions, scoped to their own organization in SQL', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym.
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
-    // Coach-of-record lookup matches.
+    // The organization lookup finds a live athlete of this gym.
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     const rows = [
       { session_id: 's-2', athlete_id: 'ath-1', date: '2026-08-12', rpe: 7, notes: 'n', completed_flag: true },
@@ -91,11 +92,14 @@ describe('GET /api/pilot/sessions/list', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: rows });
 
-    // The coach-of-record check itself carries the coach AND the organization.
+    // The access check carries the athlete AND the organization, and nothing
+    // about which coach is asking.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
     expect(mockQueryOne).toHaveBeenCalledWith(
-      expect.stringContaining('coach_id = $2'),
-      ['ath-1', 'acct-coach-1', 'org-1'],
+      expect.stringContaining('organization_id = $2'),
+      ['ath-1', 'org-1'],
     );
+    expect(String(mockQueryOne.mock.calls[0][0])).not.toContain('coach_id');
     // The sessions read is pinned to the principal's organization -- a
     // session from another organization cannot match this predicate, so
     // foreign-org sessions can never appear in the response.
@@ -129,26 +133,29 @@ describe('GET /api/pilot/sessions/list', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('a coach who is not assigned (no record, no live coverage) is refused before any sessions read', async () => {
+  test('a coach asking for an athlete outside their gym is refused before any sessions read', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym -- and
+    // no further. The organization lookup finds no such live athlete here.
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
-    // Neither the coach-of-record lookup nor the coverage lookup matches.
-    mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce(null);
 
-    const res = await GET(listRequest('ath-not-mine'));
+    const res = await GET(listRequest('ath-other-org'));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'Forbidden: coach not assigned to athlete' });
+    expect(await res.json()).toEqual({ error: 'Forbidden: athlete does not belong to organization' });
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('a coach holding a live coverage grant gets the sessions', async () => {
+  test('a same-gym coach with no assignment and no coverage gets the sessions', async () => {
+    // Issue #1480 (Jason, 2026-10-12): a coach's reach is the whole gym. One
+    // organization lookup decides; no coverage lookup follows.
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
-    // Not coach of record, but the coverage lookup matches.
-    mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ athlete_id: 'ath-covered' });
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-unassigned' });
     mockQuery.mockResolvedValueOnce([]);
 
-    const res = await GET(listRequest('ath-covered'));
+    const res = await GET(listRequest('ath-unassigned'));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: [] });
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
   });
 
   test('an organization admin is refused a cross-organization athlete_id', async () => {
