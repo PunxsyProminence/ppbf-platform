@@ -1,3 +1,4 @@
+import type { PilotRole } from './contracts';
 import {
   buildFightCard,
   CORNER_LABEL,
@@ -198,6 +199,7 @@ describe('the card', () => {
     coachPhotoAvailable: false,
     memberSince: new Date(now.getTime() - 400 * 86_400_000),
     photoAvailable: false,
+    viewerRole: 'coach' as const,
   };
 
   it('is the same object for a fitness member as for a competitor', () => {
@@ -218,5 +220,46 @@ describe('the card', () => {
   it('gives the coach initials only when there is a coach', () => {
     expect(buildFightCard(base, now).coachInitials).toBeNull();
     expect(buildFightCard({ ...base, coachName: 'Ray Nolan' }, now).coachInitials).toBe('RN');
+  });
+  /* OD-2026-10-06-025 ruling 2: families see a coach's display name, never
+   * the internal account id. Every role is listed, so a role added to
+   * PilotRole later fails `npm run typecheck` here until somebody decides
+   * which side of the line it is on. */
+  describe('the coach account id, by viewer role', () => {
+    const withCoach = { ...base, coachName: 'Ray Nolan', coachAccountId: 'acct-coach-7f3a' };
+    const keepsId: Record<PilotRole, boolean> = {
+      athlete: false,
+      parent: false,
+      coach: true,
+      admin: true,
+      organization_admin: true,
+      platform_owner: true,
+      board: true,
+      volunteer: true,
+      staff: true,
+    };
+
+    it.each(Object.entries(keepsId))('%s viewer: carries the id = %s', (role, keeps) => {
+      const card = buildFightCard({ ...withCoach, viewerRole: role as PilotRole }, now);
+      expect(card.coachAccountId).toBe(keeps ? 'acct-coach-7f3a' : null);
+      // The name still goes to everyone who gets the card.
+      expect(card.coachName).toBe('Ray Nolan');
+      if (!keeps) expect(JSON.stringify(card)).not.toContain('acct-coach-7f3a');
+    });
+
+    it('passes the name it is given through unchanged: which name a family gets is the route\'s choice', () => {
+      // coachNameForViewer (profileCardSubject.ts) picks the family reader;
+      // this layer must not rewrite it either way.
+      for (const role of Object.keys(keepsId) as PilotRole[]) {
+        expect(buildFightCard({ ...withCoach, coachName: 'Coach Ray', viewerRole: role }, now).coachName).toBe('Coach Ray');
+      }
+    });
+
+    it('leaves a card with no coach as it was', () => {
+      const card = buildFightCard({ ...base, viewerRole: 'parent' }, now);
+      expect(card.coachName).toBeNull();
+      expect(card.coachAccountId).toBeNull();
+      expect(card.coachInitials).toBeNull();
+    });
   });
 });

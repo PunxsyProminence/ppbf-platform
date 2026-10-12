@@ -580,10 +580,10 @@ test.describe('Coach journey', () => {
     await expect(catalog.getByRole('option', { name: /Wrestling League/ })).toBeVisible();
     await page.keyboard.press('Escape');
 
-    /* 4. THE WORK THEY CAME FOR. Client-gated routes only: /coach/review-queue
-          and /coach/operations are in SERVER_GUARDED_ROUTES and answer 307 to
-          /login in this harness regardless of the session stub, so they would
-          fail here for a reason that has nothing to do with this change. */
+    /* 4. THE WORK THEY CAME FOR. Client-gated routes only: routes in
+          SERVER_GUARDED_ROUTES answer 307 to /login in this harness regardless
+          of the session stub, so they would fail here for a reason that has
+          nothing to do with this change. */
     for (const path of [
       '/coach/floor-groups',
       '/coach/session-scripts',

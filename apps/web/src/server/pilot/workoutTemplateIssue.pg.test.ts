@@ -526,31 +526,44 @@ describe('issuing a template', () => {
   });
 });
 
-describe('a refusal writes nothing', () => {
-  test('an untested DRAFT drill refuses the whole issue by name, though the other steps were fine', async () => {
+// Jason, 2026-10-11: "B" -- "Let a workout be issued with untested drills,
+// shown to the coach as untested" (issue #1473). Replaces OD-2026-10-08-002
+// item 2 at template issue; the drills stay drafts and stay unmarked.
+describe('an untested DRAFT is issued and named', () => {
+  const issueAuditDetails = async (gym: Gym) => (await client.query(
+    `select details from pilot.audit_events
+     where organization_id = $1 and entity_type = 'workout_template_issue' order by audit_id`,
+    [gym.organizationId],
+  )).rows.map((row) => row.details);
+
+  test('an unadopted untested draft among tested steps: every step an assignment, the draft adopted, the result and the audit name it', async () => {
     const gym = await newGym('untested-draft');
     await insertReference(gym, 'ref-ok', 'Ready Drill');
     await insertReference(gym, 'ref-draft', 'Untested Draft', { draft: true });
     await insertTemplate(gym, ['ref-ok', 'ref-draft']);
-    const before = await written(gym);
 
     const result = await issue(gym);
 
-    expect(result).toEqual({
-      outcome: 'refused',
-      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Untested Draft.',
-      drills: [{
-        steps: [2],
-        drill_id: 'ref-draft',
-        name: 'Untested Draft',
-        untested_draft: true,
-        reason: 'It is a draft that requires floor validation, and no coach of this gym has marked it floor-tested.',
-      }],
+    expect(result).toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-draft', name: 'Untested Draft', steps: [2] }],
     });
-    expect(await written(gym)).toEqual(before);
+    if (result.outcome !== 'issued') return;
+    expect(result.steps).toHaveLength(2);
+    expect(result.adopted.map((drill) => drill.reference_drill_id).sort()).toEqual(['ref-draft', 'ref-ok']);
+    expect(await written(gym)).toMatchObject({ drills: 2, assignments: 2, issues: 1, issueSteps: 2 });
+    expect(await issueAuditDetails(gym)).toEqual([
+      expect.objectContaining({ untested_reference_drill_ids: ['ref-draft'] }),
+    ]);
+    // Still a draft, still unmarked: issuing is not a floor test.
+    const { rows: marks } = await client.query(
+      `select count(*)::int as n from pilot.drill_floor_validations where organization_id = $1`,
+      [gym.organizationId],
+    );
+    expect(marks).toEqual([{ n: 0 }]);
   });
 
-  test("another gym's floor test of the same drill id does not unlock it here", async () => {
+  test("another gym's floor test of the same drill id does not clear it here", async () => {
     const here = await newGym('draft-here');
     const there = await newGym('draft-there');
     for (const gym of [here, there]) {
@@ -565,11 +578,103 @@ describe('a refusal writes nothing', () => {
       note: '',
     });
 
-    await expect(issue(here)).resolves.toMatchObject({ outcome: 'refused', drills: [{ untested_draft: true }] });
-    await expect(issue(there)).resolves.toMatchObject({ outcome: 'issued' });
-    expect(await written(here)).toMatchObject({ drills: 0, assignments: 0 });
+    await expect(issue(here)).resolves.toMatchObject({
+      outcome: 'issued',
+      untested: [{ reference_drill_id: 'ref-draft' }],
+    });
+    await expect(issue(there)).resolves.toMatchObject({ outcome: 'issued', untested: [] });
   });
 
+  test('a DRAFT the gym already adopted, with no mark, is assigned and named; once marked it is not named', async () => {
+    const gym = await newGym('adopted-untested-draft');
+    await insertReference(gym, 'ref-draft', 'Adopted Before The Gate', { draft: true });
+    // Adopted before the floor-test gate existed. The promote ROUTE would
+    // refuse this today, so the writer is called directly, past that check.
+    const drillId = await adopt(gym, 'ref-draft', 'Adopted Before The Gate');
+    await insertTemplate(gym, ['ref-draft']);
+
+    const first = await issue(gym);
+
+    expect(first).toMatchObject({
+      outcome: 'issued',
+      adopted: [],
+      untested: [{ reference_drill_id: 'ref-draft', name: 'Adopted Before The Gate', steps: [1] }],
+    });
+    if (first.outcome !== 'issued') return;
+    expect(first.steps[0].assignment.drill_id).toBe(drillId);
+
+    await markDrillFloorTested({
+      organizationId: gym.organizationId,
+      drillId: 'ref-draft',
+      validatedByAccountId: gym.coachId,
+      validatedByRole: 'coach',
+      note: '',
+    });
+
+    await expect(issue(gym)).resolves.toMatchObject({ outcome: 'issued', adopted: [], untested: [] });
+  });
+
+  test('a newer untested version of a drill the gym runs: the gym drill is updated in place and named', async () => {
+    const gym = await newGym('untested-newer-version');
+    await insertReference(gym, 'ref-v1', 'Versioned Drill', { lineageId: 'lin-1', version: 1 });
+    const oldId = await adopt(gym, 'ref-v1', 'Versioned Drill');
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+      [gym.organizationId],
+    );
+    await insertReference(gym, 'ref-v2', 'Versioned Drill II', { lineageId: 'lin-1', version: 2, draft: true });
+    await insertTemplate(gym, ['ref-v2']);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({
+      outcome: 'issued',
+      adopted: [],
+      updated: [{ reference_drill_id: 'ref-v2', updated_from_drill_id: oldId }],
+      untested: [{ reference_drill_id: 'ref-v2', name: 'Versioned Drill II', steps: [1] }],
+    });
+    expect(await issueAuditDetails(gym)).toEqual([
+      expect.objectContaining({ untested_reference_drill_ids: ['ref-v2'] }),
+    ]);
+  });
+
+  test('untested AND without a stop rule: refused for the stop rule alone, and nothing is written', async () => {
+    const gym = await newGym('untested-no-stop');
+    await insertReference(gym, 'ref-ok', 'Ready Drill');
+    await insertReference(gym, 'ref-draft', 'Half Built Draft', { draft: true, stopRules: false });
+    await insertTemplate(gym, ['ref-ok', 'ref-draft']);
+    const before = await written(gym);
+
+    const result = await issue(gym);
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Cannot be assigned as they stand: Half Built Draft.',
+      drills: [{ steps: [2], drill_id: 'ref-draft', name: 'Half Built Draft', reason: 'It has no stop rules.' }],
+    });
+    expect(await written(gym)).toEqual(before);
+  });
+
+  test('a template mixing a retired drill and an untested draft is refused, only the retired one named, nothing written', async () => {
+    const gym = await newGym('retired-and-untested');
+    await insertReference(gym, 'ref-a', 'Retired Drill');
+    const retiredId = await adopt(gym, 'ref-a', 'Retired Drill');
+    await updateDrill({ organizationId: gym.organizationId, drillId: retiredId, active: false });
+    await insertReference(gym, 'ref-draft', 'Untested Draft', { draft: true });
+    await insertTemplate(gym, ['ref-a', 'ref-draft']);
+    const before = await written(gym);
+
+    const result = await issue(gym);
+
+    expect(result).toMatchObject({ outcome: 'refused' });
+    if (result.outcome !== 'refused') return;
+    expect(result.drills.map((drill) => drill.drill_id)).toEqual(['ref-a']);
+    expect(result.drills[0].reason).toBe('This gym adopted this drill and then retired it. Restore it in the drill library first.');
+    expect(await written(gym)).toEqual(before);
+  });
+});
+
+describe('a refusal writes nothing', () => {
   test('a drill the gym adopted and then retired is named, and is not revived', async () => {
     const gym = await newGym('retired');
     await insertReference(gym, 'ref-a', 'Retired Drill');
@@ -582,7 +687,7 @@ describe('a refusal writes nothing', () => {
 
     expect(result).toMatchObject({
       outcome: 'refused',
-      drills: [{ drill_id: 'ref-a', name: 'Retired Drill', untested_draft: false }],
+      drills: [{ drill_id: 'ref-a', name: 'Retired Drill' }],
     });
     expect(await written(gym)).toEqual(before);
     const { rows } = await client.query(`select active from pilot.drills where organization_id = $1`, [gym.organizationId]);
@@ -604,45 +709,6 @@ describe('a refusal writes nothing', () => {
       ['Stop-less Drill', 'It has no stop rules.'],
     ]);
     expect(await written(gym)).toEqual(NOTHING);
-  });
-
-  test('a DRAFT the gym already adopted, with no floor-tested mark, is refused and named; the mark clears it', async () => {
-    const gym = await newGym('adopted-untested-draft');
-    await insertReference(gym, 'ref-draft', 'Adopted Before The Gate', { draft: true });
-    // Adopted before the floor-test gate existed. The promote ROUTE would
-    // refuse this today, so the writer is called directly, past that check.
-    const drillId = await adopt(gym, 'ref-draft', 'Adopted Before The Gate');
-    await insertTemplate(gym, ['ref-draft']);
-    const before = await written(gym);
-
-    const refused = await issue(gym);
-
-    expect(refused).toEqual({
-      outcome: 'refused',
-      message: 'Nothing was issued. Not floor-tested by a coach of this gym yet: Adopted Before The Gate.',
-      drills: [{
-        steps: [1],
-        drill_id: 'ref-draft',
-        name: 'Adopted Before The Gate',
-        untested_draft: true,
-        reason:
-          'This gym runs this drill, but it is a draft and no coach of this gym has marked it floor-tested. Mark it floor-tested first.',
-      }],
-    });
-    expect(await written(gym)).toEqual(before);
-
-    await markDrillFloorTested({
-      organizationId: gym.organizationId,
-      drillId: 'ref-draft',
-      validatedByAccountId: gym.coachId,
-      validatedByRole: 'coach',
-      note: '',
-    });
-    const issued = await issue(gym);
-
-    expect(issued).toMatchObject({ outcome: 'issued', adopted: [] });
-    if (issued.outcome !== 'issued') return;
-    expect(issued.steps[0].assignment.drill_id).toBe(drillId);
   });
 
   test('an adopted, running drill is assigned although its reference was later WITHDRAWN', async () => {
@@ -696,7 +762,7 @@ describe('a refusal writes nothing', () => {
 
     expect(result).toMatchObject({
       outcome: 'refused',
-      drills: [{ steps: [1], drill_id: 'ref-a', name: 'Cue-less Running Drill', untested_draft: false }],
+      drills: [{ steps: [1], drill_id: 'ref-a', name: 'Cue-less Running Drill' }],
     });
     if (result.outcome !== 'refused') return;
     expect(result.drills[0].reason).toContain('has no coaching cue');

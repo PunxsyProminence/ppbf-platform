@@ -12,10 +12,12 @@ import { issueWorkoutTemplate } from '@/src/server/pilot/workoutTemplates';
 export const runtime = 'nodejs';
 
 // A coach issues a saved workout template to ONE athlete in one action
-// (OD-2026-10-07-012 ruling 2; OD-2026-10-08-002 item 2). Every step becomes
-// an assignment, and a reference drill the gym has not adopted is adopted in
-// the same transaction. An untested draft drill -- or any other step that
-// cannot be assigned as it stands -- refuses the whole issue and is named.
+// (OD-2026-10-07-012 ruling 2). Every step becomes an assignment, and a
+// reference drill the gym has not adopted is adopted in the same transaction.
+// A step that cannot be assigned as it stands refuses the whole issue and is
+// named. A draft no coach of this gym has floor-tested does NOT refuse it
+// (Jason, 2026-10-11: "B", issue #1473): it is assigned and named in
+// `untested_drills`.
 // The rules and the transaction are issueWorkoutTemplate's; this file is the
 // gates and the answer.
 //
@@ -146,6 +148,9 @@ export async function POST(request: NextRequest) {
         steps: result.steps,
         adopted_drills: result.adopted,
         updated_drills: result.updated,
+        // Drills in this workout no coach of this gym has floor-tested, named
+        // so the coach can see it; they were assigned all the same.
+        untested_drills: result.untested,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
       },
       { status: 201 },
