@@ -351,7 +351,7 @@ export default function OperationsHubPage() {
                 <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>
                   <p className="t-body">
-                    The research, evidence, and publication desks, and the rooms that keep their records.
+                    The research, evidence, and audit desks, and the rooms that keep their records.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {developmentLab.map((item) => (

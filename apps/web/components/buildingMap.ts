@@ -141,29 +141,14 @@ const SCOUT_GATE: readonly ClubRole[] = ['admin', 'coach', 'platform_owner'];
    Both doors stay reachable by URL for every role the pages admit. */
 const RESEARCH_GATE: readonly ClubRole[] = ['coach', 'admin', 'platform_owner', 'staff', 'volunteer'];
 
-/* Every signed-in role, and nobody signed out. /help asks requirePageRole for
-   a sign-in and admits every role (app/help/page.tsx), so OPEN offered a
-   signed-out visitor a door that only leads to /login. A Record, so a new
-   ClubRole cannot be left off this door silently. */
-const SIGNED_IN: Record<ClubRole, true> = {
-  athlete: true,
-  coach: true,
-  parent: true,
-  admin: true,
-  platform_owner: true,
-  staff: true,
-  volunteer: true,
-  board: true,
-  'board-president': true,
-  'board-chair': true,
-  'board-vice-chair': true,
-  'board-treasurer': true,
-  'board-secretary': true,
-  'board-safety-director': true,
-  'board-community-director': true,
-  'board-at-large': true,
-};
-const SIGNED_IN_GATE: readonly ClubRole[] = Object.keys(SIGNED_IN) as ClubRole[];
+/* Every session role, and nobody signed out. /help asks requirePageRole for a
+   sign-in and admits every role (app/help/page.tsx), so OPEN offered a
+   signed-out visitor a door that only leads to /login. The board SEAT roles
+   are not listed, as on every other door: a seat holder's session role is
+   'board' (roleSession.ts; app/admin/door-register/page.tsx). */
+const SIGNED_IN_GATE: readonly ClubRole[] = [
+  'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board',
+];
 
 export const BUILDING: readonly Door[] = [
   // ---------------------------------------------------------------- office --
@@ -762,8 +747,8 @@ export function doorsByRoom(role: ClubRole | null): Array<{ room: Room; doors: D
 }
 
 /**
- * Rank doors against a query. Subsequence match on label first (so "revq"
- * finds "Review Queue"), then keywords, then href. Exact prefix wins.
+ * Rank doors against a query. Subsequence match on label first (so "wtmpl"
+ * finds "Workout Templates"), then keywords, then href. Exact prefix wins.
  * Returns every door when the query is empty, so the catalog opens as a browse.
  */
 export function searchDoors(role: ClubRole | null, query: string): Door[] {

@@ -132,10 +132,9 @@ describe('visibleDoors', () => {
   // signed-out visitor must not be offered the door; every signed-in role is.
   it('offers Help to every signed-in role and not to a signed-out visitor', () => {
     expect(visibleDoors(null).map((d) => d.href)).not.toContain('/help');
+    // The session roles; a board seat holder's session role is 'board'.
     const roles = [
       'athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board',
-      'board-president', 'board-chair', 'board-vice-chair', 'board-treasurer', 'board-secretary',
-      'board-safety-director', 'board-community-director', 'board-at-large',
     ] as const;
     for (const role of roles) {
       expect(visibleDoors(role).map((d) => d.href)).toContain('/help');
