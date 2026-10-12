@@ -53,7 +53,7 @@ function resolveSslConfig() {
 
 // D19 is a data change on pilot.org_quotes; it needs the table and its
 // duplicate-text index (the insert relies on it to stay a no-op when the gym
-// already typed the line). Asserted after the change, inside the transaction.
+// already typed the line). Asserted before the change, inside the transaction.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.org_quotes') is not null as org_quotes_ready,
@@ -69,13 +69,20 @@ function assertReadiness(row) {
   }
 }
 
+/**
+ * Returns what the two statements changed, so the operator's log says whether
+ * Steel Town was switched off and the new line added, or whether either was
+ * already as the gym left it. A report, not a gate: zero is a valid outcome.
+ */
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
-    await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);
     assertReadiness(readiness.rows[0]);
+    const results = await client.query(sql);
+    const [update, insert] = Array.isArray(results) ? results : [results, { rowCount: 0 }];
     await client.query('COMMIT');
+    return { steelTownSwitchedOff: update?.rowCount ?? 0, amplectereAdded: insert?.rowCount ?? 0 };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -106,7 +113,9 @@ export async function run() {
 
   await client.connect();
   try {
-    await applyMigrationTransaction(client, sql);
+    const outcome = await applyMigrationTransaction(client, sql);
+    console.log(`steel_town_switched_off: ${outcome.steelTownSwitchedOff}`);
+    console.log(`amplectere_miseriam_added: ${outcome.amplectereAdded}`);
   } finally {
     await client.end();
   }

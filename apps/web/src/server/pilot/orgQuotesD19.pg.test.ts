@@ -57,7 +57,8 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let quotes: typeof import('./orgQuotes');
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let applyD19Transaction: (client: Client, sql: string) => Promise<void>;
+type D19Outcome = { steelTownSwitchedOff: number; amplectereAdded: number };
+let applyD19Transaction: (client: Client, sql: string) => Promise<D19Outcome>;
 let baseSchemaSql: string;
 let migrationSql: string;
 let d19Sql: string;
@@ -145,7 +146,7 @@ beforeAll(async () => {
   ) => Promise<void>;
   d19Sql = await fs.readFile(path.join(INFRA_DIR, D19_FILE), 'utf8');
   const d19Module = await nativeDynamicImport(pathToFileURL(D19_RUNNER_PATH).href);
-  applyD19Transaction = d19Module.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
+  applyD19Transaction = d19Module.applyMigrationTransaction as (client: Client, sql: string) => Promise<D19Outcome>;
 });
 
 afterAll(async () => {
@@ -171,6 +172,7 @@ const AMPLECTERE = 'AMPLECTERE MISERIAM';
 
 describe('org-quotes D19 migration against the real schema', () => {
   let main: Client;
+  let firstOutcome: D19Outcome;
 
   beforeAll(async () => {
     main = await freshDatabase(TEST_DB_NAME, [SEEDED_ORG, ORG_A, ORG_B]);
@@ -181,7 +183,7 @@ describe('org-quotes D19 migration against the real schema', () => {
        values ($1, md5('other-gym-steel')::uuid, $2, 'their wall', 'gym_saying', array['anywhere'], true)`,
       [ORG_A, STEEL],
     );
-    await applyD19Transaction(main, d19Sql);
+    firstOutcome = await applyD19Transaction(main, d19Sql);
 
     process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
     // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it), so
@@ -223,9 +225,13 @@ describe('org-quotes D19 migration against the real schema', () => {
     expect(await quotes.listQuotes(ORG_B)).toEqual([]);
   });
 
-  test('re-running changes nothing', async () => {
+  test('the runner reports what it changed: one row off, one row added; a re-run reports nothing', async () => {
+    expect(firstOutcome).toEqual({ steelTownSwitchedOff: 1, amplectereAdded: 1 });
+  });
+
+  test('re-running changes nothing, and says so', async () => {
     const before = await quotes.listQuotes(SEEDED_ORG);
-    await applyD19Transaction(main, d19Sql);
+    expect(await applyD19Transaction(main, d19Sql)).toEqual({ steelTownSwitchedOff: 0, amplectereAdded: 0 });
     expect(await quotes.listQuotes(SEEDED_ORG)).toEqual(before);
   });
 
@@ -274,6 +280,56 @@ describe('org-quotes D19 when the gym had already changed things', () => {
         [SEEDED_ORG, AMPLECTERE],
       );
       expect(amplectere.rows).toEqual([{ quote_text: 'amplectere miseriam', speaker: 'Jason', active: false }]);
+    } finally {
+      await db.end();
+    }
+  });
+
+  test('a Steel Town line the gym typed in again after renaming the seed row is never switched off', async () => {
+    const db = await freshDatabase('ppbf_test_quotes_d19_retyped', [SEEDED_ORG]);
+    try {
+      await applyMigrationTransaction(db, migrationSql);
+      await db.query(
+        `update pilot.org_quotes set quote_text = 'STEEL CITY. STEADY HANDS.', updated_at = now() + interval '1 second'
+         where organization_id = $1 and quote_text = $2`,
+        [SEEDED_ORG, STEEL],
+      );
+      await db.query(
+        `insert into pilot.org_quotes (organization_id, quote_id, quote_text, speaker, quote_type, shown, active)
+         values ($1, md5('retyped-by-gym')::uuid, $2, 'the wall', 'gym_saying', array['anywhere'], true)`,
+        [SEEDED_ORG, STEEL],
+      );
+      await applyD19Transaction(db, d19Sql);
+      await applyD19Transaction(db, d19Sql);
+      const rows = await db.query(
+        'select quote_text, active from pilot.org_quotes where organization_id = $1 and quote_text like $2 order by quote_text',
+        [SEEDED_ORG, 'STEEL%'],
+      );
+      expect(rows.rows).toEqual([
+        { quote_text: 'STEEL CITY. STEADY HANDS.', active: true },
+        { quote_text: STEEL, active: true },
+      ]);
+    } finally {
+      await db.end();
+    }
+  });
+
+  test('AMPLECTERE MISERIAM edited by the gym is not resurrected beside its edit by a re-run', async () => {
+    const db = await freshDatabase('ppbf_test_quotes_d19_reedit', [SEEDED_ORG]);
+    try {
+      await applyMigrationTransaction(db, migrationSql);
+      await applyD19Transaction(db, d19Sql);
+      await db.query(
+        `update pilot.org_quotes set quote_text = 'AMPLECTERE MISERIAM.', updated_at = now()
+         where organization_id = $1 and quote_text = $2`,
+        [SEEDED_ORG, AMPLECTERE],
+      );
+      expect(await applyD19Transaction(db, d19Sql)).toEqual({ steelTownSwitchedOff: 0, amplectereAdded: 0 });
+      const rows = await db.query(
+        `select quote_text from pilot.org_quotes where organization_id = $1 and quote_text like 'AMPLECTERE%'`,
+        [SEEDED_ORG],
+      );
+      expect(rows.rows).toEqual([{ quote_text: 'AMPLECTERE MISERIAM.' }]);
     } finally {
       await db.end();
     }

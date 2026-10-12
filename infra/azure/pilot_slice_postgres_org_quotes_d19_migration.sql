@@ -15,11 +15,16 @@
 --     /admin/quotes, re-running this never overrides that;
 --   * if the gym had already edited or switched off that row before this ran,
 --     the gym's own edit stands and nothing changes.
--- The row is found by its text (the unique index makes it at most one row per
--- organization), so a copy the gym typed in by hand is matched the same way.
+-- The row is found by the seed's own fixed id (md5 of the seed text, the
+-- org-quotes migration's pattern) AND its text, so only the seeded row is ever
+-- touched: a Steel Town line the gym types in again later, as its own row, is
+-- the gym's choice and is never switched off by a re-run.
 --
--- ROW 2 -- AMPLECTERE MISERIAM is added as an active gym saying, 'the wall',
--- shown anywhere, the same placement as the other wall lines. The id is fixed
+-- ROW 2 -- AMPLECTERE MISERIAM is added as an active gym saying. Speaker and
+-- placement are inherited from the line it replaces (egg 11, Steel Town:
+-- 'the wall', shown anywhere); the wording is egg 11 of the approved list as
+-- recorded second-hand in this repository (OWNER_DECISIONS.md, ACTIVE_WORK.md),
+-- to be confirmed against the hand-off before this is applied. The id is fixed
 -- (the seed's md5 pattern) and the insert is `on conflict do nothing`, so a
 -- re-run never resurrects it after the gym edits or switches it off, and if the
 -- gym already typed the same words the unique-text index makes it a no-op.
@@ -34,7 +39,8 @@ update pilot.org_quotes
    set active = false,
        updated_at = now()
  where organization_id = 'punxsy_prominence'
-   and lower(btrim(quote_text)) = lower('STEEL TOWN. STEADY HANDS.')
+   and quote_id = md5('org-quotes-seed:STEEL TOWN. STEADY HANDS.')::uuid
+   and quote_text = 'STEEL TOWN. STEADY HANDS.'
    and active
    and updated_at = created_at;
 
